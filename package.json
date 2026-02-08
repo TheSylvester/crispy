@@ -1,0 +1,51 @@
+{
+  "name": "crispy",
+  "displayName": "Crispy",
+  "description": "Open-source Claude Code UI for VS Code and Cursor",
+  "version": "0.0.1",
+  "publisher": "TheSylvester",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "main": "./dist/extension.js",
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.32"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.80.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.18"
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "watch": "npm run build -- --watch",
+    "typecheck": "tsc --noEmit",
+    "package": "npm run build && vsce package",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:fixture": "./scripts/check-claude-fixture.sh"
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [],
+    "configuration": {
+      "title": "Crispy",
+      "properties": {}
+    }
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Untrusted workspaces are not supported"
+    }
+  }
+}
