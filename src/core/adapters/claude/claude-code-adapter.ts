@@ -3,7 +3,11 @@
  *
  * Implements the Channel interface for Claude Code via the Agent SDK.
  * Manages the full lifecycle: input queue, query() calls, SDKMessage
- * mapping, permission handling, and session transitions.
+ * mapping, permission handling, session transitions, metadata capture,
+ * context tracking, and live session controls.
+ *
+ * Also exports free functions for disk-based history loading and
+ * session discovery (listProjects, listSessions, findSession, loadHistory).
  *
  * @module claude-code-adapter
  */
@@ -36,23 +40,311 @@ import type { ContentBlockParam } from '@anthropic-ai/sdk/resources';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { AsyncIterableQueue } from '../../async-iterable-queue.js';
 import { adaptClaudeEntry } from './claude-entry-adapter.js';
+import { parseJsonlFile, extractMetadataFast } from './jsonl-reader.js';
+
+import type { TranscriptEntry, ContextUsage } from '../../transcript.js';
+
+import { existsSync, readdirSync, statSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 
 // ============================================================================
-// Configuration
+// Configuration — Full SDK Options Surface
 // ============================================================================
 
-/** Options for creating a ClaudeCodeChannel. */
-export interface ClaudeCodeChannelOptions {
-  /** Session ID to resume. Omit to start a new session. */
-  resumeSessionId?: string;
-  /** Working directory for the session. */
-  cwd?: string;
-  /** Model to use (e.g. 'sonnet', 'opus'). */
+/** Setting sources for Claude Code configuration loading. */
+export type SettingSource = 'user' | 'project' | 'local';
+
+/**
+ * Subagent definition for programmatic agent configuration.
+ * Passed via `agents` option to define custom subagents.
+ */
+export interface AgentDefinition {
+  /** Natural language description of when to use this agent */
+  description: string;
+  /** Allowed tool names. If omitted, inherits all tools */
+  tools?: string[];
+  /** Tool names to explicitly disallow for this agent */
+  disallowedTools?: string[];
+  /** The agent's system prompt */
+  prompt: string;
+  /** Model override: 'sonnet' | 'opus' | 'haiku' | 'inherit' */
+  model?: 'sonnet' | 'opus' | 'haiku' | 'inherit';
+  /** MCP servers available to this agent */
+  mcpServers?: (string | Record<string, McpServerConfig>)[];
+  /** Maximum number of agentic turns */
+  maxTurns?: number;
+}
+
+/**
+ * MCP server configuration — supports all SDK transport types.
+ */
+export type McpServerConfig =
+  | { type?: 'stdio'; command: string; args?: string[]; env?: Record<string, string> }
+  | { type: 'sse'; url: string; headers?: Record<string, string> }
+  | { type: 'http'; url: string; headers?: Record<string, string> };
+
+/**
+ * Hook event types for intercepting agent operations.
+ */
+export type HookEvent =
+  | 'PreToolUse'
+  | 'PostToolUse'
+  | 'PostToolUseFailure'
+  | 'Notification'
+  | 'UserPromptSubmit'
+  | 'SessionStart'
+  | 'SessionEnd'
+  | 'Stop'
+  | 'SubagentStart'
+  | 'SubagentStop'
+  | 'PreCompact'
+  | 'PermissionRequest'
+  | 'Setup'
+  | 'TeammateIdle'
+  | 'TaskCompleted';
+
+/** Simplified hook callback type. */
+export type HookCallback = (
+  input: unknown,
+  toolUseID: string | undefined,
+  options: { signal: AbortSignal },
+) => Promise<Record<string, unknown>>;
+
+export interface HookCallbackMatcher {
+  matcher?: string;
+  hooks: HookCallback[];
+  timeout?: number;
+}
+
+/**
+ * Full session options for creating a ClaudeCodeChannel.
+ *
+ * Covers the entire SDK Options surface. `cwd` is the only required field.
+ * `canUseTool` is intentionally omitted — the adapter always provides its
+ * own internally to wire the approval flow. Consumers control permissions
+ * via `permissionMode`.
+ */
+export interface ClaudeSessionOptions {
+  // --- Session identity ---
+
+  /** Working directory for the session (required) */
+  cwd: string;
+  /** Session ID to resume */
+  resume?: string;
+  /** Specific session ID to use (must be valid UUID) */
+  sessionId?: string;
+  /** Fork to new session ID when resuming */
+  forkSession?: boolean;
+  /** Resume at specific message UUID (for mid-conversation forks) */
+  resumeSessionAt?: string;
+  /** Continue the most recent conversation */
+  continue?: boolean;
+  /** Save session to disk (default: true) */
+  persistSession?: boolean;
+
+  // --- Model & thinking ---
+
+  /** Claude model to use */
   model?: string;
-  /** Initial permission mode. */
+  /** Fallback model if primary fails */
+  fallbackModel?: string;
+  /** Maximum tokens for extended thinking */
+  maxThinkingTokens?: number;
+
+  // --- Permissions ---
+
+  /** Permission mode */
   permissionMode?: PermissionMode;
-  /** Additional SDK options passed through to query(). */
-  sdkOptions?: Partial<Options>;
+  /** Required when permissionMode is 'bypassPermissions' */
+  allowDangerouslySkipPermissions?: boolean;
+  /** MCP tool name for permission prompts */
+  permissionPromptToolName?: string;
+
+  // --- Tools ---
+
+  /** Tool configuration: array of names or preset */
+  tools?: string[] | { type: 'preset'; preset: 'claude_code' };
+  /** Whitelist of allowed tool names */
+  allowedTools?: string[];
+  /** Blacklist of disallowed tool names */
+  disallowedTools?: string[];
+
+  // --- System prompt ---
+
+  /** System prompt: string or preset with optional append */
+  systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string };
+
+  // --- Settings & config ---
+
+  /** Which filesystem settings to load (default: ['user', 'project', 'local']) */
+  settingSources?: SettingSource[];
+  /** Additional directories Claude can access beyond cwd */
+  additionalDirectories?: string[];
+  /** Environment variables for the subprocess */
+  env?: Record<string, string>;
+  /** Extra CLI arguments (e.g., { chrome: null }) */
+  extraArgs?: Record<string, string | null>;
+
+  // --- Limits ---
+
+  /** Maximum conversation turns */
+  maxTurns?: number;
+  /** Maximum budget in USD */
+  maxBudgetUsd?: number;
+
+  // --- Subagents ---
+
+  /** Programmatic subagent definitions */
+  agents?: Record<string, AgentDefinition>;
+  /** Agent name for the main thread */
+  agent?: string;
+
+  // --- MCP servers ---
+
+  /** MCP server configurations */
+  mcpServers?: Record<string, McpServerConfig>;
+  /** Enforce strict MCP validation */
+  strictMcpConfig?: boolean;
+
+  // --- Plugins ---
+
+  /** Plugins to load */
+  plugins?: Array<{ type: 'local'; path: string }>;
+
+  // --- Hooks ---
+
+  /** Hook callbacks for agent events */
+  hooks?: Partial<Record<HookEvent, HookCallbackMatcher[]>>;
+
+  // --- Sandbox ---
+
+  /** Sandbox configuration for command execution */
+  sandbox?: Record<string, unknown>;
+
+  // --- Structured output ---
+
+  /** JSON Schema output format for structured responses */
+  outputFormat?: { type: 'json_schema'; schema: Record<string, unknown> };
+
+  // --- Beta features ---
+
+  /** Enable beta features (e.g., ['context-1m-2025-08-07']) */
+  betas?: ('context-1m-2025-08-07')[];
+
+  // --- File checkpointing ---
+
+  /** Enable file change tracking for rewindFiles() */
+  enableFileCheckpointing?: boolean;
+
+  // --- Process control ---
+
+  /** External abort controller */
+  abortController?: AbortController;
+  /** JavaScript runtime override */
+  executable?: 'bun' | 'deno' | 'node';
+  /** Arguments to pass to the runtime */
+  executableArgs?: string[];
+  /** Path to Claude Code executable */
+  pathToClaudeCodeExecutable?: string;
+  /** Stderr callback for subprocess output */
+  stderr?: (data: string) => void;
+
+  // --- Debug ---
+
+  /** Enable debug mode */
+  debug?: boolean;
+  /** Write debug logs to a specific file path */
+  debugFile?: string;
+}
+
+// ============================================================================
+// Session Metadata — Captured from SDK init message
+// ============================================================================
+
+/**
+ * Metadata captured from the SDK's system/init message.
+ * Available on channel.metadata after the first init message arrives.
+ */
+export interface ClaudeSessionMetadata {
+  sessionId: string;
+  model: string;
+  cwd: string;
+  tools: string[];
+  mcpServers: Array<{ name: string; status: string }>;
+  slashCommands: string[];
+  skills: string[];
+  plugins: Array<{ name: string; path: string }>;
+  agents: string[];
+  permissionMode: string;
+  apiKeySource: string;
+}
+
+// ============================================================================
+// Discovery / Query Types — returned by session control methods
+// ============================================================================
+
+export interface ModelInfo {
+  value: string;
+  displayName: string;
+  description: string;
+}
+
+export interface SlashCommand {
+  name: string;
+  description: string;
+  argumentHint: string;
+}
+
+export interface McpServerStatus {
+  name: string;
+  status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled';
+  serverInfo?: { name: string; version: string };
+  error?: string;
+}
+
+export interface McpSetServersResult {
+  added: string[];
+  removed: string[];
+  errors: Record<string, string>;
+}
+
+export interface RewindFilesResult {
+  canRewind: boolean;
+  error?: string;
+  filesChanged?: string[];
+  insertions?: number;
+  deletions?: number;
+}
+
+export interface AccountInfo {
+  email?: string;
+  organization?: string;
+  subscriptionType?: string;
+  tokenSource?: string;
+  apiKeySource?: string;
+}
+
+export interface SDKControlInitializeResponse {
+  commands: SlashCommand[];
+  output_style: string;
+  available_output_styles: string[];
+  models: ModelInfo[];
+  account: AccountInfo;
+}
+
+// ============================================================================
+// Session Discovery / History Types
+// ============================================================================
+
+export interface SessionInfo {
+  sessionId: string;
+  path: string;
+  projectSlug: string;
+  modifiedAt: Date;
+  size: number;
+  label?: string;
+  vendor: 'claude';
 }
 
 // ============================================================================
@@ -77,6 +369,8 @@ export class ClaudeCodeChannel implements Channel {
   private _sessionId: string | undefined;
   private _status: ChannelStatus = 'idle';
   private _closed = false;
+  private _metadata: ClaudeSessionMetadata | null = null;
+  private _contextUsage: ContextUsage | null = null;
 
   /** The input queue fed to query() as the prompt. */
   private inputQueue: AsyncIterableQueue<SDKUserMessage> | null = null;
@@ -89,11 +383,11 @@ export class ClaudeCodeChannel implements Channel {
   /** AbortController for the active query. */
   private abortController: AbortController | null = null;
 
-  private readonly options: ClaudeCodeChannelOptions;
+  private readonly options: ClaudeSessionOptions;
 
-  constructor(options: ClaudeCodeChannelOptions = {}) {
+  constructor(options: ClaudeSessionOptions) {
     this.options = options;
-    this._sessionId = options.resumeSessionId;
+    this._sessionId = options.resume;
   }
 
   // --------------------------------------------------------------------------
@@ -106,6 +400,16 @@ export class ClaudeCodeChannel implements Channel {
 
   get status(): ChannelStatus {
     return this._status;
+  }
+
+  /** Session metadata captured from the SDK init message. */
+  get metadata(): ClaudeSessionMetadata | null {
+    return this._metadata;
+  }
+
+  /** Cumulative context usage (updated after each assistant/result message). */
+  get contextUsage(): ContextUsage | null {
+    return this._contextUsage;
   }
 
   /**
@@ -184,6 +488,81 @@ export class ClaudeCodeChannel implements Channel {
   }
 
   // --------------------------------------------------------------------------
+  // Live control methods (delegate to active Query)
+  // --------------------------------------------------------------------------
+
+  private requireQuery(method: string): Query {
+    if (!this.activeQuery) throw new Error(`Cannot call ${method}() before session is initialized`);
+    if (this._closed) throw new Error(`Cannot call ${method}() on a closed channel`);
+    return this.activeQuery;
+  }
+
+  /** Interrupt the active query (pause, not kill). */
+  async interrupt(): Promise<void> {
+    await this.requireQuery('interrupt').interrupt();
+  }
+
+  /** Change model mid-conversation. */
+  async setModel(model?: string): Promise<void> {
+    await this.requireQuery('setModel').setModel(model);
+  }
+
+  /** Change permission mode mid-conversation. */
+  async setPermissionMode(mode: PermissionMode): Promise<void> {
+    await this.requireQuery('setPermissionMode').setPermissionMode(mode);
+  }
+
+  /** Change thinking token budget mid-conversation. */
+  async setMaxThinkingTokens(tokens: number | null): Promise<void> {
+    await this.requireQuery('setMaxThinkingTokens').setMaxThinkingTokens(tokens);
+  }
+
+  /** Get full initialization data (commands, models, account, etc.). */
+  async initializationResult(): Promise<SDKControlInitializeResponse> {
+    return await this.requireQuery('initializationResult').initializationResult() as SDKControlInitializeResponse;
+  }
+
+  /** List available models with display info. */
+  async supportedModels(): Promise<ModelInfo[]> {
+    return await this.requireQuery('supportedModels').supportedModels() as ModelInfo[];
+  }
+
+  /** List available slash commands. */
+  async supportedCommands(): Promise<SlashCommand[]> {
+    return await this.requireQuery('supportedCommands').supportedCommands() as SlashCommand[];
+  }
+
+  /** Check MCP server connection status. */
+  async mcpServerStatus(): Promise<McpServerStatus[]> {
+    return await this.requireQuery('mcpServerStatus').mcpServerStatus() as McpServerStatus[];
+  }
+
+  /** Get account/organization info. */
+  async accountInfo(): Promise<AccountInfo> {
+    return await this.requireQuery('accountInfo').accountInfo() as AccountInfo;
+  }
+
+  /** Rewind files to state at a specific user message UUID. */
+  async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult> {
+    return await this.requireQuery('rewindFiles').rewindFiles(userMessageId, opts) as RewindFilesResult;
+  }
+
+  /** Reconnect an MCP server by name. */
+  async reconnectMcpServer(serverName: string): Promise<void> {
+    await this.requireQuery('reconnectMcpServer').reconnectMcpServer(serverName);
+  }
+
+  /** Enable or disable an MCP server by name. */
+  async toggleMcpServer(serverName: string, enabled: boolean): Promise<void> {
+    await this.requireQuery('toggleMcpServer').toggleMcpServer(serverName, enabled);
+  }
+
+  /** Dynamically set MCP servers. */
+  async setMcpServers(servers: Record<string, McpServerConfig>): Promise<McpSetServersResult> {
+    return await this.requireQuery('setMcpServers').setMcpServers(servers) as McpSetServersResult;
+  }
+
+  // --------------------------------------------------------------------------
   // Query lifecycle
   // --------------------------------------------------------------------------
 
@@ -193,18 +572,95 @@ export class ClaudeCodeChannel implements Channel {
 
     this.abortController = new AbortController();
 
-    // Adapter invariants (abortController, includePartialMessages, canUseTool)
-    // are applied AFTER the user's sdkOptions spread so they cannot be overridden.
+    // Reset per-session state so stale data from a prior query isn't exposed
+    this._metadata = null;
+    this._contextUsage = null;
+
+    const opts = this.options;
+
+    // Build SDK options — map all ClaudeSessionOptions fields, apply defaults,
+    // then lock adapter invariants (abortController, canUseTool, includePartialMessages)
+    // last so they can't be overridden.
     const sdkOptions: Options = {
-      ...this.options.sdkOptions,
-      ...(this.options.cwd && { cwd: this.options.cwd }),
-      ...(this.options.model && { model: this.options.model }),
-      ...(this.options.permissionMode && { permissionMode: this.options.permissionMode }),
-      ...(this._sessionId && { resume: this._sessionId }),
-      // Adapter invariants — must not be overridden by sdkOptions
+      // Session identity
+      cwd: opts.cwd,
+      ...(opts.resume && { resume: opts.resume }),
+      ...(opts.sessionId && { sessionId: opts.sessionId }),
+      ...(opts.forkSession !== undefined && { forkSession: opts.forkSession }),
+      ...(opts.resumeSessionAt && { resumeSessionAt: opts.resumeSessionAt }),
+      ...(opts.continue !== undefined && { continue: opts.continue }),
+      ...(opts.persistSession !== undefined && { persistSession: opts.persistSession }),
+
+      // Model & thinking
+      ...(opts.model && { model: opts.model }),
+      ...(opts.fallbackModel && { fallbackModel: opts.fallbackModel }),
+      ...(opts.maxThinkingTokens !== undefined && { maxThinkingTokens: opts.maxThinkingTokens }),
+
+      // Permissions
+      ...(opts.permissionMode && { permissionMode: opts.permissionMode }),
+      ...(opts.allowDangerouslySkipPermissions !== undefined && { allowDangerouslySkipPermissions: opts.allowDangerouslySkipPermissions }),
+      ...(opts.permissionPromptToolName && { permissionPromptToolName: opts.permissionPromptToolName }),
+
+      // Tools
+      ...(opts.tools && { tools: opts.tools }),
+      ...(opts.allowedTools && { allowedTools: opts.allowedTools }),
+      ...(opts.disallowedTools && { disallowedTools: opts.disallowedTools }),
+
+      // System prompt
+      ...(opts.systemPrompt && { systemPrompt: opts.systemPrompt }),
+
+      // Settings & config — default to loading all filesystem settings
+      settingSources: opts.settingSources ?? ['user', 'project', 'local'],
+      ...(opts.additionalDirectories && { additionalDirectories: opts.additionalDirectories }),
+      ...(opts.env && { env: opts.env }),
+      ...(opts.extraArgs && { extraArgs: opts.extraArgs }),
+
+      // Limits
+      ...(opts.maxTurns !== undefined && { maxTurns: opts.maxTurns }),
+      ...(opts.maxBudgetUsd !== undefined && { maxBudgetUsd: opts.maxBudgetUsd }),
+
+      // Subagents
+      ...(opts.agents && { agents: opts.agents }),
+      ...(opts.agent && { agent: opts.agent }),
+
+      // MCP servers
+      ...(opts.mcpServers && { mcpServers: opts.mcpServers }),
+      ...(opts.strictMcpConfig !== undefined && { strictMcpConfig: opts.strictMcpConfig }),
+
+      // Plugins
+      ...(opts.plugins && { plugins: opts.plugins }),
+
+      // Hooks
+      ...(opts.hooks && { hooks: opts.hooks }),
+
+      // Sandbox
+      ...(opts.sandbox && { sandbox: opts.sandbox }),
+
+      // Structured output
+      ...(opts.outputFormat && { outputFormat: opts.outputFormat }),
+
+      // Beta features
+      ...(opts.betas && { betas: opts.betas }),
+
+      // File checkpointing
+      ...(opts.enableFileCheckpointing !== undefined && { enableFileCheckpointing: opts.enableFileCheckpointing }),
+
+      // Process control
+      ...(opts.executable && { executable: opts.executable }),
+      ...(opts.executableArgs && { executableArgs: opts.executableArgs }),
+      ...(opts.pathToClaudeCodeExecutable && { pathToClaudeCodeExecutable: opts.pathToClaudeCodeExecutable }),
+      ...(opts.stderr && { stderr: opts.stderr }),
+
+      // Debug
+      ...(opts.debug !== undefined && { debug: opts.debug }),
+      ...(opts.debugFile && { debugFile: opts.debugFile }),
+
+      // Adapter invariants — always applied last, cannot be overridden.
+      // The adapter depends on partial messages for streaming and provides
+      // its own canUseTool to wire the approval flow.
       abortController: this.abortController,
       includePartialMessages: true,
-      canUseTool: (toolName, input, opts) => this.handleCanUseTool(toolName, input, opts),
+      canUseTool: (toolName, input, canUseOpts) => this.handleCanUseTool(toolName, input, canUseOpts),
     };
 
     this.activeQuery = query({
@@ -342,6 +798,31 @@ export class ClaudeCodeChannel implements Channel {
 
   private handleAssistantMessage(msg: SDKAssistantMessage): void {
     if (this._status !== 'active') this.emitStatus('active');
+
+    // --- Context usage extraction ---
+    // Assistant messages carry per-turn usage snapshot (not incremental).
+    // Extract message.usage for token breakdown.
+    const betaUsage = (msg.message as unknown as Record<string, unknown>)?.usage as Record<string, number> | undefined;
+    if (betaUsage && typeof betaUsage === 'object') {
+      const tokens = {
+        input: betaUsage.input_tokens ?? 0,
+        output: betaUsage.output_tokens ?? 0,
+        cacheCreation: betaUsage.cache_creation_input_tokens ?? 0,
+        cacheRead: betaUsage.cache_read_input_tokens ?? 0,
+      };
+      const totalTokens = tokens.input + tokens.output + tokens.cacheCreation + tokens.cacheRead;
+      const cw = this._contextUsage?.contextWindow ?? 200_000;
+      const cwSource = this._contextUsage?.contextWindowSource ?? 'default';
+      this._contextUsage = {
+        tokens,
+        totalTokens,
+        contextWindow: cw,
+        contextWindowSource: cwSource,
+        percent: Math.min(Math.round((totalTokens / cw) * 100), 100),
+        totalCostUsd: this._contextUsage?.totalCostUsd,
+      };
+    }
+
     this.emitEntry(msg);
   }
 
@@ -352,6 +833,29 @@ export class ClaudeCodeChannel implements Channel {
   }
 
   private handleResultMessage(msg: SDKResultMessage): void {
+    // --- Context usage: authoritative contextWindow from SDK ModelUsage ---
+    const resultMsg = msg as unknown as Record<string, unknown>;
+    const sdkModelUsage = resultMsg.modelUsage as Record<string, Record<string, number>> | undefined;
+
+    if (sdkModelUsage && this._contextUsage) {
+      for (const mu of Object.values(sdkModelUsage)) {
+        if (mu.contextWindow) {
+          this._contextUsage = {
+            ...this._contextUsage,
+            contextWindow: mu.contextWindow,
+            contextWindowSource: 'sdk',
+            percent: Math.min(Math.round((this._contextUsage.totalTokens / mu.contextWindow) * 100), 100),
+          };
+          break;
+        }
+      }
+    }
+
+    // --- Cumulative cost ---
+    if (resultMsg.total_cost_usd !== undefined && this._contextUsage) {
+      this._contextUsage = { ...this._contextUsage, totalCostUsd: resultMsg.total_cost_usd as number };
+    }
+
     this.emitEntry(msg);
   }
 
@@ -365,10 +869,26 @@ export class ClaudeCodeChannel implements Channel {
     }
 
     switch (systemMsg.subtype) {
-      case 'init':
+      case 'init': {
+        // --- Capture session metadata from init message ---
+        const initMsg = msg as unknown as Record<string, unknown>;
+        this._metadata = {
+          sessionId: (initMsg.session_id as string) ?? '',
+          model: (initMsg.model as string) ?? '',
+          cwd: (initMsg.cwd as string) ?? '',
+          tools: (initMsg.tools as string[]) ?? [],
+          mcpServers: (initMsg.mcp_servers as Array<{ name: string; status: string }>) ?? [],
+          slashCommands: (initMsg.slash_commands as string[]) ?? [],
+          skills: (initMsg.skills as string[]) ?? [],
+          plugins: (initMsg.plugins as Array<{ name: string; path: string }>) ?? [],
+          agents: (initMsg.agents as string[]) ?? [],
+          permissionMode: ((initMsg.permissionMode ?? initMsg.permission_mode) as string) ?? '',
+          apiKeySource: ((initMsg.apiKeySource ?? initMsg.api_key_source) as string) ?? '',
+        };
         // System init — emit as entry for metadata (tools, model, etc.)
         this.emitEntry(msg);
         break;
+      }
 
       case 'status': {
         const statusMsg = systemMsg as SDKStatusMessage;
@@ -473,6 +993,10 @@ export class ClaudeCodeChannel implements Channel {
         if (this.pendingApprovals.has(toolUseId)) {
           this.pendingApprovals.delete(toolUseId);
           resolve({ behavior: 'deny', message: 'Aborted', toolUseID: toolUseId });
+          // Transition back to 'active' if no more pending approvals
+          if (this.pendingApprovals.size === 0) {
+            this.emitStatus('active');
+          }
         }
       }, { once: true });
     });
@@ -539,4 +1063,151 @@ export class ClaudeCodeChannel implements Channel {
       event: { type: 'status', status },
     });
   }
+}
+
+// ============================================================================
+// History / Disk Functions (free functions — no instance state needed)
+// ============================================================================
+
+/** Base directory for Claude projects. */
+function claudeProjectsDir(): string {
+  return join(homedir(), '.claude', 'projects');
+}
+
+/**
+ * List all project directory names under ~/.claude/projects/.
+ *
+ * @returns Array of project slug strings (directory names)
+ */
+export function listProjects(): string[] {
+  const dir = claudeProjectsDir();
+  if (!existsSync(dir)) return [];
+
+  try {
+    return readdirSync(dir).filter((name) => {
+      try {
+        return statSync(join(dir, name)).isDirectory();
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * List sessions, optionally filtered by project slug.
+ *
+ * If `projectSlug` is provided, lists only that project's .jsonl files.
+ * If omitted, lists sessions across all projects.
+ *
+ * Uses `extractMetadataFast` for efficient label extraction (reads only
+ * the first 64KB of each file).
+ *
+ * @param projectSlug - Optional project directory name to filter by
+ * @returns Array of SessionInfo sorted by modifiedAt descending
+ */
+export function listSessions(projectSlug?: string): SessionInfo[] {
+  const baseDir = claudeProjectsDir();
+  if (!existsSync(baseDir)) return [];
+
+  const slugs = projectSlug ? [projectSlug] : listProjects();
+  const sessions: SessionInfo[] = [];
+
+  for (const slug of slugs) {
+    const projectDir = join(baseDir, slug);
+
+    let files: string[];
+    try {
+      files = readdirSync(projectDir).filter((f) => f.endsWith('.jsonl'));
+    } catch {
+      continue;
+    }
+
+    for (const file of files) {
+      const filePath = join(projectDir, file);
+      const sessionId = file.replace(/\.jsonl$/, '');
+
+      let stat;
+      try {
+        stat = statSync(filePath);
+      } catch {
+        continue;
+      }
+
+      const meta = extractMetadataFast(filePath);
+
+      sessions.push({
+        sessionId,
+        path: filePath,
+        projectSlug: slug,
+        modifiedAt: stat.mtime,
+        size: stat.size,
+        label: meta?.label,
+        vendor: 'claude',
+      });
+    }
+  }
+
+  // Sort by most recently modified first
+  sessions.sort((a, b) => b.modifiedAt.getTime() - a.modifiedAt.getTime());
+  return sessions;
+}
+
+/**
+ * Find a session by ID across all projects.
+ *
+ * Walks all project directories to find a matching .jsonl file.
+ *
+ * @param sessionId - Session UUID to search for
+ * @returns SessionInfo if found, undefined otherwise
+ */
+export function findSession(sessionId: string): SessionInfo | undefined {
+  const baseDir = claudeProjectsDir();
+  if (!existsSync(baseDir)) return undefined;
+
+  const filename = `${sessionId}.jsonl`;
+
+  for (const slug of listProjects()) {
+    const filePath = join(baseDir, slug, filename);
+    if (!existsSync(filePath)) continue;
+
+    let stat;
+    try {
+      stat = statSync(filePath);
+    } catch {
+      continue;
+    }
+
+    const meta = extractMetadataFast(filePath);
+
+    return {
+      sessionId,
+      path: filePath,
+      projectSlug: slug,
+      modifiedAt: stat.mtime,
+      size: stat.size,
+      label: meta?.label,
+      vendor: 'claude',
+    };
+  }
+
+  return undefined;
+}
+
+/**
+ * Load full transcript history from a session file on disk.
+ *
+ * Parses the JSONL file and adapts each entry to universal TranscriptEntry
+ * format. Async signature for interface compatibility.
+ *
+ * @param sessionPath - Absolute path to the .jsonl session file
+ * @returns Array of TranscriptEntry (nulls from adaptation are filtered)
+ */
+export async function loadHistory(sessionPath: string): Promise<TranscriptEntry[]> {
+  const rawEntries = parseJsonlFile(sessionPath);
+  return rawEntries
+    .map((entry) => adaptClaudeEntry(entry as unknown as Record<string, unknown>))
+    .filter((entry): entry is TranscriptEntry => entry !== null);
 }

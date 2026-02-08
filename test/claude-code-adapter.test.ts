@@ -168,13 +168,15 @@ beforeEach(() => {
 // ========== Group 1: Construction & defaults ==========
 
 describe('Construction & defaults', () => {
-  it('has correct defaults and respects resumeSessionId', () => {
-    const ch1 = new ClaudeCodeChannel();
+  it('has correct defaults and respects resume', () => {
+    const ch1 = new ClaudeCodeChannel({ cwd: '/tmp' });
     expect(ch1.vendor).toBe('claude');
     expect(ch1.status).toBe('idle');
     expect(ch1.sessionId).toBeUndefined();
+    expect(ch1.metadata).toBeNull();
+    expect(ch1.contextUsage).toBeNull();
 
-    const ch2 = new ClaudeCodeChannel({ resumeSessionId: 'abc' });
+    const ch2 = new ClaudeCodeChannel({ cwd: '/tmp', resume: 'abc' });
     expect(ch2.sessionId).toBe('abc');
   });
 });
@@ -183,7 +185,7 @@ describe('Construction & defaults', () => {
 
 describe('send() guards', () => {
   it('throws after close()', () => {
-    const ch = new ClaudeCodeChannel();
+    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
     ch.close();
     expect(() => ch.send('hello')).toThrow('Channel is closed');
   });
@@ -195,7 +197,7 @@ describe('send() guards', () => {
       return deferred.query;
     });
 
-    const ch = new ClaudeCodeChannel();
+    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
     ch.send('hi');
     await tick();
 
@@ -220,7 +222,7 @@ describe('send() guards', () => {
     const deferred = createDeferredQuery();
     mockQueryFn.mockReturnValue(deferred.query);
 
-    const ch = new ClaudeCodeChannel();
+    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
     ch.send('first');
     await tick();
     expect(mockQueryFn).toHaveBeenCalledTimes(1);
@@ -272,7 +274,7 @@ describe('Message routing', () => {
     const mockQ = createMockQuery(messages);
     mockQueryFn.mockReturnValue(mockQ);
 
-    const ch = new ClaudeCodeChannel();
+    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
     ch.send('go');
 
     // Collect until we see the idle status (query completed)
@@ -311,7 +313,7 @@ describe('Session tracking', () => {
     const deferred = createDeferredQuery();
     mockQueryFn.mockReturnValue(deferred.query);
 
-    const ch = new ClaudeCodeChannel();
+    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
     ch.send('start');
     await tick();
 
@@ -363,7 +365,7 @@ describe('Permission flow', () => {
       capturedOptions = params.options;
       return deferred.query;
     });
-    const ch = new ClaudeCodeChannel();
+    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
     ch.send('hi');
     return { ch, deferred, getCanUseTool: () => capturedOptions!.canUseTool! };
   }
@@ -487,7 +489,7 @@ describe('Concurrent approvals', () => {
       return deferred.query;
     });
 
-    const ch = new ClaudeCodeChannel();
+    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
     ch.send('go');
     await tick();
 
@@ -523,7 +525,7 @@ describe('close() & lifecycle', () => {
     const deferred = createDeferredQuery();
     mockQueryFn.mockReturnValue(deferred.query);
 
-    const ch = new ClaudeCodeChannel();
+    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
     ch.send('go');
     await tick();
 
@@ -548,7 +550,7 @@ describe('close() & lifecycle', () => {
       return deferred.query;
     });
 
-    const ch = new ClaudeCodeChannel();
+    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
     ch.send('go');
     await tick();
 
@@ -570,7 +572,7 @@ describe('close() & lifecycle', () => {
     const deferred = createDeferredQuery();
     mockQueryFn.mockReturnValue(deferred.query);
 
-    const ch = new ClaudeCodeChannel();
+    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
     ch.send('go');
     await tick();
 
@@ -602,7 +604,7 @@ describe('close() & lifecycle', () => {
     ]);
     mockQueryFn.mockReturnValue(mockQ);
 
-    const ch = new ClaudeCodeChannel();
+    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
     ch.send('go');
 
     const output = await collectUntil(
@@ -635,12 +637,9 @@ describe('sdkOptions invariants', () => {
       cwd: '/my/project',
       model: 'opus',
       permissionMode: 'acceptEdits',
-      resumeSessionId: 'resume-123',
-      sdkOptions: {
-        abortController: fakeAbort,
-        includePartialMessages: false,
-        canUseTool: vi.fn() as never,
-      } as Partial<Options> as Options,
+      resume: 'resume-123',
+      // This should be overridden by adapter invariants:
+      abortController: fakeAbort,
     });
 
     ch.send('test');
@@ -650,14 +649,12 @@ describe('sdkOptions invariants', () => {
     expect(capturedOptions!.abortController).not.toBe(fakeAbort);
     expect(capturedOptions!.includePartialMessages).toBe(true);
     expect(capturedOptions!.canUseTool).toBeDefined();
-    // canUseTool should be the adapter's handler, not the user-supplied one
-    expect(capturedOptions!.canUseTool).not.toBe((ch as unknown as { options: { sdkOptions: Options } }).options.sdkOptions.canUseTool);
 
     // Passthrough fields
     expect(capturedOptions!.cwd).toBe('/my/project');
     expect(capturedOptions!.model).toBe('opus');
     expect(capturedOptions!.permissionMode).toBe('acceptEdits');
-    expect((capturedOptions as Record<string, unknown>).resume).toBe('resume-123');
+    expect(capturedOptions!.resume).toBe('resume-123');
 
     deferred.complete();
     ch.close();

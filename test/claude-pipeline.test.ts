@@ -10,15 +10,119 @@
 
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { adaptClaudeEntry, adaptClaudeEntries } from '../src/core/adapters/claude/claude-entry-adapter.js';
 import type { TranscriptEntry } from '../src/core/transcript.js';
 
 // ============================================================================
-// Setup
+// Setup — auto-discover fixture when env vars aren't set
 // ============================================================================
 
-const FIXTURE_FILE = process.env.CLAUDE_FIXTURE_FILE;
-const FIXTURE_VERSION = process.env.CLAUDE_FIXTURE_VERSION;
+/**
+ * Extract the Claude Code version from the first entry that has one.
+ * Reads only the first 8KB for speed.
+ */
+function extractVersion(filepath: string): string | undefined {
+  try {
+    const head = fs.readFileSync(filepath, { encoding: 'utf-8', flag: 'r' }).slice(0, 8192);
+    const match = head.match(/"version":"([^"]+)"/);
+    return match?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
+/** Score a transcript by how many distinct features it covers. */
+function scoreFile(filepath: string): number {
+  try {
+    const content = fs.readFileSync(filepath, 'utf-8');
+    let score = 0;
+    // Entry types (1pt each)
+    if (content.includes('"type":"user"'))                  score++;
+    if (content.includes('"type":"assistant"'))             score++;
+    if (content.includes('"type":"system"'))                score++;
+    if (content.includes('"type":"summary"'))               score++;
+    if (content.includes('"type":"result"'))                score++;
+    if (content.includes('"type":"progress"'))              score++;
+    if (content.includes('"type":"file-history-snapshot"')) score++;
+    // Content block types (2pt each)
+    if (content.includes('"type":"tool_use"'))    score += 2;
+    if (content.includes('"type":"tool_result"')) score += 2;
+    if (content.includes('"type":"thinking"'))    score += 2;
+    // Structural features
+    if (content.includes('"toolUseResult"'))    score += 2;
+    if (content.includes('"isSidechain":true')) score += 2;
+    if (content.includes('"usage":'))           score++;
+    return score;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Walk ~/.claude/projects/ to find the richest transcript under 512KB.
+ * Returns { file, version } or undefined.
+ */
+function discoverFixture(): { file: string; version: string } | undefined {
+  const projectsDir = path.join(os.homedir(), '.claude', 'projects');
+  if (!fs.existsSync(projectsDir)) return undefined;
+
+  const SIZE_CAP = 524288;
+  let bestFile: string | undefined;
+  let bestScore = 0;
+  let bestVersion: string | undefined;
+  let candidates = 0;
+
+  // Walk project directories, collect .jsonl files sorted by mtime desc
+  const allFiles: { path: string; mtime: number }[] = [];
+  for (const slug of fs.readdirSync(projectsDir)) {
+    const projDir = path.join(projectsDir, slug);
+    let stat: fs.Stats;
+    try { stat = fs.statSync(projDir); } catch { continue; }
+    if (!stat.isDirectory()) continue;
+
+    for (const file of fs.readdirSync(projDir)) {
+      if (!file.endsWith('.jsonl')) continue;
+      const fp = path.join(projDir, file);
+      try {
+        const s = fs.statSync(fp);
+        if (s.size > 1024 && s.size < SIZE_CAP) {
+          allFiles.push({ path: fp, mtime: s.mtimeMs });
+        }
+      } catch { /* skip */ }
+    }
+  }
+
+  // Sort newest first, sample top 30
+  allFiles.sort((a, b) => b.mtime - a.mtime);
+  for (const entry of allFiles.slice(0, 30)) {
+    const v = extractVersion(entry.path);
+    if (!v) continue;
+    candidates++;
+    const s = scoreFile(entry.path);
+    if (s > bestScore) {
+      bestFile = entry.path;
+      bestScore = s;
+      bestVersion = v;
+    }
+  }
+
+  if (bestFile && bestVersion) return { file: bestFile, version: bestVersion };
+  return undefined;
+}
+
+// Use env vars if set (from check-claude-fixture.sh), otherwise auto-discover
+let FIXTURE_FILE = process.env.CLAUDE_FIXTURE_FILE;
+let FIXTURE_VERSION: string | undefined = process.env.CLAUDE_FIXTURE_VERSION;
+
+if (!FIXTURE_FILE) {
+  const discovered = discoverFixture();
+  if (discovered) {
+    FIXTURE_FILE = discovered.file;
+    FIXTURE_VERSION = discovered.version;
+  }
+}
 
 function parseRawJsonl(filepath: string): Record<string, unknown>[] {
   const content = fs.readFileSync(filepath, 'utf-8');
@@ -75,8 +179,10 @@ const UNIVERSAL_FIELDS = [
 
 describe(`Claude JSONL pipeline (v${FIXTURE_VERSION})`, () => {
   if (!FIXTURE_FILE || !fs.existsSync(FIXTURE_FILE)) {
-    it.skip('no fixture file — run via: npm test', () => {});
-    return;
+    throw new Error(
+      'No Claude transcript fixture found. Ensure ~/.claude/projects/ contains .jsonl files, ' +
+      'or set CLAUDE_FIXTURE_FILE and CLAUDE_FIXTURE_VERSION env vars.',
+    );
   }
 
   const rawEntries = parseRawJsonl(FIXTURE_FILE);
