@@ -65,8 +65,10 @@ export class AsyncIterableQueue<T> implements AsyncIterable<T>, AsyncIterator<T>
   /**
    * Add an item to the queue.
    * If there's a pending reader, it will be resolved immediately.
+   * Silently ignored if the queue is already done (no-op).
    */
   enqueue(value: T): void {
+    if (this.isDone || this.hasError) return;
     if (this.readResolve) {
       const resolve = this.readResolve;
       this.readResolve = undefined;
