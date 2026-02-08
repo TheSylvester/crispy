@@ -24,9 +24,8 @@
     "watch": "npm run build -- --watch",
     "typecheck": "tsc --noEmit",
     "package": "npm run build && vsce package",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:fixture": "./scripts/check-claude-fixture.sh"
+    "test": "./scripts/check-claude-fixture.sh",
+    "test:unit": "vitest run"
   },
   "categories": [
     "AI",

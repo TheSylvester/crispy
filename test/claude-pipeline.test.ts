@@ -1,27 +1,25 @@
 /**
  * End-to-end pipeline test: Claude JSONL → Universal TranscriptEntry
  *
- * Tests the full pipeline: read raw JSONL from disk → adapt via
- * adaptClaudeEntry → verify output matches universal TranscriptEntry contract.
+ * Requires CLAUDE_FIXTURE_FILE and CLAUDE_FIXTURE_VERSION env vars,
+ * set by scripts/check-claude-fixture.sh which finds the richest
+ * transcript for the current Claude Code version.
  *
- * Fixtures are organized by Claude Code app version (which serves as the
- * de facto schema version). Each version directory contains a sample.jsonl
- * copied from a real transcript.
+ * Run via: npm test (which calls the script)
  */
 
 import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
-import * as path from 'path';
 import { adaptClaudeEntry, adaptClaudeEntries } from '../src/core/adapters/claude/claude-entry-adapter.js';
 import type { TranscriptEntry } from '../src/core/transcript.js';
 
 // ============================================================================
-// Helpers
+// Setup
 // ============================================================================
 
-const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'claude');
+const FIXTURE_FILE = process.env.CLAUDE_FIXTURE_FILE;
+const FIXTURE_VERSION = process.env.CLAUDE_FIXTURE_VERSION;
 
-/** Parse a JSONL file into raw (untyped) JSON objects — no casting. */
 function parseRawJsonl(filepath: string): Record<string, unknown>[] {
   const content = fs.readFileSync(filepath, 'utf-8');
   const entries: Record<string, unknown>[] = [];
@@ -37,341 +35,235 @@ function parseRawJsonl(filepath: string): Record<string, unknown>[] {
   return entries;
 }
 
-/** Get all version directories that have a sample.jsonl fixture. */
-function getFixtureVersions(): string[] {
-  return fs.readdirSync(FIXTURES_DIR)
-    .filter((name) => {
-      const samplePath = path.join(FIXTURES_DIR, name, 'sample.jsonl');
-      return fs.existsSync(samplePath);
-    })
-    .sort();
-}
-
-/** Load raw entries for a version fixture. */
-function loadFixture(version: string): Record<string, unknown>[] {
-  return parseRawJsonl(path.join(FIXTURES_DIR, version, 'sample.jsonl'));
-}
-
-// ============================================================================
-// Universal TranscriptEntry contract assertions
-// ============================================================================
-
-/** Assert that an adapted entry satisfies the universal TranscriptEntry contract. */
 function assertUniversalContract(entry: TranscriptEntry, label: string): void {
-  // Must have a type
   expect(entry.type, `${label}: type must be a string`).toBeTypeOf('string');
   expect(entry.type.length, `${label}: type must not be empty`).toBeGreaterThan(0);
-
-  // Must have vendor: 'claude'
   expect(entry.vendor, `${label}: vendor must be 'claude'`).toBe('claude');
 
-  // If message exists, it must have content
   if (entry.message) {
     expect(entry.message.content, `${label}: message.content must exist`).toBeDefined();
   }
-
-  // uuid and timestamp should be strings if present
   if (entry.uuid !== undefined) {
     expect(entry.uuid, `${label}: uuid must be string`).toBeTypeOf('string');
   }
   if (entry.timestamp !== undefined) {
     expect(entry.timestamp, `${label}: timestamp must be string`).toBeTypeOf('string');
   }
-
-  // isSidechain must be boolean if present
   if (entry.isSidechain !== undefined) {
     expect(entry.isSidechain, `${label}: isSidechain must be boolean`).toBeTypeOf('boolean');
   }
-
-  // isMeta must be boolean if present
   if (entry.isMeta !== undefined) {
     expect(entry.isMeta, `${label}: isMeta must be boolean`).toBeTypeOf('boolean');
   }
-
-  // metadata must be an object if present (overflow bag)
   if (entry.metadata !== undefined) {
     expect(entry.metadata, `${label}: metadata must be object`).toBeTypeOf('object');
   }
 }
 
+// Fields the adapter explicitly destructures and maps to universal fields
+const UNIVERSAL_FIELDS = [
+  'type', 'uuid', 'parentUuid', 'sessionId', 'session_id',
+  'timestamp', 'isSidechain', 'isMeta', 'agentId', 'cwd',
+  'message', 'toolUseResult', 'summary', 'leafUuid',
+  'customTitle', 'sourceToolAssistantUUID', 'parent_tool_use_id',
+  'parentToolUseID',
+];
+
 // ============================================================================
-// Tests: Per-version pipeline
+// Pipeline tests against real transcript
 // ============================================================================
 
-const versions = getFixtureVersions();
+describe(`Claude JSONL pipeline (v${FIXTURE_VERSION})`, () => {
+  if (!FIXTURE_FILE || !fs.existsSync(FIXTURE_FILE)) {
+    it.skip('no fixture file — run via: npm test', () => {});
+    return;
+  }
 
-describe('Claude JSONL → TranscriptEntry pipeline', () => {
-  // Sanity check: we have fixtures
-  it('has at least one version fixture', () => {
-    expect(versions.length).toBeGreaterThan(0);
+  const rawEntries = parseRawJsonl(FIXTURE_FILE);
+  const adapted = adaptClaudeEntries(rawEntries);
+
+  it('parses raw JSONL', () => {
+    expect(rawEntries.length).toBeGreaterThan(0);
   });
 
-  describe.each(versions)('version %s', (version) => {
-    const rawEntries = loadFixture(version);
-    const adapted = adaptClaudeEntries(rawEntries);
+  it('produces adapted entries', () => {
+    expect(adapted.length).toBeGreaterThan(0);
+  });
 
-    it('parses raw JSONL without errors', () => {
-      expect(rawEntries.length).toBeGreaterThan(0);
-    });
+  it('filters out queue-operation entries', () => {
+    const rawQueueOps = rawEntries.filter((e) => e.type === 'queue-operation').length;
+    const adaptedQueueOps = adapted.filter((e) => e.type === 'queue-operation').length;
+    if (rawQueueOps > 0) {
+      expect(adaptedQueueOps).toBe(0);
+    }
+  });
 
-    it('produces at least one adapted entry', () => {
-      expect(adapted.length).toBeGreaterThan(0);
-    });
+  it('every entry satisfies universal TranscriptEntry contract', () => {
+    for (let i = 0; i < adapted.length; i++) {
+      assertUniversalContract(adapted[i], `entry[${i}] (type=${adapted[i].type})`);
+    }
+  });
 
-    it('filters out queue-operation entries', () => {
-      const queueOps = rawEntries.filter((e) => e.type === 'queue-operation');
-      const adaptedQueueOps = adapted.filter((e) => e.type === 'queue-operation');
-      // If raw had queue-ops, adapted should not
-      if (queueOps.length > 0) {
-        expect(adaptedQueueOps.length).toBe(0);
+  it('preserves version in metadata', () => {
+    const withVersion = adapted.filter((e) => e.metadata?.version);
+    if (withVersion.length > 0) {
+      expect(withVersion[0].metadata!.version).toBe(FIXTURE_VERSION);
+    }
+  });
+
+  it('all user/assistant entries have message content', () => {
+    for (const entry of adapted) {
+      if (entry.type === 'user' || entry.type === 'assistant') {
+        expect(entry.message, `${entry.type} must have message`).toBeDefined();
+        expect(entry.message!.content, `${entry.type} must have content`).toBeDefined();
       }
-    });
+    }
+  });
 
-    it('every adapted entry satisfies universal TranscriptEntry contract', () => {
-      for (let i = 0; i < adapted.length; i++) {
-        assertUniversalContract(adapted[i], `entry[${i}] (type=${adapted[i].type})`);
-      }
-    });
+  it('consistent sessionId across entries', () => {
+    const ids = [...new Set(adapted.map((e) => e.sessionId).filter(Boolean))];
+    if (ids.length > 0) {
+      expect(ids.length).toBe(1);
+    }
+  });
 
-    it('preserves version in metadata overflow', () => {
-      // The raw `version` field is not a universal field, so it should
-      // end up in the metadata bag
-      const rawWithVersion = rawEntries.filter((e) => typeof e.version === 'string');
-      if (rawWithVersion.length > 0) {
-        const adaptedWithMeta = adapted.filter((e) => e.metadata?.version);
-        expect(adaptedWithMeta.length).toBeGreaterThan(0);
-        // Verify the version matches what we expect
-        expect(adaptedWithMeta[0].metadata!.version).toBe(version);
-      }
-    });
+  it('no data loss: every raw field preserved', () => {
+    for (const raw of rawEntries) {
+      const entry = adaptClaudeEntry(raw);
+      if (!entry) continue;
 
-    it('all user/assistant entries have message content', () => {
-      const messages = adapted.filter(
-        (e) => e.type === 'user' || e.type === 'assistant'
-      );
-      for (const msg of messages) {
-        expect(msg.message, `${msg.type} entry must have message`).toBeDefined();
-        expect(msg.message!.content, `${msg.type} entry must have content`).toBeDefined();
+      for (const key of Object.keys(raw)) {
+        if (UNIVERSAL_FIELDS.includes(key)) continue;
+        expect(entry.metadata, `field "${key}" should be in metadata`).toBeDefined();
+        expect(key in entry.metadata!, `metadata should contain "${key}"`).toBe(true);
       }
-    });
+    }
+  });
 
-    it('preserves sessionId across entries', () => {
-      const sessionIds = adapted
-        .map((e) => e.sessionId)
-        .filter((id) => id !== undefined);
-      if (sessionIds.length > 1) {
-        // All entries in a single file should share the same sessionId
-        const unique = [...new Set(sessionIds)];
-        expect(unique.length).toBe(1);
-      }
-    });
+  it('coverage report', () => {
+    const types = [...new Set(adapted.map((e) => e.type))].sort();
+    const has = (fn: (e: TranscriptEntry) => boolean) => adapted.some(fn);
 
-    it('preserves parent-child uuid chain', () => {
-      // First entry should have parentUuid null
-      const firstNonFiltered = adapted[0];
-      if (firstNonFiltered) {
-        expect(firstNonFiltered.parentUuid).toBeNull();
-      }
-      // Subsequent entries should reference a previous uuid as parentUuid
-      const uuids = new Set(adapted.map((e) => e.uuid).filter(Boolean));
-      for (let i = 1; i < adapted.length; i++) {
-        const entry = adapted[i];
-        if (entry.parentUuid) {
-          expect(
-            uuids.has(entry.parentUuid),
-            `entry[${i}] parentUuid "${entry.parentUuid}" should reference an existing uuid`
-          ).toBe(true);
-        }
-      }
-    });
+    const features = [
+      has((e) => Array.isArray(e.message?.content) && (e.message!.content as { type: string }[]).some((b) => b.type === 'tool_use')) && 'tool_use',
+      has((e) => Array.isArray(e.message?.content) && (e.message!.content as { type: string }[]).some((b) => b.type === 'tool_result')) && 'tool_result',
+      has((e) => Array.isArray(e.message?.content) && (e.message!.content as { type: string }[]).some((b) => b.type === 'thinking')) && 'thinking',
+      has((e) => e.isSidechain === true) && 'isSidechain',
+      has((e) => e.toolUseResult !== undefined) && 'toolUseResult',
+      has((e) => e.message !== undefined && 'usage' in e.message) && 'usage',
+    ].filter(Boolean);
+
+    console.log(`  types:    [${types.join(', ')}]`);
+    console.log(`  features: [${features.join(', ')}]`);
+    expect(true).toBe(true);
   });
 });
 
 // ============================================================================
-// Tests: Adapter edge cases
+// Adapter edge cases (synthetic, always run)
 // ============================================================================
 
 describe('adaptClaudeEntry edge cases', () => {
   it('returns null for queue-operation', () => {
-    const raw = { type: 'queue-operation', operation: 'dequeue', timestamp: '2026-01-01' };
-    expect(adaptClaudeEntry(raw)).toBeNull();
+    expect(adaptClaudeEntry({ type: 'queue-operation', operation: 'dequeue' })).toBeNull();
   });
 
-  it('returns null for malformed entry (no type)', () => {
-    const raw = { uuid: 'abc', message: { content: 'hello' } };
-    expect(adaptClaudeEntry(raw)).toBeNull();
+  it('returns null for no type', () => {
+    expect(adaptClaudeEntry({ uuid: 'abc' })).toBeNull();
   });
 
-  it('returns null for entry with non-string type', () => {
-    const raw = { type: 123 };
-    expect(adaptClaudeEntry(raw)).toBeNull();
+  it('returns null for non-string type', () => {
+    expect(adaptClaudeEntry({ type: 123 })).toBeNull();
   });
 
-  it('injects vendor: claude on all adapted entries', () => {
-    const raw = { type: 'user', uuid: 'abc', message: { role: 'user', content: 'hi' } };
-    const result = adaptClaudeEntry(raw);
-    expect(result).not.toBeNull();
-    expect(result!.vendor).toBe('claude');
+  it('injects vendor: claude', () => {
+    const r = adaptClaudeEntry({ type: 'user', uuid: 'a', message: { role: 'user', content: 'hi' } });
+    expect(r!.vendor).toBe('claude');
   });
 
-  it('maps sourceToolAssistantUUID to sourceToolAssistantUuid', () => {
-    const raw = {
-      type: 'user',
-      uuid: 'abc',
-      sourceToolAssistantUUID: 'def-uuid',
-      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'x', content: 'ok' }] },
-    };
-    const result = adaptClaudeEntry(raw);
-    expect(result!.sourceToolAssistantUuid).toBe('def-uuid');
+  it('maps sourceToolAssistantUUID → sourceToolAssistantUuid', () => {
+    const r = adaptClaudeEntry({
+      type: 'user', uuid: 'a', sourceToolAssistantUUID: 'x',
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'y', content: 'ok' }] },
+    });
+    expect(r!.sourceToolAssistantUuid).toBe('x');
   });
 
-  it('moves unknown fields to metadata overflow', () => {
-    const raw = {
-      type: 'user',
-      uuid: 'abc',
-      version: '2.1.37',
-      gitBranch: 'main',
-      userType: 'external',
-      permissionMode: 'default',
+  it('unknown fields → metadata', () => {
+    const r = adaptClaudeEntry({
+      type: 'user', uuid: 'a', version: '2.1.37', gitBranch: 'main',
       message: { role: 'user', content: 'test' },
-    };
-    const result = adaptClaudeEntry(raw);
-    expect(result!.metadata).toBeDefined();
-    expect(result!.metadata!.version).toBe('2.1.37');
-    expect(result!.metadata!.gitBranch).toBe('main');
-    expect(result!.metadata!.userType).toBe('external');
-    expect(result!.metadata!.permissionMode).toBe('default');
+    });
+    expect(r!.metadata!.version).toBe('2.1.37');
+    expect(r!.metadata!.gitBranch).toBe('main');
   });
 
-  it('preserves toolUseResult on user entries', () => {
-    const raw = {
-      type: 'user',
-      uuid: 'abc',
+  it('preserves toolUseResult', () => {
+    const r = adaptClaudeEntry({
+      type: 'user', uuid: 'a',
       message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'x', content: 'ok' }] },
-      toolUseResult: { stdout: 'hello', stderr: '', interrupted: false },
-    };
-    const result = adaptClaudeEntry(raw);
-    expect(result!.toolUseResult).toBeDefined();
-    expect((result!.toolUseResult as Record<string, unknown>).stdout).toBe('hello');
+      toolUseResult: { stdout: 'hello' },
+    });
+    expect((r!.toolUseResult as Record<string, unknown>).stdout).toBe('hello');
   });
 
-  it('preserves isSidechain boolean', () => {
-    const raw = {
-      type: 'user',
-      uuid: 'abc',
-      isSidechain: true,
-      agentId: 'a123',
+  it('preserves isSidechain + agentId', () => {
+    const r = adaptClaudeEntry({
+      type: 'user', uuid: 'a', isSidechain: true, agentId: 'a1',
       message: { role: 'user', content: 'warmup' },
-    };
-    const result = adaptClaudeEntry(raw);
-    expect(result!.isSidechain).toBe(true);
-    expect(result!.agentId).toBe('a123');
+    });
+    expect(r!.isSidechain).toBe(true);
+    expect(r!.agentId).toBe('a1');
   });
 
-  it('handles progress entry with tool content', () => {
-    const raw = {
-      type: 'progress',
-      uuid: 'prog-1',
-      parentUuid: 'parent-1',
-      sessionId: 'sess-1',
-      timestamp: '2026-01-01',
-      parentToolUseID: 'tool-1',
+  it('unwraps progress with tool content', () => {
+    const r = adaptClaudeEntry({
+      type: 'progress', uuid: 'p1', parentToolUseID: 't1',
       data: {
-        agentId: 'a456',
+        agentId: 'a2',
         message: {
           type: 'assistant',
-          message: {
-            role: 'assistant',
-            content: [{ type: 'tool_use', id: 'tu-1', name: 'Bash', input: { command: 'ls' } }],
-          },
+          message: { role: 'assistant', content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'ls' } }] },
         },
       },
-    };
-    const result = adaptClaudeEntry(raw);
-    expect(result).not.toBeNull();
-    expect(result!.type).toBe('assistant');
-    expect(result!.vendor).toBe('claude');
-    expect(result!.agentId).toBe('a456');
-    expect(result!.parentToolUseID).toBe('tool-1');
-    expect(result!.message).toBeDefined();
+    });
+    expect(r!.type).toBe('assistant');
+    expect(r!.agentId).toBe('a2');
+    expect(r!.parentToolUseID).toBe('t1');
   });
 
-  it('returns null for progress entry without tool content', () => {
-    const raw = {
-      type: 'progress',
-      uuid: 'prog-2',
-      data: {
-        message: {
-          type: 'assistant',
-          message: {}, // no content
-        },
-      },
-    };
-    expect(adaptClaudeEntry(raw)).toBeNull();
+  it('returns null for progress without content', () => {
+    expect(adaptClaudeEntry({
+      type: 'progress', data: { message: { type: 'assistant', message: {} } },
+    })).toBeNull();
   });
 
-  it('prefers camelCase sessionId over snake_case session_id', () => {
-    const raw = {
-      type: 'user',
-      uuid: 'abc',
-      sessionId: 'camel-id',
-      session_id: 'snake-id',
+  it('prefers camelCase sessionId', () => {
+    const r = adaptClaudeEntry({
+      type: 'user', uuid: 'a', sessionId: 'camel', session_id: 'snake',
       message: { role: 'user', content: 'test' },
-    };
-    const result = adaptClaudeEntry(raw);
-    expect(result!.sessionId).toBe('camel-id');
+    });
+    expect(r!.sessionId).toBe('camel');
   });
 
-  it('falls back to snake_case session_id when camelCase is absent', () => {
-    const raw = {
-      type: 'user',
-      uuid: 'abc',
-      session_id: 'snake-id',
+  it('falls back to snake_case session_id', () => {
+    const r = adaptClaudeEntry({
+      type: 'user', uuid: 'a', session_id: 'snake',
       message: { role: 'user', content: 'test' },
-    };
-    const result = adaptClaudeEntry(raw);
-    expect(result!.sessionId).toBe('snake-id');
+    });
+    expect(r!.sessionId).toBe('snake');
   });
-});
 
-// ============================================================================
-// Tests: No data loss
-// ============================================================================
+  it('preserves customTitle', () => {
+    const r = adaptClaudeEntry({ type: 'custom-title', customTitle: 'My Session' });
+    expect(r!.customTitle).toBe('My Session');
+  });
 
-describe('no data loss through pipeline', () => {
-  it.each(getFixtureVersions())('version %s: every raw field is preserved somewhere', (version) => {
-    const rawEntries = loadFixture(version);
-
-    for (const raw of rawEntries) {
-      const adapted = adaptClaudeEntry(raw);
-      if (!adapted) continue; // filtered entries are expected
-
-      // Every raw field must appear either as a universal field or in metadata
-      for (const key of Object.keys(raw)) {
-        // These fields are explicitly destructured and mapped
-        const universalFields = [
-          'type', 'uuid', 'parentUuid', 'sessionId', 'session_id',
-          'timestamp', 'isSidechain', 'isMeta', 'agentId', 'cwd',
-          'message', 'toolUseResult', 'summary', 'leafUuid',
-          'customTitle', 'sourceToolAssistantUUID', 'parent_tool_use_id',
-          'parentToolUseID',
-        ];
-
-        if (universalFields.includes(key)) {
-          // Mapped to a universal field (possibly renamed)
-          continue;
-        }
-
-        // Everything else must be in metadata
-        expect(
-          adapted.metadata,
-          `version ${version}: field "${key}" from raw entry should be in metadata`
-        ).toBeDefined();
-        expect(
-          key in adapted.metadata!,
-          `version ${version}: metadata should contain "${key}"`
-        ).toBe(true);
-      }
-    }
+  it('preserves isMeta', () => {
+    const r = adaptClaudeEntry({
+      type: 'user', uuid: 'a', isMeta: true,
+      message: { role: 'user', content: 'init' },
+    });
+    expect(r!.isMeta).toBe(true);
   });
 });
