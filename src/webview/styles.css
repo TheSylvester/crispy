@@ -191,24 +191,28 @@ h2 {
   background: rgba(255, 255, 255, 0.02);
 }
 
-/* --- Text Content (Rich mode) --- */
+/* --- Block YAML Default (Rich mode) --- */
 
-.text-content {
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
+.block-yaml-default {
+  margin: 4px 0;
+  font-family: monospace;
+  font-size: 12px;
 }
 
-/* --- Tool Card Stub (Rich mode) --- */
-
-.tool-card-stub {
-  margin: 4px 0;
+.block-yaml-default .yaml-dump {
+  margin: 0;
   padding: 6px 10px;
   border: 1px solid var(--vscode-panel-border);
   border-radius: 4px;
-  font-family: monospace;
-  font-size: 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+[data-block-type$=":thinking"] .yaml-dump {
+  opacity: 0.6;
+}
+
+[data-block-type*=":tool:"] .yaml-dump {
+  border-left: 2px solid #569cd6;
 }
 
 /* --- Thinking (Rich mode) --- */

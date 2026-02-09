@@ -17,6 +17,44 @@ import type {
 } from '../../transcript.js';
 
 // ============================================================================
+// Content Block Sanitization
+// ============================================================================
+
+/**
+ * Sanitize raw content blocks so downstream consumers can trust TypeScript types.
+ *
+ * Intentionally narrow — only fixes known crash paths:
+ * - tool_use blocks with missing/non-string `name` (causes name.startsWith() crash)
+ *
+ * Expand as new edge cases surface. Don't over-validate — JSONL data is mostly
+ * well-formed; we just patch the fields that cause runtime explosions.
+ */
+function sanitizeContentBlocks(content: unknown): unknown {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return content;
+
+  return content.map((block: unknown) => {
+    if (typeof block !== 'object' || block === null) return block;
+    const b = block as Record<string, unknown>;
+    if (b.type === 'tool_use' && typeof b.name !== 'string') {
+      return { ...b, name: '<unknown>' };
+    }
+    return block;
+  });
+}
+
+/** Sanitize a TranscriptMessage's content blocks in place (returns new object). */
+function sanitizeMessage(
+  message: TranscriptMessage | undefined,
+): TranscriptMessage | undefined {
+  if (!message) return message;
+  if (Array.isArray(message.content)) {
+    return { ...message, content: sanitizeContentBlocks(message.content) as TranscriptMessage['content'] };
+  }
+  return message;
+}
+
+// ============================================================================
 // Entry Adapter
 // ============================================================================
 
@@ -53,7 +91,7 @@ export function adaptClaudeEntry(raw: Record<string, unknown>): TranscriptEntry 
         parentUuid: raw.parentUuid as string | null | undefined,
         sessionId: raw.sessionId as string | undefined,
         timestamp: raw.timestamp as string | undefined,
-        message: actualMessage,
+        message: sanitizeMessage(actualMessage)!,
         agentId: data?.agentId as string | undefined,
         parentToolUseID: raw.parentToolUseID as string | undefined,
         vendor: 'claude',
@@ -110,8 +148,8 @@ export function adaptClaudeEntry(raw: Record<string, unknown>): TranscriptEntry 
     timestamp: timestamp as string | undefined,
     vendor: 'claude',
 
-    // Message content
-    message: message as TranscriptMessage | undefined,
+    // Message content (sanitized — coerces malformed blocks to safe defaults)
+    message: sanitizeMessage(message as TranscriptMessage | undefined),
 
     // Sub-agent
     isSidechain: isSidechain as boolean | undefined,
