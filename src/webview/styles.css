@@ -362,3 +362,94 @@ h2 {
   border-radius: 4px;
   margin: 16px;
 }
+
+/* ============================================================================
+ * Markdown Prose Styles — shared by user-text and assistant-text renderers
+ * ============================================================================ */
+
+/* Paragraphs */
+.user-text p, .assistant-text p { margin: 0.4em 0; }
+.user-text p:first-child, .assistant-text p:first-child { margin-top: 0; }
+.user-text p:last-child, .assistant-text p:last-child { margin-bottom: 0; }
+
+/* Inline code */
+.user-text code, .assistant-text code {
+  font-family: monospace;
+  font-size: 0.9em;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Fenced code blocks */
+.md-code-block {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--vscode-panel-border);
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.md-code-block code {
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+.md-code-highlight {
+  display: block;
+  white-space: pre;
+  word-break: normal;
+}
+
+/* Lists */
+.user-text ul, .user-text ol,
+.assistant-text ul, .assistant-text ol {
+  margin: 0.4em 0;
+  padding-left: 1.5em;
+}
+
+/* Blockquotes */
+.user-text blockquote, .assistant-text blockquote {
+  margin: 0.4em 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--vscode-panel-border);
+  opacity: 0.8;
+}
+
+/* Links */
+.user-text a, .assistant-text a {
+  color: var(--vscode-notificationsInfoIcon-foreground);
+  text-decoration: underline;
+}
+
+/* Headings */
+.user-text h1, .user-text h2, .user-text h3,
+.user-text h4, .user-text h5, .user-text h6,
+.assistant-text h1, .assistant-text h2, .assistant-text h3,
+.assistant-text h4, .assistant-text h5, .assistant-text h6 {
+  margin: 0.5em 0 0.3em;
+  font-weight: 600;
+}
+
+/* --- User Text — right-aligned bubble --- */
+
+.user-text {
+  margin: 4px 0;
+  margin-left: auto;
+  max-width: 80%;
+  line-height: 1.5;
+  font-size: var(--vscode-font-size);
+}
+
+/* --- Assistant Text — full-width flow --- */
+
+.assistant-text {
+  margin: 4px 0;
+  line-height: 1.5;
+  font-size: var(--vscode-font-size);
+}
