@@ -5,7 +5,7 @@
  * and N subscribers (webview panels, SSE connections, test harnesses).
  *
  * Architecture:
- *   SessionChannel ──owns──▶ AgentAdapter ──owns──▶ Channel (vendor-internal)
+ *   SessionChannel ──owns──▶ AgentAdapter (vendor connection)
  *        │
  *        ├── Subscriber (VS Code webview panel)
  *        ├── Subscriber (SSE connection)
@@ -25,8 +25,8 @@
  * @module session-channel
  */
 
-import type { AgentAdapter } from './agent-adapter.js';
-import type { ChannelMessage, MessageContent, Vendor, TranscriptEntry } from './channel.js';
+import type { AgentAdapter, ChannelMessage } from './agent-adapter.js';
+import type { MessageContent, Vendor, TranscriptEntry } from './transcript.js';
 import type {
   ChannelEvent,
   StatusEvent,

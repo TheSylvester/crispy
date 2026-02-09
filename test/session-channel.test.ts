@@ -8,8 +8,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AsyncIterableQueue } from '../src/core/async-iterable-queue.js';
-import type { AgentAdapter, SessionInfo } from '../src/core/agent-adapter.js';
-import type { ChannelMessage, TranscriptEntry, MessageContent, Vendor } from '../src/core/channel.js';
+import type { AgentAdapter, SessionInfo, ChannelMessage } from '../src/core/agent-adapter.js';
+import type { TranscriptEntry, MessageContent, Vendor } from '../src/core/transcript.js';
 import type { ChannelStatus, ApprovalOption, NotificationEvent } from '../src/core/channel-events.js';
 import type { Subscriber, SubscriberEvent } from '../src/core/session-channel.js';
 

@@ -1,7 +1,7 @@
 /**
- * Claude Agent SDK → Channel Adapter
+ * Claude Agent Adapter
  *
- * Implements the Channel interface for Claude Code via the Agent SDK.
+ * Implements the AgentAdapter interface for Claude Code via the Agent SDK.
  * Manages the full lifecycle: input queue, query() calls, SDKMessage
  * mapping, permission handling, session transitions, metadata capture,
  * context tracking, and live session controls.
@@ -13,10 +13,10 @@
  */
 
 import type {
-  Channel,
+  AgentAdapter,
   ChannelMessage,
-  MessageContent,
-} from '../../channel.js';
+  SessionInfo as AgentSessionInfo,
+} from '../../agent-adapter.js';
 import type { ChannelStatus } from '../../channel-events.js';
 import type { ApprovalOption } from '../../channel-events.js';
 
@@ -42,7 +42,7 @@ import { AsyncIterableQueue } from '../../async-iterable-queue.js';
 import { adaptClaudeEntry } from './claude-entry-adapter.js';
 import { parseJsonlFile, extractMetadataFast } from './jsonl-reader.js';
 
-import type { TranscriptEntry, ContextUsage } from '../../transcript.js';
+import type { TranscriptEntry, ContextUsage, MessageContent } from '../../transcript.js';
 
 import { existsSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
@@ -118,7 +118,7 @@ export interface HookCallbackMatcher {
 }
 
 /**
- * Full session options for creating a ClaudeCodeChannel.
+ * Full session options for creating a ClaudeAgentAdapter.
  *
  * Covers the entire SDK Options surface. `cwd` is the only required field.
  * `canUseTool` is intentionally omitted — the adapter always provides its
@@ -360,10 +360,10 @@ interface PendingApproval {
 }
 
 // ============================================================================
-// ClaudeCodeChannel
+// ClaudeAgentAdapter
 // ============================================================================
 
-export class ClaudeCodeChannel implements Channel {
+export class ClaudeAgentAdapter implements AgentAdapter {
   readonly vendor = 'claude';
 
   private _sessionId: string | undefined;
@@ -560,6 +560,37 @@ export class ClaudeCodeChannel implements Channel {
   /** Dynamically set MCP servers. */
   async setMcpServers(servers: Record<string, McpServerConfig>): Promise<McpSetServersResult> {
     return await this.requireQuery('setMcpServers').setMcpServers(servers) as McpSetServersResult;
+  }
+
+  // --------------------------------------------------------------------------
+  // History / Discovery (delegate to module-scope free functions)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Load transcript history for a session by ID.
+   *
+   * Resolves the session ID to a file path first, since the underlying
+   * `loadHistory()` free function takes a file path, not a session ID.
+   */
+  async loadHistory(sessionId: string): Promise<TranscriptEntry[]> {
+    const info = findSession(sessionId);
+    if (!info) return [];
+    return loadHistory(info.path);
+  }
+
+  /**
+   * Find a session by ID across all Claude projects.
+   *
+   * Returns the Claude-specific SessionInfo (with `vendor: 'claude'`),
+   * which satisfies the widened SessionInfo type (`vendor: Vendor`).
+   */
+  findSession(sessionId: string): AgentSessionInfo | undefined {
+    return findSession(sessionId);
+  }
+
+  /** List all Claude sessions, most recently modified first. */
+  listSessions(): AgentSessionInfo[] {
+    return listSessions();
   }
 
   // --------------------------------------------------------------------------

@@ -1,12 +1,12 @@
 /**
- * Tests for ClaudeCodeChannel (SDK adapter → Channel interface)
+ * Tests for ClaudeAgentAdapter (SDK adapter → AgentAdapter interface)
  *
  * Mocks `query()` from the Agent SDK. The adapter under test manages
  * input queues, SDKMessage routing, permission flows, and session lifecycle.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ChannelMessage } from '../src/core/channel.js';
+import type { ChannelMessage } from '../src/core/agent-adapter.js';
 import type { ChannelStatus } from '../src/core/channel-events.js';
 import type { Options, SDKMessage, Query, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
 
@@ -122,7 +122,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 }));
 
 // Import AFTER the mock is registered (vitest auto-hoists vi.mock)
-import { ClaudeCodeChannel } from '../src/core/adapters/claude/claude-code-adapter.js';
+import { ClaudeAgentAdapter } from '../src/core/adapters/claude/claude-code-adapter.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -130,7 +130,7 @@ import { ClaudeCodeChannel } from '../src/core/adapters/claude/claude-code-adapt
 
 /** Collect channel messages until `predicate` returns true, or timeout. */
 async function collectUntil(
-  channel: ClaudeCodeChannel,
+  channel: ClaudeAgentAdapter,
   predicate: (msgs: ChannelMessage[]) => boolean,
   timeoutMs = 500,
 ): Promise<ChannelMessage[]> {
@@ -169,14 +169,14 @@ beforeEach(() => {
 
 describe('Construction & defaults', () => {
   it('has correct defaults and respects resume', () => {
-    const ch1 = new ClaudeCodeChannel({ cwd: '/tmp' });
+    const ch1 = new ClaudeAgentAdapter({ cwd: '/tmp' });
     expect(ch1.vendor).toBe('claude');
     expect(ch1.status).toBe('idle');
     expect(ch1.sessionId).toBeUndefined();
     expect(ch1.metadata).toBeNull();
     expect(ch1.contextUsage).toBeNull();
 
-    const ch2 = new ClaudeCodeChannel({ cwd: '/tmp', resume: 'abc' });
+    const ch2 = new ClaudeAgentAdapter({ cwd: '/tmp', resume: 'abc' });
     expect(ch2.sessionId).toBe('abc');
   });
 });
@@ -185,7 +185,7 @@ describe('Construction & defaults', () => {
 
 describe('send() guards', () => {
   it('throws after close()', () => {
-    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
     ch.close();
     expect(() => ch.send('hello')).toThrow('Channel is closed');
   });
@@ -197,7 +197,7 @@ describe('send() guards', () => {
       return deferred.query;
     });
 
-    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
     ch.send('hi');
     await tick();
 
@@ -222,7 +222,7 @@ describe('send() guards', () => {
     const deferred = createDeferredQuery();
     mockQueryFn.mockReturnValue(deferred.query);
 
-    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
     ch.send('first');
     await tick();
     expect(mockQueryFn).toHaveBeenCalledTimes(1);
@@ -274,7 +274,7 @@ describe('Message routing', () => {
     const mockQ = createMockQuery(messages);
     mockQueryFn.mockReturnValue(mockQ);
 
-    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
     ch.send('go');
 
     // Collect until we see the idle status (query completed)
@@ -313,7 +313,7 @@ describe('Session tracking', () => {
     const deferred = createDeferredQuery();
     mockQueryFn.mockReturnValue(deferred.query);
 
-    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
     ch.send('start');
     await tick();
 
@@ -365,7 +365,7 @@ describe('Permission flow', () => {
       capturedOptions = params.options;
       return deferred.query;
     });
-    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
     ch.send('hi');
     return { ch, deferred, getCanUseTool: () => capturedOptions!.canUseTool! };
   }
@@ -489,7 +489,7 @@ describe('Concurrent approvals', () => {
       return deferred.query;
     });
 
-    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
     ch.send('go');
     await tick();
 
@@ -525,7 +525,7 @@ describe('close() & lifecycle', () => {
     const deferred = createDeferredQuery();
     mockQueryFn.mockReturnValue(deferred.query);
 
-    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
     ch.send('go');
     await tick();
 
@@ -550,7 +550,7 @@ describe('close() & lifecycle', () => {
       return deferred.query;
     });
 
-    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
     ch.send('go');
     await tick();
 
@@ -572,7 +572,7 @@ describe('close() & lifecycle', () => {
     const deferred = createDeferredQuery();
     mockQueryFn.mockReturnValue(deferred.query);
 
-    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
     ch.send('go');
     await tick();
 
@@ -604,7 +604,7 @@ describe('close() & lifecycle', () => {
     ]);
     mockQueryFn.mockReturnValue(mockQ);
 
-    const ch = new ClaudeCodeChannel({ cwd: '/tmp' });
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
     ch.send('go');
 
     const output = await collectUntil(
@@ -633,7 +633,7 @@ describe('sdkOptions invariants', () => {
       return deferred.query;
     });
 
-    const ch = new ClaudeCodeChannel({
+    const ch = new ClaudeAgentAdapter({
       cwd: '/my/project',
       model: 'opus',
       permissionMode: 'acceptEdits',

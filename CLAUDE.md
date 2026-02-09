@@ -14,14 +14,14 @@ raw transcript formats into `TranscriptEntry`.
 ```
 src/core/
 ├── transcript.ts                  ← Universal types (the contract)
-├── channel.ts                     ← Channel interface + combined output types
+├── agent-adapter.ts               ← AgentAdapter interface + ChannelMessage types
 ├── channel-events.ts              ← Status & notification event types
 ├── async-iterable-queue.ts        ← Async queue (bridges input/output streams)
 └── adapters/
     └── claude/
         ├── jsonl-reader.ts        ← Claude JSONL parsing + session discovery
         ├── claude-entry-adapter.ts ← Raw JSONL → TranscriptEntry
-        └── claude-code-adapter.ts ← SDK query() → Channel (live sessions)
+        └── claude-code-adapter.ts ← ClaudeAgentAdapter (SDK + history/discovery)
 ```
 
 ## Key rules
@@ -29,7 +29,7 @@ src/core/
 - **`transcript.ts` is vendor-agnostic.** Don't add vendor-specific fields.
   Use the `metadata` bag for vendor extensions. Read the format specs in
   `.ai-reference/reference/` before changing universal types.
-- **Adapter exports are prefixed** with vendor name (`ClaudeCodeChannel`,
+- **Adapter exports are prefixed** with vendor name (`ClaudeAgentAdapter`,
   `adaptClaudeEntry`) to avoid confusion with universal types.
 - **Claude Code's app version is the de facto schema version.** Test fixtures
   in `test/fixtures/claude/` are keyed by version. `npm test` runs the
