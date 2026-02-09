@@ -18,7 +18,7 @@ import type { ContentBlock, TextBlock } from '../../core/transcript.js';
 export function AssistantTextRenderer({ block }: { block: ContentBlock }): React.JSX.Element {
   const { text } = block as TextBlock;
   return (
-    <div className="assistant-text">
+    <div className="prose assistant-text">
       <Markdown components={{ code: CodeBlock, pre: PreBlock }}>
         {text}
       </Markdown>

@@ -40,6 +40,22 @@ src/core/
 - `npm run typecheck` — strict TypeScript check
 - `npm test` — end-to-end pipeline test (finds richest local transcript)
 - `npm run test:unit` — vitest unit tests only
+- `npm run dev` — build webview + start dev server at `http://localhost:3456`
+
+## Dev server & visual testing
+
+`npm run dev` builds the webview and starts a dev server at
+`http://localhost:3456` (same bundle, real session data from disk).
+
+**Visual verification workflow:**
+1. Run `npm run dev` (or `npm run build:webview` if you only need a build)
+2. Use the `browser-qa` sub-agent **with Chrome automation tools**
+   (`mcp__claude-in-chrome__*`) to navigate to `http://localhost:3456`,
+   interact with the UI, and take screenshots for verification
+3. Kill the dev server when done (`lsof -i :3456` → kill the PID)
+
+Always prefer this over manual "looks correct" claims — the Chrome tools
+give you real screenshots of the rendered webview.
 
 ## Reference files (`.ai-reference/`, not committed)
 

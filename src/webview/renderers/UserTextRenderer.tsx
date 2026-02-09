@@ -17,7 +17,7 @@ import type { ContentBlock, TextBlock } from '../../core/transcript.js';
 export function UserTextRenderer({ block }: { block: ContentBlock }): React.JSX.Element {
   const { text } = block as TextBlock;
   return (
-    <div className="user-text">
+    <div className="prose user-text">
       <Markdown components={{ code: CodeBlock, pre: PreBlock }}>
         {text}
       </Markdown>

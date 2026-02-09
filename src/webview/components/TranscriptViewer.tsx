@@ -26,7 +26,7 @@ const MODES: readonly RenderMode[] = ["yaml", "compact", "rich"] as const;
 export function TranscriptViewer(): React.JSX.Element {
   const { selectedSessionId } = useSession();
   const { entries, isLoading, error } = useTranscript(selectedSessionId);
-  const [renderMode, setRenderMode] = useState<RenderMode>("yaml");
+  const [renderMode, setRenderMode] = useState<RenderMode>("rich");
   const {
     visibleCount,
     isPlaying,

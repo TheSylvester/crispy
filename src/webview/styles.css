@@ -171,13 +171,14 @@ h2 {
 }
 
 .message.user {
-  border-left-color: var(--vscode-notificationsInfoIcon-foreground);
-  background: rgba(255, 255, 255, 0.03);
+  border-left: none;
+  background: transparent;
 }
 
 .message.assistant {
-  border-left-color: #6a9955;
-  background: rgba(255, 255, 255, 0.02);
+  border-left: none;
+  background: transparent;
+  margin-bottom: 0;
 }
 
 .message.system {
@@ -364,33 +365,43 @@ h2 {
 }
 
 /* ============================================================================
- * Markdown Prose Styles — shared by user-text and assistant-text renderers
+ * Prose — single source of truth for all markdown typography
+ *
+ * Applied to every react-markdown wrapper. Role-specific layout stays on
+ * .user-text / .assistant-text below; prose handles content styling only.
+ *
+ * Vertical rhythm ported from Leto webview-next (.text-content).
  * ============================================================================ */
 
-/* Paragraphs */
-.user-text p, .assistant-text p { margin: 0.4em 0; }
-.user-text p:first-child, .assistant-text p:first-child { margin-top: 0; }
-.user-text p:last-child, .assistant-text p:last-child { margin-bottom: 0; }
-
-/* Inline code */
-.user-text code, .assistant-text code {
-  font-family: monospace;
-  font-size: 0.9em;
-  padding: 1px 4px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.06);
+.prose {
+  line-height: 1.5;
+  font-size: var(--vscode-font-size);
 }
 
-/* Fenced code blocks */
-.md-code-block {
-  margin: 8px 0;
-  padding: 8px 12px;
+/* Paragraphs */
+.prose p { margin: 0.5em 0; }
+.prose p:first-child { margin-top: 0; }
+.prose p:last-child { margin-bottom: 0; }
+
+/* Inline code */
+.prose code {
+  font-family: monospace;
+  font-size: 0.85em;
+  padding: 0.2em 0.4em;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(110, 118, 129, 0.2);
+}
+
+/* Fenced code blocks (standalone selectors — work inside or outside .prose) */
+.md-code-block {
+  margin: 1em 0;
+  padding: 1em;
+  border-radius: 6px;
+  background: var(--vscode-editor-background, rgba(0, 0, 0, 0.2));
   border: 1px solid var(--vscode-panel-border);
   overflow-x: auto;
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
 .md-code-block code {
@@ -407,49 +418,134 @@ h2 {
 }
 
 /* Lists */
-.user-text ul, .user-text ol,
-.assistant-text ul, .assistant-text ol {
-  margin: 0.4em 0;
-  padding-left: 1.5em;
+.prose ul { list-style-type: disc; }
+.prose ol { list-style-type: decimal; }
+.prose ul, .prose ol {
+  list-style-position: outside;
+  margin: 0.25em 0;
+  padding-left: 2em;
+  line-height: 1.6;
 }
+.prose li {
+  display: list-item;
+  margin: 0.25em 0;
+  line-height: 1.7;
+}
+.prose li > p { margin: 0; }
+
+/* Nested lists */
+.prose ul ul, .prose ol ol,
+.prose ul ol, .prose ol ul {
+  margin: 0.25em 0;
+}
+.prose ul ul { list-style-type: circle; }
+.prose ul ul ul { list-style-type: square; }
+.prose ol ol { list-style-type: lower-roman; }
 
 /* Blockquotes */
-.user-text blockquote, .assistant-text blockquote {
-  margin: 0.4em 0;
-  padding-left: 12px;
-  border-left: 3px solid var(--vscode-panel-border);
-  opacity: 0.8;
+.prose blockquote {
+  margin: 1em 0;
+  padding: 0.5em 0 0.5em 1.5em;
+  border-left: 4px solid var(--vscode-textLink-foreground, #3794ff);
+  color: var(--vscode-descriptionForeground, #9d9d9d);
+  font-style: italic;
 }
+.prose blockquote p { margin: 0.5em 0; }
+.prose blockquote p:first-child { margin-top: 0; }
+.prose blockquote p:last-child { margin-bottom: 0; }
+.prose blockquote blockquote { margin: 0.5em 0; }
 
 /* Links */
-.user-text a, .assistant-text a {
-  color: var(--vscode-notificationsInfoIcon-foreground);
+.prose a {
+  color: var(--vscode-textLink-foreground, #3794ff);
   text-decoration: underline;
 }
 
 /* Headings */
-.user-text h1, .user-text h2, .user-text h3,
-.user-text h4, .user-text h5, .user-text h6,
-.assistant-text h1, .assistant-text h2, .assistant-text h3,
-.assistant-text h4, .assistant-text h5, .assistant-text h6 {
-  margin: 0.5em 0 0.3em;
+.prose h1 {
+  font-size: 2em;
+  line-height: 1.3;
+  margin: 0.67em 0 0.5em;
   font-weight: 600;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--vscode-panel-border, #333);
+}
+.prose h2 {
+  font-size: 1.5em;
+  line-height: 1.3;
+  margin: 1em 0 0.5em;
+  font-weight: 600;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--vscode-panel-border, #333);
+}
+.prose h3 {
+  font-size: 1.25em;
+  line-height: 1.3;
+  margin: 1em 0 0.5em;
+  font-weight: 600;
+}
+.prose h4, .prose h5 {
+  font-size: 1.1em;
+  line-height: 1.3;
+  margin: 1em 0 0.5em;
+  font-weight: 600;
+}
+.prose h6 {
+  font-size: 0.9em;
+  line-height: 1.3;
+  margin: 1em 0 0.5em;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground, #858585);
+}
+.prose h1:first-child,
+.prose h2:first-child,
+.prose h3:first-child { margin-top: 0; }
+
+/* Horizontal rules */
+.prose hr {
+  border: none;
+  border-top: 1px solid var(--vscode-panel-border, #333);
+  margin: 1em 0;
+}
+
+/* Tables */
+.prose table {
+  border-collapse: collapse;
+  margin: 1em 0;
+  width: 100%;
+  overflow-x: auto;
+  display: block;
+}
+.prose th, .prose td {
+  border: 1px solid var(--vscode-panel-border, #444);
+  padding: 8px 16px;
+  text-align: left;
+  line-height: 1.5;
+}
+.prose th {
+  background: var(--vscode-editor-background, #1e1e1e);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.prose tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.02);
+}
+.prose tr:hover td {
+  background: rgba(255, 255, 255, 0.05);
 }
 
 /* --- User Text — right-aligned bubble --- */
-
 .user-text {
   margin: 4px 0;
   margin-left: auto;
   max-width: 80%;
-  line-height: 1.5;
-  font-size: var(--vscode-font-size);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 8px;
+  padding: 10px 14px;
 }
 
 /* --- Assistant Text — full-width flow --- */
-
 .assistant-text {
   margin: 4px 0;
-  line-height: 1.5;
-  font-size: var(--vscode-font-size);
 }
