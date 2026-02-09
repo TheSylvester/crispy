@@ -55,21 +55,39 @@ export interface SessionInfo {
 }
 
 // ============================================================================
+// Vendor Discovery — stateless session operations
+// ============================================================================
+
+/**
+ * Static discovery operations for a vendor.
+ *
+ * Separate from AgentAdapter because discovery is stateless — it reads
+ * session metadata from disk without needing a live SDK connection.
+ * One VendorDiscovery per vendor, shared across all consumers.
+ */
+export interface VendorDiscovery {
+  readonly vendor: Vendor;
+  findSession(sessionId: string): SessionInfo | undefined;
+  listSessions(): SessionInfo[];
+  loadHistory(sessionId: string): Promise<TranscriptEntry[]>;
+}
+
+// ============================================================================
 // Agent Adapter Interface
 // ============================================================================
 
 /**
- * A vendor adapter — the single interface for live streaming, history,
- * discovery, and live controls.
+ * A per-session live adapter — streaming, input, controls.
  *
- * The Session Channel owns one AgentAdapter and uses it for both live
- * streaming (via messages/send/respondToApproval/close) and loading past
- * sessions from disk.
+ * Each live session gets its own AgentAdapter instance from the vendor's
+ * factory. The Session Channel owns one AgentAdapter and uses it for
+ * live streaming (via messages/send/respondToApproval/close) and
+ * mid-session controls (setModel, interrupt, etc.).
  *
- * Live controls (setModel, interrupt, etc.) are best-effort. If a vendor
- * doesn't support mid-stream model switching, the call can throw or no-op.
- * Promoting them to the interface means the Session Channel and UI can
- * attempt them uniformly without downcasting to vendor-specific types.
+ * Live controls are best-effort. If a vendor doesn't support mid-stream
+ * model switching, the call can throw or no-op. Promoting them to the
+ * interface means the Session Channel and UI can attempt them uniformly
+ * without downcasting to vendor-specific types.
  */
 export interface AgentAdapter {
   /** The vendor this adapter connects to. */
@@ -124,17 +142,6 @@ export interface AgentAdapter {
    * can be sent.
    */
   close(): void;
-
-  // --- History / Discovery ---
-
-  /** Load transcript entries from a saved session by ID. */
-  loadHistory(sessionId: string): Promise<TranscriptEntry[]>;
-
-  /** Find a session by ID across all known projects. */
-  findSession(sessionId: string): SessionInfo | undefined;
-
-  /** List all known sessions, most recently modified first. */
-  listSessions(): SessionInfo[];
 
   // --- Live Session Controls ---
 

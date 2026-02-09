@@ -14,6 +14,7 @@
 
 import type {
   AgentAdapter,
+  VendorDiscovery,
   ChannelMessage,
   SessionInfo as AgentSessionInfo,
 } from '../../agent-adapter.js';
@@ -560,37 +561,6 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   /** Dynamically set MCP servers. */
   async setMcpServers(servers: Record<string, McpServerConfig>): Promise<McpSetServersResult> {
     return await this.requireQuery('setMcpServers').setMcpServers(servers) as McpSetServersResult;
-  }
-
-  // --------------------------------------------------------------------------
-  // History / Discovery (delegate to module-scope free functions)
-  // --------------------------------------------------------------------------
-
-  /**
-   * Load transcript history for a session by ID.
-   *
-   * Resolves the session ID to a file path first, since the underlying
-   * `loadHistory()` free function takes a file path, not a session ID.
-   */
-  async loadHistory(sessionId: string): Promise<TranscriptEntry[]> {
-    const info = findSession(sessionId);
-    if (!info) return [];
-    return loadHistory(info.path);
-  }
-
-  /**
-   * Find a session by ID across all Claude projects.
-   *
-   * Returns the Claude-specific SessionInfo (with `vendor: 'claude'`),
-   * which satisfies the widened SessionInfo type (`vendor: Vendor`).
-   */
-  findSession(sessionId: string): AgentSessionInfo | undefined {
-    return findSession(sessionId);
-  }
-
-  /** List all Claude sessions, most recently modified first. */
-  listSessions(): AgentSessionInfo[] {
-    return listSessions();
   }
 
   // --------------------------------------------------------------------------
@@ -1242,3 +1212,25 @@ export async function loadHistory(sessionPath: string): Promise<TranscriptEntry[
     .map((entry) => adaptClaudeEntry(entry as unknown as Record<string, unknown>))
     .filter((entry): entry is TranscriptEntry => entry !== null);
 }
+
+// ============================================================================
+// Vendor Discovery — static discovery object for session-manager
+// ============================================================================
+
+/**
+ * Static discovery object for Claude — satisfies VendorDiscovery.
+ *
+ * Wraps the module-scope free functions (findSession, listSessions,
+ * loadHistory) into the VendorDiscovery interface shape. No instance
+ * state — session-manager uses this for stateless discovery ops.
+ */
+export const claudeDiscovery: VendorDiscovery = {
+  vendor: 'claude',
+  findSession,
+  listSessions,
+  async loadHistory(sessionId: string): Promise<TranscriptEntry[]> {
+    const info = findSession(sessionId);
+    if (!info) return [];
+    return loadHistory(info.path);
+  },
+};

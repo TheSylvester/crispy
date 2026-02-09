@@ -8,7 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AsyncIterableQueue } from '../src/core/async-iterable-queue.js';
-import type { AgentAdapter, SessionInfo, ChannelMessage } from '../src/core/agent-adapter.js';
+import type { AgentAdapter, ChannelMessage } from '../src/core/agent-adapter.js';
 import type { TranscriptEntry, MessageContent, Vendor } from '../src/core/transcript.js';
 import type { ChannelStatus, ApprovalOption, NotificationEvent } from '../src/core/channel-events.js';
 import type { Subscriber, SubscriberEvent } from '../src/core/session-channel.js';
@@ -23,7 +23,7 @@ import {
   setAdapter,
   sendMessage,
   resolveApproval,
-  loadHistory,
+  backfillHistory,
 } from '../src/core/session-channel.js';
 
 // ============================================================================
@@ -72,21 +72,9 @@ function createMockAdapter(options?: {
       queue.done();
     }),
 
-    // AgentAdapter-specific methods
-    loadHistory: vi.fn(async (_id: string): Promise<TranscriptEntry[]> => {
-      return [];
-    }),
-
-    findSession: vi.fn((_id: string): SessionInfo | undefined => {
-      return undefined;
-    }),
-
-    listSessions: vi.fn((): SessionInfo[] => {
-      return [];
-    }),
-
     interrupt: vi.fn(async () => {}),
     setModel: vi.fn(async (_model?: string) => {}),
+    setPermissionMode: vi.fn(async (_mode: string) => {}),
 
     // Helpers
     pushMessage(msg: ChannelMessage): void {
@@ -678,30 +666,29 @@ describe('sendMessage', () => {
   });
 });
 
-// ========== 9. loadHistory ==========
+// ========== 9. backfillHistory ==========
 
-describe('loadHistory', () => {
+describe('backfillHistory', () => {
   it('broadcasts history event and sets entryIndex', async () => {
     const ch = createChannel('ch-1');
     const adapter = createMockAdapter();
     const sub = createTestSubscriber('sub-1');
 
-    const mockEntries: TranscriptEntry[] = [
+    const entries: TranscriptEntry[] = [
       { type: 'user', message: { role: 'user', content: 'hello' } },
       { type: 'assistant', message: { role: 'assistant', content: 'hi' } },
       { type: 'user', message: { role: 'user', content: 'how are you' } },
     ];
-    (adapter.loadHistory as ReturnType<typeof vi.fn>).mockResolvedValue(mockEntries);
 
     subscribe(ch, sub);
     setAdapter(ch, adapter);
     await tick();
 
-    await loadHistory(ch, 'session-123');
+    backfillHistory(ch, entries);
 
     const historyEvents = sub.eventsOfType('history');
     expect(historyEvents.length).toBe(1);
-    expect(historyEvents[0].entries).toEqual(mockEntries);
+    expect(historyEvents[0].entries).toEqual(entries);
     expect(ch.entryIndex).toBe(3);
   });
 
@@ -710,22 +697,15 @@ describe('loadHistory', () => {
     const adapter = createMockAdapter();
     const sub = createTestSubscriber('sub-1');
 
-    (adapter.loadHistory as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-
     subscribe(ch, sub);
     setAdapter(ch, adapter);
     await tick();
 
-    await loadHistory(ch, 'empty-session');
+    backfillHistory(ch, []);
 
     const historyEvents = sub.eventsOfType('history');
     expect(historyEvents.length).toBe(0);
-    expect(ch.entryIndex).toBe(0); // Unchanged
-  });
-
-  it('throws without adapter', async () => {
-    const ch = createChannel('ch-1');
-    await expect(loadHistory(ch, 'session-123')).rejects.toThrow('No adapter set');
+    expect(ch.entryIndex).toBe(0);
   });
 });
 

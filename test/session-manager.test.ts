@@ -1,9 +1,11 @@
 /**
  * Tests for Session Manager — Cross-Vendor Orchestration Layer
  *
- * Tests mock at the AgentAdapter boundary. A MockAdapter uses
+ * Tests mock at the AgentAdapter + VendorDiscovery boundary.
+ * MockDiscovery covers stateless ops (findSession, listSessions, loadHistory).
+ * MockAdapter covers live session ops (messages, send, close, etc.) using
  * AsyncIterableQueue<ChannelMessage> as the controllable output stream.
- * All adapter methods are vi.fn() stubs.
+ * All methods are vi.fn() stubs.
  *
  * Two test groups:
  * A) Happy path — how the public API is supposed to work
@@ -12,7 +14,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AsyncIterableQueue } from '../src/core/async-iterable-queue.js';
-import type { AgentAdapter, SessionInfo, ChannelMessage } from '../src/core/agent-adapter.js';
+import type { AgentAdapter, SessionInfo, ChannelMessage, VendorDiscovery } from '../src/core/agent-adapter.js';
 import type { TranscriptEntry, MessageContent, Vendor } from '../src/core/transcript.js';
 import type { ChannelStatus } from '../src/core/channel-events.js';
 import type { Subscriber, SubscriberEvent } from '../src/core/session-channel.js';
@@ -24,8 +26,8 @@ import {
 import {
   registerAdapter,
   unregisterAdapter,
-  getAdapter,
-  getAdapters,
+  getDiscovery,
+  getDiscoveries,
   findSession,
   loadSession,
   listAllSessions,
@@ -37,6 +39,43 @@ import {
   closeSession,
   _resetRegistry,
 } from '../src/core/session-manager.js';
+
+// ============================================================================
+// Mock Discovery
+// ============================================================================
+
+interface MockDiscoveryOptions {
+  vendor?: Vendor;
+  sessions?: SessionInfo[];
+  historyEntries?: TranscriptEntry[];
+}
+
+function createMockDiscovery(options?: MockDiscoveryOptions): VendorDiscovery & {
+  findSession: ReturnType<typeof vi.fn>;
+  listSessions: ReturnType<typeof vi.fn>;
+  loadHistory: ReturnType<typeof vi.fn>;
+} {
+  const vendor: Vendor = options?.vendor ?? 'claude';
+  const sessions = options?.sessions ?? [];
+  const historyEntries = options?.historyEntries ?? [];
+
+  return {
+    vendor,
+    findSession: vi.fn((_id: string): SessionInfo | undefined => {
+      return sessions.find((s) => s.sessionId === _id);
+    }),
+    listSessions: vi.fn((): SessionInfo[] => {
+      return sessions;
+    }),
+    loadHistory: vi.fn(async (_id: string): Promise<TranscriptEntry[]> => {
+      return historyEntries;
+    }),
+  } as VendorDiscovery & {
+    findSession: ReturnType<typeof vi.fn>;
+    listSessions: ReturnType<typeof vi.fn>;
+    loadHistory: ReturnType<typeof vi.fn>;
+  };
+}
 
 // ============================================================================
 // Mock Adapter
@@ -53,17 +92,15 @@ interface MockAdapter extends AgentAdapter {
   readonly outputQueue: AsyncIterableQueue<ChannelMessage>;
 }
 
-function createMockAdapter(options?: {
+interface MockAdapterOptions {
   vendor?: Vendor;
   sessionId?: string;
-  sessions?: SessionInfo[];
-  historyEntries?: TranscriptEntry[];
-}): MockAdapter {
+}
+
+function createMockAdapter(options?: MockAdapterOptions): MockAdapter {
   const queue = new AsyncIterableQueue<ChannelMessage>();
   const vendor: Vendor = options?.vendor ?? 'claude';
   const sessionId = options?.sessionId;
-  const sessions = options?.sessions ?? [];
-  const historyEntries = options?.historyEntries ?? [];
   let status: ChannelStatus = 'idle';
 
   return {
@@ -84,18 +121,6 @@ function createMockAdapter(options?: {
       queue.done();
     }),
 
-    loadHistory: vi.fn(async (_id: string): Promise<TranscriptEntry[]> => {
-      return historyEntries;
-    }),
-
-    findSession: vi.fn((_id: string): SessionInfo | undefined => {
-      return sessions.find((s) => s.sessionId === _id);
-    }),
-
-    listSessions: vi.fn((): SessionInfo[] => {
-      return sessions;
-    }),
-
     interrupt: vi.fn(async () => {}),
     setModel: vi.fn(async (_model?: string) => {}),
     setPermissionMode: vi.fn(async (_mode: string) => {}),
@@ -112,6 +137,22 @@ function createMockAdapter(options?: {
     failStream(err: Error): void {
       queue.error(err);
     },
+  };
+}
+
+/**
+ * Create a factory that captures the last adapter it created.
+ * Tests can call lastCreated() to get the factory-created adapter
+ * (the one actually wired into the channel).
+ */
+function createCapturingFactory(options?: { vendor?: Vendor }) {
+  let last: MockAdapter | undefined;
+  return {
+    factory: (_sessionId: string) => {
+      last = createMockAdapter(options);
+      return last;
+    },
+    lastCreated: () => last!,
   };
 }
 
@@ -183,48 +224,48 @@ afterEach(() => {
 // ========== 1. Adapter Registry ==========
 
 describe('Adapter registry', () => {
-  it('registerAdapter adds an adapter retrievable by vendor', () => {
-    const adapter = createMockAdapter({ vendor: 'claude' });
-    registerAdapter(adapter);
+  it('registerAdapter adds a discovery retrievable by vendor', () => {
+    const discovery = createMockDiscovery({ vendor: 'claude' });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
-    expect(getAdapter('claude')).toBe(adapter);
+    expect(getDiscovery('claude')).toBe(discovery);
   });
 
   it('registerAdapter throws on duplicate vendor', () => {
-    const adapter1 = createMockAdapter({ vendor: 'claude' });
-    const adapter2 = createMockAdapter({ vendor: 'claude' });
+    const discovery1 = createMockDiscovery({ vendor: 'claude' });
+    const discovery2 = createMockDiscovery({ vendor: 'claude' });
 
-    registerAdapter(adapter1);
-    expect(() => registerAdapter(adapter2)).toThrow('already registered');
+    registerAdapter(discovery1, () => createMockAdapter({ vendor: 'claude' }));
+    expect(() => registerAdapter(discovery2, () => createMockAdapter({ vendor: 'claude' }))).toThrow('already registered');
   });
 
-  it('unregisterAdapter removes the adapter', () => {
-    const adapter = createMockAdapter({ vendor: 'claude' });
-    registerAdapter(adapter);
+  it('unregisterAdapter removes the discovery', () => {
+    const discovery = createMockDiscovery({ vendor: 'claude' });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
     unregisterAdapter('claude');
 
-    expect(getAdapter('claude')).toBeUndefined();
+    expect(getDiscovery('claude')).toBeUndefined();
   });
 
   it('unregisterAdapter is no-op for unregistered vendor', () => {
     expect(() => unregisterAdapter('gemini')).not.toThrow();
   });
 
-  it('getAdapters returns all registered adapters', () => {
-    const claude = createMockAdapter({ vendor: 'claude' });
-    const codex = createMockAdapter({ vendor: 'codex' });
+  it('getDiscoveries returns all registered discovery objects', () => {
+    const claudeDiscovery = createMockDiscovery({ vendor: 'claude' });
+    const codexDiscovery = createMockDiscovery({ vendor: 'codex' });
 
-    registerAdapter(claude);
-    registerAdapter(codex);
+    registerAdapter(claudeDiscovery, () => createMockAdapter({ vendor: 'claude' }));
+    registerAdapter(codexDiscovery, () => createMockAdapter({ vendor: 'codex' }));
 
-    const all = getAdapters();
+    const all = getDiscoveries();
     expect(all).toHaveLength(2);
-    expect(all).toContain(claude);
-    expect(all).toContain(codex);
+    expect(all).toContain(claudeDiscovery);
+    expect(all).toContain(codexDiscovery);
   });
 
-  it('getAdapter returns undefined for unregistered vendor', () => {
-    expect(getAdapter('gemini')).toBeUndefined();
+  it('getDiscovery returns undefined for unregistered vendor', () => {
+    expect(getDiscovery('gemini')).toBeUndefined();
   });
 });
 
@@ -235,11 +276,11 @@ describe('findSession', () => {
     const claudeSession = makeSessionInfo({ sessionId: 'sess-c1', vendor: 'claude' });
     const codexSession = makeSessionInfo({ sessionId: 'sess-x1', vendor: 'codex' });
 
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [claudeSession] });
-    const codex = createMockAdapter({ vendor: 'codex', sessions: [codexSession] });
+    const claudeDiscovery = createMockDiscovery({ vendor: 'claude', sessions: [claudeSession] });
+    const codexDiscovery = createMockDiscovery({ vendor: 'codex', sessions: [codexSession] });
 
-    registerAdapter(claude);
-    registerAdapter(codex);
+    registerAdapter(claudeDiscovery, () => createMockAdapter({ vendor: 'claude' }));
+    registerAdapter(codexDiscovery, () => createMockAdapter({ vendor: 'codex' }));
 
     const found = findSession('sess-x1');
     expect(found).toBeDefined();
@@ -248,25 +289,25 @@ describe('findSession', () => {
   });
 
   it('returns undefined when no vendor claims the session', () => {
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [] });
-    registerAdapter(claude);
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     expect(findSession('nonexistent')).toBeUndefined();
   });
 
-  it('iterates adapters until one claims the session', () => {
+  it('iterates discoveries until one claims the session', () => {
     const claudeSession = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [claudeSession] });
-    const codex = createMockAdapter({ vendor: 'codex', sessions: [] });
+    const claudeDiscovery = createMockDiscovery({ vendor: 'claude', sessions: [claudeSession] });
+    const codexDiscovery = createMockDiscovery({ vendor: 'codex', sessions: [] });
 
-    registerAdapter(codex);
-    registerAdapter(claude);
+    registerAdapter(codexDiscovery, () => createMockAdapter({ vendor: 'codex' }));
+    registerAdapter(claudeDiscovery, () => createMockAdapter({ vendor: 'claude' }));
 
     const found = findSession('sess-1');
     expect(found).toBeDefined();
     expect(found!.vendor).toBe('claude');
-    // codex.findSession was called but returned undefined
-    expect(codex.findSession).toHaveBeenCalledWith('sess-1');
+    // codex discovery was called but returned undefined
+    expect(codexDiscovery.findSession).toHaveBeenCalledWith('sess-1');
   });
 });
 
@@ -288,11 +329,11 @@ describe('listAllSessions', () => {
       modifiedAt: new Date('2025-03-01T00:00:00Z'),
     });
 
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [s1, s3] });
-    const codex = createMockAdapter({ vendor: 'codex', sessions: [s2] });
+    const claudeDiscovery = createMockDiscovery({ vendor: 'claude', sessions: [s1, s3] });
+    const codexDiscovery = createMockDiscovery({ vendor: 'codex', sessions: [s2] });
 
-    registerAdapter(claude);
-    registerAdapter(codex);
+    registerAdapter(claudeDiscovery, () => createMockAdapter({ vendor: 'claude' }));
+    registerAdapter(codexDiscovery, () => createMockAdapter({ vendor: 'codex' }));
 
     const all = listAllSessions();
     expect(all).toHaveLength(3);
@@ -307,28 +348,28 @@ describe('listAllSessions', () => {
 });
 
 describe('loadSession (read-only)', () => {
-  it('finds the vendor and delegates to adapter.loadHistory', async () => {
+  it('finds the vendor and delegates to discovery.loadHistory', async () => {
     const entries: TranscriptEntry[] = [
       { type: 'user', message: { role: 'user', content: 'hello' } },
       { type: 'assistant', message: { role: 'assistant', content: 'hi' } },
     ];
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-    const claude = createMockAdapter({
+    const discovery = createMockDiscovery({
       vendor: 'claude',
       sessions: [session],
       historyEntries: entries,
     });
 
-    registerAdapter(claude);
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     const result = await loadSession('sess-1');
     expect(result).toEqual(entries);
-    expect(claude.loadHistory).toHaveBeenCalledWith('sess-1');
+    expect(discovery.loadHistory).toHaveBeenCalledWith('sess-1');
   });
 
   it('returns empty array when session not found', async () => {
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [] });
-    registerAdapter(claude);
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     const result = await loadSession('nonexistent');
     expect(result).toEqual([]);
@@ -336,8 +377,8 @@ describe('loadSession (read-only)', () => {
 
   it('does not create a channel (read-only)', async () => {
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [session] });
-    registerAdapter(claude);
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     await loadSession('sess-1');
 
@@ -349,33 +390,33 @@ describe('loadSession (read-only)', () => {
 // ========== 3. subscribeSession ==========
 
 describe('subscribeSession', () => {
-  it('creates a channel, wires the adapter, backfills history, and subscribes', async () => {
+  it('creates a channel, wires a factory adapter, backfills history, and subscribes', async () => {
     const entries: TranscriptEntry[] = [
       { type: 'user', message: { role: 'user', content: 'hello' } },
       { type: 'assistant', message: { role: 'assistant', content: 'hi' } },
     ];
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-    const claude = createMockAdapter({
+    const discovery = createMockDiscovery({
       vendor: 'claude',
       sessions: [session],
       historyEntries: entries,
     });
-    registerAdapter(claude);
+
+    const { factory, lastCreated } = createCapturingFactory({ vendor: 'claude' });
+    registerAdapter(discovery, factory);
 
     const sub = createTestSubscriber('sub-1');
     const channel = await subscribeSession('sess-1', sub);
 
     expect(channel).toBeDefined();
     expect(channel.channelId).toBe('sess-1');
-    expect(channel.adapter).toBe(claude);
+    // Channel adapter is factory-created, not the discovery object
+    expect(channel.adapter!.vendor).toBe('claude');
 
-    // loadHistory was called to backfill the transcript
-    expect(claude.loadHistory).toHaveBeenCalledWith('sess-1');
+    // loadHistory was called on the discovery object
+    expect(discovery.loadHistory).toHaveBeenCalledWith('sess-1');
 
-    // The subscriber is added after the channel is fully initialized
-    // (history broadcast happens during init, before subscribe),
-    // so the subscriber doesn't receive the history event directly.
-    // What matters is that the channel's entryIndex reflects the history.
+    // The channel's entryIndex reflects the history
     expect(channel.entryIndex).toBe(2);
 
     // Subscriber is registered
@@ -387,8 +428,8 @@ describe('subscribeSession', () => {
 
   it('reuses existing channel for second subscriber', async () => {
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [session] });
-    registerAdapter(claude);
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     const sub1 = createTestSubscriber('sub-1');
     const channel1 = await subscribeSession('sess-1', sub1);
@@ -402,8 +443,8 @@ describe('subscribeSession', () => {
   });
 
   it('throws when session not found across any vendor', async () => {
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [] });
-    registerAdapter(claude);
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     const sub = createTestSubscriber('sub-1');
     await expect(subscribeSession('nonexistent', sub)).rejects.toThrow('not found');
@@ -415,14 +456,15 @@ describe('subscribeSession', () => {
 describe('sendToSession', () => {
   it('delegates to the channel adapter send()', async () => {
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [session] });
-    registerAdapter(claude);
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    const { factory, lastCreated } = createCapturingFactory({ vendor: 'claude' });
+    registerAdapter(discovery, factory);
 
     const sub = createTestSubscriber('sub-1');
     await subscribeSession('sess-1', sub);
 
     sendToSession('sess-1', 'Hello world');
-    expect(claude.send).toHaveBeenCalledWith('Hello world');
+    expect(lastCreated().send).toHaveBeenCalledWith('Hello world');
   });
 
   it('throws when no channel is open', () => {
@@ -433,14 +475,15 @@ describe('sendToSession', () => {
 describe('setSessionModel', () => {
   it('delegates to adapter.setModel()', async () => {
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [session] });
-    registerAdapter(claude);
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    const { factory, lastCreated } = createCapturingFactory({ vendor: 'claude' });
+    registerAdapter(discovery, factory);
 
     const sub = createTestSubscriber('sub-1');
     await subscribeSession('sess-1', sub);
 
     await setSessionModel('sess-1', 'opus');
-    expect(claude.setModel).toHaveBeenCalledWith('opus');
+    expect(lastCreated().setModel).toHaveBeenCalledWith('opus');
   });
 
   it('throws when no channel is open', async () => {
@@ -451,14 +494,15 @@ describe('setSessionModel', () => {
 describe('setSessionPermissions', () => {
   it('delegates to adapter.setPermissionMode()', async () => {
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [session] });
-    registerAdapter(claude);
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    const { factory, lastCreated } = createCapturingFactory({ vendor: 'claude' });
+    registerAdapter(discovery, factory);
 
     const sub = createTestSubscriber('sub-1');
     await subscribeSession('sess-1', sub);
 
     await setSessionPermissions('sess-1', 'acceptEdits');
-    expect(claude.setPermissionMode).toHaveBeenCalledWith('acceptEdits');
+    expect(lastCreated().setPermissionMode).toHaveBeenCalledWith('acceptEdits');
   });
 
   it('throws when no channel is open', async () => {
@@ -469,14 +513,15 @@ describe('setSessionPermissions', () => {
 describe('interruptSession', () => {
   it('delegates to adapter.interrupt()', async () => {
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [session] });
-    registerAdapter(claude);
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    const { factory, lastCreated } = createCapturingFactory({ vendor: 'claude' });
+    registerAdapter(discovery, factory);
 
     const sub = createTestSubscriber('sub-1');
     await subscribeSession('sess-1', sub);
 
     await interruptSession('sess-1');
-    expect(claude.interrupt).toHaveBeenCalled();
+    expect(lastCreated().interrupt).toHaveBeenCalled();
   });
 
   it('throws when no channel is open', async () => {
@@ -487,8 +532,8 @@ describe('interruptSession', () => {
 describe('closeSession', () => {
   it('tears down channel and removes from registry', async () => {
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [session] });
-    registerAdapter(claude);
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     const sub = createTestSubscriber('sub-1');
     await subscribeSession('sess-1', sub);
@@ -510,18 +555,18 @@ describe('closeSession', () => {
 });
 
 describe('_resetRegistry', () => {
-  it('clears all adapters and sessions', async () => {
+  it('clears all discoveries and sessions', async () => {
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [session] });
-    registerAdapter(claude);
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     const sub = createTestSubscriber('sub-1');
     await subscribeSession('sess-1', sub);
 
     _resetRegistry();
 
-    expect(getAdapter('claude')).toBeUndefined();
-    expect(getAdapters()).toHaveLength(0);
+    expect(getDiscovery('claude')).toBeUndefined();
+    expect(getDiscoveries()).toHaveLength(0);
     expect(() => sendToSession('sess-1', 'hello')).toThrow('No open channel');
   });
 });
@@ -530,115 +575,59 @@ describe('_resetRegistry', () => {
 // B) Regression Tests
 // ============================================================================
 
-// ========== Bug 1: Single-consumer enforcement ==========
+// ========== Per-session adapters: multiple live sessions ==========
 
-describe('Regression: single-consumer enforcement', () => {
-  it('opening a second live session for the same vendor throws', async () => {
+describe('Regression: per-session adapters allow multiple live sessions', () => {
+  it('multiple live sessions for the same vendor succeed', async () => {
     const s1 = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
     const s2 = makeSessionInfo({ sessionId: 'sess-2', vendor: 'claude' });
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [s1, s2] });
-    registerAdapter(claude);
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1, s2] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     const sub1 = createTestSubscriber('sub-1');
-    await subscribeSession('sess-1', sub1);
-
     const sub2 = createTestSubscriber('sub-2');
-    await expect(subscribeSession('sess-2', sub2)).rejects.toThrow(
-      /already has a live session/,
-    );
+
+    const channel1 = await subscribeSession('sess-1', sub1);
+    const channel2 = await subscribeSession('sess-2', sub2);
+
+    expect(channel1).toBeDefined();
+    expect(channel2).toBeDefined();
+    expect(channel1.channelId).toBe('sess-1');
+    expect(channel2.channelId).toBe('sess-2');
+    // Each channel has its own adapter instance
+    expect(channel1.adapter).not.toBe(channel2.adapter);
   });
 
-  it('closing the first session allows opening a second for the same vendor', async () => {
+  it('closing the first session does not affect the second', async () => {
     const s1 = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
     const s2 = makeSessionInfo({ sessionId: 'sess-2', vendor: 'claude' });
-    // Need separate adapters because the first adapter's queue will be done() after close
-    // Actually, the session manager uses the same adapter instance for both sessions.
-    // After closing the first channel, the adapter's queue is done'd by destroyChannel.
-    // For this test we need the adapter's messages() to return the queue,
-    // but AsyncIterableQueue is single-consumer and single-use.
-    // The real code creates one channel per session but reuses the adapter.
-    // However, the mock adapter's queue.done() is called by close().
-    // We need a mock adapter where close() is intercepted but the queue can be reused.
-    //
-    // Actually, let's look at the flow: closeSession calls destroyChannel which calls
-    // teardown which calls adapter.close(). The mock's close() calls queue.done().
-    // Then when openChannel is called for sess-2, it calls setAdapter which starts
-    // the consumption loop which calls adapter.messages() which returns the same queue
-    // (now done). The loop immediately exits and the channel goes to unattached.
-    //
-    // In the real system, the adapter would manage its own internal queue and
-    // messages() could potentially be called again. For this test, we need
-    // a mock that can produce a fresh queue on each messages() call.
-    const queues: AsyncIterableQueue<ChannelMessage>[] = [];
-    let queueIndex = 0;
-
-    const freshAdapter: MockAdapter = {
-      vendor: 'claude',
-      get sessionId() { return undefined; },
-      get status(): ChannelStatus { return 'idle'; },
-      get outputQueue() { return queues[queues.length - 1]; },
-
-      messages(): AsyncIterable<ChannelMessage> {
-        if (queueIndex >= queues.length) {
-          queues.push(new AsyncIterableQueue<ChannelMessage>());
-        }
-        return queues[queueIndex++];
-      },
-
-      send: vi.fn(),
-      respondToApproval: vi.fn(),
-      close: vi.fn(() => {
-        // Don't done() the queue — just a mock close
-        if (queues.length > 0) {
-          queues[queues.length - 1].done();
-        }
-      }),
-
-      loadHistory: vi.fn(async () => []),
-      findSession: vi.fn((id: string) =>
-        [s1, s2].find((s) => s.sessionId === id),
-      ),
-      listSessions: vi.fn(() => [s1, s2]),
-      interrupt: vi.fn(async () => {}),
-      setModel: vi.fn(async () => {}),
-      setPermissionMode: vi.fn(async () => {}),
-
-      pushMessage(msg: ChannelMessage) {
-        queues[queues.length - 1]?.enqueue(msg);
-      },
-      completeStream() {
-        queues[queues.length - 1]?.done();
-      },
-      failStream(err: Error) {
-        queues[queues.length - 1]?.error(err);
-      },
-    };
-
-    registerAdapter(freshAdapter);
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1, s2] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     const sub1 = createTestSubscriber('sub-1');
+    const sub2 = createTestSubscriber('sub-2');
+
     await subscribeSession('sess-1', sub1);
+    const channel2 = await subscribeSession('sess-2', sub2);
 
     // Close first session
     closeSession('sess-1');
     await tick();
 
-    // Now opening second session for same vendor should work
-    const sub2 = createTestSubscriber('sub-2');
-    const channel2 = await subscribeSession('sess-2', sub2);
-    expect(channel2).toBeDefined();
-    expect(channel2.channelId).toBe('sess-2');
+    // Second session still alive
+    expect(channel2.state).not.toBe('unattached');
+    expect(() => sendToSession('sess-2', 'hi')).not.toThrow();
   });
 
   it('different vendors can have simultaneous live sessions', async () => {
     const claudeSession = makeSessionInfo({ sessionId: 'sess-c1', vendor: 'claude' });
     const codexSession = makeSessionInfo({ sessionId: 'sess-x1', vendor: 'codex' });
 
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [claudeSession] });
-    const codex = createMockAdapter({ vendor: 'codex', sessions: [codexSession] });
+    const claudeDiscovery = createMockDiscovery({ vendor: 'claude', sessions: [claudeSession] });
+    const codexDiscovery = createMockDiscovery({ vendor: 'codex', sessions: [codexSession] });
 
-    registerAdapter(claude);
-    registerAdapter(codex);
+    registerAdapter(claudeDiscovery, () => createMockAdapter({ vendor: 'claude' }));
+    registerAdapter(codexDiscovery, () => createMockAdapter({ vendor: 'codex' }));
 
     const sub1 = createTestSubscriber('sub-1');
     const sub2 = createTestSubscriber('sub-2');
@@ -656,59 +645,16 @@ describe('Regression: single-consumer enforcement', () => {
 describe('Regression: loadHistory failure cleanup', () => {
   it('failed loadHistory cleans up channel so next call succeeds', async () => {
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
 
-    // Use a fresh-queue adapter because the first channel will be destroyed
-    const queues: AsyncIterableQueue<ChannelMessage>[] = [];
-    let queueIndex = 0;
+    // First call fails, second succeeds — on the discovery's loadHistory
+    (discovery.loadHistory as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('Disk read failed'))
+      .mockResolvedValueOnce([
+        { type: 'user', message: { role: 'user', content: 'hello' } },
+      ]);
 
-    const adapter: MockAdapter = {
-      vendor: 'claude',
-      get sessionId() { return undefined; },
-      get status(): ChannelStatus { return 'idle'; },
-      get outputQueue() { return queues[queues.length - 1]; },
-
-      messages(): AsyncIterable<ChannelMessage> {
-        if (queueIndex >= queues.length) {
-          queues.push(new AsyncIterableQueue<ChannelMessage>());
-        }
-        return queues[queueIndex++];
-      },
-
-      send: vi.fn(),
-      respondToApproval: vi.fn(),
-      close: vi.fn(() => {
-        if (queues.length > 0) {
-          queues[queues.length - 1].done();
-        }
-      }),
-
-      // First call fails, second succeeds
-      loadHistory: vi.fn()
-        .mockRejectedValueOnce(new Error('Disk read failed'))
-        .mockResolvedValueOnce([
-          { type: 'user', message: { role: 'user', content: 'hello' } },
-        ]) as unknown as AgentAdapter['loadHistory'],
-
-      findSession: vi.fn((id: string) =>
-        id === session.sessionId ? session : undefined,
-      ),
-      listSessions: vi.fn(() => [session]),
-      interrupt: vi.fn(async () => {}),
-      setModel: vi.fn(async () => {}),
-      setPermissionMode: vi.fn(async () => {}),
-
-      pushMessage(msg: ChannelMessage) {
-        queues[queues.length - 1]?.enqueue(msg);
-      },
-      completeStream() {
-        queues[queues.length - 1]?.done();
-      },
-      failStream(err: Error) {
-        queues[queues.length - 1]?.error(err);
-      },
-    };
-
-    registerAdapter(adapter);
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     const sub1 = createTestSubscriber('sub-1');
 
@@ -721,8 +667,8 @@ describe('Regression: loadHistory failure cleanup', () => {
     expect(channel).toBeDefined();
     expect(channel.channelId).toBe('sess-1');
 
-    // loadHistory was called successfully on the second attempt
-    expect(adapter.loadHistory).toHaveBeenCalledTimes(2);
+    // loadHistory was called twice (once per attempt)
+    expect(discovery.loadHistory).toHaveBeenCalledTimes(2);
 
     // The subscriber is registered on the fresh channel
     expect(channel.subscribers.has('sub-2')).toBe(true);
@@ -734,60 +680,23 @@ describe('Regression: loadHistory failure cleanup', () => {
 describe('Regression: terminal/dead channel eviction', () => {
   it('evicts unattached channel and creates a fresh one', async () => {
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
 
-    // Multi-queue adapter (each messages() call gets a new queue)
-    const queues: AsyncIterableQueue<ChannelMessage>[] = [];
-    let queueIndex = 0;
-
-    const adapter: MockAdapter = {
-      vendor: 'claude',
-      get sessionId() { return undefined; },
-      get status(): ChannelStatus { return 'idle'; },
-      get outputQueue() { return queues[queues.length - 1]; },
-
-      messages(): AsyncIterable<ChannelMessage> {
-        if (queueIndex >= queues.length) {
-          queues.push(new AsyncIterableQueue<ChannelMessage>());
-        }
-        return queues[queueIndex++];
-      },
-
-      send: vi.fn(),
-      respondToApproval: vi.fn(),
-      close: vi.fn(() => {
-        if (queues.length > 0) {
-          queues[queues.length - 1].done();
-        }
-      }),
-
-      loadHistory: vi.fn(async () => []),
-      findSession: vi.fn((id: string) =>
-        id === session.sessionId ? session : undefined,
-      ),
-      listSessions: vi.fn(() => [session]),
-      interrupt: vi.fn(async () => {}),
-      setModel: vi.fn(async () => {}),
-      setPermissionMode: vi.fn(async () => {}),
-
-      pushMessage(msg: ChannelMessage) {
-        queues[queues.length - 1]?.enqueue(msg);
-      },
-      completeStream() {
-        queues[queues.length - 1]?.done();
-      },
-      failStream(err: Error) {
-        queues[queues.length - 1]?.error(err);
-      },
+    const created: MockAdapter[] = [];
+    const factory = () => {
+      const adapter = createMockAdapter({ vendor: 'claude' });
+      created.push(adapter);
+      return adapter;
     };
 
-    registerAdapter(adapter);
+    registerAdapter(discovery, factory);
 
     // Open session and get channel
     const sub1 = createTestSubscriber('sub-1');
     const channel1 = await subscribeSession('sess-1', sub1);
 
     // Simulate stream exhaustion -> channel goes to 'unattached'
-    queues[0].done();
+    created[0].completeStream();
     await tick();
     expect(channel1.state).toBe('unattached');
 
@@ -805,8 +714,8 @@ describe('Regression: terminal/dead channel eviction', () => {
 describe('Regression: unregisterAdapter closes live sessions', () => {
   it('unregistering a vendor closes all live sessions for that vendor', async () => {
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [session] });
-    registerAdapter(claude);
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     const sub = createTestSubscriber('sub-1');
     await subscribeSession('sess-1', sub);
@@ -820,8 +729,8 @@ describe('Regression: unregisterAdapter closes live sessions', () => {
     // Channel should be torn down
     expect(() => sendToSession('sess-1', 'hello')).toThrow('No open channel');
 
-    // Adapter should be gone
-    expect(getAdapter('claude')).toBeUndefined();
+    // Discovery should be gone
+    expect(getDiscovery('claude')).toBeUndefined();
 
     // Subscriber received state_changed to unattached
     const stateEvents = sub.eventsOfType('state_changed');
@@ -833,11 +742,11 @@ describe('Regression: unregisterAdapter closes live sessions', () => {
     const claudeSession = makeSessionInfo({ sessionId: 'sess-c1', vendor: 'claude' });
     const codexSession = makeSessionInfo({ sessionId: 'sess-x1', vendor: 'codex' });
 
-    const claude = createMockAdapter({ vendor: 'claude', sessions: [claudeSession] });
-    const codex = createMockAdapter({ vendor: 'codex', sessions: [codexSession] });
+    const claudeDiscovery = createMockDiscovery({ vendor: 'claude', sessions: [claudeSession] });
+    const codexDiscovery = createMockDiscovery({ vendor: 'codex', sessions: [codexSession] });
 
-    registerAdapter(claude);
-    registerAdapter(codex);
+    registerAdapter(claudeDiscovery, () => createMockAdapter({ vendor: 'claude' }));
+    registerAdapter(codexDiscovery, () => createMockAdapter({ vendor: 'codex' }));
 
     const sub1 = createTestSubscriber('sub-1');
     const sub2 = createTestSubscriber('sub-2');
@@ -865,12 +774,18 @@ describe('Regression: concurrent subscribeSession coalescing', () => {
     ];
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
 
-    // Use a slow loadHistory to create a window for concurrency
-    const adapter = createMockAdapter({ vendor: 'claude', sessions: [session] });
-    (adapter.loadHistory as ReturnType<typeof vi.fn>).mockImplementation(
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    // Use a slow loadHistory on the discovery to create a window for concurrency
+    (discovery.loadHistory as ReturnType<typeof vi.fn>).mockImplementation(
       () => new Promise<TranscriptEntry[]>((resolve) => setTimeout(() => resolve(entries), 50)),
     );
-    registerAdapter(adapter);
+
+    let factoryCallCount = 0;
+    const factory = (_sessionId: string) => {
+      factoryCallCount++;
+      return createMockAdapter({ vendor: 'claude' });
+    };
+    registerAdapter(discovery, factory);
 
     const sub1 = createTestSubscriber('sub-1');
     const sub2 = createTestSubscriber('sub-2');
@@ -889,8 +804,11 @@ describe('Regression: concurrent subscribeSession coalescing', () => {
     expect(channel1.subscribers.has('sub-1')).toBe(true);
     expect(channel1.subscribers.has('sub-2')).toBe(true);
 
-    // loadHistory was called only once (not twice)
-    expect(adapter.loadHistory).toHaveBeenCalledTimes(1);
+    // Factory was called only once (coalesced)
+    expect(factoryCallCount).toBe(1);
+
+    // loadHistory was called only once
+    expect(discovery.loadHistory).toHaveBeenCalledTimes(1);
   });
 
   it('concurrent calls share a single channel initialization', async () => {
@@ -899,11 +817,11 @@ describe('Regression: concurrent subscribeSession coalescing', () => {
     ];
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
 
-    const adapter = createMockAdapter({ vendor: 'claude', sessions: [session] });
-    (adapter.loadHistory as ReturnType<typeof vi.fn>).mockImplementation(
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    (discovery.loadHistory as ReturnType<typeof vi.fn>).mockImplementation(
       () => new Promise<TranscriptEntry[]>((resolve) => setTimeout(() => resolve(entries), 20)),
     );
-    registerAdapter(adapter);
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     const sub1 = createTestSubscriber('sub-1');
     const sub2 = createTestSubscriber('sub-2');
@@ -917,7 +835,7 @@ describe('Regression: concurrent subscribeSession coalescing', () => {
     expect(ch1).toBe(ch2);
 
     // loadHistory was called only once (coalesced)
-    expect(adapter.loadHistory).toHaveBeenCalledTimes(1);
+    expect(discovery.loadHistory).toHaveBeenCalledTimes(1);
 
     // Note: the history broadcast happens during init before either subscriber
     // is added (subscribe() runs after the init promise resolves), so neither
@@ -933,55 +851,13 @@ describe('Regression: concurrent subscribeSession coalescing', () => {
   it('if init fails, both concurrent callers get the error', async () => {
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
 
-    // Fresh-queue adapter so the destroyed channel doesn't block
-    const queues: AsyncIterableQueue<ChannelMessage>[] = [];
-    let queueIndex = 0;
-
-    const adapter: MockAdapter = {
-      vendor: 'claude',
-      get sessionId() { return undefined; },
-      get status(): ChannelStatus { return 'idle'; },
-      get outputQueue() { return queues[queues.length - 1]; },
-
-      messages(): AsyncIterable<ChannelMessage> {
-        if (queueIndex >= queues.length) {
-          queues.push(new AsyncIterableQueue<ChannelMessage>());
-        }
-        return queues[queueIndex++];
-      },
-
-      send: vi.fn(),
-      respondToApproval: vi.fn(),
-      close: vi.fn(() => {
-        if (queues.length > 0) {
-          queues[queues.length - 1].done();
-        }
-      }),
-      loadHistory: vi.fn(
-        () => new Promise<TranscriptEntry[]>((_, reject) =>
-          setTimeout(() => reject(new Error('Boom')), 20),
-        ),
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    (discovery.loadHistory as ReturnType<typeof vi.fn>).mockImplementation(
+      () => new Promise<TranscriptEntry[]>((_, reject) =>
+        setTimeout(() => reject(new Error('Boom')), 20),
       ),
-      findSession: vi.fn((id: string) =>
-        id === session.sessionId ? session : undefined,
-      ),
-      listSessions: vi.fn(() => [session]),
-      interrupt: vi.fn(async () => {}),
-      setModel: vi.fn(async () => {}),
-      setPermissionMode: vi.fn(async () => {}),
-
-      pushMessage(msg: ChannelMessage) {
-        queues[queues.length - 1]?.enqueue(msg);
-      },
-      completeStream() {
-        queues[queues.length - 1]?.done();
-      },
-      failStream(err: Error) {
-        queues[queues.length - 1]?.error(err);
-      },
-    };
-
-    registerAdapter(adapter);
+    );
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     const sub1 = createTestSubscriber('sub-1');
     const sub2 = createTestSubscriber('sub-2');

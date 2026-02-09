@@ -441,21 +441,17 @@ export function resolveApproval(
 }
 
 /**
- * Load historical transcript entries and broadcast them as a batch.
+ * Backfill historical transcript entries and broadcast them as a batch.
  * Subscribers receive a single { type: "history" } event with all entries,
  * rather than N individual entry events — avoids render thrashing.
  *
- * Stateless — does not change channel state.
+ * Stateless — does not change channel state. Accepts pre-loaded entries
+ * so the caller (session-manager) handles discovery/loading.
  */
-export async function loadHistory(
+export function backfillHistory(
   channel: SessionChannel,
-  sessionId: string,
-): Promise<void> {
-  if (!channel.adapter) {
-    throw new Error('No adapter set. Call setAdapter() first.');
-  }
-
-  const entries = await channel.adapter.loadHistory(sessionId);
+  entries: TranscriptEntry[],
+): void {
   if (entries.length === 0) return;
 
   broadcast(channel, { type: 'history', entries });

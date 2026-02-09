@@ -6,33 +6,43 @@
  * across all of them.
  *
  * Two registries:
- * - adapters: Map<Vendor, AgentAdapter> — one adapter per vendor
+ * - adapters: Map<Vendor, VendorRegistration> — discovery + factory per vendor
  * - sessions: Map<string, SessionChannel> — live channels keyed by sessionId
  *
  * Design matches session-channel.ts: functional API with module-level state.
  *
- * Ownership model: one adapter instance per vendor, one live channel per
- * session. Because adapters are single-consumer (messages() can only be
- * iterated once), only one live session per vendor is allowed at a time.
- * Opening a second session for the same vendor requires closing the first.
+ * Ownership model: each vendor registers a VendorDiscovery object for
+ * stateless ops (listSessions, findSession, loadHistory) and a factory
+ * that creates a fresh AgentAdapter per live session. Each channel owns
+ * its adapter exclusively, so multiple live sessions per vendor are supported.
  *
  * @module session-manager
  */
 
-import type { AgentAdapter, SessionInfo } from './agent-adapter.js';
+import type { AgentAdapter, VendorDiscovery, SessionInfo } from './agent-adapter.js';
 import type { TranscriptEntry, Vendor, MessageContent } from './transcript.js';
 import type { SessionChannel, Subscriber } from './session-channel.js';
 import {
   createChannel, setAdapter, subscribe,
-  sendMessage, destroyChannel, loadHistory,
+  sendMessage, destroyChannel, backfillHistory,
 } from './session-channel.js';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/** Registration entry: static discovery + factory for per-session adapters. */
+export interface VendorRegistration {
+  discovery: VendorDiscovery;
+  createAdapter: (sessionId: string) => AgentAdapter;
+}
 
 // ============================================================================
 // Registries
 // ============================================================================
 
-/** One adapter per vendor. */
-const adapters = new Map<Vendor, AgentAdapter>();
+/** Discovery + factory per vendor. */
+const adapters = new Map<Vendor, VendorRegistration>();
 
 /** Live channels keyed by sessionId. */
 const sessions = new Map<string, SessionChannel>();
@@ -45,17 +55,20 @@ const pending = new Map<string, Promise<SessionChannel>>();
 // ============================================================================
 
 /**
- * Register an adapter for its vendor.
+ * Register a vendor's discovery object and per-session adapter factory.
  * Throws if an adapter for that vendor is already registered.
  */
-export function registerAdapter(adapter: AgentAdapter): void {
-  if (adapters.has(adapter.vendor)) {
+export function registerAdapter(
+  discovery: VendorDiscovery,
+  createAdapter: (sessionId: string) => AgentAdapter,
+): void {
+  if (adapters.has(discovery.vendor)) {
     throw new Error(
-      `Adapter for vendor "${adapter.vendor}" is already registered. ` +
-      `Call unregisterAdapter("${adapter.vendor}") first.`
+      `Adapter for vendor "${discovery.vendor}" is already registered. ` +
+      `Call unregisterAdapter("${discovery.vendor}") first.`
     );
   }
-  adapters.set(adapter.vendor, adapter);
+  adapters.set(discovery.vendor, { discovery, createAdapter });
 }
 
 /**
@@ -80,14 +93,14 @@ export function unregisterAdapter(vendor: Vendor): void {
   adapters.delete(vendor);
 }
 
-/** Get the adapter for a specific vendor. */
-export function getAdapter(vendor: Vendor): AgentAdapter | undefined {
-  return adapters.get(vendor);
+/** Get the discovery object for a specific vendor. */
+export function getDiscovery(vendor: Vendor): VendorDiscovery | undefined {
+  return adapters.get(vendor)?.discovery;
 }
 
-/** Get all registered adapters. */
-export function getAdapters(): AgentAdapter[] {
-  return [...adapters.values()];
+/** Get all registered discovery objects. */
+export function getDiscoveries(): VendorDiscovery[] {
+  return [...adapters.values()].map((r) => r.discovery);
 }
 
 /**
@@ -112,8 +125,8 @@ export function _resetRegistry(): void {
  * Iterates adapters until one claims the session.
  */
 export function findSession(sessionId: string): SessionInfo | undefined {
-  for (const adapter of adapters.values()) {
-    const info = adapter.findSession(sessionId);
+  for (const { discovery } of adapters.values()) {
+    const info = discovery.findSession(sessionId);
     if (info) return info;
   }
   return undefined;
@@ -131,10 +144,10 @@ export async function loadSession(sessionId: string): Promise<TranscriptEntry[]>
   const info = findSession(sessionId);
   if (!info) return [];
 
-  const adapter = adapters.get(info.vendor);
-  if (!adapter) return [];
+  const reg = adapters.get(info.vendor);
+  if (!reg) return [];
 
-  return adapter.loadHistory(sessionId);
+  return reg.discovery.loadHistory(sessionId);
 }
 
 /**
@@ -143,8 +156,8 @@ export async function loadSession(sessionId: string): Promise<TranscriptEntry[]>
  */
 export function listAllSessions(): SessionInfo[] {
   const all: SessionInfo[] = [];
-  for (const adapter of adapters.values()) {
-    all.push(...adapter.listSessions());
+  for (const { discovery } of adapters.values()) {
+    all.push(...discovery.listSessions());
   }
   return all.sort((a, b) => b.modifiedAt.getTime() - a.modifiedAt.getTime());
 }
@@ -184,43 +197,21 @@ function evictIfDead(sessionId: string): void {
 }
 
 /**
- * Find any live session using the given vendor's adapter.
- * Returns the sessionId or undefined.
- */
-function findLiveSessionForVendor(vendor: Vendor): string | undefined {
-  for (const [sessionId, channel] of sessions) {
-    if (channel.adapter?.vendor === vendor && channel.state !== 'unattached') {
-      return sessionId;
-    }
-  }
-  return undefined;
-}
-
-/**
- * Create a channel for a session, wiring up the owning vendor's adapter.
+ * Create a channel for a session using a factory-created adapter.
  * Internal — not exported. Uses sessionId as channelId (1:1 mapping).
  *
- * Because adapters are single-consumer (messages() can only be iterated
- * once), this throws if another live session for the same vendor exists.
- * Close the existing session first via closeSession().
+ * Each channel gets its own adapter instance from the vendor's factory,
+ * so multiple live sessions per vendor are fully supported.
  */
 function openChannel(sessionId: string, vendor: Vendor): SessionChannel {
-  const adapter = adapters.get(vendor);
-  if (!adapter) {
+  const registration = adapters.get(vendor);
+  if (!registration) {
     throw new Error(`No adapter registered for vendor "${vendor}".`);
   }
 
-  // Enforce one live session per vendor (adapter is single-consumer)
-  const existing = findLiveSessionForVendor(vendor);
-  if (existing) {
-    throw new Error(
-      `Vendor "${vendor}" already has a live session "${existing}". ` +
-      `Call closeSession("${existing}") before opening a new one.`
-    );
-  }
-
+  const liveAdapter = registration.createAdapter(sessionId);
   const channel = createChannel(sessionId);
-  setAdapter(channel, adapter);
+  setAdapter(channel, liveAdapter);
   return channel;
 }
 
@@ -238,8 +229,7 @@ function openChannel(sessionId: string, vendor: Vendor): SessionChannel {
  * - Adds the subscriber to the channel.
  * - Returns the channel.
  *
- * Throws if the session is not found across any registered vendor, or if
- * the vendor already has another live session (adapters are single-consumer).
+ * Throws if the session is not found across any registered vendor.
  */
 export async function subscribeSession(
   sessionId: string,
@@ -275,7 +265,9 @@ export async function subscribeSession(
       // If this fails, clean up the partially-initialized channel
       // so the next caller gets a clean slate, not a poisoned entry.
       try {
-        await loadHistory(ch, sessionId);
+        const reg = adapters.get(info.vendor)!;
+        const entries = await reg.discovery.loadHistory(sessionId);
+        backfillHistory(ch, entries);
       } catch (err) {
         destroyChannel(sessionId);
         sessions.delete(sessionId);
