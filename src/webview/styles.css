@@ -1,7 +1,9 @@
 /* ============================================================================
  * Crispy Webview Styles
  *
- * BEM-ish naming with crispy- prefix. Uses VS Code CSS variables for theming.
+ * BEM-ish naming with crispy- prefix for layout. Uses VS Code CSS variables
+ * for theming. Entry-level classes use Leto-compatible names (message, yaml-*,
+ * compact-*) for the rendering pipeline.
  * ============================================================================ */
 
 /* --- Reset & Base (moved from inline <style> in index.html) --- */
@@ -111,6 +113,40 @@ h2 {
   overflow: hidden;
 }
 
+/* --- Render Mode Switcher --- */
+
+.crispy-mode-switcher {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-sideBar-background);
+  flex-shrink: 0;
+}
+
+.crispy-mode-btn {
+  background: transparent;
+  color: var(--vscode-foreground);
+  border: 1px solid var(--vscode-panel-border);
+  padding: 3px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.crispy-mode-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.crispy-mode-btn--active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: var(--vscode-button-background);
+}
+
 /* --- Transcript Viewer --- */
 
 .crispy-transcript {
@@ -119,140 +155,69 @@ h2 {
   padding: 16px;
 }
 
-/* --- Entry Styles --- */
+/* ============================================================================
+ * Message Styles — shared across render modes
+ * ============================================================================ */
 
-.crispy-entry {
+.message {
   margin-bottom: 12px;
   padding: 8px 12px;
   border-radius: 4px;
   border-left: 3px solid transparent;
 }
 
-.crispy-entry--user {
+.message:empty {
+  display: none;
+}
+
+.message.user {
   border-left-color: var(--vscode-notificationsInfoIcon-foreground);
   background: rgba(255, 255, 255, 0.03);
 }
 
-.crispy-entry--assistant {
+.message.assistant {
   border-left-color: #6a9955;
   background: rgba(255, 255, 255, 0.02);
 }
 
-.crispy-entry--system {
+.message.system {
   border-left-color: var(--vscode-notificationsWarningIcon-foreground);
   opacity: 0.8;
   font-style: italic;
 }
 
-.crispy-entry__role {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 4px;
-  opacity: 0.6;
+.message.tool {
+  border-left-color: #569cd6;
+  background: rgba(255, 255, 255, 0.02);
 }
 
-.crispy-entry__content {
+/* --- Text Content (Rich mode) --- */
+
+.text-content {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-/* --- Tool Use --- */
+/* --- Tool Card Stub (Rich mode) --- */
 
-.crispy-tool-use {
+.tool-card-stub {
   margin: 4px 0;
+  padding: 6px 10px;
   border: 1px solid var(--vscode-panel-border);
   border-radius: 4px;
-  overflow: hidden;
-}
-
-.crispy-tool-use__header {
-  padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.05);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  user-select: none;
-}
-
-.crispy-tool-use__header:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.crispy-tool-use__name {
-  font-weight: 600;
-  font-family: monospace;
-}
-
-.crispy-tool-use__preview {
-  opacity: 0.5;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-}
-
-.crispy-tool-use__body {
-  padding: 8px 10px;
   font-family: monospace;
   font-size: 12px;
-  white-space: pre-wrap;
-  word-break: break-all;
-  background: rgba(0, 0, 0, 0.1);
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-/* --- Tool Result --- */
-
-.crispy-tool-result {
-  margin: 4px 0;
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.crispy-tool-result--error {
-  border-color: var(--vscode-errorForeground);
-}
-
-.crispy-tool-result__header {
-  padding: 6px 10px;
   background: rgba(255, 255, 255, 0.03);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  user-select: none;
 }
 
-.crispy-tool-result__header:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
+/* --- Thinking (Rich mode) --- */
 
-.crispy-tool-result__body {
-  padding: 8px 10px;
-  font-family: monospace;
-  font-size: 12px;
-  white-space: pre-wrap;
-  word-break: break-all;
-  background: rgba(0, 0, 0, 0.1);
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-/* --- Thinking --- */
-
-.crispy-thinking {
+.message details {
   margin: 4px 0;
 }
 
-.crispy-thinking summary {
+.message details summary {
   cursor: pointer;
   font-size: 12px;
   opacity: 0.6;
@@ -260,11 +225,11 @@ h2 {
   user-select: none;
 }
 
-.crispy-thinking summary:hover {
+.message details summary:hover {
   opacity: 0.8;
 }
 
-.crispy-thinking pre {
+.message details pre {
   margin: 4px 0;
   padding: 8px;
   background: rgba(0, 0, 0, 0.1);
@@ -274,6 +239,54 @@ h2 {
   word-break: break-word;
   max-height: 200px;
   overflow-y: auto;
+}
+
+/* ============================================================================
+ * YAML Mode Styles
+ * ============================================================================ */
+
+.yaml-entry {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.yaml-dump {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.yaml-key {
+  color: #569cd6;
+  font-weight: 600;
+}
+
+/* ============================================================================
+ * Compact Mode Styles
+ * ============================================================================ */
+
+.compact-entry {
+  padding: 4px 12px;
+  margin-bottom: 2px;
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.compact-role {
+  font-weight: 600;
+  opacity: 0.7;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.compact-tools-summary {
+  opacity: 0.5;
+  font-family: monospace;
+  font-size: 11px;
 }
 
 /* --- Playback Controls --- */

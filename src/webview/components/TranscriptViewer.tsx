@@ -1,21 +1,32 @@
 /**
- * Transcript Viewer — main transcript area with playback integration
+ * Transcript Viewer — main transcript area with playback and render modes
  *
  * Reads the selected session from SessionContext, loads its transcript
- * via useTranscript, and integrates playback controls via usePlayback.
+ * via useTranscript, integrates playback controls via usePlayback, and
+ * provides a render mode switcher (YAML / Compact / Rich).
+ *
+ * Entry filtering via shouldRenderEntry runs after the playback slice —
+ * visibleCount counts raw entries (playback position in the full timeline),
+ * then we filter the visible slice for rendering.
  *
  * @module TranscriptViewer
  */
 
-import { useSession } from '../context/SessionContext.js';
-import { useTranscript } from '../hooks/useTranscript.js';
-import { usePlayback } from '../hooks/usePlayback.js';
-import { EntryRenderer } from './EntryRenderer.js';
-import { PlaybackControls } from './PlaybackControls.js';
+import { useState } from "react";
+import { useSession } from "../context/SessionContext.js";
+import { useTranscript } from "../hooks/useTranscript.js";
+import { usePlayback } from "../hooks/usePlayback.js";
+import { shouldRenderEntry } from "../utils/entry-filters.js";
+import { EntryRenderer } from "../renderers/EntryRenderer.js";
+import { PlaybackControls } from "./PlaybackControls.js";
+import type { RenderMode } from "../types.js";
+
+const MODES: readonly RenderMode[] = ["yaml", "compact", "rich"] as const;
 
 export function TranscriptViewer(): React.JSX.Element {
   const { selectedSessionId } = useSession();
   const { entries, isLoading, error } = useTranscript(selectedSessionId);
+  const [renderMode, setRenderMode] = useState<RenderMode>("yaml");
   const {
     visibleCount,
     isPlaying,
@@ -41,13 +52,31 @@ export function TranscriptViewer(): React.JSX.Element {
 
   return (
     <>
+      <div className="crispy-mode-switcher">
+        {MODES.map((mode) => (
+          <button
+            key={mode}
+            className={`crispy-mode-btn ${renderMode === mode ? "crispy-mode-btn--active" : ""}`}
+            onClick={() => setRenderMode(mode)}
+          >
+            {mode.toUpperCase()}
+          </button>
+        ))}
+      </div>
       <div className="crispy-transcript">
         {isLoading ? (
           <div className="crispy-loading">Loading transcript...</div>
         ) : (
-          entries.slice(0, visibleCount).map((entry, i) => (
-            <EntryRenderer key={entry.uuid ?? i} entry={entry} index={i} />
-          ))
+          entries
+            .slice(0, visibleCount)
+            .filter(shouldRenderEntry)
+            .map((entry, i) => (
+              <EntryRenderer
+                key={entry.uuid ?? `entry-${i}`}
+                entry={entry}
+                mode={renderMode}
+              />
+            ))
         )}
       </div>
       <PlaybackControls
