@@ -14,6 +14,8 @@
     "declarationMap": true,
     "sourceMap": true,
     "resolveJsonModule": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
     "noUnusedLocals": false,
     "noUnusedParameters": false
   },

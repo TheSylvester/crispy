@@ -40,11 +40,14 @@ export function createCrispyPanel(
   const cssUri = panel.webview.asWebviewUri(
     vscode.Uri.joinPath(webviewDir, 'theme-defaults.css'),
   );
+  const stylesUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(webviewDir, 'styles.css'),
+  );
 
   // Nonce for CSP
   const nonce = getNonce();
 
-  panel.webview.html = getWebviewHtml(panel.webview, scriptUri, cssUri, nonce);
+  panel.webview.html = getWebviewHtml(panel.webview, scriptUri, cssUri, stylesUri, nonce);
 
   // Wire up message handler
   const panelId = `panel-${Date.now()}`;
@@ -91,6 +94,7 @@ function getWebviewHtml(
   webview: vscode.Webview,
   scriptUri: vscode.Uri,
   cssUri: vscode.Uri,
+  stylesUri: vscode.Uri,
   nonce: string,
 ): string {
   return `<!DOCTYPE html>
@@ -104,41 +108,7 @@ function getWebviewHtml(
   >
   <title>Crispy</title>
   <link rel="stylesheet" href="${cssUri}">
-  <style>
-    body {
-      font-family: var(--vscode-font-family);
-      font-size: var(--vscode-font-size);
-      color: var(--vscode-foreground);
-      background: var(--vscode-editor-background);
-      margin: 0;
-      padding: 16px;
-    }
-
-    .session-list {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
-
-    .session-item {
-      padding: 8px 12px;
-      margin: 4px 0;
-      cursor: pointer;
-      border-radius: 4px;
-      background: var(--vscode-list-hoverBackground);
-      transition: background 0.1s;
-    }
-
-    .session-item:hover {
-      background: var(--vscode-list-activeSelectionBackground);
-      color: var(--vscode-list-activeSelectionForeground);
-    }
-
-    h2 {
-      font-weight: 600;
-      margin: 0 0 8px;
-    }
-  </style>
+  <link rel="stylesheet" href="${stylesUri}">
 </head>
 <body>
   <div id="root"></div>

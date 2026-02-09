@@ -13,10 +13,14 @@
     "@anthropic-ai/claude-agent-sdk": "^0.2.32",
     "@anthropic-ai/sdk": "^0.74.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/react": "^19.2.13",
+    "@types/react-dom": "^19.2.3",
     "@types/vscode": "^1.80.0",
     "@types/ws": "^8.18.1",
     "esbuild": "^0.20.0",
@@ -27,7 +31,7 @@
   },
   "scripts": {
     "build:extension": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --sourcemap",
-    "build:webview": "esbuild src/webview/main.ts --bundle --outfile=dist/webview/main.js --format=esm --platform=browser --sourcemap && cp src/webview/index.html dist/webview/ && cp src/webview/theme-defaults.css dist/webview/",
+    "build:webview": "esbuild src/webview/main.tsx --bundle --outfile=dist/webview/main.js --format=esm --platform=browser --sourcemap --jsx=automatic && cp src/webview/index.html dist/webview/ && cp src/webview/theme-defaults.css dist/webview/ && cp src/webview/styles.css dist/webview/",
     "build:dev-server": "esbuild src/host/dev-server.ts --bundle --outfile=dist/dev-server.js --external:@anthropic-ai/* --external:ws --format=esm --platform=node --sourcemap",
     "build": "npm run build:extension && npm run build:webview && npm run build:dev-server",
     "watch": "npm run build:extension -- --watch",
