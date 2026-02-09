@@ -61,6 +61,13 @@ src/core/
 - `core/agent-session.ts` — vendor type definitions
 - `core/types.ts` — permission types, SDK re-exports
 
+## Skills (`.claude/skills/`)
+
+- **Add Git Worktree** (`add-worktree/`) — Creates an isolated worktree at
+  `../crispy-<branch>` with `.ai-reference/` symlinked from the main repo.
+  Use when starting parallel feature work. Run:
+  `${SKILL_ROOT}/scripts/add-worktree.sh <branch-name>`
+
 ### Reference Repos
 
 - `/home/silver/dev/leto/` - Repo for the original Leto extension, contains the strangler's fig of the never completed 'webview-next' that never completed
