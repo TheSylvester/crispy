@@ -149,4 +149,10 @@ export interface AgentAdapter {
    * Vendors that don't support this should throw with a descriptive message.
    */
   setModel(model?: string): Promise<void>;
+
+  /**
+   * Change the permission mode mid-conversation.
+   * Vendors that don't support this should throw with a descriptive message.
+   */
+  setPermissionMode(mode: string): Promise<void>;
 }
