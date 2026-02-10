@@ -52,7 +52,7 @@ const TOOL_KEY_MAP = new Map<string, string>([
  * - MCP tools (mcp__*) → 'tool:mcp:{server}:{action}'
  * - Unknown → 'tool:unknown'
  */
-function resolveToolKey(name: string): string {
+export function resolveToolKey(name: string): string {
   // Defense in depth — adapter sanitizes, but guard remains for safety.
   if (typeof name !== 'string') return 'tool:unknown';
 

@@ -161,7 +161,7 @@ h2 {
 
 .message {
   margin-bottom: 12px;
-  padding: 8px 12px;
+  padding: 2px 12px;
   border-radius: 4px;
   border-left: 3px solid transparent;
 }
@@ -551,106 +551,275 @@ h2 {
 }
 
 /* ============================================================================
- * Tool Card — ToolUseRenderer component
+ * Tool Card — Minimalist Design (Leto-compatible)
  *
- * BEM block: crispy-tool-card
- * Left border accent shows status at a glance. Result content appears
- * inside the card when the tool_result arrives via the registry.
+ * No borders, transparent background, compact summary rows.
  * ============================================================================ */
 
 .crispy-tool-card {
-  margin: 6px 0;
-  border: 1px solid var(--vscode-panel-border);
-  border-left: 3px solid #569cd6;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.02);
-  font-size: 13px;
+  margin: 2px 0 2px 8px;
+  padding-left: 8px;
+  background: transparent;
 }
 
-.crispy-tool-card--complete {
-  border-left-color: #4ec9b0;
+/* Status state classes — color the tool name on success/error */
+.crispy-tool-card.tool-success .crispy-tool-header-content {
+  color: var(--vscode-gitDecoration-addedResourceForeground, #89d185);
 }
 
-.crispy-tool-card--error {
-  border-left-color: var(--vscode-errorForeground, #f48771);
-}
-
-.crispy-tool-card__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px;
-  gap: 8px;
-}
-
-.crispy-tool-card__name {
-  font-weight: 600;
-  font-family: monospace;
-  font-size: 12px;
-}
-
-.crispy-tool-card__status {
-  font-size: 11px;
-  font-weight: 500;
-  flex-shrink: 0;
-}
-
-.crispy-tool-card__status--running {
-  color: #569cd6;
-}
-
-.crispy-tool-card__status--complete {
-  color: #4ec9b0;
-}
-
-.crispy-tool-card__status--error {
+.crispy-tool-card.tool-error .crispy-tool-header-content {
   color: var(--vscode-errorForeground, #f48771);
 }
 
-/* --- Input (collapsible) --- */
+/* --- Summary row (the clickable header) --- */
 
-.crispy-tool-card__input {
-  border-top: 1px solid var(--vscode-panel-border);
+.crispy-tool-card__summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  border-radius: 2px;
+  list-style: none;
 }
 
-.crispy-tool-card__input summary {
+.crispy-tool-card__summary:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-tool-card__summary::-webkit-details-marker {
+  display: none;
+}
+
+.crispy-tool-card__summary::marker {
+  display: none;
+  content: '';
+}
+
+/* --- Icon (emoji before badge) --- */
+
+.crispy-tool-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+/* --- Header content (badge + tool-specific content) --- */
+
+.crispy-tool-header-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+/* --- Status indicator --- */
+
+.crispy-tool-status {
+  margin-left: 1rem;
+  font-size: 11px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.crispy-status-pending {
+  color: var(--vscode-charts-yellow, #dcdcaa);
+}
+
+.crispy-status-success {
+  color: var(--vscode-gitDecoration-addedResourceForeground, #89d185);
+}
+
+.crispy-status-error {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+/* --- Body (expanded content) --- */
+
+.crispy-tool-card__body {
+  padding-left: 20px;
+}
+
+/* --- Result content --- */
+
+.crispy-tool-result {
+  padding: 4px 8px 4px 20px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.crispy-tool-result__text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.crispy-tool-result__text--error {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+/* --- Generic tool input details --- */
+
+.crispy-tool-input-details {
+  padding: 4px 8px 4px 20px;
+}
+
+.crispy-tool-input-details summary {
   cursor: pointer;
-  padding: 4px 10px;
   font-size: 11px;
   opacity: 0.6;
   user-select: none;
 }
 
-.crispy-tool-card__input summary:hover {
+.crispy-tool-input-details summary:hover {
   opacity: 0.8;
 }
 
-.crispy-tool-card__input .yaml-dump {
+.crispy-tool-input-details .yaml-dump {
   margin: 0;
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: 4px 0;
+  font-size: 11px;
   max-height: 300px;
   overflow-y: auto;
 }
 
-/* --- Result --- */
+/* ============================================================================
+ * Tool-specific styles — badges, nesting, file paths, diffs, code
+ * ============================================================================ */
 
-.crispy-tool-card__result {
-  border-top: 1px solid var(--vscode-panel-border);
+/* --- Badge pill (text only, no icon inside) --- */
+
+.crispy-tool-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 0.8em;
+  font-weight: 600;
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.crispy-tool-card__result-text {
-  margin: 0;
-  padding: 6px 10px;
-  font-family: monospace;
+/* --- Nesting container (Task tool children) --- */
+
+.crispy-tool-card__children {
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 2px solid rgba(255, 255, 255, 0.08);
+}
+
+/* --- File path (monospace, link-colored) --- */
+
+.crispy-tool-filepath {
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: #60a5fa;
+}
+
+/* --- Line info (muted, smaller) --- */
+
+.crispy-tool-line-info {
+  color: var(--vscode-descriptionForeground, #888);
+  font-size: 0.85em;
+}
+
+/* --- Secondary text (monospace pill for patterns/commands) --- */
+
+.crispy-tool-secondary {
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-textPreformat-foreground, #9cdcfe);
+  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.85em;
+}
+
+/* --- Description text (gray secondary) --- */
+
+.crispy-tool-description {
+  color: var(--vscode-descriptionForeground, #999);
+  font-size: 0.9em;
+}
+
+/* --- Bash command inline (wraps to own line if needed) --- */
+
+.crispy-tool-bash-inline {
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-editor-foreground, #d4d4d4);
+  font-size: 0.85em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* --- Diff stats --- */
+
+.crispy-diff-stats {
+  display: inline-flex;
+  gap: 6px;
+  font-size: 0.85em;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.crispy-diff-stats-added {
+  color: #4ec9b0;
+}
+
+.crispy-diff-stats-removed {
+  color: #f14c4c;
+}
+
+/* --- Diff view --- */
+
+.crispy-diff {
+  font-family: var(--vscode-editor-font-family, monospace);
   font-size: 12px;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 400px;
-  overflow-y: auto;
-  line-height: 1.4;
+  margin: 2px 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-panel-border, #2a2a2a);
 }
 
-.crispy-tool-card__result-text--error {
-  color: var(--vscode-errorForeground, #f48771);
+.crispy-diff-added {
+  background: rgba(76, 175, 80, 0.2);
+}
+
+.crispy-diff-removed {
+  background: rgba(244, 67, 54, 0.2);
+}
+
+.crispy-diff-context {
+  background: var(--vscode-editor-background, #1e1e1e);
+}
+
+/* --- Code preview --- */
+
+.crispy-code-preview {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+  margin: 2px 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-panel-border, #2a2a2a);
+}
+
+/* ============================================================================
+ * Content spacing — gaps between text ↔ tool transitions
+ * ============================================================================ */
+
+/* Tool block following text content */
+.message:has(.prose) + .message.assistant:has(.crispy-tool-card) {
+  margin-top: 0.5rem;
+}
+
+/* Text content following tool blocks */
+.message.assistant:has(.crispy-tool-card) + .message:has(.prose) {
+  margin-top: 1rem;
 }

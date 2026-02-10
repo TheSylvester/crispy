@@ -12,6 +12,7 @@
  */
 
 import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { CodeBlock, PreBlock } from './markdown-components.js';
 import type { ContentBlock, TextBlock } from '../../core/transcript.js';
 
@@ -19,7 +20,7 @@ export function AssistantTextRenderer({ block }: { block: ContentBlock }): React
   const { text } = block as TextBlock;
   return (
     <div className="prose assistant-text">
-      <Markdown components={{ code: CodeBlock, pre: PreBlock }}>
+      <Markdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock, pre: PreBlock }}>
         {text}
       </Markdown>
     </div>
