@@ -549,3 +549,108 @@ h2 {
 .assistant-text {
   margin: 4px 0;
 }
+
+/* ============================================================================
+ * Tool Card — ToolUseRenderer component
+ *
+ * BEM block: crispy-tool-card
+ * Left border accent shows status at a glance. Result content appears
+ * inside the card when the tool_result arrives via the registry.
+ * ============================================================================ */
+
+.crispy-tool-card {
+  margin: 6px 0;
+  border: 1px solid var(--vscode-panel-border);
+  border-left: 3px solid #569cd6;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 13px;
+}
+
+.crispy-tool-card--complete {
+  border-left-color: #4ec9b0;
+}
+
+.crispy-tool-card--error {
+  border-left-color: var(--vscode-errorForeground, #f48771);
+}
+
+.crispy-tool-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  gap: 8px;
+}
+
+.crispy-tool-card__name {
+  font-weight: 600;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.crispy-tool-card__status {
+  font-size: 11px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.crispy-tool-card__status--running {
+  color: #569cd6;
+}
+
+.crispy-tool-card__status--complete {
+  color: #4ec9b0;
+}
+
+.crispy-tool-card__status--error {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+/* --- Input (collapsible) --- */
+
+.crispy-tool-card__input {
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.crispy-tool-card__input summary {
+  cursor: pointer;
+  padding: 4px 10px;
+  font-size: 11px;
+  opacity: 0.6;
+  user-select: none;
+}
+
+.crispy-tool-card__input summary:hover {
+  opacity: 0.8;
+}
+
+.crispy-tool-card__input .yaml-dump {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* --- Result --- */
+
+.crispy-tool-card__result {
+  border-top: 1px solid var(--vscode-panel-border);
+}
+
+.crispy-tool-card__result-text {
+  margin: 0;
+  padding: 6px 10px;
+  font-family: monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 400px;
+  overflow-y: auto;
+  line-height: 1.4;
+}
+
+.crispy-tool-card__result-text--error {
+  color: var(--vscode-errorForeground, #f48771);
+}

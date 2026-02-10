@@ -26,6 +26,7 @@ import { resolveBlockType } from './block-registry.js';
 import { YamlDump } from './YamlDump.js';
 import { UserTextRenderer } from './UserTextRenderer.js';
 import { AssistantTextRenderer } from './AssistantTextRenderer.js';
+import { ToolUseRenderer } from './ToolUseRenderer.js';
 import type { ContentBlock } from '../../core/transcript.js';
 
 /**
@@ -47,8 +48,14 @@ export const rendererMap = new Map<string, React.ComponentType<{ block: ContentB
  * - Looks up a custom renderer with cascading fallback (specific → general)
  * - Falls through to YAML dump if no custom renderer is registered
  */
-export function BlockRenderer({ block, role }: { block: ContentBlock; role: string }): React.JSX.Element {
+export function BlockRenderer({ block, role }: { block: ContentBlock; role: string }): React.JSX.Element | null {
   const key = resolveBlockType(block, role);
+
+  // tool_result → null (result teleports to ToolCard via registry)
+  if (block.type === 'tool_result') return null;
+
+  // tool_use → ToolUseRenderer (reads state from registry)
+  if (block.type === 'tool_use') return <ToolUseRenderer block={block} />;
 
   // Cascading fallback: try role-prefixed key, then strip role for agnostic match
   const Custom = rendererMap.get(key) ?? rendererMap.get(key.slice(key.indexOf(':') + 1));

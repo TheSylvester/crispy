@@ -19,6 +19,7 @@ import { usePlayback } from "../hooks/usePlayback.js";
 import { shouldRenderEntry } from "../utils/entry-filters.js";
 import { EntryRenderer } from "../renderers/EntryRenderer.js";
 import { PlaybackControls } from "./PlaybackControls.js";
+import { ToolRegistryProvider } from "../context/ToolRegistryContext.js";
 import type { RenderMode } from "../types.js";
 
 const MODES: readonly RenderMode[] = ["yaml", "compact", "rich"] as const;
@@ -50,8 +51,12 @@ export function TranscriptViewer(): React.JSX.Element {
     return <div className="crispy-error">{error}</div>;
   }
 
+  // Slice entries to playback position — registry only processes entries
+  // up to visibleCount, so tool status matches the playback timeline.
+  const visibleEntries = entries.slice(0, visibleCount);
+
   return (
-    <>
+    <ToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
       <div className="crispy-mode-switcher">
         {MODES.map((mode) => (
           <button
@@ -67,8 +72,7 @@ export function TranscriptViewer(): React.JSX.Element {
         {isLoading ? (
           <div className="crispy-loading">Loading transcript...</div>
         ) : (
-          entries
-            .slice(0, visibleCount)
+          visibleEntries
             .filter(shouldRenderEntry)
             .map((entry, i) => (
               <EntryRenderer
@@ -90,6 +94,6 @@ export function TranscriptViewer(): React.JSX.Element {
         onReset={reset}
         onJumpToEnd={jumpToEnd}
       />
-    </>
+    </ToolRegistryProvider>
   );
 }
