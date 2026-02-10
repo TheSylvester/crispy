@@ -54,4 +54,22 @@
   --vscode-errorForeground: #f48771;
   --vscode-notificationsInfoIcon-foreground: #75beff;
   --vscode-notificationsWarningIcon-foreground: #cca700;
+
+  /* Widget (popups, tooltips) */
+  --vscode-widget-border: #454545;
+  --vscode-editorWidget-background: #252526;
+  --vscode-editorWidget-border: #454545;
+
+  /* Dropdowns */
+  --vscode-dropdown-background: #3c3c3c;
+  --vscode-dropdown-foreground: #d4d4d4;
+
+  /* Focus */
+  --vscode-focusBorder: #007acc;
+
+  /* Validation */
+  --vscode-inputValidation-errorBackground: #5a1d1d;
+
+  /* Description text */
+  --vscode-descriptionForeground: #888888;
 }
