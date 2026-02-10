@@ -4,10 +4,19 @@
  * Follows the SessionContext pattern: named context → Provider function →
  * useXxx hooks with null guard + throw.
  *
- * The provider owns a ToolRegistry singleton (via useRef), processes
- * transcript entries incrementally (live streaming) or in batch (session
- * load / playback rewind), and exposes subscription-based hooks powered
- * by useSyncExternalStore.
+ * The provider owns a ToolRegistry singleton (via useRef) and processes
+ * transcript entries **synchronously during render** — not in a useEffect.
+ * This is critical: child components read from the registry via
+ * useSyncExternalStore's getSnapshot(), which runs during render. If we
+ * populated the registry in a post-render effect, the first paint would
+ * show text blocks but null tool cards (registry empty → useToolEntry
+ * returns undefined → tool renderers return null).
+ *
+ * Processing during render is safe because:
+ * - The registry is a mutable ref (useRef), not React state
+ * - We guard with processedCountRef to avoid reprocessing
+ * - Notifications are suppressed (silent mode) during render to avoid
+ *   triggering useSyncExternalStore re-render cascades mid-render
  *
  * @module webview/context/ToolRegistryContext
  */
@@ -16,7 +25,6 @@ import {
   createContext,
   useContext,
   useRef,
-  useEffect,
   useSyncExternalStore,
   useCallback,
 } from 'react';
@@ -54,49 +62,53 @@ export function ToolRegistryProvider({
   const processedCountRef = useRef(0);
   const sessionIdRef = useRef<string | null>(null);
 
-  // Unified effect: handles session changes AND entry processing in one pass.
-  // Merging avoids a race where sessionId changes but entries haven't caught up
-  // yet (useTranscript loads asynchronously), which would cause stale entries
-  // from the previous session to be processed into the fresh registry.
-  useEffect(() => {
-    const sessionChanged = sessionId !== sessionIdRef.current;
-    if (sessionChanged) {
-      sessionIdRef.current = sessionId;
-      registry.reset();
+  // ---------------------------------------------------------------------------
+  // Synchronous render-phase processing
+  //
+  // This block runs during render (not in useEffect) so the registry is
+  // populated BEFORE children call useToolEntry(). We use silent mode to
+  // suppress subscriber notifications — children will pick up the current
+  // state via getSnapshot() during their own render, so notifications are
+  // unnecessary and would cause wasteful re-render cascades.
+  // ---------------------------------------------------------------------------
+
+  const sessionChanged = sessionId !== sessionIdRef.current;
+  if (sessionChanged) {
+    sessionIdRef.current = sessionId;
+    registry.reset({ silent: true });
+    processedCountRef.current = 0;
+  }
+
+  const len = entries.length;
+  const processed = processedCountRef.current;
+
+  if (len === 0) {
+    // Nothing to process — reset if we had state (handles session → null)
+    if (processed > 0) {
+      registry.reset({ silent: true });
       processedCountRef.current = 0;
     }
-
-    const len = entries.length;
-    const processed = processedCountRef.current;
-
-    if (len === 0) {
-      // Nothing to process — reset if we had state (handles session → null)
-      if (processed > 0) {
-        registry.reset();
-        processedCountRef.current = 0;
-      }
-      return;
-    }
-
-    if (len > processed) {
-      // Incremental append (live streaming or step-forward).
-      // On session change, processed is 0, so this processes all entries.
+  } else if (len > processed) {
+    // Forward append: initial session load, live streaming, or step-forward.
+    // Use silent mode to suppress notifications during render — children
+    // will read the populated registry via getSnapshot().
+    registry.silent(() => {
       for (let i = processed; i < len; i++) {
         processEntryForRegistry(entries[i], registry);
       }
-    } else if (len < processed) {
-      // Playback rewind — full reset + rebatch
-      registry.reset();
-      registry.batch(() => {
-        for (const entry of entries) {
-          processEntryForRegistry(entry, registry);
-        }
-      });
-    }
-    // len === processed && !sessionChanged → no new entries, nothing to do
-
+    });
     processedCountRef.current = len;
-  }, [entries, entries.length, sessionId, registry]);
+  } else if (len < processed) {
+    // Playback rewind — full reset + reprocess
+    registry.reset({ silent: true });
+    registry.silent(() => {
+      for (const entry of entries) {
+        processEntryForRegistry(entry, registry);
+      }
+    });
+    processedCountRef.current = len;
+  }
+  // len === processed && !sessionChanged → no new entries, nothing to do
 
   return (
     <ToolRegistryCtx.Provider value={registry}>

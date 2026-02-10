@@ -218,10 +218,43 @@ export class ToolRegistry {
   }
 
   // --------------------------------------------------------------------------
+  // Silent mode — process without any notifications
+  // --------------------------------------------------------------------------
+
+  /**
+   * Process entries without firing any subscriber notifications.
+   *
+   * Used during React's render phase where the registry must be populated
+   * before children render, but firing notifications would cause
+   * useSyncExternalStore to trigger re-render cascades mid-render.
+   * Children pick up the populated state via getSnapshot() during their
+   * own render — no notification needed.
+   */
+  silent(fn: () => void): void {
+    this._batching = true;
+    this._pendingToolNotifications.clear();
+    this._pendingGlobalNotification = false;
+
+    try {
+      fn();
+    } finally {
+      this._batching = false;
+      // Discard all pending notifications — don't flush
+      this._pendingToolNotifications.clear();
+      this._pendingGlobalNotification = false;
+    }
+  }
+
+  // --------------------------------------------------------------------------
   // Reset — called on session change
   // --------------------------------------------------------------------------
 
-  reset(): void {
+  /**
+   * Clear all tool state. Pass `{ silent: true }` when calling during
+   * React's render phase to suppress the global notification — children
+   * will pick up the empty state via getSnapshot().
+   */
+  reset(opts?: { silent?: boolean }): void {
     this.tools.clear();
     this.orphanResults.clear();
     // Don't clear toolListeners or globalListeners — React components using
@@ -232,7 +265,9 @@ export class ToolRegistry {
     this._batching = false;
     this._pendingToolNotifications.clear();
     this._pendingGlobalNotification = false;
-    this.notifyGlobal();
+    if (!opts?.silent) {
+      this.notifyGlobal();
+    }
   }
 
   // --------------------------------------------------------------------------
