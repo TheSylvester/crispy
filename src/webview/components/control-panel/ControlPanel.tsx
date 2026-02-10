@@ -2,8 +2,9 @@
  * Control Panel — floating bottom-center bar with chat input and controls
  *
  * Parent shell that composes all control sub-components. Uses useReducer
- * for coupled cross-field state (bypass ↔ agency mode). All state is local;
- * callbacks log to console. No transport/session wiring.
+ * for coupled cross-field state (bypass ↔ agency mode). Send is wired to
+ * transport — submitting the chat input calls transport.send() with the
+ * active session. Other controls remain local/visual-only.
  *
  * Two rows:
  * - Row 1: Auto-resizing textarea + send button + image attachment chips
@@ -32,6 +33,9 @@ import { ChromeToggle } from './ChromeToggle.js';
 import { SettingsPopup } from './SettingsPopup.js';
 import { ForkButton } from './ForkButton.js';
 import { usePreferences } from '../../context/PreferencesContext.js';
+import { useTransport } from '../../context/TransportContext.js';
+import { useSession } from '../../context/SessionContext.js';
+import type { MessageContent, MessageContentBlock } from '../../../core/transcript.js';
 
 interface ControlPanelProps {
   onForkHoverChange?: (hovering: boolean) => void;
@@ -91,6 +95,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
   function ControlPanel({ onForkHoverChange }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned } = usePreferences();
+    const transport = useTransport();
+    const { selectedSessionId } = useSession();
 
     // --- Keyboard shortcuts ---
     useEffect(() => {
@@ -130,12 +136,36 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     // --- Send handler ---
     const handleSend = useCallback(() => {
+      if (!selectedSessionId) return;
       const text = state.input.trim();
       const hasImages = state.attachedImages.length > 0;
       if (!text && !hasImages) return;
-      console.log('[ControlPanel] Send:', { text, images: state.attachedImages.length });
+
+      // Build MessageContent: plain string for text-only, block array for multimodal
+      let content: MessageContent;
+      if (hasImages) {
+        const blocks: MessageContentBlock[] = [];
+        if (text) {
+          blocks.push({ type: 'text', text });
+        }
+        for (const img of state.attachedImages) {
+          blocks.push({
+            type: 'image',
+            source: { type: 'base64', media_type: img.mimeType, data: img.data },
+          });
+        }
+        content = blocks;
+      } else {
+        content = text;
+      }
+
+      // Fire-and-forget — keep UI responsive, log errors
+      transport.send(selectedSessionId, content).catch((err) => {
+        console.error('[ControlPanel] send failed:', err);
+      });
+
       dispatch({ type: 'CLEAR_INPUT' });
-    }, [state.input, state.attachedImages]);
+    }, [state.input, state.attachedImages, selectedSessionId, transport]);
 
     // --- Drag/drop handlers ---
     const handleDragOver = useCallback((e: React.DragEvent) => {
