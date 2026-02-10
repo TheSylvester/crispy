@@ -42,7 +42,6 @@ export interface ControlPanelState {
   fileContextLabel: string;
   contextPercent: number;
   chromeEnabled: boolean;
-  settingsPinned: boolean;
   isRunning: boolean;
   input: string;
   attachedImages: AttachedImage[];
@@ -55,7 +54,6 @@ export type Action =
   | { type: 'SET_AGENCY_MODE'; mode: AgencyMode }
   | { type: 'SET_MODEL'; model: ModelOption }
   | { type: 'SET_CHROME'; enabled: boolean }
-  | { type: 'TOGGLE_SETTINGS' }
   | { type: 'SET_INPUT'; value: string }
   | { type: 'CLEAR_INPUT' }
   | { type: 'ADD_IMAGE'; image: AttachedImage }
@@ -72,7 +70,6 @@ export const DEFAULT_CONTROL_PANEL_STATE: ControlPanelState = {
   fileContextLabel: 'No file open',
   contextPercent: 42,
   chromeEnabled: false,
-  settingsPinned: false,
   isRunning: false,
   input: '',
   attachedImages: [],

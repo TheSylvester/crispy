@@ -113,40 +113,6 @@ h2 {
   overflow: hidden;
 }
 
-/* --- Render Mode Switcher --- */
-
-.crispy-mode-switcher {
-  display: flex;
-  gap: 4px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--vscode-panel-border);
-  background: var(--vscode-sideBar-background);
-  flex-shrink: 0;
-}
-
-.crispy-mode-btn {
-  background: transparent;
-  color: var(--vscode-foreground);
-  border: 1px solid var(--vscode-panel-border);
-  padding: 3px 10px;
-  border-radius: 3px;
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  transition: background 0.1s, border-color 0.1s;
-}
-
-.crispy-mode-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.crispy-mode-btn--active {
-  background: var(--vscode-button-background);
-  color: var(--vscode-button-foreground);
-  border-color: var(--vscode-button-background);
-}
-
 /* --- Transcript Viewer --- */
 
 .crispy-transcript {

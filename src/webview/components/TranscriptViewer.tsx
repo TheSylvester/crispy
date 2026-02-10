@@ -2,8 +2,7 @@
  * Transcript Viewer — main transcript area with playback and render modes
  *
  * Reads the selected session from SessionContext, loads its transcript
- * via useTranscript, integrates playback controls via usePlayback, and
- * provides a render mode switcher (YAML / Compact / Rich).
+ * via useTranscript, and integrates playback controls via usePlayback.
  *
  * Entry filtering via shouldRenderEntry runs after the playback slice —
  * visibleCount counts raw entries (playback position in the full timeline),
@@ -16,8 +15,9 @@
  * @module TranscriptViewer
  */
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback } from "react";
 import { useSession } from "../context/SessionContext.js";
+import { usePreferences } from "../context/PreferencesContext.js";
 import { useTranscript } from "../hooks/useTranscript.js";
 import { usePlayback } from "../hooks/usePlayback.js";
 import { shouldRenderEntry } from "../utils/entry-filters.js";
@@ -25,9 +25,6 @@ import { EntryRenderer } from "../renderers/EntryRenderer.js";
 import { PlaybackControls } from "./PlaybackControls.js";
 import { ToolRegistryProvider } from "../context/ToolRegistryContext.js";
 import { ControlPanel } from "./control-panel/index.js";
-import type { RenderMode } from "../types.js";
-
-const MODES: readonly RenderMode[] = ["yaml", "compact", "rich"] as const;
 
 /** Check once whether debug mode is enabled */
 const isDebugMode = window.location.search.includes('debug=1');
@@ -35,7 +32,7 @@ const isDebugMode = window.location.search.includes('debug=1');
 export function TranscriptViewer(): React.JSX.Element {
   const { selectedSessionId } = useSession();
   const { entries, isLoading, error } = useTranscript(selectedSessionId);
-  const [renderMode, setRenderMode] = useState<RenderMode>("rich");
+  const { renderMode } = usePreferences();
   const {
     visibleCount,
     isPlaying,
@@ -101,17 +98,6 @@ export function TranscriptViewer(): React.JSX.Element {
   return (
     <>
       <ToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
-        <div className="crispy-mode-switcher">
-          {MODES.map((mode) => (
-            <button
-              key={mode}
-              className={`crispy-mode-btn ${renderMode === mode ? "crispy-mode-btn--active" : ""}`}
-              onClick={() => setRenderMode(mode)}
-            >
-              {mode.toUpperCase()}
-            </button>
-          ))}
-        </div>
         <div className="crispy-transcript" ref={transcriptRef}>
           {isLoading ? (
             <div className="crispy-loading">Loading transcript...</div>

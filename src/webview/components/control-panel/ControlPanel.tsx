@@ -31,7 +31,7 @@ import { ContextWidget } from './ContextWidget.js';
 import { ChromeToggle } from './ChromeToggle.js';
 import { SettingsPopup } from './SettingsPopup.js';
 import { ForkButton } from './ForkButton.js';
-import type { RenderMode } from '../../types.js';
+import { usePreferences } from '../../context/PreferencesContext.js';
 
 interface ControlPanelProps {
   onForkHoverChange?: (hovering: boolean) => void;
@@ -67,8 +67,6 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
       return { ...state, model: action.model };
     case 'SET_CHROME':
       return { ...state, chromeEnabled: action.enabled };
-    case 'TOGGLE_SETTINGS':
-      return { ...state, settingsPinned: !state.settingsPinned };
     case 'SET_INPUT':
       return { ...state, input: action.value };
     case 'CLEAR_INPUT':
@@ -92,12 +90,7 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
   function ControlPanel({ onForkHoverChange }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
-
-    // Local render mode state (visual-only, not wired to TranscriptViewer)
-    const [renderMode, setRenderMode] = useReducer(
-      (_: RenderMode, mode: RenderMode) => mode,
-      'rich' as RenderMode,
-    );
+    const { renderMode, setRenderMode, settingsPinned, setSettingsPinned } = usePreferences();
 
     // --- Keyboard shortcuts ---
     useEffect(() => {
@@ -278,8 +271,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onChange={(enabled) => dispatch({ type: 'SET_CHROME', enabled })}
             />
             <SettingsPopup
-              pinned={state.settingsPinned}
-              onToggle={() => dispatch({ type: 'TOGGLE_SETTINGS' })}
+              pinned={settingsPinned}
+              onToggle={() => setSettingsPinned(!settingsPinned)}
               renderMode={renderMode}
               onRenderModeChange={setRenderMode}
             />
