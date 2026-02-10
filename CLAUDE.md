@@ -5,9 +5,9 @@ cross-vendor AI coding agents (Claude Code, Codex, Gemini, OpenCode) behind a
 single UI. Goal: interactive chat, session history, vendor delegation,
 transcript-as-data.
 
-**Current status:** Transcript viewing and session discovery work. Interactive
-chat input and multi-vendor UI are not yet built (infrastructure is ready for
-both).
+**Current status:** Transcript viewing, session discovery, and the control panel
+UI work. The control panel is visual-only (local state, console-log callbacks) —
+transport/session wiring is the next pass.
 
 ## Architecture
 
@@ -37,6 +37,10 @@ React 19, esbuild, vanilla CSS with `var(--vscode-*)` theme variables.
 - **Transport** (`transport.ts`): Typed RPC interface with VS Code postMessage
   and WebSocket (dev server) implementations. `send()`, `resolveApproval()`,
   `interrupt()` exist but have no UI driving them yet.
+- **Control panel** (`components/control-panel/`): Floating bottom-center bar
+  with chat input, bypass/agency/model/chrome toggles, settings popup, fork
+  button. `useReducer` for coupled state (bypass ↔ agency). Visual-only — all
+  callbacks log to console. `PlaybackControls` gated behind `?debug=1`.
 - **Tool renderers** under `renderers/tools/` — Bash, Grep, Glob, Read,
   Write, Edit, Task (with nested children). Shared components in `tools/shared/`.
 
