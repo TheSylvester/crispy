@@ -120,6 +120,7 @@ export interface ClaudeSessionMeta {
 export interface ClaudeQuickMeta {
   label: string;
   isSidechain: boolean;
+  isTrivial: boolean;
   parentSessionId?: string;
   lastMessage?: string;
 }
@@ -467,6 +468,98 @@ export function isSidechainSession(entries: ClaudeTranscriptEntry[]): boolean {
   return firstMessage?.type === "user" && firstMessage?.isSidechain === true;
 }
 
+/**
+ * Extract plain text from an entry's message.content.
+ *
+ * Handles both content forms:
+ * - String: `content: "Warmup"`
+ * - Array: `content: [{ type: "text", text: "Warmup" }]`
+ *
+ * @param entry - Transcript entry with a message
+ * @returns Extracted text, or empty string if none found
+ */
+function extractMessageText(entry: ClaudeTranscriptEntry): string {
+  const content = entry.message?.content;
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    for (const block of content) {
+      if (block.type === "text" && block.text) {
+        return block.text;
+      }
+    }
+  }
+  return "";
+}
+
+/**
+ * Detect whether a session is trivial (warmup, empty, or interrupted).
+ *
+ * Trivial sessions are SDK artifacts that clutter the session list:
+ * - Empty files (0 entries, 0 bytes)
+ * - Sessions with no user/assistant messages (queue-ops, system-only, etc.)
+ * - Sub-agent warmup sessions ("Warmup" user prompt ± tool-use round-trips)
+ * - Immediately interrupted sessions (user prompt + interrupt, no response)
+ *
+ * @param entries - Parsed transcript entries from the first chunk
+ * @param fileSize - Total file size in bytes (from stat)
+ * @returns true if the session is trivial and should be hidden
+ */
+export function isTrivialSession(
+  entries: ClaudeTranscriptEntry[],
+  fileSize: number,
+): boolean {
+  // 1. Empty file — trivial
+  if (entries.length === 0 && fileSize === 0) {
+    return true;
+  }
+
+  // 2. Unparseable file (bytes on disk but no parsed entries) — show it
+  if (entries.length === 0 && fileSize > 0) {
+    return false;
+  }
+
+  // Filter to actual user/assistant messages (skip meta entries)
+  const messages = entries.filter(
+    (e) => (e.type === "user" || e.type === "assistant") && !e.isMeta,
+  );
+
+  // 3. No user/assistant messages at all — trivial
+  //    (queue-ops, file-history-snapshots, system-only sessions)
+  if (messages.length === 0) {
+    return true;
+  }
+
+  // Real user prompts: user entries that aren't tool_result responses.
+  // Tool-result user entries carry toolUseResult (truthy) or have content
+  // blocks that are all type "tool_result". These are machine-generated
+  // round-trips, not human prompts.
+  const userPrompts = messages.filter(
+    (e) => e.type === "user" && !e.toolUseResult,
+  );
+
+  // 4. Warmup session: only real user prompt is "Warmup".
+  //    Extended warmups may have many tool-use round-trips but still
+  //    only one human prompt — the "Warmup" message.
+  if (
+    userPrompts.length === 1 &&
+    extractMessageText(userPrompts[0]) === "Warmup"
+  ) {
+    return true;
+  }
+
+  // 5. Interrupted before response: user message(s) but NO assistant,
+  //    and total entries ≤ 3 (e.g. queue-op + user + "[Request interrupted]")
+  const hasAssistant = messages.some((e) => e.type === "assistant");
+  if (!hasAssistant && entries.length <= 3) {
+    return true;
+  }
+
+  // Everything else — not trivial
+  return false;
+}
+
 // ============================================================================
 // Fast Metadata Extraction (Performance Optimization)
 // ============================================================================
@@ -525,6 +618,7 @@ export function extractMetadataFast(
       return {
         label: "No prompt",
         isSidechain: false,
+        isTrivial: true,
         lastMessage: extractLastMessage(filepath),
       };
     }
@@ -561,10 +655,12 @@ export function extractMetadataFast(
     const lastMessage = extractLastMessage(filepath);
 
     const isSidechain = isSidechainSession(entries);
+    const isTrivial = isTrivialSession(entries, stat.size);
 
     return {
       label: extractLabel(entries),
       isSidechain,
+      isTrivial,
       parentSessionId,
       lastMessage,
     };

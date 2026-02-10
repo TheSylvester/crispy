@@ -1139,6 +1139,11 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
 
       const meta = extractMetadataFast(filePath);
 
+      // Skip trivial/warmup sessions (sub-agent pre-warming, empty files, etc.)
+      if (meta?.isTrivial) {
+        continue;
+      }
+
       sessions.push({
         sessionId,
         path: filePath,

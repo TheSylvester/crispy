@@ -25,8 +25,8 @@ export function TaskTool({ toolId }: { toolId: string }): React.JSX.Element | nu
   const agentType = input?.subagent_type ?? 'agent';
   const description = input?.description ?? '';
 
-  // Result summary
-  const resultText = entry.result && typeof entry.result.content === 'string' ? entry.result.content : null;
+  // Result text — content can be a string or array of text blocks
+  const resultText = extractResultText(entry.result?.content);
   const resultSummary = entry.result
     ? entry.result.is_error ? 'Failed' : formatLineCount(resultText)
     : undefined;
@@ -52,16 +52,29 @@ export function TaskTool({ toolId }: { toolId: string }): React.JSX.Element | nu
         </div>
       )}
 
-      {/* Error result */}
-      {entry.result && entry.result.is_error && (
+      {/* Result output (success or error) */}
+      {entry.result && resultText && (
         <div className="crispy-tool-result">
-          <pre className="crispy-tool-result__text crispy-tool-result__text--error">
-            {typeof entry.result.content === 'string' ? entry.result.content : JSON.stringify(entry.result.content, null, 2)}
+          <pre className={`crispy-tool-result__text ${entry.result.is_error ? 'crispy-tool-result__text--error' : ''}`}>
+            {resultText}
           </pre>
         </div>
       )}
     </ToolCardShell>
   );
+}
+
+/** Extract display text from tool_result content (string or array of text blocks). */
+function extractResultText(content: unknown): string | null {
+  if (typeof content === 'string') return content || null;
+  if (Array.isArray(content)) {
+    const texts = content
+      .filter((b): b is { type: string; text: string } =>
+        typeof b === 'object' && b !== null && 'text' in b && typeof b.text === 'string')
+      .map((b) => b.text);
+    return texts.length > 0 ? texts.join('\n') : null;
+  }
+  return null;
 }
 
 function formatLineCount(text: string | null): string {
