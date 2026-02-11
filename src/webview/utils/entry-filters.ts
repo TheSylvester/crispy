@@ -24,8 +24,13 @@ const SKIP_ENTRY_TYPES = new Set([
  * Filters out:
  * - Internal entry types (result, stream_event, progress, etc.)
  * - Entries with no message (and not a summary)
- * - Subagent user messages (user entries with parentUuid — they render
- *   inside their parent Task card, not at top level)
+ * - Tool-result user entries (user entries carrying toolUseResult — these
+ *   contain only tool_result blocks that render on their paired ToolCard
+ *   via the ToolRegistry, not as standalone messages)
+ *
+ * Note: parentUuid on user entries is conversation-tree linking (pointing
+ * to the preceding system/assistant turn), NOT a sub-agent indicator.
+ * Sub-agent messages arrive as 'progress' entries (already in SKIP_ENTRY_TYPES).
  *
  * Summary entries are allowed through if they have summary text,
  * even without a message field.
@@ -38,8 +43,9 @@ export function shouldRenderEntry(entry: TranscriptEntry): boolean {
 
   if (!entry.message) return false;
 
-  // Subagent user messages render inside their parent Task card, not at top level
-  if (entry.type === 'user' && entry.parentUuid) return false;
+  // Tool-result user entries render via ToolRegistry pairing, not as top-level messages.
+  // These carry toolUseResult and contain only tool_result content blocks.
+  if (entry.type === 'user' && entry.toolUseResult) return false;
 
   return true;
 }
