@@ -245,6 +245,67 @@ h2 {
   padding: 16px;
 }
 
+/* --- Transcript content fade-in --- */
+
+.crispy-transcript-content {
+  opacity: 0;
+}
+
+.crispy-transcript-content--visible {
+  opacity: 1;
+  transition: opacity 0.8s ease;
+}
+
+/* --- Scroll-to-bottom FAB --- */
+
+.crispy-scroll-to-bottom {
+  position: fixed;
+  bottom: 6rem;           /* above the control panel (fixed at bottom: 1rem, ~80px tall) */
+  right: 1.5rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #fff);
+  border: 1px solid var(--vscode-button-border, transparent);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  z-index: 90;            /* below control panel (z: 100), above transcript */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  /* Entrance: keyframe handles opacity + translate + scale */
+  animation: crispy-scroll-fab-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  /* Exit + hover use transitions (animation-fill-mode: both keeps final keyframe state) */
+  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Slide-up + fade-in + slight overshoot scale */
+@keyframes crispy-scroll-fab-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.8);
+  }
+  to {
+    opacity: 0.85;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.crispy-scroll-to-bottom:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+/* Hidden state — slide down + fade out, pointer-events off */
+.crispy-scroll-to-bottom--hidden {
+  opacity: 0;
+  transform: translateY(12px) scale(0.8);
+  pointer-events: none;
+  animation: none;   /* kill entrance keyframe so transition drives the exit */
+}
+
 /* ============================================================================
  * Message Styles — shared across render modes
  * ============================================================================ */

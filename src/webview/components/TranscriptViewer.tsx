@@ -20,6 +20,7 @@ import { useSession } from "../context/SessionContext.js";
 import { usePreferences } from "../context/PreferencesContext.js";
 import { useTranscript } from "../hooks/useTranscript.js";
 import { usePlayback } from "../hooks/usePlayback.js";
+import { useAutoScroll } from "../hooks/useAutoScroll.js";
 import { shouldRenderEntry } from "../utils/entry-filters.js";
 import { EntryRenderer } from "../renderers/EntryRenderer.js";
 import { PlaybackControls } from "./PlaybackControls.js";
@@ -44,9 +45,21 @@ export function TranscriptViewer(): React.JSX.Element {
     jumpToEnd,
   } = usePlayback(entries.length);
 
-  // Refs for dynamic transcript padding
+  // Refs for dynamic transcript padding and auto-scroll
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const controlPanelRef = useRef<HTMLDivElement>(null);
+
+  // Filter entries for rendering (used for both display and scroll settle detection)
+  const visibleEntries = entries.slice(0, visibleCount);
+  const filteredEntries = visibleEntries.filter(shouldRenderEntry);
+
+  const { isSticky, scrollToBottom, contentReady } = useAutoScroll({
+    containerRef: transcriptRef,
+    contentRef,
+    entryCount: filteredEntries.length,
+    sessionId: selectedSessionId,
+  });
 
   // Observe control panel height for dynamic transcript bottom padding
   useEffect(() => {
@@ -91,28 +104,32 @@ export function TranscriptViewer(): React.JSX.Element {
     return <div className="crispy-error">{error}</div>;
   }
 
-  // Slice entries to playback position — registry only processes entries
-  // up to visibleCount, so tool status matches the playback timeline.
-  const visibleEntries = entries.slice(0, visibleCount);
-
   return (
     <>
       <ToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
         <div className="crispy-transcript" ref={transcriptRef}>
-          {isLoading ? (
-            <div className="crispy-loading">Loading transcript...</div>
-          ) : (
-            visibleEntries
-              .filter(shouldRenderEntry)
-              .map((entry, i) => (
-                <EntryRenderer
-                  key={entry.uuid ?? `entry-${i}`}
-                  entry={entry}
-                  mode={renderMode}
-                />
-              ))
-          )}
+          <div ref={contentRef} className={`crispy-transcript-content ${contentReady ? 'crispy-transcript-content--visible' : ''}`}>
+            {isLoading ? (
+              <div className="crispy-loading">Loading transcript...</div>
+            ) : (
+              filteredEntries
+                .map((entry, i) => (
+                  <EntryRenderer
+                    key={entry.uuid ?? `entry-${i}`}
+                    entry={entry}
+                    mode={renderMode}
+                  />
+                ))
+            )}
+          </div>
         </div>
+        <button
+          className={`crispy-scroll-to-bottom ${isSticky ? 'crispy-scroll-to-bottom--hidden' : ''}`}
+          onClick={scrollToBottom}
+          aria-label="Scroll to bottom"
+        >
+          ↓
+        </button>
         {isDebugMode && (
           <PlaybackControls
             visibleCount={visibleCount}
