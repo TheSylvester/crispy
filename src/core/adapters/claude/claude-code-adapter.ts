@@ -859,6 +859,12 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     }
 
     this.emitEntry(msg);
+
+    // Result marks end-of-turn — transition to idle so subscribers know
+    // streaming has stopped. The query stays alive (waiting for next user
+    // input via inputQueue), so drainOutput's finally block won't fire
+    // until the query is fully closed/aborted.
+    this.emitStatus('idle');
   }
 
   private handleSystemMessage(msg: SDKMessage): void {

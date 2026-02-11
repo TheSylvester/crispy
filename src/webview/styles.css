@@ -209,6 +209,32 @@ h2 {
   overflow: hidden;
   height: 100vh;
   margin-left: var(--sidebar-offset);
+  position: relative;
+}
+
+/* Streaming glow overlay — inset box-shadow on the main content area.
+   Reads data-streaming from .crispy-main and agency mode from the
+   ControlPanel's data-agency via :has(). Matches Leto's #main::after pattern. */
+.crispy-main::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  border-radius: inherit;
+}
+
+.crispy-main[data-streaming]:has(.crispy-cp[data-agency="ask-before-edits"])::after {
+  animation: crispy-cp-glow-orange 2s ease-in-out infinite;
+}
+.crispy-main[data-streaming]:has(.crispy-cp[data-agency="edit-automatically"])::after {
+  animation: crispy-cp-glow-blue 2s ease-in-out infinite;
+}
+.crispy-main[data-streaming]:has(.crispy-cp[data-agency="plan-mode"])::after {
+  animation: crispy-cp-glow-teal 2s ease-in-out infinite;
+}
+.crispy-main[data-streaming]:has(.crispy-cp[data-agency="bypass-permissions"])::after {
+  animation: crispy-cp-glow-red 2s ease-in-out infinite;
 }
 
 /* --- Transcript Viewer --- */

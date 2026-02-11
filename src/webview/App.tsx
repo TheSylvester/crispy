@@ -11,10 +11,11 @@
 import { useState } from 'react';
 import type { Transport } from './transport.js';
 import { TransportProvider } from './context/TransportContext.js';
-import { SessionProvider } from './context/SessionContext.js';
+import { SessionProvider, useSession } from './context/SessionContext.js';
 import { PreferencesProvider, usePreferences } from './context/PreferencesContext.js';
 import { SessionSelector } from './components/SessionSelector.js';
 import { TranscriptViewer } from './components/TranscriptViewer.js';
+import { useSessionStatus } from './hooks/useSessionStatus.js';
 
 interface AppProps {
   transport: Transport;
@@ -34,6 +35,9 @@ export function App({ transport }: AppProps): React.JSX.Element {
 
 function AppLayout(): React.JSX.Element {
   const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
+  const { selectedSessionId } = useSession();
+  const { channelState } = useSessionStatus(selectedSessionId);
+  const isStreaming = channelState === 'streaming';
   const [sidebarOverlay, setSidebarOverlay] = useState(false);
 
   const sidebarClasses = [
@@ -74,7 +78,7 @@ function AppLayout(): React.JSX.Element {
         {sidebarCollapsed ? '\u25B6' : '\u25C0'}
       </button>
 
-      <main className="crispy-main">
+      <main className="crispy-main" data-streaming={isStreaming || undefined}>
         <TranscriptViewer />
       </main>
     </div>
