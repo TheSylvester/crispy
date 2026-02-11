@@ -58,6 +58,13 @@
         "title": "Open Crispy"
       }
     ],
+    "keybindings": [
+      {
+        "command": "crispy.open",
+        "key": "ctrl+shift+alt+i",
+        "mac": "cmd+shift+alt+i"
+      }
+    ],
     "configuration": {
       "title": "Crispy",
       "properties": {}

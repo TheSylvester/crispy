@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 import { registerAdapter, unregisterAdapter } from './core/session-manager.js';
 import { ClaudeAgentAdapter, claudeDiscovery } from './core/adapters/claude/claude-code-adapter.js';
-import { createCrispyPanel } from './host/webview-host.js';
+import { openCrispyPanel } from './host/webview-host.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
@@ -17,7 +17,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('crispy.open', () => createCrispyPanel(context)),
+    vscode.commands.registerCommand('crispy.open', () => openCrispyPanel(context)),
   );
 
   context.subscriptions.push({ dispose: () => unregisterAdapter('claude') });

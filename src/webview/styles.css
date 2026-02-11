@@ -974,6 +974,75 @@ h2 {
   background: var(--vscode-editor-background, #1e1e1e);
 }
 
+/* --- Diff view internals --- */
+
+.crispy-diff-pre {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  background: transparent;
+}
+
+.crispy-diff-scroll {
+  overflow-y: auto;
+}
+
+/* Dual line-number gutters */
+.crispy-diff-gutter {
+  display: inline-block;
+  width: 3.5em;
+  text-align: right;
+  padding-right: 0.75em;
+  color: rgba(255, 255, 255, 0.25);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* +/- prefix column */
+.crispy-diff-prefix {
+  display: inline-block;
+  width: 1.5em;
+  color: rgba(255, 255, 255, 0.35);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* Code content — fills remaining space */
+.crispy-diff-code {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* --- Split (side-by-side) diff --- */
+
+.crispy-diff-split {
+  display: grid;
+}
+
+.crispy-diff-split-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.crispy-diff-split-left,
+.crispy-diff-split-right {
+  display: flex;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  min-height: 1.5em;
+}
+
+.crispy-diff-split-right {
+  border-right: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.crispy-diff-split-empty {
+  background: rgba(255, 255, 255, 0.02);
+}
+
 /* --- Code preview --- */
 
 .crispy-code-preview {

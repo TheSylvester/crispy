@@ -11,6 +11,23 @@
 import * as vscode from 'vscode';
 import { createMessageHandler } from './message-handler.js';
 
+/** The single active Crispy panel, if any. */
+let activePanel: vscode.WebviewPanel | undefined;
+
+/**
+ * Open the Crispy panel (or reveal + focus input if already open).
+ *
+ * @param context  VS Code extension context (for webview resource URIs)
+ */
+export function openCrispyPanel(context: vscode.ExtensionContext): void {
+  if (activePanel) {
+    activePanel.reveal(undefined, false);
+    activePanel.webview.postMessage({ kind: 'focusInput' });
+    return;
+  }
+  createCrispyPanel(context);
+}
+
 /**
  * Create and show a Crispy webview panel.
  *
@@ -74,8 +91,11 @@ export function createCrispyPanel(
     context.subscriptions,
   );
 
+  activePanel = panel;
+
   panel.onDidDispose(() => {
     handler.dispose();
+    activePanel = undefined;
   });
 
   return panel;

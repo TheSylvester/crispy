@@ -9,7 +9,7 @@
 import { useToolEntry } from '../../context/ToolRegistryContext.js';
 import { ToolCardShell } from './shared/ToolCardShell.js';
 import { FilePath } from './shared/FilePath.js';
-import { DiffView } from './shared/DiffView.js';
+import { DiffView, inferLanguage } from './shared/DiffView.js';
 import { isFileEditInput } from '../../../core/transcript.js';
 import type { ToolInput } from '../../../core/transcript.js';
 
@@ -51,7 +51,7 @@ export function EditTool({ toolId }: { toolId: string }): React.JSX.Element | nu
         </>
       }
     >
-      {(oldString || newString) && <DiffView oldText={oldString} newText={newString} />}
+      {(oldString || newString) && <DiffView oldText={oldString} newText={newString} language={inferLanguage(filePath)} />}
 
       {entry.result && entry.result.is_error && (
         <div className="crispy-tool-result">

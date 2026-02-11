@@ -7,7 +7,7 @@
  * @module control-panel/ChatInput
  */
 
-import { useRef, useLayoutEffect, useState, useCallback } from 'react';
+import { useRef, useLayoutEffect, useEffect, useState, useCallback } from 'react';
 import type { AttachedImage } from './types.js';
 
 interface ChatInputProps {
@@ -20,6 +20,17 @@ interface ChatInputProps {
 export function ChatInput({ value, attachedImages, onInput, onSend }: ChatInputProps): React.JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [hoverClass, setHoverClass] = useState('');
+
+  // Focus textarea when host sends focusInput message (e.g. keybinding)
+  useEffect(() => {
+    function onMessage(ev: MessageEvent): void {
+      if (ev.data?.kind === 'focusInput') {
+        textareaRef.current?.focus();
+      }
+    }
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
 
   // Auto-resize textarea when value changes
   useLayoutEffect(() => {
