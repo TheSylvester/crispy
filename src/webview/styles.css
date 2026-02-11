@@ -24,18 +24,35 @@ h2 {
   margin: 0 0 8px;
 }
 
+/* --- Sidebar Custom Properties --- */
+
+:root {
+  --sidebar-width: 260px;
+  --sidebar-transition: 0.25s ease-in-out;
+  --sidebar-hover-zone: 12px;
+}
+
 /* --- Layout --- */
 
 .crispy-layout {
-  display: grid;
-  grid-template-columns: 260px 1fr;
+  --sidebar-offset: var(--sidebar-width);
+  position: relative;
   height: 100vh;
   overflow: hidden;
+}
+
+.crispy-layout[data-sidebar="collapsed"] {
+  --sidebar-offset: 0px;
 }
 
 /* --- Sidebar --- */
 
 .crispy-sidebar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--sidebar-width);
   background: var(--vscode-sideBar-background);
   color: var(--vscode-sideBar-foreground);
   border-right: 1px solid var(--vscode-panel-border);
@@ -43,6 +60,68 @@ h2 {
   padding: 8px 0;
   display: flex;
   flex-direction: column;
+  z-index: 200;
+  transform: translateX(0);
+  transition: transform var(--sidebar-transition);
+  will-change: transform;
+}
+
+.crispy-layout[data-sidebar="collapsed"] .crispy-sidebar {
+  transform: translateX(calc(-1 * var(--sidebar-width)));
+}
+
+.crispy-layout[data-sidebar="collapsed"] .crispy-sidebar--overlay {
+  transform: translateX(0);
+  box-shadow: 4px 0 12px rgba(0, 0, 0, 0.3);
+}
+
+/* --- Sidebar Hover Zone --- */
+
+.crispy-sidebar-hover-zone {
+  display: none;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--sidebar-hover-zone);
+  z-index: 150;
+  cursor: pointer;
+}
+
+.crispy-layout[data-sidebar="collapsed"] .crispy-sidebar-hover-zone {
+  display: block;
+}
+
+/* --- Sidebar Toggle Tab --- */
+
+.crispy-sidebar-toggle {
+  position: absolute;
+  top: 50%;
+  left: var(--sidebar-width);
+  transform: translateY(-50%);
+  width: 16px;
+  height: 48px;
+  background: var(--vscode-sideBar-background);
+  border: 1px solid var(--vscode-panel-border);
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 201;
+  opacity: 0.6;
+  transition: opacity 0.15s, left var(--sidebar-transition);
+  font-size: 10px;
+  color: var(--vscode-sideBar-foreground);
+}
+
+.crispy-sidebar-toggle:hover {
+  opacity: 1;
+}
+
+.crispy-layout[data-sidebar="collapsed"] .crispy-sidebar-toggle {
+  left: 0;
 }
 
 .crispy-sidebar__header {
@@ -82,27 +161,44 @@ h2 {
   color: var(--vscode-list-activeSelectionForeground);
 }
 
-.crispy-session-item__vendor {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  padding: 1px 4px;
-  border-radius: 2px;
-  background: var(--vscode-badge-background);
-  color: var(--vscode-badge-foreground);
-  margin-right: 6px;
+.crispy-session-item--show-more {
+  justify-content: center;
+  opacity: 0.6;
+  font-size: 12px;
 }
 
-.crispy-session-item__id {
-  font-family: monospace;
-  font-size: 11px;
-  opacity: 0.7;
+.crispy-session-item--show-more:hover {
+  opacity: 1;
+}
+
+.crispy-session-item__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.crispy-session-item__label {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .crispy-session-item__time {
   font-size: 11px;
   opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.crispy-session-item__preview {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #858585);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.7;
 }
 
 /* --- Main Content Area --- */
@@ -111,6 +207,8 @@ h2 {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  height: 100vh;
+  margin-left: var(--sidebar-offset);
 }
 
 /* --- Transcript Viewer --- */
@@ -842,12 +940,12 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   padding: 0.5rem;
   background: var(--vscode-editor-background, #1e1e1e);
   max-width: 800px;
-  width: calc(100vw - 260px - 2rem);
+  width: calc(100vw - var(--sidebar-offset, var(--sidebar-width)) - 2rem);
   border-radius: 6px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   position: fixed;
   bottom: 1rem;
-  left: calc(260px + (100vw - 260px) / 2);
+  left: calc(var(--sidebar-offset, var(--sidebar-width)) + (100vw - var(--sidebar-offset, var(--sidebar-width))) / 2);
   transform: translateX(-50%);
   z-index: 100;
 }

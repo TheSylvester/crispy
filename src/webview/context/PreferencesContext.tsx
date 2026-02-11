@@ -4,11 +4,13 @@ import type { RenderMode } from '../types.js';
 interface Preferences {
   renderMode: RenderMode;
   settingsPinned: boolean;
+  sidebarCollapsed: boolean;
 }
 
 interface PreferencesContextValue extends Preferences {
   setRenderMode: (mode: RenderMode) => void;
   setSettingsPinned: (pinned: boolean) => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
@@ -16,12 +18,15 @@ const PreferencesContext = createContext<PreferencesContextValue | null>(null);
 export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [renderMode, setRenderMode] = useState<RenderMode>('rich');
   const [settingsPinned, setSettingsPinned] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const value: PreferencesContextValue = {
     renderMode,
     settingsPinned,
+    sidebarCollapsed,
     setRenderMode,
     setSettingsPinned,
+    setSidebarCollapsed,
   };
 
   return (

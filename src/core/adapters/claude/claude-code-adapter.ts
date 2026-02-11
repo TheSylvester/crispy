@@ -345,6 +345,7 @@ export interface SessionInfo {
   modifiedAt: Date;
   size: number;
   label?: string;
+  lastMessage?: string;
   vendor: 'claude';
 }
 
@@ -1151,6 +1152,7 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
         modifiedAt: stat.mtime,
         size: stat.size,
         label: meta?.label,
+        lastMessage: meta?.lastMessage,
         vendor: 'claude',
       });
     }

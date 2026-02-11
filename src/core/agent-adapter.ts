@@ -51,6 +51,7 @@ export interface SessionInfo {
   modifiedAt: Date;
   size: number;
   label?: string;
+  lastMessage?: string;
   vendor: Vendor;
 }
 
