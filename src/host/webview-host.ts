@@ -9,10 +9,13 @@
  */
 
 import * as vscode from 'vscode';
-import { createMessageHandler } from './message-handler.js';
+import { createMessageHandler, type HostMessage } from './message-handler.js';
 
 /** The single active Crispy panel, if any. */
 let activePanel: vscode.WebviewPanel | undefined;
+
+/** Monotonic counter for panel client IDs (mirrors dev-server connectionCounter). */
+let panelCounter = 0;
 
 /**
  * Open the Crispy panel (or reveal + focus input if already open).
@@ -64,36 +67,56 @@ export function createCrispyPanel(
   // Nonce for CSP
   const nonce = getNonce();
 
-  panel.webview.html = getWebviewHtml(panel.webview, scriptUri, cssUri, stylesUri, nonce);
+  // --- Core bridge (mirrors dev-server.ts wss.on('connection') pattern) ---
 
-  // Wire up message handler
-  const panelId = `panel-${Date.now()}`;
+  const panelId = `vscode-panel-${++panelCounter}`;
+  let disposed = false;
+
+  // Guarded sendFn — mirrors dev-server's `if (ws.readyState === ws.OPEN)` check
   const handler = createMessageHandler(panelId, (msg) => {
-    panel.webview.postMessage(msg);
+    if (!disposed) {
+      panel.webview.postMessage(msg);
+    }
   });
 
+  // Wire listener BEFORE setting HTML to prevent race condition.
+  // The dev-server has no race because ws.on('message') is registered
+  // synchronously inside the 'connection' callback before any data arrives.
   panel.webview.onDidReceiveMessage(
     (msg) => {
-      // Handle VS Code-specific commands
+      // VS Code-specific: open file in editor (requires vscode API,
+      // so handled here rather than in shared message-handler)
       if (msg.kind === 'request' && msg.method === 'openFile') {
         const filePath = msg.params?.path as string;
         if (filePath) {
           vscode.window.showTextDocument(vscode.Uri.file(filePath));
         }
+        // Always send response so client's pending request resolves
+        if (!disposed) {
+          panel.webview.postMessage({
+            kind: 'response',
+            id: msg.id,
+            result: { opened: !!filePath },
+          } satisfies HostMessage);
+        }
         return;
       }
 
       handler.handleMessage(msg).catch((err) => {
-        console.error('[crispy] Message handler error:', err);
+        console.error(`[crispy] Message handler error (${panelId}):`, err);
       });
     },
     undefined,
     context.subscriptions,
   );
 
+  // Set HTML AFTER listener is wired — this triggers webview JS to load
+  panel.webview.html = getWebviewHtml(panel.webview, scriptUri, cssUri, stylesUri, nonce);
+
   activePanel = panel;
 
   panel.onDidDispose(() => {
+    disposed = true;
     handler.dispose();
     activePanel = undefined;
   });
@@ -124,7 +147,7 @@ function getWebviewHtml(
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'none'; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'unsafe-inline';"
+    content="default-src 'none'; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} blob:; font-src ${webview.cspSource};"
   >
   <title>Crispy</title>
   <link rel="stylesheet" href="${cssUri}">
