@@ -35,10 +35,12 @@ import { ForkButton } from './ForkButton.js';
 import { usePreferences } from '../../context/PreferencesContext.js';
 import { useTransport } from '../../context/TransportContext.js';
 import { useSession } from '../../context/SessionContext.js';
-import type { MessageContent, MessageContentBlock } from '../../../core/transcript.js';
+import type { MessageContent, MessageContentBlock, ContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 
 interface ControlPanelProps {
   onForkHoverChange?: (hovering: boolean) => void;
+  /** Inject an optimistic user entry into the transcript before backend echo. */
+  onOptimisticEntry?: (entry: TranscriptEntry) => void;
 }
 
 /** Agency modes for keyboard cycling (excluding bypass-permissions). */
@@ -92,7 +94,7 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange }, ref) {
+  function ControlPanel({ onForkHoverChange, onOptimisticEntry }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned } = usePreferences();
     const transport = useTransport();
@@ -159,13 +161,37 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         content = text;
       }
 
+      // Inject optimistic user entry for immediate rendering.
+      // The backend will echo the real entry, and useTranscript deduplicates
+      // by replacing the last optimistic- prefixed entry.
+      if (onOptimisticEntry) {
+        const contentBlocks: ContentBlock[] = typeof content === 'string'
+          ? [{ type: 'text', text: content }]
+          : content.map((block): ContentBlock =>
+              block.type === 'text'
+                ? { type: 'text', text: block.text }
+                : { type: 'image', source: { type: block.source.type, media_type: block.source.media_type, data: block.source.data } }
+            );
+
+        onOptimisticEntry({
+          type: 'user',
+          uuid: `optimistic-${Date.now()}`,
+          sessionId: selectedSessionId,
+          timestamp: new Date().toISOString(),
+          message: {
+            role: 'user',
+            content: contentBlocks,
+          },
+        });
+      }
+
       // Fire-and-forget — keep UI responsive, log errors
       transport.send(selectedSessionId, content).catch((err) => {
         console.error('[ControlPanel] send failed:', err);
       });
 
       dispatch({ type: 'CLEAR_INPUT' });
-    }, [state.input, state.attachedImages, selectedSessionId, transport]);
+    }, [state.input, state.attachedImages, selectedSessionId, transport, onOptimisticEntry]);
 
     // --- Drag/drop handlers ---
     const handleDragOver = useCallback((e: React.DragEvent) => {

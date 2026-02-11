@@ -32,7 +32,7 @@ const isDebugMode = window.location.search.includes('debug=1');
 
 export function TranscriptViewer(): React.JSX.Element {
   const { selectedSessionId } = useSession();
-  const { entries, isLoading, error } = useTranscript(selectedSessionId);
+  const { entries, isLoading, error, addOptimisticEntry } = useTranscript(selectedSessionId);
   const { renderMode } = usePreferences();
   const {
     visibleCount,
@@ -159,6 +159,7 @@ export function TranscriptViewer(): React.JSX.Element {
       <ControlPanel
         ref={controlPanelRef}
         onForkHoverChange={handleForkHoverChange}
+        onOptimisticEntry={addOptimisticEntry}
       />
     </>
   );
