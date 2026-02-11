@@ -49,8 +49,12 @@ export interface UseAutoScrollOptions {
 export interface UseAutoScrollReturn {
   /** Whether auto-scroll is engaged (user is at bottom) */
   isSticky: boolean;
+  /** Whether the user is at the top of the scroll container */
+  isAtTop: boolean;
   /** Smooth-scroll to bottom (for the FAB button) */
   scrollToBottom: () => void;
+  /** Smooth-scroll to top (for the FAB button) */
+  scrollToTop: () => void;
   /** False while initial content is loading; true once ready to show */
   contentReady: boolean;
 }
@@ -72,9 +76,11 @@ export function useAutoScroll({
 }: UseAutoScrollOptions): UseAutoScrollReturn {
   const enabled = !!sessionId;
   const [isSticky, setIsSticky] = useState(true);
+  const [isAtTop, setIsAtTop] = useState(true);
   const [contentReady, setContentReady] = useState(false);
 
   const isStickyRef = useRef(true);
+  const isAtTopRef = useRef(true);
   const phaseRef = useRef<"initial" | "live">("initial");
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tweenRafRef = useRef<number>(0);
@@ -83,6 +89,8 @@ export function useAutoScroll({
   useEffect(() => {
     isStickyRef.current = true;
     setIsSticky(true);
+    isAtTopRef.current = true;
+    setIsAtTop(true);
     setContentReady(false);
     phaseRef.current = "initial";
 
@@ -110,10 +118,15 @@ export function useAutoScroll({
       const el = container!;
       const atBottom =
         el.scrollHeight - el.scrollTop - el.clientHeight < STICKY_THRESHOLD_PX;
+      const atTop = el.scrollTop <= STICKY_THRESHOLD_PX;
 
       if (atBottom !== isStickyRef.current) {
         isStickyRef.current = atBottom;
         setIsSticky(atBottom);
+      }
+      if (atTop !== isAtTopRef.current) {
+        isAtTopRef.current = atTop;
+        setIsAtTop(atTop);
       }
     }
 
@@ -217,6 +230,21 @@ export function useAutoScroll({
     });
   }, [containerRef]);
 
+  // --- FAB button: native smooth scroll to top ---
+  const scrollToTop = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    if (tweenRafRef.current) {
+      cancelAnimationFrame(tweenRafRef.current);
+      tweenRafRef.current = 0;
+    }
+
+    isAtTopRef.current = true;
+    setIsAtTop(true);
+    container.scrollTo({ top: 0, behavior: "smooth" });
+  }, [containerRef]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -225,5 +253,5 @@ export function useAutoScroll({
     };
   }, []);
 
-  return { isSticky, scrollToBottom, contentReady };
+  return { isSticky, isAtTop, scrollToBottom, scrollToTop, contentReady };
 }

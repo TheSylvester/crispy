@@ -256,12 +256,10 @@ h2 {
   transition: opacity 0.8s ease;
 }
 
-/* --- Scroll-to-bottom FAB --- */
+/* --- Scroll navigation FABs (shared base) --- */
 
-.crispy-scroll-to-bottom {
+.crispy-scroll-nav {
   position: fixed;
-  /* Track control panel height via --cp-height (set by ResizeObserver in JS) */
-  bottom: calc(var(--cp-height, 80) * 1px + 2rem);
   right: 1.5rem;
   width: 36px;
   height: 36px;
@@ -275,44 +273,62 @@ h2 {
   justify-content: center;
   z-index: 90;            /* below control panel (z: 100), above transcript */
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
-  /* Entrance: keyframe handles opacity + translate */
-  animation: crispy-scroll-fab-in 0.15s ease-out both;
   /* Exit + hover use transitions */
   transition: opacity 0.15s ease-out, transform 0.15s ease-out,
               background 0.15s ease-out, box-shadow 0.15s ease-out;
 }
 
-/* Slide-up + fade-in */
-@keyframes crispy-scroll-fab-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px) scale(0.8);
-  }
-  to {
-    opacity: 0.85;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.crispy-scroll-to-bottom:hover {
-  opacity: 1;
+.crispy-scroll-nav:hover {
   background: linear-gradient(180deg, #454850 0%, #3a3d41 100%);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
   transform: translateY(-1px);
 }
 
-.crispy-scroll-to-bottom:active {
+.crispy-scroll-nav:active {
   background: linear-gradient(180deg, #2d2f33 0%, #3a3d41 100%);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
   transform: translateY(1px);
 }
 
-/* Hidden state — slide down + fade out, pointer-events off */
+/* --- Scroll-to-bottom (position + entrance) --- */
+
+.crispy-scroll-to-bottom {
+  /* Track control panel height via --cp-height (set by ResizeObserver in JS) */
+  bottom: calc(var(--cp-height, 80) * 1px + 2rem);
+  animation: crispy-scroll-fab-in-bottom 0.15s ease-out both;
+}
+
+@keyframes crispy-scroll-fab-in-bottom {
+  from { opacity: 0; transform: translateY(12px) scale(0.8); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Hidden state — slide down + fade out */
 .crispy-scroll-to-bottom--hidden {
   opacity: 0;
   transform: translateY(12px) scale(0.8);
   pointer-events: none;
   animation: none;   /* kill entrance keyframe so transition drives the exit */
+}
+
+/* --- Scroll-to-top (position + entrance) --- */
+
+.crispy-scroll-to-top {
+  top: 2rem;
+  animation: crispy-scroll-fab-in-top 0.15s ease-out both;
+}
+
+@keyframes crispy-scroll-fab-in-top {
+  from { opacity: 0; transform: translateY(-12px) scale(0.8); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Hidden state — slide up + fade out */
+.crispy-scroll-to-top--hidden {
+  opacity: 0;
+  transform: translateY(-12px) scale(0.8);
+  pointer-events: none;
+  animation: none;
 }
 
 /* ============================================================================

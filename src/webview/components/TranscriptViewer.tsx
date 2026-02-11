@@ -54,7 +54,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const visibleEntries = entries.slice(0, visibleCount);
   const filteredEntries = visibleEntries.filter(shouldRenderEntry);
 
-  const { isSticky, scrollToBottom, contentReady } = useAutoScroll({
+  const { isSticky, isAtTop, scrollToBottom, scrollToTop, contentReady } = useAutoScroll({
     containerRef: transcriptRef,
     contentRef,
     entryCount: filteredEntries.length,
@@ -125,7 +125,16 @@ export function TranscriptViewer(): React.JSX.Element {
           </div>
         </div>
         <button
-          className={`crispy-scroll-to-bottom ${isSticky ? 'crispy-scroll-to-bottom--hidden' : ''}`}
+          className={`crispy-scroll-nav crispy-scroll-to-top ${isAtTop ? 'crispy-scroll-to-top--hidden' : ''}`}
+          onClick={scrollToTop}
+          aria-label="Scroll to top"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+            <polyline points="18 15 12 9 6 15" />
+          </svg>
+        </button>
+        <button
+          className={`crispy-scroll-nav crispy-scroll-to-bottom ${isSticky ? 'crispy-scroll-to-bottom--hidden' : ''}`}
           onClick={scrollToBottom}
           aria-label="Scroll to bottom"
         >
