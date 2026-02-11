@@ -799,6 +799,11 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   }
 
   private handleAssistantMessage(msg: SDKAssistantMessage): void {
+    // Skip replayed messages — they're history already backfilled via loadHistory().
+    // Letting them through would duplicate entries and, more critically, would
+    // emit 'active' status before the replayed result emits 'idle', causing flicker.
+    if ('isReplay' in msg && (msg as { isReplay?: boolean }).isReplay) return;
+
     if (this._status !== 'active') this.emitStatus('active');
 
     // --- Context usage extraction ---
@@ -835,6 +840,12 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   }
 
   private handleResultMessage(msg: SDKResultMessage): void {
+    // Replayed result messages are history — don't emit them as entries or
+    // transition state. Without this guard, a resumed session replays its
+    // prior result which flips the channel to 'idle' before the new turn's
+    // assistant messages arrive, causing a visible glow-off/glow-on flicker.
+    if ('isReplay' in msg && (msg as { isReplay?: boolean }).isReplay) return;
+
     // --- Context usage: authoritative contextWindow from SDK ModelUsage ---
     const resultMsg = msg as unknown as Record<string, unknown>;
     const sdkModelUsage = resultMsg.modelUsage as Record<string, Record<string, number>> | undefined;

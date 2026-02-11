@@ -20,13 +20,15 @@ declare function acquireVsCodeApi(): {
   setState(state: unknown): void;
 };
 
-function detectTransport(): Transport {
+export type TransportKind = 'vscode' | 'websocket';
+
+function detectTransport(): { transport: Transport; kind: TransportKind } {
   try {
     const api = acquireVsCodeApi();
-    return createVSCodeTransport(api);
+    return { transport: createVSCodeTransport(api), kind: 'vscode' };
   } catch {
     // Not in VS Code — use WebSocket to dev server
-    return createWebSocketTransport(`ws://${window.location.host}/ws`);
+    return { transport: createWebSocketTransport(`ws://${window.location.host}/ws`), kind: 'websocket' };
   }
 }
 
@@ -34,10 +36,10 @@ function detectTransport(): Transport {
 // Bootstrap
 // ============================================================================
 
-const transport = detectTransport();
+const { transport, kind } = detectTransport();
 
 const container = document.getElementById('root');
 if (container) {
   const root = createRoot(container);
-  root.render(<App transport={transport} />);
+  root.render(<App transport={transport} transportKind={kind} />);
 }

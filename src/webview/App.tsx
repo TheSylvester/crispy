@@ -10,6 +10,7 @@
 
 import { useState } from 'react';
 import type { Transport } from './transport.js';
+import type { TransportKind } from './main.js';
 import { TransportProvider } from './context/TransportContext.js';
 import { SessionProvider, useSession } from './context/SessionContext.js';
 import { PreferencesProvider, usePreferences } from './context/PreferencesContext.js';
@@ -19,21 +20,22 @@ import { useSessionStatus } from './hooks/useSessionStatus.js';
 
 interface AppProps {
   transport: Transport;
+  transportKind: TransportKind;
 }
 
-export function App({ transport }: AppProps): React.JSX.Element {
+export function App({ transport, transportKind }: AppProps): React.JSX.Element {
   return (
     <TransportProvider transport={transport}>
       <SessionProvider>
         <PreferencesProvider>
-          <AppLayout />
+          <AppLayout transportKind={transportKind} />
         </PreferencesProvider>
       </SessionProvider>
     </TransportProvider>
   );
 }
 
-function AppLayout(): React.JSX.Element {
+function AppLayout({ transportKind }: { transportKind: TransportKind }): React.JSX.Element {
   const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
   const { selectedSessionId } = useSession();
   const { channelState } = useSessionStatus(selectedSessionId);
@@ -81,6 +83,17 @@ function AppLayout(): React.JSX.Element {
       <main className="crispy-main" data-streaming={isStreaming || undefined}>
         <TranscriptViewer />
       </main>
+
+      {/* Debug transport indicator — remove when no longer needed */}
+      <div style={{
+        position: 'fixed', top: 4, right: 4, zIndex: 9999,
+        background: transportKind === 'vscode' ? '#0078d4' : '#16a34a',
+        color: '#fff', padding: '2px 8px',
+        borderRadius: 4, fontSize: 11, opacity: 0.85,
+        pointerEvents: 'none',
+      }}>
+        {transportKind === 'vscode' ? 'VS Code' : 'Dev'}
+      </div>
     </div>
   );
 }
