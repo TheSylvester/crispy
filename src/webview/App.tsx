@@ -8,7 +8,7 @@
  * @module App
  */
 
-import { useState } from 'react';
+import { useCallback } from 'react';
 import type { Transport } from './transport.js';
 import type { TransportKind } from './main.js';
 import { TransportProvider } from './context/TransportContext.js';
@@ -16,6 +16,7 @@ import { SessionProvider, useSession } from './context/SessionContext.js';
 import { PreferencesProvider, usePreferences } from './context/PreferencesContext.js';
 import { SessionSelector } from './components/SessionSelector.js';
 import { TranscriptViewer } from './components/TranscriptViewer.js';
+import { TitleBar } from './components/TitleBar.js';
 import { useSessionStatus } from './hooks/useSessionStatus.js';
 
 interface AppProps {
@@ -35,65 +36,40 @@ export function App({ transport, transportKind }: AppProps): React.JSX.Element {
   );
 }
 
-function AppLayout({ transportKind }: { transportKind: TransportKind }): React.JSX.Element {
+function AppLayout({ transportKind: _transportKind }: { transportKind: TransportKind }): React.JSX.Element {
   const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
   const { selectedSessionId } = useSession();
   const { channelState } = useSessionStatus(selectedSessionId);
   const isStreaming = channelState === 'streaming';
-  const [sidebarOverlay, setSidebarOverlay] = useState(false);
 
-  const sidebarClasses = [
-    'crispy-sidebar',
-    sidebarOverlay ? 'crispy-sidebar--overlay' : '',
-  ].filter(Boolean).join(' ');
+  const closeSidebar = useCallback(() => {
+    setSidebarCollapsed(true);
+  }, [setSidebarCollapsed]);
 
   return (
     <div
       className="crispy-layout"
-      data-sidebar={sidebarCollapsed ? 'collapsed' : 'docked'}
+      data-sidebar={sidebarCollapsed ? 'collapsed' : 'open'}
     >
-      {/* Hover zone — only active when collapsed */}
-      <div
-        className="crispy-sidebar-hover-zone"
-        onMouseEnter={() => setSidebarOverlay(true)}
-      />
+      <TitleBar />
 
-      <aside
-        className={sidebarClasses}
-        onMouseLeave={() => {
-          if (sidebarCollapsed) setSidebarOverlay(false);
-        }}
-      >
+      <aside className="crispy-sidebar">
         <div className="crispy-sidebar__header">Sessions</div>
         <SessionSelector />
       </aside>
 
-      {/* Toggle tab */}
-      <button
-        className="crispy-sidebar-toggle"
-        onClick={() => {
-          setSidebarCollapsed(!sidebarCollapsed);
-          setSidebarOverlay(false);
-        }}
-        aria-label={sidebarCollapsed ? 'Show sessions' : 'Hide sessions'}
-      >
-        {sidebarCollapsed ? '\u25B6' : '\u25C0'}
-      </button>
+      {/* Backdrop — click-outside to close sidebar (only when open) */}
+      {!sidebarCollapsed && (
+        <div
+          className="crispy-sidebar-backdrop"
+          onClick={closeSidebar}
+          aria-hidden="true"
+        />
+      )}
 
       <main className="crispy-main" data-streaming={isStreaming || undefined}>
         <TranscriptViewer />
       </main>
-
-      {/* Debug transport indicator — remove when no longer needed */}
-      <div style={{
-        position: 'fixed', top: 4, right: 4, zIndex: 9999,
-        background: transportKind === 'vscode' ? '#0078d4' : '#16a34a',
-        color: '#fff', padding: '2px 8px',
-        borderRadius: 4, fontSize: 11, opacity: 0.85,
-        pointerEvents: 'none',
-      }}>
-        {transportKind === 'vscode' ? 'VS Code' : 'Dev'}
-      </div>
     </div>
   );
 }
