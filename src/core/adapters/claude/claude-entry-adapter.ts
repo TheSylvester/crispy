@@ -136,7 +136,6 @@ export function adaptClaudeEntry(raw: Record<string, unknown>): TranscriptEntry 
   // Collect overflow fields into metadata bag (avoids data loss)
   const mergedMetadata = {
     ...overflow,
-    ...(parent_tool_use_id !== undefined && { parent_tool_use_id }),
   };
 
   return {
@@ -154,7 +153,7 @@ export function adaptClaudeEntry(raw: Record<string, unknown>): TranscriptEntry 
     // Sub-agent
     isSidechain: isSidechain as boolean | undefined,
     agentId: agentId as string | undefined,
-    parentToolUseID: parentToolUseID as string | undefined,
+    parentToolUseID: (parentToolUseID ?? parent_tool_use_id) as string | undefined,
 
     // Working directory
     cwd: cwd as string | undefined,
