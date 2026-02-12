@@ -184,6 +184,18 @@ export function destroyChannel(channelId: string): void {
   channels.delete(channelId);
 }
 
+/**
+ * Re-key a channel from oldId to newId in the internal registry.
+ * Used when a fresh session's pending ID is replaced by the real session ID.
+ */
+export function rekeyChannel(oldId: string, newId: string): void {
+  const channel = channels.get(oldId);
+  if (!channel) throw new Error(`Cannot re-key: no channel with ID "${oldId}"`);
+  if (channels.has(newId)) throw new Error(`Cannot re-key: channel "${newId}" already exists`);
+  channels.delete(oldId);
+  channels.set(newId, channel);
+}
+
 /** Clear the channel registry (test helper). */
 export function _resetRegistry(): void {
   // Teardown all channels first

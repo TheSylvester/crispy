@@ -19,12 +19,12 @@
  * @module session-manager
  */
 
-import type { AgentAdapter, VendorDiscovery, SessionInfo, SendOptions } from './agent-adapter.js';
+import type { AgentAdapter, VendorDiscovery, SessionInfo, SendOptions, SessionOpenSpec } from './agent-adapter.js';
 import type { TranscriptEntry, Vendor, MessageContent } from './transcript.js';
-import type { SessionChannel, Subscriber } from './session-channel.js';
+import type { SessionChannel, Subscriber, SubscriberEvent } from './session-channel.js';
 import {
-  createChannel, setAdapter, subscribe,
-  sendMessage, destroyChannel, backfillHistory,
+  createChannel, setAdapter, subscribe, unsubscribe,
+  sendMessage, destroyChannel, backfillHistory, rekeyChannel,
 } from './session-channel.js';
 
 // ============================================================================
@@ -34,7 +34,7 @@ import {
 /** Registration entry: static discovery + factory for per-session adapters. */
 export interface VendorRegistration {
   discovery: VendorDiscovery;
-  createAdapter: (sessionId: string) => AgentAdapter;
+  createAdapter: (spec: SessionOpenSpec) => AgentAdapter;
 }
 
 // ============================================================================
@@ -60,7 +60,7 @@ const pending = new Map<string, Promise<SessionChannel>>();
  */
 export function registerAdapter(
   discovery: VendorDiscovery,
-  createAdapter: (sessionId: string) => AgentAdapter,
+  createAdapter: (spec: SessionOpenSpec) => AgentAdapter,
 ): void {
   if (adapters.has(discovery.vendor)) {
     throw new Error(
@@ -203,14 +203,14 @@ function evictIfDead(sessionId: string): void {
  * Each channel gets its own adapter instance from the vendor's factory,
  * so multiple live sessions per vendor are fully supported.
  */
-function openChannel(sessionId: string, vendor: Vendor): SessionChannel {
+function openChannel(channelId: string, vendor: Vendor, spec: SessionOpenSpec): SessionChannel {
   const registration = adapters.get(vendor);
   if (!registration) {
     throw new Error(`No adapter registered for vendor "${vendor}".`);
   }
 
-  const liveAdapter = registration.createAdapter(sessionId);
-  const channel = createChannel(sessionId);
+  const liveAdapter = registration.createAdapter(spec);
+  const channel = createChannel(channelId);
   setAdapter(channel, liveAdapter);
   return channel;
 }
@@ -258,7 +258,7 @@ export async function subscribeSession(
         );
       }
 
-      const ch = openChannel(sessionId, info.vendor);
+      const ch = openChannel(sessionId, info.vendor, { mode: 'resume', sessionId });
       sessions.set(sessionId, ch);
 
       // Backfill transcript history for subscribers.
@@ -287,6 +287,58 @@ export async function subscribeSession(
 
   subscribe(channel, subscriber);
   return channel;
+}
+
+/**
+ * Create a brand-new session (no resume ID).
+ *
+ * Registers the channel under a temporary `pending:<uuid>` key. A one-shot
+ * internal subscriber watches for `session_changed` and re-keys to the real
+ * session ID in both the channel registry and the sessions map.
+ *
+ * Returns the pendingId and channel so the caller can track the transition.
+ */
+export function createSession(
+  vendor: Vendor,
+  cwd: string,
+  subscriber: Subscriber,
+  options?: { model?: string; permissionMode?: SendOptions['permissionMode'] },
+): { pendingId: string; channel: SessionChannel } {
+  const registration = adapters.get(vendor);
+  if (!registration) throw new Error(`No adapter registered for vendor "${vendor}".`);
+
+  const pendingId = `pending:${crypto.randomUUID()}`;
+  const spec: SessionOpenSpec = {
+    mode: 'fresh',
+    cwd,
+    ...(options?.model && { model: options.model }),
+    ...(options?.permissionMode && { permissionMode: options.permissionMode }),
+  };
+
+  const channel = openChannel(pendingId, vendor, spec);
+  sessions.set(pendingId, channel);
+  subscribe(channel, subscriber);
+
+  // One-shot re-key subscriber: swaps pending → real ID on session_changed
+  const rekeySubscriber: Subscriber = {
+    id: `__rekey__${pendingId}`,
+    send(event: SubscriberEvent) {
+      if (
+        event.type === 'notification' &&
+        event.event.kind === 'session_changed' &&
+        event.event.sessionId
+      ) {
+        const realId = event.event.sessionId;
+        rekeyChannel(pendingId, realId);
+        sessions.delete(pendingId);
+        sessions.set(realId, channel);
+        unsubscribe(channel, rekeySubscriber);
+      }
+    },
+  };
+  subscribe(channel, rekeySubscriber);
+
+  return { pendingId, channel };
 }
 
 /**

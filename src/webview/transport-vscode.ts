@@ -90,6 +90,9 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     loadSession: (sessionId) =>
       request<TranscriptEntry[]>('loadSession', { sessionId }),
 
+    createSession: (vendor, cwd, options) =>
+      request<{ pendingId: string }>('createSession', { vendor, cwd, ...options }),
+
     subscribe: (sessionId) =>
       request<void>('subscribe', { sessionId }),
 

@@ -97,9 +97,15 @@ export function TranscriptViewer(): React.JSX.Element {
 
   if (!selectedSessionId) {
     return (
-      <div className="crispy-placeholder">
-        Select a session to view its transcript
-      </div>
+      <>
+        <div className="crispy-placeholder">
+          Select a session or start a new conversation
+        </div>
+        <ControlPanel
+          ref={controlPanelRef}
+          onForkHoverChange={handleForkHoverChange}
+        />
+      </>
     );
   }
 

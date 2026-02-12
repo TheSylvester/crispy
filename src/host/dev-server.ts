@@ -115,7 +115,25 @@ wss.on('connection', (ws: WebSocket) => {
 const cwd = process.cwd();
 registerAdapter(
   claudeDiscovery,
-  (sessionId) => new ClaudeAgentAdapter({ cwd, resume: sessionId }),
+  (spec) => {
+    switch (spec.mode) {
+      case 'resume':
+        return new ClaudeAgentAdapter({ cwd, resume: spec.sessionId });
+      case 'fresh':
+        return new ClaudeAgentAdapter({
+          cwd: spec.cwd,
+          ...(spec.model && { model: spec.model }),
+          ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+        });
+      case 'fork':
+        return new ClaudeAgentAdapter({
+          cwd, resume: spec.fromSessionId, forkSession: true,
+          ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
+        });
+      case 'continue':
+        return new ClaudeAgentAdapter({ cwd, resume: spec.sessionId, continue: true });
+    }
+  },
 );
 
 server.listen(PORT, () => {

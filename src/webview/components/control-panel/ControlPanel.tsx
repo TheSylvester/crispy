@@ -37,6 +37,7 @@ import { ForkButton } from './ForkButton.js';
 import { usePreferences } from '../../context/PreferencesContext.js';
 import { useTransport } from '../../context/TransportContext.js';
 import { useSession } from '../../context/SessionContext.js';
+import { slugToPath } from '../../hooks/useSessionCwd.js';
 import type { MessageContent, MessageContentBlock, ContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 
 interface ControlPanelProps {
@@ -100,7 +101,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned } = usePreferences();
     const transport = useTransport();
-    const { selectedSessionId } = useSession();
+    const { selectedSessionId, selectedCwd, setSelectedSessionId } = useSession();
 
     // --- Keyboard shortcuts ---
     useEffect(() => {
@@ -155,7 +156,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     // --- Send handler ---
     const handleSend = useCallback(() => {
-      if (!selectedSessionId) return;
       const text = state.input.trim();
       const hasImages = state.attachedImages.length > 0;
       if (!text && !hasImages) return;
@@ -177,6 +177,32 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       } else {
         content = text;
       }
+
+      // --- New session branch: create session, then send ---
+      if (!selectedSessionId) {
+        if (!selectedCwd) {
+          console.error('[ControlPanel] Cannot create session: no CWD selected');
+          return;
+        }
+        const cwd = slugToPath(selectedCwd);
+        transport.createSession('claude', cwd, {
+          model: state.model || undefined,
+          permissionMode: mapAgencyToPermissionMode(state.agencyMode),
+        }).then(({ pendingId }) => {
+          setSelectedSessionId(pendingId);
+          return transport.send(pendingId, content, {
+            model: state.model || undefined,
+            permissionMode: mapAgencyToPermissionMode(state.agencyMode),
+            allowDangerouslySkipPermissions: state.bypassEnabled || undefined,
+          });
+        }).catch((err) => {
+          console.error('[ControlPanel] createSession failed:', err);
+        });
+        dispatch({ type: 'CLEAR_INPUT' });
+        return;
+      }
+
+      // --- Existing session: optimistic entry + send ---
 
       // Inject optimistic user entry for immediate rendering.
       // The backend will echo the real entry, and useTranscript deduplicates
@@ -215,7 +241,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       });
 
       dispatch({ type: 'CLEAR_INPUT' });
-    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, selectedSessionId, transport, onOptimisticEntry]);
+    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, selectedSessionId, selectedCwd, setSelectedSessionId, transport, onOptimisticEntry]);
 
     // --- Drag/drop handlers ---
     const handleDragOver = useCallback((e: React.DragEvent) => {

@@ -118,6 +118,9 @@ export function createWebSocketTransport(url: string): SessionService {
     loadSession: (sessionId) =>
       request<TranscriptEntry[]>('loadSession', { sessionId }),
 
+    createSession: (vendor, cwd, options) =>
+      request<{ pendingId: string }>('createSession', { vendor, cwd, ...options }),
+
     subscribe: (sessionId) =>
       request<void>('subscribe', { sessionId }),
 

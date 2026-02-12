@@ -90,6 +90,20 @@ export interface SendOptions {
   allowDangerouslySkipPermissions?: boolean;
 }
 
+/**
+ * Discriminated union describing how to open a session.
+ *
+ * 'resume'   — reattach to an existing session by ID (current behavior)
+ * 'fresh'    — start a brand-new session (no resume ID)
+ * 'fork'     — fork from an existing session (future)
+ * 'continue' — continue the most recent session in a CWD (future)
+ */
+export type SessionOpenSpec =
+  | { mode: 'resume'; sessionId: string }
+  | { mode: 'fresh'; cwd: string; model?: string; permissionMode?: SendOptions['permissionMode'] }
+  | { mode: 'fork'; fromSessionId: string; atMessageId?: string }
+  | { mode: 'continue'; sessionId: string };
+
 // ============================================================================
 // Agent Adapter Interface
 // ============================================================================

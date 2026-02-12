@@ -11,7 +11,8 @@
  * @module client-connection
  */
 
-import type { MessageContent } from "../core/transcript.js";
+import type { MessageContent, Vendor } from "../core/transcript.js";
+import type { SendOptions } from "../core/agent-adapter.js";
 import type {
   Subscriber,
   SubscriberEvent,
@@ -23,6 +24,7 @@ import {
   findSession,
   loadSession,
   subscribeSession,
+  createSession,
   sendToSession,
   setSessionModel,
   setSessionPermissions,
@@ -144,6 +146,44 @@ export function createClientConnection(
           subscriptions.delete(sessionId);
         }
         return { unsubscribed: true };
+      }
+
+      case "createSession": {
+        const vendor = (params.vendor as string) ?? 'claude';
+        const cwdParam = params.cwd as string;
+        const model = params.model as string | undefined;
+        const permissionMode = params.permissionMode as string | undefined;
+
+        let currentSessionId = '';
+
+        const subscriber: Subscriber = {
+          id: clientId,
+          send(event: SubscriberEvent) {
+            sendFn({ kind: "event", sessionId: currentSessionId, event });
+            // Re-key subscription tracking on session_changed
+            if (
+              event.type === 'notification' &&
+              event.event.kind === 'session_changed' &&
+              event.event.sessionId
+            ) {
+              const realId = event.event.sessionId;
+              const sub = subscriptions.get(currentSessionId);
+              if (sub) {
+                subscriptions.delete(currentSessionId);
+                currentSessionId = realId;
+                subscriptions.set(realId, sub);
+              }
+            }
+          },
+        };
+
+        const { pendingId, channel } = createSession(
+          vendor as Vendor, cwdParam, subscriber,
+          { model, permissionMode: permissionMode as SendOptions['permissionMode'] },
+        );
+        currentSessionId = pendingId;
+        subscriptions.set(pendingId, { channel, subscriber });
+        return { pendingId };
       }
 
       case "send": {

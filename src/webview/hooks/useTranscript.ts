@@ -70,6 +70,14 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
     });
 
     async function load() {
+      // Skip subscribe/loadSession for pending sessions — the subscription
+      // is already set up by createSession on the host side. Live entries
+      // will arrive via the event stream.
+      if (sessionId!.startsWith('pending:')) {
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
       setError(null);
       try {
@@ -97,9 +105,12 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
     return () => {
       unmounted = true;
       off();
-      transport.unsubscribe(sessionId).catch(() => {
-        // Best-effort unsubscribe
-      });
+      // Skip unsubscribe for pending sessions — they weren't subscribed via transport
+      if (!sessionId!.startsWith('pending:')) {
+        transport.unsubscribe(sessionId).catch(() => {
+          // Best-effort unsubscribe
+        });
+      }
     };
   }, [sessionId, transport]);
 

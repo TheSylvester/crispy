@@ -84,6 +84,9 @@ function discoverFixture(): { file: string; version: string } | undefined {
 
     for (const file of fs.readdirSync(projDir)) {
       if (!file.endsWith('.jsonl')) continue;
+      // Skip sub-agent transcripts — they legitimately contain mixed sessionIds
+      // (parent session ID on first entry, sub-agent's own ID on the rest)
+      if (file.startsWith('agent-')) continue;
       const fp = path.join(projDir, file);
       try {
         const s = fs.statSync(fp);

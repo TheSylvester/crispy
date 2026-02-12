@@ -24,9 +24,28 @@ export function activate(context: vscode.ExtensionContext): void {
     'claude-agent-sdk',
     'cli.js',
   );
+  const base = { cwd, pathToClaudeCodeExecutable };
   registerAdapter(
     claudeDiscovery,
-    (sessionId) => new ClaudeAgentAdapter({ cwd, resume: sessionId, pathToClaudeCodeExecutable }),
+    (spec) => {
+      switch (spec.mode) {
+        case 'resume':
+          return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId });
+        case 'fresh':
+          return new ClaudeAgentAdapter({
+            ...base, cwd: spec.cwd,
+            ...(spec.model && { model: spec.model }),
+            ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+          });
+        case 'fork':
+          return new ClaudeAgentAdapter({
+            ...base, resume: spec.fromSessionId, forkSession: true,
+            ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
+          });
+        case 'continue':
+          return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, continue: true });
+      }
+    },
   );
 
   context.subscriptions.push(

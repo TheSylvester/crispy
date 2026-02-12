@@ -21,6 +21,10 @@ export interface SessionService {
   listSessions(): Promise<WireSessionInfo[]>;
   findSession(sessionId: string): Promise<WireSessionInfo | null>;
   loadSession(sessionId: string): Promise<TranscriptEntry[]>;
+  createSession(vendor: string, cwd: string, options?: {
+    model?: string;
+    permissionMode?: string;
+  }): Promise<{ pendingId: string }>;
   subscribe(sessionId: string): Promise<void>;
   unsubscribe(sessionId: string): Promise<void>;
   send(sessionId: string, content: MessageContent, options?: SendOptions): Promise<void>;

@@ -6,6 +6,10 @@
  * @module control-panel/ModelSelect
  */
 
+// TODO: Model selection is Claude-only. When multi-vendor support lands,
+// this becomes a vendor+model picker — the selected model determines which
+// adapter factory is used in createSession(). For now, hardcoded to Claude.
+
 import type { ModelOption } from './types.js';
 
 interface ModelSelectProps {

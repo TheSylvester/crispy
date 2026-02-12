@@ -251,8 +251,6 @@ describe('Message routing', () => {
       msg({ type: 'user', message: { role: 'user', content: 'test' }, parent_tool_use_id: null, session_id: 's1' }),
       // user with isReplay → skipped
       msg({ type: 'user', message: { role: 'user', content: 'old' }, parent_tool_use_id: null, isReplay: true, uuid: 'u3', session_id: 's1' }),
-      // result → entry
-      msg({ type: 'result', subtype: 'success', duration_ms: 100, duration_api_ms: 50, is_error: false, num_turns: 1, result: 'done', stop_reason: 'end_turn', total_cost_usd: 0.01, usage: { input_tokens: 10, output_tokens: 5 }, modelUsage: {}, permission_denials: [], uuid: 'u4', session_id: 's1' }),
       // system/status compacting → compacting notification
       msg({ type: 'system', subtype: 'status', status: 'compacting', uuid: 'u5', session_id: 's1' }),
       // system/status permissionMode → permission_mode_changed notification
@@ -269,6 +267,8 @@ describe('Message routing', () => {
       msg({ type: 'auth_status', isAuthenticating: false, output: [], uuid: 'u11', session_id: 's1' }),
       // unknown type → entry (default case)
       msg({ type: 'tool_use_summary', summary: 'Ran Bash', preceding_tool_use_ids: ['tu1'], uuid: 'u12', session_id: 's1' }),
+      // result → entry (last entry-producing message; emits idle so must come after all others)
+      msg({ type: 'result', subtype: 'success', duration_ms: 100, duration_api_ms: 50, is_error: false, num_turns: 1, result: 'done', stop_reason: 'end_turn', total_cost_usd: 0.01, usage: { input_tokens: 10, output_tokens: 5 }, modelUsage: {}, permission_denials: [], uuid: 'u4', session_id: 's1' }),
     ];
 
     const mockQ = createMockQuery(messages);
@@ -286,8 +286,8 @@ describe('Message routing', () => {
     const entries = output.filter((m) => m.type === 'entry');
     const events = output.filter((m) => m.type === 'event');
 
-    // Entries: init, assistant, user (not replay), result, compact_boundary,
-    //          system-no-subtype, stream_event, tool_use_summary = 8
+    // Entries: init, assistant, user (not replay), compact_boundary,
+    //          system-no-subtype, stream_event, tool_use_summary, result = 8
     expect(entries.length).toBe(8);
 
     // Events: session_changed (first session_id), active (from startQuery),

@@ -16,7 +16,8 @@ import { useCallback, useState } from 'react';
 import { useSession } from '../context/SessionContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
 import { useSessionStatus } from '../hooks/useSessionStatus.js';
-import { useSessionCwd } from '../hooks/useSessionCwd.js';
+import { useCwd } from '../hooks/useSessionCwd.js';
+import { useAvailableCwds } from '../hooks/useAvailableCwds.js';
 
 /** SVG chevron — points down, rotates 180° when sidebar is open */
 function Chevron({ open }: { open: boolean }): React.JSX.Element {
@@ -111,10 +112,11 @@ function ConnectionDot({
 }
 
 export function TitleBar(): React.JSX.Element {
-  const { sessions, selectedSessionId, setSelectedSessionId } = useSession();
+  const { sessions, selectedSessionId, setSelectedSessionId, selectedCwd, setSelectedCwd } = useSession();
   const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
   const { channelState } = useSessionStatus(selectedSessionId);
-  const { fullPath, display: cwdDisplay } = useSessionCwd();
+  const { fullPath } = useCwd();
+  const availableCwds = useAvailableCwds();
 
   const sessionLabel =
     sessions.find((s) => s.sessionId === selectedSessionId)?.label ?? 'No session';
@@ -127,6 +129,10 @@ export function TitleBar(): React.JSX.Element {
     setSelectedSessionId(null);
     console.log('[TitleBar] New session requested — transport.createSession() not wired yet');
   }, [setSelectedSessionId]);
+
+  const handleCwdChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSelectedCwd(e.target.value || null);
+  }, [setSelectedCwd]);
 
   return (
     <header className="crispy-titlebar">
@@ -141,15 +147,21 @@ export function TitleBar(): React.JSX.Element {
         <Chevron open={!sidebarCollapsed} />
       </button>
 
-      {/* Center — CWD + connection indicator */}
+      {/* Center — CWD dropdown + connection indicator */}
       <div className="crispy-titlebar__center">
-        {cwdDisplay && (
-          <span
-            className="crispy-titlebar__cwd"
-            title={fullPath ?? undefined}
+        {availableCwds.length > 0 && (
+          <select
+            className="crispy-titlebar__cwd-select"
+            value={selectedCwd ?? ''}
+            onChange={handleCwdChange}
+            title={fullPath ?? 'Select working directory'}
           >
-            {cwdDisplay}
-          </span>
+            {availableCwds.map((cwd) => (
+              <option key={cwd.slug} value={cwd.slug} title={cwd.fullPath}>
+                {cwd.display}
+              </option>
+            ))}
+          </select>
         )}
         <ConnectionDot channelState={channelState} sessionId={selectedSessionId} />
       </div>

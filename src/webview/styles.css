@@ -1963,21 +1963,47 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   font-family: var(--vscode-editor-font-family, monospace);
 }
 
-/* CWD display — Leto-style: link-blue, monospace, hover highlight */
-.crispy-titlebar__cwd {
+/* CWD dropdown — link-blue monospace select, transparent bg, minimal border */
+.crispy-titlebar__cwd-select {
   color: var(--vscode-textLink-foreground, #3794ff);
   opacity: 0.9;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  padding: 2px 6px;
+  font-size: 12px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 3px;
-  transition: background 0.15s ease;
-  cursor: default;
+  padding: 2px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 240px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  /* Remove default select arrow styling on some browsers */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  /* Custom dropdown arrow via inline SVG */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath d='M1 2.5L4 5.5L7 2.5' stroke='%233794ff' stroke-width='1.2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 4px center;
+  padding-right: 18px;
 }
 
-.crispy-titlebar__cwd:hover {
-  background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.05));
+.crispy-titlebar__cwd-select:hover {
+  background-color: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.05));
+  border-color: var(--vscode-textLink-foreground, #3794ff);
+  opacity: 1;
+}
+
+.crispy-titlebar__cwd-select:focus {
+  outline: none;
+  border-color: var(--vscode-textLink-foreground, #3794ff);
+  opacity: 1;
+}
+
+/* Style the dropdown options (dark background to match theme) */
+.crispy-titlebar__cwd-select option {
+  background: var(--vscode-dropdown-background, #252526);
+  color: var(--vscode-dropdown-foreground, #cccccc);
 }
 
 /* --- Right section --- */
