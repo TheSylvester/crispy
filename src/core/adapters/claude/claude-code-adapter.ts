@@ -457,9 +457,11 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       // with the caller's model/permissionMode already merged in.
       this.startQuery(sdkMessage);
     } else {
-      // Session is running — enqueue into existing input queue.
-      // For mid-stream option changes, use setModel/setPermissionMode
-      // which delegate to the active Query directly.
+      // Session is running — apply mid-stream option changes directly
+      // to the active Query before enqueuing the message.
+      if (options?.permissionMode) {
+        this.activeQuery.setPermissionMode(options.permissionMode as PermissionMode);
+      }
       this.inputQueue.enqueue(sdkMessage);
     }
   }
@@ -937,7 +939,13 @@ export class ClaudeAgentAdapter implements AgentAdapter {
             event: { type: 'notification', kind: 'compacting' },
           });
         }
-        if (statusMsg.permissionMode) {
+        // Only emit when the SDK's mode genuinely differs from what we
+        // requested — suppresses the boot echo where the SDK reports its
+        // default mode before processing our requested mode.
+        if (
+          statusMsg.permissionMode &&
+          statusMsg.permissionMode !== this.options.permissionMode
+        ) {
           this.outputQueue.enqueue({
             type: 'event',
             event: {
