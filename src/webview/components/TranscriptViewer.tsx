@@ -76,6 +76,15 @@ export function TranscriptViewer(): React.JSX.Element {
     }
   }, [selectedSessionId, isLoading, entries.length, addOptimisticEntry]);
 
+  // Clear stale pending optimistic entry when switching to a non-pending session.
+  // Without this, a stashed entry from a previous new-session flow could leak
+  // into an unrelated session if the user switches away before it was injected.
+  useEffect(() => {
+    if (selectedSessionId && !selectedSessionId.startsWith('pending:')) {
+      pendingOptimisticRef.current = null;
+    }
+  }, [selectedSessionId]);
+
   // Filter entries for rendering (used for both display and scroll settle detection)
   const visibleEntries = entries.slice(0, visibleCount);
   const filteredEntries = visibleEntries.filter(shouldRenderEntry);

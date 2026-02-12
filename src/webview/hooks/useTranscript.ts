@@ -56,6 +56,13 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
 
     let unmounted = false;
 
+    // Clear stale entries immediately so optimistic messages from a
+    // previous session never bleed into the newly selected one.
+    // Skip the clear for pending→real transitions (entries are already correct).
+    if (!prevSessionId?.startsWith('pending:') && !sessionId.startsWith('pending:')) {
+      setEntries([]);
+    }
+
     // Listen for live events
     const off = transport.onEvent((sid, event) => {
       if (unmounted || sid !== sessionId) return;
@@ -110,7 +117,12 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
         if (unmounted) return;
 
         setEntries((prev) => {
-          const optimistic = prev.filter((e) => e.uuid?.startsWith('optimistic-'));
+          // Only preserve optimistic entries that belong to *this* session.
+          // The early clear (above) already flushed cross-session leftovers,
+          // but guard here too: only keep entries added after the clear.
+          const optimistic = prev.filter(
+            (e) => e.uuid?.startsWith('optimistic-') && e.sessionId === sessionId
+          );
           if (optimistic.length === 0) return history;
           return [...history, ...optimistic];
         });
