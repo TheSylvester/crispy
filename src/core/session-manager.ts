@@ -19,7 +19,7 @@
  * @module session-manager
  */
 
-import type { AgentAdapter, VendorDiscovery, SessionInfo } from './agent-adapter.js';
+import type { AgentAdapter, VendorDiscovery, SessionInfo, SendOptions } from './agent-adapter.js';
 import type { TranscriptEntry, Vendor, MessageContent } from './transcript.js';
 import type { SessionChannel, Subscriber } from './session-channel.js';
 import {
@@ -291,11 +291,14 @@ export async function subscribeSession(
 
 /**
  * Send a message into a session's live channel.
+ *
+ * Options (model, permissionMode, etc.) are threaded through to the
+ * adapter so they can be applied atomically at query start time.
  * Throws if no channel is open for this sessionId.
  */
-export function sendToSession(sessionId: string, content: MessageContent): void {
+export function sendToSession(sessionId: string, content: MessageContent, options?: SendOptions): void {
   const channel = requireChannel(sessionId);
-  sendMessage(channel, content);
+  sendMessage(channel, content, options);
 }
 
 /**

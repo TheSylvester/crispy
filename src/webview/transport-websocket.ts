@@ -124,8 +124,8 @@ export function createWebSocketTransport(url: string): SessionService {
     unsubscribe: (sessionId) =>
       request<void>('unsubscribe', { sessionId }),
 
-    send: (sessionId, content) =>
-      request<void>('send', { sessionId, content }),
+    send: (sessionId, content, options) =>
+      request<void>('send', { sessionId, content, options }),
 
     resolveApproval: (sessionId, toolUseId, optionId) =>
       request<void>('resolveApproval', { sessionId, toolUseId, optionId }),

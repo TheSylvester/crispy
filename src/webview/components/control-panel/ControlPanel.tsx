@@ -21,6 +21,8 @@ import {
   type ModelOption,
   type AttachedImage,
   DEFAULT_CONTROL_PANEL_STATE,
+  mapAgencyToPermissionMode,
+  mapPermissionModeToAgency,
 } from './types.js';
 import { ChatInput } from './ChatInput.js';
 import { AttachmentsRow } from './AttachmentsRow.js';
@@ -136,6 +138,21 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       return () => document.removeEventListener('keydown', handleKeyDown);
     }, [state.bypassEnabled, state.agencyMode, state.model]);
 
+    // --- Server → UI: permission_mode_changed notifications ---
+    // Handles server-initiated mode transitions (e.g. EnterPlanMode).
+    useEffect(() => {
+      const off = transport.onEvent((sessionId, event) => {
+        if (sessionId !== selectedSessionId) return;
+        if (event.type === 'notification' && event.event.kind === 'permission_mode_changed') {
+          const agencyMode = mapPermissionModeToAgency(event.event.mode);
+          if (agencyMode) {
+            dispatch({ type: 'SET_AGENCY_MODE', mode: agencyMode });
+          }
+        }
+      });
+      return off;
+    }, [selectedSessionId, transport]);
+
     // --- Send handler ---
     const handleSend = useCallback(() => {
       if (!selectedSessionId) return;
@@ -185,13 +202,20 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         });
       }
 
-      // Fire-and-forget — keep UI responsive, log errors
-      transport.send(selectedSessionId, content).catch((err) => {
+      // Bundle control panel options with the send — applied atomically
+      // before the adapter starts the query, like Leto does.
+      const options = {
+        model: state.model || undefined,
+        permissionMode: mapAgencyToPermissionMode(state.agencyMode),
+        allowDangerouslySkipPermissions: state.bypassEnabled || undefined,
+      };
+
+      transport.send(selectedSessionId, content, options).catch((err) => {
         console.error('[ControlPanel] send failed:', err);
       });
 
       dispatch({ type: 'CLEAR_INPUT' });
-    }, [state.input, state.attachedImages, selectedSessionId, transport, onOptimisticEntry]);
+    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, selectedSessionId, transport, onOptimisticEntry]);
 
     // --- Drag/drop handlers ---
     const handleDragOver = useCallback((e: React.DragEvent) => {

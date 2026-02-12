@@ -16,6 +16,7 @@ import type {
   AgentAdapter,
   VendorDiscovery,
   ChannelMessage,
+  SendOptions,
   SessionInfo as AgentSessionInfo,
 } from '../../agent-adapter.js';
 import type { ChannelStatus } from '../../channel-events.js';
@@ -425,7 +426,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     return this.outputQueue;
   }
 
-  send(content: MessageContent): void {
+  send(content: MessageContent, options?: SendOptions): void {
     if (this._closed) {
       throw new Error('Channel is closed');
     }
@@ -433,13 +434,32 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       throw new Error('Cannot send while awaiting approval');
     }
 
+    // Apply send options to session config before starting the query.
+    // When a query is already active these won't affect the current SDK
+    // options, but they'll be used for the next startQuery().
+    if (options) {
+      if (options.model !== undefined) {
+        this.options.model = options.model || undefined;
+      }
+      if (options.permissionMode !== undefined) {
+        this.options.permissionMode = options.permissionMode as Options['permissionMode'];
+      }
+      if (options.allowDangerouslySkipPermissions !== undefined) {
+        this.options.allowDangerouslySkipPermissions = options.allowDangerouslySkipPermissions;
+      }
+    }
+
     const sdkMessage = this.toSDKUserMessage(content);
 
     if (!this.activeQuery || !this.inputQueue) {
-      // No active session — spin up a new query()
+      // No active session — spin up a new query().
+      // Options were applied above, so startQuery reads this.options
+      // with the caller's model/permissionMode already merged in.
       this.startQuery(sdkMessage);
     } else {
-      // Session is running — enqueue into existing input queue
+      // Session is running — enqueue into existing input queue.
+      // For mid-stream option changes, use setModel/setPermissionMode
+      // which delegate to the active Query directly.
       this.inputQueue.enqueue(sdkMessage);
     }
   }

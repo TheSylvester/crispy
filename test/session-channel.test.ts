@@ -642,7 +642,7 @@ describe('sendMessage', () => {
     await tick();
 
     sendMessage(ch, 'Hello world');
-    expect(adapter.send).toHaveBeenCalledWith('Hello world');
+    expect(adapter.send).toHaveBeenCalledWith('Hello world', undefined);
   });
 
   it('throws without adapter', () => {
@@ -662,7 +662,7 @@ describe('sendMessage', () => {
     ];
 
     sendMessage(ch, content);
-    expect(adapter.send).toHaveBeenCalledWith(content);
+    expect(adapter.send).toHaveBeenCalledWith(content, undefined);
   });
 });
 
@@ -932,7 +932,7 @@ describe('Integration: full conversation flow', () => {
 
     // 1. Send a message
     sendMessage(ch, 'Write a hello world program');
-    expect(adapter.send).toHaveBeenCalledWith('Write a hello world program');
+    expect(adapter.send).toHaveBeenCalledWith('Write a hello world program', undefined);
 
     // 2. Adapter emits active status
     adapter.pushMessage(statusMsg('active'));

@@ -464,7 +464,7 @@ describe('sendToSession', () => {
     await subscribeSession('sess-1', sub);
 
     sendToSession('sess-1', 'Hello world');
-    expect(lastCreated().send).toHaveBeenCalledWith('Hello world');
+    expect(lastCreated().send).toHaveBeenCalledWith('Hello world', undefined);
   });
 
   it('throws when no channel is open', () => {

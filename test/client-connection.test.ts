@@ -379,7 +379,7 @@ describe('ClientConnection', () => {
         content: 'Hello world',
       });
       expect(resp.kind).toBe('response');
-      expect(lastCreated().send).toHaveBeenCalledWith('Hello world');
+      expect(lastCreated().send).toHaveBeenCalledWith('Hello world', undefined);
 
       handler.dispose();
     });

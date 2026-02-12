@@ -25,7 +25,7 @@
  * @module session-channel
  */
 
-import type { AgentAdapter, ChannelMessage } from './agent-adapter.js';
+import type { AgentAdapter, ChannelMessage, SendOptions } from './agent-adapter.js';
 import type { MessageContent, Vendor, TranscriptEntry } from './transcript.js';
 import type {
   ChannelEvent,
@@ -401,12 +401,15 @@ function routeNotificationEvent(
  *
  * Guards: throws if no adapter. The adapter handles lazy query start,
  * closed checks, and awaiting_approval guards internally.
+ *
+ * Options (model, permissionMode, etc.) are threaded through to the
+ * adapter so they can be applied atomically at query start time.
  */
-export function sendMessage(channel: SessionChannel, message: MessageContent): void {
+export function sendMessage(channel: SessionChannel, message: MessageContent, options?: SendOptions): void {
   if (!channel.adapter) {
     throw new Error('No adapter set. Call setAdapter() first.');
   }
-  channel.adapter.send(message);
+  channel.adapter.send(message, options);
 }
 
 /**

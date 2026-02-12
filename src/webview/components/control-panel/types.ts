@@ -91,3 +91,29 @@ export const AGENCY_MODE_COLORS: Record<AgencyMode, string> = {
   'plan-mode': '#47988c',
   'bypass-permissions': '#E84040',
 };
+
+/** Map local agency mode to the transport's permission mode string. */
+export function mapAgencyToPermissionMode(
+  agencyMode: AgencyMode,
+): 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' {
+  const mapping: Record<AgencyMode, 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions'> = {
+    'plan-mode': 'plan',
+    'edit-automatically': 'acceptEdits',
+    'ask-before-edits': 'default',
+    'bypass-permissions': 'bypassPermissions',
+  };
+  return mapping[agencyMode];
+}
+
+/** Map a transport permission mode string back to the local agency mode. */
+export function mapPermissionModeToAgency(
+  mode: string,
+): AgencyMode | null {
+  const mapping: Record<string, AgencyMode> = {
+    plan: 'plan-mode',
+    acceptEdits: 'edit-automatically',
+    default: 'ask-before-edits',
+    bypassPermissions: 'bypass-permissions',
+  };
+  return mapping[mode] ?? null;
+}

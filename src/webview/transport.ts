@@ -8,7 +8,7 @@
  * @module transport
  */
 
-import type { SessionInfo } from '../core/agent-adapter.js';
+import type { SessionInfo, SendOptions } from '../core/agent-adapter.js';
 import type { TranscriptEntry, MessageContent } from '../core/transcript.js';
 import type { SubscriberEvent } from '../core/session-channel.js';
 
@@ -23,7 +23,7 @@ export interface SessionService {
   loadSession(sessionId: string): Promise<TranscriptEntry[]>;
   subscribe(sessionId: string): Promise<void>;
   unsubscribe(sessionId: string): Promise<void>;
-  send(sessionId: string, content: MessageContent): Promise<void>;
+  send(sessionId: string, content: MessageContent, options?: SendOptions): Promise<void>;
   resolveApproval(sessionId: string, toolUseId: string, optionId: string): Promise<void>;
   setModel(sessionId: string, model?: string): Promise<void>;
   setPermissions(sessionId: string, mode: string): Promise<void>;

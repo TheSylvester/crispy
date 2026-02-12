@@ -149,7 +149,8 @@ export function createClientConnection(
       case "send": {
         const sessionId = params.sessionId as string;
         const content = params.content as MessageContent;
-        sendToSession(sessionId, content);
+        const options = params.options as Record<string, unknown> | undefined;
+        sendToSession(sessionId, content, options);
         return { sent: true };
       }
 

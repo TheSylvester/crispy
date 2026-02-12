@@ -74,6 +74,23 @@ export interface VendorDiscovery {
 }
 
 // ============================================================================
+// Send Options — bundled with each send() call
+// ============================================================================
+
+/**
+ * Options passed alongside the user's message at send time.
+ *
+ * Matches Leto's SendOptions — the control panel gathers UI state and
+ * bundles it into a single object so the adapter can apply everything
+ * atomically before starting a new query.
+ */
+export interface SendOptions {
+  model?: string;
+  permissionMode?: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions';
+  allowDangerouslySkipPermissions?: boolean;
+}
+
+// ============================================================================
 // Agent Adapter Interface
 // ============================================================================
 
@@ -122,11 +139,16 @@ export interface AgentAdapter {
    * If no vendor session is active, one is created. If a session is
    * already running, the message is enqueued into the existing session.
    *
+   * Options (model, permissionMode, etc.) are applied atomically before
+   * the query starts — they're bundled with the message like Leto does.
+   * When a session is already running, options are applied mid-stream
+   * (best-effort).
+   *
    * Throws if the adapter is closed or awaiting approval.
    * Errors from the underlying vendor session are delivered via the
    * event stream, not thrown from this method.
    */
-  send(content: MessageContent): void;
+  send(content: MessageContent, options?: SendOptions): void;
 
   /**
    * Respond to a pending approval request.
