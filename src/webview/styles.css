@@ -167,7 +167,7 @@ h2 {
 }
 
 .crispy-main[data-streaming]:has(.crispy-cp[data-agency="ask-before-edits"])::after {
-  animation: crispy-cp-glow-orange 2s ease-in-out infinite;
+  animation: crispy-cp-glow-white 2s ease-in-out infinite;
 }
 .crispy-main[data-streaming]:has(.crispy-cp[data-agency="edit-automatically"])::after {
   animation: crispy-cp-glow-blue 2s ease-in-out infinite;
@@ -1869,9 +1869,9 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
    Glow Pulse Animations — per-agency mode running state glow
    -------------------------------------------------------------------------- */
 
-@keyframes crispy-cp-glow-orange {
-  0%, 100% { box-shadow: inset 0 0 12px #E88040; }
-  50% { box-shadow: inset 0 0 25px #E88040; }
+@keyframes crispy-cp-glow-white {
+  0%, 100% { box-shadow: inset 0 0 12px #FFFFFF; }
+  50% { box-shadow: inset 0 0 25px #FFFFFF; }
 }
 
 @keyframes crispy-cp-glow-blue {
