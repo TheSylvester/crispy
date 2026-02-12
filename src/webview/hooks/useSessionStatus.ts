@@ -2,7 +2,6 @@
  * useSessionStatus — track a session's channel state (idle/streaming/etc.)
  *
  * Listens for `state_changed` events on the transport for the selected session.
- * Uses the same cancelled-flag pattern as useTranscript (onEvent has no unsubscribe).
  *
  * Returns null when no session is selected.
  *
@@ -25,19 +24,14 @@ export function useSessionStatus(sessionId: string | null): {
       return;
     }
 
-    let cancelled = false;
-
-    // Listen for state_changed events — cancelled flag since onEvent has no unsubscribe
-    transport.onEvent((sid, event) => {
-      if (cancelled || sid !== sessionId) return;
+    const off = transport.onEvent((sid, event) => {
+      if (sid !== sessionId) return;
       if (event.type === 'state_changed') {
         setChannelState(event.state);
       }
     });
 
-    return () => {
-      cancelled = true;
-    };
+    return off;
   }, [sessionId, transport]);
 
   return { channelState };

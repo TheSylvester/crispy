@@ -20,7 +20,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 
 import { registerAdapter } from '../core/session-manager.js';
 import { ClaudeAgentAdapter, claudeDiscovery } from '../core/adapters/claude/claude-code-adapter.js';
-import { createMessageHandler } from './message-handler.js';
+import { createClientConnection } from './client-connection.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
 
@@ -84,7 +84,7 @@ wss.on('connection', (ws: WebSocket) => {
   const clientId = `ws-client-${++connectionCounter}`;
   console.log(`[dev-server] Client connected: ${clientId}`);
 
-  const handler = createMessageHandler(clientId, (msg) => {
+  const handler = createClientConnection(clientId, (msg) => {
     if (ws.readyState === ws.OPEN) {
       ws.send(JSON.stringify(msg));
     }

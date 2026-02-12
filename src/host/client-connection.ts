@@ -1,18 +1,23 @@
 /**
- * Shared Message Handler — Client→Host request routing
+ * Client Connection — per-client lifecycle management
  *
  * The key to zero duplication between dev-server (WebSocket) and
- * webview-host (postMessage). Both transports create a handler via
- * createMessageHandler() and feed it raw messages.
+ * webview-host (postMessage). Both transports create a connection via
+ * createClientConnection() and feed it raw messages.
  *
- * Internally tracks active subscriptions so dispose() can clean up.
+ * Internally tracks active subscriptions so dispose() can clean up
+ * when a client disconnects.
  *
- * @module message-handler
+ * @module client-connection
  */
 
-import type { MessageContent } from '../core/transcript.js';
-import type { Subscriber, SubscriberEvent, SessionChannel } from '../core/session-channel.js';
-import { resolveApproval, unsubscribe } from '../core/session-channel.js';
+import type { MessageContent } from "../core/transcript.js";
+import type {
+  Subscriber,
+  SubscriberEvent,
+  SessionChannel,
+} from "../core/session-channel.js";
+import { resolveApproval, unsubscribe } from "../core/session-channel.js";
 import {
   listAllSessions,
   findSession,
@@ -23,7 +28,7 @@ import {
   setSessionPermissions,
   interruptSession,
   closeSession,
-} from '../core/session-manager.js';
+} from "../core/session-manager.js";
 
 // ============================================================================
 // Wire Protocol Types
@@ -31,7 +36,7 @@ import {
 
 /** Client → Host request. */
 export type ClientMessage = {
-  kind: 'request';
+  kind: "request";
   id: string;
   method: string;
   params?: Record<string, unknown>;
@@ -39,42 +44,47 @@ export type ClientMessage = {
 
 /** Host → Client response or push event. */
 export type HostMessage =
-  | { kind: 'response'; id: string; result: unknown }
-  | { kind: 'error'; id: string; error: string }
-  | { kind: 'event'; sessionId: string; event: SubscriberEvent };
+  | { kind: "response"; id: string; result: unknown }
+  | { kind: "error"; id: string; error: string }
+  | { kind: "event"; sessionId: string; event: SubscriberEvent };
 
 // ============================================================================
-// Message Handler
+// Client Connection
 // ============================================================================
 
 export type SendFn = (message: HostMessage) => void;
 
-export interface MessageHandler {
+export interface ClientConnection {
   handleMessage(raw: unknown): Promise<void>;
   dispose(): void;
 }
 
 /**
- * Create a message handler bound to a single client connection.
+ * Create a handler bound to a single client connection.
  *
  * @param clientId  Unique ID for this client (used as subscriber ID)
  * @param sendFn    Transport-specific send function
  */
-export function createMessageHandler(
+export function createClientConnection(
   clientId: string,
   sendFn: SendFn,
-): MessageHandler {
+): ClientConnection {
   /** Active subscriptions: sessionId → { channel, subscriber } */
-  const subscriptions = new Map<string, {
-    channel: SessionChannel;
-    subscriber: Subscriber;
-  }>();
+  const subscriptions = new Map<
+    string,
+    {
+      channel: SessionChannel;
+      subscriber: Subscriber;
+    }
+  >();
 
   async function handleMessage(raw: unknown): Promise<void> {
     // Parse the message
-    const msg = (typeof raw === 'string' ? JSON.parse(raw) : raw) as ClientMessage;
+    const msg = (
+      typeof raw === "string" ? JSON.parse(raw) : raw
+    ) as ClientMessage;
 
-    if (msg.kind !== 'request' || !msg.id || !msg.method) {
+    if (msg.kind !== "request" || !msg.id || !msg.method) {
       return; // Ignore malformed messages
     }
 
@@ -82,10 +92,10 @@ export function createMessageHandler(
 
     try {
       const result = await routeMethod(method, params ?? {});
-      sendFn({ kind: 'response', id, result });
+      sendFn({ kind: "response", id, result });
     } catch (err) {
       sendFn({
-        kind: 'error',
+        kind: "error",
         id,
         error: err instanceof Error ? err.message : String(err),
       });
@@ -97,16 +107,16 @@ export function createMessageHandler(
     params: Record<string, unknown>,
   ): Promise<unknown> {
     switch (method) {
-      case 'listSessions':
+      case "listSessions":
         return listAllSessions();
 
-      case 'findSession':
+      case "findSession":
         return findSession(params.sessionId as string) ?? null;
 
-      case 'loadSession':
+      case "loadSession":
         return loadSession(params.sessionId as string);
 
-      case 'subscribe': {
+      case "subscribe": {
         const sessionId = params.sessionId as string;
 
         // Don't double-subscribe
@@ -117,7 +127,7 @@ export function createMessageHandler(
         const subscriber: Subscriber = {
           id: clientId,
           send(event: SubscriberEvent) {
-            sendFn({ kind: 'event', sessionId, event });
+            sendFn({ kind: "event", sessionId, event });
           },
         };
 
@@ -126,7 +136,7 @@ export function createMessageHandler(
         return { subscribed: true };
       }
 
-      case 'unsubscribe': {
+      case "unsubscribe": {
         const sessionId = params.sessionId as string;
         const sub = subscriptions.get(sessionId);
         if (sub) {
@@ -136,14 +146,14 @@ export function createMessageHandler(
         return { unsubscribed: true };
       }
 
-      case 'send': {
+      case "send": {
         const sessionId = params.sessionId as string;
         const content = params.content as MessageContent;
         sendToSession(sessionId, content);
         return { sent: true };
       }
 
-      case 'resolveApproval': {
+      case "resolveApproval": {
         const sessionId = params.sessionId as string;
         const toolUseId = params.toolUseId as string;
         const optionId = params.optionId as string;
@@ -157,27 +167,27 @@ export function createMessageHandler(
         return { resolved: true };
       }
 
-      case 'setModel': {
+      case "setModel": {
         const sessionId = params.sessionId as string;
         const model = params.model as string | undefined;
         await setSessionModel(sessionId, model);
         return { set: true };
       }
 
-      case 'setPermissions': {
+      case "setPermissions": {
         const sessionId = params.sessionId as string;
         const mode = params.mode as string;
         await setSessionPermissions(sessionId, mode);
         return { set: true };
       }
 
-      case 'interrupt': {
+      case "interrupt": {
         const sessionId = params.sessionId as string;
         await interruptSession(sessionId);
         return { interrupted: true };
       }
 
-      case 'close': {
+      case "close": {
         const sessionId = params.sessionId as string;
         // Clean up our subscription tracking first
         const sub = subscriptions.get(sessionId);

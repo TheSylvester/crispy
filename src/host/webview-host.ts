@@ -9,7 +9,7 @@
  */
 
 import * as vscode from 'vscode';
-import { createMessageHandler, type HostMessage } from './message-handler.js';
+import { createClientConnection, type HostMessage } from './client-connection.js';
 
 /** The single active Crispy panel, if any. */
 let activePanel: vscode.WebviewPanel | undefined;
@@ -73,7 +73,7 @@ export function createCrispyPanel(
   let disposed = false;
 
   // Guarded sendFn — mirrors dev-server's `if (ws.readyState === ws.OPEN)` check
-  const handler = createMessageHandler(panelId, (msg) => {
+  const handler = createClientConnection(panelId, (msg) => {
     if (!disposed) {
       panel.webview.postMessage(msg);
     }

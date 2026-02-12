@@ -8,12 +8,12 @@
  */
 
 import { createContext, useContext } from 'react';
-import type { Transport } from '../transport.js';
+import type { SessionService } from '../transport.js';
 
-const TransportContext = createContext<Transport | null>(null);
+const TransportContext = createContext<SessionService | null>(null);
 
 interface TransportProviderProps {
-  transport: Transport;
+  transport: SessionService;
   children: React.ReactNode;
 }
 
@@ -28,7 +28,7 @@ export function TransportProvider({ transport, children }: TransportProviderProp
 /**
  * Access the transport instance. Throws if used outside TransportProvider.
  */
-export function useTransport(): Transport {
+export function useTransport(): SessionService {
   const transport = useContext(TransportContext);
   if (!transport) {
     throw new Error('useTransport must be used within a TransportProvider');

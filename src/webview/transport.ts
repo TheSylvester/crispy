@@ -1,8 +1,9 @@
 /**
- * Transport Interface — Client-Side RPC
+ * SessionService Interface — Client-Side RPC
  *
  * Typed RPC methods for communicating with the host. Both VS Code
  * postMessage and WebSocket transports implement this interface.
+ * The transport pipe (postMessage vs WebSocket) is invisible to consumers.
  *
  * @module transport
  */
@@ -16,7 +17,7 @@ export interface WireSessionInfo extends Omit<SessionInfo, 'modifiedAt'> {
   modifiedAt: string;
 }
 
-export interface Transport {
+export interface SessionService {
   listSessions(): Promise<WireSessionInfo[]>;
   findSession(sessionId: string): Promise<WireSessionInfo | null>;
   loadSession(sessionId: string): Promise<TranscriptEntry[]>;
@@ -28,6 +29,9 @@ export interface Transport {
   setPermissions(sessionId: string, mode: string): Promise<void>;
   interrupt(sessionId: string): Promise<void>;
   close(sessionId: string): Promise<void>;
-  onEvent(handler: (sessionId: string, event: SubscriberEvent) => void): void;
+  onEvent(handler: (sessionId: string, event: SubscriberEvent) => void): () => void;
   dispose(): void;
 }
+
+/** @deprecated Use SessionService instead. */
+export type Transport = SessionService;

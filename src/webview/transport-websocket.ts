@@ -8,7 +8,7 @@
  */
 
 import type { SubscriberEvent } from '../core/session-channel.js';
-import type { Transport, WireSessionInfo } from './transport.js';
+import type { SessionService, WireSessionInfo } from './transport.js';
 import type { TranscriptEntry } from '../core/transcript.js';
 
 /** Pending request awaiting a response. */
@@ -26,7 +26,7 @@ function nextId(): string {
   return `ws-${++requestCounter}-${Date.now()}`;
 }
 
-export function createWebSocketTransport(url: string): Transport {
+export function createWebSocketTransport(url: string): SessionService {
   const pending = new Map<string, PendingRequest>();
   const eventHandlers: Array<(sessionId: string, event: SubscriberEvent) => void> = [];
   const ws = new WebSocket(url);
@@ -144,6 +144,10 @@ export function createWebSocketTransport(url: string): Transport {
 
     onEvent(handler) {
       eventHandlers.push(handler);
+      return () => {
+        const i = eventHandlers.indexOf(handler);
+        if (i >= 0) eventHandlers.splice(i, 1);
+      };
     },
 
     dispose() {

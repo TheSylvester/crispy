@@ -11,9 +11,6 @@
  * arrives from the backend, the onEvent handler replaces the optimistic
  * entry to avoid duplicates.
  *
- * Known limitation: transport.onEvent() has no removeHandler.
- * We use a `cancelled` flag to ignore stale events after cleanup.
- *
  * @module useTranscript
  */
 
@@ -47,11 +44,11 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
       return;
     }
 
-    let cancelled = false;
+    let unmounted = false;
 
-    // Listen for live events — uses cancelled flag since onEvent has no unsubscribe
-    transport.onEvent((sid, event) => {
-      if (cancelled || sid !== sessionId) return;
+    // Listen for live events
+    const off = transport.onEvent((sid, event) => {
+      if (unmounted || sid !== sessionId) return;
 
       if (event.type === 'entry') {
         setEntries((prev) => {
@@ -78,18 +75,18 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
       try {
         // Subscribe first so we don't miss events between load and subscribe
         await transport.subscribe(sessionId!);
-        if (cancelled) return;
+        if (unmounted) return;
 
         // Load full history — overwrites any early events from subscription backfill
         const history = await transport.loadSession(sessionId!);
-        if (cancelled) return;
+        if (unmounted) return;
 
         setEntries(history);
       } catch (err) {
-        if (cancelled) return;
+        if (unmounted) return;
         setError(err instanceof Error ? err.message : String(err));
       } finally {
-        if (!cancelled) {
+        if (!unmounted) {
           setIsLoading(false);
         }
       }
@@ -98,7 +95,8 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
     load();
 
     return () => {
-      cancelled = true;
+      unmounted = true;
+      off();
       transport.unsubscribe(sessionId).catch(() => {
         // Best-effort unsubscribe
       });

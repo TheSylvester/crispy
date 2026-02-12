@@ -1,5 +1,5 @@
 /**
- * Tests for Message Handler — Client->Host request routing
+ * Tests for Client Connection — Client->Host request routing
  *
  * Uses MockDiscovery for stateless session operations (findSession,
  * listSessions, loadHistory) and MockAdapter for live session streaming.
@@ -27,9 +27,9 @@ import {
 } from '../src/core/session-manager.js';
 
 import {
-  createMessageHandler,
+  createClientConnection,
   type HostMessage,
-} from '../src/host/message-handler.js';
+} from '../src/host/client-connection.js';
 
 // ============================================================================
 // Mock Discovery
@@ -151,7 +151,7 @@ function createMockSend(): { messages: HostMessage[]; sendFn: (msg: HostMessage)
 
 /** Send a request and return the response message from the collected messages. */
 async function sendRequestAndGetResponse(
-  handler: ReturnType<typeof createMessageHandler>,
+  handler: ReturnType<typeof createClientConnection>,
   sendMessages: HostMessage[],
   method: string,
   params?: Record<string, unknown>,
@@ -192,7 +192,7 @@ afterEach(() => {
 // Tests
 // ============================================================================
 
-describe('MessageHandler', () => {
+describe('ClientConnection', () => {
   describe('listSessions', () => {
     it('returns all sessions from registered adapters', async () => {
       const s1 = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
@@ -201,7 +201,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       const resp = await sendRequestAndGetResponse(handler, messages, 'listSessions');
       expect(resp.kind).toBe('response');
@@ -221,7 +221,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       const resp = await sendRequestAndGetResponse(handler, messages, 'findSession', { sessionId: 'sess-1' });
       expect(resp.kind).toBe('response');
@@ -238,7 +238,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       const resp = await sendRequestAndGetResponse(handler, messages, 'findSession', { sessionId: 'nonexistent' });
       expect(resp.kind).toBe('response');
@@ -261,7 +261,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       const resp = await sendRequestAndGetResponse(handler, messages, 'loadSession', { sessionId: 'sess-1' });
       expect(resp.kind).toBe('response');
@@ -282,7 +282,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, factory);
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       // Subscribe
       const resp = await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
@@ -315,7 +315,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, factory);
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
       await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
@@ -342,7 +342,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, factory);
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
       await sendRequestAndGetResponse(handler, messages, 'unsubscribe', { sessionId: 'sess-1' });
@@ -370,7 +370,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, factory);
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
 
@@ -389,7 +389,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       const resp = await sendRequestAndGetResponse(handler, messages, 'send', {
         sessionId: 'nonexistent',
@@ -409,7 +409,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, factory);
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
 
@@ -444,7 +444,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       const resp = await sendRequestAndGetResponse(handler, messages, 'resolveApproval', {
         sessionId: 'sess-1',
@@ -465,7 +465,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, factory);
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
 
@@ -488,7 +488,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, factory);
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
 
@@ -511,7 +511,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, factory);
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
 
@@ -532,7 +532,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
 
@@ -555,7 +555,7 @@ describe('MessageHandler', () => {
   describe('unknown method', () => {
     it('returns an error for unknown methods', async () => {
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       const resp = await sendRequestAndGetResponse(handler, messages, 'nonexistentMethod');
       expect(resp.kind).toBe('error');
@@ -570,7 +570,7 @@ describe('MessageHandler', () => {
   describe('malformed messages', () => {
     it('ignores messages without kind=request', async () => {
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       await handler.handleMessage({ kind: 'not-a-request', id: '1', method: 'listSessions' });
       expect(messages).toHaveLength(0);
@@ -583,7 +583,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       await handler.handleMessage(JSON.stringify({
         kind: 'request',
@@ -606,7 +606,7 @@ describe('MessageHandler', () => {
       registerAdapter(discovery, factory);
 
       const { messages, sendFn } = createMockSend();
-      const handler = createMessageHandler('client-1', sendFn);
+      const handler = createClientConnection('client-1', sendFn);
 
       await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
 

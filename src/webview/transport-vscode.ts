@@ -8,7 +8,7 @@
  */
 
 import type { SubscriberEvent } from '../core/session-channel.js';
-import type { Transport, WireSessionInfo } from './transport.js';
+import type { SessionService, WireSessionInfo } from './transport.js';
 import type { TranscriptEntry } from '../core/transcript.js';
 
 interface VSCodeAPI {
@@ -32,7 +32,7 @@ function nextId(): string {
   return `vsc-${++requestCounter}-${Date.now()}`;
 }
 
-export function createVSCodeTransport(api: VSCodeAPI): Transport {
+export function createVSCodeTransport(api: VSCodeAPI): SessionService {
   const pending = new Map<string, PendingRequest>();
   const eventHandlers: Array<(sessionId: string, event: SubscriberEvent) => void> = [];
 
@@ -116,6 +116,10 @@ export function createVSCodeTransport(api: VSCodeAPI): Transport {
 
     onEvent(handler) {
       eventHandlers.push(handler);
+      return () => {
+        const i = eventHandlers.indexOf(handler);
+        if (i >= 0) eventHandlers.splice(i, 1);
+      };
     },
 
     dispose() {
