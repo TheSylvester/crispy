@@ -27,7 +27,7 @@ h2 {
 /* --- Sidebar Custom Properties --- */
 
 :root {
-  --sidebar-width: min(70vw, 480px);   /* Leto used left:8px + right:30% ≈ 70vw */
+  --sidebar-width: 70vw;               /* Leto: left:8px + right:30% ≈ 70% of viewport */
   --sidebar-transition: 0.25s ease-in-out;
   --titlebar-height: 36px;
 }
@@ -564,7 +564,7 @@ h2 {
 .prose blockquote {
   margin: 1em 0;
   padding: 0.5em 0 0.5em 1.5em;
-  border-left: 4px solid var(--vscode-textLink-foreground, #3794ff);
+  border-left: 4px solid #e2c08d;
   color: var(--vscode-descriptionForeground, #9d9d9d);
   font-style: italic;
 }
@@ -575,7 +575,11 @@ h2 {
 
 /* Links */
 .prose a {
-  color: var(--vscode-textLink-foreground, #3794ff);
+  color: #e2c08d;
+  text-decoration: none;
+}
+
+.prose a:hover {
   text-decoration: underline;
 }
 
@@ -680,13 +684,14 @@ h2 {
   background: transparent;
 }
 
-/* Status state classes — color the tool name on success/error */
-.crispy-tool-card.tool-success .crispy-tool-header-content {
-  color: var(--vscode-gitDecoration-addedResourceForeground, #89d185);
+/* Status state classes — color only the badge label on success/error,
+   not the entire header (keeps filepath, pattern, description colors intact) */
+.crispy-tool-card.tool-success .crispy-tool-badge {
+  opacity: 0.7;
 }
 
-.crispy-tool-card.tool-error .crispy-tool-header-content {
-  color: var(--vscode-errorForeground, #f48771);
+.crispy-tool-card.tool-error .crispy-tool-badge {
+  opacity: 0.7;
 }
 
 /* --- Summary row (the clickable header) --- */
@@ -740,6 +745,7 @@ h2 {
   font-size: 11px;
   flex-shrink: 0;
   white-space: nowrap;
+  font-weight: 700;
 }
 
 .crispy-status-pending {
@@ -835,7 +841,7 @@ h2 {
 
 .crispy-tool-filepath {
   font-family: var(--vscode-editor-font-family, monospace);
-  color: #60a5fa;
+  color: #e2c08d;
 }
 
 /* --- Line info (muted, smaller) --- */
@@ -1849,7 +1855,7 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   transform: rotate(180deg);
 }
 
-/* --- Center slot (CWD / git — future) --- */
+/* --- Center section (CWD + connection indicator) --- */
 
 .crispy-titlebar__center {
   display: flex;
@@ -1857,8 +1863,26 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   gap: 8px;
   flex: 1;
   min-width: 0;
+  justify-content: center;
   font-size: 12px;
   font-family: var(--vscode-editor-font-family, monospace);
+}
+
+/* CWD display — Leto-style: link-blue, monospace, hover highlight */
+.crispy-titlebar__cwd {
+  color: var(--vscode-textLink-foreground, #3794ff);
+  opacity: 0.9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 2px 6px;
+  border-radius: 3px;
+  transition: background 0.15s ease;
+  cursor: default;
+}
+
+.crispy-titlebar__cwd:hover {
+  background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.05));
 }
 
 /* --- Right section --- */
@@ -1870,20 +1894,21 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   flex-shrink: 0;
 }
 
-/* --- Connection dot (Leto-style with glow) --- */
+/* --- Connection indicator dot (Leto-style with glow + click-to-copy) --- */
 
 .crispy-titlebar__dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+  cursor: pointer;
   transition: background 0.3s ease, box-shadow 0.3s ease;
 }
 
 .crispy-titlebar__dot--streaming {
   background: var(--vscode-testing-runAction, #73c991);
   box-shadow: 0 0 4px rgba(115, 201, 145, 0.6);
-  animation: crispy-dot-pulse 2s ease-in-out infinite;
+  animation: crispy-dot-pulse-green 2s ease-in-out infinite;
 }
 
 .crispy-titlebar__dot--idle {
@@ -1893,12 +1918,24 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 .crispy-titlebar__dot--approval {
   background: #dcdcaa;
   box-shadow: 0 0 4px rgba(220, 220, 170, 0.5);
-  animation: crispy-dot-pulse 2s ease-in-out infinite;
+  animation: crispy-dot-pulse-amber 2s ease-in-out infinite;
 }
 
-@keyframes crispy-dot-pulse {
+/* Copied flash — brief bright highlight on click-to-copy */
+.crispy-titlebar__dot--copied {
+  background: #fff !important;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.8) !important;
+  animation: none !important;
+}
+
+@keyframes crispy-dot-pulse-green {
   0%, 100% { box-shadow: 0 0 4px rgba(115, 201, 145, 0.4); }
   50% { box-shadow: 0 0 8px rgba(115, 201, 145, 0.8); }
+}
+
+@keyframes crispy-dot-pulse-amber {
+  0%, 100% { box-shadow: 0 0 4px rgba(220, 220, 170, 0.3); }
+  50% { box-shadow: 0 0 8px rgba(220, 220, 170, 0.7); }
 }
 
 /* --- New session button (right) — extends base btn --- */

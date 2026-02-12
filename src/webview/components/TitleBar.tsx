@@ -1,17 +1,22 @@
 /**
- * TitleBar — Fixed header with session dropdown, status dot, and new-session button
+ * TitleBar — Fixed header with session dropdown, CWD/status, and new-session button
  *
- * Left:   Session dropdown button (label + animated chevron) — toggles sidebar
- * Center: Empty structural slot for future CWD/git display
- * Right:  Connection dot (streaming/idle/approval) + New session button
+ * Three-column layout matching Leto webview-next:
+ *   Left:   Session dropdown button (label + animated chevron) — toggles sidebar
+ *   Center: CWD display (last 2 path segments, clickable) + connection indicator dot
+ *   Right:  New session button
+ *
+ * Connection dot shows streaming/idle/approval state with Leto-style glow.
+ * Click-to-copy session ID on the dot (Leto pattern).
  *
  * @module TitleBar
  */
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useSession } from '../context/SessionContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
 import { useSessionStatus } from '../hooks/useSessionStatus.js';
+import { useSessionCwd } from '../hooks/useSessionCwd.js';
 
 /** SVG chevron — points down, rotates 180° when sidebar is open */
 function Chevron({ open }: { open: boolean }): React.JSX.Element {
@@ -49,10 +54,67 @@ function PlusIcon(): React.JSX.Element {
   );
 }
 
+/**
+ * Connection indicator — 8px dot with state-driven color + glow.
+ * Click-to-copy session ID (Leto pattern: flash "copied" feedback).
+ */
+function ConnectionDot({
+  channelState,
+  sessionId,
+}: {
+  channelState: string | null;
+  sessionId: string | null;
+}): React.JSX.Element | null {
+  const [copied, setCopied] = useState(false);
+
+  // Only show dot when a session is selected and has a known state
+  const dotModifier =
+    channelState === 'streaming'
+      ? 'crispy-titlebar__dot--streaming'
+      : channelState === 'idle'
+        ? 'crispy-titlebar__dot--idle'
+        : channelState === 'awaiting_approval'
+          ? 'crispy-titlebar__dot--approval'
+          : null;
+
+  if (!dotModifier) return null;
+
+  const dotClass = `crispy-titlebar__dot ${dotModifier}${copied ? ' crispy-titlebar__dot--copied' : ''}`;
+
+  const handleCopy = async () => {
+    if (!sessionId) return;
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      console.error('[TitleBar] Failed to copy session ID');
+    }
+  };
+
+  const title = copied
+    ? 'Copied!'
+    : sessionId
+      ? `${channelState} · click to copy session ID`
+      : `Status: ${channelState}`;
+
+  return (
+    <span
+      className={dotClass}
+      title={title}
+      onClick={handleCopy}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCopy(); }}
+    />
+  );
+}
+
 export function TitleBar(): React.JSX.Element {
   const { sessions, selectedSessionId, setSelectedSessionId } = useSession();
   const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
   const { channelState } = useSessionStatus(selectedSessionId);
+  const { fullPath, display: cwdDisplay } = useSessionCwd();
 
   const sessionLabel =
     sessions.find((s) => s.sessionId === selectedSessionId)?.label ?? 'No session';
@@ -65,16 +127,6 @@ export function TitleBar(): React.JSX.Element {
     setSelectedSessionId(null);
     console.log('[TitleBar] New session requested — transport.createSession() not wired yet');
   }, [setSelectedSessionId]);
-
-  // Dot class based on channel state
-  const dotClass =
-    channelState === 'streaming'
-      ? 'crispy-titlebar__dot crispy-titlebar__dot--streaming'
-      : channelState === 'idle'
-        ? 'crispy-titlebar__dot crispy-titlebar__dot--idle'
-        : channelState === 'awaiting_approval'
-          ? 'crispy-titlebar__dot crispy-titlebar__dot--approval'
-          : null; // hidden for null / unattached
 
   return (
     <header className="crispy-titlebar">
@@ -89,14 +141,21 @@ export function TitleBar(): React.JSX.Element {
         <Chevron open={!sidebarCollapsed} />
       </button>
 
-      {/* Center — structural slot for CWD / git (future) */}
-      <div className="crispy-titlebar__center" />
-
-      {/* Right — connection dot + New button */}
-      <div className="crispy-titlebar__right">
-        {dotClass && (
-          <span className={dotClass} title={`Status: ${channelState}`} />
+      {/* Center — CWD + connection indicator */}
+      <div className="crispy-titlebar__center">
+        {cwdDisplay && (
+          <span
+            className="crispy-titlebar__cwd"
+            title={fullPath ?? undefined}
+          >
+            {cwdDisplay}
+          </span>
         )}
+        <ConnectionDot channelState={channelState} sessionId={selectedSessionId} />
+      </div>
+
+      {/* Right — New button */}
+      <div className="crispy-titlebar__right">
         <button
           className="crispy-titlebar__btn crispy-titlebar__new-btn"
           onClick={handleNew}
