@@ -39,6 +39,7 @@ import { useTransport } from '../../context/TransportContext.js';
 import { useSession } from '../../context/SessionContext.js';
 import { slugToPath } from '../../hooks/useSessionCwd.js';
 import { useContextUsage } from '../../hooks/useContextUsage.js';
+import { useSessionStatus } from '../../hooks/useSessionStatus.js';
 import type { MessageContent, MessageContentBlock, ContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 
 /**
@@ -137,6 +138,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned } = usePreferences();
     const transport = useTransport();
     const { selectedSessionId, selectedCwd, setSelectedSessionId } = useSession();
+    const { setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
 
     // --- Context usage tracking ---
     const contextUsage = useContextUsage(selectedSessionId, entries);
@@ -240,6 +242,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         const optimistic = buildOptimisticUserEntry('pending', content);
         onPendingOptimisticEntry?.(optimistic);
 
+        setOptimisticStatus('streaming');
         transport.createSession('claude', cwd, {
           model: state.model || undefined,
           permissionMode: mapAgencyToPermissionMode(state.agencyMode),
@@ -251,6 +254,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             allowDangerouslySkipPermissions: state.bypassEnabled || undefined,
           });
         }).catch((err) => {
+          setOptimisticStatus('idle');
           console.error('[ControlPanel] createSession failed:', err);
         });
         dispatch({ type: 'CLEAR_INPUT' });
@@ -274,12 +278,14 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         allowDangerouslySkipPermissions: state.bypassEnabled || undefined,
       };
 
+      setOptimisticStatus('streaming');
       transport.send(selectedSessionId, content, options).catch((err) => {
+        setOptimisticStatus('idle');
         console.error('[ControlPanel] send failed:', err);
       });
 
       dispatch({ type: 'CLEAR_INPUT' });
-    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, selectedSessionId, selectedCwd, setSelectedSessionId, transport, onOptimisticEntry, onPendingOptimisticEntry]);
+    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, selectedSessionId, selectedCwd, setSelectedSessionId, setOptimisticStatus, transport, onOptimisticEntry, onPendingOptimisticEntry]);
 
     // --- Drag/drop handlers ---
     const handleDragOver = useCallback((e: React.DragEvent) => {

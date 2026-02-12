@@ -17,7 +17,7 @@ import { PreferencesProvider, usePreferences } from './context/PreferencesContex
 import { SessionSelector } from './components/SessionSelector.js';
 import { TranscriptViewer } from './components/TranscriptViewer.js';
 import { TitleBar } from './components/TitleBar.js';
-import { useSessionStatus } from './hooks/useSessionStatus.js';
+import { SessionStatusProvider, useSessionStatus } from './hooks/useSessionStatus.js';
 
 interface AppProps {
   transport: Transport;
@@ -29,7 +29,9 @@ export function App({ transport, transportKind }: AppProps): React.JSX.Element {
     <TransportProvider transport={transport}>
       <SessionProvider>
         <PreferencesProvider>
-          <AppLayout transportKind={transportKind} />
+          <SessionStatusProvider>
+            <AppLayout transportKind={transportKind} />
+          </SessionStatusProvider>
         </PreferencesProvider>
       </SessionProvider>
     </TransportProvider>
