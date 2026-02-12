@@ -85,6 +85,19 @@ export function adaptClaudeEntry(raw: Record<string, unknown>): TranscriptEntry 
 
     // Only transform if there's actual message content (tool_use/tool_result)
     if (actualMessage?.content) {
+      // Collect overflow fields not consumed by the progress mapping.
+      // These are fields on the raw entry that aren't mapped to any universal
+      // field — they go into the metadata bag to avoid data loss.
+      const {
+        type: _type,
+        uuid: _uuid,
+        parentUuid: _parentUuid,
+        sessionId: _sessionId,
+        timestamp: _timestamp,
+        parentToolUseID: _parentToolUseID,
+        ...progressOverflow
+      } = raw;
+
       return {
         type: (innerMessage?.type as EntryType) ?? 'assistant',
         uuid: raw.uuid as string | undefined,
@@ -95,6 +108,7 @@ export function adaptClaudeEntry(raw: Record<string, unknown>): TranscriptEntry 
         agentId: data?.agentId as string | undefined,
         parentToolUseID: raw.parentToolUseID as string | undefined,
         vendor: 'claude',
+        ...(Object.keys(progressOverflow).length > 0 && { metadata: progressOverflow }),
       };
     }
     // Progress entries without tool content are skipped

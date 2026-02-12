@@ -13,7 +13,7 @@
  * @module control-panel/ControlPanel
  */
 
-import { useReducer, useEffect, useCallback, forwardRef } from 'react';
+import { useReducer, useEffect, useCallback, useRef, forwardRef } from 'react';
 import {
   type ControlPanelState,
   type Action,
@@ -183,14 +183,25 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     }, [state.bypassEnabled, state.agencyMode, state.model]);
 
     // --- Server → UI: permission_mode_changed notifications ---
-    // Handles server-initiated mode transitions (e.g. EnterPlanMode).
+    // The control panel state is the optimistic source of truth — the user's
+    // chosen mode takes effect immediately. Server notifications only update
+    // the UI when the server is announcing a *different* mode than what we
+    // already have locally (e.g. the agent called EnterPlanMode).
+    //
+    // This also naturally handles the SDK boot race: the SDK emits an initial
+    // status with its default mode before processing our requested mode. Since
+    // the local state already reflects the user's choice, that default-mode
+    // echo is a no-op.
+    const agencyModeRef = useRef(state.agencyMode);
+    agencyModeRef.current = state.agencyMode;
+
     useEffect(() => {
       const off = transport.onEvent((sessionId, event) => {
         if (sessionId !== selectedSessionId) return;
         if (event.type === 'notification' && event.event.kind === 'permission_mode_changed') {
-          const agencyMode = mapPermissionModeToAgency(event.event.mode);
-          if (agencyMode) {
-            dispatch({ type: 'SET_AGENCY_MODE', mode: agencyMode });
+          const serverMode = mapPermissionModeToAgency(event.event.mode);
+          if (serverMode && serverMode !== agencyModeRef.current) {
+            dispatch({ type: 'SET_AGENCY_MODE', mode: serverMode });
           }
         }
       });
