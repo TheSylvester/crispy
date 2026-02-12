@@ -18,7 +18,7 @@ const PreferencesContext = createContext<PreferencesContextValue | null>(null);
 export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [renderMode, setRenderMode] = useState<RenderMode>('rich');
   const [settingsPinned, setSettingsPinned] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   const value: PreferencesContextValue = {
     renderMode,
