@@ -21,6 +21,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { registerAdapter } from '../core/session-manager.js';
 import { ClaudeAgentAdapter, claudeDiscovery } from '../core/adapters/claude/claude-code-adapter.js';
 import { createClientConnection } from './client-connection.js';
+import { startRescan } from '../core/session-list-manager.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
 
@@ -141,4 +142,5 @@ server.listen(PORT, () => {
   console.log(`[dev-server] WebSocket endpoint: ws://localhost:${PORT}/ws`);
   console.log(`[dev-server] Serving static files from: ${STATIC_DIR}`);
   console.log(`[dev-server] Adapter registered for vendor: ${claudeDiscovery.vendor}`);
+  startRescan();
 });

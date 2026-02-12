@@ -139,6 +139,9 @@ export interface SessionChannel {
 
   /** Guards against race conditions during teardown. */
   tearing: boolean;
+
+  /** Optional callback invoked when the channel transitions to idle (end of turn). */
+  onIdle?: () => void;
 }
 
 // ============================================================================
@@ -370,6 +373,7 @@ function routeStatusEvent(
     case 'idle':
       channel.pendingApprovals.clear();
       setState(channel, 'idle');
+      channel.onIdle?.();
       break;
 
     case 'awaiting_approval': {

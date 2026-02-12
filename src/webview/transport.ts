@@ -10,7 +10,7 @@
 
 import type { SessionInfo, SendOptions } from '../core/agent-adapter.js';
 import type { TranscriptEntry, MessageContent } from '../core/transcript.js';
-import type { SubscriberEvent } from '../core/session-channel.js';
+import type { HostEvent } from '../host/client-connection.js';
 
 /** Client-side session info — modifiedAt is a string after JSON serialization. */
 export interface WireSessionInfo extends Omit<SessionInfo, 'modifiedAt'> {
@@ -33,7 +33,9 @@ export interface SessionService {
   setPermissions(sessionId: string, mode: string): Promise<void>;
   interrupt(sessionId: string): Promise<void>;
   close(sessionId: string): Promise<void>;
-  onEvent(handler: (sessionId: string, event: SubscriberEvent) => void): () => void;
+  subscribeSessionList(): Promise<void>;
+  unsubscribeSessionList(): Promise<void>;
+  onEvent(handler: (sessionId: string, event: HostEvent) => void): () => void;
   dispose(): void;
 }
 

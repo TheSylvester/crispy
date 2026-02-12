@@ -18,6 +18,7 @@ import type {
   SubscriberEvent,
   SessionChannel,
 } from "../core/session-channel.js";
+import type { SessionListEvent } from "../core/session-list-events.js";
 import { resolveApproval, unsubscribe } from "../core/session-channel.js";
 import {
   listAllSessions,
@@ -31,6 +32,12 @@ import {
   interruptSession,
   closeSession,
 } from "../core/session-manager.js";
+import {
+  subscribeSessionList,
+  unsubscribeSessionList,
+  type SessionListSubscriber,
+} from "../core/session-list-manager.js";
+import { SESSION_LIST_CHANNEL_ID } from "../core/session-list-events.js";
 
 // ============================================================================
 // Wire Protocol Types
@@ -44,11 +51,14 @@ export type ClientMessage = {
   params?: Record<string, unknown>;
 };
 
+/** Union of all events that can be pushed over the wire. */
+export type HostEvent = SubscriberEvent | SessionListEvent;
+
 /** Host → Client response or push event. */
 export type HostMessage =
   | { kind: "response"; id: string; result: unknown }
   | { kind: "error"; id: string; error: string }
-  | { kind: "event"; sessionId: string; event: SubscriberEvent };
+  | { kind: "event"; sessionId: string; event: HostEvent };
 
 // ============================================================================
 // Client Connection
@@ -79,6 +89,9 @@ export function createClientConnection(
       subscriber: Subscriber;
     }
   >();
+
+  /** Global session-list subscription for this client. */
+  let sessionListSub: SessionListSubscriber | null = null;
 
   async function handleMessage(raw: unknown): Promise<void> {
     // Parse the message
@@ -240,12 +253,36 @@ export function createClientConnection(
         return { closed: true };
       }
 
+      case "subscribeSessionList": {
+        if (sessionListSub) return { subscribed: true };
+        sessionListSub = {
+          id: clientId,
+          send(event) {
+            sendFn({ kind: "event", sessionId: SESSION_LIST_CHANNEL_ID, event });
+          },
+        };
+        subscribeSessionList(sessionListSub);
+        return { subscribed: true };
+      }
+
+      case "unsubscribeSessionList": {
+        if (sessionListSub) {
+          unsubscribeSessionList(sessionListSub);
+          sessionListSub = null;
+        }
+        return { unsubscribed: true };
+      }
+
       default:
         throw new Error(`Unknown method: ${method}`);
     }
   }
 
   function dispose(): void {
+    if (sessionListSub) {
+      unsubscribeSessionList(sessionListSub);
+      sessionListSub = null;
+    }
     for (const [, sub] of subscriptions) {
       try {
         unsubscribe(sub.channel, sub.subscriber);

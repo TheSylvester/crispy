@@ -7,7 +7,7 @@
  * @module transport-vscode
  */
 
-import type { SubscriberEvent } from '../core/session-channel.js';
+import type { HostEvent } from '../host/client-connection.js';
 import type { SessionService, WireSessionInfo } from './transport.js';
 import type { TranscriptEntry } from '../core/transcript.js';
 
@@ -34,7 +34,7 @@ function nextId(): string {
 
 export function createVSCodeTransport(api: VSCodeAPI): SessionService {
   const pending = new Map<string, PendingRequest>();
-  const eventHandlers: Array<(sessionId: string, event: SubscriberEvent) => void> = [];
+  const eventHandlers: Array<(sessionId: string, event: HostEvent) => void> = [];
 
   function onMessage(ev: MessageEvent): void {
     const msg = ev.data;
@@ -116,6 +116,9 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
 
     close: (sessionId) =>
       request<void>('close', { sessionId }),
+
+    subscribeSessionList: () => request<void>('subscribeSessionList'),
+    unsubscribeSessionList: () => request<void>('unsubscribeSessionList'),
 
     onEvent(handler) {
       eventHandlers.push(handler);

@@ -14,6 +14,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { WireSessionInfo } from '../transport.js';
 import { useTransport } from './TransportContext.js';
+import { SESSION_LIST_CHANNEL_ID } from '../../core/session-list-events.js';
 
 interface SessionState {
   sessions: WireSessionInfo[];
@@ -46,6 +47,7 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
   // Track whether initial CWD default has been applied
   const cwdInitialized = useRef(false);
 
+  // Manual refresh fallback — kept in context value for explicit "pull" scenarios
   const loadSessions = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -59,9 +61,52 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     }
   }, [transport]);
 
+  // Combined load + subscribe effect: subscribe first (so we don't miss
+  // upserts during load), then load the initial snapshot, then listen for
+  // push upserts on the sentinel sessionId.
   useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
+    let unmounted = false;
+
+    // 1. Subscribe first
+    transport.subscribeSessionList().catch(() => {});
+
+    // 2. Load initial snapshot
+    (async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const result = await transport.listSessions();
+        if (!unmounted) setSessions(result);
+      } catch (err) {
+        if (!unmounted) setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!unmounted) setIsLoading(false);
+      }
+    })();
+
+    // 3. Listen for upserts on the sentinel sessionId
+    const off = transport.onEvent((sessionId, event) => {
+      if (unmounted || sessionId !== SESSION_LIST_CHANNEL_ID) return;
+      if (event.type === 'session_list_upsert') {
+        // JSON serialization converts Date→string, so it arrives as WireSessionInfo
+        const upserted = event.session as unknown as WireSessionInfo;
+        setSessions((prev) => {
+          const filtered = prev.filter((s) => s.sessionId !== upserted.sessionId);
+          const next = [upserted, ...filtered];
+          next.sort((a, b) =>
+            new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime()
+          );
+          return next;
+        });
+      }
+    });
+
+    return () => {
+      unmounted = true;
+      off();
+      transport.unsubscribeSessionList().catch(() => {});
+    };
+  }, [transport]);
 
   // Auto-sync: when selectedSessionId changes, update CWD to that session's slug
   useEffect(() => {

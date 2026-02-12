@@ -26,6 +26,7 @@ import {
   createChannel, setAdapter, subscribe, unsubscribe,
   sendMessage, destroyChannel, backfillHistory, rekeyChannel,
 } from './session-channel.js';
+import { refreshAndNotify } from './session-list-manager.js';
 
 // ============================================================================
 // Types
@@ -211,6 +212,20 @@ function openChannel(channelId: string, vendor: Vendor, spec: SessionOpenSpec): 
 
   const liveAdapter = registration.createAdapter(spec);
   const channel = createChannel(channelId);
+
+  // Wire idle hook: when the channel transitions to idle (end of turn),
+  // re-read session metadata from disk and push an upsert to all
+  // session-list subscribers (title/lastMessage/timestamp may have changed).
+  channel.onIdle = () => {
+    const sessionId = channel.adapter?.sessionId;
+    if (!sessionId) return;
+    // Small grace period: the adapter emits idle synchronously when the SDK
+    // yields the result message, but the SDK may not have flushed the JSONL
+    // file to disk yet. 150ms is enough for the OS write buffer to flush.
+    // The 30s rescan is a fallback either way.
+    setTimeout(() => refreshAndNotify(sessionId), 150);
+  };
+
   setAdapter(channel, liveAdapter);
   return channel;
 }
@@ -318,6 +333,22 @@ export function createSession(
   const channel = openChannel(pendingId, vendor, spec);
   sessions.set(pendingId, channel);
   subscribe(channel, subscriber);
+
+  // One-shot session-list notifier: pushes upsert when the real session ID resolves
+  const listNotifySubscriber: Subscriber = {
+    id: `__list_notify__${pendingId}`,
+    send(event: SubscriberEvent) {
+      if (
+        event.type === 'notification' &&
+        event.event.kind === 'session_changed' &&
+        event.event.sessionId
+      ) {
+        refreshAndNotify(event.event.sessionId);
+        unsubscribe(channel, listNotifySubscriber);
+      }
+    },
+  };
+  subscribe(channel, listNotifySubscriber);
 
   // One-shot re-key subscriber: swaps pending → real ID on session_changed
   const rekeySubscriber: Subscriber = {

@@ -1234,6 +1234,7 @@ export function findSession(sessionId: string): SessionInfo | undefined {
       modifiedAt: stat.mtime,
       size: stat.size,
       label: meta?.label,
+      lastMessage: meta?.lastMessage,
       vendor: 'claude',
     };
   }

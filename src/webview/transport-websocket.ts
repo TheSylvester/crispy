@@ -7,7 +7,7 @@
  * @module transport-websocket
  */
 
-import type { SubscriberEvent } from '../core/session-channel.js';
+import type { HostEvent } from '../host/client-connection.js';
 import type { SessionService, WireSessionInfo } from './transport.js';
 import type { TranscriptEntry } from '../core/transcript.js';
 
@@ -28,7 +28,7 @@ function nextId(): string {
 
 export function createWebSocketTransport(url: string): SessionService {
   const pending = new Map<string, PendingRequest>();
-  const eventHandlers: Array<(sessionId: string, event: SubscriberEvent) => void> = [];
+  const eventHandlers: Array<(sessionId: string, event: HostEvent) => void> = [];
   const ws = new WebSocket(url);
 
   /** Queue messages until the socket is open. */
@@ -66,7 +66,7 @@ export function createWebSocketTransport(url: string): SessionService {
     }
 
     if (msg.kind === 'event') {
-      const event = msg.event as SubscriberEvent;
+      const event = msg.event as HostEvent;
       const sessionId = msg.sessionId as string;
       for (const handler of eventHandlers) {
         handler(sessionId, event);
@@ -144,6 +144,9 @@ export function createWebSocketTransport(url: string): SessionService {
 
     close: (sessionId) =>
       request<void>('close', { sessionId }),
+
+    subscribeSessionList: () => request<void>('subscribeSessionList'),
+    unsubscribeSessionList: () => request<void>('unsubscribeSessionList'),
 
     onEvent(handler) {
       eventHandlers.push(handler);
