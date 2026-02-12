@@ -11,8 +11,8 @@
 body {
   font-family: var(--vscode-font-family);
   font-size: var(--vscode-font-size);
-  color: var(--vscode-foreground);
-  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground, #d4d4d4);
+  background: var(--vscode-sideBar-background, #252526);
   margin: 0;
   padding: 0;
   overflow: hidden;
@@ -564,7 +564,7 @@ h2 {
 .prose blockquote {
   margin: 1em 0;
   padding: 0.5em 0 0.5em 1.5em;
-  border-left: 4px solid #e2c08d;
+  border-left: 4px solid var(--vscode-textLink-foreground, #3794ff);
   color: var(--vscode-descriptionForeground, #9d9d9d);
   font-style: italic;
 }
@@ -575,7 +575,7 @@ h2 {
 
 /* Links */
 .prose a {
-  color: #e2c08d;
+  color: #60a5fa;
   text-decoration: none;
 }
 
@@ -661,9 +661,8 @@ h2 {
   margin: 4px 0;
   margin-left: auto;
   max-width: 80%;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: 8px;
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  border-radius: 6px;
   padding: 10px 14px;
 }
 
@@ -684,15 +683,8 @@ h2 {
   background: transparent;
 }
 
-/* Status state classes — color only the badge label on success/error,
-   not the entire header (keeps filepath, pattern, description colors intact) */
-.crispy-tool-card.tool-success .crispy-tool-badge {
-  opacity: 0.7;
-}
-
-.crispy-tool-card.tool-error .crispy-tool-badge {
-  opacity: 0.7;
-}
+/* Status state classes — reserved for future per-state styling.
+   No opacity dimming — completed tools should look fully solid. */
 
 /* --- Summary row (the clickable header) --- */
 
@@ -841,7 +833,7 @@ h2 {
 
 .crispy-tool-filepath {
   font-family: var(--vscode-editor-font-family, monospace);
-  color: #e2c08d;
+  color: #60a5fa;
 }
 
 /* --- Line info (muted, smaller) --- */
