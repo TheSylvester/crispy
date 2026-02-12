@@ -26,6 +26,8 @@ import { EntryRenderer } from "../renderers/EntryRenderer.js";
 import { PlaybackControls } from "./PlaybackControls.js";
 import { ToolRegistryProvider } from "../context/ToolRegistryContext.js";
 import { ControlPanel } from "./control-panel/index.js";
+import { StopButton } from "./control-panel/StopButton.js";
+import { ThinkingIndicator } from "./ThinkingIndicator.js";
 
 /** Check once whether debug mode is enabled */
 const isDebugMode = window.location.search.includes('debug=1');
@@ -122,6 +124,7 @@ export function TranscriptViewer(): React.JSX.Element {
                   />
                 ))
             )}
+            <ThinkingIndicator />
           </div>
         </div>
         <button
@@ -156,6 +159,7 @@ export function TranscriptViewer(): React.JSX.Element {
           />
         )}
       </ToolRegistryProvider>
+      <StopButton />
       <ControlPanel
         ref={controlPanelRef}
         onForkHoverChange={handleForkHoverChange}
