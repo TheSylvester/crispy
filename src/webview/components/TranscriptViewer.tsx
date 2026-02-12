@@ -128,28 +128,24 @@ export function TranscriptViewer(): React.JSX.Element {
     }
   }, []);
 
+  // --- Main content area (conditional) ---
+  // ControlPanel is rendered once, outside the conditional branches, so it is
+  // never unmounted when selectedSessionId transitions from null → pending.
+  // This preserves user-chosen state (agency mode, model, bypass) across the
+  // new-session flow instead of resetting to defaults on remount.
+
+  let mainContent: React.JSX.Element;
+
   if (!selectedSessionId) {
-    return (
-      <>
-        <div className="crispy-placeholder">
-          Select a session or start a new conversation
-        </div>
-        <ControlPanel
-          ref={controlPanelRef}
-          onForkHoverChange={handleForkHoverChange}
-          onPendingOptimisticEntry={handlePendingOptimisticEntry}
-          entries={entries}
-        />
-      </>
+    mainContent = (
+      <div className="crispy-placeholder">
+        Select a session or start a new conversation
+      </div>
     );
-  }
-
-  if (error) {
-    return <div className="crispy-error">{error}</div>;
-  }
-
-  return (
-    <>
+  } else if (error) {
+    mainContent = <div className="crispy-error">{error}</div>;
+  } else {
+    mainContent = (
       <ToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
         <div className="crispy-transcript" ref={transcriptRef}>
           <div ref={contentRef} className={`crispy-transcript-content ${contentReady ? 'crispy-transcript-content--visible' : ''}`}>
@@ -200,11 +196,17 @@ export function TranscriptViewer(): React.JSX.Element {
           />
         )}
       </ToolRegistryProvider>
-      <StopButton />
+    );
+  }
+
+  return (
+    <>
+      {mainContent}
+      {selectedSessionId && !error && <StopButton />}
       <ControlPanel
         ref={controlPanelRef}
         onForkHoverChange={handleForkHoverChange}
-        onOptimisticEntry={addOptimisticEntry}
+        onOptimisticEntry={selectedSessionId ? addOptimisticEntry : undefined}
         onPendingOptimisticEntry={handlePendingOptimisticEntry}
         entries={entries}
       />
