@@ -84,15 +84,17 @@ export function useAutoScroll({
   const phaseRef = useRef<"initial" | "live">("initial");
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tweenRafRef = useRef<number>(0);
+  const prevSessionIdRef = useRef<string | null>(null);
 
   // --- Reset on session switch ---
   useEffect(() => {
+    const prevSessionId = prevSessionIdRef.current;
+    prevSessionIdRef.current = sessionId;
+
     isStickyRef.current = true;
     setIsSticky(true);
     isAtTopRef.current = true;
     setIsAtTop(true);
-    setContentReady(false);
-    phaseRef.current = "initial";
 
     if (settleTimerRef.current) {
       clearTimeout(settleTimerRef.current);
@@ -103,9 +105,25 @@ export function useAutoScroll({
       tweenRafRef.current = 0;
     }
 
-    // Start at top so the initial tween has somewhere to go
-    const container = containerRef.current;
-    if (container) container.scrollTop = 0;
+    // Brand-new (pending) sessions have no history to load — skip the
+    // INITIAL hide-settle-fade entirely so the optimistic user message
+    // renders immediately without a flash of invisible content.
+    // Also skip for the pending→real transition — the session is already
+    // live with entries visible; resetting to INITIAL would flash opacity
+    // to 0 and replay the fade-in.
+    if (
+      sessionId?.startsWith("pending:") ||
+      prevSessionId?.startsWith("pending:")
+    ) {
+      phaseRef.current = "live";
+      setContentReady(true);
+    } else {
+      phaseRef.current = "initial";
+      setContentReady(false);
+      // Start at top so the initial tween has somewhere to go
+      const container = containerRef.current;
+      if (container) container.scrollTop = 0;
+    }
   }, [sessionId, containerRef]);
 
   // --- Sticky detection via scroll event ---
