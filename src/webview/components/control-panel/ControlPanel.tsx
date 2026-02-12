@@ -38,6 +38,7 @@ import { usePreferences } from '../../context/PreferencesContext.js';
 import { useTransport } from '../../context/TransportContext.js';
 import { useSession } from '../../context/SessionContext.js';
 import { slugToPath } from '../../hooks/useSessionCwd.js';
+import { useContextUsage } from '../../hooks/useContextUsage.js';
 import type { MessageContent, MessageContentBlock, ContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 
 /**
@@ -74,6 +75,8 @@ interface ControlPanelProps {
   onOptimisticEntry?: (entry: TranscriptEntry) => void;
   /** Stash an optimistic entry for injection after a new session initializes. */
   onPendingOptimisticEntry?: (entry: TranscriptEntry) => void;
+  /** Transcript entries for historical context usage fallback. */
+  entries?: TranscriptEntry[];
 }
 
 /** Agency modes for keyboard cycling (excluding bypass-permissions). */
@@ -121,17 +124,27 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
       return { ...state, attachedImages: [], pastedImageCounter: 0 };
     case 'SET_FILE_CONTEXT':
       return { ...state, fileContextEnabled: action.enabled };
+    case 'SET_CONTEXT':
+      return { ...state, contextPercent: action.contextUsage.percent, contextUsage: action.contextUsage };
     default:
       return state;
   }
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry }, ref) {
+  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, entries }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned } = usePreferences();
     const transport = useTransport();
     const { selectedSessionId, selectedCwd, setSelectedSessionId } = useSession();
+
+    // --- Context usage tracking ---
+    const contextUsage = useContextUsage(selectedSessionId, entries);
+    useEffect(() => {
+      if (contextUsage) {
+        dispatch({ type: 'SET_CONTEXT', contextUsage });
+      }
+    }, [contextUsage]);
 
     // --- Keyboard shortcuts ---
     useEffect(() => {
@@ -392,7 +405,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             onChange={(enabled) => dispatch({ type: 'SET_FILE_CONTEXT', enabled })}
           />
           <span className="crispy-cp-right">
-            <ContextWidget percent={state.contextPercent} />
+            <ContextWidget percent={state.contextPercent} contextUsage={state.contextUsage} />
             <ChromeToggle
               checked={state.chromeEnabled}
               onChange={(enabled) => dispatch({ type: 'SET_CHROME', enabled })}

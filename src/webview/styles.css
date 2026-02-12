@@ -1675,6 +1675,22 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   font-style: italic;
 }
 
+.crispy-cp-context-tooltip__row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-cp-context-tooltip__row--total {
+  font-weight: 600;
+}
+
+.crispy-cp-context-tooltip__divider {
+  border-top: 1px solid var(--vscode-panel-border, #333);
+  margin: 4px 0;
+}
+
 /* --------------------------------------------------------------------------
    Settings Popup
    -------------------------------------------------------------------------- */

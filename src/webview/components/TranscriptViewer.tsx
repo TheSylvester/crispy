@@ -138,6 +138,7 @@ export function TranscriptViewer(): React.JSX.Element {
           ref={controlPanelRef}
           onForkHoverChange={handleForkHoverChange}
           onPendingOptimisticEntry={handlePendingOptimisticEntry}
+          entries={entries}
         />
       </>
     );
@@ -205,6 +206,7 @@ export function TranscriptViewer(): React.JSX.Element {
         onForkHoverChange={handleForkHoverChange}
         onOptimisticEntry={addOptimisticEntry}
         onPendingOptimisticEntry={handlePendingOptimisticEntry}
+        entries={entries}
       />
     </>
   );

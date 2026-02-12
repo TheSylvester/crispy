@@ -12,7 +12,7 @@
  * @module agent-adapter
  */
 
-import type { TranscriptEntry, MessageContent, Vendor } from './transcript.js';
+import type { TranscriptEntry, MessageContent, Vendor, ContextUsage } from './transcript.js';
 import type { ChannelEvent, ChannelStatus } from './channel-events.js';
 
 // ============================================================================
@@ -130,6 +130,9 @@ export interface AgentAdapter {
 
   /** Current channel status (synchronous read of last sticky status). */
   readonly status: ChannelStatus;
+
+  /** Cumulative context window usage for the active session (null before first assistant turn). */
+  readonly contextUsage: ContextUsage | null;
 
   // --- Live Streaming ---
 

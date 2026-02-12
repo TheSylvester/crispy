@@ -26,7 +26,7 @@
  */
 
 import type { AgentAdapter, ChannelMessage, SendOptions } from './agent-adapter.js';
-import type { MessageContent, Vendor, TranscriptEntry } from './transcript.js';
+import type { MessageContent, Vendor, TranscriptEntry, ContextUsage } from './transcript.js';
 import type {
   ChannelEvent,
   StatusEvent,
@@ -107,6 +107,7 @@ export interface ChannelSnapshot {
   state: SessionChannelState;
   sessionId: string | undefined;
   vendor: Vendor | undefined;
+  contextUsage: ContextUsage | null;
 }
 
 // ============================================================================
@@ -245,6 +246,7 @@ function getSnapshot(channel: SessionChannel): ChannelSnapshot {
     state: channel.state,
     sessionId: channel.adapter?.sessionId,
     vendor: channel.adapter?.vendor,
+    contextUsage: channel.adapter?.contextUsage ?? null,
   };
 }
 

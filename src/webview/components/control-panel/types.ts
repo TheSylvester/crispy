@@ -7,6 +7,8 @@
  * @module control-panel/types
  */
 
+import type { ContextUsage } from '../../../core/transcript.js';
+
 /** Agency mode determines how Claude handles edits and permissions. */
 export type AgencyMode =
   | 'plan-mode'
@@ -41,6 +43,7 @@ export interface ControlPanelState {
   fileContextEnabled: boolean;
   fileContextLabel: string;
   contextPercent: number;
+  contextUsage: ContextUsage | null;
   chromeEnabled: boolean;
   isRunning: boolean;
   input: string;
@@ -59,7 +62,8 @@ export type Action =
   | { type: 'ADD_IMAGE'; image: AttachedImage }
   | { type: 'REMOVE_IMAGE'; id: string }
   | { type: 'CLEAR_IMAGES' }
-  | { type: 'SET_FILE_CONTEXT'; enabled: boolean };
+  | { type: 'SET_FILE_CONTEXT'; enabled: boolean }
+  | { type: 'SET_CONTEXT'; contextUsage: ContextUsage };
 
 /** Default initial state for the control panel. */
 export const DEFAULT_CONTROL_PANEL_STATE: ControlPanelState = {
@@ -68,7 +72,8 @@ export const DEFAULT_CONTROL_PANEL_STATE: ControlPanelState = {
   model: '',
   fileContextEnabled: false,
   fileContextLabel: 'No file open',
-  contextPercent: 42,
+  contextPercent: 0,
+  contextUsage: null,
   chromeEnabled: false,
   isRunning: false,
   input: '',
