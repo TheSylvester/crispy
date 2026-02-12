@@ -30,13 +30,18 @@ const SKIP_ENTRY_TYPES = new Set([
  *
  * Note: parentUuid on user entries is conversation-tree linking (pointing
  * to the preceding system/assistant turn), NOT a sub-agent indicator.
- * Sub-agent messages arrive as 'progress' entries (already in SKIP_ENTRY_TYPES).
  *
  * Summary entries are allowed through if they have summary text,
  * even without a message field.
  */
 export function shouldRenderEntry(entry: TranscriptEntry): boolean {
   if (SKIP_ENTRY_TYPES.has(entry.type)) return false;
+
+  // Sub-agent entries render inside their parent Task tool card via the
+  // ToolRegistry's parent-child tree — not as top-level messages.
+  // The adapter unwraps 'progress' entries to expose their content, changing
+  // their type to 'assistant'/'user', so we must filter on parentToolUseID.
+  if (entry.parentToolUseID) return false;
 
   // Summary entries use entry.summary, not entry.message — let them through
   if (entry.type === 'summary' && entry.summary) return true;
