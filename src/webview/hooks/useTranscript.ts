@@ -14,7 +14,7 @@
  * @module useTranscript
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { TranscriptEntry } from '../../core/transcript.js';
 import { useTransport } from '../context/TransportContext.js';
 
@@ -32,11 +32,21 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Track previous sessionId to detect pending→real transitions.
+  // When a pending session resolves to its real ID, we skip the full
+  // load cycle (subscribe + loadSession) because the event stream is
+  // already active and entries (including any optimistic ones) should
+  // be preserved rather than wiped.
+  const prevSessionIdRef = useRef<string | null>(null);
+
   const addOptimisticEntry = useCallback((entry: TranscriptEntry) => {
     setEntries((prev) => [...prev, entry]);
   }, []);
 
   useEffect(() => {
+    const prevSessionId = prevSessionIdRef.current;
+    prevSessionIdRef.current = sessionId;
+
     if (!sessionId) {
       setEntries([]);
       setIsLoading(false);
@@ -78,6 +88,15 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
         return;
       }
 
+      // Pending→real transition: the previous session was a pending placeholder
+      // that has now resolved to its real ID. The event stream is already active
+      // (the host re-keys the channel), so entries and optimistic messages are
+      // already in state. Skip the destructive load cycle to preserve them.
+      if (prevSessionId?.startsWith('pending:')) {
+        setIsLoading(false);
+        return;
+      }
+
       setIsLoading(true);
       setError(null);
       try {
@@ -85,11 +104,16 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
         await transport.subscribe(sessionId!);
         if (unmounted) return;
 
-        // Load full history — overwrites any early events from subscription backfill
+        // Load full history — overwrites any early events from subscription backfill.
+        // Preserve optimistic entries that haven't been echoed yet.
         const history = await transport.loadSession(sessionId!);
         if (unmounted) return;
 
-        setEntries(history);
+        setEntries((prev) => {
+          const optimistic = prev.filter((e) => e.uuid?.startsWith('optimistic-'));
+          if (optimistic.length === 0) return history;
+          return [...history, ...optimistic];
+        });
       } catch (err) {
         if (unmounted) return;
         setError(err instanceof Error ? err.message : String(err));

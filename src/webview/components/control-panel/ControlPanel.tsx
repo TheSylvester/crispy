@@ -40,10 +40,40 @@ import { useSession } from '../../context/SessionContext.js';
 import { slugToPath } from '../../hooks/useSessionCwd.js';
 import type { MessageContent, MessageContentBlock, ContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 
+/**
+ * Build an optimistic TranscriptEntry for immediate rendering before backend echo.
+ *
+ * Pure function — no React hooks. Handles both text-only and multimodal content.
+ * The returned entry uses a `uuid` prefixed with "optimistic-" so useTranscript's
+ * dedup logic can replace it when the real backend echo arrives.
+ */
+export function buildOptimisticUserEntry(sessionId: string, content: MessageContent): TranscriptEntry {
+  const contentBlocks: ContentBlock[] = typeof content === 'string'
+    ? [{ type: 'text', text: content }]
+    : content.map((block): ContentBlock =>
+        block.type === 'text'
+          ? { type: 'text', text: block.text }
+          : { type: 'image', source: { type: block.source.type, media_type: block.source.media_type, data: block.source.data } }
+      );
+
+  return {
+    type: 'user',
+    uuid: `optimistic-${Date.now()}`,
+    sessionId,
+    timestamp: new Date().toISOString(),
+    message: {
+      role: 'user',
+      content: contentBlocks,
+    },
+  };
+}
+
 interface ControlPanelProps {
   onForkHoverChange?: (hovering: boolean) => void;
   /** Inject an optimistic user entry into the transcript before backend echo. */
   onOptimisticEntry?: (entry: TranscriptEntry) => void;
+  /** Stash an optimistic entry for injection after a new session initializes. */
+  onPendingOptimisticEntry?: (entry: TranscriptEntry) => void;
 }
 
 /** Agency modes for keyboard cycling (excluding bypass-permissions). */
@@ -97,7 +127,7 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange, onOptimisticEntry }, ref) {
+  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned } = usePreferences();
     const transport = useTransport();
@@ -185,6 +215,14 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           return;
         }
         const cwd = slugToPath(selectedCwd);
+
+        // Stash optimistic entry for injection after session initializes.
+        // We can't call onOptimisticEntry directly because useTranscript(null)
+        // resets entries when the sessionId transitions to the pending ID.
+        // The ref-based pending entry survives the re-render cycle.
+        const optimistic = buildOptimisticUserEntry('pending', content);
+        onPendingOptimisticEntry?.(optimistic);
+
         transport.createSession('claude', cwd, {
           model: state.model || undefined,
           permissionMode: mapAgencyToPermissionMode(state.agencyMode),
@@ -208,24 +246,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       // The backend will echo the real entry, and useTranscript deduplicates
       // by replacing the last optimistic- prefixed entry.
       if (onOptimisticEntry) {
-        const contentBlocks: ContentBlock[] = typeof content === 'string'
-          ? [{ type: 'text', text: content }]
-          : content.map((block): ContentBlock =>
-              block.type === 'text'
-                ? { type: 'text', text: block.text }
-                : { type: 'image', source: { type: block.source.type, media_type: block.source.media_type, data: block.source.data } }
-            );
-
-        onOptimisticEntry({
-          type: 'user',
-          uuid: `optimistic-${Date.now()}`,
-          sessionId: selectedSessionId,
-          timestamp: new Date().toISOString(),
-          message: {
-            role: 'user',
-            content: contentBlocks,
-          },
-        });
+        onOptimisticEntry(buildOptimisticUserEntry(selectedSessionId, content));
       }
 
       // Bundle control panel options with the send — applied atomically
@@ -241,7 +262,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       });
 
       dispatch({ type: 'CLEAR_INPUT' });
-    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, selectedSessionId, selectedCwd, setSelectedSessionId, transport, onOptimisticEntry]);
+    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, selectedSessionId, selectedCwd, setSelectedSessionId, transport, onOptimisticEntry, onPendingOptimisticEntry]);
 
     // --- Drag/drop handlers ---
     const handleDragOver = useCallback((e: React.DragEvent) => {

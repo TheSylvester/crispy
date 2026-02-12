@@ -28,6 +28,7 @@ import { ToolRegistryProvider } from "../context/ToolRegistryContext.js";
 import { ControlPanel } from "./control-panel/index.js";
 import { StopButton } from "./control-panel/StopButton.js";
 import { ThinkingIndicator } from "./ThinkingIndicator.js";
+import type { TranscriptEntry } from "../../core/transcript.js";
 
 /** Check once whether debug mode is enabled */
 const isDebugMode = window.location.search.includes('debug=1');
@@ -51,6 +52,29 @@ export function TranscriptViewer(): React.JSX.Element {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const controlPanelRef = useRef<HTMLDivElement>(null);
+
+  // Pending optimistic entry: stashed by ControlPanel in the new-session branch,
+  // injected into useTranscript once the pending session ID initializes.
+  const pendingOptimisticRef = useRef<TranscriptEntry | null>(null);
+
+  const handlePendingOptimisticEntry = useCallback((entry: TranscriptEntry) => {
+    pendingOptimisticRef.current = entry;
+  }, []);
+
+  // Inject the pending optimistic entry when useTranscript initializes for a
+  // pending session (entries are empty, not loading, no error).
+  useEffect(() => {
+    if (
+      selectedSessionId?.startsWith('pending:') &&
+      pendingOptimisticRef.current &&
+      !isLoading &&
+      entries.length === 0
+    ) {
+      const entry = pendingOptimisticRef.current;
+      pendingOptimisticRef.current = null;
+      addOptimisticEntry(entry);
+    }
+  }, [selectedSessionId, isLoading, entries.length, addOptimisticEntry]);
 
   // Filter entries for rendering (used for both display and scroll settle detection)
   const visibleEntries = entries.slice(0, visibleCount);
@@ -104,6 +128,7 @@ export function TranscriptViewer(): React.JSX.Element {
         <ControlPanel
           ref={controlPanelRef}
           onForkHoverChange={handleForkHoverChange}
+          onPendingOptimisticEntry={handlePendingOptimisticEntry}
         />
       </>
     );
@@ -170,6 +195,7 @@ export function TranscriptViewer(): React.JSX.Element {
         ref={controlPanelRef}
         onForkHoverChange={handleForkHoverChange}
         onOptimisticEntry={addOptimisticEntry}
+        onPendingOptimisticEntry={handlePendingOptimisticEntry}
       />
     </>
   );
