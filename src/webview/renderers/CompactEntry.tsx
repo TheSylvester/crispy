@@ -57,6 +57,12 @@ function extractToolUseBlocks(content: string | ContentBlock[] | undefined): Too
   return content.filter((block): block is ToolUseBlock => block.type === 'tool_use');
 }
 
+/** Count image blocks in content */
+function extractImageCount(content: string | ContentBlock[] | undefined): number {
+  if (!content || typeof content === 'string') return 0;
+  return content.filter(block => block.type === 'image').length;
+}
+
 /** Truncate text to max length with ellipsis */
 function truncate(text: string, maxLength: number = MAX_CONTENT_LENGTH): string {
   const trimmed = text.trim();
@@ -124,13 +130,18 @@ export function CompactEntry({ entry }: CompactEntryProps): React.JSX.Element | 
   const textContent = extractTextContent(content);
   const thinkingContent = extractThinkingContent(content);
   const toolBlocks = extractToolUseBlocks(content);
+  const imageCount = extractImageCount(content);
 
   // Skip if no meaningful content
-  if (!textContent && !thinkingContent && toolBlocks.length === 0) {
+  if (!textContent && !thinkingContent && toolBlocks.length === 0 && imageCount === 0) {
     return null;
   }
 
   const rolePrefix = `[${role}]`;
+
+  const imageBadge = imageCount > 0
+    ? <span className="compact-tools-summary">[{imageCount === 1 ? '1 image' : `${imageCount} images`}]</span>
+    : null;
 
   return (
     <div className={`message ${role} compact-entry`} data-uuid={entry.uuid}>
@@ -141,6 +152,7 @@ export function CompactEntry({ entry }: CompactEntryProps): React.JSX.Element | 
           {toolBlocks.length > 0 && (
             <>{' '}<ToolSummary blocks={toolBlocks} /></>
           )}
+          {imageBadge && <>{' '}{imageBadge}</>}
         </>
       ) : thinkingContent ? (
         <>
@@ -151,6 +163,12 @@ export function CompactEntry({ entry }: CompactEntryProps): React.JSX.Element | 
         <>
           <span className="compact-role">{rolePrefix}</span>{' '}
           <ToolSummary blocks={toolBlocks} />
+          {imageBadge && <>{' '}{imageBadge}</>}
+        </>
+      ) : imageBadge ? (
+        <>
+          <span className="compact-role">{rolePrefix}</span>{' '}
+          {imageBadge}
         </>
       ) : null}
     </div>

@@ -230,6 +230,13 @@ h2 {
 /* All labels hidden by default — CSS :has() reveals the correct one */
 .crispy-thinking__label {
   display: none;
+  font-style: italic;
+  animation: crispy-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes crispy-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 /* Default (ask-before-edits) → "thinking" */
@@ -727,6 +734,25 @@ h2 {
   background: var(--vscode-button-secondaryBackground, #3a3d41);
   border-radius: 6px;
   padding: 10px 14px;
+}
+
+/* --- Image blocks in transcript --- */
+.transcript-image {
+  margin: 4px 0;
+  width: fit-content;
+}
+
+.transcript-image img {
+  max-width: 400px;
+  max-height: 400px;
+  border-radius: 4px;
+  object-fit: contain;
+  display: block;
+}
+
+/* Right-align user images to match user text bubbles */
+.message.user .transcript-image {
+  margin-left: auto;
 }
 
 /* --- Assistant Text — full-width flow --- */

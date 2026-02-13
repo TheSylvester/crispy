@@ -185,7 +185,7 @@ function getWebviewHtml(
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'none'; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} blob:; font-src ${webview.cspSource};"
+    content="default-src 'none'; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource};"
   >
   <title>Crispy</title>
   <link rel="stylesheet" href="${cssUri}">

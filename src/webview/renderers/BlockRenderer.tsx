@@ -15,6 +15,7 @@ import { resolveBlockType } from './block-registry.js';
 import { YamlDump } from './YamlDump.js';
 import { UserTextRenderer } from './UserTextRenderer.js';
 import { AssistantTextRenderer } from './AssistantTextRenderer.js';
+import { ImageRenderer } from './ImageRenderer.js';
 import { toolRendererMap, GenericTool } from './tools/index.js';
 import type { ContentBlock, ToolUseBlock } from '../../core/transcript.js';
 
@@ -26,6 +27,8 @@ import type { ContentBlock, ToolUseBlock } from '../../core/transcript.js';
 export const blockRendererMap = new Map<string, React.ComponentType<{ block: ContentBlock }>>([
   ['user:text', UserTextRenderer],
   ['assistant:text', AssistantTextRenderer],
+  ['user:image', ImageRenderer],
+  ['assistant:image', ImageRenderer],
 ]);
 
 /**

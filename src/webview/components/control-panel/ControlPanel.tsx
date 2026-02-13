@@ -266,14 +266,15 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       let content: MessageContent;
       if (hasImages) {
         const blocks: MessageContentBlock[] = [];
-        if (text) {
-          blocks.push({ type: 'text', text });
-        }
+        // Images first — matches Claude Code's content order and Leto's visual layout
         for (const img of state.attachedImages) {
           blocks.push({
             type: 'image',
             source: { type: 'base64', media_type: img.mimeType, data: img.data },
           });
+        }
+        if (text) {
+          blocks.push({ type: 'text', text });
         }
         content = blocks;
       } else {

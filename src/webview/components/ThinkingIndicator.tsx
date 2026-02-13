@@ -5,10 +5,10 @@
  * visual feedback that the agent is active. The displayed label varies
  * by agency mode:
  *
- *   plan-mode           → "planning"
- *   bypass-permissions   → "working"
- *   edit-automatically   → "working"
- *   ask-before-edits     → "thinking"
+ *   plan-mode           → "Planning…"
+ *   bypass-permissions   → "Working…"
+ *   edit-automatically   → "Working…"
+ *   ask-before-edits     → "Thinking…"
  *
  * Because agency mode lives in ControlPanel's local reducer (no context),
  * the component renders all three labels and CSS `:has()` selectors on
@@ -32,9 +32,9 @@ export function ThinkingIndicator(): React.JSX.Element | null {
   return (
     <div className="crispy-thinking" aria-live="polite">
       <span className="crispy-thinking__spinner" />
-      <span className="crispy-thinking__label crispy-thinking__label--thinking">thinking</span>
-      <span className="crispy-thinking__label crispy-thinking__label--planning">planning</span>
-      <span className="crispy-thinking__label crispy-thinking__label--working">working</span>
+      <span className="crispy-thinking__label crispy-thinking__label--thinking">Thinking…</span>
+      <span className="crispy-thinking__label crispy-thinking__label--planning">Planning…</span>
+      <span className="crispy-thinking__label crispy-thinking__label--working">Working…</span>
     </div>
   );
 }
