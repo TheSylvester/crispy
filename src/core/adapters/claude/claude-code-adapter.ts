@@ -357,6 +357,8 @@ export interface SessionInfo {
 interface PendingApproval {
   toolUseId: string;
   resolve: (result: PermissionResult) => void;
+  /** Original tool input — passed back as updatedInput on allow. */
+  input: Record<string, unknown>;
   suggestions?: PermissionUpdate[];
   /** Valid option IDs for this approval request. */
   validOptionIds: string[];
@@ -480,18 +482,25 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     let result: PermissionResult;
 
     if (optionId === 'deny') {
+      // Zv6 deny schema requires `message: string` — always provide one.
       result = { behavior: 'deny', message: 'User denied', toolUseID: toolUseId };
     } else {
-      // 'allow', 'allow_session', etc. — all resolve as allow.
-      // If the option was 'allow_session' and there are suggestions,
-      // pass them through as updatedPermissions so the SDK persists them.
+      // Zv6 allow schema requires `updatedInput: Record<string, unknown>` (NOT
+      // optional, despite the .d.ts saying so — the wire-protocol Zod schema
+      // demands it). Pass the original input unchanged; fall back to {} if
+      // input is somehow nullish (shouldn't happen, but defensive).
+      //
+      // For 'allow_session', propagate SDK-provided suggestions as
+      // updatedPermissions so the SDK persists the permission rule.
       result = {
         behavior: 'allow',
+        updatedInput: pending.input ?? {},
         toolUseID: toolUseId,
-        ...(optionId !== 'allow' && pending.suggestions
-          ? { updatedPermissions: pending.suggestions }
-          : {}),
       };
+
+      if (optionId !== 'allow' && pending.suggestions && pending.suggestions.length > 0) {
+        result.updatedPermissions = pending.suggestions;
+      }
     }
 
     pending.resolve(result);
@@ -1011,10 +1020,11 @@ export class ClaudeAgentAdapter implements AgentAdapter {
 
       const validOptionIds = options.map((o) => o.id);
 
-      // Store the pending approval
+      // Store the pending approval (including input for updatedInput on allow)
       this.pendingApprovals.set(toolUseId, {
         toolUseId,
         resolve,
+        input,
         suggestions: opts.suggestions,
         validOptionIds,
       });

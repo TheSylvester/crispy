@@ -28,6 +28,8 @@ import { ToolRegistryProvider } from "../context/ToolRegistryContext.js";
 import { ControlPanel } from "./control-panel/index.js";
 import { StopButton } from "./control-panel/StopButton.js";
 import { ThinkingIndicator } from "./ThinkingIndicator.js";
+import { ApprovalContent } from "./approval/index.js";
+import { useApprovalRequest } from "../hooks/useApprovalRequest.js";
 import type { TranscriptEntry } from "../../core/transcript.js";
 
 /** Check once whether debug mode is enabled */
@@ -37,6 +39,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const { selectedSessionId } = useSession();
   const { entries, isLoading, error, addOptimisticEntry } = useTranscript(selectedSessionId);
   const { renderMode } = usePreferences();
+  const { approvalRequest, resolve: resolveApproval } = useApprovalRequest(selectedSessionId);
   const {
     visibleCount,
     isPlaying,
@@ -209,7 +212,14 @@ export function TranscriptViewer(): React.JSX.Element {
         onOptimisticEntry={selectedSessionId ? addOptimisticEntry : undefined}
         onPendingOptimisticEntry={handlePendingOptimisticEntry}
         entries={entries}
-      />
+      >
+        {approvalRequest && (
+          <ApprovalContent
+            request={approvalRequest}
+            onResolve={resolveApproval}
+          />
+        )}
+      </ControlPanel>
     </>
   );
 }

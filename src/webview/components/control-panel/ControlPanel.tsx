@@ -78,6 +78,8 @@ interface ControlPanelProps {
   onPendingOptimisticEntry?: (entry: TranscriptEntry) => void;
   /** Transcript entries for historical context usage fallback. */
   entries?: TranscriptEntry[];
+  /** Slot: when provided, replaces AttachmentsRow + ChatInput (approval mode). */
+  children?: React.ReactNode;
 }
 
 /** Agency modes for keyboard cycling (excluding bypass-permissions). */
@@ -133,7 +135,7 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, entries }, ref) {
+  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, entries, children }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned } = usePreferences();
     const transport = useTransport();
@@ -382,19 +384,23 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         ref={ref}
         className="crispy-cp"
         data-agency={state.agencyMode}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
+        onDragOver={children ? undefined : handleDragOver}
+        onDrop={children ? undefined : handleDrop}
       >
-        <AttachmentsRow
-          images={state.attachedImages}
-          onRemove={(id) => dispatch({ type: 'REMOVE_IMAGE', id })}
-        />
-        <ChatInput
-          value={state.input}
-          attachedImages={state.attachedImages}
-          onInput={(value) => dispatch({ type: 'SET_INPUT', value })}
-          onSend={handleSend}
-        />
+        {children ?? (
+          <>
+            <AttachmentsRow
+              images={state.attachedImages}
+              onRemove={(id) => dispatch({ type: 'REMOVE_IMAGE', id })}
+            />
+            <ChatInput
+              value={state.input}
+              attachedImages={state.attachedImages}
+              onInput={(value) => dispatch({ type: 'SET_INPUT', value })}
+              onSend={handleSend}
+            />
+          </>
+        )}
         <div className="crispy-cp-controls">
           <BypassToggle
             checked={state.bypassEnabled}

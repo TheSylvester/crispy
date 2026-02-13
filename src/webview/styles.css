@@ -2099,3 +2099,114 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   z-index: 199;
   background: transparent;
 }
+
+/* ============================================================================
+ * Approval Content — rendered inside .crispy-cp via children slot
+ *
+ * When an approval is active, the ControlPanel's children prop replaces
+ * AttachmentsRow + ChatInput with approval UI. The shell positioning,
+ * shadow, border-radius, and --frame-highlight color are inherited.
+ *
+ * Styling ported from Leto webview-next — #inline-permission-panel.
+ * ============================================================================ */
+
+/* Override .crispy-cp background to input-background during approval
+   (Leto uses input-background for the panel, not editor-background) */
+.crispy-cp:has(.crispy-approval-header) {
+  background: var(--vscode-input-background, #3c3c3c);
+  border: 1px solid var(--frame-highlight, #E88040);
+}
+
+/* Standard approval layout (inside .crispy-cp) */
+.crispy-approval-standard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Approval header — colored with --frame-highlight (agency-aware) */
+.crispy-approval-header {
+  margin: 0 0 4px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--frame-highlight, #E88040);
+}
+
+.crispy-approval-header__subtitle {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground, #858585);
+  margin-top: 2px;
+}
+
+/* YAML content block */
+.crispy-approval-content {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.crispy-approval-content pre {
+  margin: 0;
+  padding: 8px;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border-radius: 4px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  max-height: 150px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Button row */
+.crispy-approval-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.crispy-approval-btn {
+  padding: 6px 12px;
+  border-radius: 2px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.crispy-approval-btn--primary {
+  background: #E88040;
+  color: #fff;
+  border: 1px solid #E88040;
+}
+
+.crispy-approval-btn--primary:hover {
+  background: #D06A2C;
+  border-color: #D06A2C;
+}
+
+.crispy-approval-btn--secondary {
+  background: var(--vscode-editor-background, #1e1e1e);
+  color: var(--vscode-button-secondaryForeground, #d4d4d4);
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+}
+
+.crispy-approval-btn--secondary:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  border-color: var(--frame-highlight, #E88040);
+}
+
+.crispy-approval-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Dim transcript when approval is pending */
+.crispy-main:has(.crispy-approval-header) .crispy-transcript::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+  z-index: 1;
+}
