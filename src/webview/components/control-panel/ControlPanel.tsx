@@ -138,6 +138,8 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
       return { ...state, fileContextEnabled: action.enabled };
     case 'SET_CONTEXT':
       return { ...state, contextPercent: action.contextUsage.percent, contextUsage: action.contextUsage };
+    case 'RESET_CONTEXT':
+      return { ...state, contextPercent: 0, contextUsage: null };
     default:
       return state;
   }
@@ -172,6 +174,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     useEffect(() => {
       if (contextUsage) {
         dispatch({ type: 'SET_CONTEXT', contextUsage });
+      } else {
+        dispatch({ type: 'RESET_CONTEXT' });
       }
     }, [contextUsage]);
 

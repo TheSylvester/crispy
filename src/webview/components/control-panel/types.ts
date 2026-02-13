@@ -63,7 +63,8 @@ export type Action =
   | { type: 'REMOVE_IMAGE'; id: string }
   | { type: 'CLEAR_IMAGES' }
   | { type: 'SET_FILE_CONTEXT'; enabled: boolean }
-  | { type: 'SET_CONTEXT'; contextUsage: ContextUsage };
+  | { type: 'SET_CONTEXT'; contextUsage: ContextUsage }
+  | { type: 'RESET_CONTEXT' };
 
 /** Default initial state for the control panel. */
 export const DEFAULT_CONTROL_PANEL_STATE: ControlPanelState = {
