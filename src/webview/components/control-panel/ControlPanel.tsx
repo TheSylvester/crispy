@@ -113,8 +113,9 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
       };
     }
     case 'SET_AGENCY_MODE': {
-      const isBypass = action.mode === 'bypass-permissions';
-      return { ...state, agencyMode: action.mode, bypassEnabled: isBypass };
+      // Agency mode and bypass are independent axes.
+      // Changing mode never affects the bypass safety gate.
+      return { ...state, agencyMode: action.mode };
     }
     case 'SET_MODEL':
       return { ...state, model: action.model };
