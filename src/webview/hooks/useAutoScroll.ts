@@ -33,6 +33,9 @@ const INITIAL_TWEEN_MS = 1000;
 /** If within this many px of bottom, consider user "sticky". */
 const STICKY_THRESHOLD_PX = 80;
 
+/** Duration of the pin-to-bottom tween on send (short + snappy). */
+const PIN_TWEEN_MS = 150;
+
 // --- Types ---
 
 export interface UseAutoScrollOptions {
@@ -71,6 +74,11 @@ export interface UseAutoScrollReturn {
 /** Slow start → fast middle → slow stop. */
 function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+/** Fast start → gentle stop. */
+function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3);
 }
 
 // --- Hook ---
@@ -255,18 +263,50 @@ export function useAutoScroll({
     });
   }, [containerRef]);
 
-  // --- User-initiated pin: instant scroll + re-engage sticky ---
+  // --- User-initiated pin: short ease-out tween + re-engage sticky ---
   const pinToBottom = useCallback(() => {
     // Re-engage sticky so the ResizeObserver keeps pinning during streaming
     isStickyRef.current = true;
     setIsSticky(true);
 
+    // Cancel any in-flight tween (initial load or previous pin)
+    if (tweenRafRef.current) {
+      cancelAnimationFrame(tweenRafRef.current);
+      tweenRafRef.current = 0;
+    }
+
     // rAF ensures we fire after React's DOM commit so scrollHeight is up-to-date
     requestAnimationFrame(() => {
       const container = containerRef.current;
-      if (container) {
-        container.scrollTop = container.scrollHeight;
+      if (!container) return;
+
+      const startScroll = container.scrollTop;
+      const maxScroll = container.scrollHeight - container.clientHeight;
+      const distance = maxScroll - startScroll;
+
+      // Already at bottom or nothing to scroll — just pin
+      if (distance <= 1) {
+        container.scrollTop = maxScroll;
+        return;
       }
+
+      const startTime = performance.now();
+
+      function step(now: number) {
+        const elapsed = now - startTime;
+        const progress = Math.min(elapsed / PIN_TWEEN_MS, 1);
+        const eased = easeOutCubic(progress);
+
+        container!.scrollTop = startScroll + distance * eased;
+
+        if (progress < 1) {
+          tweenRafRef.current = requestAnimationFrame(step);
+        } else {
+          tweenRafRef.current = 0;
+        }
+      }
+
+      tweenRafRef.current = requestAnimationFrame(step);
     });
   }, [containerRef]);
 
