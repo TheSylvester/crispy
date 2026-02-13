@@ -20,20 +20,25 @@ interface AskUserApprovalProps {
 export function AskUserApproval({ input, onResolve }: AskUserApprovalProps): React.JSX.Element {
   const { questions } = input;
   const [activeTab, setActiveTab] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [answers, setAnswers] = useState<Record<number, string | string[]>>({});
   const [otherTexts, setOtherTexts] = useState<Record<number, string>>({});
 
-  const isAnswered = (qIndex: number): boolean => !!answers[qIndex];
+  const isAnswered = (qIndex: number): boolean => {
+    const answer = answers[qIndex];
+    if (Array.isArray(answer)) return answer.length > 0;
+    return !!answer;
+  };
   const allAnswered = questions.every((_, i) => isAnswered(i));
 
   function handleOptionSelect(qIndex: number, label: string, multiSelect?: boolean): void {
     if (multiSelect) {
-      // Toggle: add/remove from comma-separated list
-      const current = (answers[qIndex] ?? '').split(', ').filter(Boolean);
-      const updated = current.includes(label)
-        ? current.filter((v) => v !== label)
-        : [...current, label];
-      setAnswers((prev) => ({ ...prev, [qIndex]: updated.join(', ') }));
+      setAnswers((prev) => {
+        const current = Array.isArray(prev[qIndex]) ? (prev[qIndex] as string[]) : [];
+        const updated = current.includes(label)
+          ? current.filter((v) => v !== label)
+          : [...current, label];
+        return { ...prev, [qIndex]: updated };
+      });
     } else {
       setAnswers((prev) => ({ ...prev, [qIndex]: label }));
     }
@@ -43,18 +48,18 @@ export function AskUserApproval({ input, onResolve }: AskUserApprovalProps): Rea
     const collectedAnswers: Record<string, string> = {};
     questions.forEach((q, i) => {
       const answer = answers[i];
-      if (answer === 'Other') {
+      if (Array.isArray(answer)) {
+        // Multi-select: join array values, replacing "Other" with freeform text
         const text = otherTexts[i]?.trim();
-        collectedAnswers[q.question] = text ? `Other: ${text}` : 'Other';
-      } else if (answer?.includes('Other') && q.multiSelect) {
-        // Multi-select with Other: replace "Other" token with the freeform text
-        const text = otherTexts[i]?.trim();
-        const parts = answer.split(', ').map((v) =>
+        const resolved = answer.map((v) =>
           v === 'Other' ? (text ? `Other: ${text}` : 'Other') : v,
         );
-        collectedAnswers[q.question] = parts.join(', ');
+        collectedAnswers[q.question] = resolved.join(', ');
+      } else if (answer === 'Other') {
+        const text = otherTexts[i]?.trim();
+        collectedAnswers[q.question] = text ? `Other: ${text}` : 'Other';
       } else {
-        collectedAnswers[q.question] = answer;
+        collectedAnswers[q.question] = answer ?? '';
       }
     });
     onResolve('allow', { updatedInput: { answers: collectedAnswers } });
@@ -62,19 +67,24 @@ export function AskUserApproval({ input, onResolve }: AskUserApprovalProps): Rea
 
   /** Whether the "Other" ChatInput is visible for the active tab. */
   function isOtherVisible(qIndex: number): boolean {
-    const q = questions[qIndex];
-    const currentAnswer = answers[qIndex] ?? '';
-    if (q.multiSelect) {
-      return currentAnswer.split(', ').filter(Boolean).includes('Other');
+    const answer = answers[qIndex];
+    if (Array.isArray(answer)) {
+      return answer.includes('Other');
     }
-    return currentAnswer === 'Other';
+    return answer === 'Other';
   }
 
   function renderQuestionPanel(qIndex: number): React.JSX.Element {
     const q = questions[qIndex];
-    const currentAnswer = answers[qIndex] ?? '';
+    const currentAnswer = answers[qIndex];
     const isMulti = q.multiSelect === true;
-    const selectedValues = isMulti ? currentAnswer.split(', ').filter(Boolean) : [];
+    const selectedValues: string[] = isMulti
+      ? (Array.isArray(currentAnswer) ? currentAnswer : [])
+      : [];
+    const currentString = typeof currentAnswer === 'string' ? currentAnswer : '';
+    const otherSelected = isMulti
+      ? selectedValues.includes('Other')
+      : currentString === 'Other';
 
     return (
       <div key={qIndex}>
@@ -83,7 +93,7 @@ export function AskUserApproval({ input, onResolve }: AskUserApprovalProps): Rea
           {q.options.map((opt) => {
             const isSelected = isMulti
               ? selectedValues.includes(opt.label)
-              : currentAnswer === opt.label;
+              : currentString === opt.label;
 
             return (
               <label
@@ -105,28 +115,20 @@ export function AskUserApproval({ input, onResolve }: AskUserApprovalProps): Rea
           })}
 
           {/* "Other" option */}
-          {(() => {
-            const otherSelected = isMulti
-              ? selectedValues.includes('Other')
-              : currentAnswer === 'Other';
-
-            return (
-              <label
-                className={`crispy-approval-option ${otherSelected ? 'crispy-approval-option--selected' : ''}`}
-              >
-                <input
-                  type={isMulti ? 'checkbox' : 'radio'}
-                  name={`q-${qIndex}`}
-                  checked={otherSelected}
-                  onChange={() => handleOptionSelect(qIndex, 'Other', isMulti)}
-                />
-                <div>
-                  <div className="crispy-approval-option__label">Other</div>
-                  <div className="crispy-approval-option__desc">Provide a custom answer</div>
-                </div>
-              </label>
-            );
-          })()}
+          <label
+            className={`crispy-approval-option ${otherSelected ? 'crispy-approval-option--selected' : ''}`}
+          >
+            <input
+              type={isMulti ? 'checkbox' : 'radio'}
+              name={`q-${qIndex}`}
+              checked={otherSelected}
+              onChange={() => handleOptionSelect(qIndex, 'Other', isMulti)}
+            />
+            <div>
+              <div className="crispy-approval-option__label">Other</div>
+              <div className="crispy-approval-option__desc">Provide a custom answer</div>
+            </div>
+          </label>
         </div>
 
         {/* ChatInput for freeform "Other" text */}
@@ -170,18 +172,15 @@ export function AskUserApproval({ input, onResolve }: AskUserApprovalProps): Rea
       {/* Question panel */}
       {renderQuestionPanel(activeTab)}
 
-      {/* Submit button — hidden when ChatInput is visible (it has its own send) */}
-      {!isOtherVisible(activeTab) && (
-        <div className="crispy-approval-buttons">
-          <button
-            className="crispy-approval-btn crispy-approval-btn--primary"
-            disabled={!allAnswered}
-            onClick={handleSubmit}
-          >
-            Submit
-          </button>
-        </div>
-      )}
+      <div className="crispy-approval-buttons">
+        <button
+          className="crispy-approval-btn crispy-approval-btn--primary"
+          disabled={!allAnswered}
+          onClick={handleSubmit}
+        >
+          Submit
+        </button>
+      </div>
     </div>
   );
 }

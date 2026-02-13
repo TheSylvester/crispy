@@ -26,7 +26,7 @@ export function constructExitPlanHandoffPrompt(
   if (sessionId) {
     lines.push('',
       `If you need specific details from before exiting plan mode, ` +
-      `read the full transcript at: ~/.claude/projects/.../${sessionId}.jsonl`
+      `refer to the previous session (ID: ${sessionId}).`
     );
   }
   return lines.join('\n');

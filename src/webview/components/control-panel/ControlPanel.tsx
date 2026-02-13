@@ -13,7 +13,7 @@
  * @module control-panel/ControlPanel
  */
 
-import { useReducer, useEffect, useCallback, forwardRef } from 'react';
+import { useReducer, useEffect, useCallback, useRef, forwardRef } from 'react';
 import {
   type ControlPanelState,
   type Action,
@@ -82,6 +82,10 @@ interface ControlPanelProps {
   children?: React.ReactNode;
   /** Notify parent when bypass state changes (for ExitPlanMode approval). */
   onBypassChange?: (enabled: boolean) => void;
+  /** Pre-fill the ChatInput with content (for ExitPlanMode handoff). Consumed once. */
+  prefillInput?: string | null;
+  /** Called after prefillInput is consumed, allowing the parent to clear it. */
+  onPrefillConsumed?: () => void;
 }
 
 /** Agency modes for keyboard cycling (excluding bypass-permissions). */
@@ -137,8 +141,11 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, entries, children, onBypassChange }, ref) {
+  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, entries, children, onBypassChange, prefillInput, onPrefillConsumed }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
+    // Track the last permission mode we pushed to the server to avoid echo loops
+    // with the permission_mode_changed event listener.
+    const lastPushedModeRef = useRef<string | null>(null);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned } = usePreferences();
     const transport = useTransport();
     const { selectedSessionId, selectedCwd, setSelectedSessionId } = useSession();
@@ -148,6 +155,14 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     useEffect(() => {
       onBypassChange?.(state.bypassEnabled);
     }, [state.bypassEnabled, onBypassChange]);
+
+    // --- Consume prefillInput when provided (ExitPlanMode handoff) ---
+    useEffect(() => {
+      if (prefillInput) {
+        dispatch({ type: 'SET_INPUT', value: prefillInput });
+        onPrefillConsumed?.();
+      }
+    }, [prefillInput, onPrefillConsumed]);
 
     // --- Context usage tracking ---
     const contextUsage = useContextUsage(selectedSessionId, entries);
@@ -205,12 +220,27 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         if (event.type === 'notification' && event.event.kind === 'permission_mode_changed') {
           const serverMode = mapPermissionModeToAgency(event.event.mode);
           if (serverMode) {
+            // Update the ref so the push-to-server effect below doesn't echo
+            lastPushedModeRef.current = mapAgencyToPermissionMode(serverMode);
             dispatch({ type: 'SET_AGENCY_MODE', mode: serverMode });
           }
         }
       });
       return off;
     }, [selectedSessionId, transport]);
+
+    // --- Push agency mode changes to server immediately ---
+    // Track what we last pushed to avoid echo loops with the
+    // permission_mode_changed event listener above.
+    useEffect(() => {
+      if (!selectedSessionId) return;
+      const mode = mapAgencyToPermissionMode(state.agencyMode);
+      if (mode === lastPushedModeRef.current) return;
+      lastPushedModeRef.current = mode;
+      transport.setPermissions(selectedSessionId, mode).catch((err) => {
+        console.error('[ControlPanel] setPermissions failed:', err);
+      });
+    }, [state.agencyMode, selectedSessionId, transport]);
 
     // --- Send handler ---
     const handleSend = useCallback(() => {

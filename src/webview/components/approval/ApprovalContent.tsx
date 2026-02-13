@@ -14,7 +14,7 @@
  * @module approval/ApprovalContent
  */
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { ApprovalRequest, ApprovalExtra, AskUserQuestionInput, ExitPlanModeInput } from './types.js';
 import { StandardApproval } from './StandardApproval.js';
 import { AskUserApproval } from './AskUserApproval.js';
@@ -32,11 +32,13 @@ export function ApprovalContent({
   bypassEnabled,
 }: ApprovalContentProps): React.JSX.Element | null {
   // EnterPlanMode: auto-approve immediately without showing UI
+  const autoApprovedRef = useRef<string | null>(null);
   useEffect(() => {
-    if (request.toolName === 'EnterPlanMode') {
+    if (request.toolName === 'EnterPlanMode' && autoApprovedRef.current !== request.toolUseId) {
+      autoApprovedRef.current = request.toolUseId;
       onResolve('allow');
     }
-  }, [request.toolName, onResolve]);
+  }, [request.toolName, request.toolUseId, onResolve]);
 
   if (request.toolName === 'EnterPlanMode') {
     return null;

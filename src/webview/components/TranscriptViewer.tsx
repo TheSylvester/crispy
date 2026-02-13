@@ -30,6 +30,8 @@ import { StopButton } from "./control-panel/StopButton.js";
 import { ThinkingIndicator } from "./ThinkingIndicator.js";
 import { ApprovalContent } from "./approval/index.js";
 import { useApprovalRequest } from "../hooks/useApprovalRequest.js";
+import { constructExitPlanHandoffPrompt } from "./approval/approval-utils.js";
+import { useTransport } from "../context/TransportContext.js";
 import type { ApprovalExtra } from "./approval/types.js";
 import type { TranscriptEntry } from "../../core/transcript.js";
 
@@ -37,11 +39,13 @@ import type { TranscriptEntry } from "../../core/transcript.js";
 const isDebugMode = window.location.search.includes('debug=1');
 
 export function TranscriptViewer(): React.JSX.Element {
-  const { selectedSessionId } = useSession();
+  const { selectedSessionId, setSelectedSessionId } = useSession();
+  const transport = useTransport();
   const { entries, isLoading, error, addOptimisticEntry } = useTranscript(selectedSessionId);
   const { renderMode } = usePreferences();
   const { approvalRequest, resolve: resolveApproval } = useApprovalRequest(selectedSessionId);
   const [bypassEnabled, setBypassEnabled] = useState(false);
+  const [prefillInput, setPrefillInput] = useState<string | null>(null);
   const {
     visibleCount,
     isPlaying,
@@ -137,17 +141,44 @@ export function TranscriptViewer(): React.JSX.Element {
   // (clearContext, planContent) before forwarding to transport.
   const handleApprovalResolve = useCallback(
     async (optionId: string, extra?: ApprovalExtra & { clearContext?: boolean; planContent?: string }) => {
-      if (extra?.clearContext) {
-        // TODO: clearContext orchestration — close session, create new one
-        // with constructExitPlanHandoffPrompt(extra.planContent, selectedSessionId)
-        console.log('[TranscriptViewer] clearContext requested — not yet wired');
-      }
       // Strip non-transport fields before forwarding
       const { clearContext, planContent, ...transportExtra } = extra ?? {};
+
+      if (clearContext && selectedSessionId) {
+        // ExitPlanMode with context clear: resolve approval, close old session,
+        // null out selection (clears transcript), and prefill handoff prompt.
+        const handoffPrompt = constructExitPlanHandoffPrompt(planContent, selectedSessionId);
+
+        // Resolve the approval first — SDK needs the PermissionResult before we tear down
+        await resolveApproval(optionId, Object.keys(transportExtra).length ? transportExtra : undefined);
+
+        // Close the old session — tears down the adapter and channel
+        try {
+          await transport.close(selectedSessionId);
+        } catch (err) {
+          // Session may already be closed; proceed anyway
+          console.warn('[TranscriptViewer] close session failed:', err);
+        }
+
+        // Null out session selection — clears transcript (useTranscript resets),
+        // clears approval UI (useApprovalRequest clears on session change)
+        setSelectedSessionId(null);
+
+        // Prefill ChatInput with the handoff prompt
+        setPrefillInput(handoffPrompt);
+        return;
+      }
+
+      // Normal approval resolution path
       await resolveApproval(optionId, Object.keys(transportExtra).length ? transportExtra : undefined);
     },
-    [resolveApproval, selectedSessionId],
+    [resolveApproval, selectedSessionId, transport, setSelectedSessionId],
   );
+
+  // Callback to clear prefillInput after ControlPanel consumes it
+  const handlePrefillConsumed = useCallback(() => {
+    setPrefillInput(null);
+  }, []);
 
   // --- Main content area (conditional) ---
   // ControlPanel is rendered once, outside the conditional branches, so it is
@@ -231,6 +262,8 @@ export function TranscriptViewer(): React.JSX.Element {
         onPendingOptimisticEntry={handlePendingOptimisticEntry}
         entries={entries}
         onBypassChange={setBypassEnabled}
+        prefillInput={prefillInput}
+        onPrefillConsumed={handlePrefillConsumed}
       >
         {approvalRequest && (
           <ApprovalContent

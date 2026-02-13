@@ -58,9 +58,16 @@ export function useApprovalRequest(sessionId: string | null): UseApprovalRequest
     async (optionId: string, extra?: ApprovalExtra) => {
       if (!sessionId || !request) return;
       const { toolUseId } = request;
+      const savedRequest = request;
       // Clear optimistically to prevent double-click
       setRequest(null);
-      await transport.resolveApproval(sessionId, toolUseId, optionId, extra);
+      try {
+        await transport.resolveApproval(sessionId, toolUseId, optionId, extra);
+      } catch (err) {
+        // Restore the approval UI so the user can retry
+        setRequest(savedRequest);
+        console.error('[useApprovalRequest] resolveApproval failed:', err);
+      }
     },
     [sessionId, request, transport],
   );

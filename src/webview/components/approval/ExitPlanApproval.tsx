@@ -51,7 +51,8 @@ export function ExitPlanApproval({ input, bypassEnabled, onResolve }: ExitPlanAp
 
   function handleSubmit(): void {
     if (choice === 'feedback') {
-      const text = feedbackText.trim() || 'User requested changes';
+      const text = feedbackText.trim();
+      if (!text) return; // Require actual feedback
       onResolve('deny', { message: text });
       return;
     }

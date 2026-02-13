@@ -103,7 +103,7 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
       request<void>('send', { sessionId, content, options }),
 
     resolveApproval: (sessionId, toolUseId, optionId, extra) =>
-      request<void>('resolveApproval', { sessionId, toolUseId, optionId, ...extra }),
+      request<void>('resolveApproval', { sessionId, toolUseId, optionId, extra }),
 
     setModel: (sessionId, model) =>
       request<void>('setModel', { sessionId, model }),
