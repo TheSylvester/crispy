@@ -98,7 +98,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const visibleEntries = entries.slice(0, visibleCount);
   const filteredEntries = visibleEntries.filter(shouldRenderEntry);
 
-  const { isSticky, isAtTop, scrollToBottom, scrollToTop, contentReady } = useAutoScroll({
+  const { isSticky, isAtTop, scrollToBottom, scrollToTop, contentReady, pinToBottom } = useAutoScroll({
     containerRef: transcriptRef,
     contentRef,
     entryCount: filteredEntries.length,
@@ -260,6 +260,7 @@ export function TranscriptViewer(): React.JSX.Element {
         onForkHoverChange={handleForkHoverChange}
         onOptimisticEntry={selectedSessionId ? addOptimisticEntry : undefined}
         onPendingOptimisticEntry={handlePendingOptimisticEntry}
+        onScrollToBottom={pinToBottom}
         entries={entries}
         onBypassChange={setBypassEnabled}
         prefillInput={prefillInput}

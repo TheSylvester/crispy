@@ -76,6 +76,8 @@ interface ControlPanelProps {
   onOptimisticEntry?: (entry: TranscriptEntry) => void;
   /** Stash an optimistic entry for injection after a new session initializes. */
   onPendingOptimisticEntry?: (entry: TranscriptEntry) => void;
+  /** Instantly pin transcript scroll to bottom (called on send). */
+  onScrollToBottom?: () => void;
   /** Transcript entries for historical context usage fallback. */
   entries?: TranscriptEntry[];
   /** Slot: when provided, replaces AttachmentsRow + ChatInput (approval mode). */
@@ -141,7 +143,7 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, entries, children, onBypassChange, prefillInput, onPrefillConsumed }, ref) {
+  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     // Track the last permission mode we pushed to the server to avoid echo loops
     // with the permission_mode_changed event listener.
@@ -287,6 +289,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           permissionMode: mapAgencyToPermissionMode(state.agencyMode),
         }).then(({ pendingId }) => {
           setSelectedSessionId(pendingId);
+          // Pin scroll to bottom after React commits the new session's transcript container
+          onScrollToBottom?.();
           return transport.send(pendingId, content, {
             model: state.model || undefined,
             permissionMode: mapAgencyToPermissionMode(state.agencyMode),
@@ -309,6 +313,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         onOptimisticEntry(buildOptimisticUserEntry(selectedSessionId, content));
       }
 
+      // Pin scroll to bottom — user just sent a message, always show it.
+      onScrollToBottom?.();
+
       // Bundle control panel options with the send — applied atomically
       // before the adapter starts the query, like Leto does.
       const options = {
@@ -324,7 +331,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       });
 
       dispatch({ type: 'CLEAR_INPUT' });
-    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, selectedSessionId, selectedCwd, setSelectedSessionId, setOptimisticStatus, transport, onOptimisticEntry, onPendingOptimisticEntry]);
+    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, selectedSessionId, selectedCwd, setSelectedSessionId, setOptimisticStatus, transport, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom]);
 
     // --- Drag/drop handlers ---
     const handleDragOver = useCallback((e: React.DragEvent) => {

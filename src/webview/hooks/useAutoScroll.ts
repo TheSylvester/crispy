@@ -57,6 +57,13 @@ export interface UseAutoScrollReturn {
   scrollToTop: () => void;
   /** False while initial content is loading; true once ready to show */
   contentReady: boolean;
+  /**
+   * Instantly pin to bottom and re-engage sticky mode.
+   * Call after user-initiated actions (e.g. sending a message) where we
+   * always want to scroll to the newest content regardless of current
+   * scroll position. Uses rAF to fire after React's DOM commit.
+   */
+  pinToBottom: () => void;
 }
 
 // --- Easing ---
@@ -248,6 +255,21 @@ export function useAutoScroll({
     });
   }, [containerRef]);
 
+  // --- User-initiated pin: instant scroll + re-engage sticky ---
+  const pinToBottom = useCallback(() => {
+    // Re-engage sticky so the ResizeObserver keeps pinning during streaming
+    isStickyRef.current = true;
+    setIsSticky(true);
+
+    // rAF ensures we fire after React's DOM commit so scrollHeight is up-to-date
+    requestAnimationFrame(() => {
+      const container = containerRef.current;
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
+    });
+  }, [containerRef]);
+
   // --- FAB button: native smooth scroll to top ---
   const scrollToTop = useCallback(() => {
     const container = containerRef.current;
@@ -271,5 +293,5 @@ export function useAutoScroll({
     };
   }, []);
 
-  return { isSticky, isAtTop, scrollToBottom, scrollToTop, contentReady };
+  return { isSticky, isAtTop, scrollToBottom, scrollToTop, contentReady, pinToBottom };
 }
