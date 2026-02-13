@@ -50,7 +50,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('crispy.open', () => openCrispyPanel(context)),
+    vscode.commands.registerCommand('crispy.editor.open', () => openCrispyPanel(context)),
   );
 
   startRescan();

@@ -49,18 +49,19 @@
     "Chat"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onWebviewPanel:crispy"
   ],
   "contributes": {
     "commands": [
       {
-        "command": "crispy.open",
-        "title": "Open Crispy"
+        "command": "crispy.editor.open",
+        "title": "Crispy: Open"
       }
     ],
     "keybindings": [
       {
-        "command": "crispy.open",
+        "command": "crispy.editor.open",
         "key": "ctrl+shift+alt+i",
         "mac": "cmd+shift+alt+i"
       }

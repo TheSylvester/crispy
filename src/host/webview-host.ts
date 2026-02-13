@@ -1,9 +1,11 @@
 /**
  * Webview Host — VS Code Webview Panel + postMessage Bridge
  *
- * Creates a VS Code WebviewPanel and bridges it to the session-manager
- * via createMessageHandler(). The webview loads the same bundle as the
- * Chrome dev server, but communicates via postMessage instead of WebSocket.
+ * Creates VS Code WebviewPanels and bridges them to the session-manager
+ * via createClientConnection(). Supports multi-window panel management:
+ * - No panels exist → create new panel in current editor column
+ * - Panel exists but not focused → reveal most recent panel
+ * - Panel is focused → create new panel beside it
  *
  * @module webview-host
  */
@@ -11,38 +13,71 @@
 import * as vscode from 'vscode';
 import { createClientConnection, type HostMessage } from './client-connection.js';
 
-/** The single active Crispy panel, if any. */
-let activePanel: vscode.WebviewPanel | undefined;
+/** All active Crispy panels, keyed by panelId. */
+const panels = new Map<string, vscode.WebviewPanel>();
 
 /** Monotonic counter for panel client IDs (mirrors dev-server connectionCounter). */
 let panelCounter = 0;
 
 /**
- * Open the Crispy panel (or reveal + focus input if already open).
+ * Check if any Crispy panel is currently focused.
+ */
+function isAnyPanelActive(): boolean {
+  for (const panel of panels.values()) {
+    if (panel.active) return true;
+  }
+  return false;
+}
+
+/**
+ * Get the most recently created panel (last in insertion order).
+ */
+function getMostRecentPanel(): vscode.WebviewPanel | undefined {
+  const all = Array.from(panels.values());
+  return all[all.length - 1];
+}
+
+/**
+ * Open a Crispy panel with smart 3-way logic:
+ * - No panels exist → create new panel in current editor column
+ * - Panel exists but not focused → reveal + focus input
+ * - Panel is focused → create new panel beside it
  *
  * @param context  VS Code extension context (for webview resource URIs)
  */
 export function openCrispyPanel(context: vscode.ExtensionContext): void {
-  if (activePanel) {
-    activePanel.reveal(undefined, false);
-    activePanel.webview.postMessage({ kind: 'focusInput' });
+  const column = vscode.window.activeTextEditor?.viewColumn;
+
+  // If panel(s) exist but none is focused → reveal the most recent one
+  const existing = getMostRecentPanel();
+  if (existing && !isAnyPanelActive()) {
+    existing.reveal(column);
+    existing.webview.postMessage({ kind: 'focusInput' });
     return;
   }
-  createCrispyPanel(context);
+
+  // No panels, or a panel is focused → create new panel
+  // If a panel is focused, open beside it; otherwise use current column
+  createCrispyPanel(
+    context,
+    isAnyPanelActive() ? vscode.ViewColumn.Beside : (column || vscode.ViewColumn.One),
+  );
 }
 
 /**
  * Create and show a Crispy webview panel.
  *
- * @param context  VS Code extension context (for webview resource URIs)
+ * @param context     VS Code extension context (for webview resource URIs)
+ * @param viewColumn  Column to open the panel in (default: Beside for backward compat)
  */
 export function createCrispyPanel(
   context: vscode.ExtensionContext,
+  viewColumn: vscode.ViewColumn = vscode.ViewColumn.Beside,
 ): vscode.WebviewPanel {
   const panel = vscode.window.createWebviewPanel(
     'crispy',
     'Crispy',
-    vscode.ViewColumn.Beside,
+    viewColumn,
     {
       enableScripts: true,
       retainContextWhenHidden: true,
@@ -51,6 +86,9 @@ export function createCrispyPanel(
       ],
     },
   );
+
+  // Tab icon
+  panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'crispy-icon.svg');
 
   // Resolve URIs for webview resources
   const webviewDir = vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview');
@@ -113,12 +151,12 @@ export function createCrispyPanel(
   // Set HTML AFTER listener is wired — this triggers webview JS to load
   panel.webview.html = getWebviewHtml(panel.webview, scriptUri, cssUri, stylesUri, nonce);
 
-  activePanel = panel;
+  panels.set(panelId, panel);
 
   panel.onDidDispose(() => {
     disposed = true;
     handler.dispose();
-    activePanel = undefined;
+    panels.delete(panelId);
   });
 
   return panel;
