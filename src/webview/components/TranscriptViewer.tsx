@@ -61,6 +61,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const controlPanelRef = useRef<HTMLDivElement>(null);
+  const stopButtonRef = useRef<HTMLDivElement>(null);
 
   // Pending optimistic entry: stashed by ControlPanel in the new-session branch,
   // injected into useTranscript once the pending session ID initializes.
@@ -105,23 +106,49 @@ export function TranscriptViewer(): React.JSX.Element {
     sessionId: selectedSessionId,
   });
 
-  // Observe control panel height for dynamic transcript bottom padding
+  // Observe control panel + stop button for dynamic transcript bottom padding.
+  // The stop button floats above the control panel; when visible its height must be
+  // included so the last transcript entry isn't hidden behind it.
+  //
+  // ResizeObserver fires on control panel size changes. The stop button doesn't resize
+  // (it's always in the DOM at fixed size, toggled via opacity/transform), so we use a
+  // MutationObserver on its classList to detect visibility transitions.
   useEffect(() => {
     const cpEl = controlPanelRef.current;
+    const sbEl = stopButtonRef.current;
     const txEl = transcriptRef.current;
     if (!cpEl || !txEl) return;
 
+    const GAP = 32; // px spacer between content and control panel
+
     const updatePadding = () => {
-      const height = cpEl.getBoundingClientRect().height;
-      txEl.style.paddingBottom = `${height + 32}px`;
-      document.documentElement.style.setProperty('--cp-height', String(Math.round(height)));
+      const cpHeight = cpEl.getBoundingClientRect().height;
+      // Stop button is always in the DOM but invisible (opacity: 0) when idle.
+      // Only add its height when it has the --visible class.
+      const sbVisible = sbEl?.classList.contains('crispy-stop--visible');
+      const sbHeight = sbVisible ? sbEl!.getBoundingClientRect().height : 0;
+
+      txEl.style.paddingBottom = `${cpHeight + sbHeight + GAP}px`;
+      document.documentElement.style.setProperty('--cp-height', String(Math.round(cpHeight)));
     };
 
-    const observer = new ResizeObserver(updatePadding);
-    observer.observe(cpEl);
+    // Watch control panel for size changes (e.g. textarea grow)
+    const resizeObs = new ResizeObserver(updatePadding);
+    resizeObs.observe(cpEl);
+
+    // Watch stop button for class changes (visible ↔ hidden)
+    let mutationObs: MutationObserver | undefined;
+    if (sbEl) {
+      mutationObs = new MutationObserver(updatePadding);
+      mutationObs.observe(sbEl, { attributes: true, attributeFilter: ['class'] });
+    }
+
     updatePadding(); // Initial measurement
 
-    return () => observer.disconnect();
+    return () => {
+      resizeObs.disconnect();
+      mutationObs?.disconnect();
+    };
   }, [selectedSessionId]); // Re-attach when session changes
 
   // Fork preview glow: add/remove class on last assistant message
@@ -254,7 +281,7 @@ export function TranscriptViewer(): React.JSX.Element {
   return (
     <>
       {mainContent}
-      {selectedSessionId && !error && <StopButton />}
+      {selectedSessionId && !error && <StopButton ref={stopButtonRef} />}
       <ControlPanel
         ref={controlPanelRef}
         onForkHoverChange={handleForkHoverChange}
