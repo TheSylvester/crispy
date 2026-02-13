@@ -25,6 +25,7 @@ export interface SessionService {
   createSession(vendor: string, cwd: string, options?: {
     model?: string;
     permissionMode?: string;
+    extraArgs?: Record<string, string | null>;
   }): Promise<{ pendingId: string }>;
   subscribe(sessionId: string): Promise<void>;
   unsubscribe(sessionId: string): Promise<void>;

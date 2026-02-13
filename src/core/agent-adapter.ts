@@ -100,7 +100,7 @@ export interface SendOptions {
  */
 export type SessionOpenSpec =
   | { mode: 'resume'; sessionId: string }
-  | { mode: 'fresh'; cwd: string; model?: string; permissionMode?: SendOptions['permissionMode'] }
+  | { mode: 'fresh'; cwd: string; model?: string; permissionMode?: SendOptions['permissionMode']; extraArgs?: Record<string, string | null> }
   | { mode: 'fork'; fromSessionId: string; atMessageId?: string }
   | { mode: 'continue'; sessionId: string };
 

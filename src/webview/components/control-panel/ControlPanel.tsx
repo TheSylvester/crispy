@@ -113,9 +113,16 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
       };
     }
     case 'SET_AGENCY_MODE': {
-      // Agency mode and bypass are independent axes.
-      // Changing mode never affects the bypass safety gate.
-      return { ...state, agencyMode: action.mode };
+      // Agency mode and bypass are independent axes — switching to plan mode
+      // or accept-edits never turns OFF the bypass safety gate.
+      // However, if the server tells us we're in bypass-permissions mode
+      // (e.g., via permission_mode_changed), we must turn bypass ON to
+      // reflect reality.
+      return {
+        ...state,
+        agencyMode: action.mode,
+        bypassEnabled: action.mode === 'bypass-permissions' ? true : state.bypassEnabled,
+      };
     }
     case 'SET_MODEL':
       return { ...state, model: action.model };
@@ -292,6 +299,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         transport.createSession('claude', cwd, {
           model: state.model || undefined,
           permissionMode: mapAgencyToPermissionMode(state.agencyMode),
+          extraArgs: state.chromeEnabled ? { chrome: null } : undefined,
         }).then(({ pendingId }) => {
           setSelectedSessionId(pendingId);
           // Pin scroll to bottom after React commits the new session's transcript container
@@ -336,7 +344,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       });
 
       dispatch({ type: 'CLEAR_INPUT' });
-    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, selectedSessionId, selectedCwd, setSelectedSessionId, setOptimisticStatus, transport, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom]);
+    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, selectedSessionId, selectedCwd, setSelectedSessionId, setOptimisticStatus, transport, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom]);
 
     // --- Drag/drop handlers ---
     const handleDragOver = useCallback((e: React.DragEvent) => {

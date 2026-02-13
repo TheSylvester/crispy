@@ -317,7 +317,7 @@ export function createSession(
   vendor: Vendor,
   cwd: string,
   subscriber: Subscriber,
-  options?: { model?: string; permissionMode?: SendOptions['permissionMode'] },
+  options?: { model?: string; permissionMode?: SendOptions['permissionMode']; extraArgs?: Record<string, string | null> },
 ): { pendingId: string; channel: SessionChannel } {
   const registration = adapters.get(vendor);
   if (!registration) throw new Error(`No adapter registered for vendor "${vendor}".`);
@@ -328,6 +328,7 @@ export function createSession(
     cwd,
     ...(options?.model && { model: options.model }),
     ...(options?.permissionMode && { permissionMode: options.permissionMode }),
+    ...(options?.extraArgs && { extraArgs: options.extraArgs }),
   };
 
   const channel = openChannel(pendingId, vendor, spec);

@@ -37,6 +37,7 @@ export function activate(context: vscode.ExtensionContext): void {
             ...base, cwd: spec.cwd,
             ...(spec.model && { model: spec.model }),
             ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+            ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
           });
         case 'fork':
           return new ClaudeAgentAdapter({

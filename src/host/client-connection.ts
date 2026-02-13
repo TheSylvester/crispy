@@ -166,6 +166,7 @@ export function createClientConnection(
         const cwdParam = params.cwd as string;
         const model = params.model as string | undefined;
         const permissionMode = params.permissionMode as string | undefined;
+        const extraArgs = params.extraArgs as Record<string, string | null> | undefined;
 
         let currentSessionId = '';
 
@@ -192,7 +193,7 @@ export function createClientConnection(
 
         const { pendingId, channel } = createSession(
           vendor as Vendor, cwdParam, subscriber,
-          { model, permissionMode: permissionMode as SendOptions['permissionMode'] },
+          { model, permissionMode: permissionMode as SendOptions['permissionMode'], extraArgs },
         );
         currentSessionId = pendingId;
         subscriptions.set(pendingId, { channel, subscriber });
