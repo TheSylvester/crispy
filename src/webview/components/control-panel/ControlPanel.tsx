@@ -80,6 +80,8 @@ interface ControlPanelProps {
   entries?: TranscriptEntry[];
   /** Slot: when provided, replaces AttachmentsRow + ChatInput (approval mode). */
   children?: React.ReactNode;
+  /** Notify parent when bypass state changes (for ExitPlanMode approval). */
+  onBypassChange?: (enabled: boolean) => void;
 }
 
 /** Agency modes for keyboard cycling (excluding bypass-permissions). */
@@ -135,12 +137,17 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, entries, children }, ref) {
+  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, entries, children, onBypassChange }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned } = usePreferences();
     const transport = useTransport();
     const { selectedSessionId, selectedCwd, setSelectedSessionId } = useSession();
     const { setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
+
+    // --- Notify parent of bypass state changes ---
+    useEffect(() => {
+      onBypassChange?.(state.bypassEnabled);
+    }, [state.bypassEnabled, onBypassChange]);
 
     // --- Context usage tracking ---
     const contextUsage = useContextUsage(selectedSessionId, entries);

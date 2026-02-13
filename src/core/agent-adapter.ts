@@ -172,8 +172,13 @@ export interface AgentAdapter {
    *
    * @param toolUseId - The tool_use block ID from the AwaitingApprovalEvent
    * @param optionId - The `id` of the chosen ApprovalOption
+   * @param extra - Optional structured data (form answers, mode changes, deny message)
    */
-  respondToApproval(toolUseId: string, optionId: string): void;
+  respondToApproval(toolUseId: string, optionId: string, extra?: {
+    message?: string;
+    updatedInput?: Record<string, unknown>;
+    updatedPermissions?: unknown[];
+  }): void;
 
   /**
    * Close the adapter and tear down any active vendor session.

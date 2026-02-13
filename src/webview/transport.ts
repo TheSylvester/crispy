@@ -11,6 +11,7 @@
 import type { SessionInfo, SendOptions } from '../core/agent-adapter.js';
 import type { TranscriptEntry, MessageContent } from '../core/transcript.js';
 import type { HostEvent } from '../host/client-connection.js';
+import type { ApprovalExtra } from './components/approval/types.js';
 
 /** Client-side session info — modifiedAt is a string after JSON serialization. */
 export interface WireSessionInfo extends Omit<SessionInfo, 'modifiedAt'> {
@@ -28,7 +29,7 @@ export interface SessionService {
   subscribe(sessionId: string): Promise<void>;
   unsubscribe(sessionId: string): Promise<void>;
   send(sessionId: string, content: MessageContent, options?: SendOptions): Promise<void>;
-  resolveApproval(sessionId: string, toolUseId: string, optionId: string): Promise<void>;
+  resolveApproval(sessionId: string, toolUseId: string, optionId: string, extra?: ApprovalExtra): Promise<void>;
   setModel(sessionId: string, model?: string): Promise<void>;
   setPermissions(sessionId: string, mode: string): Promise<void>;
   interrupt(sessionId: string): Promise<void>;

@@ -211,13 +211,18 @@ export function createClientConnection(
         const sessionId = params.sessionId as string;
         const toolUseId = params.toolUseId as string;
         const optionId = params.optionId as string;
+        const extra = {
+          message: params.message as string | undefined,
+          updatedInput: params.updatedInput as Record<string, unknown> | undefined,
+          updatedPermissions: params.updatedPermissions as unknown[] | undefined,
+        };
         const sub = subscriptions.get(sessionId);
         if (!sub) {
           throw new Error(
             `Not subscribed to session "${sessionId}". Call subscribe first.`,
           );
         }
-        resolveApproval(sub.channel, toolUseId, optionId);
+        resolveApproval(sub.channel, toolUseId, optionId, extra);
         return { resolved: true };
       }
 

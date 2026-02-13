@@ -2210,3 +2210,103 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   pointer-events: none;
   z-index: 1;
 }
+
+/* Tab bar (AskUserQuestion multi-question) */
+.crispy-approval-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--vscode-panel-border, #333);
+  padding-bottom: 4px;
+  margin-bottom: 8px;
+}
+
+.crispy-approval-tab {
+  padding: 4px 10px;
+  font-size: 12px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px 3px 0 0;
+  color: var(--vscode-descriptionForeground, #888);
+  cursor: pointer;
+}
+
+.crispy-approval-tab--active {
+  color: var(--vscode-foreground, #d4d4d4);
+  border-color: var(--vscode-panel-border, #333);
+  border-bottom-color: var(--vscode-editor-background, #1e1e1e);
+  background: var(--vscode-editor-background, #1e1e1e);
+}
+
+.crispy-approval-tab__check {
+  color: var(--frame-highlight, #E88040);
+  margin-left: 4px;
+}
+
+/* Options (radio/checkbox) — shared by AskUserQuestion + ExitPlanMode */
+.crispy-approval-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.crispy-approval-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.crispy-approval-option:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-approval-option--selected {
+  background: var(--vscode-list-activeSelectionBackground, #094771);
+}
+
+.crispy-approval-option input[type="radio"],
+.crispy-approval-option input[type="checkbox"] {
+  margin-top: 2px;
+  accent-color: var(--frame-highlight, #E88040);
+}
+
+.crispy-approval-option__label {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.crispy-approval-option__desc {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #888);
+}
+
+.crispy-approval-question {
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+/* Other input (ChatInput wrapper inside approval) */
+.crispy-approval-other-input {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+/* ExitPlanMode permissions list */
+.crispy-approval-permissions {
+  margin-bottom: 8px;
+}
+
+.crispy-approval-permissions-list {
+  margin: 4px 0 0 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-approval-permissions-list li {
+  margin-bottom: 2px;
+}

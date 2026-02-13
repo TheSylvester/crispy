@@ -15,9 +15,10 @@ interface ChatInputProps {
   attachedImages: AttachedImage[];
   onInput: (value: string) => void;
   onSend: () => void;
+  placeholder?: string;
 }
 
-export function ChatInput({ value, attachedImages, onInput, onSend }: ChatInputProps): React.JSX.Element {
+export function ChatInput({ value, attachedImages, onInput, onSend, placeholder }: ChatInputProps): React.JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [hoverClass, setHoverClass] = useState('');
 
@@ -59,7 +60,7 @@ export function ChatInput({ value, attachedImages, onInput, onSend }: ChatInputP
       <textarea
         ref={textareaRef}
         className="crispy-cp-input"
-        placeholder="Ask Claude anything..."
+        placeholder={placeholder ?? "Ask Claude anything..."}
         rows={1}
         value={value}
         onChange={(e) => onInput(e.target.value)}

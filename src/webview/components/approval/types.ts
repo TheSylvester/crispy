@@ -40,3 +40,13 @@ export interface ExitPlanModeInput {
   remoteSessionUrl?: string;
   plan?: string;
 }
+
+/** Structured data sent alongside approval resolution (beyond just optionId). */
+export interface ApprovalExtra {
+  /** Override deny message (default: 'User denied'). Used by ExitPlanMode feedback. */
+  message?: string;
+  /** Pass form data back (AskUserQuestion answers). */
+  updatedInput?: Record<string, unknown>;
+  /** Mode changes (ExitPlanMode approval). Overrides pending.suggestions. */
+  updatedPermissions?: Array<{ type: string; mode?: string; destination?: string; rules?: unknown[] }>;
+}

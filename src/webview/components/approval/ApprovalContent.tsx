@@ -5,24 +5,31 @@
  * inside the `.crispy-cp` shell, replacing AttachmentsRow + ChatInput.
  * Not a positioned container — the shell handles positioning.
  *
- * Phase 1: routes to StandardApproval for all tools.
- * Phase 2/3: will add AskUserApproval, ExitPlanApproval routes.
+ * Routes by tool name:
+ * - AskUserQuestion → AskUserApproval (structured question/answer UI)
+ * - ExitPlanMode → ExitPlanApproval (plan review with mode selection)
+ * - EnterPlanMode → auto-approved (no UI)
+ * - Everything else → StandardApproval (YAML preview + buttons)
  *
  * @module approval/ApprovalContent
  */
 
 import { useEffect } from 'react';
-import type { ApprovalRequest } from './types.js';
+import type { ApprovalRequest, ApprovalExtra, AskUserQuestionInput, ExitPlanModeInput } from './types.js';
 import { StandardApproval } from './StandardApproval.js';
+import { AskUserApproval } from './AskUserApproval.js';
+import { ExitPlanApproval } from './ExitPlanApproval.js';
 
 interface ApprovalContentProps {
   request: ApprovalRequest;
-  onResolve: (optionId: string) => void;
+  onResolve: (optionId: string, extra?: ApprovalExtra) => void;
+  bypassEnabled: boolean;
 }
 
 export function ApprovalContent({
   request,
   onResolve,
+  bypassEnabled,
 }: ApprovalContentProps): React.JSX.Element | null {
   // EnterPlanMode: auto-approve immediately without showing UI
   useEffect(() => {
@@ -35,8 +42,19 @@ export function ApprovalContent({
     return null;
   }
 
-  // Phase 2: AskUserQuestion → <AskUserApproval />
-  // Phase 3: ExitPlanMode → <ExitPlanApproval />
+  if (request.toolName === 'AskUserQuestion') {
+    return <AskUserApproval input={request.input as AskUserQuestionInput} onResolve={onResolve} />;
+  }
+
+  if (request.toolName === 'ExitPlanMode') {
+    return (
+      <ExitPlanApproval
+        input={request.input as ExitPlanModeInput}
+        bypassEnabled={bypassEnabled}
+        onResolve={onResolve}
+      />
+    );
+  }
 
   return (
     <StandardApproval

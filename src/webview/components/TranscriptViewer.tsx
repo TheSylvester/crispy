@@ -15,7 +15,7 @@
  * @module TranscriptViewer
  */
 
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import { useSession } from "../context/SessionContext.js";
 import { usePreferences } from "../context/PreferencesContext.js";
 import { useTranscript } from "../hooks/useTranscript.js";
@@ -30,6 +30,7 @@ import { StopButton } from "./control-panel/StopButton.js";
 import { ThinkingIndicator } from "./ThinkingIndicator.js";
 import { ApprovalContent } from "./approval/index.js";
 import { useApprovalRequest } from "../hooks/useApprovalRequest.js";
+import type { ApprovalExtra } from "./approval/types.js";
 import type { TranscriptEntry } from "../../core/transcript.js";
 
 /** Check once whether debug mode is enabled */
@@ -40,6 +41,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const { entries, isLoading, error, addOptimisticEntry } = useTranscript(selectedSessionId);
   const { renderMode } = usePreferences();
   const { approvalRequest, resolve: resolveApproval } = useApprovalRequest(selectedSessionId);
+  const [bypassEnabled, setBypassEnabled] = useState(false);
   const {
     visibleCount,
     isPlaying,
@@ -131,6 +133,22 @@ export function TranscriptViewer(): React.JSX.Element {
     }
   }, []);
 
+  // Wrap resolveApproval to intercept ExitPlanMode orchestration fields
+  // (clearContext, planContent) before forwarding to transport.
+  const handleApprovalResolve = useCallback(
+    async (optionId: string, extra?: ApprovalExtra & { clearContext?: boolean; planContent?: string }) => {
+      if (extra?.clearContext) {
+        // TODO: clearContext orchestration — close session, create new one
+        // with constructExitPlanHandoffPrompt(extra.planContent, selectedSessionId)
+        console.log('[TranscriptViewer] clearContext requested — not yet wired');
+      }
+      // Strip non-transport fields before forwarding
+      const { clearContext, planContent, ...transportExtra } = extra ?? {};
+      await resolveApproval(optionId, Object.keys(transportExtra).length ? transportExtra : undefined);
+    },
+    [resolveApproval, selectedSessionId],
+  );
+
   // --- Main content area (conditional) ---
   // ControlPanel is rendered once, outside the conditional branches, so it is
   // never unmounted when selectedSessionId transitions from null → pending.
@@ -212,11 +230,13 @@ export function TranscriptViewer(): React.JSX.Element {
         onOptimisticEntry={selectedSessionId ? addOptimisticEntry : undefined}
         onPendingOptimisticEntry={handlePendingOptimisticEntry}
         entries={entries}
+        onBypassChange={setBypassEnabled}
       >
         {approvalRequest && (
           <ApprovalContent
             request={approvalRequest}
-            onResolve={resolveApproval}
+            onResolve={handleApprovalResolve}
+            bypassEnabled={bypassEnabled}
           />
         )}
       </ControlPanel>

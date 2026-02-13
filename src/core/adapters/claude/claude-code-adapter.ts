@@ -468,7 +468,11 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     }
   }
 
-  respondToApproval(toolUseId: string, optionId: string): void {
+  respondToApproval(toolUseId: string, optionId: string, extra?: {
+    message?: string;
+    updatedInput?: Record<string, unknown>;
+    updatedPermissions?: unknown[];
+  }): void {
     const pending = this.pendingApprovals.get(toolUseId);
     if (!pending) {
       throw new Error(`No pending approval for toolUseId: ${toolUseId}`);
@@ -483,7 +487,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
 
     if (optionId === 'deny') {
       // Zv6 deny schema requires `message: string` — always provide one.
-      result = { behavior: 'deny', message: 'User denied', toolUseID: toolUseId };
+      result = { behavior: 'deny', message: extra?.message ?? 'User denied', toolUseID: toolUseId };
     } else {
       // Zv6 allow schema requires `updatedInput: Record<string, unknown>` (NOT
       // optional, despite the .d.ts saying so — the wire-protocol Zod schema
@@ -500,6 +504,16 @@ export class ClaudeAgentAdapter implements AgentAdapter {
 
       if (optionId !== 'allow' && pending.suggestions && pending.suggestions.length > 0) {
         result.updatedPermissions = pending.suggestions;
+      }
+
+      // extra.updatedPermissions overrides if provided (ExitPlanMode)
+      if (extra?.updatedPermissions) {
+        result.updatedPermissions = extra.updatedPermissions as PermissionUpdate[];
+      }
+
+      // extra.updatedInput merges over pending.input (AskUserQuestion answers)
+      if (extra?.updatedInput) {
+        result.updatedInput = { ...result.updatedInput, ...extra.updatedInput };
       }
     }
 

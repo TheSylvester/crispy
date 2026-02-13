@@ -8,6 +8,31 @@
  */
 
 /**
+ * Construct a handoff prompt for ExitPlanMode with context clear.
+ *
+ * When the user approves a plan with "clear context", this prompt is
+ * used to start a fresh session that carries the plan forward.
+ *
+ * @param planContent - The plan text from ExitPlanModeInput
+ * @param sessionId - Current session ID for transcript reference
+ * @returns Formatted handoff prompt
+ */
+export function constructExitPlanHandoffPrompt(
+  planContent: string | undefined,
+  sessionId: string | null,
+): string {
+  const lines = ['Implement the following plan:'];
+  if (planContent) lines.push('', planContent);
+  if (sessionId) {
+    lines.push('',
+      `If you need specific details from before exiting plan mode, ` +
+      `read the full transcript at: ~/.claude/projects/.../${sessionId}.jsonl`
+    );
+  }
+  return lines.join('\n');
+}
+
+/**
  * Format an object as YAML-like display text.
  * Used to show tool inputs in approval panels.
  *

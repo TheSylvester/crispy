@@ -444,6 +444,7 @@ export function resolveApproval(
   channel: SessionChannel,
   toolUseId: string,
   optionId: string,
+  extra?: { message?: string; updatedInput?: Record<string, unknown>; updatedPermissions?: unknown[] },
 ): void {
   if (!channel.adapter) {
     throw new Error('No adapter set. Call setAdapter() first.');
@@ -456,7 +457,7 @@ export function resolveApproval(
 
   // Let adapter throw on invalid optionId — don't clean up pendingApprovals
   // so the caller can retry with a valid option.
-  channel.adapter.respondToApproval(toolUseId, optionId);
+  channel.adapter.respondToApproval(toolUseId, optionId, extra);
   channel.pendingApprovals.delete(toolUseId);
   broadcast(channel, { type: 'approval_resolved', toolUseId });
 }

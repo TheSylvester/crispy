@@ -11,13 +11,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useTransport } from '../context/TransportContext.js';
-import type { ApprovalRequest } from '../components/approval/types.js';
+import type { ApprovalRequest, ApprovalExtra } from '../components/approval/types.js';
 
 export interface UseApprovalRequestResult {
   /** Current pending approval, or null if none. */
   approvalRequest: ApprovalRequest | null;
-  /** Resolve the pending approval with the chosen option ID. */
-  resolve: (optionId: string) => Promise<void>;
+  /** Resolve the pending approval with the chosen option ID and optional extra data. */
+  resolve: (optionId: string, extra?: ApprovalExtra) => Promise<void>;
 }
 
 export function useApprovalRequest(sessionId: string | null): UseApprovalRequestResult {
@@ -55,12 +55,12 @@ export function useApprovalRequest(sessionId: string | null): UseApprovalRequest
   }, [sessionId, transport]);
 
   const resolve = useCallback(
-    async (optionId: string) => {
+    async (optionId: string, extra?: ApprovalExtra) => {
       if (!sessionId || !request) return;
       const { toolUseId } = request;
       // Clear optimistically to prevent double-click
       setRequest(null);
-      await transport.resolveApproval(sessionId, toolUseId, optionId);
+      await transport.resolveApproval(sessionId, toolUseId, optionId, extra);
     },
     [sessionId, request, transport],
   );
