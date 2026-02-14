@@ -6,8 +6,9 @@
  * 2. ResizeObserver on content div — auto-scrolls when content grows while near bottom
  * 3. pinToBottom() — forces scroll lock on message send, ResizeObserver sustains it
  *
- * Uses the browser's built-in `behavior: 'smooth'` for user-initiated scrolls (FAB clicks).
- * Content-growth auto-scroll uses instant scrolling to avoid lag during streaming.
+ * On session load, waits for content to settle (no resize events for SETTLE_MS),
+ * then plays a smooth top-to-bottom intro scroll as visual feedback that there's
+ * history above. During streaming, instant-scrolls to avoid lag.
  *
  * @module useAutoScroll
  */
@@ -18,6 +19,8 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 const NEAR_BOTTOM_THRESHOLD = 100;
 /** Tight zone for FAB visibility */
 const BUTTON_THRESHOLD = 50;
+/** Quiet period (ms) after last resize before playing the intro scroll */
+const SETTLE_MS = 150;
 
 export interface UseAutoScrollOptions {
   sessionId: string | null;
@@ -43,16 +46,18 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
   const isNearBottomRef = useRef(true);
   const lastScrollHeightRef = useRef(0);
   const rafIdRef = useRef(0);
+  // True during initial session load; cleared after the intro scroll plays.
+  const isSessionLoadRef = useRef(true);
+  // Settle timer for the intro scroll.
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   // ── Session reset ──────────────────────────────────────────────────
-  // Reset refs so the ResizeObserver treats the next content render as
-  // "grew from 0" and auto-scrolls. We do NOT force isSticky here —
-  // the scroll listener will set it based on actual position after the
-  // auto-scroll lands.
   useEffect(() => {
     setIsAtTop(true);
     isNearBottomRef.current = true;
     lastScrollHeightRef.current = 0;
+    isSessionLoadRef.current = true;
+    clearTimeout(settleTimerRef.current);
   }, [sessionId]);
 
   // ── 1. Scroll listener (RAF-debounced, passive) ────────────────────
@@ -87,8 +92,11 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
   // ResizeObserver doesn't track. The content div's border-box grows as
   // entries mount, so ResizeObserver fires reliably.
   //
-  // We read scrollHeight from the scroll container (scrollRef) for the
-  // auto-scroll math, since that's where overflow lives.
+  // During session load, instant-scroll keeps us at the bottom while
+  // content renders. A settle timer (debounced by each resize) fires once
+  // content stops growing — then we jump to top and smooth-scroll down
+  // as the intro animation. This avoids the smooth scroll getting
+  // cancelled by subsequent instant scrolls during the render cascade.
   useEffect(() => {
     const scrollEl = scrollRef.current;
     if (!scrollEl) return;
@@ -98,18 +106,35 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
 
     const observer = new ResizeObserver(() => {
       if (!scrollRef.current) return;
-      const newScrollHeight = scrollRef.current.scrollHeight;
+      const el = scrollRef.current;
+      const newScrollHeight = el.scrollHeight;
       const grew = newScrollHeight > lastScrollHeightRef.current;
       lastScrollHeightRef.current = newScrollHeight;
 
       if (grew && isNearBottomRef.current) {
-        // Instant scroll — smooth causes perpetual lag during streaming
-        scrollRef.current.scrollTop = newScrollHeight;
+        // Always instant-scroll to keep up with content growth.
+        el.scrollTop = newScrollHeight;
+
+        if (isSessionLoadRef.current) {
+          // Content is still settling — reset the debounce timer.
+          // When it finally fires, we play the intro scroll.
+          clearTimeout(settleTimerRef.current);
+          settleTimerRef.current = setTimeout(() => {
+            if (!scrollRef.current || !isSessionLoadRef.current) return;
+            isSessionLoadRef.current = false;
+            const settled = scrollRef.current;
+            settled.scrollTop = 0;
+            settled.scrollTo({ top: settled.scrollHeight, behavior: "smooth" });
+          }, SETTLE_MS);
+        }
       }
     });
 
     observer.observe(contentEl);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      clearTimeout(settleTimerRef.current);
+    };
   }, [sessionId, scrollRef]);
 
   // ── User-initiated smooth scrolls (FAB clicks) ────────────────────
@@ -126,7 +151,11 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
   }, [scrollRef]);
 
   // ── 3. pinToBottom — called on message send ────────────────────────
+  // Cancels any pending intro scroll — sending a message means the user
+  // is already engaged, no need for theatrics.
   const pinToBottom = useCallback(() => {
+    isSessionLoadRef.current = false;
+    clearTimeout(settleTimerRef.current);
     isNearBottomRef.current = true;
     setIsSticky(true);
     const el = scrollRef.current;
