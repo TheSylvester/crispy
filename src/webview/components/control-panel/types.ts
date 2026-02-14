@@ -62,6 +62,7 @@ export type Action =
   | { type: 'ADD_IMAGE'; image: AttachedImage }
   | { type: 'REMOVE_IMAGE'; id: string }
   | { type: 'CLEAR_IMAGES' }
+  | { type: 'INCREMENT_PASTE_COUNTER' }
   | { type: 'SET_FILE_CONTEXT'; enabled: boolean }
   | { type: 'SET_CONTEXT'; contextUsage: ContextUsage }
   | { type: 'RESET_CONTEXT' };

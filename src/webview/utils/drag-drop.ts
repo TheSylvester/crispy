@@ -50,10 +50,11 @@ export function extractFilePathsFromDragEvent(e: DragEvent): string[] {
   if (uriList) {
     const uris = uriList.split('\n').filter((uri) => uri.trim() && !uri.startsWith('#'));
     for (const uri of uris) {
-      if (uri.startsWith('file://')) {
+      const trimmed = uri.trim();
+      if (trimmed.startsWith('file://')) {
         // file:// → path conversion produces /C:/... on Windows, which is
         // valid for Node's fs APIs. No further normalization needed.
-        filePaths.push(decodeURIComponent(uri.slice(7)));
+        filePaths.push(decodeURIComponent(trimmed.slice(7)));
       }
     }
   }

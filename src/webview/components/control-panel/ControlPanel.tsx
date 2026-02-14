@@ -142,6 +142,8 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
       };
     case 'CLEAR_IMAGES':
       return { ...state, attachedImages: [], pastedImageCounter: 0 };
+    case 'INCREMENT_PASTE_COUNTER':
+      return { ...state, pastedImageCounter: state.pastedImageCounter + 1 };
     case 'SET_FILE_CONTEXT':
       return { ...state, fileContextEnabled: action.enabled };
     case 'SET_CONTEXT':
@@ -179,6 +181,53 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const { selectedSessionId, selectedCwd, setSelectedSessionId } = useSession();
     const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
     const togglesDisabled = channelState === 'streaming' || channelState === 'awaiting_approval';
+
+    /** Read current input from the textarea DOM — avoids closing over stale state. */
+    const getTextareaState = useCallback(() => {
+      const textarea = document.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
+      return textarea
+        ? { textarea, value: textarea.value, start: textarea.selectionStart, end: textarea.selectionEnd }
+        : null;
+    }, []);
+
+    /** Insert text at cursor position (or append), dispatch SET_INPUT, restore cursor. */
+    const insertAtCursor = useCallback((text: string) => {
+      const ts = getTextareaState();
+      if (ts) {
+        const newValue = ts.value.slice(0, ts.start) + text + ts.value.slice(ts.end);
+        dispatch({ type: 'SET_INPUT', value: newValue });
+        requestAnimationFrame(() => {
+          ts.textarea.selectionStart = ts.textarea.selectionEnd = ts.start + text.length;
+          ts.textarea.focus();
+        });
+      } else {
+        // No textarea found — append to whatever the reducer currently holds.
+        // Use a functional-style dispatch via a known-current DOM read.
+        dispatch({ type: 'SET_INPUT', value: text });
+      }
+    }, [getTextareaState]);
+
+    /** Read an image File into base64 and dispatch ADD_IMAGE (no text insertion). */
+    const attachImageFile = useCallback((file: File, customName?: string) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const data = (reader.result as string).split(',')[1] ?? '';
+        const id = typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : Math.random().toString(36).slice(2);
+        const thumbnailUrl = URL.createObjectURL(file);
+        const image: AttachedImage = {
+          id,
+          uri: '',
+          fileName: customName ?? file.name,
+          mimeType: file.type || 'image/png', // Fallback for missing MIME type
+          data,
+          thumbnailUrl,
+        };
+        dispatch({ type: 'ADD_IMAGE', image });
+      };
+      reader.readAsDataURL(file);
+    }, []);
 
     // --- Notify parent of bypass state changes ---
     useEffect(() => {
@@ -421,48 +470,55 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         }
       };
 
-      /** Read current input from the textarea DOM — avoids closing over stale state. */
-      const getTextareaState = () => {
-        const textarea = document.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
-        return textarea
-          ? { textarea, value: textarea.value, start: textarea.selectionStart, end: textarea.selectionEnd }
-          : null;
-      };
-
-      /** Insert text at cursor position (or append), dispatch SET_INPUT, restore cursor. */
-      const insertAtCursor = (text: string) => {
-        const ts = getTextareaState();
-        if (ts) {
-          const newValue = ts.value.slice(0, ts.start) + text + ts.value.slice(ts.end);
-          dispatch({ type: 'SET_INPUT', value: newValue });
-          requestAnimationFrame(() => {
-            ts.textarea.selectionStart = ts.textarea.selectionEnd = ts.start + text.length;
-            ts.textarea.focus();
-          });
-        } else {
-          // No textarea found — append to whatever the reducer currently holds.
-          // Use a functional-style dispatch via a known-current DOM read.
-          dispatch({ type: 'SET_INPUT', value: text });
-        }
-      };
-
       const onDrop = (e: DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
         panelEl.classList.remove('drag-over');
 
-        // Phase 1: Extract file paths from VS Code drag formats (synchronous —
-        // getData() returns empty strings if called after the event is released).
+        // Collect both data sources synchronously (getData() returns empty
+        // strings if called after the event is released).
         const paths = extractFilePathsFromDragEvent(e);
+        const fileObjects = e.dataTransfer?.files ? Array.from(e.dataTransfer.files) : [];
 
+        // Identify images in fileObjects by MIME type OR extension (robustness for Linux)
+        const imageFiles = fileObjects.filter(f => {
+          if (f.type.startsWith('image/')) return true;
+          const dotIdx = f.name.lastIndexOf('.');
+          const ext = dotIdx >= 0 ? f.name.slice(dotIdx) : '';
+          return isImageExtension(ext);
+        });
+
+        // --- Image File objects take priority (most reliable — works like paste) ---
+        if (imageFiles.length > 0) {
+          const placeholders: string[] = [];
+          for (const file of imageFiles) {
+            attachImageFile(file);
+            placeholders.push(`[${file.name}]`);
+          }
+          // Also handle any non-image paths that came along
+          for (const filePath of paths) {
+            const dotIdx = filePath.lastIndexOf('.');
+            const ext = dotIdx >= 0 ? filePath.slice(dotIdx) : '';
+            // Skip paths that correspond to the image files we already processed
+            const isAlreadyProcessed = imageFiles.some(f => filePath.endsWith(f.name));
+            if (!isImageExtension(ext) && !isAlreadyProcessed) {
+              placeholders.push(`'${filePath}'`);
+            }
+          }
+          if (placeholders.length > 0) {
+            insertAtCursor(placeholders.join(' '));
+          }
+          return;
+        }
+
+        // --- Path-based drops (VS Code Explorer / editor tabs / WSL remote) ---
         if (paths.length > 0) {
-          // Process path-based drops (VS Code Explorer / editor tabs)
           for (const filePath of paths) {
             const dotIdx = filePath.lastIndexOf('.');
             const ext = dotIdx >= 0 ? filePath.slice(dotIdx) : '';
 
             if (isImageExtension(ext)) {
-              // Image path → read via transport, attach as image chip
+              // No File objects available — read via transport as fallback
               transport.readImage(filePath).then(({ data, mimeType, fileName }) => {
                 const id = typeof crypto !== 'undefined' && crypto.randomUUID
                   ? crypto.randomUUID()
@@ -481,38 +537,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
                 console.error('[ControlPanel] readImage failed:', err);
               });
             } else {
-              // Non-image path → insert quoted path at cursor
               insertAtCursor(`'${filePath}'`);
             }
           }
           return;
-        }
-
-        // Phase 2: Direct File objects (browser file drops — existing logic)
-        const files = e.dataTransfer?.files;
-        if (!files) return;
-        for (const file of Array.from(files)) {
-          if (file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = () => {
-              const data = (reader.result as string).split(',')[1] ?? '';
-              const id = typeof crypto !== 'undefined' && crypto.randomUUID
-                ? crypto.randomUUID()
-                : Math.random().toString(36).slice(2);
-              const thumbnailUrl = URL.createObjectURL(file);
-              const image: AttachedImage = {
-                id,
-                uri: '',
-                fileName: file.name,
-                mimeType: file.type,
-                data,
-                thumbnailUrl,
-              };
-              dispatch({ type: 'ADD_IMAGE', image });
-              insertAtCursor(`[${file.name}]`);
-            };
-            reader.readAsDataURL(file);
-          }
         }
 
         // Focus textarea after drop so user can immediately type
@@ -529,20 +557,29 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         panelEl.removeEventListener('drop', onDrop);
         panelEl.classList.remove('drag-over');
       };
-    }, [panelEl, children, transport]);
+    }, [panelEl, children, transport, attachImageFile, insertAtCursor]);
 
     // --- Paste handler for images ---
     useEffect(() => {
-      let counter = state.pastedImageCounter;
       const handlePaste = (e: ClipboardEvent) => {
         const items = e.clipboardData?.items;
         if (!items) return;
+
+        let localCounter = state.pastedImageCounter;
         for (let i = 0; i < items.length; i++) {
           const item = items[i];
           if (item.type.startsWith('image/')) {
             e.preventDefault();
             const file = item.getAsFile();
             if (!file) continue;
+
+            localCounter++;
+            dispatch({ type: 'INCREMENT_PASTE_COUNTER' });
+
+            const fileName = (!file.name || file.name === 'image.png')
+              ? `image-${localCounter}.png`
+              : file.name;
+
             const reader = new FileReader();
             reader.onload = () => {
               const data = (reader.result as string).split(',')[1] ?? '';
@@ -550,38 +587,19 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
                 ? crypto.randomUUID()
                 : Math.random().toString(36).slice(2);
               const thumbnailUrl = URL.createObjectURL(file);
-              counter++;
-              const fileName = (!file.name || file.name === 'image.png')
-                ? `image-${counter}.png`
-                : file.name;
+
               const image: AttachedImage = {
                 id,
                 uri: '',
                 fileName,
-                mimeType: file.type,
+                mimeType: file.type || 'image/png',
                 data,
                 thumbnailUrl,
               };
               dispatch({ type: 'ADD_IMAGE', image });
 
-              // Insert text trail placeholder at cursor (like Leto) so the LLM
-              // can reference the image by name in the prompt text.
-              const textarea = document.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
-              const placeholder = `[${fileName}]`;
-              if (textarea) {
-                const start = textarea.selectionStart;
-                const end = textarea.selectionEnd;
-                const text = textarea.value;
-                const newValue = text.slice(0, start) + placeholder + text.slice(end);
-                dispatch({ type: 'SET_INPUT', value: newValue });
-                // Restore cursor position after React re-render
-                requestAnimationFrame(() => {
-                  textarea.selectionStart = textarea.selectionEnd = start + placeholder.length;
-                });
-              } else {
-                // Fallback: append to current input
-                dispatch({ type: 'SET_INPUT', value: state.input + placeholder });
-              }
+              // Insert text trail placeholder at cursor (like Leto)
+              insertAtCursor(`[${fileName}]`);
             };
             reader.readAsDataURL(file);
           }
@@ -590,7 +608,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
       document.addEventListener('paste', handlePaste);
       return () => document.removeEventListener('paste', handlePaste);
-    }, [state.pastedImageCounter]);
+    }, [state.pastedImageCounter, insertAtCursor]);
 
     // --- Fork handler ---
     const handleFork = useCallback(() => {
