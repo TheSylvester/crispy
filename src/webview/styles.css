@@ -47,7 +47,9 @@ h2 {
   left: 0.5rem;
   min-width: 280px;
   max-width: 50vw;
-  max-height: calc(100vh - var(--titlebar-height) - var(--cp-height, 80) * 1px - 1rem - 2rem);
+  max-height: calc(
+    100vh - var(--titlebar-height) - var(--cp-height, 80) * 1px - 1rem - 2rem
+  );
   background: var(--vscode-sideBar-background);
   color: var(--vscode-sideBar-foreground);
   border: 1px solid var(--vscode-panel-border);
@@ -61,7 +63,9 @@ h2 {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   opacity: 1;
   transform: translateY(0);
-  transition: opacity var(--sidebar-transition), transform var(--sidebar-transition);
+  transition:
+    opacity var(--sidebar-transition),
+    transform var(--sidebar-transition);
   will-change: opacity, transform;
 }
 
@@ -163,7 +167,7 @@ h2 {
    Reads data-streaming from .crispy-main and agency mode from the
    ControlPanel's data-agency via :has(). Matches Leto's #main::after pattern. */
 .crispy-main::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -171,16 +175,22 @@ h2 {
   border-radius: inherit;
 }
 
-.crispy-main[data-streaming]:has(.crispy-cp[data-agency="ask-before-edits"])::after {
+.crispy-main[data-streaming]:has(
+    .crispy-cp[data-agency="ask-before-edits"]
+  )::after {
   animation: crispy-cp-glow-white 2s ease-in-out infinite;
 }
-.crispy-main[data-streaming]:has(.crispy-cp[data-agency="edit-automatically"])::after {
+.crispy-main[data-streaming]:has(
+    .crispy-cp[data-agency="edit-automatically"]
+  )::after {
   animation: crispy-cp-glow-blue 2s ease-in-out infinite;
 }
 .crispy-main[data-streaming]:has(.crispy-cp[data-agency="plan-mode"])::after {
   animation: crispy-cp-glow-teal 2s ease-in-out infinite;
 }
-.crispy-main[data-streaming]:has(.crispy-cp[data-agency="bypass-permissions"])::after {
+.crispy-main[data-streaming]:has(
+    .crispy-cp[data-agency="bypass-permissions"]
+  )::after {
   animation: crispy-cp-glow-red 2s ease-in-out infinite;
 }
 
@@ -218,7 +228,9 @@ h2 {
 }
 
 @keyframes crispy-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* All labels hidden by default — CSS :has() reveals the correct one */
@@ -229,8 +241,13 @@ h2 {
 }
 
 @keyframes crispy-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* Default (ask-before-edits) → "thinking" */
@@ -239,26 +256,32 @@ h2 {
 }
 
 /* plan-mode → "planning" */
-.crispy-main:has(.crispy-cp[data-agency="plan-mode"]) .crispy-thinking__label--thinking {
+.crispy-main:has(.crispy-cp[data-agency="plan-mode"])
+  .crispy-thinking__label--thinking {
   display: none;
 }
-.crispy-main:has(.crispy-cp[data-agency="plan-mode"]) .crispy-thinking__label--planning {
+.crispy-main:has(.crispy-cp[data-agency="plan-mode"])
+  .crispy-thinking__label--planning {
   display: inline;
 }
 
 /* bypass-permissions → "working" */
-.crispy-main:has(.crispy-cp[data-agency="bypass-permissions"]) .crispy-thinking__label--thinking {
+.crispy-main:has(.crispy-cp[data-agency="bypass-permissions"])
+  .crispy-thinking__label--thinking {
   display: none;
 }
-.crispy-main:has(.crispy-cp[data-agency="bypass-permissions"]) .crispy-thinking__label--working {
+.crispy-main:has(.crispy-cp[data-agency="bypass-permissions"])
+  .crispy-thinking__label--working {
   display: inline;
 }
 
 /* edit-automatically → "working" */
-.crispy-main:has(.crispy-cp[data-agency="edit-automatically"]) .crispy-thinking__label--thinking {
+.crispy-main:has(.crispy-cp[data-agency="edit-automatically"])
+  .crispy-thinking__label--thinking {
   display: none;
 }
-.crispy-main:has(.crispy-cp[data-agency="edit-automatically"]) .crispy-thinking__label--working {
+.crispy-main:has(.crispy-cp[data-agency="edit-automatically"])
+  .crispy-thinking__label--working {
   display: inline;
 }
 
@@ -277,11 +300,14 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 90;            /* below control panel (z: 100), above transcript */
+  z-index: 90; /* below control panel (z: 100), above transcript */
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
   /* Exit + hover use transitions */
-  transition: opacity 0.15s ease-out, transform 0.15s ease-out,
-              background 0.15s ease-out, box-shadow 0.15s ease-out;
+  transition:
+    opacity 0.15s ease-out,
+    transform 0.15s ease-out,
+    background 0.15s ease-out,
+    box-shadow 0.15s ease-out;
 }
 
 .crispy-scroll-nav:hover {
@@ -305,8 +331,14 @@ h2 {
 }
 
 @keyframes crispy-scroll-fab-in-bottom {
-  from { opacity: 0; transform: translateY(12px) scale(0.8); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* Hidden state — slide down + fade out */
@@ -314,7 +346,7 @@ h2 {
   opacity: 0;
   transform: translateY(12px) scale(0.8);
   pointer-events: none;
-  animation: none;   /* kill entrance keyframe so transition drives the exit */
+  animation: none; /* kill entrance keyframe so transition drives the exit */
 }
 
 /* --- Scroll-to-top (position + entrance) --- */
@@ -325,8 +357,14 @@ h2 {
 }
 
 @keyframes crispy-scroll-fab-in-top {
-  from { opacity: 0; transform: translateY(-12px) scale(0.8); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* Hidden state — slide up + fade out */
@@ -561,9 +599,15 @@ h2 {
 }
 
 /* Paragraphs */
-.prose p { margin: 0.5em 0; }
-.prose p:first-child { margin-top: 0; }
-.prose p:last-child { margin-bottom: 0; }
+.prose p {
+  margin: 0.5em 0;
+}
+.prose p:first-child {
+  margin-top: 0;
+}
+.prose p:last-child {
+  margin-bottom: 0;
+}
 
 /* Inline code — black pill matching grep params */
 .prose code {
@@ -600,9 +644,14 @@ h2 {
 }
 
 /* Lists */
-.prose ul { list-style-type: disc; }
-.prose ol { list-style-type: decimal; }
-.prose ul, .prose ol {
+.prose ul {
+  list-style-type: disc;
+}
+.prose ol {
+  list-style-type: decimal;
+}
+.prose ul,
+.prose ol {
   list-style-position: outside;
   margin: 0.25em 0;
   padding-left: 2em;
@@ -613,16 +662,26 @@ h2 {
   margin: 0.25em 0;
   line-height: 1.7;
 }
-.prose li > p { margin: 0; }
+.prose li > p {
+  margin: 0;
+}
 
 /* Nested lists */
-.prose ul ul, .prose ol ol,
-.prose ul ol, .prose ol ul {
+.prose ul ul,
+.prose ol ol,
+.prose ul ol,
+.prose ol ul {
   margin: 0.25em 0;
 }
-.prose ul ul { list-style-type: circle; }
-.prose ul ul ul { list-style-type: square; }
-.prose ol ol { list-style-type: lower-roman; }
+.prose ul ul {
+  list-style-type: circle;
+}
+.prose ul ul ul {
+  list-style-type: square;
+}
+.prose ol ol {
+  list-style-type: lower-roman;
+}
 
 /* Blockquotes */
 .prose blockquote {
@@ -632,10 +691,18 @@ h2 {
   color: var(--vscode-descriptionForeground, #9d9d9d);
   font-style: italic;
 }
-.prose blockquote p { margin: 0.5em 0; }
-.prose blockquote p:first-child { margin-top: 0; }
-.prose blockquote p:last-child { margin-bottom: 0; }
-.prose blockquote blockquote { margin: 0.5em 0; }
+.prose blockquote p {
+  margin: 0.5em 0;
+}
+.prose blockquote p:first-child {
+  margin-top: 0;
+}
+.prose blockquote p:last-child {
+  margin-bottom: 0;
+}
+.prose blockquote blockquote {
+  margin: 0.5em 0;
+}
 
 /* Links */
 .prose a {
@@ -670,7 +737,8 @@ h2 {
   margin: 1em 0 0.5em;
   font-weight: 600;
 }
-.prose h4, .prose h5 {
+.prose h4,
+.prose h5 {
   font-size: 1.1em;
   line-height: 1.3;
   margin: 1em 0 0.5em;
@@ -685,7 +753,9 @@ h2 {
 }
 .prose h1:first-child,
 .prose h2:first-child,
-.prose h3:first-child { margin-top: 0; }
+.prose h3:first-child {
+  margin-top: 0;
+}
 
 /* Horizontal rules */
 .prose hr {
@@ -702,7 +772,8 @@ h2 {
   overflow-x: auto;
   display: block;
 }
-.prose th, .prose td {
+.prose th,
+.prose td {
   border: 1px solid var(--vscode-panel-border, #444);
   padding: 8px 16px;
   text-align: left;
@@ -793,7 +864,7 @@ h2 {
 
 .crispy-tool-card__summary::marker {
   display: none;
-  content: '';
+  content: "";
 }
 
 /* --- Icon (emoji before badge) --- */
@@ -1121,18 +1192,21 @@ h2 {
  * ============================================================================ */
 
 @keyframes crispy-fork-preview-glow {
-  0%, 100% {
-    box-shadow: 0 0 8px 2px rgba(232, 128, 64, 0.4),
-                0 0 16px 4px rgba(232, 128, 64, 0.2);
+  0%,
+  100% {
+    box-shadow:
+      0 0 8px 2px rgba(232, 128, 64, 0.4),
+      0 0 16px 4px rgba(232, 128, 64, 0.2);
   }
   50% {
-    box-shadow: 0 0 12px 4px rgba(232, 128, 64, 0.6),
-                0 0 24px 8px rgba(232, 128, 64, 0.3);
+    box-shadow:
+      0 0 12px 4px rgba(232, 128, 64, 0.6),
+      0 0 24px 8px rgba(232, 128, 64, 0.3);
   }
 }
 
 .message.crispy-fork-preview {
-  border-color: #E88040 !important;
+  border-color: #e88040 !important;
   animation: crispy-fork-preview-glow 1.5s ease-in-out infinite;
   position: relative;
   z-index: 1;
@@ -1145,19 +1219,35 @@ h2 {
  * ============================================================================ */
 
 body {
-  --frame-highlight: #FFFFFF;
+  --frame-highlight: #ffffff;
 }
 
-body.agency-ask-before-edits { --frame-highlight: #FFFFFF; }
-body.agency-edit-automatically { --frame-highlight: #40A8E8; }
-body.agency-plan-mode { --frame-highlight: #47988c; }
-body.agency-bypass-permissions { --frame-highlight: #E84040; }
+body.agency-ask-before-edits {
+  --frame-highlight: #ffffff;
+}
+body.agency-edit-automatically {
+  --frame-highlight: #40a8e8;
+}
+body.agency-plan-mode {
+  --frame-highlight: #47988c;
+}
+body.agency-bypass-permissions {
+  --frame-highlight: #e84040;
+}
 
 /* Also support data-agency on the panel itself for local state */
-.crispy-cp[data-agency="ask-before-edits"] { --frame-highlight: #FFFFFF; }
-.crispy-cp[data-agency="edit-automatically"] { --frame-highlight: #40A8E8; }
-.crispy-cp[data-agency="plan-mode"] { --frame-highlight: #47988c; }
-.crispy-cp[data-agency="bypass-permissions"] { --frame-highlight: #E84040; }
+.crispy-cp[data-agency="ask-before-edits"] {
+  --frame-highlight: #ffffff;
+}
+.crispy-cp[data-agency="edit-automatically"] {
+  --frame-highlight: #40a8e8;
+}
+.crispy-cp[data-agency="plan-mode"] {
+  --frame-highlight: #47988c;
+}
+.crispy-cp[data-agency="bypass-permissions"] {
+  --frame-highlight: #e84040;
+}
 
 /* --- Main container --- */
 
@@ -1196,7 +1286,9 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   z-index: 101;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s ease-out, transform 0.15s ease-out;
+  transition:
+    opacity 0.15s ease-out,
+    transform 0.15s ease-out;
 }
 
 .crispy-stop--visible {
@@ -1206,21 +1298,31 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 .crispy-stop__btn {
-  padding: 8px 24px;
+  padding: 4px 24px;
   background: var(--vscode-button-secondaryBackground, #3a3d41);
   color: var(--vscode-button-secondaryForeground, #d4d4d4);
-  border: 1px solid #FFFFFF;
+  border: 1px solid #ffffff;
   border-radius: 4px;
   cursor: pointer;
   font-size: 13px;
   font-family: inherit;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
 /* Agency-mode border colors — :has() reads data-agency from sibling ControlPanel */
-.crispy-main:has(.crispy-cp[data-agency="edit-automatically"]) .crispy-stop__btn { border-color: #40A8E8; }
-.crispy-main:has(.crispy-cp[data-agency="plan-mode"]) .crispy-stop__btn { border-color: #47988c; }
-.crispy-main:has(.crispy-cp[data-agency="bypass-permissions"]) .crispy-stop__btn { border-color: #E84040; }
+.crispy-main:has(.crispy-cp[data-agency="edit-automatically"])
+  .crispy-stop__btn {
+  border-color: #40a8e8;
+}
+.crispy-main:has(.crispy-cp[data-agency="plan-mode"]) .crispy-stop__btn {
+  border-color: #47988c;
+}
+.crispy-main:has(.crispy-cp[data-agency="bypass-permissions"])
+  .crispy-stop__btn {
+  border-color: #e84040;
+}
 
 .crispy-stop__btn:hover {
   background: var(--vscode-button-secondaryHoverBackground, #45494e);
@@ -1266,7 +1368,7 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   padding: 4px 10px;
   font-size: 12px;
   font-weight: 600;
-  background: #E88040;
+  background: #e88040;
   color: #f0f0f0;
   border: none;
   border-radius: 2px;
@@ -1279,7 +1381,7 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 .crispy-cp-send:hover:not(:disabled) {
-  background: #D06A2C;
+  background: #d06a2c;
 }
 
 .crispy-cp-send:disabled {
@@ -1300,16 +1402,30 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 @keyframes crispy-cp-send-jiggle-in {
-  0% { transform: translateX(0); }
-  25% { transform: translateX(-1px); }
-  50% { transform: translateX(1px); }
-  75% { transform: translateX(-0.5px); }
-  100% { transform: translateX(0); }
+  0% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-1px);
+  }
+  50% {
+    transform: translateX(1px);
+  }
+  75% {
+    transform: translateX(-0.5px);
+  }
+  100% {
+    transform: translateX(0);
+  }
 }
 
 @keyframes crispy-cp-send-jiggle-out {
-  0% { transform: translateX(-0.5px); }
-  100% { transform: translateX(0); }
+  0% {
+    transform: translateX(-0.5px);
+  }
+  100% {
+    transform: translateX(0);
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -1333,7 +1449,9 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   border-radius: 4px;
   font-size: 12px;
   cursor: default;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .crispy-cp-image-chip:hover {
@@ -1370,7 +1488,9 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .crispy-cp-image-chip__remove:hover {
@@ -1399,7 +1519,10 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   border-radius: 3px;
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 }
 
 .crispy-cp-controls select:hover {
@@ -1455,7 +1578,9 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   cursor: pointer;
   border: 1px solid transparent;
   border-radius: 3px;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .crispy-cp-bypass:hover {
@@ -1499,7 +1624,9 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 .crispy-cp-bypass__icon {
-  transition: transform 0.2s ease, color 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    color 0.2s ease;
 }
 
 /* Safe state — muted shield */
@@ -1509,7 +1636,7 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 
 /* Danger state — red */
 .crispy-cp-bypass--checked svg {
-  color: #E84040;
+  color: #e84040;
 }
 
 /* Activate animation when toggling on */
@@ -1518,9 +1645,17 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 @keyframes crispy-cp-bypass-activate {
-  0% { transform: scale(0.8) rotate(-180deg); opacity: 0; }
-  50% { transform: scale(1.3) rotate(10deg); }
-  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+  0% {
+    transform: scale(0.8) rotate(-180deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.3) rotate(10deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
 }
 
 /* Persistent danger pulse when checked */
@@ -1529,17 +1664,24 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 @keyframes crispy-cp-bypass-pulse {
-  0%, 100% { filter: drop-shadow(0 0 2px rgba(232, 64, 64, 0.4)); }
-  50% { filter: drop-shadow(0 0 6px rgba(232, 64, 64, 0.8)); }
+  0%,
+  100% {
+    filter: drop-shadow(0 0 2px rgba(232, 64, 64, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 6px rgba(232, 64, 64, 0.8));
+  }
 }
 
 /* Unchecked hover in */
-.crispy-cp-bypass:not(.crispy-cp-bypass--checked) .crispy-cp-bypass__icon.hovering {
+.crispy-cp-bypass:not(.crispy-cp-bypass--checked)
+  .crispy-cp-bypass__icon.hovering {
   animation: crispy-cp-bypass-wobble-in 0.5s ease forwards;
 }
 
 /* Unchecked hover out */
-.crispy-cp-bypass:not(.crispy-cp-bypass--checked) .crispy-cp-bypass__icon.hover-out {
+.crispy-cp-bypass:not(.crispy-cp-bypass--checked)
+  .crispy-cp-bypass__icon.hover-out {
   animation: crispy-cp-bypass-wobble-out 0.3s ease forwards;
 }
 
@@ -1554,29 +1696,62 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 @keyframes crispy-cp-bypass-wobble-in {
-  0% { transform: scale(1) rotate(0deg); }
-  25% { transform: scale(1.1) rotate(-10deg); }
-  50% { transform: scale(0.95) rotate(10deg); }
-  75% { transform: scale(1.05) rotate(-5deg); }
-  100% { transform: scale(1) rotate(0deg); color: #888; }
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    transform: scale(1.1) rotate(-10deg);
+  }
+  50% {
+    transform: scale(0.95) rotate(10deg);
+  }
+  75% {
+    transform: scale(1.05) rotate(-5deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    color: #888;
+  }
 }
 
 @keyframes crispy-cp-bypass-wobble-out {
-  0% { transform: scale(1) rotate(0deg); color: #888; }
-  100% { transform: scale(1) rotate(0deg); color: #666; }
+  0% {
+    transform: scale(1) rotate(0deg);
+    color: #888;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    color: #666;
+  }
 }
 
 @keyframes crispy-cp-bypass-wobble-danger-in {
-  0% { transform: scale(1) rotate(0deg); }
-  25% { transform: scale(1.15) rotate(-15deg); }
-  50% { transform: scale(0.9) rotate(15deg); }
-  75% { transform: scale(1.1) rotate(-8deg); }
-  100% { transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 8px rgba(232, 64, 64, 1)); }
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    transform: scale(1.15) rotate(-15deg);
+  }
+  50% {
+    transform: scale(0.9) rotate(15deg);
+  }
+  75% {
+    transform: scale(1.1) rotate(-8deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 8px rgba(232, 64, 64, 1));
+  }
 }
 
 @keyframes crispy-cp-bypass-wobble-danger-out {
-  0% { transform: scale(1) rotate(0deg); filter: drop-shadow(0 0 8px rgba(232, 64, 64, 1)); }
-  100% { transform: scale(1) rotate(0deg); }
+  0% {
+    transform: scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 8px rgba(232, 64, 64, 1));
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -1588,12 +1763,14 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 /* Unchecked hover in */
-.crispy-cp-chrome:not(.crispy-cp-chrome--checked) .crispy-cp-chrome__icon.hovering {
+.crispy-cp-chrome:not(.crispy-cp-chrome--checked)
+  .crispy-cp-chrome__icon.hovering {
   animation: crispy-cp-chrome-wobble-in 0.5s ease forwards;
 }
 
 /* Unchecked hover out */
-.crispy-cp-chrome:not(.crispy-cp-chrome--checked) .crispy-cp-chrome__icon.hover-out {
+.crispy-cp-chrome:not(.crispy-cp-chrome--checked)
+  .crispy-cp-chrome__icon.hover-out {
   animation: crispy-cp-chrome-wobble-out 0.3s ease forwards;
 }
 
@@ -1608,16 +1785,30 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 @keyframes crispy-cp-chrome-wobble-in {
-  0% { transform: scale(1); }
-  25% { transform: scale(1.15); }
-  50% { transform: scale(0.95); }
-  75% { transform: scale(1.1); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(1);
+  }
+  25% {
+    transform: scale(1.15);
+  }
+  50% {
+    transform: scale(0.95);
+  }
+  75% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 @keyframes crispy-cp-chrome-wobble-out {
-  0% { transform: scale(1); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(1);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 /* Pop animation on activation */
@@ -1626,9 +1817,17 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 @keyframes crispy-cp-chrome-pop {
-  0% { transform: scale(0.8) rotate(-180deg); opacity: 0; }
-  50% { transform: scale(1.2) rotate(10deg); }
-  100% { transform: scale(1) rotate(0deg); opacity: 1; }
+  0% {
+    transform: scale(0.8) rotate(-180deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2) rotate(10deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -1648,7 +1847,10 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   border: 1px solid var(--vscode-input-border, #3c3c3c);
   border-radius: 3px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 }
 
 .crispy-cp-file-context:hover {
@@ -1662,7 +1864,7 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   height: 13px;
   margin: 0;
   cursor: pointer;
-  accent-color: var(--frame-highlight, #E88040);
+  accent-color: var(--frame-highlight, #e88040);
 }
 
 .crispy-cp-file-context__label {
@@ -1701,12 +1903,25 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 /* Context color classes */
-.crispy-cp-context--minimal { color: #6c6c6c; }
-.crispy-cp-context--low { color: #a0a0a0; }
-.crispy-cp-context--healthy { color: #89d185; }
-.crispy-cp-context--moderate { color: #dcdcaa; }
-.crispy-cp-context--high { color: #f48771; }
-.crispy-cp-context--critical { color: #ff5555; font-weight: 600; }
+.crispy-cp-context--minimal {
+  color: #6c6c6c;
+}
+.crispy-cp-context--low {
+  color: #a0a0a0;
+}
+.crispy-cp-context--healthy {
+  color: #89d185;
+}
+.crispy-cp-context--moderate {
+  color: #dcdcaa;
+}
+.crispy-cp-context--high {
+  color: #f48771;
+}
+.crispy-cp-context--critical {
+  color: #ff5555;
+  font-weight: 600;
+}
 
 /* Context tooltip */
 .crispy-cp-context-tooltip {
@@ -1767,7 +1982,9 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   border-radius: 2px;
   cursor: pointer;
   color: var(--vscode-descriptionForeground, #888);
-  transition: color 0.15s, background 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s;
 }
 
 .crispy-cp-settings__btn:active {
@@ -1775,13 +1992,15 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 /* Unpinned hover in */
-.crispy-cp-settings:not(.crispy-cp-settings--pinned) .crispy-cp-settings__btn.hovering {
+.crispy-cp-settings:not(.crispy-cp-settings--pinned)
+  .crispy-cp-settings__btn.hovering {
   color: var(--vscode-foreground, #d4d4d4);
   animation: crispy-cp-settings-wobble-in 0.5s ease forwards;
 }
 
 /* Unpinned hover out */
-.crispy-cp-settings:not(.crispy-cp-settings--pinned) .crispy-cp-settings__btn.hover-out {
+.crispy-cp-settings:not(.crispy-cp-settings--pinned)
+  .crispy-cp-settings__btn.hover-out {
   animation: crispy-cp-settings-wobble-out 0.3s ease forwards;
 }
 
@@ -1807,29 +2026,53 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 @keyframes crispy-cp-settings-wobble-in {
-  0% { transform: scale(1) rotate(0deg); }
-  100% { transform: scale(1.1) rotate(90deg); }
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  100% {
+    transform: scale(1.1) rotate(90deg);
+  }
 }
 
 @keyframes crispy-cp-settings-wobble-out {
-  0% { transform: scale(1.1) rotate(90deg); }
-  100% { transform: scale(1) rotate(0deg); }
+  0% {
+    transform: scale(1.1) rotate(90deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
 }
 
 @keyframes crispy-cp-settings-wobble-pinned-in {
-  0% { transform: scale(1) rotate(45deg); }
-  100% { transform: scale(1.1) rotate(135deg); }
+  0% {
+    transform: scale(1) rotate(45deg);
+  }
+  100% {
+    transform: scale(1.1) rotate(135deg);
+  }
 }
 
 @keyframes crispy-cp-settings-wobble-pinned-out {
-  0% { transform: scale(1.1) rotate(135deg); }
-  100% { transform: scale(1) rotate(45deg); }
+  0% {
+    transform: scale(1.1) rotate(135deg);
+  }
+  100% {
+    transform: scale(1) rotate(45deg);
+  }
 }
 
 @keyframes crispy-cp-settings-pop {
-  0% { transform: scale(0.8) rotate(-180deg); opacity: 0.5; }
-  50% { transform: scale(1.2) rotate(60deg); }
-  100% { transform: scale(1) rotate(45deg); opacity: 1; }
+  0% {
+    transform: scale(0.8) rotate(-180deg);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.2) rotate(60deg);
+  }
+  100% {
+    transform: scale(1) rotate(45deg);
+    opacity: 1;
+  }
 }
 
 /* Settings popup panel */
@@ -1910,16 +2153,30 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 @keyframes crispy-cp-fork-jiggle-in {
-  0% { transform: translateX(0); }
-  25% { transform: translateX(-1px); }
-  50% { transform: translateX(1px); }
-  75% { transform: translateX(-0.5px); }
-  100% { transform: translateX(0); }
+  0% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-1px);
+  }
+  50% {
+    transform: translateX(1px);
+  }
+  75% {
+    transform: translateX(-0.5px);
+  }
+  100% {
+    transform: translateX(0);
+  }
 }
 
 @keyframes crispy-cp-fork-jiggle-out {
-  0% { transform: translateX(-0.5px); }
-  100% { transform: translateX(0); }
+  0% {
+    transform: translateX(-0.5px);
+  }
+  100% {
+    transform: translateX(0);
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -1927,23 +2184,43 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
    -------------------------------------------------------------------------- */
 
 @keyframes crispy-cp-glow-white {
-  0%, 100% { box-shadow: inset 0 0 12px #FFFFFF; }
-  50% { box-shadow: inset 0 0 25px #FFFFFF; }
+  0%,
+  100% {
+    box-shadow: inset 0 0 12px #ffffff;
+  }
+  50% {
+    box-shadow: inset 0 0 25px #ffffff;
+  }
 }
 
 @keyframes crispy-cp-glow-blue {
-  0%, 100% { box-shadow: inset 0 0 12px #40A8E8; }
-  50% { box-shadow: inset 0 0 25px #40A8E8; }
+  0%,
+  100% {
+    box-shadow: inset 0 0 12px #40a8e8;
+  }
+  50% {
+    box-shadow: inset 0 0 25px #40a8e8;
+  }
 }
 
 @keyframes crispy-cp-glow-teal {
-  0%, 100% { box-shadow: inset 0 0 12px #47988c; }
-  50% { box-shadow: inset 0 0 25px #47988c; }
+  0%,
+  100% {
+    box-shadow: inset 0 0 12px #47988c;
+  }
+  50% {
+    box-shadow: inset 0 0 25px #47988c;
+  }
 }
 
 @keyframes crispy-cp-glow-red {
-  0%, 100% { box-shadow: inset 0 0 12px #E84040; }
-  50% { box-shadow: inset 0 0 25px #E84040; }
+  0%,
+  100% {
+    box-shadow: inset 0 0 12px #e84040;
+  }
+  50% {
+    box-shadow: inset 0 0 25px #e84040;
+  }
 }
 
 /* ============================================================================
@@ -2049,7 +2326,9 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   cursor: pointer;
   white-space: nowrap;
   max-width: 240px;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
   /* Remove default select arrow styling on some browsers */
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -2062,7 +2341,10 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 .crispy-titlebar__cwd-select:hover {
-  background-color: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.05));
+  background-color: var(
+    --vscode-list-hoverBackground,
+    rgba(255, 255, 255, 0.05)
+  );
   border-color: var(--vscode-textLink-foreground, #3794ff);
   opacity: 1;
 }
@@ -2096,7 +2378,9 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   border-radius: 50%;
   flex-shrink: 0;
   cursor: pointer;
-  transition: background 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    background 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .crispy-titlebar__dot--streaming {
@@ -2123,13 +2407,23 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 @keyframes crispy-dot-pulse-green {
-  0%, 100% { box-shadow: 0 0 4px rgba(115, 201, 145, 0.4); }
-  50% { box-shadow: 0 0 8px rgba(115, 201, 145, 0.8); }
+  0%,
+  100% {
+    box-shadow: 0 0 4px rgba(115, 201, 145, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 8px rgba(115, 201, 145, 0.8);
+  }
 }
 
 @keyframes crispy-dot-pulse-amber {
-  0%, 100% { box-shadow: 0 0 4px rgba(220, 220, 170, 0.3); }
-  50% { box-shadow: 0 0 8px rgba(220, 220, 170, 0.7); }
+  0%,
+  100% {
+    box-shadow: 0 0 4px rgba(220, 220, 170, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 8px rgba(220, 220, 170, 0.7);
+  }
 }
 
 /* --- New session button (right) — extends base btn --- */
@@ -2166,7 +2460,7 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
    (Leto uses input-background for the panel, not editor-background) */
 .crispy-cp:has(.crispy-approval-header) {
   background: var(--vscode-input-background, #3c3c3c);
-  border: 1px solid var(--frame-highlight, #E88040);
+  border: 1px solid var(--frame-highlight, #e88040);
 }
 
 /* Standard approval layout (inside .crispy-cp) */
@@ -2181,7 +2475,7 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   margin: 0 0 4px 0;
   font-size: 13px;
   font-weight: 600;
-  color: var(--frame-highlight, #E88040);
+  color: var(--frame-highlight, #e88040);
 }
 
 .crispy-approval-header__subtitle {
@@ -2223,18 +2517,20 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   cursor: pointer;
   font-size: 12px;
   font-family: inherit;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .crispy-approval-btn--primary {
-  background: #E88040;
+  background: #e88040;
   color: #fff;
-  border: 1px solid #E88040;
+  border: 1px solid #e88040;
 }
 
 .crispy-approval-btn--primary:hover {
-  background: #D06A2C;
-  border-color: #D06A2C;
+  background: #d06a2c;
+  border-color: #d06a2c;
 }
 
 .crispy-approval-btn--secondary {
@@ -2245,7 +2541,7 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 
 .crispy-approval-btn--secondary:hover {
   background: var(--vscode-list-hoverBackground, #2a2d2e);
-  border-color: var(--frame-highlight, #E88040);
+  border-color: var(--frame-highlight, #e88040);
 }
 
 .crispy-approval-btn:disabled {
@@ -2255,7 +2551,7 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 
 /* Dim transcript when approval is pending */
 .crispy-main:has(.crispy-approval-header) .crispy-transcript::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.15);
@@ -2290,7 +2586,7 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 .crispy-approval-tab__check {
-  color: var(--frame-highlight, #E88040);
+  color: var(--frame-highlight, #e88040);
   margin-left: 4px;
 }
 
@@ -2322,7 +2618,7 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 .crispy-approval-option input[type="radio"],
 .crispy-approval-option input[type="checkbox"] {
   margin-top: 2px;
-  accent-color: var(--frame-highlight, #E88040);
+  accent-color: var(--frame-highlight, #e88040);
 }
 
 .crispy-approval-option__label {
