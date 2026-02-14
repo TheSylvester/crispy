@@ -192,6 +192,11 @@ h2 {
   padding: 16px;
 }
 
+.crispy-transcript-content {
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
 /* --- Thinking Indicator — animated spinner + agency-aware label --- */
 
 .crispy-thinking {
