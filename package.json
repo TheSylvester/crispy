@@ -57,6 +57,10 @@
       {
         "command": "crispy.editor.open",
         "title": "Crispy: Open"
+      },
+      {
+        "command": "crispy.executeFile",
+        "title": "Execute in Crispy"
       }
     ],
     "keybindings": [
@@ -66,6 +70,15 @@
         "mac": "cmd+shift+alt+i"
       }
     ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "crispy.executeFile",
+          "when": "resourceLangId == markdown",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "Crispy",
       "properties": {}

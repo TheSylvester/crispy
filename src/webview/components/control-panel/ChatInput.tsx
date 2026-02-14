@@ -23,15 +23,20 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder 
   const [hoverClass, setHoverClass] = useState('');
 
   // Focus textarea when host sends focusInput message (e.g. keybinding)
+  // Prefill textarea when host sends prefillInput message (e.g. "Execute in Crispy")
   useEffect(() => {
     function onMessage(ev: MessageEvent): void {
       if (ev.data?.kind === 'focusInput') {
         textareaRef.current?.focus();
       }
+      if (ev.data?.kind === 'prefillInput' && ev.data.content) {
+        onInput(ev.data.content);
+        requestAnimationFrame(() => textareaRef.current?.focus());
+      }
     }
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, []);
+  }, [onInput]);
 
   // Auto-resize textarea when value changes
   useLayoutEffect(() => {

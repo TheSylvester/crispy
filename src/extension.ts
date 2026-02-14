@@ -8,7 +8,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { registerAdapter, unregisterAdapter } from './core/session-manager.js';
 import { ClaudeAgentAdapter, claudeDiscovery } from './core/adapters/claude/claude-code-adapter.js';
-import { openCrispyPanel } from './host/webview-host.js';
+import { openCrispyPanel, getOrCreatePanelForPrefill } from './host/webview-host.js';
 import { startRescan, stopRescan } from './core/session-list-manager.js';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -52,6 +52,18 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('crispy.editor.open', () => openCrispyPanel(context)),
+    vscode.commands.registerCommand('crispy.executeFile', async (uri: vscode.Uri) => {
+      if (!uri) return;
+      const doc = await vscode.workspace.openTextDocument(uri);
+      const content = doc.getText();
+      if (!content.trim()) return;
+
+      const panel = getOrCreatePanelForPrefill(context);
+      // Small delay for newly created panels to initialize their webview JS
+      setTimeout(() => {
+        panel.webview.postMessage({ kind: 'prefillInput', content: `Execute the following:\n\n${content}` });
+      }, 100);
+    }),
   );
 
   startRescan();

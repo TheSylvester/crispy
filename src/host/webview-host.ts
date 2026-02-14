@@ -38,6 +38,22 @@ function getMostRecentPanel(): vscode.WebviewPanel | undefined {
 }
 
 /**
+ * Get or create a panel for prefilling input content.
+ * Unlike openCrispyPanel, this always returns the panel reference
+ * and reuses the existing panel instead of creating one beside it.
+ */
+export function getOrCreatePanelForPrefill(
+  context: vscode.ExtensionContext,
+): vscode.WebviewPanel {
+  const existing = getMostRecentPanel();
+  if (existing) {
+    existing.reveal();
+    return existing;
+  }
+  return createCrispyPanel(context, vscode.ViewColumn.One);
+}
+
+/**
  * Open a Crispy panel with smart 3-way logic:
  * - No panels exist → create new panel in current editor column
  * - Panel exists but not focused → reveal + focus input
