@@ -1464,7 +1464,6 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 .crispy-cp-chrome:hover {
-  background: var(--vscode-list-hoverBackground, #2a2d2e);
 }
 
 .crispy-cp-bypass__input,
@@ -1478,8 +1477,7 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   transition: color 0.15s;
 }
 
-.crispy-cp-bypass:hover svg,
-.crispy-cp-chrome:hover svg {
+.crispy-cp-bypass:hover svg {
   color: var(--vscode-foreground, #d4d4d4);
 }
 
