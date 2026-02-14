@@ -39,7 +39,7 @@ import {
   type SessionListSubscriber,
 } from "../core/session-list-manager.js";
 import { SESSION_LIST_CHANNEL_ID } from "../core/session-list-events.js";
-import { getGitFiles, fileExists } from "../core/file-service.js";
+import { getGitFiles, fileExists, readImage } from "../core/file-service.js";
 
 // ============================================================================
 // Wire Protocol Types
@@ -299,6 +299,11 @@ export function createClientConnection(
       case "fileExists": {
         const filePath = params.path as string;
         return fileExists(filePath);
+      }
+
+      case "readImage": {
+        const filePath = params.path as string;
+        return readImage(filePath);
       }
 
       case "openFile":

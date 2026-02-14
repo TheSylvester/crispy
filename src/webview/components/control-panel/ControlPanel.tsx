@@ -13,7 +13,7 @@
  * @module control-panel/ControlPanel
  */
 
-import { useReducer, useEffect, useCallback, useRef, forwardRef } from 'react';
+import { useReducer, useEffect, useCallback, useRef, forwardRef, useState } from 'react';
 import {
   type ControlPanelState,
   type Action,
@@ -40,6 +40,7 @@ import { useSession } from '../../context/SessionContext.js';
 import { slugToPath } from '../../hooks/useSessionCwd.js';
 import { useContextUsage } from '../../hooks/useContextUsage.js';
 import { useSessionStatus } from '../../hooks/useSessionStatus.js';
+import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, ContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 
 /**
@@ -155,6 +156,19 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
   function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
+    // Track the DOM element for native drag/drop listeners. A callback ref
+    // ensures the useEffect re-runs when the element mounts, unlike a
+    // RefObject whose identity never changes.
+    const [panelEl, setPanelEl] = useState<HTMLDivElement | null>(null);
+    const panelRefCallback = useCallback((node: HTMLDivElement | null) => {
+      setPanelEl(node);
+      // Forward to the parent-provided ref
+      if (typeof ref === 'function') {
+        ref(node);
+      } else if (ref) {
+        (ref as React.RefObject<HTMLDivElement | null>).current = node;
+      }
+    }, [ref]);
     // Track the last permission mode we pushed to the server to avoid echo loops
     // with the permission_mode_changed event listener.
     const lastPushedModeRef = useRef<string | null>(null);
@@ -373,41 +387,149 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       dispatch({ type: 'CLEAR_INPUT' });
     }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, selectedSessionId, selectedCwd, setSelectedSessionId, setOptimisticStatus, transport, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom]);
 
-    // --- Drag/drop handlers ---
-    const handleDragOver = useCallback((e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
-    }, []);
+    // --- Drag/drop handlers (native addEventListener, not React props) ---
+    //
+    // Must use native addEventListener directly on the DOM element, not React's
+    // onDragOver/onDrop props. React's event delegation attaches a single listener
+    // at the root — the browser requires preventDefault() on the actual dragover
+    // target synchronously for the element to be a valid drop zone. In VS Code
+    // webviews (Electron iframes), React's indirection can cause the browser to
+    // reject the drop silently. Leto uses native addEventListener and it works.
+    //
+    // Also matches Leto's dragleave strategy: relatedTarget check instead of a
+    // counter, and drag-over class set in dragover (continuously reapplied) so
+    // visual feedback is robust.
 
-    const handleDrop = useCallback((e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const files = e.dataTransfer?.files;
-      if (!files) return;
-      for (const file of Array.from(files)) {
-        if (file.type.startsWith('image/')) {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const data = (reader.result as string).split(',')[1] ?? '';
-            const id = typeof crypto !== 'undefined' && crypto.randomUUID
-              ? crypto.randomUUID()
-              : Math.random().toString(36).slice(2);
-            const thumbnailUrl = URL.createObjectURL(file);
-            const image: AttachedImage = {
-              id,
-              uri: '',
-              fileName: file.name,
-              mimeType: file.type,
-              data,
-              thumbnailUrl,
-            };
-            dispatch({ type: 'ADD_IMAGE', image });
-          };
-          reader.readAsDataURL(file);
+    useEffect(() => {
+      if (!panelEl || children) return;
+
+      const onDragOver = (e: DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+        panelEl.classList.add('drag-over');
+      };
+
+      const onDragLeave = (e: DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Only remove class if cursor left the panel entirely (not entering a child).
+        // Matches Leto's relatedTarget approach — simpler and more reliable than counters.
+        const relatedTarget = e.relatedTarget as Node | null;
+        if (!relatedTarget || !panelEl.contains(relatedTarget)) {
+          panelEl.classList.remove('drag-over');
         }
-      }
-    }, []);
+      };
+
+      /** Read current input from the textarea DOM — avoids closing over stale state. */
+      const getTextareaState = () => {
+        const textarea = document.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
+        return textarea
+          ? { textarea, value: textarea.value, start: textarea.selectionStart, end: textarea.selectionEnd }
+          : null;
+      };
+
+      /** Insert text at cursor position (or append), dispatch SET_INPUT, restore cursor. */
+      const insertAtCursor = (text: string) => {
+        const ts = getTextareaState();
+        if (ts) {
+          const newValue = ts.value.slice(0, ts.start) + text + ts.value.slice(ts.end);
+          dispatch({ type: 'SET_INPUT', value: newValue });
+          requestAnimationFrame(() => {
+            ts.textarea.selectionStart = ts.textarea.selectionEnd = ts.start + text.length;
+            ts.textarea.focus();
+          });
+        } else {
+          // No textarea found — append to whatever the reducer currently holds.
+          // Use a functional-style dispatch via a known-current DOM read.
+          dispatch({ type: 'SET_INPUT', value: text });
+        }
+      };
+
+      const onDrop = (e: DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        panelEl.classList.remove('drag-over');
+
+        // Phase 1: Extract file paths from VS Code drag formats (synchronous —
+        // getData() returns empty strings if called after the event is released).
+        const paths = extractFilePathsFromDragEvent(e);
+
+        if (paths.length > 0) {
+          // Process path-based drops (VS Code Explorer / editor tabs)
+          for (const filePath of paths) {
+            const dotIdx = filePath.lastIndexOf('.');
+            const ext = dotIdx >= 0 ? filePath.slice(dotIdx) : '';
+
+            if (isImageExtension(ext)) {
+              // Image path → read via transport, attach as image chip
+              transport.readImage(filePath).then(({ data, mimeType, fileName }) => {
+                const id = typeof crypto !== 'undefined' && crypto.randomUUID
+                  ? crypto.randomUUID()
+                  : Math.random().toString(36).slice(2);
+                const image: AttachedImage = {
+                  id,
+                  uri: filePath,
+                  fileName,
+                  mimeType,
+                  data,
+                  thumbnailUrl: `data:${mimeType};base64,${data}`,
+                };
+                dispatch({ type: 'ADD_IMAGE', image });
+                insertAtCursor(`[${fileName}]`);
+              }).catch((err) => {
+                console.error('[ControlPanel] readImage failed:', err);
+              });
+            } else {
+              // Non-image path → insert quoted path at cursor
+              insertAtCursor(`'${filePath}'`);
+            }
+          }
+          return;
+        }
+
+        // Phase 2: Direct File objects (browser file drops — existing logic)
+        const files = e.dataTransfer?.files;
+        if (!files) return;
+        for (const file of Array.from(files)) {
+          if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const data = (reader.result as string).split(',')[1] ?? '';
+              const id = typeof crypto !== 'undefined' && crypto.randomUUID
+                ? crypto.randomUUID()
+                : Math.random().toString(36).slice(2);
+              const thumbnailUrl = URL.createObjectURL(file);
+              const image: AttachedImage = {
+                id,
+                uri: '',
+                fileName: file.name,
+                mimeType: file.type,
+                data,
+                thumbnailUrl,
+              };
+              dispatch({ type: 'ADD_IMAGE', image });
+              insertAtCursor(`[${file.name}]`);
+            };
+            reader.readAsDataURL(file);
+          }
+        }
+
+        // Focus textarea after drop so user can immediately type
+        const textarea = document.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
+        textarea?.focus();
+      };
+
+      panelEl.addEventListener('dragover', onDragOver);
+      panelEl.addEventListener('dragleave', onDragLeave);
+      panelEl.addEventListener('drop', onDrop);
+      return () => {
+        panelEl.removeEventListener('dragover', onDragOver);
+        panelEl.removeEventListener('dragleave', onDragLeave);
+        panelEl.removeEventListener('drop', onDrop);
+        panelEl.classList.remove('drag-over');
+      };
+    }, [panelEl, children, transport]);
 
     // --- Paste handler for images ---
     useEffect(() => {
@@ -484,11 +606,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     return (
       <div
-        ref={ref}
+        ref={panelRefCallback}
         className="crispy-cp"
         data-agency={state.agencyMode}
-        onDragOver={children ? undefined : handleDragOver}
-        onDrop={children ? undefined : handleDrop}
       >
         {children ?? (
           <>

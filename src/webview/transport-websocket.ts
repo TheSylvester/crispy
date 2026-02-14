@@ -153,6 +153,7 @@ export function createWebSocketTransport(url: string): SessionService {
 
     getGitFiles: (cwd) => request<string[]>('getGitFiles', { cwd }),
     fileExists: (path) => request<boolean>('fileExists', { path }),
+    readImage: (path) => request<{ data: string; mimeType: string; fileName: string }>('readImage', { path }),
     openFile: (path, line, col) => request<{ opened: boolean }>('openFile', { path, line, col }),
     pickFile: (candidates) => request<{ picked: string | null }>('pickFile', { candidates }),
 
