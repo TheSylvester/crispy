@@ -125,8 +125,19 @@ export function TranscriptViewer(): React.JSX.Element {
       const sbVisible = sbEl?.classList.contains('crispy-stop--visible');
       const sbHeight = sbVisible ? sbEl!.getBoundingClientRect().height : 0;
 
+      // Check if user is near bottom before padding change — useAutoScroll's
+      // ResizeObserver watches the content div (not the scroll container), so
+      // it won't detect scrollHeight changes caused by padding alone.
+      const distFromBottom = txEl.scrollHeight - txEl.scrollTop - txEl.clientHeight;
+      const wasNearBottom = distFromBottom < 100;
+
       txEl.style.paddingBottom = `${cpHeight + sbHeight + GAP}px`;
       document.documentElement.style.setProperty('--cp-height', String(Math.round(cpHeight)));
+
+      // Re-pin scroll so content isn't occluded by the growing control panel
+      if (wasNearBottom) {
+        txEl.scrollTop = txEl.scrollHeight;
+      }
     };
 
     // Watch control panel for size changes (e.g. textarea grow)
