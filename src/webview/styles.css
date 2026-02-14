@@ -1097,7 +1097,7 @@ h2 {
   font-size: 12px;
   margin: 2px 0;
   border-radius: 4px;
-  overflow: hidden;
+  overflow: auto;
   background: var(--vscode-editor-background, #1e1e1e);
   border: 1px solid var(--vscode-panel-border, #2a2a2a);
 }

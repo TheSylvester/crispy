@@ -17,7 +17,7 @@ interface CodePreviewProps {
 
 export function CodePreview({ code, language = 'text', maxHeight = 400 }: CodePreviewProps): React.JSX.Element {
   return (
-    <div className="crispy-code-preview" style={{ maxHeight, overflowY: 'auto' }}>
+    <div className="crispy-code-preview" style={{ maxHeight }}>
       <Highlight theme={themes.vsDark} code={code} language={language}>
         {({ tokens, getLineProps, getTokenProps, style }) => (
           <pre style={{ ...style, background: 'transparent', margin: 0, padding: '8px 10px', fontSize: '12px', lineHeight: 1.5 }}>
