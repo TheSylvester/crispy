@@ -57,9 +57,8 @@ export function TranscriptViewer(): React.JSX.Element {
     jumpToEnd,
   } = usePlayback(entries.length);
 
-  // Refs for dynamic transcript padding and auto-scroll
+  // Refs for dynamic transcript padding
   const transcriptRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
   const controlPanelRef = useRef<HTMLDivElement>(null);
   const stopButtonRef = useRef<HTMLDivElement>(null);
 
@@ -99,10 +98,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const visibleEntries = entries.slice(0, visibleCount);
   const filteredEntries = visibleEntries.filter(shouldRenderEntry);
 
-  const { isSticky, isAtTop, scrollToBottom, scrollToTop, contentReady, pinToBottom } = useAutoScroll({
-    containerRef: transcriptRef,
-    contentRef,
-    entryCount: filteredEntries.length,
+  const { isSticky, isAtTop, scrollToBottom, scrollToTop, pinToBottom } = useAutoScroll({
     sessionId: selectedSessionId,
   });
 
@@ -227,7 +223,7 @@ export function TranscriptViewer(): React.JSX.Element {
     mainContent = (
       <ToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
         <div className="crispy-transcript" ref={transcriptRef}>
-          <div ref={contentRef} className={`crispy-transcript-content ${contentReady ? 'crispy-transcript-content--visible' : ''}`}>
+          <div className="crispy-transcript-content">
             {isLoading ? (
               <div className="crispy-loading">Loading transcript...</div>
             ) : (

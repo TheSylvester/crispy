@@ -192,17 +192,6 @@ h2 {
   padding: 16px;
 }
 
-/* --- Transcript content fade-in --- */
-
-.crispy-transcript-content {
-  opacity: 0;
-}
-
-.crispy-transcript-content--visible {
-  opacity: 1;
-  transition: opacity 0.8s ease;
-}
-
 /* --- Thinking Indicator — animated spinner + agency-aware label --- */
 
 .crispy-thinking {
