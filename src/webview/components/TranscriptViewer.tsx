@@ -100,6 +100,7 @@ export function TranscriptViewer(): React.JSX.Element {
 
   const { isSticky, isAtTop, scrollToBottom, scrollToTop, pinToBottom } = useAutoScroll({
     sessionId: selectedSessionId,
+    scrollRef: transcriptRef,
   });
 
   // Observe control panel + stop button for dynamic transcript bottom padding.
