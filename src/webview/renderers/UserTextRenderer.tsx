@@ -12,14 +12,24 @@
 
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { CodeBlock, PreBlock } from './markdown-components.js';
+import { PreBlock } from './markdown-components.js';
+import { LinkifiedP, LinkifiedLi, LinkifiedTd, LinkifiedCode } from './linkify-components.js';
 import type { ContentBlock, TextBlock } from '../../core/transcript.js';
 
 export function UserTextRenderer({ block }: { block: ContentBlock }): React.JSX.Element {
   const { text } = block as TextBlock;
   return (
     <div className="prose user-text">
-      <Markdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock, pre: PreBlock }}>
+      <Markdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          code: LinkifiedCode,
+          pre: PreBlock,
+          p: LinkifiedP,
+          li: LinkifiedLi,
+          td: LinkifiedTd,
+        }}
+      >
         {text}
       </Markdown>
     </div>

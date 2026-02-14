@@ -15,6 +15,7 @@ import { EditTool } from './EditTool.js';
 import { GlobTool } from './GlobTool.js';
 import { GrepTool } from './GrepTool.js';
 import { TaskTool } from './TaskTool.js';
+import { TodoTool } from './TodoTool.js';
 
 export const toolRendererMap = new Map<string, React.ComponentType<{ toolId: string }>>([
   ['tool:Bash', BashTool],
@@ -24,7 +25,8 @@ export const toolRendererMap = new Map<string, React.ComponentType<{ toolId: str
   ['tool:Glob', GlobTool],
   ['tool:Grep', GrepTool],
   ['tool:Task', TaskTool],
-  // Phase 2 tools added later (WebSearch, WebFetch, TodoWrite, etc.)
+  ['tool:TodoWrite', TodoTool],
+  // Phase 2 tools added later (WebSearch, WebFetch, etc.)
 ]);
 
 /** Default renderer for tools not in the map */

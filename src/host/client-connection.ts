@@ -39,6 +39,7 @@ import {
   type SessionListSubscriber,
 } from "../core/session-list-manager.js";
 import { SESSION_LIST_CHANNEL_ID } from "../core/session-list-events.js";
+import { getGitFiles, fileExists } from "../core/file-service.js";
 
 // ============================================================================
 // Wire Protocol Types
@@ -289,6 +290,24 @@ export function createClientConnection(
         }
         return { unsubscribed: true };
       }
+
+      case "getGitFiles": {
+        const cwd = params.cwd as string;
+        return getGitFiles(cwd);
+      }
+
+      case "fileExists": {
+        const filePath = params.path as string;
+        return fileExists(filePath);
+      }
+
+      case "openFile":
+        // VS Code intercepts in webview-host; no-op for dev server
+        return { opened: false };
+
+      case "pickFile":
+        // VS Code-only QuickPick; no-op for dev server
+        return { picked: null };
 
       default:
         throw new Error(`Unknown method: ${method}`);

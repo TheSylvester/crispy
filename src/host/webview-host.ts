@@ -121,13 +121,22 @@ export function createCrispyPanel(
   // The dev-server has no race because ws.on('message') is registered
   // synchronously inside the 'connection' callback before any data arrives.
   panel.webview.onDidReceiveMessage(
-    (msg) => {
+    async (msg) => {
       // VS Code-specific: open file in editor (requires vscode API,
       // so handled here rather than in shared message-handler)
       if (msg.kind === 'request' && msg.method === 'openFile') {
         const filePath = msg.params?.path as string;
         if (filePath) {
-          vscode.window.showTextDocument(vscode.Uri.file(filePath));
+          const line = (msg.params?.line as number) ?? 1;
+          const col = (msg.params?.col as number) ?? 1;
+          await vscode.window.showTextDocument(vscode.Uri.file(filePath), {
+            viewColumn: vscode.ViewColumn.Beside,
+            selection: new vscode.Range(
+              new vscode.Position(line - 1, col - 1),
+              new vscode.Position(line - 1, col - 1),
+            ),
+            preview: false,
+          });
         }
         // Always send response so client's pending request resolves
         if (!disposed) {
@@ -135,6 +144,24 @@ export function createCrispyPanel(
             kind: 'response',
             id: msg.id,
             result: { opened: !!filePath },
+          } satisfies HostMessage);
+        }
+        return;
+      }
+
+      // VS Code-specific: pick file from candidates via QuickPick
+      if (msg.kind === 'request' && msg.method === 'pickFile') {
+        const candidates = (msg.params?.candidates as string[]) ?? [];
+        const picked = candidates.length > 0
+          ? (await vscode.window.showQuickPick(candidates, {
+              placeHolder: 'Multiple files match — pick one to open',
+            })) ?? null
+          : null;
+        if (!disposed) {
+          panel.webview.postMessage({
+            kind: 'response',
+            id: msg.id,
+            result: { picked },
           } satisfies HostMessage);
         }
         return;

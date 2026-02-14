@@ -12,7 +12,9 @@ import { useCallback } from 'react';
 import type { Transport } from './transport.js';
 import type { TransportKind } from './main.js';
 import { TransportProvider } from './context/TransportContext.js';
+import { EnvironmentProvider } from './context/EnvironmentContext.js';
 import { SessionProvider, useSession } from './context/SessionContext.js';
+import { FileIndexProvider } from './context/FileIndexContext.js';
 import { PreferencesProvider, usePreferences } from './context/PreferencesContext.js';
 import { SessionSelector } from './components/SessionSelector.js';
 import { TranscriptViewer } from './components/TranscriptViewer.js';
@@ -27,18 +29,22 @@ interface AppProps {
 export function App({ transport, transportKind }: AppProps): React.JSX.Element {
   return (
     <TransportProvider transport={transport}>
-      <SessionProvider>
-        <PreferencesProvider>
-          <SessionStatusProvider>
-            <AppLayout transportKind={transportKind} />
-          </SessionStatusProvider>
-        </PreferencesProvider>
-      </SessionProvider>
+      <EnvironmentProvider kind={transportKind}>
+        <SessionProvider>
+          <FileIndexProvider>
+            <PreferencesProvider>
+              <SessionStatusProvider>
+                <AppLayout />
+              </SessionStatusProvider>
+            </PreferencesProvider>
+          </FileIndexProvider>
+        </SessionProvider>
+      </EnvironmentProvider>
     </TransportProvider>
   );
 }
 
-function AppLayout({ transportKind: _transportKind }: { transportKind: TransportKind }): React.JSX.Element {
+function AppLayout(): React.JSX.Element {
   const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
   const { selectedSessionId } = useSession();
   const { channelState } = useSessionStatus(selectedSessionId);

@@ -42,6 +42,10 @@ export interface SessionService {
   subscribeSessionList(): Promise<void>;
   unsubscribeSessionList(): Promise<void>;
   onEvent(handler: (sessionId: string, event: HostEvent) => void): () => void;
+  getGitFiles(cwd: string): Promise<string[]>;
+  fileExists(path: string): Promise<boolean>;
+  openFile(path: string, line?: number, col?: number): Promise<{ opened: boolean }>;
+  pickFile(candidates: string[]): Promise<{ picked: string | null }>;
   dispose(): void;
 }
 

@@ -123,6 +123,11 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     subscribeSessionList: () => request<void>('subscribeSessionList'),
     unsubscribeSessionList: () => request<void>('unsubscribeSessionList'),
 
+    getGitFiles: (cwd) => request<string[]>('getGitFiles', { cwd }),
+    fileExists: (path) => request<boolean>('fileExists', { path }),
+    openFile: (path, line, col) => request<{ opened: boolean }>('openFile', { path, line, col }),
+    pickFile: (candidates) => request<{ picked: string | null }>('pickFile', { candidates }),
+
     onEvent(handler) {
       eventHandlers.push(handler);
       return () => {

@@ -1056,6 +1056,28 @@ h2 {
   font-size: 0.85em;
 }
 
+/* --- Clickable file link (linkification) --- */
+
+.crispy-file-link {
+  color: #60a5fa;
+  text-decoration: none;
+  cursor: pointer;
+  border-bottom: 1px dotted rgba(96, 165, 250, 0.4);
+}
+
+.crispy-file-link:hover {
+  text-decoration: underline;
+  border-bottom-color: transparent;
+}
+
+.crispy-file-link .crispy-tool-filepath {
+  cursor: pointer;
+}
+
+.crispy-file-link:hover .crispy-tool-filepath {
+  text-decoration: underline;
+}
+
 /* --- Line info (muted, smaller) --- */
 
 .crispy-tool-line-info {
@@ -1234,6 +1256,41 @@ h2 {
   overflow: auto;
   background: var(--vscode-editor-background, #1e1e1e);
   border: 1px solid var(--vscode-panel-border, #2a2a2a);
+}
+
+/* --- TodoWrite checklist --- */
+
+.crispy-todo-list {
+  list-style: none;
+  padding: 0;
+  margin: 2px 0;
+}
+
+.crispy-todo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.crispy-todo-icon {
+  font-size: 1em;
+  width: 1.2em;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.crispy-todo-content {
+  flex: 1;
+}
+
+.crispy-todo--completed .crispy-todo-content {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.crispy-todo--in-progress .crispy-todo-content {
+  color: var(--vscode-charts-yellow, #cca700);
 }
 
 /* ============================================================================
