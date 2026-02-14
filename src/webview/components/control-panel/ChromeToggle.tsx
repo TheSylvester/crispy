@@ -13,9 +13,10 @@ import { ChromeMonoIcon, ChromeColorIcon } from './icons.js';
 interface ChromeToggleProps {
   checked: boolean;
   onChange: (enabled: boolean) => void;
+  disabled?: boolean;
 }
 
-export function ChromeToggle({ checked, onChange }: ChromeToggleProps): React.JSX.Element {
+export function ChromeToggle({ checked, onChange, disabled }: ChromeToggleProps): React.JSX.Element {
   const inputId = useId();
   const [justActivated, setJustActivated] = useState(false);
   const [hoverClass, setHoverClass] = useState('');
@@ -37,6 +38,7 @@ export function ChromeToggle({ checked, onChange }: ChromeToggleProps): React.JS
     <label
       className={containerClass}
       title="Enable Chrome browser integration"
+      style={disabled ? { opacity: 0.4, pointerEvents: 'none' } : undefined}
       onMouseEnter={() => setHoverClass('hovering')}
       onMouseLeave={() => setHoverClass('hover-out')}
     >
@@ -45,6 +47,7 @@ export function ChromeToggle({ checked, onChange }: ChromeToggleProps): React.JS
         type="checkbox"
         className="crispy-cp-chrome__input"
         checked={checked}
+        disabled={disabled}
         onChange={handleChange}
       />
       {checked ? (

@@ -428,6 +428,25 @@ export async function interruptSession(sessionId: string): Promise<void> {
 }
 
 /**
+ * Reconfigure a session's query options (bypass, chrome) and prepare
+ * for restart. The next send() will create a fresh query with updated
+ * options while preserving the session ID.
+ */
+export function reconfigureSession(
+  sessionId: string,
+  updates: { allowDangerouslySkipPermissions?: boolean; extraArgs?: Record<string, string | null> },
+): void {
+  const channel = requireChannel(sessionId);
+  if (!channel.adapter) {
+    throw new Error(`Channel for session "${sessionId}" has no adapter.`);
+  }
+  if (!channel.adapter.prepareQueryRestart) {
+    throw new Error(`Adapter for session "${sessionId}" does not support query restart.`);
+  }
+  channel.adapter.prepareQueryRestart(updates);
+}
+
+/**
  * Close a session's live channel and remove it from the registry.
  *
  * Delegates to destroyChannel() which tears down the adapter and

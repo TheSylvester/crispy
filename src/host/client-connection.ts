@@ -30,6 +30,7 @@ import {
   setSessionModel,
   setSessionPermissions,
   interruptSession,
+  reconfigureSession,
   closeSession,
 } from "../core/session-manager.js";
 import {
@@ -246,6 +247,15 @@ export function createClientConnection(
         const sessionId = params.sessionId as string;
         await interruptSession(sessionId);
         return { interrupted: true };
+      }
+
+      case "reconfigure": {
+        const sessionId = params.sessionId as string;
+        reconfigureSession(sessionId, {
+          allowDangerouslySkipPermissions: params.allowDangerouslySkipPermissions as boolean | undefined,
+          extraArgs: params.extraArgs as Record<string, string | null> | undefined,
+        });
+        return { reconfigured: true };
       }
 
       case "close": {

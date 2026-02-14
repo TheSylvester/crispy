@@ -158,10 +158,13 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // Track the last permission mode we pushed to the server to avoid echo loops
     // with the permission_mode_changed event listener.
     const lastPushedModeRef = useRef<string | null>(null);
+    const lastPushedBypassRef = useRef<boolean>(state.bypassEnabled);
+    const lastPushedChromeRef = useRef<boolean>(state.chromeEnabled);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned } = usePreferences();
     const transport = useTransport();
     const { selectedSessionId, selectedCwd, setSelectedSessionId } = useSession();
-    const { setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
+    const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
+    const togglesDisabled = channelState === 'streaming' || channelState === 'awaiting_approval';
 
     // --- Notify parent of bypass state changes ---
     useEffect(() => {
@@ -192,6 +195,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         // Alt+`: Toggle bypass
         if (e.key === '`' && e.altKey && !e.ctrlKey && !e.shiftKey) {
           e.preventDefault();
+          if (togglesDisabled) return;
           dispatch({ type: 'SET_BYPASS', enabled: !state.bypassEnabled });
           return;
         }
@@ -220,7 +224,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
       document.addEventListener('keydown', handleKeyDown);
       return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [state.bypassEnabled, state.agencyMode, state.model]);
+    }, [state.bypassEnabled, state.agencyMode, state.model, togglesDisabled]);
 
     // --- Server → UI: permission_mode_changed notifications ---
     // The control panel is the optimistic source of truth — the user's chosen
@@ -255,6 +259,28 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         console.error('[ControlPanel] setPermissions failed:', err);
       });
     }, [state.agencyMode, selectedSessionId, transport]);
+
+    // --- Push bypass changes to server (triggers query restart) ---
+    useEffect(() => {
+      if (!selectedSessionId) return;
+      if (channelState !== 'idle') return;
+      if (state.bypassEnabled === lastPushedBypassRef.current) return;
+      lastPushedBypassRef.current = state.bypassEnabled;
+      transport.reconfigure(selectedSessionId, {
+        allowDangerouslySkipPermissions: state.bypassEnabled,
+      }).catch(err => console.error('[ControlPanel] reconfigure (bypass) failed:', err));
+    }, [state.bypassEnabled, selectedSessionId, channelState, transport]);
+
+    // --- Push Chrome changes to server (triggers query restart) ---
+    useEffect(() => {
+      if (!selectedSessionId) return;
+      if (channelState !== 'idle') return;
+      if (state.chromeEnabled === lastPushedChromeRef.current) return;
+      lastPushedChromeRef.current = state.chromeEnabled;
+      transport.reconfigure(selectedSessionId, {
+        extraArgs: state.chromeEnabled ? { chrome: null } : {},
+      }).catch(err => console.error('[ControlPanel] reconfigure (chrome) failed:', err));
+    }, [state.chromeEnabled, selectedSessionId, channelState, transport]);
 
     // --- Send handler ---
     const handleSend = useCallback(() => {
@@ -463,6 +489,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           <BypassToggle
             checked={state.bypassEnabled}
             onChange={(enabled) => dispatch({ type: 'SET_BYPASS', enabled })}
+            disabled={togglesDisabled}
           />
           <AgencyModeSelect
             value={state.agencyMode}
@@ -483,6 +510,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             <ChromeToggle
               checked={state.chromeEnabled}
               onChange={(enabled) => dispatch({ type: 'SET_CHROME', enabled })}
+              disabled={togglesDisabled}
             />
             <SettingsPopup
               pinned={settingsPinned}

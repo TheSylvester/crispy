@@ -387,6 +387,8 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   private pendingApprovals = new Map<string, PendingApproval>();
   /** AbortController for the active query. */
   private abortController: AbortController | null = null;
+  /** Generation counter to prevent stale drainOutput() finally blocks from clobbering new queries. */
+  private queryGeneration = 0;
 
   private readonly options: ClaudeSessionOptions;
 
@@ -564,6 +566,51 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     await this.requireQuery('setMaxThinkingTokens').setMaxThinkingTokens(tokens);
   }
 
+  /**
+   * Tear down the current query and update options so the next send()
+   * creates a fresh SDK query() with updated bypass / extraArgs.
+   * Only callable when idle (no streaming in progress).
+   */
+  prepareQueryRestart(updates: {
+    allowDangerouslySkipPermissions?: boolean;
+    extraArgs?: Record<string, string | null>;
+  }): void {
+    if (this._closed) throw new Error('Cannot call prepareQueryRestart() on a closed channel');
+    if (this._status !== 'idle') throw new Error('Cannot call prepareQueryRestart() while session is not idle');
+
+    // Fast path: no active query to tear down (e.g. subscribed but no message sent yet)
+    if (!this.activeQuery) {
+      if (updates.allowDangerouslySkipPermissions !== undefined) {
+        this.options.allowDangerouslySkipPermissions = updates.allowDangerouslySkipPermissions;
+      }
+      if (updates.extraArgs !== undefined) {
+        this.options.extraArgs = updates.extraArgs;
+      }
+      return;
+    }
+
+    // Sync session ID: _sessionId is updated from every SDK message but
+    // options.resume is only set at construction. Without this the next
+    // startQuery() wouldn't resume the correct session.
+    this.options.resume = this._sessionId;
+
+    // Clear one-shot flags that shouldn't carry over to the next query
+    this.options.sessionId = undefined;
+    this.options.forkSession = undefined;
+    this.options.continue = undefined;
+    this.options.resumeSessionAt = undefined;
+
+    // Apply caller's updates
+    if (updates.allowDangerouslySkipPermissions !== undefined) {
+      this.options.allowDangerouslySkipPermissions = updates.allowDangerouslySkipPermissions;
+    }
+    if (updates.extraArgs !== undefined) {
+      this.options.extraArgs = updates.extraArgs;
+    }
+
+    this.teardownQuery();
+  }
+
   /** Get full initialization data (commands, models, account, etc.). */
   async initializationResult(): Promise<SDKControlInitializeResponse> {
     return await this.requireQuery('initializationResult').initializationResult() as SDKControlInitializeResponse;
@@ -614,6 +661,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   // --------------------------------------------------------------------------
 
   private startQuery(firstMessage: SDKUserMessage): void {
+    this.queryGeneration++;
     this.inputQueue = new AsyncIterableQueue<SDKUserMessage>();
     this.inputQueue.enqueue(firstMessage);
 
@@ -751,6 +799,12 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   private async drainOutput(): Promise<void> {
     if (!this.activeQuery) return;
 
+    // Capture the generation at the start of this drain loop. If a new query
+    // is started (via prepareQueryRestart → teardownQuery → send → startQuery)
+    // before our finally block runs, the generation will have advanced and we
+    // must not clobber the new query's state.
+    const generation = this.queryGeneration;
+
     try {
       for await (const sdkMessage of this.activeQuery) {
         if (this._closed) break;
@@ -769,18 +823,21 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       }
     } finally {
       // Query ended (normally or via error) — clean up and go idle.
-      // Clear pending approvals (same cleanup as teardownQuery).
-      const pendingEntries = [...this.pendingApprovals.values()];
-      this.pendingApprovals.clear();
-      for (const pending of pendingEntries) {
-        pending.resolve({ behavior: 'deny', message: 'Session ended', toolUseID: pending.toolUseId });
-      }
+      // Only mutate instance state if no newer query has started.
+      if (this.queryGeneration === generation) {
+        // Clear pending approvals (same cleanup as teardownQuery).
+        const pendingEntries = [...this.pendingApprovals.values()];
+        this.pendingApprovals.clear();
+        for (const pending of pendingEntries) {
+          pending.resolve({ behavior: 'deny', message: 'Session ended', toolUseID: pending.toolUseId });
+        }
 
-      this.activeQuery = null;
-      this.inputQueue = null;
-      this.abortController = null;
-      if (!this._closed) {
-        this.emitStatus('idle');
+        this.activeQuery = null;
+        this.inputQueue = null;
+        this.abortController = null;
+        if (!this._closed) {
+          this.emitStatus('idle');
+        }
       }
     }
   }

@@ -207,4 +207,15 @@ export interface AgentAdapter {
    * Vendors that don't support this should throw with a descriptive message.
    */
   setPermissionMode(mode: string): Promise<void>;
+
+  /**
+   * Tear down the current query and update options that require a fresh
+   * query() call (e.g. allowDangerouslySkipPermissions, extraArgs).
+   * The next send() will create a new query with the updated options.
+   * Only callable when idle. Vendors that don't support this can omit it.
+   */
+  prepareQueryRestart?(updates: {
+    allowDangerouslySkipPermissions?: boolean;
+    extraArgs?: Record<string, string | null>;
+  }): void;
 }

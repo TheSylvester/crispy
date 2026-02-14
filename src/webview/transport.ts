@@ -34,6 +34,10 @@ export interface SessionService {
   setModel(sessionId: string, model?: string): Promise<void>;
   setPermissions(sessionId: string, mode: string): Promise<void>;
   interrupt(sessionId: string): Promise<void>;
+  reconfigure(sessionId: string, updates: {
+    allowDangerouslySkipPermissions?: boolean;
+    extraArgs?: Record<string, string | null>;
+  }): Promise<void>;
   close(sessionId: string): Promise<void>;
   subscribeSessionList(): Promise<void>;
   unsubscribeSessionList(): Promise<void>;

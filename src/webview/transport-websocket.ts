@@ -142,6 +142,9 @@ export function createWebSocketTransport(url: string): SessionService {
     interrupt: (sessionId) =>
       request<void>('interrupt', { sessionId }),
 
+    reconfigure: (sessionId, updates) =>
+      request<void>('reconfigure', { sessionId, ...updates }),
+
     close: (sessionId) =>
       request<void>('close', { sessionId }),
 

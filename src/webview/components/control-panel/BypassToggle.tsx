@@ -14,9 +14,10 @@ import { ShieldSafeIcon, ShieldDangerIcon } from './icons.js';
 interface BypassToggleProps {
   checked: boolean;
   onChange: (enabled: boolean) => void;
+  disabled?: boolean;
 }
 
-export function BypassToggle({ checked, onChange }: BypassToggleProps): React.JSX.Element {
+export function BypassToggle({ checked, onChange, disabled }: BypassToggleProps): React.JSX.Element {
   const inputId = useId();
   const [justActivated, setJustActivated] = useState(false);
   const [hoverClass, setHoverClass] = useState('');
@@ -39,6 +40,7 @@ export function BypassToggle({ checked, onChange }: BypassToggleProps): React.JS
       className={containerClass}
       title="Enable --dangerously-skip-permissions mode (Alt+`)"
       data-shortcut="Alt+`"
+      style={disabled ? { opacity: 0.4, pointerEvents: 'none' } : undefined}
       onMouseEnter={() => setHoverClass('hovering')}
       onMouseLeave={() => setHoverClass('hover-out')}
     >
@@ -47,6 +49,7 @@ export function BypassToggle({ checked, onChange }: BypassToggleProps): React.JS
         type="checkbox"
         className="crispy-cp-bypass__input"
         checked={checked}
+        disabled={disabled}
         onChange={handleChange}
       />
       {checked ? (
