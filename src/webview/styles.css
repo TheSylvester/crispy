@@ -1402,6 +1402,12 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   background: var(--vscode-list-hoverBackground, #2a2d2e);
 }
 
+/* Style dropdown options (dark background to match theme) */
+.crispy-cp-controls select option {
+  background: var(--vscode-dropdown-background, #252526);
+  color: var(--vscode-dropdown-foreground, #cccccc);
+}
+
 /* --- Right controls cluster --- */
 
 .crispy-cp-right {

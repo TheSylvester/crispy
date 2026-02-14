@@ -441,6 +441,25 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
                 thumbnailUrl,
               };
               dispatch({ type: 'ADD_IMAGE', image });
+
+              // Insert text trail placeholder at cursor (like Leto) so the LLM
+              // can reference the image by name in the prompt text.
+              const textarea = document.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
+              const placeholder = `[${fileName}]`;
+              if (textarea) {
+                const start = textarea.selectionStart;
+                const end = textarea.selectionEnd;
+                const text = textarea.value;
+                const newValue = text.slice(0, start) + placeholder + text.slice(end);
+                dispatch({ type: 'SET_INPUT', value: newValue });
+                // Restore cursor position after React re-render
+                requestAnimationFrame(() => {
+                  textarea.selectionStart = textarea.selectionEnd = start + placeholder.length;
+                });
+              } else {
+                // Fallback: append to current input
+                dispatch({ type: 'SET_INPUT', value: state.input + placeholder });
+              }
             };
             reader.readAsDataURL(file);
           }
