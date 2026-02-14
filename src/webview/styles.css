@@ -565,13 +565,13 @@ h2 {
 .prose p:first-child { margin-top: 0; }
 .prose p:last-child { margin-bottom: 0; }
 
-/* Inline code */
+/* Inline code — black pill matching grep params */
 .prose code {
   font-family: monospace;
   font-size: 0.85em;
-  padding: 0.2em 0.4em;
-  border-radius: 4px;
-  background: rgba(110, 118, 129, 0.2);
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
 }
 
 /* Fenced code blocks (standalone selectors — work inside or outside .prose) */
@@ -911,11 +911,15 @@ h2 {
   border-left: 2px solid rgba(255, 255, 255, 0.08);
 }
 
-/* --- File path (monospace, link-colored) --- */
+/* --- File path (monospace, dark pill like grep params) --- */
 
 .crispy-tool-filepath {
   font-family: var(--vscode-editor-font-family, monospace);
   color: #60a5fa;
+  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.85em;
 }
 
 /* --- Line info (muted, smaller) --- */
@@ -943,16 +947,21 @@ h2 {
   font-size: 0.9em;
 }
 
-/* --- Bash command inline (wraps to own line if needed) --- */
+/* --- Bash command inline (dark pill, max 5 lines with scroll, never truncated) --- */
 
 .crispy-tool-bash-inline {
   font-family: var(--vscode-editor-font-family, monospace);
   color: var(--vscode-editor-foreground, #d4d4d4);
+  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
+  padding: 2px 6px;
+  border-radius: 3px;
   font-size: 0.85em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: calc(1.4em * 5);
+  overflow-y: auto;
+  display: block;
+  line-height: 1.4;
 }
 
 /* --- Diff stats --- */
@@ -1034,31 +1043,47 @@ h2 {
 .crispy-diff-code {
   flex: 1;
   min-width: 0;
-  white-space: pre-wrap;
-  word-break: break-all;
+  white-space: pre;
+  word-break: normal;
 }
 
 /* --- Split (side-by-side) diff --- */
 
 .crispy-diff-split {
+  display: flex;
+  background: var(--vscode-editor-background, #1e1e1e);
+}
+
+.crispy-diff-split-pane {
+  flex: 1;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  /* Grid makes all rows stretch to the widest row's width,
+     so backgrounds fill the entire scrollable area. */
   display: grid;
+}
+
+.crispy-diff-split-pane::-webkit-scrollbar {
+  height: 8px;
+}
+
+.crispy-diff-split-pane::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background, #79797966);
+  border-radius: 4px;
+}
+
+.crispy-diff-split-pane::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground, #646464b3);
+}
+
+.crispy-diff-split-left {
+  border-right: 1px solid var(--vscode-panel-border, #2a2a2a);
 }
 
 .crispy-diff-split-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-
-.crispy-diff-split-left,
-.crispy-diff-split-right {
   display: flex;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
   min-height: 1.5em;
-}
-
-.crispy-diff-split-right {
-  border-right: none;
-  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  min-width: fit-content;
 }
 
 .crispy-diff-split-empty {
@@ -1312,7 +1337,7 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 .crispy-cp-image-chip:hover {
-  border-color: var(--vscode-focusBorder, #007acc);
+  border-color: var(--frame-highlight);
 }
 
 .crispy-cp-image-chip__thumb {
@@ -1433,10 +1458,13 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
   transition: background 0.15s, border-color 0.15s;
 }
 
-.crispy-cp-bypass:hover,
+.crispy-cp-bypass:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  border-color: var(--frame-highlight);
+}
+
 .crispy-cp-chrome:hover {
   background: var(--vscode-list-hoverBackground, #2a2d2e);
-  border-color: var(--vscode-widget-border, #454545);
 }
 
 .crispy-cp-bypass__input,
@@ -1667,7 +1695,7 @@ body.agency-bypass-permissions { --frame-highlight: #E84040; }
 }
 
 .crispy-cp-context:hover {
-  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  /* background-only hover; no colour highlight — animation speaks for itself */
 }
 
 .crispy-cp-context-container--pinned .crispy-cp-context {

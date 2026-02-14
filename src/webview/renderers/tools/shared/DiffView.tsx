@@ -324,22 +324,16 @@ function SplitDiffGrid({
     <div className="crispy-diff-scroll" style={{ maxHeight, overflowY: 'auto' }}>
       <pre className="crispy-diff-pre">
         <div className="crispy-diff-split">
-          {pairs.map((pair, i) => {
-            const leftBg = pair.left ? (LINE_BG[pair.left.type] ?? LINE_BG.context) : LINE_BG.context;
-            const rightBg = pair.right ? (LINE_BG[pair.right.type] ?? LINE_BG.context) : LINE_BG.context;
+          {/* Left pane — scrolls independently */}
+          <div className="crispy-diff-split-pane crispy-diff-split-left">
+            {pairs.map((pair, i) => {
+              const leftIdx = pair.left ? pair.left.lineNo - 1 : -1;
+              const leftToks = leftIdx >= 0 && leftIdx < leftTokens.length ? leftTokens[leftIdx] : null;
 
-            // Look up tokenized lines by 0-based index
-            const leftIdx = pair.left ? pair.left.lineNo - 1 : -1;
-            const rightIdx = pair.right ? pair.right.lineNo - 1 : -1;
-            const leftToks = leftIdx >= 0 && leftIdx < leftTokens.length ? leftTokens[leftIdx] : null;
-            const rightToks = rightIdx >= 0 && rightIdx < rightTokens.length ? rightTokens[rightIdx] : null;
-
-            return (
-              <div key={i} className="crispy-diff-split-row">
-                {/* Left pane */}
+              return (
                 <div
-                  className={`crispy-diff-split-left ${pair.left ? `crispy-diff-${pair.left.type}` : 'crispy-diff-split-empty'}`}
-                  style={{ background: leftBg }}
+                  key={i}
+                  className={`crispy-diff-split-row ${pair.left ? `crispy-diff-${pair.left.type}` : 'crispy-diff-split-empty'}`}
                 >
                   <span className="crispy-diff-gutter">
                     {pair.left?.lineNo ?? ' '}
@@ -353,10 +347,19 @@ function SplitDiffGrid({
                       : '\u00A0'}
                   </span>
                 </div>
-                {/* Right pane */}
+              );
+            })}
+          </div>
+          {/* Right pane — scrolls independently */}
+          <div className="crispy-diff-split-pane">
+            {pairs.map((pair, i) => {
+              const rightIdx = pair.right ? pair.right.lineNo - 1 : -1;
+              const rightToks = rightIdx >= 0 && rightIdx < rightTokens.length ? rightTokens[rightIdx] : null;
+
+              return (
                 <div
-                  className={`crispy-diff-split-right ${pair.right ? `crispy-diff-${pair.right.type}` : 'crispy-diff-split-empty'}`}
-                  style={{ background: rightBg }}
+                  key={i}
+                  className={`crispy-diff-split-row ${pair.right ? `crispy-diff-${pair.right.type}` : 'crispy-diff-split-empty'}`}
                 >
                   <span className="crispy-diff-gutter">
                     {pair.right?.lineNo ?? ' '}
@@ -370,9 +373,9 @@ function SplitDiffGrid({
                       : '\u00A0'}
                   </span>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </pre>
     </div>
