@@ -1,13 +1,16 @@
 /**
- * Session Selector — sidebar session list
+ * Session Selector — sidebar session list with search and CWD filtering
  *
  * Two-line layout per session: label (first message) on top,
  * last message preview below, with relative time on the right.
  *
+ * Search filters by label + lastMessage with useDeferredValue for
+ * responsive input. CWD filtering chains before search (Leto pattern).
+ *
  * @module SessionSelector
  */
 
-import { useState } from 'react';
+import { useState, useMemo, useDeferredValue } from 'react';
 import { useSession } from '../context/SessionContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
 
@@ -46,29 +49,96 @@ function formatRelativeTime(isoString: string): string {
   return `${years}y`;
 }
 
+/**
+ * Highlight first case-insensitive match of `query` within `text`.
+ * Returns JSX fragments with <mark> around the match — no dangerouslySetInnerHTML.
+ */
+function highlightMatch(text: string, query: string): React.ReactNode {
+  if (!query) return text;
+
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text;
+
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="crispy-session-highlight">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
+
 export function SessionSelector(): React.JSX.Element {
-  const { sessions, selectedSessionId, setSelectedSessionId, isLoading, error } = useSession();
+  const { sessions, selectedSessionId, setSelectedSessionId, selectedCwd, isLoading, error } =
+    useSession();
   const { setSidebarCollapsed } = usePreferences();
 
+  // All hooks unconditionally (fixes prior rules-of-hooks violation)
+  const [showAll, setShowAll] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const deferredQuery = useDeferredValue(searchQuery);
+
+  // Two-stage filter: CWD first, then search. Expose intermediate count
+  // so the "match in all text" button knows if there could be more matches.
+  const { filteredSessions, cwdFilteredCount } = useMemo(() => {
+    let result = sessions;
+
+    // Stage 1: CWD filter (when a specific project is selected)
+    if (selectedCwd) {
+      result = result.filter((s) => s.projectSlug === selectedCwd);
+    }
+    const cwdFilteredCount = result.length;
+
+    // Stage 2: Search filter (case-insensitive on label + lastMessage)
+    if (deferredQuery) {
+      const q = deferredQuery.toLowerCase();
+      result = result.filter((s) => {
+        const labelMatch = s.label?.toLowerCase().includes(q) ?? false;
+        const previewMatch = s.lastMessage?.toLowerCase().includes(q) ?? false;
+        return labelMatch || previewMatch;
+      });
+    }
+
+    return { filteredSessions: result, cwdFilteredCount };
+  }, [sessions, selectedCwd, deferredQuery]);
+
+  // Early returns AFTER all hooks
   if (isLoading) {
     return <div className="crispy-loading">Loading sessions...</div>;
   }
-
   if (error) {
     return <div className="crispy-error">{error}</div>;
   }
-
-  const [showAll, setShowAll] = useState(false);
-
   if (sessions.length === 0) {
     return <div className="crispy-placeholder">No sessions found</div>;
   }
 
-  const visibleSessions = showAll ? sessions : sessions.slice(0, INITIAL_RENDER_CAP);
-  const hasMore = sessions.length > INITIAL_RENDER_CAP && !showAll;
+  const isSearching = deferredQuery.length > 0;
+
+  // When searching, show all matches (bypass cap). Otherwise respect the cap.
+  const visibleSessions =
+    isSearching || showAll ? filteredSessions : filteredSessions.slice(0, INITIAL_RENDER_CAP);
+
+  const hasMore = !isSearching && filteredSessions.length > INITIAL_RENDER_CAP && !showAll;
+  const hasFullTextButton = isSearching && filteredSessions.length < cwdFilteredCount;
 
   return (
     <ul className="crispy-session-list">
+      {/* Search input */}
+      <li className="crispy-session-search">
+        <input
+          className="crispy-session-search__input"
+          type="text"
+          placeholder="Search conversations…"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setSearchQuery('');
+          }}
+        />
+      </li>
+
+      {/* Session items */}
       {visibleSessions.map((session) => {
         const isSelected = session.sessionId === selectedSessionId;
         const className = `crispy-session-item${isSelected ? ' crispy-session-item--selected' : ''}`;
@@ -85,7 +155,10 @@ export function SessionSelector(): React.JSX.Element {
           >
             <div className="crispy-session-item__header">
               <span className="crispy-session-item__label">
-                {session.label || session.sessionId.slice(0, 8) + '\u2026'}
+                {highlightMatch(
+                  session.label || session.sessionId.slice(0, 8) + '\u2026',
+                  deferredQuery,
+                )}
               </span>
               <span className="crispy-session-item__time">
                 {formatRelativeTime(session.modifiedAt)}
@@ -93,20 +166,44 @@ export function SessionSelector(): React.JSX.Element {
             </div>
             {session.lastMessage && (
               <div className="crispy-session-item__preview">
-                {session.lastMessage}
+                {highlightMatch(session.lastMessage, deferredQuery)}
               </div>
             )}
           </li>
         );
       })}
+
+      {/* Empty state when searching */}
+      {isSearching && filteredSessions.length === 0 && (
+        <li className="crispy-session-item crispy-session-item--empty">
+          <span className="crispy-session-item__label">No matches</span>
+        </li>
+      )}
+
+      {/* Show more button (only when NOT searching) */}
       {hasMore && (
         <li
           className="crispy-session-item crispy-session-item--show-more"
           onClick={() => setShowAll(true)}
         >
           <span className="crispy-session-item__label">
-            Show {sessions.length - INITIAL_RENDER_CAP} more…
+            Show {filteredSessions.length - INITIAL_RENDER_CAP} more…
           </span>
+        </li>
+      )}
+
+      {/* Match in all text — placeholder for future transcript grep */}
+      {hasFullTextButton && (
+        <li
+          className="crispy-session-item crispy-session-item--full-text"
+          onClick={() => {
+            console.log(
+              '[SessionSelector] Match in all text requested for query:',
+              deferredQuery,
+            );
+          }}
+        >
+          <span className="crispy-session-item__label">Match in all text…</span>
         </li>
       )}
     </ul>

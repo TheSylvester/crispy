@@ -12,7 +12,7 @@
  * @module TitleBar
  */
 
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useSession } from '../context/SessionContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
 import { useSessionStatus } from '../hooks/useSessionStatus.js';
@@ -116,7 +116,21 @@ export function TitleBar(): React.JSX.Element {
   const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
   const { channelState } = useSessionStatus(selectedSessionId);
   const { fullPath } = useCwd();
-  const availableCwds = useAvailableCwds();
+  const allCwds = useAvailableCwds();
+
+  /** Cap visible CWDs to keep the native dropdown manageable.
+   *  Always includes the currently selected CWD even if it falls outside the cap. */
+  const MAX_CWDS = 15;
+  const availableCwds = useMemo(() => {
+    if (allCwds.length <= MAX_CWDS) return allCwds;
+    const top = allCwds.slice(0, MAX_CWDS);
+    // Ensure selected CWD is always present
+    if (selectedCwd && !top.some((c) => c.slug === selectedCwd)) {
+      const selected = allCwds.find((c) => c.slug === selectedCwd);
+      if (selected) top.push(selected);
+    }
+    return top;
+  }, [allCwds, selectedCwd]);
 
   const sessionLabel =
     sessions.find((s) => s.sessionId === selectedSessionId)?.label ?? 'No session';
@@ -154,8 +168,9 @@ export function TitleBar(): React.JSX.Element {
             className="crispy-titlebar__cwd-select"
             value={selectedCwd ?? ''}
             onChange={handleCwdChange}
-            title={fullPath ?? 'Select working directory'}
+            title={fullPath ?? 'All projects'}
           >
+            <option value="">All Projects</option>
             {availableCwds.map((cwd) => (
               <option key={cwd.slug} value={cwd.slug} title={cwd.fullPath}>
                 {cwd.display}

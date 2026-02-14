@@ -152,6 +152,69 @@ h2 {
   opacity: 0.7;
 }
 
+/* --- Session Search --- */
+
+.crispy-session-search {
+  padding: 4px 8px;
+  margin: 0 4px 4px;
+  list-style: none;
+}
+
+.crispy-session-search__input {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #d4d4d4);
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.crispy-session-search__input:focus {
+  border-color: var(--vscode-focusBorder, #007acc);
+}
+
+.crispy-session-search__input::placeholder {
+  color: var(--vscode-input-placeholderForeground, #717171);
+}
+
+/* --- Search Highlight --- */
+
+.crispy-session-highlight {
+  background: var(--vscode-editor-findMatchHighlightBackground, #ea5c0055);
+  color: inherit;
+  border-radius: 1px;
+}
+
+/* --- Empty State --- */
+
+.crispy-session-item--empty {
+  justify-content: center;
+  opacity: 0.5;
+  font-size: 12px;
+  cursor: default;
+}
+
+.crispy-session-item--empty:hover {
+  background: transparent;
+}
+
+/* --- Full-Text Search Button --- */
+
+.crispy-session-item--full-text {
+  justify-content: center;
+  opacity: 0.6;
+  font-size: 12px;
+  color: var(--vscode-textLink-foreground, #3794ff);
+}
+
+.crispy-session-item--full-text:hover {
+  opacity: 1;
+}
+
 /* --- Main Content Area --- */
 
 .crispy-main {
@@ -2310,54 +2373,33 @@ body.agency-bypass-permissions {
   min-width: 0;
   justify-content: center;
   font-size: 12px;
-  font-family: var(--vscode-editor-font-family, monospace);
 }
 
-/* CWD dropdown — link-blue monospace select, transparent bg, minimal border */
+/* CWD dropdown — native select with link-blue text, dark background.
+   Keeps native appearance for consistent dropdown popup rendering. */
 .crispy-titlebar__cwd-select {
   color: var(--vscode-textLink-foreground, #3794ff);
-  opacity: 0.9;
   font-size: 12px;
-  font-family: var(--vscode-editor-font-family, monospace);
-  background: transparent;
-  border: 1px solid transparent;
+  font-family: inherit;
+  background: var(--vscode-dropdown-background, #3c3c3c);
+  border: 1px solid var(--vscode-dropdown-border, transparent);
   border-radius: 3px;
   padding: 2px 6px;
   cursor: pointer;
   white-space: nowrap;
   max-width: 240px;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease;
-  /* Remove default select arrow styling on some browsers */
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
-  /* Custom dropdown arrow via inline SVG */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3E%3Cpath d='M1 2.5L4 5.5L7 2.5' stroke='%233794ff' stroke-width='1.2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 4px center;
-  padding-right: 18px;
 }
 
 .crispy-titlebar__cwd-select:hover {
-  background-color: var(
-    --vscode-list-hoverBackground,
-    rgba(255, 255, 255, 0.05)
-  );
   border-color: var(--vscode-textLink-foreground, #3794ff);
-  opacity: 1;
 }
 
 .crispy-titlebar__cwd-select:focus {
   outline: none;
-  border-color: var(--vscode-textLink-foreground, #3794ff);
-  opacity: 1;
+  border-color: var(--vscode-focusBorder, #007acc);
 }
 
-/* Style the dropdown options (dark background to match theme) */
 .crispy-titlebar__cwd-select option {
-  background: var(--vscode-dropdown-background, #252526);
   color: var(--vscode-dropdown-foreground, #cccccc);
 }
 
