@@ -26,6 +26,8 @@ export interface UseAutoScrollOptions {
   sessionId: string | null;
   /** Ref to the scrollable container (.crispy-transcript) */
   scrollRef: RefObject<HTMLDivElement | null>;
+  /** Extra signal to re-attach when the scroll container mounts (e.g. fork history preload). */
+  remount?: boolean;
 }
 
 export interface UseAutoScrollReturn {
@@ -37,7 +39,7 @@ export interface UseAutoScrollReturn {
 }
 
 export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
-  const { sessionId, scrollRef } = opts;
+  const { sessionId, scrollRef, remount } = opts;
 
   const [isSticky, setIsSticky] = useState(true);
   const [isAtTop, setIsAtTop] = useState(true);
@@ -58,7 +60,7 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
     lastScrollHeightRef.current = 0;
     isSessionLoadRef.current = true;
     clearTimeout(settleTimerRef.current);
-  }, [sessionId]);
+  }, [sessionId, remount]);
 
   // ── 1. Scroll listener (RAF-debounced, passive) ────────────────────
   useEffect(() => {
@@ -83,7 +85,7 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
       el.removeEventListener("scroll", onScroll);
       cancelAnimationFrame(rafIdRef.current);
     };
-  }, [sessionId, scrollRef]);
+  }, [sessionId, scrollRef, remount]);
 
   // ── 2. ResizeObserver on content div ───────────────────────────────
   // We observe .crispy-transcript-content (the inner div), NOT the scroll
@@ -135,7 +137,7 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
       observer.disconnect();
       clearTimeout(settleTimerRef.current);
     };
-  }, [sessionId, scrollRef]);
+  }, [sessionId, scrollRef, remount]);
 
   // ── User-initiated smooth scrolls (FAB clicks) ────────────────────
   const scrollToBottom = useCallback(() => {

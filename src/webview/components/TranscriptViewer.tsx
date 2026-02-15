@@ -119,6 +119,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const { isSticky, isAtTop, scrollToBottom, scrollToTop, pinToBottom } = useAutoScroll({
     sessionId: selectedSessionId,
     scrollRef: transcriptRef,
+    remount: hasForkHistory,
   });
 
   // Observe control panel + stop button for dynamic transcript bottom padding.
@@ -175,7 +176,7 @@ export function TranscriptViewer(): React.JSX.Element {
       resizeObs.disconnect();
       mutationObs?.disconnect();
     };
-  }, [selectedSessionId]); // Re-attach when session changes
+  }, [selectedSessionId, hasForkHistory]); // Re-attach when session changes or fork history mounts transcript
 
   // Fork preview glow: add/remove class on last assistant message
   const handleForkHoverChange = useCallback((hovering: boolean) => {
