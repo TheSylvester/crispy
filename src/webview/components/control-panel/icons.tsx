@@ -64,6 +64,16 @@ export function SettingsIcon({ className, ...props }: IconProps): React.JSX.Elem
   );
 }
 
+/** Rewind (↺) icon — counter-clockwise circular arrow. */
+export function RewindIcon({ className, ...props }: IconProps): React.JSX.Element {
+  return (
+    <svg className={className} width="10" height="10" viewBox="0 0 16 16" fill="currentColor" style={{ verticalAlign: 'middle' }} {...props}>
+      <path d="M4.75 1.5a.75.75 0 0 1 .75.75v2.5h2.5a.75.75 0 0 1 0 1.5H4.75a.75.75 0 0 1-.75-.75V2.25a.75.75 0 0 1 .75-.75Z" />
+      <path d="M5.07 5.3A5.25 5.25 0 1 1 2.75 8a.75.75 0 0 0-1.5 0 6.75 6.75 0 1 0 2.98-5.6L5.07 5.3Z" />
+    </svg>
+  );
+}
+
 /** Fork (git branch) icon. */
 export function ForkIcon({ className, ...props }: IconProps): React.JSX.Element {
   return (

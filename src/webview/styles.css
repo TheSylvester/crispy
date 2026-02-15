@@ -1333,42 +1333,50 @@ h2 {
   z-index: 1;
 }
 
-/* --- Per-message fork button (appears on user message hover) --- */
+/* --- Per-message action buttons (rewind + fork, appear on user hover) --- */
 
-/* Button is a sibling after .user-text inside .message.user (position: relative).
-   We use negative margin-top to overlap the bottom-right corner of the bubble. */
-.crispy-message-fork {
+/* Container — negative margin overlaps into user-text bubble.
+   width: fit-content + margin-left: auto pins to the right edge. */
+.crispy-message-actions {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  gap: 2px;
+  width: fit-content;
   margin-left: auto;
-  margin-top: -28px;   /* overlap into the bubble */
+  margin-top: -28px;
   margin-bottom: 4px;
   margin-right: 4px;
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--vscode-descriptionForeground, #858585);
-  cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s, background 0.15s, color 0.15s;
-  padding: 0;
+  transition: opacity 0.15s;
   position: relative;
   z-index: 1;
 }
 
-.message.user:hover .crispy-message-fork {
+.message.user:hover .crispy-message-actions {
   opacity: 1;
 }
 
-.crispy-message-fork:hover:not(:disabled) {
+/* Shared button base (both rewind and fork) */
+.crispy-message-action {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground, #858585);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.crispy-message-action:hover:not(:disabled) {
   background: var(--vscode-button-secondaryBackground, #3a3d41);
   color: var(--vscode-foreground, #d4d4d4);
 }
 
-.crispy-message-fork:disabled {
+.crispy-message-action:disabled {
   cursor: not-allowed;
 }
 

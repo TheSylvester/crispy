@@ -16,7 +16,7 @@
 import { normalizeToBlocks } from '../utils/normalize-blocks.js';
 import { BlockRenderer } from './BlockRenderer.js';
 import { useFork } from '../context/ForkContext.js';
-import { MessageForkButton } from '../components/MessageForkButton.js';
+import { MessageActions } from '../components/MessageActions.js';
 import type { TranscriptEntry, ToolUseBlock } from '../../core/transcript.js';
 
 /**
@@ -45,7 +45,7 @@ export function RichEntry({ entry }: { entry: TranscriptEntry }): React.JSX.Elem
           role={role}
         />
       ))}
-      {targetId && <MessageForkButton targetAssistantId={targetId} />}
+      {targetId && <MessageActions targetAssistantId={targetId} />}
     </div>
   );
 }
