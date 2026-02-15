@@ -194,24 +194,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
     const togglesDisabled = channelState === 'streaming' || channelState === 'awaiting_approval';
 
-    // Fork target: last assistant message UUID, updated when channel goes idle
-    const forkTargetRef = useRef<string | null>(null);
-
-    // Update fork target when idle — find the last assistant entry with a uuid
+    // Clear forkMode when switching sessions
     useEffect(() => {
-      if (channelState === 'idle' && entries && entries.length > 0) {
-        for (let i = entries.length - 1; i >= 0; i--) {
-          if (entries[i].type === 'assistant' && entries[i].uuid) {
-            forkTargetRef.current = entries[i].uuid!;
-            return;
-          }
-        }
-      }
-    }, [channelState, entries]);
-
-    // Clear forkMode and forkTarget when switching sessions
-    useEffect(() => {
-      forkTargetRef.current = null;
       dispatch({ type: 'SET_FORK_MODE', forkMode: null });
     }, [selectedSessionId]);
 
@@ -697,9 +681,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     // --- forkConfig message listener (new panel created via fork) ---
     // Host retries delivery so the listener must be idempotent.
-    // Settings dispatches are naturally idempotent; auto-send is guarded by a flag.
+    // Settings dispatches are naturally idempotent; input prefill is idempotent.
     useEffect(() => {
-      let autoSendFired = false;
       function onMessage(ev: MessageEvent) {
         if (ev.data?.kind === 'forkConfig') {
           const { fromSessionId, atMessageId, initialPrompt, model, agencyMode, bypassEnabled, chromeEnabled } = ev.data;
@@ -723,12 +706,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           if (bypassEnabled !== undefined) dispatch({ type: 'SET_BYPASS', enabled: bypassEnabled });
           if (chromeEnabled !== undefined) dispatch({ type: 'SET_CHROME', enabled: chromeEnabled });
 
-          // Prefill input and auto-send (once only)
-          if (initialPrompt && !autoSendFired) {
-            autoSendFired = true;
+          // Prefill input (user sends manually)
+          if (initialPrompt) {
             dispatch({ type: 'SET_INPUT', value: initialPrompt });
-            // Auto-send after a tick to let state settle — use ref to avoid stale closure
-            setTimeout(() => handleSendRef.current(), 50);
           }
         }
       }
@@ -780,10 +760,11 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // --- Fork handler (control panel button — computes fork target, then delegates) ---
     const handleFork = useCallback(() => {
       if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
+      if (!entries || entries.length === 0) return;
 
       let forkAtMessageId: string | undefined;
 
-      if (channelState === 'streaming' && entries) {
+      if (channelState === 'streaming') {
         // While streaming: find last assistant before last user
         let lastUserIdx = -1;
         for (let i = entries.length - 1; i >= 0; i--) {
@@ -796,9 +777,13 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             }
           }
         }
-        if (!forkAtMessageId) return; // First turn, can't fork
       } else {
-        forkAtMessageId = forkTargetRef.current ?? undefined;
+        // Not streaming: find last assistant entry with a uuid (simple backward scan)
+        for (let i = entries.length - 1; i >= 0; i--) {
+          if (entries[i].type === 'assistant' && entries[i].uuid) {
+            forkAtMessageId = entries[i].uuid!; break;
+          }
+        }
       }
 
       if (forkAtMessageId) executeFork(forkAtMessageId);

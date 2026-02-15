@@ -126,7 +126,7 @@ export function createWebSocketTransport(url: string): SessionService {
 
     forkToNewPanel: async (params) => {
       // Browser dev-server: open fork in a new tab via window.open()
-      const url = new URL(window.location.href);
+      const url = new URL(window.location.pathname, window.location.origin);
       url.searchParams.set('forkFrom', params.fromSessionId);
       if (params.atMessageId) url.searchParams.set('forkAt', params.atMessageId);
       if (params.initialPrompt) url.searchParams.set('prompt', params.initialPrompt);
