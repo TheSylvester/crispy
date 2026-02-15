@@ -129,7 +129,7 @@ export function TranscriptViewer(): React.JSX.Element {
     const targets = new Map<string, string>();
     for (let i = 0; i < filteredEntries.length; i++) {
       const entry = filteredEntries[i];
-      if (entry.type !== 'user' || !entry.uuid || entry.uuid.startsWith('optimistic-')) continue;
+      if (entry.type !== 'user' || !entry.uuid) continue;
       let found = false;
       for (let j = i - 1; j >= 0; j--) {
         if (filteredEntries[j].type === 'assistant' && filteredEntries[j].uuid) {
