@@ -48,7 +48,7 @@ h2 {
   min-width: 280px;
   max-width: 50vw;
   max-height: calc(
-    100vh - var(--titlebar-height) - var(--cp-height, 80) * 1px - 1rem - 2rem
+    100vh - var(--titlebar-height) - var(--cp-height, 80) * 1px - 1rem - 3.5rem
   );
   background: var(--vscode-sideBar-background);
   color: var(--vscode-sideBar-foreground);
@@ -363,7 +363,7 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 90; /* below control panel (z: 100), above transcript */
+  z-index: 90; /* below control panel (z: 200), above transcript */
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
   /* Exit + hover use transitions */
   transition:
@@ -1333,50 +1333,46 @@ h2 {
   z-index: 1;
 }
 
-/* --- Per-message action buttons (rewind + fork, appear on user hover) --- */
+/* --- Per-message action buttons (rewind + fork, appear on user hover) ---
+   Exact Leto .message-actions pattern: absolute-positioned inside
+   .message.user (position: relative), bottom-right of the user bubble. */
 
-/* Container — negative margin overlaps into user-text bubble.
-   width: fit-content + margin-left: auto pins to the right edge. */
-.crispy-message-actions {
+/* Positioned inside .message.user (position: relative).
+   right: 18px = 12px message padding + 6px inset into bubble. */
+.message.user .crispy-message-actions {
+  position: absolute;
+  bottom: 8px;
+  right: 18px;
   display: flex;
-  gap: 2px;
-  width: fit-content;
-  margin-left: auto;
-  margin-top: -28px;
-  margin-bottom: 4px;
-  margin-right: 4px;
+  gap: 0;
   opacity: 0;
   transition: opacity 0.15s;
-  position: relative;
-  z-index: 1;
 }
 
 .message.user:hover .crispy-message-actions {
   opacity: 1;
 }
 
-/* Shared button base (both rewind and fork) */
-.crispy-message-action {
-  width: 24px;
-  height: 24px;
+.message.user .crispy-message-actions button {
   padding: 0;
   border: none;
   border-radius: 4px;
   background: transparent;
   color: var(--vscode-descriptionForeground, #858585);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 14px;
+  margin: 5px;
 }
 
-.crispy-message-action:hover:not(:disabled) {
+.message.user .crispy-message-actions button:hover {
   background: var(--vscode-button-secondaryBackground, #3a3d41);
   color: var(--vscode-foreground, #d4d4d4);
 }
 
-.crispy-message-action:disabled {
+.message.user .crispy-message-actions button:disabled {
   cursor: not-allowed;
 }
 
@@ -1433,7 +1429,7 @@ body.agency-bypass-permissions {
   bottom: 1rem;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 100;
+  z-index: 200;
 }
 
 /* Drag-over visual feedback */
@@ -1451,7 +1447,7 @@ body.agency-bypass-permissions {
   bottom: calc(var(--cp-height, 80) * 1px + 2rem);
   left: 50%;
   transform: translateX(-50%) translateY(8px);
-  z-index: 101;
+  z-index: 201;
   opacity: 0;
   pointer-events: none;
   transition:

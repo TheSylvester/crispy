@@ -25,7 +25,12 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [hoverClass, setHoverClass] = useState('');
 
-  // Focus textarea when host sends focusInput message (e.g. keybinding)
+  // Auto-focus textarea on mount
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  // Focus textarea when host sends focusInput message (e.g. keybinding, panel activation)
   // Prefill textarea when host sends prefillInput message (e.g. "Execute in Crispy")
   useEffect(() => {
     function onMessage(ev: MessageEvent): void {

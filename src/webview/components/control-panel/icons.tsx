@@ -64,21 +64,12 @@ export function SettingsIcon({ className, ...props }: IconProps): React.JSX.Elem
   );
 }
 
-/** Rewind (↺) icon — counter-clockwise circular arrow. */
+/** Rewind (↺) icon — Unicode glyph, matching Leto's message-actions style. */
 export function RewindIcon({ className, ...props }: IconProps): React.JSX.Element {
-  return (
-    <svg className={className} width="10" height="10" viewBox="0 0 16 16" fill="currentColor" style={{ verticalAlign: 'middle' }} {...props}>
-      <path d="M4.75 1.5a.75.75 0 0 1 .75.75v2.5h2.5a.75.75 0 0 1 0 1.5H4.75a.75.75 0 0 1-.75-.75V2.25a.75.75 0 0 1 .75-.75Z" />
-      <path d="M5.07 5.3A5.25 5.25 0 1 1 2.75 8a.75.75 0 0 0-1.5 0 6.75 6.75 0 1 0 2.98-5.6L5.07 5.3Z" />
-    </svg>
-  );
+  return <span className={className} {...props}>↺</span>;
 }
 
-/** Fork (git branch) icon. */
+/** Fork (⑂) icon — Unicode glyph, matching Leto's message-actions style. */
 export function ForkIcon({ className, ...props }: IconProps): React.JSX.Element {
-  return (
-    <svg className={className} width="10" height="10" viewBox="0 0 16 16" fill="currentColor" style={{ verticalAlign: 'middle' }} {...props}>
-      <path d="M5 3.25a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Zm0 2.122a2.25 2.25 0 1 0-1.5 0v.878A2.25 2.25 0 0 0 5.75 8.5h1.5v2.128a2.251 2.251 0 1 0 1.5 0V8.5h1.5a2.25 2.25 0 0 0 2.25-2.25v-.878a2.25 2.25 0 1 0-1.5 0v.878a.75.75 0 0 1-.75.75h-4.5a.75.75 0 0 1-.75-.75v-.878Zm6 1.378a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Zm-3 8.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" />
-    </svg>
-  );
+  return <span className={className} {...props}>⑂</span>;
 }

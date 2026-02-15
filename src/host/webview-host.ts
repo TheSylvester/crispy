@@ -232,6 +232,15 @@ export function createCrispyPanel(
 
   panels.set(panelId, panel);
 
+  // Auto-focus chat input whenever the panel becomes active (user clicks tab,
+  // switches back from editor, etc.). This complements the mount-time autofocus
+  // in ChatInput and the explicit focusInput in openCrispyPanel's reveal path.
+  panel.onDidChangeViewState((e) => {
+    if (e.webviewPanel.active) {
+      panel.webview.postMessage({ kind: 'focusInput' });
+    }
+  });
+
   panel.onDidDispose(() => {
     disposed = true;
     handler.dispose();
