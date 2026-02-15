@@ -12,30 +12,66 @@ import { stat, readFile } from "node:fs/promises";
 import { basename, extname } from "node:path";
 
 /**
- * List all tracked + untracked (non-ignored) files via git.
- *
- * Uses `execFile` (no shell) to avoid injection. 10MB maxBuffer
- * accommodates large repos.
+ * Gitignored directories whose contents should still appear in the file index
+ * (for linkification and @-mention autocomplete). These are listed via a
+ * separate `git ls-files --others --ignored` scoped to each path, then merged
+ * with the main listing.
  */
-export function getGitFiles(cwd: string): Promise<string[]> {
+const EXTRA_INDEX_DIRS = [".ai-reference"];
+
+/** Run `git ls-files` with the given args and return non-empty lines. */
+function lsFiles(args: string[], cwd: string): Promise<string[]> {
   return new Promise((resolve, reject) => {
     execFile(
       "git",
-      ["ls-files", "--cached", "--others", "--exclude-standard"],
+      ["ls-files", ...args],
       { cwd, maxBuffer: 10 * 1024 * 1024 },
       (err, stdout) => {
         if (err) {
           reject(err);
           return;
         }
-        resolve(
-          stdout
-            .split("\n")
-            .filter((line) => line.length > 0),
-        );
+        resolve(stdout.split("\n").filter((line) => line.length > 0));
       },
     );
   });
+}
+
+/**
+ * List all tracked + untracked (non-ignored) files via git, plus files in
+ * {@link EXTRA_INDEX_DIRS} even if gitignored.
+ *
+ * Uses `execFile` (no shell) to avoid injection. 10MB maxBuffer
+ * accommodates large repos.
+ */
+export async function getGitFiles(cwd: string): Promise<string[]> {
+  const main = await lsFiles(
+    ["--cached", "--others", "--exclude-standard"],
+    cwd,
+  );
+
+  // Collect gitignored files from allowlisted dirs. Failures (e.g. dir
+  // doesn't exist) are silently ignored — these are optional extras.
+  const extras = await Promise.all(
+    EXTRA_INDEX_DIRS.map((dir) =>
+      lsFiles(
+        ["--others", "--ignored", "--exclude-standard", "--", dir],
+        cwd,
+      ).catch(() => [] as string[]),
+    ),
+  );
+
+  const seen = new Set(main);
+  for (const list of extras) {
+    for (const file of list) {
+      if (!seen.has(file)) {
+        seen.add(file);
+        main.push(file);
+      }
+    }
+  }
+
+  return main;
 }
 
 /**

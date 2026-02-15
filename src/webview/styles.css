@@ -1503,6 +1503,7 @@ body.agency-bypass-permissions {
   display: flex;
   gap: 0.5rem;
   align-items: flex-end;
+  position: relative;
 }
 
 .crispy-cp-input {
@@ -1522,6 +1523,57 @@ body.agency-bypass-permissions {
 .crispy-cp-input:focus {
   outline: 1px solid var(--frame-highlight);
   outline-offset: -1px;
+}
+
+/* --- @Mention Autocomplete Dropdown --- */
+
+.crispy-cp-mention {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 500;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--vscode-editorWidget-background, #252526);
+  border: 1px solid var(--vscode-editorWidget-border, #454545);
+  border-radius: 4px;
+  padding: 4px 0;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.crispy-cp-mention__item {
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--vscode-list-inactiveSelectionForeground, #d4d4d4);
+}
+
+.crispy-cp-mention__item:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-cp-mention__item--selected {
+  background: var(--vscode-list-activeSelectionBackground, #094771);
+  color: var(--vscode-list-activeSelectionForeground, #fff);
+}
+
+.crispy-cp-mention__empty {
+  padding: 8px 10px;
+  font-style: italic;
+  text-align: center;
+  color: var(--vscode-descriptionForeground, #858585);
+  font-size: 13px;
+}
+
+.crispy-cp-mention__highlight {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+  color: inherit;
+  font-weight: 600;
+  border-radius: 1px;
 }
 
 /* --- Send Button --- */

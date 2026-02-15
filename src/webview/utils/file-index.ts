@@ -18,6 +18,8 @@ export interface FileMatch {
 export interface FileIndex {
   /** Find files matching a token. Priority: exact → suffix → basename. */
   match(token: string): FileMatch[];
+  /** Substring search across all indexed paths. Returns up to `limit` matches. */
+  search(query: string, limit?: number): FileMatch[];
   /** Total number of indexed files. */
   size: number;
 }
@@ -101,6 +103,25 @@ export function buildMatchIndex(gitFiles: string[], cwd: string): FileIndex {
       }
 
       return [];
+    },
+    search(query: string, limit = 15): FileMatch[] {
+      const results: FileMatch[] = [];
+      if (!query) {
+        // Empty query → return first N files (alphabetical, matching git ls-files order)
+        for (const fm of exactMap.values()) {
+          results.push(fm);
+          if (results.length >= limit) break;
+        }
+        return results;
+      }
+      const lower = query.toLowerCase();
+      for (const fm of exactMap.values()) {
+        if (fm.relativePath.toLowerCase().includes(lower)) {
+          results.push(fm);
+          if (results.length >= limit) break;
+        }
+      }
+      return results;
     },
     get size() {
       return exactMap.size;
