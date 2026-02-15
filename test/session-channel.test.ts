@@ -530,7 +530,7 @@ describe('Approval flow', () => {
 
     resolveApproval(ch, 'tool-1', 'allow');
 
-    expect(adapter.respondToApproval).toHaveBeenCalledWith('tool-1', 'allow');
+    expect(adapter.respondToApproval).toHaveBeenCalledWith('tool-1', 'allow', undefined);
   });
 
   it('resolveApproval removes from pendingApprovals and broadcasts approval_resolved', async () => {

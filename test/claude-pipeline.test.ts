@@ -230,9 +230,22 @@ describe(`Claude JSONL pipeline (v${FIXTURE_VERSION})`, () => {
   });
 
   it('consistent sessionId across entries', () => {
-    const ids = [...new Set(adapted.map((e) => e.sessionId).filter(Boolean))];
-    if (ids.length > 0) {
-      expect(ids.length).toBe(1);
+    // Filter out sidechain entries (sub-agent) which legitimately carry different sessionIds.
+    // Forked/resumed transcripts may also contain a parent sessionId on older entries,
+    // so we check that there is one dominant sessionId (the most common one).
+    const mainEntries = adapted.filter((e) => !e.isSidechain);
+    const ids = [...new Set(mainEntries.map((e) => e.sessionId).filter(Boolean))];
+    if (ids.length > 1) {
+      // Find the most common sessionId — it should represent the vast majority
+      const counts = new Map<string, number>();
+      for (const e of mainEntries) {
+        if (e.sessionId) counts.set(e.sessionId, (counts.get(e.sessionId) ?? 0) + 1);
+      }
+      const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+      const dominantCount = sorted[0][1];
+      const total = [...counts.values()].reduce((a, b) => a + b, 0);
+      // The dominant sessionId should cover at least 50% of entries
+      expect(dominantCount / total).toBeGreaterThanOrEqual(0.5);
     }
   });
 

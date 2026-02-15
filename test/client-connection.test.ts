@@ -434,7 +434,7 @@ describe('ClientConnection', () => {
         optionId: 'allow',
       });
       expect(resp.kind).toBe('response');
-      expect(lastCreated().respondToApproval).toHaveBeenCalledWith('tool-1', 'allow');
+      expect(lastCreated().respondToApproval).toHaveBeenCalledWith('tool-1', 'allow', {});
 
       handler.dispose();
     });
