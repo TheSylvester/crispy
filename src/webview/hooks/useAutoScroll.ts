@@ -52,11 +52,18 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
   const isSessionLoadRef = useRef(true);
   // Settle timer for the intro scroll.
   const settleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Sticky pin flag — set by pinToBottom(), cleared only by user-initiated scroll.
+  // Survives large content growth that would push distFromBottom > threshold.
+  const pinnedRef = useRef(false);
 
   // ── Session reset ──────────────────────────────────────────────────
   useEffect(() => {
     setIsAtTop(true);
     isNearBottomRef.current = true;
+    // NOTE: pinnedRef is intentionally NOT reset here. When a fork/send
+    // triggers setSelectedSessionId → remount change → this effect, we
+    // want the pin from pinToBottom() to survive across the session switch.
+    // pinnedRef is only cleared by user-initiated scroll away from bottom.
     lastScrollHeightRef.current = 0;
     isSessionLoadRef.current = true;
     clearTimeout(settleTimerRef.current);
@@ -74,7 +81,10 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
         const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
         const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
 
-        isNearBottomRef.current = distanceFromBottom < NEAR_BOTTOM_THRESHOLD;
+        const nearBottom = distanceFromBottom < NEAR_BOTTOM_THRESHOLD;
+        isNearBottomRef.current = nearBottom;
+        // Clear sticky pin when user scrolls away from bottom.
+        if (!nearBottom) pinnedRef.current = false;
         setIsSticky(distanceFromBottom < BUTTON_THRESHOLD);
         setIsAtTop(scrollTop < BUTTON_THRESHOLD);
       });
@@ -113,9 +123,22 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
       const grew = newScrollHeight > lastScrollHeightRef.current;
       lastScrollHeightRef.current = newScrollHeight;
 
-      if (grew && isNearBottomRef.current) {
+      // Two-pronged near-bottom check:
+      // 1. Fresh synchronous computation — fixes the race where multiple
+      //    Task tools stream and the RAF-debounced ref lags behind.
+      // 2. Sticky pinnedRef — survives large content growth (>100px) that
+      //    happens between pinToBottom() and the next ResizeObserver fire.
+      //    Cleared only by user-initiated scroll away from bottom.
+      const distFromBottom = newScrollHeight - el.scrollTop - el.clientHeight;
+      const isNearBottom = distFromBottom < NEAR_BOTTOM_THRESHOLD || pinnedRef.current;
+
+      if (grew && isNearBottom) {
         // Always instant-scroll to keep up with content growth.
         el.scrollTop = newScrollHeight;
+
+        // Keep ref and state in sync after our scroll adjustment
+        isNearBottomRef.current = true;
+        setIsSticky(true);
 
         if (isSessionLoadRef.current) {
           // Content is still settling — reset the debounce timer.
@@ -159,6 +182,7 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
     isSessionLoadRef.current = false;
     clearTimeout(settleTimerRef.current);
     isNearBottomRef.current = true;
+    pinnedRef.current = true;
     setIsSticky(true);
     const el = scrollRef.current;
     if (el) {

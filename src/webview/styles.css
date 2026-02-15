@@ -1040,6 +1040,11 @@ h2 {
   overflow-y: auto;
 }
 
+.crispy-task-prompt {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
 .crispy-tool-result__text {
   margin: 0;
   white-space: pre-wrap;
