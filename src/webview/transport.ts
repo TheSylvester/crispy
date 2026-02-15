@@ -21,12 +21,24 @@ export interface WireSessionInfo extends Omit<SessionInfo, 'modifiedAt'> {
 export interface SessionService {
   listSessions(): Promise<WireSessionInfo[]>;
   findSession(sessionId: string): Promise<WireSessionInfo | null>;
-  loadSession(sessionId: string): Promise<TranscriptEntry[]>;
+  loadSession(sessionId: string, options?: { until?: string }): Promise<TranscriptEntry[]>;
   createSession(vendor: string, cwd: string, options?: {
     model?: string;
     permissionMode?: string;
     extraArgs?: Record<string, string | null>;
   }): Promise<{ pendingId: string }>;
+  forkSession(vendor: string, fromSessionId: string, options?: {
+    atMessageId?: string;
+  }): Promise<{ pendingId: string }>;
+  forkToNewPanel?(params: {
+    fromSessionId: string;
+    atMessageId?: string;
+    initialPrompt?: string;
+    model?: string;
+    agencyMode?: string;
+    bypassEnabled?: boolean;
+    chromeEnabled?: boolean;
+  }): Promise<{ ok: boolean }>;
   subscribe(sessionId: string): Promise<void>;
   unsubscribe(sessionId: string): Promise<void>;
   send(sessionId: string, content: MessageContent, options?: SendOptions): Promise<void>;

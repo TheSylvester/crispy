@@ -26,6 +26,7 @@ import {
   loadSession,
   subscribeSession,
   createSession,
+  createForkSession,
   sendToSession,
   setSessionModel,
   setSessionPermissions,
@@ -131,7 +132,9 @@ export function createClientConnection(
         return findSession(params.sessionId as string) ?? null;
 
       case "loadSession":
-        return loadSession(params.sessionId as string);
+        return loadSession(params.sessionId as string, {
+          until: params.until as string | undefined,
+        });
 
       case "subscribe": {
         const sessionId = params.sessionId as string;
@@ -196,6 +199,45 @@ export function createClientConnection(
         const { pendingId, channel } = createSession(
           vendor as Vendor, cwdParam, subscriber,
           { model, permissionMode: permissionMode as SendOptions['permissionMode'], extraArgs },
+        );
+        currentSessionId = pendingId;
+        subscriptions.set(pendingId, { channel, subscriber });
+        return { pendingId };
+      }
+
+      case "forkSession": {
+        const vendor = (params.vendor as string) ?? 'claude';
+        const fromSessionId = params.fromSessionId as string;
+        const atMessageId = params.atMessageId as string | undefined;
+
+        let currentSessionId = '';
+
+        const subscriber: Subscriber = {
+          id: clientId,
+          send(event: SubscriberEvent) {
+            sendFn({ kind: "event", sessionId: currentSessionId, event });
+            // Re-key subscription tracking on session_changed
+            if (
+              event.type === 'notification' &&
+              event.event.kind === 'session_changed' &&
+              event.event.sessionId
+            ) {
+              const realId = event.event.sessionId;
+              const sub = subscriptions.get(currentSessionId);
+              if (sub) {
+                subscriptions.delete(currentSessionId);
+                currentSessionId = realId;
+                subscriptions.set(realId, sub);
+              }
+            }
+          },
+        };
+
+        // Note: model/permissionMode/extraArgs are applied via the subsequent send() call,
+        // not at fork-session creation time (SessionOpenSpec for fork only supports atMessageId).
+        const { pendingId, channel } = createForkSession(
+          vendor as Vendor, fromSessionId, subscriber,
+          { atMessageId },
         );
         currentSessionId = pendingId;
         subscriptions.set(pendingId, { channel, subscriber });
@@ -305,6 +347,10 @@ export function createClientConnection(
         const filePath = params.path as string;
         return readImage(filePath);
       }
+
+      case "forkToNewPanel":
+        // VS Code intercepts in webview-host; browser handles via window.open()
+        return { ok: false };
 
       case "openFile":
         // VS Code intercepts in webview-host; no-op for dev server

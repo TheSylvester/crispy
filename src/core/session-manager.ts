@@ -141,14 +141,22 @@ export function findSession(sessionId: string): SessionInfo | undefined {
  *
  * Returns [] if the session is not found across any vendor.
  */
-export async function loadSession(sessionId: string): Promise<TranscriptEntry[]> {
+export async function loadSession(
+  sessionId: string,
+  options?: { until?: string },
+): Promise<TranscriptEntry[]> {
   const info = findSession(sessionId);
   if (!info) return [];
 
   const reg = adapters.get(info.vendor);
   if (!reg) return [];
 
-  return reg.discovery.loadHistory(sessionId);
+  const entries = await reg.discovery.loadHistory(sessionId);
+  if (options?.until) {
+    const cutIdx = entries.findIndex(e => e.uuid === options.until);
+    if (cutIdx !== -1) return entries.slice(0, cutIdx + 1);
+  }
+  return entries;
 }
 
 /**
@@ -329,6 +337,78 @@ export function createSession(
     ...(options?.model && { model: options.model }),
     ...(options?.permissionMode && { permissionMode: options.permissionMode }),
     ...(options?.extraArgs && { extraArgs: options.extraArgs }),
+  };
+
+  const channel = openChannel(pendingId, vendor, spec);
+  sessions.set(pendingId, channel);
+  subscribe(channel, subscriber);
+
+  // One-shot session-list notifier: pushes upsert when the real session ID resolves
+  const listNotifySubscriber: Subscriber = {
+    id: `__list_notify__${pendingId}`,
+    send(event: SubscriberEvent) {
+      if (
+        event.type === 'notification' &&
+        event.event.kind === 'session_changed' &&
+        event.event.sessionId
+      ) {
+        refreshAndNotify(event.event.sessionId);
+        unsubscribe(channel, listNotifySubscriber);
+      }
+    },
+  };
+  subscribe(channel, listNotifySubscriber);
+
+  // One-shot re-key subscriber: swaps pending → real ID on session_changed
+  const rekeySubscriber: Subscriber = {
+    id: `__rekey__${pendingId}`,
+    send(event: SubscriberEvent) {
+      if (
+        event.type === 'notification' &&
+        event.event.kind === 'session_changed' &&
+        event.event.sessionId
+      ) {
+        const realId = event.event.sessionId;
+        rekeyChannel(pendingId, realId);
+        sessions.delete(pendingId);
+        sessions.set(realId, channel);
+        unsubscribe(channel, rekeySubscriber);
+      }
+    },
+  };
+  subscribe(channel, rekeySubscriber);
+
+  return { pendingId, channel };
+}
+
+/**
+ * Create a forked session from an existing session.
+ *
+ * Same `pending:<uuid>` + rekey pattern as createSession(), but opens
+ * with mode 'fork' so the adapter resumes the source session and
+ * truncates at the specified message ID.
+ *
+ * Returns the pendingId and channel so the caller can track the transition.
+ */
+export function createForkSession(
+  vendor: Vendor,
+  fromSessionId: string,
+  subscriber: Subscriber,
+  options?: {
+    atMessageId?: string;
+    // Note: model/permissionMode/extraArgs are NOT accepted here because
+    // SessionOpenSpec for mode:'fork' only supports fromSessionId + atMessageId.
+    // The caller should apply these via the subsequent send() call instead.
+  },
+): { pendingId: string; channel: SessionChannel } {
+  const registration = adapters.get(vendor);
+  if (!registration) throw new Error(`No adapter registered for vendor "${vendor}".`);
+
+  const pendingId = `pending:${crypto.randomUUID()}`;
+  const spec: SessionOpenSpec = {
+    mode: 'fork',
+    fromSessionId,
+    ...(options?.atMessageId && { atMessageId: options.atMessageId }),
   };
 
   const channel = openChannel(pendingId, vendor, spec);

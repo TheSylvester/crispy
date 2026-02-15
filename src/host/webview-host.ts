@@ -165,6 +165,42 @@ export function createCrispyPanel(
         return;
       }
 
+      // VS Code-specific: fork to new panel beside the current one
+      if (msg.kind === 'request' && msg.method === 'forkToNewPanel') {
+        const { fromSessionId, atMessageId, initialPrompt, model, agencyMode, bypassEnabled, chromeEnabled } = msg.params ?? {};
+
+        // Create new panel beside the current one
+        const newPanel = createCrispyPanel(context, vscode.ViewColumn.Beside);
+
+        // Send fork config to the new panel after it initializes.
+        // Retry a few times to handle slow webview startup — the listener
+        // is idempotent (SET_FORK_MODE with same value is a no-op).
+        const forkConfig = {
+          kind: 'forkConfig',
+          fromSessionId,
+          atMessageId,
+          initialPrompt,
+          model,
+          agencyMode,
+          bypassEnabled,
+          chromeEnabled,
+        };
+        const delays = [100, 500, 1500];
+        for (const delay of delays) {
+          setTimeout(() => newPanel.webview.postMessage(forkConfig), delay);
+        }
+
+        // Respond to source panel
+        if (!disposed) {
+          panel.webview.postMessage({
+            kind: 'response',
+            id: msg.id,
+            result: { ok: true },
+          } satisfies HostMessage);
+        }
+        return;
+      }
+
       // VS Code-specific: pick file from candidates via QuickPick
       if (msg.kind === 'request' && msg.method === 'pickFile') {
         const candidates = (msg.params?.candidates as string[]) ?? [];

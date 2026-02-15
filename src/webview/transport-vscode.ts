@@ -87,11 +87,17 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     findSession: (sessionId) =>
       request<WireSessionInfo | null>('findSession', { sessionId }),
 
-    loadSession: (sessionId) =>
-      request<TranscriptEntry[]>('loadSession', { sessionId }),
+    loadSession: (sessionId, options) =>
+      request<TranscriptEntry[]>('loadSession', { sessionId, ...options }),
 
     createSession: (vendor, cwd, options) =>
       request<{ pendingId: string }>('createSession', { vendor, cwd, ...options }),
+
+    forkSession: (vendor, fromSessionId, options) =>
+      request<{ pendingId: string }>('forkSession', { vendor, fromSessionId, ...options }),
+
+    forkToNewPanel: (params) =>
+      request<{ ok: boolean }>('forkToNewPanel', params),
 
     subscribe: (sessionId) =>
       request<void>('subscribe', { sessionId }),

@@ -41,7 +41,7 @@ const isDebugMode = window.location.search.includes('debug=1');
 export function TranscriptViewer(): React.JSX.Element {
   const { selectedSessionId, setSelectedSessionId } = useSession();
   const transport = useTransport();
-  const { entries, isLoading, error, addOptimisticEntry } = useTranscript(selectedSessionId);
+  const { entries, isLoading, error, addOptimisticEntry, setForkHistory } = useTranscript(selectedSessionId);
   const { renderMode } = usePreferences();
   const { approvalRequest, resolve: resolveApproval } = useApprovalRequest(selectedSessionId);
   const [bypassEnabled, setBypassEnabled] = useState(false);
@@ -70,20 +70,31 @@ export function TranscriptViewer(): React.JSX.Element {
     pendingOptimisticRef.current = entry;
   }, []);
 
+  // Fork history: when in fork mode, we display source session entries before
+  // any session is created (selectedSessionId is still null). This flag tells
+  // the rendering branch to show the transcript area instead of the placeholder.
+  const [hasForkHistory, setHasForkHistory] = useState(false);
+
+  const handleForkHistoryLoaded = useCallback((forkEntries: TranscriptEntry[]) => {
+    setForkHistory(forkEntries);
+    setHasForkHistory(true);
+  }, [setForkHistory]);
+
   // Inject the pending optimistic entry when useTranscript initializes for a
-  // pending session (entries are empty, not loading, no error).
+  // pending session (not loading). The ref-nulling prevents double-injection.
+  // entries.length is NOT checked — for forks, entries are pre-populated via
+  // setForkHistory so the guard would never pass.
   useEffect(() => {
     if (
       selectedSessionId?.startsWith('pending:') &&
       pendingOptimisticRef.current &&
-      !isLoading &&
-      entries.length === 0
+      !isLoading
     ) {
       const entry = pendingOptimisticRef.current;
       pendingOptimisticRef.current = null;
       addOptimisticEntry(entry);
     }
-  }, [selectedSessionId, isLoading, entries.length, addOptimisticEntry]);
+  }, [selectedSessionId, isLoading, addOptimisticEntry]);
 
   // Clear stale pending optimistic entry when switching to a non-pending session.
   // Without this, a stashed entry from a previous new-session flow could leak
@@ -91,6 +102,13 @@ export function TranscriptViewer(): React.JSX.Element {
   useEffect(() => {
     if (selectedSessionId && !selectedSessionId.startsWith('pending:')) {
       pendingOptimisticRef.current = null;
+    }
+  }, [selectedSessionId]);
+
+  // Clear fork history flag when a real session is selected
+  useEffect(() => {
+    if (selectedSessionId) {
+      setHasForkHistory(false);
     }
   }, [selectedSessionId]);
 
@@ -223,7 +241,7 @@ export function TranscriptViewer(): React.JSX.Element {
 
   let mainContent: React.JSX.Element;
 
-  if (!selectedSessionId) {
+  if (!selectedSessionId && !hasForkHistory) {
     mainContent = (
       <div className="crispy-placeholder">
         Select a session or start a new conversation
@@ -300,6 +318,7 @@ export function TranscriptViewer(): React.JSX.Element {
         onBypassChange={setBypassEnabled}
         prefillInput={prefillInput}
         onPrefillConsumed={handlePrefillConsumed}
+        onForkHistoryLoaded={handleForkHistoryLoaded}
       >
         {approvalRequest && (
           <ApprovalContent

@@ -89,6 +89,8 @@ interface ControlPanelProps {
   prefillInput?: string | null;
   /** Called after prefillInput is consumed, allowing the parent to clear it. */
   onPrefillConsumed?: () => void;
+  /** Called when fork history entries are loaded for pre-display. */
+  onForkHistoryLoaded?: (entries: TranscriptEntry[]) => void;
 }
 
 /** Agency modes for keyboard cycling (excluding bypass-permissions). */
@@ -132,7 +134,7 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
     case 'SET_INPUT':
       return { ...state, input: action.value };
     case 'CLEAR_INPUT':
-      return { ...state, input: '', attachedImages: [], pastedImageCounter: 0 };
+      return { ...state, input: '', attachedImages: [], pastedImageCounter: 0, forkMode: null };
     case 'ADD_IMAGE':
       return { ...state, attachedImages: [...state.attachedImages, action.image] };
     case 'REMOVE_IMAGE':
@@ -150,13 +152,15 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
       return { ...state, contextPercent: action.contextUsage.percent, contextUsage: action.contextUsage };
     case 'RESET_CONTEXT':
       return { ...state, contextPercent: 0, contextUsage: null };
+    case 'SET_FORK_MODE':
+      return { ...state, forkMode: action.forkMode };
     default:
       return state;
   }
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed }, ref) {
+  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed, onForkHistoryLoaded }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     // Track the DOM element for native drag/drop listeners. A callback ref
     // ensures the useEffect re-runs when the element mounts, unlike a
@@ -181,6 +185,30 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const { selectedSessionId, selectedCwd, setSelectedSessionId } = useSession();
     const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
     const togglesDisabled = channelState === 'streaming' || channelState === 'awaiting_approval';
+
+    // Fork target: last assistant message UUID, updated when channel goes idle
+    const forkTargetRef = useRef<string | null>(null);
+
+    // Update fork target when idle — find the last assistant entry with a uuid
+    useEffect(() => {
+      if (channelState === 'idle' && entries && entries.length > 0) {
+        for (let i = entries.length - 1; i >= 0; i--) {
+          if (entries[i].type === 'assistant' && entries[i].uuid) {
+            forkTargetRef.current = entries[i].uuid!;
+            return;
+          }
+        }
+      }
+    }, [channelState, entries]);
+
+    // Clear forkMode and forkTarget when switching sessions
+    useEffect(() => {
+      forkTargetRef.current = null;
+      dispatch({ type: 'SET_FORK_MODE', forkMode: null });
+    }, [selectedSessionId]);
+
+    // Ref to always call the latest handleSend (avoids stale closure in forkConfig auto-send)
+    const handleSendRef = useRef<() => void>(() => {});
 
     /** Read current input from the textarea DOM — avoids closing over stale state. */
     const getTextareaState = useCallback(() => {
@@ -370,6 +398,36 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         content = text;
       }
 
+      // --- Fork branch: create forked session, then send ---
+      if (state.forkMode) {
+        const forkMode = state.forkMode;
+        const { fromSessionId, atMessageId } = forkMode;
+
+        const optimistic = buildOptimisticUserEntry('pending', content);
+        onPendingOptimisticEntry?.(optimistic);
+
+        setOptimisticStatus('streaming');
+        // Fork only needs atMessageId — model/permissions/extraArgs are applied via send()
+        transport.forkSession('claude', fromSessionId, { atMessageId }).then(({ pendingId }) => {
+          setSelectedSessionId(pendingId);
+          onScrollToBottom?.();
+          return transport.send(pendingId, content, {
+            model: state.model || undefined,
+            permissionMode: mapAgencyToPermissionMode(state.agencyMode),
+            allowDangerouslySkipPermissions: state.bypassEnabled || undefined,
+          });
+        }).catch((err) => {
+          setOptimisticStatus('idle');
+          console.error('[ControlPanel] forkSession failed:', err);
+          // Restore input and forkMode so user can retry
+          dispatch({ type: 'SET_INPUT', value: typeof content === 'string' ? content : text });
+          dispatch({ type: 'SET_FORK_MODE', forkMode });
+        });
+
+        dispatch({ type: 'CLEAR_INPUT' }); // Also clears forkMode
+        return;
+      }
+
       // --- New session branch: create session, then send ---
       if (!selectedSessionId) {
         if (!selectedCwd) {
@@ -434,7 +492,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       });
 
       dispatch({ type: 'CLEAR_INPUT' });
-    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, selectedSessionId, selectedCwd, setSelectedSessionId, setOptimisticStatus, transport, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom]);
+    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, state.forkMode, selectedSessionId, selectedCwd, setSelectedSessionId, setOptimisticStatus, transport, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom]);
+
+    // Keep ref in sync so forkConfig auto-send always calls the latest handleSend
+    useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
 
     // --- Drag/drop handlers (native addEventListener, not React props) ---
     //
@@ -610,10 +671,88 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       return () => document.removeEventListener('paste', handlePaste);
     }, [state.pastedImageCounter, insertAtCursor]);
 
+    // --- forkConfig message listener (new panel created via fork) ---
+    // Host retries delivery so the listener must be idempotent.
+    // Settings dispatches are naturally idempotent; auto-send is guarded by a flag.
+    useEffect(() => {
+      let autoSendFired = false;
+      function onMessage(ev: MessageEvent) {
+        if (ev.data?.kind === 'forkConfig') {
+          const { fromSessionId, atMessageId, initialPrompt, model, agencyMode, bypassEnabled, chromeEnabled } = ev.data;
+
+          // Set fork mode — this changes the send button (idempotent)
+          dispatch({ type: 'SET_FORK_MODE', forkMode: { fromSessionId, atMessageId } });
+
+          // Pull source session history truncated at fork point for immediate display.
+          // This is visual-only — no session is created until the user sends.
+          if (fromSessionId && onForkHistoryLoaded) {
+            transport.loadSession(fromSessionId, atMessageId ? { until: atMessageId } : undefined)
+              .then((history: TranscriptEntry[]) => {
+                if (history.length > 0) onForkHistoryLoaded(history);
+              })
+              .catch((err: unknown) => console.error('[ControlPanel] fork history load failed:', err));
+          }
+
+          // Apply inherited settings (idempotent)
+          if (model) dispatch({ type: 'SET_MODEL', model });
+          if (agencyMode) dispatch({ type: 'SET_AGENCY_MODE', mode: agencyMode });
+          if (bypassEnabled !== undefined) dispatch({ type: 'SET_BYPASS', enabled: bypassEnabled });
+          if (chromeEnabled !== undefined) dispatch({ type: 'SET_CHROME', enabled: chromeEnabled });
+
+          // Prefill input and auto-send (once only)
+          if (initialPrompt && !autoSendFired) {
+            autoSendFired = true;
+            dispatch({ type: 'SET_INPUT', value: initialPrompt });
+            // Auto-send after a tick to let state settle — use ref to avoid stale closure
+            setTimeout(() => handleSendRef.current(), 50);
+          }
+        }
+      }
+      window.addEventListener('message', onMessage);
+      return () => window.removeEventListener('message', onMessage);
+    }, [transport, onForkHistoryLoaded]); // transport is module-level stable, onForkHistoryLoaded is a stable useCallback
+
     // --- Fork handler ---
     const handleFork = useCallback(() => {
-      console.log('[ControlPanel] Fork requested');
-    }, []);
+      if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
+
+      let forkAtMessageId: string | undefined;
+
+      if (channelState === 'streaming' && entries) {
+        // While streaming: find last assistant before last user
+        let lastUserIdx = -1;
+        for (let i = entries.length - 1; i >= 0; i--) {
+          if (entries[i].type === 'user') { lastUserIdx = i; break; }
+        }
+        if (lastUserIdx > 0) {
+          for (let i = lastUserIdx - 1; i >= 0; i--) {
+            if (entries[i].type === 'assistant' && entries[i].uuid) {
+              forkAtMessageId = entries[i].uuid!; break;
+            }
+          }
+        }
+        if (!forkAtMessageId) return; // First turn, can't fork
+      } else {
+        forkAtMessageId = forkTargetRef.current ?? undefined;
+      }
+
+      const currentInput = state.input.trim();
+
+      // Use forkToNewPanel RPC (intercepted by VS Code host or handled by browser)
+      transport.forkToNewPanel?.({
+        fromSessionId: selectedSessionId,
+        atMessageId: forkAtMessageId,
+        initialPrompt: currentInput || undefined,
+        model: state.model || undefined,
+        agencyMode: state.agencyMode,
+        bypassEnabled: state.bypassEnabled,
+        chromeEnabled: state.chromeEnabled,
+      })?.catch((err: Error) => {
+        console.error('[ControlPanel] forkToNewPanel failed:', err);
+      });
+
+      if (currentInput) dispatch({ type: 'CLEAR_INPUT' });
+    }, [selectedSessionId, channelState, entries, state.input, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, transport]);
 
     const handleForkHover = useCallback(
       (hovering: boolean) => {
@@ -639,6 +778,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               attachedImages={state.attachedImages}
               onInput={(value) => dispatch({ type: 'SET_INPUT', value })}
               onSend={handleSend}
+              forkMode={!!state.forkMode}
+              onFork={handleFork}
             />
           </>
         )}
@@ -676,7 +817,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onRenderModeChange={setRenderMode}
             />
             <ForkButton
-              disabled={false}
+              disabled={!selectedSessionId || selectedSessionId.startsWith('pending:')}
               onFork={handleFork}
               onHoverChange={handleForkHover}
             />

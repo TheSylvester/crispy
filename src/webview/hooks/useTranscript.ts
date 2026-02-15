@@ -24,6 +24,8 @@ interface UseTranscriptResult {
   error: string | null;
   /** Inject a synthetic user entry for immediate rendering before backend echo. */
   addOptimisticEntry: (entry: TranscriptEntry) => void;
+  /** Bulk-set entries for fork history preload. Preserves optimistic entries. */
+  setForkHistory: (entries: TranscriptEntry[]) => void;
 }
 
 export function useTranscript(sessionId: string | null): UseTranscriptResult {
@@ -41,6 +43,15 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
 
   const addOptimisticEntry = useCallback((entry: TranscriptEntry) => {
     setEntries((prev) => [...prev, entry]);
+  }, []);
+
+  const setForkHistory = useCallback((forkEntries: TranscriptEntry[]) => {
+    setEntries((prev) => {
+      const optimistic = prev.filter(e => e.uuid?.startsWith('optimistic-'));
+      return optimistic.length > 0
+        ? [...forkEntries, ...optimistic]
+        : forkEntries;
+    });
   }, []);
 
   useEffect(() => {
@@ -81,8 +92,8 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
           return [...prev, event.entry];
         });
       } else if (event.type === 'history') {
-        // History backfill from subscription — ignore if we already loaded via loadSession
-        // loadSession response will overwrite anyway
+        // History backfill from subscription — handled by setForkHistory for forks,
+        // overwritten by loadSession response for normal sessions.
       }
     });
 
@@ -150,5 +161,5 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
     };
   }, [sessionId, transport]);
 
-  return { entries, isLoading, error, addOptimisticEntry };
+  return { entries, isLoading, error, addOptimisticEntry, setForkHistory };
 }

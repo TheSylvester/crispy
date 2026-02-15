@@ -115,11 +115,28 @@ export function createWebSocketTransport(url: string): SessionService {
     findSession: (sessionId) =>
       request<WireSessionInfo | null>('findSession', { sessionId }),
 
-    loadSession: (sessionId) =>
-      request<TranscriptEntry[]>('loadSession', { sessionId }),
+    loadSession: (sessionId, options) =>
+      request<TranscriptEntry[]>('loadSession', { sessionId, ...options }),
 
     createSession: (vendor, cwd, options) =>
       request<{ pendingId: string }>('createSession', { vendor, cwd, ...options }),
+
+    forkSession: (vendor, fromSessionId, options) =>
+      request<{ pendingId: string }>('forkSession', { vendor, fromSessionId, ...options }),
+
+    forkToNewPanel: async (params) => {
+      // Browser dev-server: open fork in a new tab via window.open()
+      const url = new URL(window.location.href);
+      url.searchParams.set('forkFrom', params.fromSessionId);
+      if (params.atMessageId) url.searchParams.set('forkAt', params.atMessageId);
+      if (params.initialPrompt) url.searchParams.set('prompt', params.initialPrompt);
+      if (params.model) url.searchParams.set('model', params.model);
+      if (params.agencyMode) url.searchParams.set('agency', params.agencyMode);
+      if (params.bypassEnabled) url.searchParams.set('bypass', '1');
+      if (params.chromeEnabled) url.searchParams.set('chrome', '1');
+      window.open(url.toString(), '_blank');
+      return { ok: true };
+    },
 
     subscribe: (sessionId) =>
       request<void>('subscribe', { sessionId }),

@@ -9,6 +9,7 @@
 
 import { useRef, useLayoutEffect, useEffect, useState, useCallback } from 'react';
 import type { AttachedImage } from './types.js';
+import { ForkIcon } from './icons.js';
 
 interface ChatInputProps {
   value: string;
@@ -16,9 +17,11 @@ interface ChatInputProps {
   onInput: (value: string) => void;
   onSend: () => void;
   placeholder?: string;
+  forkMode?: boolean;
+  onFork?: () => void;
 }
 
-export function ChatInput({ value, attachedImages, onInput, onSend, placeholder }: ChatInputProps): React.JSX.Element {
+export function ChatInput({ value, attachedImages, onInput, onSend, placeholder, forkMode, onFork }: ChatInputProps): React.JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [hoverClass, setHoverClass] = useState('');
 
@@ -50,12 +53,19 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder 
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // Ctrl+Shift+Enter: fork
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+        e.preventDefault();
+        onFork?.();
+        return;
+      }
+      // Ctrl+Enter: send
       if (e.key === 'Enter' && e.ctrlKey && !e.shiftKey && !e.altKey) {
         e.preventDefault();
         onSend();
       }
     },
-    [onSend],
+    [onSend, onFork],
   );
 
   const isEmpty = !value.trim() && attachedImages.length === 0;
@@ -72,14 +82,16 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder 
         onKeyDown={handleKeyDown}
       />
       <button
-        className="crispy-cp-send"
-        title="Send message (Ctrl+Enter)"
+        className={`crispy-cp-send ${forkMode ? 'crispy-cp-send--fork' : ''}`}
+        title={forkMode ? "Send forked message (Ctrl+Enter)" : "Send message (Ctrl+Enter)"}
         disabled={isEmpty}
         onClick={onSend}
         onMouseEnter={() => setHoverClass('hovering')}
         onMouseLeave={() => setHoverClass('hover-out')}
       >
-        <span className={`crispy-cp-send__icon ${hoverClass}`}>&#9654;</span>
+        <span className={`crispy-cp-send__icon ${hoverClass}`}>
+          {forkMode ? <ForkIcon /> : <>&#9654;</>}
+        </span>
       </button>
     </div>
   );
