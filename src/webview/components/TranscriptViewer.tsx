@@ -38,6 +38,7 @@ import { useTransport } from "../context/TransportContext.js";
 import { useSessionStatus } from "../hooks/useSessionStatus.js";
 import type { ApprovalExtra } from "./approval/types.js";
 import type { TranscriptEntry } from "../../core/transcript.js";
+import { WelcomePage } from "./WelcomePage.js";
 
 /** Check once whether debug mode is enabled */
 const isDebugMode = window.location.search.includes('debug=1');
@@ -347,11 +348,7 @@ export function TranscriptViewer(): React.JSX.Element {
   let mainContent: React.JSX.Element;
 
   if (!selectedSessionId && !hasForkHistory) {
-    mainContent = (
-      <div className="crispy-placeholder">
-        Select a session or start a new conversation
-      </div>
-    );
+    mainContent = <WelcomePage loading={isLoading} />;
   } else if (error) {
     mainContent = <div className="crispy-error">{error}</div>;
   } else {

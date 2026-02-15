@@ -621,16 +621,73 @@ h2 {
   text-align: center;
 }
 
-/* --- Placeholder / Loading / Error States --- */
+/* --- Welcome Page --- */
 
-.crispy-placeholder {
+.crispy-welcome {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  opacity: 0.5;
-  font-size: 14px;
+  padding: 20px;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--vscode-sideBar-background, #252526);
 }
+
+.crispy-welcome__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 400px;
+}
+
+.crispy-welcome__icon {
+  margin-bottom: 16px;
+  flex-shrink: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.crispy-welcome__icon svg {
+  width: auto;
+  height: auto;
+  max-width: min(160px, 40vw);
+  max-height: min(160px, 25vh);
+  flex-shrink: 1;
+}
+
+.crispy-welcome__title {
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--vscode-foreground, #ccc);
+  margin: 8px 0 4px 0;
+  letter-spacing: 0.4em;
+  padding-left: 0.4em;
+  text-transform: uppercase;
+}
+
+.crispy-welcome__subtitle {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--vscode-descriptionForeground, #888);
+  margin: 0;
+  letter-spacing: 0.25em;
+  padding-left: 0.25em;
+  text-transform: uppercase;
+}
+
+.crispy-welcome__loading {
+  animation: crispy-shimmer-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes crispy-shimmer-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* --- Placeholder / Loading / Error States --- */
 
 .crispy-loading {
   display: flex;
