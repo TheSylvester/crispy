@@ -86,7 +86,7 @@ interface ControlPanelProps {
   /** Notify parent when bypass state changes (for ExitPlanMode approval). */
   onBypassChange?: (enabled: boolean) => void;
   /** Pre-fill the ChatInput with content (for ExitPlanMode handoff). Consumed once. */
-  prefillInput?: string | null;
+  prefillInput?: { text: string; autoSend?: boolean } | null;
   /** Called after prefillInput is consumed, allowing the parent to clear it. */
   onPrefillConsumed?: () => void;
   /** Called when fork history entries are loaded for pre-display. */
@@ -273,7 +273,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // --- Consume prefillInput when provided (ExitPlanMode handoff) ---
     useEffect(() => {
       if (prefillInput) {
-        dispatch({ type: 'SET_INPUT', value: prefillInput });
+        dispatch({ type: 'SET_INPUT', value: prefillInput.text });
+        if (prefillInput.autoSend) {
+          setTimeout(() => handleSendRef.current(), 50);
+        }
         onPrefillConsumed?.();
       }
     }, [prefillInput, onPrefillConsumed]);

@@ -49,7 +49,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const { renderMode } = usePreferences();
   const { approvalRequest, resolve: resolveApproval } = useApprovalRequest(selectedSessionId);
   const [bypassEnabled, setBypassEnabled] = useState(false);
-  const [prefillInput, setPrefillInput] = useState<string | null>(null);
+  const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean } | null>(null);
   const [pendingAgencyMode, setPendingAgencyMode] = useState<{ agencyMode: AgencyMode; bypassEnabled: boolean } | null>(null);
   const {
     visibleCount,
@@ -272,14 +272,14 @@ export function TranscriptViewer(): React.JSX.Element {
       // First user message sentinel: no fork, just clear session and prefill
       const text = extractUserText();
       setSelectedSessionId(null);
-      if (text) setPrefillInput(text);
+      if (text) setPrefillInput({ text });
       return;
     }
 
     // Normal rewind: trigger ControlPanel's executeRewind (loads fork history, sets fork mode)
     rewindHandlerRef.current?.(atMessageId);
     const text = extractUserText();
-    if (text) setPrefillInput(text);
+    if (text) setPrefillInput({ text });
   }, [forkTargets, filteredEntries, setPrefillInput, setSelectedSessionId]);
 
   // Wrap resolveApproval to intercept ExitPlanMode orchestration fields
@@ -319,8 +319,8 @@ export function TranscriptViewer(): React.JSX.Element {
           }
         }
 
-        // Prefill ChatInput with the handoff prompt
-        setPrefillInput(handoffPrompt);
+        // Prefill ChatInput with the handoff prompt and auto-send
+        setPrefillInput({ text: handoffPrompt, autoSend: true });
         return;
       }
 
