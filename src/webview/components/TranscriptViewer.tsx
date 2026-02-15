@@ -15,7 +15,7 @@
  * @module TranscriptViewer
  */
 
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "../context/SessionContext.js";
 import { usePreferences } from "../context/PreferencesContext.js";
 import { useTranscript } from "../hooks/useTranscript.js";
@@ -25,6 +25,7 @@ import { shouldRenderEntry } from "../utils/entry-filters.js";
 import { EntryRenderer } from "../renderers/EntryRenderer.js";
 import { PlaybackControls } from "./PlaybackControls.js";
 import { ToolRegistryProvider } from "../context/ToolRegistryContext.js";
+import { ForkProvider } from "../context/ForkContext.js";
 import { ControlPanel } from "./control-panel/index.js";
 import { StopButton } from "./control-panel/StopButton.js";
 import { ThinkingIndicator } from "./ThinkingIndicator.js";
@@ -32,6 +33,7 @@ import { ApprovalContent } from "./approval/index.js";
 import { useApprovalRequest } from "../hooks/useApprovalRequest.js";
 import { constructExitPlanHandoffPrompt } from "./approval/approval-utils.js";
 import { useTransport } from "../context/TransportContext.js";
+import { useSessionStatus } from "../hooks/useSessionStatus.js";
 import type { ApprovalExtra } from "./approval/types.js";
 import type { TranscriptEntry } from "../../core/transcript.js";
 
@@ -116,6 +118,25 @@ export function TranscriptViewer(): React.JSX.Element {
   const visibleEntries = entries.slice(0, visibleCount);
   const filteredEntries = visibleEntries.filter(shouldRenderEntry);
 
+  // --- Per-message fork targets: user UUID → preceding assistant UUID ---
+  const forkTargets = useMemo(() => {
+    const targets = new Map<string, string>();
+    for (let i = 0; i < filteredEntries.length; i++) {
+      const entry = filteredEntries[i];
+      if (entry.type !== 'user' || !entry.uuid || entry.uuid.startsWith('optimistic-')) continue;
+      for (let j = i - 1; j >= 0; j--) {
+        if (filteredEntries[j].type === 'assistant' && filteredEntries[j].uuid) {
+          targets.set(entry.uuid, filteredEntries[j].uuid!);
+          break;
+        }
+      }
+    }
+    return targets;
+  }, [filteredEntries]);
+
+  // Channel state for fork streaming check
+  const { channelState } = useSessionStatus(selectedSessionId);
+
   const { isSticky, isAtTop, scrollToBottom, scrollToTop, pinToBottom } = useAutoScroll({
     sessionId: selectedSessionId,
     scrollRef: transcriptRef,
@@ -191,6 +212,27 @@ export function TranscriptViewer(): React.JSX.Element {
     }
   }, []);
 
+  // Per-message fork preview: glow a specific assistant message by UUID
+  const handleForkPreviewHover = useCallback((targetMessageId: string, hovering: boolean) => {
+    if (hovering) {
+      const el = document.querySelector(`.message[data-uuid="${targetMessageId}"]`);
+      if (el) el.classList.add('crispy-fork-preview');
+    } else {
+      document.querySelectorAll('.message.crispy-fork-preview').forEach(el =>
+        el.classList.remove('crispy-fork-preview')
+      );
+    }
+  }, []);
+
+  // Per-message fork handler — delegates to ControlPanel's executeFork via ref
+  const forkHandlerRef = useRef<((atMessageId: string) => void) | null>(null);
+  const handleRegisterForkHandler = useCallback((handler: (atMessageId: string) => void) => {
+    forkHandlerRef.current = handler;
+  }, []);
+  const handlePerMessageFork = useCallback((atMessageId: string) => {
+    forkHandlerRef.current?.(atMessageId);
+  }, []);
+
   // Wrap resolveApproval to intercept ExitPlanMode orchestration fields
   // (clearContext, planContent) before forwarding to transport.
   const handleApprovalResolve = useCallback(
@@ -253,23 +295,29 @@ export function TranscriptViewer(): React.JSX.Element {
   } else {
     mainContent = (
       <ToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
-        <div className="crispy-transcript" ref={transcriptRef}>
-          <div className="crispy-transcript-content">
-            {isLoading ? (
-              <div className="crispy-loading">Loading transcript...</div>
-            ) : (
-              filteredEntries
-                .map((entry, i) => (
-                  <EntryRenderer
-                    key={entry.uuid ?? `entry-${i}`}
-                    entry={entry}
-                    mode={renderMode}
-                  />
-                ))
-            )}
-            <ThinkingIndicator />
+        <ForkProvider
+          onFork={handlePerMessageFork}
+          onForkPreviewHover={handleForkPreviewHover}
+          isStreaming={channelState === 'streaming'}
+          forkTargets={forkTargets}
+        >
+          <div className="crispy-transcript" ref={transcriptRef}>
+            <div className="crispy-transcript-content">
+              {isLoading ? (
+                <div className="crispy-loading">Loading transcript...</div>
+              ) : (
+                filteredEntries
+                  .map((entry, i) => (
+                    <EntryRenderer
+                      key={entry.uuid ?? `entry-${i}`}
+                      entry={entry}
+                      mode={renderMode}
+                    />
+                  ))
+              )}
+              <ThinkingIndicator />
+            </div>
           </div>
-        </div>
         <button
           className={`crispy-scroll-nav crispy-scroll-to-top ${isAtTop ? 'crispy-scroll-to-top--hidden' : ''}`}
           onClick={scrollToTop}
@@ -301,6 +349,7 @@ export function TranscriptViewer(): React.JSX.Element {
             onJumpToEnd={jumpToEnd}
           />
         )}
+        </ForkProvider>
       </ToolRegistryProvider>
     );
   }
@@ -312,6 +361,7 @@ export function TranscriptViewer(): React.JSX.Element {
       <ControlPanel
         ref={controlPanelRef}
         onForkHoverChange={handleForkHoverChange}
+        onRegisterForkHandler={handleRegisterForkHandler}
         onOptimisticEntry={selectedSessionId ? addOptimisticEntry : undefined}
         onPendingOptimisticEntry={handlePendingOptimisticEntry}
         onScrollToBottom={pinToBottom}

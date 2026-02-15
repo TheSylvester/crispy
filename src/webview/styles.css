@@ -456,6 +456,7 @@ h2 {
 .message.user {
   border-left: none;
   background: transparent;
+  position: relative;
 }
 
 .message.assistant {
@@ -1330,6 +1331,45 @@ h2 {
   animation: crispy-fork-preview-glow 1.5s ease-in-out infinite;
   position: relative;
   z-index: 1;
+}
+
+/* --- Per-message fork button (appears on user message hover) --- */
+
+/* Button is a sibling after .user-text inside .message.user (position: relative).
+   We use negative margin-top to overlap the bottom-right corner of the bubble. */
+.crispy-message-fork {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  margin-top: -28px;   /* overlap into the bubble */
+  margin-bottom: 4px;
+  margin-right: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--vscode-descriptionForeground, #858585);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+  padding: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.message.user:hover .crispy-message-fork {
+  opacity: 1;
+}
+
+.crispy-message-fork:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-message-fork:disabled {
+  cursor: not-allowed;
 }
 
 /* ============================================================================

@@ -91,6 +91,8 @@ interface ControlPanelProps {
   onPrefillConsumed?: () => void;
   /** Called when fork history entries are loaded for pre-display. */
   onForkHistoryLoaded?: (entries: TranscriptEntry[]) => void;
+  /** Register a handler for per-message fork execution (called from ForkContext). */
+  onRegisterForkHandler?: (handler: (atMessageId: string) => void) => void;
 }
 
 /** Agency modes for keyboard cycling (excluding bypass-permissions). */
@@ -160,7 +162,7 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed, onForkHistoryLoaded }, ref) {
+  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed, onForkHistoryLoaded, onRegisterForkHandler }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     // Track the DOM element for native drag/drop listeners. A callback ref
     // ensures the useEffect re-runs when the element mounts, unlike a
@@ -712,7 +714,30 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       return () => window.removeEventListener('message', onMessage);
     }, [transport, onForkHistoryLoaded]); // transport is module-level stable, onForkHistoryLoaded is a stable useCallback
 
-    // --- Fork handler ---
+    // --- Fork execution (shared between control panel button and per-message buttons) ---
+    const executeFork = useCallback((atMessageId: string) => {
+      if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
+      const currentInput = state.input.trim();
+
+      transport.forkToNewPanel?.({
+        fromSessionId: selectedSessionId,
+        atMessageId,
+        initialPrompt: currentInput || undefined,
+        model: state.model || undefined,
+        agencyMode: state.agencyMode,
+        bypassEnabled: state.bypassEnabled,
+        chromeEnabled: state.chromeEnabled,
+      })?.catch((err: Error) => {
+        console.error('[ControlPanel] forkToNewPanel failed:', err);
+      });
+
+      if (currentInput) dispatch({ type: 'CLEAR_INPUT' });
+    }, [selectedSessionId, state.input, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, transport]);
+
+    // Register executeFork with parent for per-message fork buttons
+    useEffect(() => { onRegisterForkHandler?.(executeFork); }, [onRegisterForkHandler, executeFork]);
+
+    // --- Fork handler (control panel button — computes fork target, then delegates) ---
     const handleFork = useCallback(() => {
       if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
 
@@ -736,23 +761,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         forkAtMessageId = forkTargetRef.current ?? undefined;
       }
 
-      const currentInput = state.input.trim();
-
-      // Use forkToNewPanel RPC (intercepted by VS Code host or handled by browser)
-      transport.forkToNewPanel?.({
-        fromSessionId: selectedSessionId,
-        atMessageId: forkAtMessageId,
-        initialPrompt: currentInput || undefined,
-        model: state.model || undefined,
-        agencyMode: state.agencyMode,
-        bypassEnabled: state.bypassEnabled,
-        chromeEnabled: state.chromeEnabled,
-      })?.catch((err: Error) => {
-        console.error('[ControlPanel] forkToNewPanel failed:', err);
-      });
-
-      if (currentInput) dispatch({ type: 'CLEAR_INPUT' });
-    }, [selectedSessionId, channelState, entries, state.input, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, transport]);
+      if (forkAtMessageId) executeFork(forkAtMessageId);
+    }, [selectedSessionId, channelState, entries, executeFork]);
 
     const handleForkHover = useCallback(
       (hovering: boolean) => {

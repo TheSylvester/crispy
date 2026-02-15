@@ -15,6 +15,8 @@
 
 import { normalizeToBlocks } from '../utils/normalize-blocks.js';
 import { BlockRenderer } from './BlockRenderer.js';
+import { useFork } from '../context/ForkContext.js';
+import { MessageForkButton } from '../components/MessageForkButton.js';
 import type { TranscriptEntry, ToolUseBlock } from '../../core/transcript.js';
 
 /**
@@ -31,6 +33,9 @@ export function RichEntry({ entry }: { entry: TranscriptEntry }): React.JSX.Elem
   // Other entries derive role from the message or fall back to entry type.
   const role = entry.type === 'summary' ? 'system' : (entry.message?.role ?? entry.type);
 
+  const fork = useFork();
+  const targetId = (fork && entry.uuid) ? fork.forkTargets.get(entry.uuid) : undefined;
+
   return (
     <div className={`message ${role}`} data-uuid={entry.uuid}>
       {blocks.map((block, i) => (
@@ -40,6 +45,7 @@ export function RichEntry({ entry }: { entry: TranscriptEntry }): React.JSX.Elem
           role={role}
         />
       ))}
+      {targetId && <MessageForkButton targetAssistantId={targetId} />}
     </div>
   );
 }
