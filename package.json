@@ -56,7 +56,11 @@
     "commands": [
       {
         "command": "crispy.editor.open",
-        "title": "Crispy: Open"
+        "title": "Crispy: Open",
+        "icon": {
+          "light": "media/crispy-icon.svg",
+          "dark": "media/crispy-icon.svg"
+        }
       },
       {
         "command": "crispy.executeFile",
@@ -71,6 +75,12 @@
       }
     ],
     "menus": {
+      "editor/title": [
+        {
+          "command": "crispy.editor.open",
+          "group": "navigation"
+        }
+      ],
       "explorer/context": [
         {
           "command": "crispy.executeFile",
