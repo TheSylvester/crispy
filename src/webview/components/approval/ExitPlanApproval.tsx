@@ -9,8 +9,11 @@
  */
 
 import { useState } from 'react';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { ExitPlanModeInput, ApprovalExtra } from './types.js';
 import { ChatInput } from '../control-panel/ChatInput.js';
+import { CodeBlock, PreBlock } from '../../renderers/markdown-components.js';
 
 type ExitPlanChoice = 'clear_and_auto' | 'auto_only' | 'manual_approve' | 'feedback';
 
@@ -74,6 +77,18 @@ export function ExitPlanApproval({ input, bypassEnabled, onResolve }: ExitPlanAp
   return (
     <div className="crispy-approval-standard">
       <div className="crispy-approval-header">Plan Ready for Review</div>
+
+      {/* Plan content — expanded by default */}
+      {input.plan && (
+        <details className="crispy-approval-plan" open>
+          <summary className="crispy-approval-plan__summary">Plan</summary>
+          <div className="crispy-approval-plan__content prose assistant-text">
+            <Markdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock, pre: PreBlock }}>
+              {input.plan}
+            </Markdown>
+          </div>
+        </details>
+      )}
 
       {/* Requested permissions list */}
       {input.allowedPrompts && input.allowedPrompts.length > 0 && (
