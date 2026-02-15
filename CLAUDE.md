@@ -5,13 +5,13 @@ cross-vendor AI coding agents (Claude Code, Codex, Gemini, OpenCode) behind a
 single UI. Goal: interactive chat, session history, vendor delegation,
 transcript-as-data.
 
-**Current status:** Transcript viewing, session discovery, and the control panel
-UI work. The control panel is visual-only (local state, console-log callbacks) —
-transport/session wiring is the next pass.
+**Current status:** Fully interactive agent client — chat, approvals,
+fork/rewind, session management all wired. Only Claude adapter implemented.
 
 ## Architecture
 
-Two halves: **core** (`src/core/`) and **webview** (`src/webview/`).
+Three layers: **core** (`src/core/`), **host** (`src/host/`), and **webview**
+(`src/webview/`).
 
 ### Core
 
@@ -20,29 +20,107 @@ under `adapters/<vendor>/` convert raw formats into `TranscriptEntry`.
 `agent-adapter.ts` defines the `AgentAdapter` interface; `VendorDiscovery`
 handles session listing/loading. Only Claude is wired up today.
 
+Functional API convention throughout core — free functions with module-level
+state, not classes.
+
+- **`session-channel.ts`** — Per-session state machine:
+  `unattached → idle → streaming ↔ awaiting_approval`. Manages subscriptions,
+  approval tracking, and history backfill. Emits `SubscriberEvent` union
+  (entry, history, state_changed, approval_request, approval_resolved,
+  notification, error).
+- **`session-manager.ts`** — Adapter/channel orchestration. Registers vendor
+  adapters, creates/loads/forks sessions, handles pending → real session ID
+  re-keying on `session_changed`. `onIdle` hook triggers session list refresh
+  ~150ms after idle transition.
+- **`session-list-manager.ts`** — Background disk rescan (30s poll), pushes
+  `SessionListEvent` upserts. Three update triggers: session creation (instant),
+  end of turn (150ms grace), periodic rescan.
+
+### Host
+
+Two host implementations share the same `client-connection.ts` protocol
+multiplexer.
+
+- **`client-connection.ts`** — JSON-RPC wire protocol. Request/response
+  correlation, event push, per-client subscription tracking. Routes all
+  `SessionService` methods to core free functions.
+- **`webview-host.ts`** — VS Code panel management. 3-way open logic: no
+  panels → create; exists not focused → reveal; focused → create beside.
+  Handles VS Code–specific methods (openFile, pickFile, forkToNewPanel).
+- **`dev-server.ts`** — HTTP + WebSocket on port 3456. Mirrors webview-host
+  protocol over WebSocket; serves static bundle over HTTP. Auto-registers
+  `ClaudeAgentAdapter` on startup.
+
 ### Webview
 
 React 19, esbuild, vanilla CSS with `var(--vscode-*)` theme variables.
 
 - **Layout:** Two-column grid — 260px sidebar (`SessionSelector`) + main
-  (`TranscriptViewer`). Context providers: Transport → Session → ToolRegistry.
+  (`TranscriptViewer`).
+
+- **Provider cascade** — `App.tsx` nests: Transport → Environment → Session →
+  FileIndex → Preferences → SessionStatus. Inside `TranscriptViewer`:
+  ToolRegistry → Fork (per-session, reset on session switch).
+
 - **Rendering pipeline:** Three modes (YAML / Compact / Rich). Rich mode:
   Entry → `normalizeToBlocks()` → `BlockRenderer` dispatches to per-type
   renderers. Extend via `block-registry.ts` + a new renderer component —
   don't add switch statements to RichEntry or BlockRenderer.
+
 - **ToolRegistry** (`tool-registry.ts`): Standalone mutable store (pure TS).
   Tracks tool_use → tool_result lifecycle, parent-child nesting, orphan
   queuing. Subscribed via `useSyncExternalStore` for per-tool re-renders.
   Tool results return null from BlockRenderer and render on their ToolCard.
-- **Transport** (`transport.ts`): Typed RPC interface with VS Code postMessage
-  and WebSocket (dev server) implementations. `send()`, `resolveApproval()`,
-  `interrupt()` exist but have no UI driving them yet.
+
+- **SessionService** (`transport.ts`): The interface is `SessionService`;
+  `Transport` is a deprecated alias. Fully wired RPC with dual
+  implementations — VS Code postMessage (`transport-vscode.ts`) and WebSocket
+  (`transport-websocket.ts`). Method groups:
+  - Session lifecycle: `listSessions`, `loadSession`, `createSession`,
+    `forkSession`, `forkToNewPanel`, `close`
+  - Agent control: `send`, `interrupt`, `setModel`, `setPermissions`,
+    `reconfigure`
+  - Approval: `resolveApproval`
+  - Subscriptions: `subscribe`, `unsubscribe`, `subscribeSessionList`, `onEvent`
+  - File ops: `getGitFiles`, `fileExists`, `readImage`, `openFile`, `pickFile`
+
 - **Control panel** (`components/control-panel/`): Floating bottom-center bar
   with chat input, bypass/agency/model/chrome toggles, settings popup, fork
-  button. `useReducer` for coupled state (bypass ↔ agency). Visual-only — all
-  callbacks log to console. `PlaybackControls` gated behind `?debug=1`.
+  button. Fully wired to transport — drives `send`, `createSession`,
+  `forkSession`, `forkToNewPanel`, `setModel`, `setPermissions`, `reconfigure`,
+  `resolveApproval`.
+  - Keyboard shortcuts: Alt+\` (bypass), Alt+Q (agency cycle), Alt+M (model
+    cycle), Ctrl+Enter (send), Ctrl+Shift+Enter (fork)
+  - Image/file attachment: drag-drop + paste with base64 encoding,
+    AttachmentsRow
+  - Optimistic user entries: `buildOptimisticUserEntry()` with
+    `uuid: "optimistic-*"` prefix, backend dedup
+  - `useReducer` for coupled state (bypass ↔ agency)
+  - `PlaybackControls` gated behind `?debug=1`
+
+- **Approval system** (`components/approval/`): Three types routed by
+  `ApprovalContent`:
+  - `StandardApproval` — generic option buttons (Bash/Edit/Write tool use)
+  - `AskUserApproval` — multi-question radio/multiselect forms, sends
+    `updatedInput` with answers
+  - `ExitPlanApproval` — plan review with context-clear checkbox and
+    permission mode selection
+  - Flow: `approval_request` event → `useApprovalRequest()` hook → UI
+    renderer → `transport.resolveApproval(sessionId, toolUseId, optionId,
+    extra)`
+
+- **Fork/Rewind** — per-message fork/rewind buttons on user messages
+  (in `MessageActions`), disabled during streaming.
+  - Fork: creates new session branched at a prior assistant turn
+  - Fork-to-new-panel: `forkToNewPanel()` opens new VS Code panel with
+    pre-filled state
+  - Rewind (fork-in-same-panel): clears session, loads truncated history,
+    enters fork mode with original text pre-filled
+  - `ForkContext` provides fork targets + execution to `MessageActions`
+
 - **Tool renderers** under `renderers/tools/` — Bash, Grep, Glob, Read,
-  Write, Edit, Task (with nested children). Shared components in `tools/shared/`.
+  Write, Edit, Task (with nested children), TodoWrite. Shared components in
+  `tools/shared/`.
 
 ## Key rules
 
