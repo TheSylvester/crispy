@@ -418,33 +418,52 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         content = text;
       }
 
+      // Options applied atomically with send() — model, permissions, bypass.
+      const sendOptions = {
+        model: state.model || undefined,
+        permissionMode: mapAgencyToPermissionMode(state.agencyMode),
+        allowDangerouslySkipPermissions: state.bypassEnabled || undefined,
+      };
+
+      /**
+       * Shared flow for fork & new-session branches: inject pending optimistic
+       * entry → create session via factory → select → scroll → send.
+       */
+      function createThenSend(
+        sessionFactory: () => Promise<{ pendingId: string }>,
+        errorLabel: string,
+        onError?: () => void,
+      ) {
+        const optimistic = buildOptimisticUserEntry('pending', content);
+        onPendingOptimisticEntry?.(optimistic);
+        setOptimisticStatus('streaming');
+
+        sessionFactory().then(({ pendingId }) => {
+          setSelectedSessionId(pendingId);
+          onScrollToBottom?.();
+          return transport.send(pendingId, content, sendOptions);
+        }).catch((err) => {
+          setOptimisticStatus('idle');
+          console.error(`[ControlPanel] ${errorLabel} failed:`, err);
+          onError?.();
+        });
+
+        dispatch({ type: 'CLEAR_INPUT' });
+      }
+
       // --- Fork branch: create forked session, then send ---
       if (state.forkMode) {
         const forkMode = state.forkMode;
         const { fromSessionId, atMessageId } = forkMode;
 
-        const optimistic = buildOptimisticUserEntry('pending', content);
-        onPendingOptimisticEntry?.(optimistic);
-
-        setOptimisticStatus('streaming');
-        // Fork only needs atMessageId — model/permissions/extraArgs are applied via send()
-        transport.forkSession('claude', fromSessionId, { atMessageId }).then(({ pendingId }) => {
-          setSelectedSessionId(pendingId);
-          onScrollToBottom?.();
-          return transport.send(pendingId, content, {
-            model: state.model || undefined,
-            permissionMode: mapAgencyToPermissionMode(state.agencyMode),
-            allowDangerouslySkipPermissions: state.bypassEnabled || undefined,
-          });
-        }).catch((err) => {
-          setOptimisticStatus('idle');
-          console.error('[ControlPanel] forkSession failed:', err);
-          // Restore input and forkMode so user can retry
-          dispatch({ type: 'SET_INPUT', value: typeof content === 'string' ? content : text });
-          dispatch({ type: 'SET_FORK_MODE', forkMode });
-        });
-
-        dispatch({ type: 'CLEAR_INPUT' }); // Also clears forkMode
+        createThenSend(
+          () => transport.forkSession('claude', fromSessionId, { atMessageId }),
+          'forkSession',
+          () => {
+            dispatch({ type: 'SET_INPUT', value: typeof content === 'string' ? content : text });
+            dispatch({ type: 'SET_FORK_MODE', forkMode });
+          },
+        );
         return;
       }
 
@@ -456,57 +475,25 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         }
         const cwd = slugToPath(selectedCwd);
 
-        // Stash optimistic entry for injection after session initializes.
-        // We can't call onOptimisticEntry directly because useTranscript(null)
-        // resets entries when the sessionId transitions to the pending ID.
-        // The ref-based pending entry survives the re-render cycle.
-        const optimistic = buildOptimisticUserEntry('pending', content);
-        onPendingOptimisticEntry?.(optimistic);
-
-        setOptimisticStatus('streaming');
-        transport.createSession('claude', cwd, {
-          model: state.model || undefined,
-          permissionMode: mapAgencyToPermissionMode(state.agencyMode),
-          extraArgs: state.chromeEnabled ? { chrome: null } : undefined,
-        }).then(({ pendingId }) => {
-          setSelectedSessionId(pendingId);
-          // Pin scroll to bottom after React commits the new session's transcript container
-          onScrollToBottom?.();
-          return transport.send(pendingId, content, {
+        createThenSend(
+          () => transport.createSession('claude', cwd, {
             model: state.model || undefined,
             permissionMode: mapAgencyToPermissionMode(state.agencyMode),
-            allowDangerouslySkipPermissions: state.bypassEnabled || undefined,
-          });
-        }).catch((err) => {
-          setOptimisticStatus('idle');
-          console.error('[ControlPanel] createSession failed:', err);
-        });
-        dispatch({ type: 'CLEAR_INPUT' });
+            extraArgs: state.chromeEnabled ? { chrome: null } : undefined,
+          }),
+          'createSession',
+        );
         return;
       }
 
       // --- Existing session: optimistic entry + send ---
-
-      // Inject optimistic user entry for immediate rendering.
-      // The backend will echo the real entry, and useTranscript deduplicates
-      // by replacing the last optimistic- prefixed entry.
       if (onOptimisticEntry) {
         onOptimisticEntry(buildOptimisticUserEntry(selectedSessionId, content));
       }
-
-      // Pin scroll to bottom — user just sent a message, always show it.
       onScrollToBottom?.();
 
-      // Bundle control panel options with the send — applied atomically
-      // before the adapter starts the query, like Leto does.
-      const options = {
-        model: state.model || undefined,
-        permissionMode: mapAgencyToPermissionMode(state.agencyMode),
-        allowDangerouslySkipPermissions: state.bypassEnabled || undefined,
-      };
-
       setOptimisticStatus('streaming');
-      transport.send(selectedSessionId, content, options).catch((err) => {
+      transport.send(selectedSessionId, content, sendOptions).catch((err) => {
         setOptimisticStatus('idle');
         console.error('[ControlPanel] send failed:', err);
       });
@@ -561,8 +548,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         const paths = extractFilePathsFromDragEvent(e);
         const fileObjects = e.dataTransfer?.files ? Array.from(e.dataTransfer.files) : [];
 
-        // Identify images in fileObjects by MIME type OR extension (robustness for Linux)
+        // Identify images in fileObjects by MIME type OR extension (robustness for Linux).
+        // Exclude SVG — the API only accepts raster formats (jpeg, png, gif, webp).
         const imageFiles = fileObjects.filter(f => {
+          if (f.type === 'image/svg+xml') return false;
           if (f.type.startsWith('image/')) return true;
           const dotIdx = f.name.lastIndexOf('.');
           const ext = dotIdx >= 0 ? f.name.slice(dotIdx) : '';
@@ -576,12 +565,19 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             attachImageFile(file);
             placeholders.push(`[${file.name}]`);
           }
+          // Handle non-image File objects (e.g. SVGs mixed with raster images)
+          const imageFileSet = new Set(imageFiles);
+          for (const file of fileObjects) {
+            if (!imageFileSet.has(file)) {
+              placeholders.push(`[${file.name}]`);
+            }
+          }
           // Also handle any non-image paths that came along
           for (const filePath of paths) {
             const dotIdx = filePath.lastIndexOf('.');
             const ext = dotIdx >= 0 ? filePath.slice(dotIdx) : '';
-            // Skip paths that correspond to the image files we already processed
-            const isAlreadyProcessed = imageFiles.some(f => filePath.endsWith(f.name));
+            // Skip paths that correspond to files we already processed
+            const isAlreadyProcessed = fileObjects.some(f => filePath.endsWith(f.name));
             if (!isImageExtension(ext) && !isAlreadyProcessed) {
               placeholders.push(`'${filePath}'`);
             }
@@ -589,6 +585,14 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           if (placeholders.length > 0) {
             insertAtCursor(placeholders.join(' '));
           }
+          return;
+        }
+
+        // --- Non-image File objects with no extractable path (e.g. SVG from file manager) ---
+        // Insert filenames as references so they aren't silently dropped.
+        if (fileObjects.length > 0 && paths.length === 0) {
+          const refs = fileObjects.map(f => `[${f.name}]`);
+          insertAtCursor(refs.join(' '));
           return;
         }
 
@@ -649,7 +653,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         let localCounter = state.pastedImageCounter;
         for (let i = 0; i < items.length; i++) {
           const item = items[i];
-          if (item.type.startsWith('image/')) {
+          if (item.type.startsWith('image/') && item.type !== 'image/svg+xml') {
             e.preventDefault();
             const file = item.getAsFile();
             if (!file) continue;

@@ -13,7 +13,7 @@
  */
 
 /** Supported image file extensions. */
-export const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
+export const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
 
 /**
  * Check if a file extension is a supported image type.
