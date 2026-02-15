@@ -122,16 +122,24 @@ export function TranscriptViewer(): React.JSX.Element {
   const filteredEntries = visibleEntries.filter(shouldRenderEntry);
 
   // --- Per-message fork targets: user UUID → preceding assistant UUID ---
+  // First user message gets '' (empty string) sentinel — no assistant to fork
+  // from, but rewind should still be available (starts a fresh session).
   const forkTargets = useMemo(() => {
     const targets = new Map<string, string>();
     for (let i = 0; i < filteredEntries.length; i++) {
       const entry = filteredEntries[i];
       if (entry.type !== 'user' || !entry.uuid || entry.uuid.startsWith('optimistic-')) continue;
+      let found = false;
       for (let j = i - 1; j >= 0; j--) {
         if (filteredEntries[j].type === 'assistant' && filteredEntries[j].uuid) {
           targets.set(entry.uuid, filteredEntries[j].uuid!);
+          found = true;
           break;
         }
+      }
+      // First user message: no preceding assistant — sentinel for rewind-only
+      if (!found) {
+        targets.set(entry.uuid, '');
       }
     }
     return targets;
@@ -243,25 +251,36 @@ export function TranscriptViewer(): React.JSX.Element {
     rewindHandlerRef.current = handler;
   }, []);
   const handlePerMessageRewind = useCallback((atMessageId: string) => {
-    // Trigger ControlPanel's executeRewind (loads fork history, sets fork mode)
-    rewindHandlerRef.current?.(atMessageId);
-
-    // Reverse-lookup: find the user entry whose fork target is this assistant message
-    for (const [userUUID, assistantUUID] of forkTargets.entries()) {
-      if (assistantUUID === atMessageId) {
-        const userEntry = filteredEntries.find(e => e.uuid === userUUID);
-        if (userEntry?.message?.content) {
-          // Extract text from content blocks (same logic as CompactEntry.extractTextContent)
-          const content = userEntry.message.content;
-          const text = Array.isArray(content)
-            ? content.filter((b): b is { type: 'text'; text: string } => b.type === 'text').map(b => b.text).join('\n')
-            : typeof content === 'string' ? content : '';
-          if (text) setPrefillInput(text);
+    // Extract user text from the entry whose fork target matches atMessageId
+    const extractUserText = (): string => {
+      for (const [userUUID, assistantUUID] of forkTargets.entries()) {
+        if (assistantUUID === atMessageId) {
+          const userEntry = filteredEntries.find(e => e.uuid === userUUID);
+          if (userEntry?.message?.content) {
+            const content = userEntry.message.content;
+            return Array.isArray(content)
+              ? content.filter((b): b is { type: 'text'; text: string } => b.type === 'text').map(b => b.text).join('\n')
+              : typeof content === 'string' ? content : '';
+          }
+          break;
         }
-        break;
       }
+      return '';
+    };
+
+    if (!atMessageId) {
+      // First user message sentinel: no fork, just clear session and prefill
+      const text = extractUserText();
+      setSelectedSessionId(null);
+      if (text) setPrefillInput(text);
+      return;
     }
-  }, [forkTargets, filteredEntries, setPrefillInput]);
+
+    // Normal rewind: trigger ControlPanel's executeRewind (loads fork history, sets fork mode)
+    rewindHandlerRef.current?.(atMessageId);
+    const text = extractUserText();
+    if (text) setPrefillInput(text);
+  }, [forkTargets, filteredEntries, setPrefillInput, setSelectedSessionId]);
 
   // Wrap resolveApproval to intercept ExitPlanMode orchestration fields
   // (clearContext, planContent) before forwarding to transport.

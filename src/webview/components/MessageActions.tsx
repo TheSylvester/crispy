@@ -1,12 +1,13 @@
 /**
  * Per-message action buttons — appear on hover over user messages.
  *
- * Renders bottom-right of the user message bubble. Two buttons side by side:
- * - Rewind (↺): visual-only, logs to console on click
- * - Fork (⑂): forks the conversation at the preceding assistant message
+ * Renders bottom-right of the user message bubble:
+ * - Rewind (↺): fork-in-same-panel with original user text pre-filled
+ * - Fork (⑂): forks to a new panel at the preceding assistant message
  *
- * Hovering the fork button triggers a preview glow on the target assistant
- * message.
+ * When targetAssistantId is null (first user message — no preceding assistant),
+ * only the rewind button renders. Rewind with null target starts a fresh
+ * session with the original prompt pre-filled.
  *
  * @module MessageActions
  */
@@ -15,7 +16,8 @@ import { useFork } from '../context/ForkContext.js';
 import { RewindIcon, ForkIcon } from './control-panel/icons.js';
 
 interface MessageActionsProps {
-  targetAssistantId: string;
+  /** Preceding assistant message UUID, or null for first user message (rewind-only). */
+  targetAssistantId: string | null;
 }
 
 export function MessageActions({ targetAssistantId }: MessageActionsProps): React.JSX.Element | null {
@@ -29,24 +31,26 @@ export function MessageActions({ targetAssistantId }: MessageActionsProps): Reac
         className="crispy-message-action"
         title="Rewind to this message"
         disabled={isStreaming}
-        onClick={() => onRewind(targetAssistantId)}
-        onMouseEnter={() => onForkPreviewHover(targetAssistantId, true)}
-        onMouseLeave={() => onForkPreviewHover(targetAssistantId, false)}
+        onClick={() => onRewind(targetAssistantId ?? '')}
+        onMouseEnter={targetAssistantId ? () => onForkPreviewHover(targetAssistantId, true) : undefined}
+        onMouseLeave={targetAssistantId ? () => onForkPreviewHover(targetAssistantId, false) : undefined}
         aria-label="Rewind conversation to this point"
       >
         <RewindIcon />
       </button>
-      <button
-        className="crispy-message-action"
-        title="Fork from here"
-        disabled={isStreaming}
-        onClick={() => onFork(targetAssistantId)}
-        onMouseEnter={() => onForkPreviewHover(targetAssistantId, true)}
-        onMouseLeave={() => onForkPreviewHover(targetAssistantId, false)}
-        aria-label="Fork conversation from this point"
-      >
-        <ForkIcon />
-      </button>
+      {targetAssistantId && (
+        <button
+          className="crispy-message-action"
+          title="Fork from here"
+          disabled={isStreaming}
+          onClick={() => onFork(targetAssistantId)}
+          onMouseEnter={() => onForkPreviewHover(targetAssistantId, true)}
+          onMouseLeave={() => onForkPreviewHover(targetAssistantId, false)}
+          aria-label="Fork conversation from this point"
+        >
+          <ForkIcon />
+        </button>
+      )}
     </div>
   );
 }

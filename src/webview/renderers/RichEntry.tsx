@@ -45,7 +45,7 @@ export function RichEntry({ entry }: { entry: TranscriptEntry }): React.JSX.Elem
           role={role}
         />
       ))}
-      {targetId && <MessageActions targetAssistantId={targetId} />}
+      {targetId !== undefined && <MessageActions targetAssistantId={targetId || null} />}
     </div>
   );
 }
