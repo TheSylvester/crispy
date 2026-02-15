@@ -93,6 +93,10 @@ interface ControlPanelProps {
   onForkHistoryLoaded?: (entries: TranscriptEntry[]) => void;
   /** Register a handler for per-message fork execution (called from ForkContext). */
   onRegisterForkHandler?: (handler: (atMessageId: string) => void) => void;
+  /** Push agency mode + bypass state from ExitPlanMode handoff. Consumed once. */
+  pendingAgencyMode?: { agencyMode: AgencyMode; bypassEnabled: boolean } | null;
+  /** Called after pendingAgencyMode is consumed. */
+  onPendingAgencyModeConsumed?: () => void;
 }
 
 /** Agency modes for keyboard cycling (excluding bypass-permissions). */
@@ -162,7 +166,7 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed, onForkHistoryLoaded, onRegisterForkHandler }, ref) {
+  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed, onForkHistoryLoaded, onRegisterForkHandler, pendingAgencyMode, onPendingAgencyModeConsumed }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     // Track the DOM element for native drag/drop listeners. A callback ref
     // ensures the useEffect re-runs when the element mounts, unlike a
@@ -271,6 +275,15 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         onPrefillConsumed?.();
       }
     }, [prefillInput, onPrefillConsumed]);
+
+    // --- Consume pendingAgencyMode when provided (ExitPlanMode handoff) ---
+    useEffect(() => {
+      if (pendingAgencyMode) {
+        dispatch({ type: 'SET_AGENCY_MODE', mode: pendingAgencyMode.agencyMode });
+        dispatch({ type: 'SET_BYPASS', enabled: pendingAgencyMode.bypassEnabled });
+        onPendingAgencyModeConsumed?.();
+      }
+    }, [pendingAgencyMode, onPendingAgencyModeConsumed]);
 
     // --- Context usage tracking ---
     const contextUsage = useContextUsage(selectedSessionId, entries);

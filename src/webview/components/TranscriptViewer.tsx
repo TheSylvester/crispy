@@ -27,6 +27,8 @@ import { PlaybackControls } from "./PlaybackControls.js";
 import { ToolRegistryProvider } from "../context/ToolRegistryContext.js";
 import { ForkProvider } from "../context/ForkContext.js";
 import { ControlPanel } from "./control-panel/index.js";
+import { mapPermissionModeToAgency } from './control-panel/types.js';
+import type { AgencyMode } from './control-panel/types.js';
 import { StopButton } from "./control-panel/StopButton.js";
 import { ThinkingIndicator } from "./ThinkingIndicator.js";
 import { ApprovalContent } from "./approval/index.js";
@@ -48,6 +50,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const { approvalRequest, resolve: resolveApproval } = useApprovalRequest(selectedSessionId);
   const [bypassEnabled, setBypassEnabled] = useState(false);
   const [prefillInput, setPrefillInput] = useState<string | null>(null);
+  const [pendingAgencyMode, setPendingAgencyMode] = useState<{ agencyMode: AgencyMode; bypassEnabled: boolean } | null>(null);
   const {
     visibleCount,
     isPlaying,
@@ -260,6 +263,16 @@ export function TranscriptViewer(): React.JSX.Element {
         // clears approval UI (useApprovalRequest clears on session change)
         setSelectedSessionId(null);
 
+        // Push the chosen permission mode into ControlPanel state so the
+        // new session is created with the correct permissionMode.
+        const targetMode = (transportExtra.updatedPermissions?.[0] as { mode?: string })?.mode;
+        if (targetMode) {
+          const agencyMode = mapPermissionModeToAgency(targetMode);
+          if (agencyMode) {
+            setPendingAgencyMode({ agencyMode, bypassEnabled: targetMode === 'bypassPermissions' });
+          }
+        }
+
         // Prefill ChatInput with the handoff prompt
         setPrefillInput(handoffPrompt);
         return;
@@ -275,6 +288,9 @@ export function TranscriptViewer(): React.JSX.Element {
   const handlePrefillConsumed = useCallback(() => {
     setPrefillInput(null);
   }, []);
+
+  // Callback to clear pendingAgencyMode after ControlPanel consumes it
+  const handlePendingAgencyModeConsumed = useCallback(() => setPendingAgencyMode(null), []);
 
   // --- Main content area (conditional) ---
   // ControlPanel is rendered once, outside the conditional branches, so it is
@@ -370,6 +386,8 @@ export function TranscriptViewer(): React.JSX.Element {
         prefillInput={prefillInput}
         onPrefillConsumed={handlePrefillConsumed}
         onForkHistoryLoaded={handleForkHistoryLoaded}
+        pendingAgencyMode={pendingAgencyMode}
+        onPendingAgencyModeConsumed={handlePendingAgencyModeConsumed}
       >
         {approvalRequest && (
           <ApprovalContent
