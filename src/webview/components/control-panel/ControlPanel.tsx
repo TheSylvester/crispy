@@ -93,6 +93,8 @@ interface ControlPanelProps {
   onForkHistoryLoaded?: (entries: TranscriptEntry[]) => void;
   /** Register a handler for per-message fork execution (called from ForkContext). */
   onRegisterForkHandler?: (handler: (atMessageId: string) => void) => void;
+  /** Register a handler for per-message rewind execution (fork-in-same-panel). */
+  onRegisterRewindHandler?: (handler: (atMessageId: string) => void) => void;
   /** Push agency mode + bypass state from ExitPlanMode handoff. Consumed once. */
   pendingAgencyMode?: { agencyMode: AgencyMode; bypassEnabled: boolean } | null;
   /** Called after pendingAgencyMode is consumed. */
@@ -166,7 +168,7 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed, onForkHistoryLoaded, onRegisterForkHandler, pendingAgencyMode, onPendingAgencyModeConsumed }, ref) {
+  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed, onForkHistoryLoaded, onRegisterForkHandler, onRegisterRewindHandler, pendingAgencyMode, onPendingAgencyModeConsumed }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     // Track the DOM element for native drag/drop listeners. A callback ref
     // ensures the useEffect re-runs when the element mounts, unlike a
@@ -749,6 +751,24 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     // Register executeFork with parent for per-message fork buttons
     useEffect(() => { onRegisterForkHandler?.(executeFork); }, [onRegisterForkHandler, executeFork]);
+
+    // --- Rewind execution (fork-in-same-panel): load fork history + set fork mode ---
+    const executeRewind = useCallback((atMessageId: string) => {
+      if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
+
+      // Load truncated source history for immediate display
+      transport.loadSession(selectedSessionId, { until: atMessageId })
+        .then((history: TranscriptEntry[]) => {
+          if (history.length > 0) onForkHistoryLoaded?.(history);
+        })
+        .catch((err: unknown) => console.error('[ControlPanel] rewind history load failed:', err));
+
+      // Enter fork mode — the existing handleSend fork branch handles the rest
+      dispatch({ type: 'SET_FORK_MODE', forkMode: { fromSessionId: selectedSessionId, atMessageId } });
+    }, [selectedSessionId, transport, onForkHistoryLoaded]);
+
+    // Register executeRewind with parent for per-message rewind buttons
+    useEffect(() => { onRegisterRewindHandler?.(executeRewind); }, [onRegisterRewindHandler, executeRewind]);
 
     // --- Fork handler (control panel button — computes fork target, then delegates) ---
     const handleFork = useCallback(() => {

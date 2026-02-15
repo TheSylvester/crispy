@@ -21,7 +21,7 @@ interface MessageActionsProps {
 export function MessageActions({ targetAssistantId }: MessageActionsProps): React.JSX.Element | null {
   const fork = useFork();
   if (!fork) return null;
-  const { onFork, onForkPreviewHover, isStreaming } = fork;
+  const { onFork, onRewind, onForkPreviewHover, isStreaming } = fork;
 
   return (
     <div className="crispy-message-actions">
@@ -29,7 +29,9 @@ export function MessageActions({ targetAssistantId }: MessageActionsProps): Reac
         className="crispy-message-action"
         title="Rewind to this message"
         disabled={isStreaming}
-        onClick={() => console.log('[MessageActions] rewind (not wired)', targetAssistantId)}
+        onClick={() => onRewind(targetAssistantId)}
+        onMouseEnter={() => onForkPreviewHover(targetAssistantId, true)}
+        onMouseLeave={() => onForkPreviewHover(targetAssistantId, false)}
         aria-label="Rewind conversation to this point"
       >
         <RewindIcon />

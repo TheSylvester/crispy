@@ -236,6 +236,33 @@ export function TranscriptViewer(): React.JSX.Element {
     forkHandlerRef.current?.(atMessageId);
   }, []);
 
+  // Per-message rewind handler — delegates to ControlPanel's executeRewind via ref,
+  // then extracts the original user text and prefills the chat input.
+  const rewindHandlerRef = useRef<((atMessageId: string) => void) | null>(null);
+  const handleRegisterRewindHandler = useCallback((handler: (atMessageId: string) => void) => {
+    rewindHandlerRef.current = handler;
+  }, []);
+  const handlePerMessageRewind = useCallback((atMessageId: string) => {
+    // Trigger ControlPanel's executeRewind (loads fork history, sets fork mode)
+    rewindHandlerRef.current?.(atMessageId);
+
+    // Reverse-lookup: find the user entry whose fork target is this assistant message
+    for (const [userUUID, assistantUUID] of forkTargets.entries()) {
+      if (assistantUUID === atMessageId) {
+        const userEntry = filteredEntries.find(e => e.uuid === userUUID);
+        if (userEntry?.message?.content) {
+          // Extract text from content blocks (same logic as CompactEntry.extractTextContent)
+          const content = userEntry.message.content;
+          const text = Array.isArray(content)
+            ? content.filter((b): b is { type: 'text'; text: string } => b.type === 'text').map(b => b.text).join('\n')
+            : typeof content === 'string' ? content : '';
+          if (text) setPrefillInput(text);
+        }
+        break;
+      }
+    }
+  }, [forkTargets, filteredEntries, setPrefillInput]);
+
   // Wrap resolveApproval to intercept ExitPlanMode orchestration fields
   // (clearContext, planContent) before forwarding to transport.
   const handleApprovalResolve = useCallback(
@@ -313,6 +340,7 @@ export function TranscriptViewer(): React.JSX.Element {
       <ToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
         <ForkProvider
           onFork={handlePerMessageFork}
+          onRewind={handlePerMessageRewind}
           onForkPreviewHover={handleForkPreviewHover}
           isStreaming={channelState === 'streaming'}
           forkTargets={forkTargets}
@@ -378,6 +406,7 @@ export function TranscriptViewer(): React.JSX.Element {
         ref={controlPanelRef}
         onForkHoverChange={handleForkHoverChange}
         onRegisterForkHandler={handleRegisterForkHandler}
+        onRegisterRewindHandler={handleRegisterRewindHandler}
         onOptimisticEntry={selectedSessionId ? addOptimisticEntry : undefined}
         onPendingOptimisticEntry={handlePendingOptimisticEntry}
         onScrollToBottom={pinToBottom}

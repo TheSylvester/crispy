@@ -14,6 +14,7 @@ import { createContext, useContext } from 'react';
 
 interface ForkContextValue {
   onFork: (atMessageId: string) => void;
+  onRewind: (atMessageId: string) => void;
   onForkPreviewHover: (targetMessageId: string, hovering: boolean) => void;
   isStreaming: boolean;
   forkTargets: Map<string, string>; // user UUID → preceding assistant UUID
