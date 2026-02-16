@@ -18,6 +18,12 @@
  * - Notifications are suppressed (silent mode) during render to avoid
  *   triggering useSyncExternalStore re-render cascades mid-render
  *
+ * Post-render flush: silent mode collects dirty tool IDs during render.
+ * A useEffect calls registry.flushDirty() after commit so already-mounted
+ * components (e.g. TaskTool whose childIds grew) get notified and re-render.
+ * Without this, streaming child tools inside Task cards wouldn't appear
+ * until the session is reloaded from disk.
+ *
  * @module webview/context/ToolRegistryContext
  */
 
@@ -25,6 +31,7 @@ import {
   createContext,
   useContext,
   useRef,
+  useEffect,
   useSyncExternalStore,
   useCallback,
 } from 'react';
@@ -77,9 +84,12 @@ export function ToolRegistryProvider({
   //
   // This block runs during render (not in useEffect) so the registry is
   // populated BEFORE children call useToolEntry(). We use silent mode to
-  // suppress subscriber notifications — children will pick up the current
-  // state via getSnapshot() during their own render, so notifications are
-  // unnecessary and would cause wasteful re-render cascades.
+  // suppress subscriber notifications — newly-mounted children pick up
+  // state via getSnapshot() during their own render.
+  //
+  // Silent mode collects dirty tool IDs so the post-render useEffect can
+  // flush notifications for already-mounted components (e.g. a TaskTool
+  // whose childIds grew when a streaming child registered).
   // ---------------------------------------------------------------------------
 
   const sessionChanged = sessionId !== sessionIdRef.current;
@@ -100,8 +110,8 @@ export function ToolRegistryProvider({
     }
   } else if (len > processed) {
     // Forward append: initial session load, live streaming, or step-forward.
-    // Use silent mode to suppress notifications during render — children
-    // will read the populated registry via getSnapshot().
+    // Silent mode suppresses notifications during render; dirty IDs are
+    // collected and flushed by the useEffect below after commit.
     registry.silent(() => {
       for (let i = processed; i < len; i++) {
         processEntryForRegistry(entries[i], registry);
@@ -119,6 +129,18 @@ export function ToolRegistryProvider({
     processedCountRef.current = len;
   }
   // len === processed && !sessionChanged → no new entries, nothing to do
+
+  // ---------------------------------------------------------------------------
+  // Post-render flush — notify already-mounted subscribers
+  //
+  // Silent mode suppressed notifications during render to avoid mid-render
+  // re-render cascades. Now that React has committed, flush dirty tool IDs
+  // so components like TaskTool (whose childIds grew) re-render to show
+  // streaming child tool cards.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    registry.flushDirty();
+  });
 
   return (
     <ToolRegistryCtx.Provider value={registry}>

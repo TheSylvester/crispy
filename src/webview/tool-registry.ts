@@ -61,6 +61,11 @@ export class ToolRegistry {
   private _pendingToolNotifications = new Set<string>();
   private _pendingGlobalNotification = false;
 
+  // Silent mode — collects dirty IDs for post-render flush
+  private _silent = false;
+  private _dirtyTools = new Set<string>();
+  private _dirtyGlobal = false;
+
   // --------------------------------------------------------------------------
   // Registration
   // --------------------------------------------------------------------------
@@ -226,20 +231,24 @@ export class ToolRegistry {
   }
 
   // --------------------------------------------------------------------------
-  // Silent mode — process without any notifications
+  // Silent mode — suppress notifications during render, flush post-commit
   // --------------------------------------------------------------------------
 
   /**
-   * Process entries without firing any subscriber notifications.
+   * Process entries without firing subscriber notifications during render.
    *
    * Used during React's render phase where the registry must be populated
    * before children render, but firing notifications would cause
    * useSyncExternalStore to trigger re-render cascades mid-render.
-   * Children pick up the populated state via getSnapshot() during their
-   * own render — no notification needed.
+   *
+   * Newly-mounted components pick up state via getSnapshot() during their
+   * own render. Already-mounted components (e.g. a TaskTool whose childIds
+   * changed) need a post-render notification — dirty IDs are collected here
+   * and flushed by the provider's useEffect via flushDirty().
    */
   silent(fn: () => void): void {
     this._batching = true;
+    this._silent = true;
     this._pendingToolNotifications.clear();
     this._pendingGlobalNotification = false;
 
@@ -247,10 +256,41 @@ export class ToolRegistry {
       fn();
     } finally {
       this._batching = false;
-      // Discard all pending notifications — don't flush
+      this._silent = false;
+      // Move pending notifications to dirty sets for post-render flush
+      for (const id of this._pendingToolNotifications) {
+        this._dirtyTools.add(id);
+      }
+      if (this._pendingGlobalNotification) {
+        this._dirtyGlobal = true;
+      }
       this._pendingToolNotifications.clear();
       this._pendingGlobalNotification = false;
     }
+  }
+
+  /**
+   * Flush notifications that were suppressed during silent-mode render.
+   * Called from useEffect (post-commit) so subscriber re-renders are safe.
+   * Returns true if any notifications were flushed.
+   */
+  flushDirty(): boolean {
+    if (this._dirtyTools.size === 0 && !this._dirtyGlobal) return false;
+
+    for (const toolId of this._dirtyTools) {
+      const listeners = this.toolListeners.get(toolId);
+      if (listeners) {
+        for (const cb of listeners) cb();
+      }
+    }
+    this._dirtyTools.clear();
+
+    if (this._dirtyGlobal) {
+      this._dirtyGlobal = false;
+      for (const cb of this.globalListeners) cb();
+    }
+
+    return true;
   }
 
   // --------------------------------------------------------------------------
@@ -271,8 +311,11 @@ export class ToolRegistry {
     // rewind (where components stay mounted but registry state is rebuilt).
     this._cachedRootIds = [];
     this._batching = false;
+    this._silent = false;
     this._pendingToolNotifications.clear();
     this._pendingGlobalNotification = false;
+    this._dirtyTools.clear();
+    this._dirtyGlobal = false;
     if (!opts?.silent) {
       this.notifyGlobal();
     }
