@@ -17,6 +17,11 @@ import { GrepTool } from './GrepTool.js';
 import { TaskTool } from './TaskTool.js';
 import { TodoTool } from './TodoTool.js';
 import { SkillTool } from './SkillTool.js';
+import { WebSearchTool } from './WebSearchTool.js';
+import { WebFetchTool } from './WebFetchTool.js';
+import { AskUserQuestionTool } from './AskUserQuestionTool.js';
+import { ExitPlanModeTool } from './ExitPlanModeTool.js';
+import { EnterPlanModeTool } from './EnterPlanModeTool.js';
 
 export const toolRendererMap = new Map<string, React.ComponentType<{ toolId: string }>>([
   ['tool:Bash', BashTool],
@@ -28,7 +33,11 @@ export const toolRendererMap = new Map<string, React.ComponentType<{ toolId: str
   ['tool:Task', TaskTool],
   ['tool:TodoWrite', TodoTool],
   ['tool:Skill', SkillTool],
-  // Phase 2 tools added later (WebSearch, WebFetch, etc.)
+  ['tool:WebSearch', WebSearchTool],
+  ['tool:WebFetch', WebFetchTool],
+  ['tool:AskUserQuestion', AskUserQuestionTool],
+  ['tool:ExitPlanMode', ExitPlanModeTool],
+  ['tool:EnterPlanMode', EnterPlanModeTool],
 ]);
 
 /** Default renderer for tools not in the map */

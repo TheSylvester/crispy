@@ -3105,3 +3105,101 @@ body.agency-bypass-permissions {
   font-style: italic;
   font-size: 10px;
 }
+
+/* ============================================================================
+ * AskUserQuestion Tool — transcript view of questions + options
+ * ============================================================================ */
+
+.crispy-askuser-questions {
+  padding: 4px 8px 4px 20px;
+}
+
+.crispy-askuser-question {
+  margin-bottom: 8px;
+}
+
+.crispy-askuser-question:last-child {
+  margin-bottom: 0;
+}
+
+.crispy-askuser-question__text {
+  display: block;
+  font-size: 0.9em;
+  margin-bottom: 4px;
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-askuser-options {
+  list-style: none;
+  padding: 0;
+  margin: 2px 0 0 8px;
+}
+
+.crispy-askuser-option {
+  padding: 2px 0;
+  font-size: 0.9em;
+}
+
+.crispy-askuser-option__label {
+  color: var(--vscode-foreground, #d4d4d4);
+  font-weight: 500;
+}
+
+.crispy-askuser-option__desc {
+  color: var(--vscode-descriptionForeground, #999);
+}
+
+/* ============================================================================
+ * ExitPlanMode Tool — collapsed plan details + permissions list
+ * ============================================================================ */
+
+.crispy-plan-details {
+  padding: 4px 8px 4px 20px;
+}
+
+.crispy-plan-summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--vscode-descriptionForeground, #858585);
+  user-select: none;
+  padding: 2px 0;
+}
+
+.crispy-plan-summary:hover {
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-plan-permissions {
+  padding: 4px 8px 4px 20px;
+  font-size: 0.9em;
+}
+
+.crispy-plan-permissions__title {
+  color: var(--vscode-descriptionForeground, #999);
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.crispy-plan-permissions-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.crispy-plan-permissions-list li {
+  padding: 2px 0;
+}
+
+.crispy-plan-permission__tool {
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-textPreformat-foreground, #9cdcfe);
+  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-size: 0.9em;
+}
+
+.crispy-plan-permission__prompt {
+  color: var(--vscode-descriptionForeground, #999);
+}
