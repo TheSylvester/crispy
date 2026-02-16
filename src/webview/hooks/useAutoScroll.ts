@@ -1,28 +1,38 @@
 /**
- * useAutoScroll — smart auto-scroll with FAB visibility and streaming support.
+ * useAutoScroll — intent-driven scroll management.
  *
- * Three cooperating mechanisms:
- * 1. RAF-debounced passive scroll listener — tracks position, updates FAB visibility
- * 2. ResizeObserver on content div — auto-scrolls when content grows while near bottom
- * 3. pinToBottom() — forces scroll lock on message send, ResizeObserver sustains it
+ * Single source of truth: `parked` boolean = "user wants to stay at bottom."
  *
- * On session load, waits for content to settle (no resize events for SETTLE_MS),
- * then plays a smooth top-to-bottom intro scroll as visual feedback that there's
- * history above. During streaming, instant-scrolls to avoid lag.
+ * Parked transitions:
+ *   → true:  scrollToBottom click, message send (pinToBottom), session change,
+ *            fork/remount, user manually scrolls to absolute bottom (<10px)
+ *   → false: user scrolls UP past 100px from bottom (direction-gated)
+ *
+ * Asymmetric hysteresis (100px to unpark, 10px to re-park) prevents flapping.
+ * Direction gating (only unpark on upward scroll) prevents smooth-scroll
+ * animations from accidentally unparking.
+ *
+ * Auto-scroll: single ResizeObserver on .crispy-transcript-content. When parked
+ * and content grew, instant-scroll to bottom. The spacer div inside the content
+ * div means control panel size changes flow through naturally. The observer
+ * reads parked via ref (not closure) to avoid resubscription on state change.
+ *
+ * Button visibility: scroll-to-bottom hidden when parked, scroll-to-top hidden
+ * when already at top.
  *
  * @module useAutoScroll
  */
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { isPerfMode } from "../perf/index.js";
-import { PerfStore } from "../perf/profiler.js";
 
-/** Generous zone for auto-scroll decisions (content growth while near bottom) */
-const NEAR_BOTTOM_THRESHOLD = 100;
-/** Tight zone for FAB visibility */
-const BUTTON_THRESHOLD = 50;
-/** Quiet period (ms) after last resize before playing the intro scroll */
-const SETTLE_MS = 150;
+/** Distance from bottom the user must scroll before we unpark. */
+const UNPARK_THRESHOLD = 100;
+/** User must scroll within this distance to re-park by position. */
+const REPARK_THRESHOLD = 10;
+/** Distance from top before we show the scroll-to-top button. */
+const AT_TOP_THRESHOLD = 50;
+/** Quiet period (ms) after last content resize before playing intro scroll. */
+const INTRO_SETTLE_MS = 200;
 
 export interface UseAutoScrollOptions {
   sessionId: string | null;
@@ -33,7 +43,9 @@ export interface UseAutoScrollOptions {
 }
 
 export interface UseAutoScrollReturn {
-  isSticky: boolean;
+  /** True when the user intends to stay at the bottom of the transcript. */
+  parked: boolean;
+  /** True when scrolled to the very top (hides scroll-to-top button). */
   isAtTop: boolean;
   scrollToBottom: () => void;
   scrollToTop: () => void;
@@ -43,53 +55,57 @@ export interface UseAutoScrollReturn {
 export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
   const { sessionId, scrollRef, remount } = opts;
 
-  const [isSticky, setIsSticky] = useState(true);
+  const [parked, setParked] = useState(true);
   const [isAtTop, setIsAtTop] = useState(true);
 
-  // Refs for non-rendering state
-  const isNearBottomRef = useRef(true);
-  const lastScrollHeightRef = useRef(0);
-  const rafIdRef = useRef(0);
-  // True during initial session load; cleared after the intro scroll plays.
-  const isSessionLoadRef = useRef(true);
-  // Settle timer for the intro scroll.
-  const settleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  // Sticky pin flag — set by pinToBottom(), cleared only by user-initiated scroll.
-  // Survives large content growth that would push distFromBottom > threshold.
-  const pinnedRef = useRef(false);
+  // Ref mirror of parked — read by ResizeObserver callback to avoid
+  // resubscribing the observer on every parked state change.
+  const parkedRef = useRef(true);
+  parkedRef.current = parked;
 
-  // ── Session reset ──────────────────────────────────────────────────
+  const rafIdRef = useRef(0);
+  // Track previous scrollTop to compute direction (up vs down).
+  const lastScrollTopRef = useRef(0);
+  // Track scrollHeight for the ResizeObserver grow-detection.
+  const lastScrollHeightRef = useRef(0);
+
+  // ── Session / fork reset → always park ────────────────────────────
   useEffect(() => {
+    setParked(true);
     setIsAtTop(true);
-    isNearBottomRef.current = true;
-    // NOTE: pinnedRef is intentionally NOT reset here. When a fork/send
-    // triggers setSelectedSessionId → remount change → this effect, we
-    // want the pin from pinToBottom() to survive across the session switch.
-    // pinnedRef is only cleared by user-initiated scroll away from bottom.
+    lastScrollTopRef.current = 0;
     lastScrollHeightRef.current = 0;
-    isSessionLoadRef.current = true;
-    clearTimeout(settleTimerRef.current);
   }, [sessionId, remount]);
 
-  // ── 1. Scroll listener (RAF-debounced, passive) ────────────────────
+  // ── Scroll listener: unpark / re-park / isAtTop ───────────────────
+  // Direction-gated: only unpark when scrolling UP. This prevents smooth
+  // scroll animations (scrollToBottom) from generating intermediate events
+  // that would accidentally unpark.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
 
     const onScroll = () => {
-      if (isPerfMode) PerfStore.recordScrollEvent();
       cancelAnimationFrame(rafIdRef.current);
       rafIdRef.current = requestAnimationFrame(() => {
         if (!scrollRef.current) return;
         const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-        const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+        const distFromBottom = scrollHeight - scrollTop - clientHeight;
+        const delta = scrollTop - lastScrollTopRef.current;
+        lastScrollTopRef.current = scrollTop;
 
-        const nearBottom = distanceFromBottom < NEAR_BOTTOM_THRESHOLD;
-        isNearBottomRef.current = nearBottom;
-        // Clear sticky pin when user scrolls away from bottom.
-        if (!nearBottom) pinnedRef.current = false;
-        setIsSticky(distanceFromBottom < BUTTON_THRESHOLD);
-        setIsAtTop(scrollTop < BUTTON_THRESHOLD);
+        // Only unpark on UPWARD scroll (delta < 0) past threshold.
+        // Smooth scroll animations move downward (delta > 0), so they
+        // never trigger unpark regardless of distance from bottom.
+        if (delta < 0 && distFromBottom > UNPARK_THRESHOLD) {
+          setParked(false);
+        }
+        // Re-park: user manually scrolled all the way back to bottom.
+        else if (distFromBottom < REPARK_THRESHOLD) {
+          setParked(true);
+        }
+
+        setIsAtTop(scrollTop < AT_TOP_THRESHOLD);
       });
     };
 
@@ -100,18 +116,11 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
     };
   }, [sessionId, scrollRef, remount]);
 
-  // ── 2. ResizeObserver on content div ───────────────────────────────
-  // We observe .crispy-transcript-content (the inner div), NOT the scroll
-  // container. The scroll container is flex-sized and its own dimensions
-  // don't change when children render — only scrollHeight changes, which
-  // ResizeObserver doesn't track. The content div's border-box grows as
-  // entries mount, so ResizeObserver fires reliably.
-  //
-  // During session load, instant-scroll keeps us at the bottom while
-  // content renders. A settle timer (debounced by each resize) fires once
-  // content stops growing — then we jump to top and smooth-scroll down
-  // as the intro animation. This avoids the smooth scroll getting
-  // cancelled by subsequent instant scrolls during the render cascade.
+  // ── Auto-scroll: single ResizeObserver on content div ─────────────
+  // When parked and content grew (new entries, spacer resize from
+  // --cp-height change), instant-scroll to bottom.
+  // Reads parkedRef (not parked state) so this effect doesn't re-subscribe
+  // on parked changes — one stable observer per session/mount.
   useEffect(() => {
     const scrollEl = scrollRef.current;
     if (!scrollEl) return;
@@ -126,50 +135,21 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
       const grew = newScrollHeight > lastScrollHeightRef.current;
       lastScrollHeightRef.current = newScrollHeight;
 
-      // Two-pronged near-bottom check:
-      // 1. Fresh synchronous computation — fixes the race where multiple
-      //    Task tools stream and the RAF-debounced ref lags behind.
-      // 2. Sticky pinnedRef — survives large content growth (>100px) that
-      //    happens between pinToBottom() and the next ResizeObserver fire.
-      //    Cleared only by user-initiated scroll away from bottom.
-      const distFromBottom = newScrollHeight - el.scrollTop - el.clientHeight;
-      const isNearBottom = distFromBottom < NEAR_BOTTOM_THRESHOLD || pinnedRef.current;
-
-      if (grew && isNearBottom) {
-        if (isPerfMode) PerfStore.recordAutoScrollTrigger();
-        // Always instant-scroll to keep up with content growth.
+      if (grew && parkedRef.current) {
         el.scrollTop = newScrollHeight;
-
-        // Keep ref and state in sync after our scroll adjustment
-        isNearBottomRef.current = true;
-        setIsSticky(true);
-
-        if (isSessionLoadRef.current) {
-          // Content is still settling — reset the debounce timer.
-          // When it finally fires, we play the intro scroll.
-          clearTimeout(settleTimerRef.current);
-          settleTimerRef.current = setTimeout(() => {
-            if (!scrollRef.current || !isSessionLoadRef.current) return;
-            isSessionLoadRef.current = false;
-            const settled = scrollRef.current;
-            settled.scrollTop = 0;
-            settled.scrollTo({ top: settled.scrollHeight, behavior: "smooth" });
-          }, SETTLE_MS);
-        }
+        lastScrollTopRef.current = el.scrollTop;
       }
     });
 
     observer.observe(contentEl);
-    return () => {
-      observer.disconnect();
-      clearTimeout(settleTimerRef.current);
-    };
+    return () => observer.disconnect();
   }, [sessionId, scrollRef, remount]);
 
   // ── User-initiated smooth scrolls (FAB clicks) ────────────────────
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+    setParked(true);
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [scrollRef]);
 
@@ -179,26 +159,65 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
     el.scrollTo({ top: 0, behavior: "smooth" });
   }, [scrollRef]);
 
-  // ── 3. pinToBottom — called on message send ────────────────────────
-  // Cancels any pending intro scroll — sending a message means the user
-  // is already engaged, no need for theatrics.
+  // ── pinToBottom — called on message send ───────────────────────────
   const pinToBottom = useCallback(() => {
-    isSessionLoadRef.current = false;
-    clearTimeout(settleTimerRef.current);
-    isNearBottomRef.current = true;
-    pinnedRef.current = true;
-    setIsSticky(true);
+    setParked(true);
     const el = scrollRef.current;
     if (el) {
       el.scrollTop = el.scrollHeight;
+      lastScrollTopRef.current = el.scrollTop;
     }
   }, [scrollRef]);
 
-  return {
-    isSticky,
-    isAtTop,
-    scrollToBottom,
-    scrollToTop,
-    pinToBottom,
-  };
+  // ── Intro scroll: one-shot sweep on session switch ──────────────
+  // When the user switches to a session (or fork/remount), once content
+  // has settled (no resizes for INTRO_SETTLE_MS), jump one viewport above
+  // the bottom and smooth-scroll down. Gives spatial orientation that
+  // there's history above. Purely cosmetic — doesn't touch parked state.
+  // Only fires for content taller than the viewport.
+  useEffect(() => {
+    const scrollEl = scrollRef.current;
+    if (!scrollEl || !sessionId) return;
+
+    const contentEl = scrollEl.querySelector('.crispy-transcript-content');
+    if (!contentEl) return;
+
+    let settleTimer: ReturnType<typeof setTimeout>;
+    let fired = false;
+
+    const observer = new ResizeObserver(() => {
+      if (fired) return;
+      clearTimeout(settleTimer);
+      // Keep content pinned to bottom during render cascade so user
+      // doesn't see a flash of content at the top.
+      scrollEl.scrollTop = scrollEl.scrollHeight;
+      lastScrollTopRef.current = scrollEl.scrollTop;
+
+      settleTimer = setTimeout(() => {
+        if (fired || !scrollRef.current) return;
+        fired = true;
+        observer.disconnect();
+
+        const el = scrollRef.current;
+        const { scrollHeight, clientHeight } = el;
+
+        // Only animate if content is taller than viewport.
+        if (scrollHeight <= clientHeight) return;
+
+        // Jump one viewport above the bottom, then smooth-scroll down.
+        const jumpTo = Math.max(0, scrollHeight - clientHeight * 2);
+        el.scrollTop = jumpTo;
+        lastScrollTopRef.current = jumpTo;
+        el.scrollTo({ top: scrollHeight, behavior: "smooth" });
+      }, INTRO_SETTLE_MS);
+    });
+
+    observer.observe(contentEl);
+    return () => {
+      observer.disconnect();
+      clearTimeout(settleTimer);
+    };
+  }, [sessionId, scrollRef, remount]);
+
+  return { parked, isAtTop, scrollToBottom, scrollToTop, pinToBottom };
 }

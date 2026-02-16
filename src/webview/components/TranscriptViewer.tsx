@@ -169,72 +169,28 @@ export function TranscriptViewer(): React.JSX.Element {
   // Channel state for fork streaming check
   const { channelState } = useSessionStatus(selectedSessionId);
 
-  const { isSticky, isAtTop, scrollToBottom, scrollToTop, pinToBottom } = useAutoScroll({
+  const { parked, isAtTop, scrollToBottom, scrollToTop, pinToBottom } = useAutoScroll({
     sessionId: selectedSessionId,
     scrollRef: transcriptRef,
     remount: hasForkHistory,
   });
 
-  // Observe control panel + stop button for dynamic transcript bottom padding.
-  // The stop button floats above the control panel; when visible its height must be
-  // included so the last transcript entry isn't hidden behind it.
-  //
-  // ResizeObserver fires on control panel size changes. The stop button doesn't resize
-  // (it's always in the DOM at fixed size, toggled via opacity/transform), so we use a
-  // MutationObserver on its classList to detect visibility transitions.
+  // Track control panel height for CSS custom property --cp-height.
+  // Used by the spacer div, scroll FABs, and stop button for positioning.
+  // No scroll compensation — the spacer div inside .crispy-transcript-content
+  // makes padding part of content flow, so layout changes are handled naturally.
   useEffect(() => {
     const cpEl = controlPanelRef.current;
-    const sbEl = stopButtonRef.current;
-    const txEl = transcriptRef.current;
-    if (!cpEl || !txEl) return;
+    if (!cpEl) return;
 
-    const GAP = 32; // px spacer between content and control panel
+    const observer = new ResizeObserver(() => {
+      const cpHeight = Math.round(cpEl.getBoundingClientRect().height);
+      document.documentElement.style.setProperty('--cp-height', String(cpHeight));
+    });
 
-    const updatePadding = () => {
-      const cpHeight = cpEl.getBoundingClientRect().height;
-      // Stop button is always in the DOM but invisible (opacity: 0) when idle.
-      // Only add its height when it has the --visible class.
-      const sbVisible = sbEl?.classList.contains('crispy-stop--visible');
-      const sbHeight = sbVisible ? sbEl!.getBoundingClientRect().height : 0;
-
-      const newPadding = cpHeight + sbHeight + GAP;
-      const oldPadding = parseFloat(txEl.style.paddingBottom) || 0;
-      const delta = newPadding - oldPadding;
-
-      // Measure near-bottom BEFORE padding change. useAutoScroll's content
-      // ResizeObserver won't fire for padding-only changes (it watches the
-      // content div, not the scroll container), so we compensate here with
-      // a targeted scrollBy — not an absolute jump to bottom, which would
-      // race with useAutoScroll during streaming.
-      const distFromBottom = txEl.scrollHeight - txEl.scrollTop - txEl.clientHeight;
-      const wasNearBottom = distFromBottom < 100;
-
-      txEl.style.paddingBottom = `${newPadding}px`;
-      document.documentElement.style.setProperty('--cp-height', String(Math.round(cpHeight)));
-
-      if (wasNearBottom && delta > 0) {
-        txEl.scrollBy({ top: delta });
-      }
-    };
-
-    // Watch control panel for size changes (e.g. textarea grow)
-    const resizeObs = new ResizeObserver(updatePadding);
-    resizeObs.observe(cpEl);
-
-    // Watch stop button for class changes (visible ↔ hidden)
-    let mutationObs: MutationObserver | undefined;
-    if (sbEl) {
-      mutationObs = new MutationObserver(updatePadding);
-      mutationObs.observe(sbEl, { attributes: true, attributeFilter: ['class'] });
-    }
-
-    updatePadding(); // Initial measurement
-
-    return () => {
-      resizeObs.disconnect();
-      mutationObs?.disconnect();
-    };
-  }, [selectedSessionId, hasForkHistory]); // Re-attach when session changes or fork history mounts transcript
+    observer.observe(cpEl);
+    return () => observer.disconnect();
+  }, []);
 
   // Fork preview glow: add/remove class on last assistant message
   const handleForkHoverChange = useCallback((hovering: boolean) => {
@@ -411,6 +367,10 @@ export function TranscriptViewer(): React.JSX.Element {
                 </PerfProfiler>
               )}
               <ThinkingIndicator />
+              {/* Spacer: reserves space for the fixed control panel + stop button + gap.
+                  Sized via CSS using --cp-height. Always reserves stop button space so
+                  layout doesn't shift when it appears/disappears. */}
+              <div className="crispy-transcript-spacer" />
             </div>
           </div>
         <button
@@ -423,7 +383,7 @@ export function TranscriptViewer(): React.JSX.Element {
           </svg>
         </button>
         <button
-          className={`crispy-scroll-nav crispy-scroll-to-bottom ${isSticky ? 'crispy-scroll-to-bottom--hidden' : ''}`}
+          className={`crispy-scroll-nav crispy-scroll-to-bottom ${parked ? 'crispy-scroll-to-bottom--hidden' : ''}`}
           onClick={scrollToBottom}
           aria-label="Scroll to bottom"
         >

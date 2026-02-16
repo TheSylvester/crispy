@@ -270,6 +270,14 @@ h2 {
   margin: 0 auto;
 }
 
+/* Bottom spacer — reserves space for the fixed control panel + stop button.
+   Always accounts for stop button height so layout doesn't shift when it
+   appears/disappears. Sized via --cp-height (set by ResizeObserver in JS).
+   cp-height + ~26px (stop button) + 32px (gap) + generous breathing room */
+.crispy-transcript-spacer {
+  height: calc(var(--cp-height, 80) * 1px + 76px);
+}
+
 /* --- Thinking Indicator — animated spinner + agency-aware label --- */
 
 .crispy-thinking {
