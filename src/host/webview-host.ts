@@ -38,19 +38,17 @@ function getMostRecentPanel(): vscode.WebviewPanel | undefined {
 }
 
 /**
- * Get or create a panel for prefilling input content.
- * Unlike openCrispyPanel, this always returns the panel reference
- * and reuses the existing panel instead of creating one beside it.
+ * Create a new panel for "Execute in Crispy".
+ * Always creates a fresh panel so the current session is not overwritten.
+ * If a panel already exists, opens beside it; otherwise uses column one.
  */
 export function getOrCreatePanelForPrefill(
   context: vscode.ExtensionContext,
 ): vscode.WebviewPanel {
-  const existing = getMostRecentPanel();
-  if (existing) {
-    existing.reveal();
-    return existing;
-  }
-  return createCrispyPanel(context, vscode.ViewColumn.One);
+  const column = getMostRecentPanel()
+    ? vscode.ViewColumn.Beside
+    : vscode.ViewColumn.One;
+  return createCrispyPanel(context, column);
 }
 
 /**
