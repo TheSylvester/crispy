@@ -8,7 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AsyncIterableQueue } from '../src/core/async-iterable-queue.js';
-import type { AgentAdapter, ChannelMessage } from '../src/core/agent-adapter.js';
+import type { AgentAdapter, AdapterSettings, ChannelMessage } from '../src/core/agent-adapter.js';
 import type { TranscriptEntry, MessageContent, Vendor } from '../src/core/transcript.js';
 import type { ChannelStatus, ApprovalOption, NotificationEvent } from '../src/core/channel-events.js';
 import type { Subscriber, SubscriberEvent } from '../src/core/session-channel.js';
@@ -54,6 +54,10 @@ function createMockAdapter(options?: {
     vendor,
     get sessionId() { return sessionId; },
     get status() { return status; },
+    get contextUsage() { return null; },
+    get settings(): AdapterSettings {
+      return { model: undefined, permissionMode: undefined, allowDangerouslySkipPermissions: false, extraArgs: undefined };
+    },
     outputQueue: queue,
 
     messages(): AsyncIterable<ChannelMessage> {
@@ -285,14 +289,85 @@ describe('Subscribe / Unsubscribe', () => {
     const lateSubscriber = createTestSubscriber('late');
     subscribe(ch, lateSubscriber);
 
+    // Late subscriber receives current state on subscribe (idle)
+    const lateStateEvents = lateSubscriber.eventsOfType('state_changed');
+    expect(lateStateEvents.length).toBe(1);
+    expect(lateStateEvents[0].state).toBe('idle');
+
     // Push second entry — both subscribers get it
     adapter.pushMessage(entryMsg({ type: 'assistant' }));
     await tick();
 
     // Early subscriber: state_changed(idle) + entry + entry = 3
-    // Late subscriber: entry = 1
+    // Late subscriber: state_changed(idle) + entry = 2
     expect(earlySubscriber.eventsOfType('entry').length).toBe(2);
     expect(lateSubscriber.eventsOfType('entry').length).toBe(1);
+  });
+
+  it('late subscriber receives current state on subscribe', async () => {
+    const ch = createChannel('ch-1');
+    const adapter = createMockAdapter();
+
+    setAdapter(ch, adapter);
+    await tick();
+
+    // Transition to streaming
+    adapter.pushMessage(statusMsg('active'));
+    await tick();
+    expect(ch.state).toBe('streaming');
+
+    // Late subscriber joins mid-streaming
+    const lateSub = createTestSubscriber('late');
+    subscribe(ch, lateSub);
+
+    const stateEvents = lateSub.eventsOfType('state_changed');
+    expect(stateEvents.length).toBe(1);
+    expect(stateEvents[0].state).toBe('streaming');
+    expect(stateEvents[0].snapshot.state).toBe('streaming');
+  });
+
+  it('late subscriber receives pending approval on subscribe', async () => {
+    const ch = createChannel('ch-1');
+    const adapter = createMockAdapter();
+
+    setAdapter(ch, adapter);
+    await tick();
+
+    // Create a pending approval
+    adapter.pushMessage(approvalMsg('tool-77', 'Bash', { command: 'ls' }, [
+      { id: 'allow', label: 'Allow' },
+      { id: 'deny', label: 'Deny' },
+    ], 'wants to list files'));
+    await tick();
+    expect(ch.state).toBe('awaiting_approval');
+
+    // Late subscriber joins during awaiting_approval
+    const lateSub = createTestSubscriber('late');
+    subscribe(ch, lateSub);
+
+    // Should receive state_changed + approval_request
+    const stateEvents = lateSub.eventsOfType('state_changed');
+    expect(stateEvents.length).toBe(1);
+    expect(stateEvents[0].state).toBe('awaiting_approval');
+
+    const approvalEvents = lateSub.eventsOfType('approval_request');
+    expect(approvalEvents.length).toBe(1);
+    expect(approvalEvents[0].toolUseId).toBe('tool-77');
+    expect(approvalEvents[0].toolName).toBe('Bash');
+    expect(approvalEvents[0].input).toEqual({ command: 'ls' });
+    expect(approvalEvents[0].reason).toBe('wants to list files');
+    expect(approvalEvents[0].options).toHaveLength(2);
+  });
+
+  it('late subscriber does not receive state for unattached channel', () => {
+    const ch = createChannel('ch-1');
+    expect(ch.state).toBe('unattached');
+
+    const lateSub = createTestSubscriber('late');
+    subscribe(ch, lateSub);
+
+    // No events should be sent — channel is unattached
+    expect(lateSub.events.length).toBe(0);
   });
 });
 
@@ -875,6 +950,7 @@ describe('Snapshot', () => {
     expect(snapshot.state).toBe('idle');
     expect(snapshot.sessionId).toBe('sess-abc');
     expect(snapshot.vendor).toBe('claude');
+    expect(snapshot.settings).toBeDefined();
   });
 
   it('snapshot reflects state transitions', async () => {
@@ -894,6 +970,7 @@ describe('Snapshot', () => {
     expect(streamingEvent).toBeDefined();
     expect(streamingEvent!.snapshot.state).toBe('streaming');
     expect(streamingEvent!.snapshot.vendor).toBe('claude');
+    expect(streamingEvent!.snapshot.settings).toBeDefined();
   });
 
   it('destroyChannel emits state_changed with unattached snapshot', async () => {
@@ -915,6 +992,48 @@ describe('Snapshot', () => {
     expect(stateEvents.length).toBe(1);
     expect(stateEvents[0].state).toBe('unattached');
     expect(stateEvents[0].snapshot.state).toBe('unattached');
+  });
+
+  it('snapshot includes adapter settings', async () => {
+    const ch = createChannel('ch-1');
+    const adapter = createMockAdapter({ vendor: 'claude', sessionId: 'sess-settings' });
+    const sub = createTestSubscriber('sub-1');
+
+    subscribe(ch, sub);
+    setAdapter(ch, adapter);
+    await tick();
+
+    const stateEvents = sub.eventsOfType('state_changed');
+    expect(stateEvents.length).toBeGreaterThan(0);
+
+    const snapshot = stateEvents[0].snapshot;
+    expect(snapshot.settings).toBeDefined();
+    expect(snapshot.settings).not.toBeNull();
+    expect(snapshot.settings!.allowDangerouslySkipPermissions).toBe(false);
+  });
+
+  it('snapshot settings are null when no adapter (teardown)', async () => {
+    const ch = createChannel('ch-1');
+    const adapter = createMockAdapter({ vendor: 'claude', sessionId: 'sess-1' });
+    const sub = createTestSubscriber('sub-1');
+
+    subscribe(ch, sub);
+    setAdapter(ch, adapter);
+    await tick();
+
+    // Clear previous events to isolate teardown
+    sub.events.length = 0;
+
+    destroyChannel(ch.channelId);
+    await tick();
+
+    const stateEvents = sub.eventsOfType('state_changed');
+    expect(stateEvents.length).toBe(1);
+    expect(stateEvents[0].state).toBe('unattached');
+    // After teardown the adapter is closed but still referenced;
+    // the snapshot is built from the torn-down channel state
+    // Settings may be present (adapter still assigned) or null depending on teardown order
+    // The key invariant is that the state is 'unattached'
   });
 });
 

@@ -14,7 +14,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AsyncIterableQueue } from '../src/core/async-iterable-queue.js';
-import type { AgentAdapter, SessionInfo, ChannelMessage, VendorDiscovery } from '../src/core/agent-adapter.js';
+import type { AgentAdapter, AdapterSettings, SessionInfo, ChannelMessage, VendorDiscovery } from '../src/core/agent-adapter.js';
 import type { TranscriptEntry, MessageContent, Vendor } from '../src/core/transcript.js';
 import type { ChannelStatus } from '../src/core/channel-events.js';
 import type { Subscriber, SubscriberEvent } from '../src/core/session-channel.js';
@@ -107,6 +107,10 @@ function createMockAdapter(options?: MockAdapterOptions): MockAdapter {
     vendor,
     get sessionId() { return sessionId; },
     get status() { return status; },
+    get contextUsage() { return null; },
+    get settings(): AdapterSettings {
+      return { model: undefined, permissionMode: undefined, allowDangerouslySkipPermissions: false, extraArgs: undefined };
+    },
     outputQueue: queue,
 
     messages(): AsyncIterable<ChannelMessage> {

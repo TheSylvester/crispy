@@ -90,6 +90,14 @@ export interface SendOptions {
   allowDangerouslySkipPermissions?: boolean;
 }
 
+/** Vendor-agnostic session settings, readable from the adapter. */
+export interface AdapterSettings {
+  model: string | undefined;
+  permissionMode: string | undefined;
+  allowDangerouslySkipPermissions: boolean;
+  extraArgs: Record<string, string | null> | undefined;
+}
+
 /**
  * Discriminated union describing how to open a session.
  *
@@ -133,6 +141,9 @@ export interface AgentAdapter {
 
   /** Cumulative context window usage for the active session (null before first assistant turn). */
   readonly contextUsage: ContextUsage | null;
+
+  /** Current session settings (model, permission mode, bypass, extra args). */
+  readonly settings: AdapterSettings;
 
   // --- Live Streaming ---
 

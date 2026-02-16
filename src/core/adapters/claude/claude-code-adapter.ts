@@ -14,6 +14,7 @@
 
 import type {
   AgentAdapter,
+  AdapterSettings,
   VendorDiscovery,
   ChannelMessage,
   SendOptions,
@@ -419,6 +420,16 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     return this._contextUsage;
   }
 
+  /** Current session settings (model, permission mode, bypass, extra args). */
+  get settings(): AdapterSettings {
+    return {
+      model: this.options.model,
+      permissionMode: this.options.permissionMode,
+      allowDangerouslySkipPermissions: this.options.allowDangerouslySkipPermissions ?? false,
+      extraArgs: this.options.extraArgs,
+    };
+  }
+
   /**
    * The combined output stream.
    *
@@ -553,11 +564,13 @@ export class ClaudeAgentAdapter implements AgentAdapter {
 
   /** Change model mid-conversation. */
   async setModel(model?: string): Promise<void> {
+    this.options.model = model;
     await this.requireQuery('setModel').setModel(model);
   }
 
   /** Change permission mode mid-conversation. */
   async setPermissionMode(mode: PermissionMode): Promise<void> {
+    this.options.permissionMode = mode;
     await this.requireQuery('setPermissionMode').setPermissionMode(mode);
   }
 
@@ -1006,6 +1019,34 @@ export class ClaudeAgentAdapter implements AgentAdapter {
           permissionMode: ((initMsg.permissionMode ?? initMsg.permission_mode) as string) ?? '',
           apiKeySource: ((initMsg.apiKeySource ?? initMsg.api_key_source) as string) ?? '',
         };
+
+        // --- Sync options from init so adapter.settings reflects actual state ---
+        // The SDK's init message reports the authoritative model and permissionMode
+        // the session is actually using. For resumed sessions the adapter is created
+        // with a bare { mode: 'resume', sessionId } spec — options are empty.
+        // Without this sync, adapter.settings returns undefined for everything
+        // and late subscribers can't pick up the session's real settings.
+        //
+        // Only back-fill model from init when options.model is empty (resume case).
+        // If options.model is already set (e.g. "opus" from send()), keep it —
+        // the SDK init reports the full model string ("claude-opus-4-...") which
+        // would clobber the short name the UI understands.
+        if (this._metadata.model && !this.options.model) {
+          this.options.model = this._metadata.model;
+        }
+        if (this._metadata.permissionMode) {
+          this.options.permissionMode = this._metadata.permissionMode as Options['permissionMode'];
+        }
+
+        // Re-emit current status so the channel broadcasts a fresh state_changed
+        // with the now-populated settings snapshot. The first 'active' status
+        // (from startQuery) was processed before init arrived, so its snapshot
+        // had empty settings. This causes a harmless streaming→streaming
+        // re-broadcast with the correct settings.
+        if (this._status === 'active') {
+          this.emitStatus('active');
+        }
+
         // System init — emit as entry for metadata (tools, model, etc.)
         this.emitEntry(msg);
         break;
@@ -1026,6 +1067,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
           statusMsg.permissionMode &&
           statusMsg.permissionMode !== this.options.permissionMode
         ) {
+          this.options.permissionMode = statusMsg.permissionMode as Options['permissionMode'];
           this.outputQueue.enqueue({
             type: 'event',
             event: {

@@ -14,9 +14,11 @@
  * Key design decisions:
  * - Functional API (createChannel, setAdapter, etc.) — not a class
  * - Discriminated union events — single send() method per subscriber
- * - Approval flow is simpler than Leto: pendingApprovals is a Set<string>
- *   (toolUseIds only), not a Map with resolve/reject. The adapter handles
- *   resolution internally via respondToApproval().
+ * - Approval flow is simpler than Leto: pendingApprovals is a Map<string,
+ *   PendingApprovalInfo> (keyed by toolUseId), not a Map with resolve/reject.
+ *   The adapter handles resolution internally via respondToApproval().
+ *   Full approval data is stored so late subscribers can receive pending
+ *   approval_request events on subscribe().
  * - State transitions are adapter-driven: after resolveApproval(), the
  *   channel waits for the adapter's 'active' status event rather than
  *   manually transitioning to streaming.
@@ -25,7 +27,7 @@
  * @module session-channel
  */
 
-import type { AgentAdapter, ChannelMessage, SendOptions } from './agent-adapter.js';
+import type { AgentAdapter, AdapterSettings, ChannelMessage, SendOptions } from './agent-adapter.js';
 import type { MessageContent, Vendor, TranscriptEntry, ContextUsage } from './transcript.js';
 import type {
   ChannelEvent,
@@ -108,6 +110,16 @@ export interface ChannelSnapshot {
   sessionId: string | undefined;
   vendor: Vendor | undefined;
   contextUsage: ContextUsage | null;
+  settings: AdapterSettings | null;
+}
+
+/** Stored approval data for replaying approval_request to late subscribers. */
+export interface PendingApprovalInfo {
+  toolUseId: string;
+  toolName: string;
+  input: unknown;
+  reason?: string;
+  options: ApprovalOption[];
 }
 
 // ============================================================================
@@ -128,8 +140,8 @@ export interface SessionChannel {
   /** Current state machine position. */
   state: SessionChannelState;
 
-  /** Pending approval toolUseIds — tracking only, no resolve/reject. */
-  pendingApprovals: Set<string>;
+  /** Pending approval data — tracking + replay for late subscribers. */
+  pendingApprovals: Map<string, PendingApprovalInfo>;
 
   /** Running count of entries broadcast (used as index in entry events). */
   entryIndex: number;
@@ -164,7 +176,7 @@ export function createChannel(channelId: string): SessionChannel {
     adapter: null,
     subscribers: new Map(),
     state: 'unattached',
-    pendingApprovals: new Set(),
+    pendingApprovals: new Map(),
     entryIndex: 0,
     loopDone: null,
     tearing: false,
@@ -216,9 +228,31 @@ export function _resetRegistry(): void {
 /**
  * Add a subscriber to the channel. Idempotent — replaces existing
  * subscriber with the same ID.
+ *
+ * Late subscribers immediately receive the current channel state and any
+ * pending approval requests via unicast (subscriber.send), so their UI
+ * matches the session's actual state without waiting for the next event.
  */
 export function subscribe(channel: SessionChannel, subscriber: Subscriber): void {
   channel.subscribers.set(subscriber.id, subscriber);
+
+  // Sync current state to late subscribers (skip 'unattached' — no useful state)
+  if (channel.state !== 'unattached') {
+    try {
+      subscriber.send({
+        type: 'state_changed',
+        state: channel.state,
+        snapshot: getSnapshot(channel),
+      });
+    } catch { /* swallow — consistent with broadcast() */ }
+
+    // Replay pending approval requests
+    for (const approval of channel.pendingApprovals.values()) {
+      try {
+        subscriber.send({ type: 'approval_request', ...approval });
+      } catch { /* swallow */ }
+    }
+  }
 }
 
 /**
@@ -250,6 +284,7 @@ function getSnapshot(channel: SessionChannel): ChannelSnapshot {
     sessionId: channel.adapter?.sessionId,
     vendor: channel.adapter?.vendor,
     contextUsage: channel.adapter?.contextUsage ?? null,
+    settings: channel.adapter?.settings ?? null,
   };
 }
 
@@ -379,7 +414,7 @@ function routeStatusEvent(
     case 'awaiting_approval': {
       // TS narrows to AwaitingApprovalEvent via the switch on event.status
       const { toolUseId, toolName, input, reason, options } = event;
-      channel.pendingApprovals.add(toolUseId);
+      channel.pendingApprovals.set(toolUseId, { toolUseId, toolName, input, reason, options });
       setState(channel, 'awaiting_approval');
       broadcast(channel, {
         type: 'approval_request',

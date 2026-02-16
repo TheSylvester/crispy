@@ -186,6 +186,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // Track the last permission mode we pushed to the server to avoid echo loops
     // with the permission_mode_changed event listener.
     const lastPushedModeRef = useRef<string | null>(null);
+    const lastPushedModelRef = useRef<ModelOption>(state.model);
     const lastPushedBypassRef = useRef<boolean>(state.bypassEnabled);
     const lastPushedChromeRef = useRef<boolean>(state.chromeEnabled);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned } = usePreferences();
@@ -342,6 +343,56 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       return off;
     }, [selectedSessionId, transport]);
 
+    // --- Continuous settings sync from snapshot ---
+    // Every state_changed snapshot carries the adapter's current settings.
+    // We apply incoming settings whenever they differ from what this client
+    // last pushed, so cross-client changes (another tab calling setModel,
+    // setPermissions, or reconfigure) are reflected immediately. The
+    // lastPushed*Ref guards prevent echo loops — the client that made the
+    // change already updated its refs in the push effects, so the incoming
+    // snapshot is a no-op for the originator.
+    useEffect(() => {
+      const off = transport.onEvent((sessionId, event) => {
+        if (sessionId !== selectedSessionId) return;
+        if (event.type !== 'state_changed' || !event.snapshot.settings) return;
+
+        const { settings } = event.snapshot;
+
+        // Skip empty settings — adapter hasn't received init yet.
+        if (!settings.model && !settings.permissionMode) return;
+
+        // Sync permission mode (skip if it matches our last push)
+        if (settings.permissionMode) {
+          const serverMode = mapPermissionModeToAgency(settings.permissionMode);
+          if (serverMode && settings.permissionMode !== lastPushedModeRef.current) {
+            lastPushedModeRef.current = mapAgencyToPermissionMode(serverMode);
+            dispatch({ type: 'SET_AGENCY_MODE', mode: serverMode });
+          }
+        }
+
+        // Sync model (skip if it matches our last push)
+        const incomingModel = (settings.model ?? '') as ModelOption;
+        if (incomingModel !== lastPushedModelRef.current) {
+          lastPushedModelRef.current = incomingModel;
+          dispatch({ type: 'SET_MODEL', model: incomingModel });
+        }
+
+        // Sync bypass (skip if it matches our last push)
+        if (settings.allowDangerouslySkipPermissions !== lastPushedBypassRef.current) {
+          lastPushedBypassRef.current = settings.allowDangerouslySkipPermissions;
+          dispatch({ type: 'SET_BYPASS', enabled: settings.allowDangerouslySkipPermissions });
+        }
+
+        // Sync chrome (skip if it matches our last push)
+        const chromeEnabled = settings.extraArgs?.chrome !== undefined;
+        if (chromeEnabled !== lastPushedChromeRef.current) {
+          lastPushedChromeRef.current = chromeEnabled;
+          dispatch({ type: 'SET_CHROME', enabled: chromeEnabled });
+        }
+      });
+      return off;
+    }, [selectedSessionId, transport]);
+
     // --- Push agency mode changes to server immediately ---
     // Track what we last pushed to avoid echo loops with the
     // permission_mode_changed event listener above.
@@ -408,6 +459,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         permissionMode: mapAgencyToPermissionMode(state.agencyMode),
         allowDangerouslySkipPermissions: state.bypassEnabled || undefined,
       };
+
+      // Mark what we're sending so the continuous settings sync ignores the
+      // echo from our own send — only other clients adopt the change.
+      lastPushedModelRef.current = state.model;
 
       /**
        * Shared flow for fork & new-session branches: inject pending optimistic
