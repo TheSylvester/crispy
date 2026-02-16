@@ -22,6 +22,11 @@ import type { ToolInput } from '../../../core/transcript.js';
 
 import { ToolCard } from './ToolCard.js';
 
+// Hoisted to module-level for referential stability — prevents react-markdown
+// from re-parsing on every render when props haven't changed.
+const MD_REMARK_PLUGINS = [remarkGfm];
+const MD_COMPONENTS = { code: CodeBlock, pre: PreBlock };
+
 export function TaskTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   const entry = useToolEntry(toolId);
   if (!entry) return null;
@@ -55,7 +60,7 @@ export function TaskTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       {/* Initial prompt — rendered as user-style message */}
       {prompt && (
         <div className="prose user-text crispy-task-prompt">
-          <Markdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock, pre: PreBlock }}>
+          <Markdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>
             {prompt}
           </Markdown>
         </div>
@@ -73,7 +78,7 @@ export function TaskTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       {/* Result output — rich markdown rendering */}
       {entry.result && resultText && (
         <div className={`prose assistant-text crispy-task-result ${entry.result.is_error ? 'crispy-task-result--error' : ''}`}>
-          <Markdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock, pre: PreBlock }}>
+          <Markdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>
             {resultText}
           </Markdown>
         </div>

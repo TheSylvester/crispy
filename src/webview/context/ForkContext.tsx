@@ -10,7 +10,7 @@
  * @module ForkContext
  */
 
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useMemo } from 'react';
 
 interface ForkContextValue {
   onFork: (atMessageId: string) => void;
@@ -26,7 +26,18 @@ interface ForkProviderProps extends ForkContextValue {
   children: React.ReactNode;
 }
 
-export function ForkProvider({ children, ...value }: ForkProviderProps): React.JSX.Element {
+export function ForkProvider({
+  children,
+  onFork,
+  onRewind,
+  onForkPreviewHover,
+  isStreaming,
+  forkTargets,
+}: ForkProviderProps): React.JSX.Element {
+  const value = useMemo(
+    () => ({ onFork, onRewind, onForkPreviewHover, isStreaming, forkTargets }),
+    [onFork, onRewind, onForkPreviewHover, isStreaming, forkTargets]
+  );
   return (
     <ForkContext.Provider value={value}>
       {children}

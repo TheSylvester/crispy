@@ -13,29 +13,36 @@
  * @module webview/renderers/RichEntry
  */
 
+import { useMemo } from 'react';
 import { normalizeToBlocks } from '../utils/normalize-blocks.js';
 import { BlockRenderer } from './BlockRenderer.js';
-import { useFork } from '../context/ForkContext.js';
 import { MessageActions } from '../components/MessageActions.js';
 import { PerfProfiler } from '../perf/index.js';
 import type { TranscriptEntry, ToolUseBlock } from '../../core/transcript.js';
+
+interface RichEntryProps {
+  entry: TranscriptEntry;
+  /** Pre-resolved fork target — passed from EntryRenderer to avoid ForkContext subscription. */
+  forkTargetId?: string;
+}
 
 /**
  * Rich mode entry renderer.
  *
  * No switch, no branching, no stubs. The normalize-dispatch-render
  * pipeline handles everything.
+ *
+ * Does NOT subscribe to ForkContext — receives forkTargetId as a prop
+ * so React.memo on the parent EntryRenderer can bail out effectively.
+ * MessageActions (the only ForkContext consumer) subscribes on its own.
  */
-export function RichEntry({ entry }: { entry: TranscriptEntry }): React.JSX.Element | null {
-  const blocks = normalizeToBlocks(entry);
+export function RichEntry({ entry, forkTargetId }: RichEntryProps): React.JSX.Element | null {
+  const blocks = useMemo(() => normalizeToBlocks(entry), [entry]);
   if (blocks.length === 0) return null;
 
   // Summary entries render with 'system' styling (matching old explicit behavior).
   // Other entries derive role from the message or fall back to entry type.
   const role = entry.type === 'summary' ? 'system' : (entry.message?.role ?? entry.type);
-
-  const fork = useFork();
-  const targetId = (fork && entry.uuid) ? fork.forkTargets.get(entry.uuid) : undefined;
 
   return (
     <PerfProfiler id="RichEntry">
@@ -47,7 +54,7 @@ export function RichEntry({ entry }: { entry: TranscriptEntry }): React.JSX.Elem
             role={role}
           />
         ))}
-        {targetId !== undefined && <MessageActions targetAssistantId={targetId || null} />}
+        {forkTargetId !== undefined && <MessageActions targetAssistantId={forkTargetId || null} />}
       </div>
     </PerfProfiler>
   );

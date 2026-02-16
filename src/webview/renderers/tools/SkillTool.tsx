@@ -15,6 +15,11 @@ import { ToolCardShell } from './shared/ToolCardShell.js';
 import { isSkillInput } from '../../../core/transcript.js';
 import type { ToolInput } from '../../../core/transcript.js';
 
+// Hoisted to module-level for referential stability — prevents react-markdown
+// from re-parsing on every render when props haven't changed.
+const MD_REMARK_PLUGINS = [remarkGfm];
+const MD_COMPONENTS = { code: CodeBlock, pre: PreBlock };
+
 export function SkillTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   const entry = useToolEntry(toolId);
   if (!entry) return null;
@@ -46,7 +51,7 @@ export function SkillTool({ toolId }: { toolId: string }): React.JSX.Element | n
       {/* Result output — rich markdown rendering */}
       {entry.result && resultText && (
         <div className={`prose assistant-text crispy-task-result ${entry.result.is_error ? 'crispy-task-result--error' : ''}`}>
-          <Markdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock, pre: PreBlock }}>
+          <Markdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>
             {resultText}
           </Markdown>
         </div>

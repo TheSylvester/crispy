@@ -70,7 +70,9 @@ export function PerfOverlay(): React.JSX.Element | null {
           <span className="crispy-perf-summary">
             {snap.totalRenders} renders | {snap.domNodeCount} DOM | {snap.fps} fps
           </span>
-          <button className="crispy-perf-btn" onClick={() => setVisible(false)} title="Close">×</button>
+          <span onPointerDown={e => e.stopPropagation()}>
+            <button className="crispy-perf-btn" onClick={() => setVisible(false)} title="Close">×</button>
+          </span>
         </div>
       </div>
     );
@@ -82,7 +84,7 @@ export function PerfOverlay(): React.JSX.Element | null {
         <span className="crispy-perf-title" onClick={() => setCollapsed(true)}>
           Perf Profiler
         </span>
-        <span className="crispy-perf-actions">
+        <span className="crispy-perf-actions" onPointerDown={e => e.stopPropagation()}>
           <button className="crispy-perf-btn" onClick={() => PerfStore.reset()} title="Reset counters">Reset</button>
           <button className="crispy-perf-btn" onClick={() => setVisible(false)} title="Close">×</button>
         </span>

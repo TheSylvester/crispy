@@ -120,9 +120,17 @@ export function TranscriptViewer(): React.JSX.Element {
     }
   }, [selectedSessionId]);
 
-  // Filter entries for rendering (used for both display and scroll settle detection)
-  const visibleEntries = entries.slice(0, visibleCount);
-  const filteredEntries = visibleEntries.filter(shouldRenderEntry);
+  // Filter entries for rendering (used for both display and scroll settle detection).
+  // Memoized for reference stability — downstream useMemos (forkTargets) and
+  // ForkProvider depend on these arrays not changing identity on every render.
+  const visibleEntries = useMemo(
+    () => entries.slice(0, visibleCount),
+    [entries, visibleCount]
+  );
+  const filteredEntries = useMemo(
+    () => visibleEntries.filter(shouldRenderEntry),
+    [visibleEntries]
+  );
 
   // Record entry stats for perf profiler
   if (isPerfMode) {
@@ -264,16 +272,23 @@ export function TranscriptViewer(): React.JSX.Element {
 
   // Per-message rewind handler — delegates to ControlPanel's executeRewind via ref,
   // then extracts the original user text and prefills the chat input.
+  // Uses refs for forkTargets/filteredEntries to keep the callback stable
+  // (same pattern as handlePerMessageFork uses forkHandlerRef).
   const rewindHandlerRef = useRef<((atMessageId: string) => void) | null>(null);
   const handleRegisterRewindHandler = useCallback((handler: (atMessageId: string) => void) => {
     rewindHandlerRef.current = handler;
   }, []);
+  const forkTargetsRef = useRef(forkTargets);
+  forkTargetsRef.current = forkTargets;
+  const filteredEntriesRef = useRef(filteredEntries);
+  filteredEntriesRef.current = filteredEntries;
+
   const handlePerMessageRewind = useCallback((atMessageId: string) => {
     // Extract user text from the entry whose fork target matches atMessageId
     const extractUserText = (): string => {
-      for (const [userUUID, assistantUUID] of forkTargets.entries()) {
+      for (const [userUUID, assistantUUID] of forkTargetsRef.current.entries()) {
         if (assistantUUID === atMessageId) {
-          const userEntry = filteredEntries.find(e => e.uuid === userUUID);
+          const userEntry = filteredEntriesRef.current.find(e => e.uuid === userUUID);
           if (userEntry?.message?.content) {
             const content = userEntry.message.content;
             return Array.isArray(content)
@@ -298,7 +313,7 @@ export function TranscriptViewer(): React.JSX.Element {
     rewindHandlerRef.current?.(atMessageId);
     const text = extractUserText();
     if (text) setPrefillInput({ text });
-  }, [forkTargets, filteredEntries, setPrefillInput, setSelectedSessionId]);
+  }, [setPrefillInput, setSelectedSessionId]);
 
   // Wrap resolveApproval to intercept ExitPlanMode orchestration fields
   // (clearContext, planContent) before forwarding to transport.
@@ -390,6 +405,7 @@ export function TranscriptViewer(): React.JSX.Element {
                         key={entry.uuid ?? `entry-${i}`}
                         entry={entry}
                         mode={renderMode}
+                        forkTargetId={entry.uuid ? forkTargets.get(entry.uuid) : undefined}
                       />
                     ))}
                 </PerfProfiler>
