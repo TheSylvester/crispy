@@ -1367,6 +1367,12 @@ h2 {
  * Content spacing — gaps between text ↔ tool transitions
  * ============================================================================ */
 
+/* Collapse spacing between consecutive tool-card-only assistant messages.
+   Matches tight spacing inside Task children. */
+.message.assistant:has(.crispy-tool-card) + .message.assistant:has(.crispy-tool-card) {
+  margin-top: 0;
+}
+
 /* Tool block following text content */
 .message:has(.prose) + .message.assistant:has(.crispy-tool-card) {
   margin-top: 0.5rem;
