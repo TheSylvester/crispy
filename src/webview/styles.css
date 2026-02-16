@@ -2942,3 +2942,152 @@ body.agency-bypass-permissions {
   border-radius: 4px;
   font-size: 12px;
 }
+
+/* ============================================================================
+ * Perf Overlay — Floating metrics panel (?perf=1)
+ *
+ * Fixed-position panel with draggable title bar, two-column stats layout.
+ * Follows the .crispy-scroll-nav floating pattern for z-index + styling.
+ * ============================================================================ */
+
+.crispy-perf-overlay {
+  background: rgba(30, 30, 30, 0.95);
+  border: 1px solid var(--vscode-panel-border, #333);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  font-size: 11px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-foreground, #d4d4d4);
+  min-width: 420px;
+  max-width: 560px;
+  user-select: none;
+  pointer-events: auto;
+}
+
+.crispy-perf-overlay--collapsed {
+  min-width: unset;
+  max-width: unset;
+}
+
+/* --- Title bar (draggable) --- */
+
+.crispy-perf-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: rgba(60, 60, 60, 0.6);
+  border-radius: 6px 6px 0 0;
+  cursor: grab;
+}
+
+.crispy-perf-titlebar:active {
+  cursor: grabbing;
+}
+
+.crispy-perf-overlay--collapsed .crispy-perf-titlebar {
+  border-radius: 6px;
+}
+
+.crispy-perf-title {
+  font-weight: 600;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-perf-title:hover {
+  text-decoration: underline;
+}
+
+.crispy-perf-summary {
+  flex: 1;
+  color: var(--vscode-descriptionForeground, #888);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crispy-perf-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.crispy-perf-btn {
+  background: transparent;
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  color: var(--vscode-descriptionForeground, #888);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 10px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.crispy-perf-btn:hover {
+  color: var(--vscode-foreground, #d4d4d4);
+  border-color: var(--vscode-foreground, #d4d4d4);
+}
+
+/* --- Body (two columns) --- */
+
+.crispy-perf-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.crispy-perf-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.crispy-perf-section-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vscode-descriptionForeground, #888);
+  margin-bottom: 2px;
+}
+
+/* --- Metric rows --- */
+
+.crispy-perf-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 1px 0;
+}
+
+.crispy-perf-label {
+  color: var(--vscode-descriptionForeground, #999);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.crispy-perf-value {
+  color: var(--vscode-foreground, #d4d4d4);
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.crispy-perf-component-row .crispy-perf-value {
+  font-size: 10px;
+}
+
+.crispy-perf-dim {
+  color: var(--vscode-descriptionForeground, #666);
+  font-style: italic;
+  font-size: 10px;
+}

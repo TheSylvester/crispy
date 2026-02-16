@@ -39,6 +39,8 @@ import { useSessionStatus } from "../hooks/useSessionStatus.js";
 import type { ApprovalExtra } from "./approval/types.js";
 import type { TranscriptEntry } from "../../core/transcript.js";
 import { WelcomePage } from "./WelcomePage.js";
+import { isPerfMode, PerfProfiler } from "../perf/index.js";
+import { PerfStore } from "../perf/profiler.js";
 
 /** Check once whether debug mode is enabled */
 const isDebugMode = window.location.search.includes('debug=1');
@@ -121,6 +123,16 @@ export function TranscriptViewer(): React.JSX.Element {
   // Filter entries for rendering (used for both display and scroll settle detection)
   const visibleEntries = entries.slice(0, visibleCount);
   const filteredEntries = visibleEntries.filter(shouldRenderEntry);
+
+  // Record entry stats for perf profiler
+  if (isPerfMode) {
+    let blockCount = 0;
+    for (const entry of filteredEntries) {
+      const content = entry.message?.content;
+      blockCount += Array.isArray(content) ? content.length : (content ? 1 : 0);
+    }
+    PerfStore.recordEntryStats(entries.length, filteredEntries.length, blockCount);
+  }
 
   // --- Per-message fork targets: user UUID → preceding assistant UUID ---
   // First user message gets '' (empty string) sentinel — no assistant to fork
@@ -371,14 +383,16 @@ export function TranscriptViewer(): React.JSX.Element {
               {isLoading ? (
                 <div className="crispy-loading">Loading transcript...</div>
               ) : (
-                filteredEntries
-                  .map((entry, i) => (
-                    <EntryRenderer
-                      key={entry.uuid ?? `entry-${i}`}
-                      entry={entry}
-                      mode={renderMode}
-                    />
-                  ))
+                <PerfProfiler id="TranscriptList">
+                  {filteredEntries
+                    .map((entry, i) => (
+                      <EntryRenderer
+                        key={entry.uuid ?? `entry-${i}`}
+                        entry={entry}
+                        mode={renderMode}
+                      />
+                    ))}
+                </PerfProfiler>
               )}
               <ThinkingIndicator />
             </div>

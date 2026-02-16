@@ -160,6 +160,14 @@ export class ToolRegistry {
     return this._cachedRootIds;
   }
 
+  getToolCount(): number {
+    return this.tools.size;
+  }
+
+  getOrphanCount(): number {
+    return this.orphanResults.size;
+  }
+
   // --------------------------------------------------------------------------
   // Subscriptions
   // --------------------------------------------------------------------------

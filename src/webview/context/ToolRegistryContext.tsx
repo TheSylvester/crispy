@@ -31,6 +31,8 @@ import {
 import type { TranscriptEntry } from '../../core/transcript.js';
 import { ToolRegistry, processEntryForRegistry } from '../tool-registry.js';
 import type { ToolEntry } from '../tool-registry.js';
+import { isPerfMode } from '../perf/index.js';
+import { PerfStore } from '../perf/profiler.js';
 
 // ============================================================================
 // Context
@@ -56,6 +58,14 @@ export function ToolRegistryProvider({
   const registryRef = useRef<ToolRegistry | null>(null);
   if (registryRef.current === null) {
     registryRef.current = new ToolRegistry();
+    // Wire tool-count getters into PerfStore (perf mode only)
+    if (isPerfMode) {
+      const reg = registryRef.current;
+      PerfStore.setToolGetters({
+        getToolCount: () => reg.getToolCount(),
+        getOrphanCount: () => reg.getOrphanCount(),
+      });
+    }
   }
   const registry = registryRef.current;
 

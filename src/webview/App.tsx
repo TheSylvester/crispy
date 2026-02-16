@@ -20,6 +20,7 @@ import { SessionSelector } from './components/SessionSelector.js';
 import { TranscriptViewer } from './components/TranscriptViewer.js';
 import { TitleBar } from './components/TitleBar.js';
 import { SessionStatusProvider, useSessionStatus } from './hooks/useSessionStatus.js';
+import { isPerfMode, PerfOverlay, PerfProfiler } from './perf/index.js';
 
 interface AppProps {
   transport: Transport;
@@ -34,7 +35,10 @@ export function App({ transport, transportKind }: AppProps): React.JSX.Element {
           <FileIndexProvider>
             <PreferencesProvider>
               <SessionStatusProvider>
-                <AppLayout />
+                <PerfProfiler id="App">
+                  <AppLayout />
+                </PerfProfiler>
+                {isPerfMode && <PerfOverlay />}
               </SessionStatusProvider>
             </PreferencesProvider>
           </FileIndexProvider>

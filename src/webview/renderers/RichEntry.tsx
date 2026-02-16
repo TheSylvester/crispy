@@ -17,6 +17,7 @@ import { normalizeToBlocks } from '../utils/normalize-blocks.js';
 import { BlockRenderer } from './BlockRenderer.js';
 import { useFork } from '../context/ForkContext.js';
 import { MessageActions } from '../components/MessageActions.js';
+import { PerfProfiler } from '../perf/index.js';
 import type { TranscriptEntry, ToolUseBlock } from '../../core/transcript.js';
 
 /**
@@ -37,15 +38,17 @@ export function RichEntry({ entry }: { entry: TranscriptEntry }): React.JSX.Elem
   const targetId = (fork && entry.uuid) ? fork.forkTargets.get(entry.uuid) : undefined;
 
   return (
-    <div className={`message ${role}`} data-uuid={entry.uuid}>
-      {blocks.map((block, i) => (
-        <BlockRenderer
-          key={block.type === 'tool_use' ? (block as ToolUseBlock).id : `${entry.uuid}-${i}`}
-          block={block}
-          role={role}
-        />
-      ))}
-      {targetId !== undefined && <MessageActions targetAssistantId={targetId || null} />}
-    </div>
+    <PerfProfiler id="RichEntry">
+      <div className={`message ${role}`} data-uuid={entry.uuid}>
+        {blocks.map((block, i) => (
+          <BlockRenderer
+            key={block.type === 'tool_use' ? (block as ToolUseBlock).id : `${entry.uuid}-${i}`}
+            block={block}
+            role={role}
+          />
+        ))}
+        {targetId !== undefined && <MessageActions targetAssistantId={targetId || null} />}
+      </div>
+    </PerfProfiler>
   );
 }

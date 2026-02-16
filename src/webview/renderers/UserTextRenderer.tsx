@@ -16,20 +16,21 @@ import { PreBlock } from './markdown-components.js';
 import { LinkifiedP, LinkifiedLi, LinkifiedTd, LinkifiedCode } from './linkify-components.js';
 import type { ContentBlock, TextBlock } from '../../core/transcript.js';
 
+/** Hoisted to module level — stable references prevent react-markdown pipeline re-init */
+const mdRemarkPlugins = [remarkGfm];
+const mdComponents = {
+  code: LinkifiedCode,
+  pre: PreBlock,
+  p: LinkifiedP,
+  li: LinkifiedLi,
+  td: LinkifiedTd,
+};
+
 export function UserTextRenderer({ block }: { block: ContentBlock }): React.JSX.Element {
   const { text } = block as TextBlock;
   return (
     <div className="prose user-text">
-      <Markdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          code: LinkifiedCode,
-          pre: PreBlock,
-          p: LinkifiedP,
-          li: LinkifiedLi,
-          td: LinkifiedTd,
-        }}
-      >
+      <Markdown remarkPlugins={mdRemarkPlugins} components={mdComponents}>
         {text}
       </Markdown>
     </div>

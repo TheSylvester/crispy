@@ -14,6 +14,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { isPerfMode } from "../perf/index.js";
+import { PerfStore } from "../perf/profiler.js";
 
 /** Generous zone for auto-scroll decisions (content growth while near bottom) */
 const NEAR_BOTTOM_THRESHOLD = 100;
@@ -75,6 +77,7 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
     if (!el) return;
 
     const onScroll = () => {
+      if (isPerfMode) PerfStore.recordScrollEvent();
       cancelAnimationFrame(rafIdRef.current);
       rafIdRef.current = requestAnimationFrame(() => {
         if (!scrollRef.current) return;
@@ -133,6 +136,7 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
       const isNearBottom = distFromBottom < NEAR_BOTTOM_THRESHOLD || pinnedRef.current;
 
       if (grew && isNearBottom) {
+        if (isPerfMode) PerfStore.recordAutoScrollTrigger();
         // Always instant-scroll to keep up with content growth.
         el.scrollTop = newScrollHeight;
 
