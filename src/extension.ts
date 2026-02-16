@@ -61,7 +61,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const panel = getOrCreatePanelForPrefill(context);
       // Small delay for newly created panels to initialize their webview JS
       setTimeout(() => {
-        panel.webview.postMessage({ kind: 'prefillInput', content: `Execute the following:\n\n${content}` });
+        panel.webview.postMessage({ kind: 'executeInCrispy', content: `Execute the following:\n\n${content}` });
       }, 100);
     }),
   );
