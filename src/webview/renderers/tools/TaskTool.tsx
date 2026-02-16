@@ -12,20 +12,13 @@
  * @module webview/renderers/tools/TaskTool
  */
 
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { CodeBlock, PreBlock } from '../markdown-components.js';
+import { CrispyMarkdown } from '../CrispyMarkdown.js';
 import { useToolEntry } from '../../context/ToolRegistryContext.js';
 import { ToolCardShell } from './shared/ToolCardShell.js';
 import { isAgentInput } from '../../../core/transcript.js';
 import type { ToolInput } from '../../../core/transcript.js';
 
 import { ToolCard } from './ToolCard.js';
-
-// Hoisted to module-level for referential stability — prevents react-markdown
-// from re-parsing on every render when props haven't changed.
-const MD_REMARK_PLUGINS = [remarkGfm];
-const MD_COMPONENTS = { code: CodeBlock, pre: PreBlock };
 
 export function TaskTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   const entry = useToolEntry(toolId);
@@ -60,9 +53,7 @@ export function TaskTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       {/* Initial prompt — rendered as user-style message */}
       {prompt && (
         <div className="prose user-text crispy-task-prompt">
-          <Markdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>
-            {prompt}
-          </Markdown>
+          <CrispyMarkdown>{prompt}</CrispyMarkdown>
         </div>
       )}
 
@@ -78,9 +69,7 @@ export function TaskTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       {/* Result output — rich markdown rendering */}
       {entry.result && resultText && (
         <div className={`prose assistant-text crispy-task-result ${entry.result.is_error ? 'crispy-task-result--error' : ''}`}>
-          <Markdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>
-            {resultText}
-          </Markdown>
+          <CrispyMarkdown>{resultText}</CrispyMarkdown>
         </div>
       )}
     </ToolCardShell>

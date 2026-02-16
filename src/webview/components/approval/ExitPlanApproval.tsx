@@ -9,16 +9,9 @@
  */
 
 import { useState } from 'react';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import type { ExitPlanModeInput, ApprovalExtra } from './types.js';
 import { ChatInput } from '../control-panel/ChatInput.js';
-import { CodeBlock, PreBlock } from '../../renderers/markdown-components.js';
-
-// Hoisted to module-level for referential stability — prevents react-markdown
-// from re-parsing on every render when props haven't changed.
-const MD_REMARK_PLUGINS = [remarkGfm];
-const MD_COMPONENTS = { code: CodeBlock, pre: PreBlock };
+import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
 
 type ExitPlanChoice = 'clear_and_auto' | 'auto_only' | 'manual_approve' | 'feedback';
 
@@ -88,9 +81,7 @@ export function ExitPlanApproval({ input, bypassEnabled, onResolve }: ExitPlanAp
         <details className="crispy-approval-plan" open>
           <summary className="crispy-approval-plan__summary">Plan</summary>
           <div className="crispy-approval-plan__content prose assistant-text">
-            <Markdown remarkPlugins={MD_REMARK_PLUGINS} components={MD_COMPONENTS}>
-              {input.plan}
-            </Markdown>
+            <CrispyMarkdown>{input.plan}</CrispyMarkdown>
           </div>
         </details>
       )}
