@@ -12,7 +12,7 @@
  * @module TitleBar
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSession } from '../context/SessionContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
 import { useSessionStatus } from '../hooks/useSessionStatus.js';
@@ -51,6 +51,24 @@ function PlusIcon(): React.JSX.Element {
       strokeLinecap="round"
     >
       <path d="M6 2V10M2 6H10" />
+    </svg>
+  );
+}
+
+/** Wrench icon for the Tool Panel toggle */
+function ToolPanelIcon(): React.JSX.Element {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M14.7 6.5a4 4 0 0 0-4.7-3.2 4 4 0 0 0-2.8 5.3l-5.4 5.4 1.4 1.4 5.4-5.4a4 4 0 0 0 5.3-2.8l-2.3-2.3-1.5 1.5-1.4-1.4 1.5-1.5z" />
     </svg>
   );
 }
@@ -113,7 +131,7 @@ function ConnectionDot({
 
 export function TitleBar(): React.JSX.Element {
   const { sessions, selectedSessionId, setSelectedSessionId, selectedCwd, setSelectedCwd } = useSession();
-  const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
+  const { sidebarCollapsed, setSidebarCollapsed, toolPanelOpen, setToolPanelOpen } = usePreferences();
   const { channelState } = useSessionStatus(selectedSessionId);
   const { fullPath } = useCwd();
   const allCwds = useAvailableCwds();
@@ -148,6 +166,22 @@ export function TitleBar(): React.JSX.Element {
     setSelectedCwd(e.target.value || null);
   }, [setSelectedCwd]);
 
+  const toggleToolPanel = useCallback(() => {
+    setToolPanelOpen(!toolPanelOpen);
+  }, [toolPanelOpen, setToolPanelOpen]);
+
+  // Alt+T keyboard shortcut — toggle tool activity panel
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && e.key.toLowerCase() === 't' && !e.ctrlKey && !e.shiftKey && !e.metaKey) {
+        e.preventDefault();
+        setToolPanelOpen(!document.querySelector('[data-tool-panel="open"]'));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [setToolPanelOpen]);
+
   return (
     <header className="crispy-titlebar">
       {/* Left — session dropdown toggle */}
@@ -181,8 +215,17 @@ export function TitleBar(): React.JSX.Element {
         <ConnectionDot channelState={channelState} sessionId={selectedSessionId} />
       </div>
 
-      {/* Right — New button */}
+      {/* Right — Tool panel toggle + New button */}
       <div className="crispy-titlebar__right">
+        <button
+          className={`crispy-titlebar__btn crispy-titlebar__tool-panel-btn${toolPanelOpen ? ' crispy-titlebar__tool-panel-btn--active' : ''}`}
+          onClick={toggleToolPanel}
+          title="Toggle tool panel (Alt+T)"
+          aria-label={toolPanelOpen ? 'Close tool panel' : 'Open tool panel'}
+        >
+          <ToolPanelIcon />
+          <span>Tools</span>
+        </button>
         <button
           className="crispy-titlebar__btn crispy-titlebar__new-btn"
           onClick={handleNew}

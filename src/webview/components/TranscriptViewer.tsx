@@ -27,6 +27,7 @@ import { PlaybackControls } from "./PlaybackControls.js";
 import { ToolRegistryProvider } from "../context/ToolRegistryContext.js";
 import { ForkProvider } from "../context/ForkContext.js";
 import { ControlPanel } from "./control-panel/index.js";
+import { ToolActivityPanel } from "./ToolActivityPanel.js";
 import { mapPermissionModeToAgency } from './control-panel/types.js';
 import type { AgencyMode } from './control-panel/types.js';
 import { StopButton } from "./control-panel/StopButton.js";
@@ -49,7 +50,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const { selectedSessionId, setSelectedSessionId } = useSession();
   const transport = useTransport();
   const { entries, isLoading, error, addOptimisticEntry, setForkHistory } = useTranscript(selectedSessionId);
-  const { renderMode } = usePreferences();
+  const { renderMode, toolPanelOpen } = usePreferences();
   const { approvalRequest, resolve: resolveApproval } = useApprovalRequest(selectedSessionId);
   const [bypassEnabled, setBypassEnabled] = useState(false);
   const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean } | null>(null);
@@ -386,6 +387,7 @@ export function TranscriptViewer(): React.JSX.Element {
           />
         )}
         </ForkProvider>
+        {toolPanelOpen && <ToolActivityPanel />}
       </ToolRegistryProvider>
     );
   }
