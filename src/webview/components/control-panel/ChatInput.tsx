@@ -49,10 +49,12 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
   useLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
+    el.style.transition = 'none';
     el.style.height = 'auto';
     const scrollH = el.scrollHeight;
     el.style.height = Math.min(scrollH, 300) + 'px';
     el.style.overflowY = scrollH > 300 ? 'auto' : 'hidden';
+    requestAnimationFrame(() => { el.style.transition = ''; });
   }, [value]);
 
   // Click-outside dismissal for mention dropdown

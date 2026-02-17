@@ -29,7 +29,6 @@ export function ModelSelect({ value, onChange }: ModelSelectProps): React.JSX.El
     <select
       className="crispy-cp-model"
       value={value}
-      data-shortcut="Alt+M"
       onChange={(e) => onChange(e.target.value as ModelOption)}
     >
       {OPTIONS.map((opt) => (

@@ -1492,22 +1492,34 @@ body.agency-bypass-permissions {
   flex-direction: column;
   gap: 0.5rem;
   padding: 0.5rem;
-  background: var(--vscode-editor-background, #1e1e1e);
+  background: rgba(30, 30, 30, 0.55);
+  -webkit-backdrop-filter: blur(40px) saturate(170%);
+  backdrop-filter: blur(40px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   max-width: 800px;
   width: calc(100vw - 2rem);
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  border-radius: 14px;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    0 1px 4px rgba(0, 0, 0, 0.2);
   position: fixed;
   bottom: 1rem;
   left: 50%;
   transform: translateX(-50%);
   z-index: 200;
+  transition: padding 0.15s ease, gap 0.15s ease, box-shadow 0.3s ease;
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .crispy-cp {
+    background: var(--vscode-editor-background, #1e1e1e);
+  }
 }
 
 /* Drag-over visual feedback */
 .crispy-cp.drag-over {
   border: 2px dashed var(--vscode-focusBorder, #007acc);
-  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  background: rgba(42, 45, 46, 0.9);
 }
 
 /* --------------------------------------------------------------------------
@@ -1538,7 +1550,7 @@ body.agency-bypass-permissions {
   background: var(--vscode-button-secondaryBackground, #3a3d41);
   color: var(--vscode-button-secondaryForeground, #d4d4d4);
   border: 1px solid #ffffff;
-  border-radius: 4px;
+  border-radius: 8px;
   cursor: pointer;
   font-size: 13px;
   font-family: inherit;
@@ -1582,20 +1594,32 @@ body.agency-bypass-permissions {
 .crispy-cp-input {
   flex: 1;
   padding: 8px;
-  background: var(--vscode-input-background, #3c3c3c);
+  background: rgba(255, 255, 255, 0.06);
   color: var(--vscode-input-foreground, #d4d4d4);
-  border: 1px solid var(--vscode-input-border, #3c3c3c);
-  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
   font-family: inherit;
   font-size: inherit;
   resize: none;
   overflow-y: hidden;
   max-height: 300px;
+  transition: height 0.2s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .crispy-cp-input:focus {
-  outline: 1px solid var(--frame-highlight);
-  outline-offset: -1px;
+  outline: none;
+  border-color: transparent;
+  box-shadow:
+    0 0 0 1px var(--frame-highlight),
+    0 0 8px color-mix(in srgb, var(--frame-highlight) 40%, transparent);
+}
+
+@supports not (color: color-mix(in srgb, red 50%, blue)) {
+  .crispy-cp-input:focus {
+    box-shadow:
+      0 0 0 1px var(--frame-highlight),
+      0 0 8px rgba(255, 255, 255, 0.15);
+  }
 }
 
 /* --- @Mention Autocomplete Dropdown --- */
@@ -1610,7 +1634,7 @@ body.agency-bypass-permissions {
   overflow-y: auto;
   background: var(--vscode-editorWidget-background, #252526);
   border: 1px solid var(--vscode-editorWidget-border, #454545);
-  border-radius: 4px;
+  border-radius: 10px;
   padding: 4px 0;
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3);
 }
@@ -1659,7 +1683,7 @@ body.agency-bypass-permissions {
   background: #e88040;
   color: #f0f0f0;
   border: none;
-  border-radius: 2px;
+  border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s;
   appearance: none;
@@ -1793,18 +1817,18 @@ body.agency-bypass-permissions {
 .crispy-cp-controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.375rem;
+  gap: 0.5rem;
   align-items: center;
 }
 
 /* --- Shared select styles --- */
 
 .crispy-cp-controls select {
-  padding: 4px 8px;
+  padding: 4px 12px;
   background: var(--vscode-editor-background, #1e1e1e);
   color: var(--vscode-descriptionForeground, #888);
-  border: 1px solid var(--vscode-input-border, #3c3c3c);
-  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
   font-size: 12px;
   cursor: pointer;
   transition:
@@ -1830,6 +1854,13 @@ body.agency-bypass-permissions {
   color: var(--frame-highlight) !important;
   border-color: var(--frame-highlight) !important;
   font-weight: 500;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--frame-highlight) 50%, transparent);
+}
+
+@supports not (color: color-mix(in srgb, red 50%, blue)) {
+  .crispy-cp-agency {
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.15);
+  }
 }
 
 .crispy-cp-agency:hover {
@@ -1865,7 +1896,7 @@ body.agency-bypass-permissions {
   padding: 4px 6px;
   cursor: pointer;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: 8px;
   transition:
     background 0.15s,
     border-color 0.15s;
@@ -1954,10 +1985,10 @@ body.agency-bypass-permissions {
 @keyframes crispy-cp-bypass-pulse {
   0%,
   100% {
-    filter: drop-shadow(0 0 2px rgba(232, 64, 64, 0.4));
+    filter: drop-shadow(0 0 4px rgba(232, 64, 64, 0.4));
   }
   50% {
-    filter: drop-shadow(0 0 6px rgba(232, 64, 64, 0.8));
+    filter: drop-shadow(0 0 10px rgba(232, 64, 64, 0.8));
   }
 }
 
@@ -2132,8 +2163,8 @@ body.agency-bypass-permissions {
   font-size: 12px;
   color: var(--vscode-descriptionForeground, #888);
   background: transparent;
-  border: 1px solid var(--vscode-input-border, #3c3c3c);
-  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
   cursor: pointer;
   transition:
     background 0.15s,
@@ -2175,10 +2206,10 @@ body.agency-bypass-permissions {
 .crispy-cp-context {
   font-size: 12px;
   font-weight: 400;
-  padding: 4px 6px;
+  padding: 4px 12px;
   font-family: var(--vscode-editor-font-family, monospace);
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: 8px;
   transition: background 0.15s;
 }
 
@@ -2264,10 +2295,10 @@ body.agency-bypass-permissions {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 6px;
+  padding: 4px 12px;
   background: transparent;
   border: none;
-  border-radius: 2px;
+  border-radius: 8px;
   cursor: pointer;
   color: var(--vscode-descriptionForeground, #888);
   transition:
@@ -2398,7 +2429,7 @@ body.agency-bypass-permissions {
   background: var(--vscode-dropdown-background, #3c3c3c);
   color: var(--vscode-dropdown-foreground, #d4d4d4);
   border: 1px solid var(--vscode-input-border, #3c3c3c);
-  border-radius: 2px;
+  border-radius: 8px;
   font-size: 12px;
   cursor: pointer;
 }
@@ -2413,7 +2444,7 @@ body.agency-bypass-permissions {
   background: var(--vscode-descriptionForeground, #888);
   color: #1e1e1e;
   border: none;
-  border-radius: 2px;
+  border-radius: 8px;
   font-size: 12px;
   cursor: pointer;
   transition: background 0.15s;
@@ -2509,6 +2540,36 @@ body.agency-bypass-permissions {
   50% {
     box-shadow: inset 0 0 25px #e84040;
   }
+}
+
+/* --- Streaming neon glow on container (per-agency color) --- */
+
+.crispy-main[data-streaming] .crispy-cp[data-agency="ask-before-edits"] {
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    0 1px 4px rgba(0, 0, 0, 0.2),
+    0 0 12px rgba(255, 255, 255, 0.3);
+}
+
+.crispy-main[data-streaming] .crispy-cp[data-agency="edit-automatically"] {
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    0 1px 4px rgba(0, 0, 0, 0.2),
+    0 0 12px rgba(64, 168, 232, 0.3);
+}
+
+.crispy-main[data-streaming] .crispy-cp[data-agency="plan-mode"] {
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    0 1px 4px rgba(0, 0, 0, 0.2),
+    0 0 12px rgba(71, 152, 140, 0.3);
+}
+
+.crispy-main[data-streaming] .crispy-cp[data-agency="bypass-permissions"] {
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    0 1px 4px rgba(0, 0, 0, 0.2),
+    0 0 12px rgba(232, 64, 64, 0.3);
 }
 
 /* ============================================================================
@@ -2726,7 +2787,7 @@ body.agency-bypass-permissions {
 /* Override .crispy-cp background to input-background during approval
    (Leto uses input-background for the panel, not editor-background) */
 .crispy-cp:has(.crispy-approval-header) {
-  background: var(--vscode-input-background, #3c3c3c);
+  background: rgba(60, 60, 60, 0.85);
   border: 1px solid var(--frame-highlight, #e88040);
 }
 

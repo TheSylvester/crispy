@@ -29,7 +29,6 @@ export function AgencyModeSelect({ value, showBypassOption, onChange }: AgencyMo
     <select
       className="crispy-cp-agency"
       value={value}
-      data-shortcut="Alt+Q"
       onChange={(e) => onChange(e.target.value as AgencyMode)}
     >
       {MODES.map((mode) => (
