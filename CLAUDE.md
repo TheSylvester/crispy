@@ -131,6 +131,15 @@ React 19, esbuild, vanilla CSS with `var(--vscode-*)` theme variables.
 - **Schema versioning:** Claude Code's app version is the de facto schema
   version. Fixtures in `test/fixtures/claude/` are keyed by version.
 
+### Frozen layer boundaries — do not modify without approval
+
+- **`agent-adapter.ts`** — Frozen. The adapter contract (`AgentAdapter`,
+  `ChannelMessage`, `SendOptions`, `SessionOpenSpec`).
+- **`channel-events.ts`** — Frozen. The event types adapters emit.
+- **`session-channel.ts`** — Frozen. Dumb pub/sub broker. Forwards
+  `ChannelMessage` as-is to all subscribers. No transformation, no
+  interpretation, no new event types. Frontend derives state client-side.
+
 ## Commands
 
 - `npm run typecheck` — strict TypeScript check
