@@ -2797,7 +2797,9 @@ body.agency-bypass-permissions {
 /* Override .crispy-cp background to input-background during approval
    (Leto uses input-background for the panel, not editor-background) */
 .crispy-cp:has(.crispy-approval-header) {
-  background: rgba(60, 60, 60, 0.85);
+  background: var(--vscode-input-background, #3c3c3c);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   border: 1px solid var(--frame-highlight, #e88040);
 }
 
