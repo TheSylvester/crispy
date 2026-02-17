@@ -2589,9 +2589,11 @@ body.agency-bypass-permissions {
   align-items: center;
   gap: 12px;
   padding: 0 12px;
-  background: var(--vscode-sideBar-background, #252526);
+  background: rgba(37, 37, 38, 0.55);
+  -webkit-backdrop-filter: blur(40px) saturate(170%);
+  backdrop-filter: blur(40px) saturate(170%);
   color: var(--vscode-sideBar-foreground, #cccccc);
-  border-bottom: 1px solid var(--vscode-panel-border, #333);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   z-index: 300;
   user-select: none;
   flex-shrink: 0;
