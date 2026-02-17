@@ -3314,7 +3314,7 @@ body.agency-bypass-permissions {
   position: fixed;
   top: var(--titlebar-height);
   right: 0;
-  width: var(--tool-panel-width, 0px);
+  width: var(--tool-panel-actual-width, var(--tool-panel-width, 0px));
   height: calc(100vh - var(--titlebar-height));
   background: var(--vscode-sideBar-background, #252526);
   border-left: 1px solid var(--vscode-panel-border, #2b2b2b);
@@ -3334,6 +3334,11 @@ body.agency-bypass-permissions {
   opacity: 0;
   transform: translateX(8px);
   pointer-events: none;
+}
+
+/* Overlay mode — panel floats over content with shadow */
+[data-tool-panel="overlay"] .crispy-tool-panel {
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
 }
 
 /* --- Resize handle — draggable left edge --- */
@@ -3388,6 +3393,10 @@ body.agency-bypass-permissions {
   right: calc(var(--tool-panel-width, 0px) + 1.5rem);
 }
 
+[data-tool-panel="overlay"] .crispy-scroll-nav {
+  right: calc(var(--tool-panel-actual-width, 0px) + 1.5rem);
+}
+
 /* --- TitleBar tool panel toggle button --- */
 
 .crispy-titlebar__tool-panel-btn--active {
@@ -3404,13 +3413,3 @@ body.agency-bypass-permissions {
   transition: none !important;
 }
 
-/* --- Responsive: hide panel on narrow viewports --- */
-
-@media (max-width: 768px) {
-  .crispy-tool-panel {
-    display: none;
-  }
-  .crispy-titlebar__tool-panel-btn {
-    display: none;
-  }
-}

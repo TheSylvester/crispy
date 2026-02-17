@@ -390,10 +390,12 @@ export function DiffView({ oldText, newText, language = 'text', maxHeight = 400 
   const containerRef = useRef<HTMLDivElement>(null);
   const [tooNarrow, setTooNarrow] = useState(false);
 
-  // Responsive: force unified below 400px (each split pane needs ~200px min)
+  // Responsive: force unified below 380px (each split pane needs ~190px min).
+  // At 450px tool-panel width the diff container is ~398px after padding,
+  // so 380px keeps split diffs usable at the minimum panel size.
   const checkWidth = useCallback(() => {
     if (!containerRef.current) return;
-    setTooNarrow(containerRef.current.offsetWidth < 400);
+    setTooNarrow(containerRef.current.offsetWidth < 380);
   }, []);
 
   useEffect(() => {

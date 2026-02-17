@@ -48,12 +48,14 @@ export function App({ transport, transportKind }: AppProps): React.JSX.Element {
   );
 }
 
-/** Chat content max-width (matches .crispy-transcript-content) + padding */
-const CHAT_CONTENT_PX = 72 * 16 + 32; // 72rem + 32px transcript padding
 /** Min panel width in px — below this the panel content is unusable */
 const MIN_PANEL_PX = 350;
 /** Max panel width in px — 60rem */
 const MAX_PANEL_PX = 60 * 16; // 960px
+/** Panel claims this fraction of the container */
+const PANEL_RATIO = 0.38;
+/** Below this container width the panel switches to overlay mode */
+const OVERLAY_BREAKPOINT_PX = 800;
 
 function AppLayout(): React.JSX.Element {
   const { sidebarCollapsed, setSidebarCollapsed, toolPanelOpen, toolPanelWidthPx } = usePreferences();
@@ -81,24 +83,27 @@ function AppLayout(): React.JSX.Element {
     return () => observer.disconnect();
   }, []);
 
-  // Tool panel claims leftover space beyond what the chat content needs,
-  // clamped between MIN and MAX. User drag override (toolPanelWidthPx) wins
-  // when set; otherwise auto-compute from spare space.
-  const spareSpace = containerWidth - CHAT_CONTENT_PX;
-  const autoPx = Math.min(Math.max(spareSpace, MIN_PANEL_PX), MAX_PANEL_PX);
+  // Tool panel takes a proportional share of the container, clamped between
+  // MIN and MAX. User drag override (toolPanelWidthPx) wins when set.
+  // Below the overlay breakpoint the panel floats over content instead of
+  // pushing the main column narrower.
+  const autoPx = Math.min(Math.max(Math.round(containerWidth * PANEL_RATIO), MIN_PANEL_PX), MAX_PANEL_PX);
   const panelPx = toolPanelWidthPx != null
     ? Math.min(Math.max(toolPanelWidthPx, MIN_PANEL_PX), MAX_PANEL_PX)
     : autoPx;
-  const toolPanelWidth = toolPanelOpen ? panelPx : 0;
+  const isOverlay = toolPanelOpen && containerWidth < OVERLAY_BREAKPOINT_PX;
+  // In overlay mode the panel floats over content — main column keeps full width.
+  const toolPanelWidth = toolPanelOpen && !isOverlay ? panelPx : 0;
 
   return (
     <div
       ref={layoutRef}
       className="crispy-layout"
       data-sidebar={sidebarCollapsed ? 'collapsed' : 'open'}
-      data-tool-panel={toolPanelOpen ? 'open' : 'collapsed'}
+      data-tool-panel={toolPanelOpen ? (isOverlay ? 'overlay' : 'open') : 'collapsed'}
       style={{
         '--tool-panel-width': `${toolPanelWidth}px`,
+        '--tool-panel-actual-width': `${toolPanelOpen ? panelPx : 0}px`,
         '--container-width': `${containerWidth}px`,
       } as React.CSSProperties}
     >
