@@ -1547,7 +1547,9 @@ body.agency-bypass-permissions {
 
 .crispy-stop__btn {
   padding: 4px 24px;
-  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  background: rgba(30, 30, 30, 0.55);
+  -webkit-backdrop-filter: blur(40px) saturate(170%);
+  backdrop-filter: blur(40px) saturate(170%);
   color: var(--vscode-button-secondaryForeground, #d4d4d4);
   border: 1px solid #ffffff;
   border-radius: 8px;
@@ -1573,7 +1575,13 @@ body.agency-bypass-permissions {
 }
 
 .crispy-stop__btn:hover {
-  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+  background: rgba(50, 50, 50, 0.7);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .crispy-stop__btn {
+    background: var(--vscode-editor-background, #1e1e1e);
+  }
 }
 
 .crispy-stop__btn:active {
