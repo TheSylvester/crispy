@@ -16,8 +16,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AsyncIterableQueue } from '../src/core/async-iterable-queue.js';
 import type { AgentAdapter, AdapterSettings, SessionInfo, ChannelMessage, VendorDiscovery } from '../src/core/agent-adapter.js';
 import type { TranscriptEntry, MessageContent, Vendor } from '../src/core/transcript.js';
-import type { ChannelStatus } from '../src/core/channel-events.js';
-import type { Subscriber, SubscriberEvent } from '../src/core/session-channel.js';
+import type { ChannelStatus, HistoryMessage, ChannelCatchupMessage } from '../src/core/channel-events.js';
+import type { Subscriber } from '../src/core/session-channel.js';
+
+/** Union of all messages a subscriber can receive. */
+type SubscriberMessage = ChannelMessage | HistoryMessage | ChannelCatchupMessage;
 
 import {
   _resetRegistry as _resetChannelRegistry,
@@ -34,7 +37,6 @@ import {
   subscribeSession,
   sendToSession,
   setSessionModel,
-  setSessionPermissions,
   interruptSession,
   closeSession,
   _resetRegistry,
@@ -165,24 +167,24 @@ function createCapturingFactory(options?: { vendor?: Vendor }) {
 // ============================================================================
 
 interface TestSubscriber extends Subscriber {
-  events: SubscriberEvent[];
-  eventsOfType<T extends SubscriberEvent['type']>(
+  events: SubscriberMessage[];
+  eventsOfType<T extends SubscriberMessage['type']>(
     type: T,
-  ): Extract<SubscriberEvent, { type: T }>[];
+  ): Extract<SubscriberMessage, { type: T }>[];
 }
 
 function createTestSubscriber(id: string): TestSubscriber {
-  const events: SubscriberEvent[] = [];
+  const events: SubscriberMessage[] = [];
   return {
     id,
     events,
-    send(event: SubscriberEvent): void {
+    send(event: SubscriberMessage): void {
       events.push(event);
     },
-    eventsOfType<T extends SubscriberEvent['type']>(
+    eventsOfType<T extends SubscriberMessage['type']>(
       type: T,
-    ): Extract<SubscriberEvent, { type: T }>[] {
-      return events.filter((e) => e.type === type) as Extract<SubscriberEvent, { type: T }>[];
+    ): Extract<SubscriberMessage, { type: T }>[] {
+      return events.filter((e) => e.type === type) as Extract<SubscriberMessage, { type: T }>[];
     },
   };
 }
@@ -495,25 +497,6 @@ describe('setSessionModel', () => {
   });
 });
 
-describe('setSessionPermissions', () => {
-  it('delegates to adapter.setPermissionMode()', async () => {
-    const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
-    const { factory, lastCreated } = createCapturingFactory({ vendor: 'claude' });
-    registerAdapter(discovery, factory);
-
-    const sub = createTestSubscriber('sub-1');
-    await subscribeSession('sess-1', sub);
-
-    await setSessionPermissions('sess-1', 'acceptEdits');
-    expect(lastCreated().setPermissionMode).toHaveBeenCalledWith('acceptEdits');
-  });
-
-  it('throws when no channel is open', async () => {
-    await expect(setSessionPermissions('nonexistent', 'plan')).rejects.toThrow('No open channel');
-  });
-});
-
 describe('interruptSession', () => {
   it('delegates to adapter.interrupt()', async () => {
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
@@ -540,17 +523,15 @@ describe('closeSession', () => {
     registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     const sub = createTestSubscriber('sub-1');
-    await subscribeSession('sess-1', sub);
+    const channel = await subscribeSession('sess-1', sub);
 
     closeSession('sess-1');
 
     // Channel is gone — operations should throw
     expect(() => sendToSession('sess-1', 'hello')).toThrow('No open channel');
 
-    // Subscriber received state_changed to unattached (from teardown)
-    const stateEvents = sub.eventsOfType('state_changed');
-    const lastState = stateEvents[stateEvents.length - 1];
-    expect(lastState.state).toBe('unattached');
+    // No broadcast on teardown — channel is torn down (state set internally)
+    expect(channel.state).toBe('unattached');
   });
 
   it('is no-op if no channel is open for sessionId', () => {
@@ -722,7 +703,7 @@ describe('Regression: unregisterAdapter closes live sessions', () => {
     registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     const sub = createTestSubscriber('sub-1');
-    await subscribeSession('sess-1', sub);
+    const channel = await subscribeSession('sess-1', sub);
 
     // Verify channel is live
     expect(() => sendToSession('sess-1', 'hi')).not.toThrow();
@@ -736,10 +717,8 @@ describe('Regression: unregisterAdapter closes live sessions', () => {
     // Discovery should be gone
     expect(getDiscovery('claude')).toBeUndefined();
 
-    // Subscriber received state_changed to unattached
-    const stateEvents = sub.eventsOfType('state_changed');
-    const lastState = stateEvents[stateEvents.length - 1];
-    expect(lastState.state).toBe('unattached');
+    // Channel state is unattached (no broadcast on teardown)
+    expect(channel.state).toBe('unattached');
   });
 
   it('unregistering vendor does not affect other vendors', async () => {

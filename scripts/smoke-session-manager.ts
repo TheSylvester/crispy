@@ -25,9 +25,15 @@ import {
   _resetRegistry,
 } from '../src/core/session-manager.js';
 
-import { ClaudeAgentAdapter } from '../src/core/adapters/claude/claude-code-adapter.js';
+import { ClaudeAgentAdapter, claudeDiscovery } from '../src/core/adapters/claude/claude-code-adapter.js';
+import type { SessionOpenSpec } from '../src/core/agent-adapter.js';
 
-import type { Subscriber, SubscriberEvent, SessionChannel } from '../src/core/session-channel.js';
+import type { Subscriber, SessionChannel } from '../src/core/session-channel.js';
+import type { ChannelMessage } from '../src/core/agent-adapter.js';
+import type { HistoryMessage, ChannelCatchupMessage } from '../src/core/channel-events.js';
+
+/** Union of all messages a subscriber can receive. */
+type SubscriberMessage = ChannelMessage | HistoryMessage | ChannelCatchupMessage;
 import {
   createChannel,
   setAdapter,
@@ -89,19 +95,32 @@ async function main(): Promise<void> {
   console.log(`${DIM}Pipeline: session-manager -> session-channel -> claude-code-adapter -> JSONL${RESET}`);
 
   // --------------------------------------------------------------------------
-  // Step 1: Instantiate ClaudeAgentAdapter (disk-only, no live session)
+  // Step 1: Create adapter factory
   // --------------------------------------------------------------------------
-  header('Step 1: Instantiate ClaudeAgentAdapter');
+  header('Step 1: Create adapter factory');
 
-  let adapter: ClaudeAgentAdapter;
-  try {
-    adapter = new ClaudeAgentAdapter({ cwd: process.cwd() });
-    recordStep('ClaudeAgentAdapter created', true, `vendor: ${adapter.vendor}`);
-  } catch (err) {
-    recordStep('ClaudeAgentAdapter created', false, String(err));
-    printSummary();
-    process.exit(1);
-  }
+  const cwd = process.cwd();
+  const createClaudeAdapter = (spec: SessionOpenSpec): ClaudeAgentAdapter => {
+    switch (spec.mode) {
+      case 'resume':
+        return new ClaudeAgentAdapter({ cwd, resume: spec.sessionId });
+      case 'fresh':
+        return new ClaudeAgentAdapter({
+          cwd: spec.cwd,
+          ...(spec.model && { model: spec.model }),
+          ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+          ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
+        });
+      case 'fork':
+        return new ClaudeAgentAdapter({
+          cwd, resume: spec.fromSessionId, forkSession: true,
+          ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
+        });
+      case 'continue':
+        return new ClaudeAgentAdapter({ cwd, resume: spec.sessionId, continue: true });
+    }
+  };
+  recordStep('Adapter factory created', true, `vendor: ${claudeDiscovery.vendor}`);
 
   // --------------------------------------------------------------------------
   // Step 2: Register adapter with session manager
@@ -109,7 +128,7 @@ async function main(): Promise<void> {
   header('Step 2: Register adapter');
 
   try {
-    registerAdapter(adapter);
+    registerAdapter(claudeDiscovery, createClaudeAdapter);
     recordStep('registerAdapter() succeeded', true);
   } catch (err) {
     recordStep('registerAdapter() succeeded', false, String(err));
@@ -209,10 +228,10 @@ async function main(): Promise<void> {
   // --------------------------------------------------------------------------
   header('Step 6: Subscribe to session');
 
-  const collected: SubscriberEvent[] = [];
+  const collected: SubscriberMessage[] = [];
   const subscriber: Subscriber = {
     id: 'smoke-test-subscriber',
-    send(event: SubscriberEvent): void {
+    send(event: SubscriberMessage): void {
       collected.push(event);
     },
   };
@@ -382,10 +401,10 @@ const STREAM_TIMEOUT_MS = 60_000;
  */
 function createCollectingSubscriber(id: string): {
   subscriber: Subscriber;
-  collected: SubscriberEvent[];
+  collected: SubscriberMessage[];
   waitForTurnComplete: () => Promise<void>;
 } {
-  const collected: SubscriberEvent[] = [];
+  const collected: SubscriberMessage[] = [];
   let sawStreaming = false;
   let turnResolve: (() => void) | null = null;
   let turnReject: ((err: Error) => void) | null = null;
@@ -404,22 +423,41 @@ function createCollectingSubscriber(id: string): {
 
   const subscriber: Subscriber = {
     id,
-    send(event: SubscriberEvent): void {
+    send(event: SubscriberMessage): void {
       collected.push(event);
-      if (event.type === 'state_changed') {
-        console.log(`    ${DIM}[${id}] state -> ${event.state}${RESET}`);
-        if (event.state === 'streaming') sawStreaming = true;
+
+      // Handle catchup (initial state sync for late subscribers)
+      if (event.type === 'catchup') {
+        console.log(`    ${DIM}[${id}] catchup state -> ${event.state}${RESET}`);
+        if (event.state === 'active' || event.state === 'streaming') sawStreaming = true;
+        return;
+      }
+
+      // Handle status events (active/idle/awaiting_approval)
+      if (event.type === 'event' && event.event.type === 'status') {
+        const status = event.event.status;
+        console.log(`    ${DIM}[${id}] status -> ${status}${RESET}`);
+        if (status === 'active') sawStreaming = true;
         // Idle after streaming = turn complete (query iterator ended)
-        if (event.state === 'idle' && sawStreaming) {
+        if (status === 'idle' && sawStreaming) {
           markComplete();
         }
-      } else if (event.type === 'error') {
-        console.log(`    ${DIM}[${id}] error: ${event.error}${RESET}`);
+        return;
+      }
+
+      // Handle error notifications
+      if (event.type === 'event' && event.event.type === 'notification' && event.event.kind === 'error') {
+        const errorMsg = typeof event.event.error === 'string' ? event.event.error : event.event.error.message;
+        console.log(`    ${DIM}[${id}] error: ${errorMsg}${RESET}`);
         if (!resolved) {
           resolved = true;
-          turnReject?.(new Error(`Channel error: ${event.error}`));
+          turnReject?.(new Error(`Channel error: ${errorMsg}`));
         }
-      } else if (event.type === 'entry') {
+        return;
+      }
+
+      // Handle entry messages
+      if (event.type === 'entry') {
         // Result entry = turn complete (SDK finished this turn's response)
         if (event.entry.type === 'result') {
           console.log(`    ${DIM}[${id}] result entry received (turn complete)${RESET}`);
@@ -436,7 +474,7 @@ function createCollectingSubscriber(id: string): {
     // Check if a result entry or idle-after-streaming already arrived
     const hasResult = collected.some(e => e.type === 'entry' && e.entry.type === 'result');
     const hasIdleAfterStreaming = sawStreaming && collected.some(
-      e => e.type === 'state_changed' && e.state === 'idle'
+      e => e.type === 'event' && e.event.type === 'status' && e.event.status === 'idle'
     );
     if (hasResult || hasIdleAfterStreaming) return Promise.resolve();
 
@@ -454,10 +492,19 @@ function createCollectingSubscriber(id: string): {
 }
 
 /** Summarize collected subscriber events for logging. */
-function summarizeEvents(collected: SubscriberEvent[]): string {
+function summarizeEvents(collected: SubscriberMessage[]): string {
   const counts = new Map<string, number>();
   for (const evt of collected) {
-    const key = evt.type === 'state_changed' ? `state_changed(${evt.state})` : evt.type;
+    let key: string;
+    if (evt.type === 'catchup') {
+      key = `catchup(${evt.state})`;
+    } else if (evt.type === 'event' && evt.event.type === 'status') {
+      key = `status(${evt.event.status})`;
+    } else if (evt.type === 'event' && evt.event.type === 'notification') {
+      key = `notification(${evt.event.kind})`;
+    } else {
+      key = evt.type;
+    }
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return [...counts.entries()]
@@ -521,11 +568,6 @@ async function runPhaseA(): Promise<void> {
     },
   });
   recordStep('Fresh ClaudeAgentAdapter created', true, `vendor: ${liveAdapter.vendor}`);
-
-  // A.2: Register adapter with session-manager
-  header('A.2: Register adapter');
-  registerAdapter(liveAdapter);
-  recordStep('registerAdapter() succeeded', true);
 
   // A.3: Create channel manually via session-channel primitives
   // (subscribeSession requires findSession which needs the session on disk)
@@ -592,7 +634,9 @@ async function runPhaseA(): Promise<void> {
   const assistantEntries = entryEvents.filter(
     e => e.type === 'entry' && e.entry.type === 'assistant'
   );
-  const stateEvents = liveCollected.filter(e => e.type === 'state_changed');
+  const statusEvents = liveCollected.filter(
+    e => e.type === 'event' && e.event.type === 'status'
+  );
 
   recordStep(
     `Subscriber received ${liveCollected.length} event(s)`,
@@ -607,13 +651,17 @@ async function runPhaseA(): Promise<void> {
     `Got ${assistantEntries.length} assistant entry/entries`,
     assistantEntries.length > 0,
   );
-  // Note: We expect at least 1 state transition (streaming). The adapter's
+  // Note: We expect at least 1 status transition (active). The adapter's
   // query iterator stays open after a turn completes (waiting for follow-up
   // input), so the idle transition only comes when close() is called.
   recordStep(
-    `State transitions observed: ${stateEvents.length}`,
-    stateEvents.length >= 1,
-    stateEvents.map(e => e.type === 'state_changed' ? e.state : '?').join(' -> '),
+    `Status transitions observed: ${statusEvents.length}`,
+    statusEvents.length >= 1,
+    statusEvents
+      .filter((e): e is ChannelMessage & { event: { type: 'status' } } =>
+        e.type === 'event' && e.event.type === 'status')
+      .map(e => e.event.status)
+      .join(' -> '),
   );
 
   // A.7: Capture sessionId
@@ -652,11 +700,31 @@ async function runPhaseB(): Promise<void> {
 
   const sessionId = capturedSessionId!;
 
-  // B.1: Create a brand new adapter (simulates restart)
-  header('B.1: Create fresh adapter (simulates restart)');
-  const freshAdapter = new ClaudeAgentAdapter({ cwd: process.cwd() });
-  registerAdapter(freshAdapter);
-  recordStep('Fresh adapter registered', true);
+  // B.1: Register discovery + factory (simulates restart)
+  header('B.1: Register discovery + factory (simulates restart)');
+  const cwd = process.cwd();
+  const createAdapter = (spec: SessionOpenSpec): ClaudeAgentAdapter => {
+    switch (spec.mode) {
+      case 'resume':
+        return new ClaudeAgentAdapter({ cwd, resume: spec.sessionId });
+      case 'fresh':
+        return new ClaudeAgentAdapter({
+          cwd: spec.cwd,
+          ...(spec.model && { model: spec.model }),
+          ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+          ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
+        });
+      case 'fork':
+        return new ClaudeAgentAdapter({
+          cwd, resume: spec.fromSessionId, forkSession: true,
+          ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
+        });
+      case 'continue':
+        return new ClaudeAgentAdapter({ cwd, resume: spec.sessionId, continue: true });
+    }
+  };
+  registerAdapter(claudeDiscovery, createAdapter);
+  recordStep('Discovery + factory registered', true);
 
   // B.2: Load session from disk (read-only)
   header('B.2: Load session from disk');
@@ -710,15 +778,34 @@ async function runPhaseC(): Promise<void> {
 
   const sessionId = capturedSessionId!;
 
-  // C.1: Register a fresh adapter and subscribe to the session
+  // C.1: Register discovery + factory and subscribe to the session
   header('C.1: Subscribe to existing session');
-  const resumeAdapter = new ClaudeAgentAdapter({
-    cwd: process.cwd(),
-    resume: sessionId,
-    maxTurns: 1,
-    settingSources: [],
-  });
-  registerAdapter(resumeAdapter);
+  const cwd = process.cwd();
+  const createResumeAdapter = (spec: SessionOpenSpec): ClaudeAgentAdapter => {
+    switch (spec.mode) {
+      case 'resume':
+        return new ClaudeAgentAdapter({
+          cwd, resume: spec.sessionId, maxTurns: 1, settingSources: [],
+        });
+      case 'fresh':
+        return new ClaudeAgentAdapter({
+          cwd: spec.cwd, maxTurns: 1, settingSources: [],
+          ...(spec.model && { model: spec.model }),
+          ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+          ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
+        });
+      case 'fork':
+        return new ClaudeAgentAdapter({
+          cwd, resume: spec.fromSessionId, forkSession: true, maxTurns: 1, settingSources: [],
+          ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
+        });
+      case 'continue':
+        return new ClaudeAgentAdapter({
+          cwd, resume: spec.sessionId, continue: true, maxTurns: 1, settingSources: [],
+        });
+    }
+  };
+  registerAdapter(claudeDiscovery, createResumeAdapter);
 
   const { subscriber: resumeSubscriber, collected: resumeCollected, waitForTurnComplete: waitForResumeIdle } =
     createCollectingSubscriber('smoke-resume-subscriber');
@@ -787,7 +874,9 @@ async function runPhaseC(): Promise<void> {
   const resumeAssistant = resumeEntries.filter(
     e => e.type === 'entry' && e.entry.type === 'assistant'
   );
-  const resumeStates = resumeCollected.filter(e => e.type === 'state_changed');
+  const resumeStatusEvents = resumeCollected.filter(
+    e => e.type === 'event' && e.event.type === 'status'
+  );
 
   recordStep(
     `Resume subscriber received ${resumeCollected.length} event(s)`,
@@ -802,11 +891,15 @@ async function runPhaseC(): Promise<void> {
     `Got ${resumeAssistant.length} assistant entry/entries from follow-up`,
     resumeAssistant.length > 0,
   );
-  // Same as Phase A: expect at least 1 state transition (streaming).
+  // Same as Phase A: expect at least 1 status transition (active).
   recordStep(
-    `State transitions: ${resumeStates.length}`,
-    resumeStates.length >= 1,
-    resumeStates.map(e => e.type === 'state_changed' ? e.state : '?').join(' -> '),
+    `Status transitions: ${resumeStatusEvents.length}`,
+    resumeStatusEvents.length >= 1,
+    resumeStatusEvents
+      .filter((e): e is ChannelMessage & { event: { type: 'status'; status: string } } =>
+        e.type === 'event' && e.event.type === 'status')
+      .map(e => e.event.status)
+      .join(' -> '),
   );
 
   // C.6: Clean up

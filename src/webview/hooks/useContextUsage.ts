@@ -69,14 +69,14 @@ export function useContextUsage(
     setLiveUsage(null);
   }, [sessionId]);
 
-  // Subscribe to live state_changed events
+  // Subscribe to live catchup events
   useEffect(() => {
     if (!sessionId) return;
 
     const off = transport.onEvent((sid, event) => {
       if (sid !== sessionId) return;
-      if (event.type === 'state_changed' && event.snapshot.contextUsage) {
-        setLiveUsage(event.snapshot.contextUsage);
+      if (event.type === 'catchup' && event.contextUsage) {
+        setLiveUsage(event.contextUsage);
       }
     });
 

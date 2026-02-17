@@ -134,7 +134,8 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     const off = transport.onEvent((sessionId, event) => {
       if (
         sessionId === selectedSessionId &&
-        event.type === 'notification' &&
+        event.type === 'event' &&
+        event.event.type === 'notification' &&
         event.event.kind === 'session_changed'
       ) {
         setSelectedSessionId(event.event.sessionId);

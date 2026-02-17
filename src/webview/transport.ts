@@ -8,8 +8,8 @@
  * @module transport
  */
 
-import type { SessionInfo, SendOptions } from '../core/agent-adapter.js';
-import type { TranscriptEntry, MessageContent } from '../core/transcript.js';
+import type { SessionInfo, TurnIntent, TurnReceipt } from '../core/agent-adapter.js';
+import type { TranscriptEntry } from '../core/transcript.js';
 import type { HostEvent } from '../host/client-connection.js';
 import type { ApprovalExtra } from './components/approval/types.js';
 
@@ -22,14 +22,15 @@ export interface SessionService {
   listSessions(): Promise<WireSessionInfo[]>;
   findSession(sessionId: string): Promise<WireSessionInfo | null>;
   loadSession(sessionId: string, options?: { until?: string }): Promise<TranscriptEntry[]>;
-  createSession(vendor: string, cwd: string, options?: {
-    model?: string;
-    permissionMode?: string;
-    extraArgs?: Record<string, string | null>;
-  }): Promise<{ pendingId: string }>;
-  forkSession(vendor: string, fromSessionId: string, options?: {
-    atMessageId?: string;
-  }): Promise<{ pendingId: string }>;
+
+  /**
+   * Send a turn (user message + settings) with unified routing.
+   *
+   * The session manager handles existing/new/fork targets, broadcasts the
+   * user entry, and calls the adapter. Returns a receipt with the session ID.
+   */
+  sendTurn(intent: TurnIntent): Promise<TurnReceipt>;
+
   forkToNewPanel?(params: {
     fromSessionId: string;
     atMessageId?: string;
@@ -41,15 +42,11 @@ export interface SessionService {
   }): Promise<{ ok: boolean }>;
   subscribe(sessionId: string): Promise<void>;
   unsubscribe(sessionId: string): Promise<void>;
-  send(sessionId: string, content: MessageContent, options?: SendOptions): Promise<void>;
+
   resolveApproval(sessionId: string, toolUseId: string, optionId: string, extra?: ApprovalExtra): Promise<void>;
-  setModel(sessionId: string, model?: string): Promise<void>;
-  setPermissions(sessionId: string, mode: string): Promise<void>;
+
   interrupt(sessionId: string): Promise<void>;
-  reconfigure(sessionId: string, updates: {
-    allowDangerouslySkipPermissions?: boolean;
-    extraArgs?: Record<string, string | null>;
-  }): Promise<void>;
+
   close(sessionId: string): Promise<void>;
   subscribeSessionList(): Promise<void>;
   unsubscribeSessionList(): Promise<void>;

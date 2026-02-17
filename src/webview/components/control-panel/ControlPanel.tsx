@@ -41,42 +41,11 @@ import { slugToPath } from '../../hooks/useSessionCwd.js';
 import { useContextUsage } from '../../hooks/useContextUsage.js';
 import { useSessionStatus } from '../../hooks/useSessionStatus.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
-import type { MessageContent, MessageContentBlock, ContentBlock, TranscriptEntry } from '../../../core/transcript.js';
-
-/**
- * Build an optimistic TranscriptEntry for immediate rendering before backend echo.
- *
- * Pure function — no React hooks. Handles both text-only and multimodal content.
- * The returned entry uses a `uuid` prefixed with "optimistic-" so useTranscript's
- * dedup logic can replace it when the real backend echo arrives.
- */
-export function buildOptimisticUserEntry(sessionId: string, content: MessageContent): TranscriptEntry {
-  const contentBlocks: ContentBlock[] = typeof content === 'string'
-    ? [{ type: 'text', text: content }]
-    : content.map((block): ContentBlock =>
-        block.type === 'text'
-          ? { type: 'text', text: block.text }
-          : { type: 'image', source: { type: block.source.type, media_type: block.source.media_type, data: block.source.data } }
-      );
-
-  return {
-    type: 'user',
-    uuid: `optimistic-${Date.now()}`,
-    sessionId,
-    timestamp: new Date().toISOString(),
-    message: {
-      role: 'user',
-      content: contentBlocks,
-    },
-  };
-}
+import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
+import type { TurnIntent } from '../../../core/agent-adapter.js';
 
 interface ControlPanelProps {
   onForkHoverChange?: (hovering: boolean) => void;
-  /** Inject an optimistic user entry into the transcript before backend echo. */
-  onOptimisticEntry?: (entry: TranscriptEntry) => void;
-  /** Stash an optimistic entry for injection after a new session initializes. */
-  onPendingOptimisticEntry?: (entry: TranscriptEntry) => void;
   /** Instantly pin transcript scroll to bottom (called on send). */
   onScrollToBottom?: () => void;
   /** Transcript entries for historical context usage fallback. */
@@ -99,6 +68,8 @@ interface ControlPanelProps {
   pendingAgencyMode?: { agencyMode: AgencyMode; bypassEnabled: boolean } | null;
   /** Called after pendingAgencyMode is consumed. */
   onPendingAgencyModeConsumed?: () => void;
+  /** Inject a synthetic user entry for immediate rendering before backend echo. */
+  onOptimisticEntry?: (entry: TranscriptEntry) => void;
 }
 
 /** Agency modes for keyboard cycling (excluding bypass-permissions). */
@@ -168,7 +139,7 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed, onForkHistoryLoaded, onRegisterForkHandler, onRegisterRewindHandler, pendingAgencyMode, onPendingAgencyModeConsumed }, ref) {
+  function ControlPanel({ onForkHoverChange, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed, onForkHistoryLoaded, onRegisterForkHandler, onRegisterRewindHandler, pendingAgencyMode, onPendingAgencyModeConsumed, onOptimisticEntry }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     // Track the DOM element for native drag/drop listeners. A callback ref
     // ensures the useEffect re-runs when the element mounts, unlike a
@@ -183,12 +154,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         (ref as React.RefObject<HTMLDivElement | null>).current = node;
       }
     }, [ref]);
-    // Track the last permission mode we pushed to the server to avoid echo loops
-    // with the permission_mode_changed event listener.
-    const lastPushedModeRef = useRef<string | null>(null);
-    const lastPushedModelRef = useRef<ModelOption>(state.model);
-    const lastPushedBypassRef = useRef<boolean>(state.bypassEnabled);
-    const lastPushedChromeRef = useRef<boolean>(state.chromeEnabled);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned } = usePreferences();
     const transport = useTransport();
     const { selectedSessionId, selectedCwd, setSelectedSessionId } = useSession();
@@ -322,111 +287,43 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       return () => document.removeEventListener('keydown', handleKeyDown);
     }, [state.bypassEnabled, state.agencyMode, state.model, togglesDisabled]);
 
-    // --- Server → UI: permission_mode_changed notifications ---
-    // The control panel is the optimistic source of truth — the user's chosen
-    // mode takes effect immediately on send(). The adapter suppresses the SDK
-    // boot echo (where it reports its default before processing our request),
-    // so every event that reaches here is a genuine server-initiated change
-    // (e.g. agent called EnterPlanMode) and should be applied unconditionally.
+    // --- Server → UI: settings sync notifications ---
+    // Server-initiated setting changes update the local state. Handles both
+    // legacy permission_mode_changed (from adapter) and the new settings_changed
+    // (broadcast after each sendTurn) for cross-panel sync.
     useEffect(() => {
       const off = transport.onEvent((sessionId, event) => {
         if (sessionId !== selectedSessionId) return;
-        if (event.type === 'notification' && event.event.kind === 'permission_mode_changed') {
+        if (event.type !== 'event' || event.event.type !== 'notification') return;
+
+        if (event.event.kind === 'permission_mode_changed') {
           const serverMode = mapPermissionModeToAgency(event.event.mode);
           if (serverMode) {
-            // Update the ref so the push-to-server effect below doesn't echo
-            lastPushedModeRef.current = mapAgencyToPermissionMode(serverMode);
-            dispatch({ type: 'SET_AGENCY_MODE', mode: serverMode });
-          }
-        }
-      });
-      return off;
-    }, [selectedSessionId, transport]);
-
-    // --- Continuous settings sync from snapshot ---
-    // Every state_changed snapshot carries the adapter's current settings.
-    // We apply incoming settings whenever they differ from what this client
-    // last pushed, so cross-client changes (another tab calling setModel,
-    // setPermissions, or reconfigure) are reflected immediately. The
-    // lastPushed*Ref guards prevent echo loops — the client that made the
-    // change already updated its refs in the push effects, so the incoming
-    // snapshot is a no-op for the originator.
-    useEffect(() => {
-      const off = transport.onEvent((sessionId, event) => {
-        if (sessionId !== selectedSessionId) return;
-        if (event.type !== 'state_changed' || !event.snapshot.settings) return;
-
-        const { settings } = event.snapshot;
-
-        // Skip empty settings — adapter hasn't received init yet.
-        if (!settings.model && !settings.permissionMode) return;
-
-        // Sync permission mode (skip if it matches our last push)
-        if (settings.permissionMode) {
-          const serverMode = mapPermissionModeToAgency(settings.permissionMode);
-          if (serverMode && settings.permissionMode !== lastPushedModeRef.current) {
-            lastPushedModeRef.current = mapAgencyToPermissionMode(serverMode);
             dispatch({ type: 'SET_AGENCY_MODE', mode: serverMode });
           }
         }
 
-        // Sync model (skip if it matches our last push)
-        const incomingModel = (settings.model ?? '') as ModelOption;
-        if (incomingModel !== lastPushedModelRef.current) {
-          lastPushedModelRef.current = incomingModel;
-          dispatch({ type: 'SET_MODEL', model: incomingModel });
-        }
-
-        // Sync bypass (skip if it matches our last push)
-        if (settings.allowDangerouslySkipPermissions !== lastPushedBypassRef.current) {
-          lastPushedBypassRef.current = settings.allowDangerouslySkipPermissions;
+        if (event.event.kind === 'settings_changed') {
+          const { settings } = event.event;
+          // Sync model
+          const modelValue = (settings.model ?? '') as ModelOption;
+          dispatch({ type: 'SET_MODEL', model: modelValue });
+          // Sync permission mode → agency mode
+          if (settings.permissionMode) {
+            const agencyMode = mapPermissionModeToAgency(settings.permissionMode);
+            if (agencyMode) {
+              dispatch({ type: 'SET_AGENCY_MODE', mode: agencyMode });
+            }
+          }
+          // Sync bypass
           dispatch({ type: 'SET_BYPASS', enabled: settings.allowDangerouslySkipPermissions });
-        }
-
-        // Sync chrome (skip if it matches our last push)
-        const chromeEnabled = settings.extraArgs?.chrome !== undefined;
-        if (chromeEnabled !== lastPushedChromeRef.current) {
-          lastPushedChromeRef.current = chromeEnabled;
+          // Sync chrome (extraArgs with 'chrome' key means enabled)
+          const chromeEnabled = settings.extraArgs != null && 'chrome' in settings.extraArgs;
           dispatch({ type: 'SET_CHROME', enabled: chromeEnabled });
         }
       });
       return off;
     }, [selectedSessionId, transport]);
-
-    // --- Push agency mode changes to server immediately ---
-    // Track what we last pushed to avoid echo loops with the
-    // permission_mode_changed event listener above.
-    useEffect(() => {
-      if (!selectedSessionId) return;
-      const mode = mapAgencyToPermissionMode(state.agencyMode);
-      if (mode === lastPushedModeRef.current) return;
-      lastPushedModeRef.current = mode;
-      transport.setPermissions(selectedSessionId, mode).catch((err) => {
-        console.error('[ControlPanel] setPermissions failed:', err);
-      });
-    }, [state.agencyMode, selectedSessionId, transport]);
-
-    // --- Push bypass changes to server (triggers query restart) ---
-    useEffect(() => {
-      if (!selectedSessionId) return;
-      if (channelState !== 'idle') return;
-      if (state.bypassEnabled === lastPushedBypassRef.current) return;
-      lastPushedBypassRef.current = state.bypassEnabled;
-      transport.reconfigure(selectedSessionId, {
-        allowDangerouslySkipPermissions: state.bypassEnabled,
-      }).catch(err => console.error('[ControlPanel] reconfigure (bypass) failed:', err));
-    }, [state.bypassEnabled, selectedSessionId, channelState, transport]);
-
-    // --- Push Chrome changes to server (triggers query restart) ---
-    useEffect(() => {
-      if (!selectedSessionId) return;
-      if (channelState !== 'idle') return;
-      if (state.chromeEnabled === lastPushedChromeRef.current) return;
-      lastPushedChromeRef.current = state.chromeEnabled;
-      transport.reconfigure(selectedSessionId, {
-        extraArgs: state.chromeEnabled ? { chrome: null } : {},
-      }).catch(err => console.error('[ControlPanel] reconfigure (chrome) failed:', err));
-    }, [state.chromeEnabled, selectedSessionId, channelState, transport]);
 
     // --- Send handler ---
     const handleSend = useCallback(() => {
@@ -453,92 +350,80 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         content = text;
       }
 
-      // Options applied atomically with send() — model, permissions, bypass.
-      const sendOptions = {
-        model: state.model || undefined,
-        permissionMode: mapAgencyToPermissionMode(state.agencyMode),
-        allowDangerouslySkipPermissions: state.bypassEnabled || undefined,
+      // Build TurnIntent with unified routing target
+      const intent: TurnIntent = {
+        content,
+        clientMessageId: crypto.randomUUID(),
+        settings: {
+          model: state.model || undefined,
+          permissionMode: mapAgencyToPermissionMode(state.agencyMode),
+          allowDangerouslySkipPermissions: state.bypassEnabled || undefined,
+          extraArgs: state.chromeEnabled ? { chrome: null } : undefined,
+        },
+        target: state.forkMode
+          ? {
+              kind: 'fork',
+              vendor: 'claude',
+              fromSessionId: state.forkMode.fromSessionId,
+              atMessageId: state.forkMode.atMessageId,
+            }
+          : !selectedSessionId
+            ? { kind: 'new', vendor: 'claude', cwd: slugToPath(selectedCwd!) }
+            : { kind: 'existing', sessionId: selectedSessionId },
       };
 
-      // Mark what we're sending so the continuous settings sync ignores the
-      // echo from our own send — only other clients adopt the change.
-      lastPushedModelRef.current = state.model;
-
-      /**
-       * Shared flow for fork & new-session branches: inject pending optimistic
-       * entry → create session via factory → select → scroll → send.
-       */
-      function createThenSend(
-        sessionFactory: () => Promise<{ pendingId: string }>,
-        errorLabel: string,
-        onError?: () => void,
-      ) {
-        const optimistic = buildOptimisticUserEntry('pending', content);
-        onPendingOptimisticEntry?.(optimistic);
-        setOptimisticStatus('streaming');
-
-        sessionFactory().then(({ pendingId }) => {
-          setSelectedSessionId(pendingId);
-          onScrollToBottom?.();
-          return transport.send(pendingId, content, sendOptions);
-        }).catch((err) => {
-          setOptimisticStatus('idle');
-          console.error(`[ControlPanel] ${errorLabel} failed:`, err);
-          onError?.();
-        });
-
-        dispatch({ type: 'CLEAR_INPUT' });
-      }
-
-      // --- Fork branch: create forked session, then send ---
-      if (state.forkMode) {
-        const forkMode = state.forkMode;
-        const { fromSessionId, atMessageId } = forkMode;
-
-        createThenSend(
-          () => transport.forkSession('claude', fromSessionId, { atMessageId }),
-          'forkSession',
-          () => {
-            dispatch({ type: 'SET_INPUT', value: typeof content === 'string' ? content : text });
-            dispatch({ type: 'SET_FORK_MODE', forkMode });
-          },
-        );
+      // Early bail for new session without CWD
+      if (intent.target.kind === 'new' && !selectedCwd) {
+        console.error('[ControlPanel] Cannot create session: no CWD selected');
         return;
       }
 
-      // --- New session branch: create session, then send ---
-      if (!selectedSessionId) {
-        if (!selectedCwd) {
-          console.error('[ControlPanel] Cannot create session: no CWD selected');
-          return;
-        }
-        const cwd = slugToPath(selectedCwd);
+      // Stash forkMode for error recovery before clearing
+      const forkModeBackup = state.forkMode;
 
-        createThenSend(
-          () => transport.createSession('claude', cwd, {
-            model: state.model || undefined,
-            permissionMode: mapAgencyToPermissionMode(state.agencyMode),
-            extraArgs: state.chromeEnabled ? { chrome: null } : undefined,
-          }),
-          'createSession',
-        );
-        return;
-      }
-
-      // --- Existing session: optimistic entry + send ---
-      if (onOptimisticEntry) {
-        onOptimisticEntry(buildOptimisticUserEntry(selectedSessionId, content));
-      }
-      onScrollToBottom?.();
-
-      setOptimisticStatus('streaming');
-      transport.send(selectedSessionId, content, sendOptions).catch((err) => {
-        setOptimisticStatus('idle');
-        console.error('[ControlPanel] send failed:', err);
-      });
-
+      // Clear input immediately (optimistic)
       dispatch({ type: 'CLEAR_INPUT' });
-    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, state.forkMode, selectedSessionId, selectedCwd, setSelectedSessionId, setOptimisticStatus, transport, onOptimisticEntry, onPendingOptimisticEntry, onScrollToBottom]);
+      onScrollToBottom?.();
+      setOptimisticStatus('streaming');
+
+      // Inject optimistic user entry for immediate rendering.
+      // For new/fork sessions, the server-broadcast entry arrives before
+      // useTranscript has subscribed to the pending session ID, so we
+      // must inject locally. The dedup logic in useTranscript replaces
+      // the optimistic entry when the real echo arrives.
+      if (onOptimisticEntry) {
+        const optimisticEntry: TranscriptEntry = {
+          type: 'user',
+          uuid: `optimistic-${intent.clientMessageId}`,
+          sessionId: selectedSessionId ?? 'pending',
+          timestamp: new Date().toISOString(),
+          message: {
+            role: 'user',
+            content: typeof content === 'string'
+              ? [{ type: 'text', text: content }]
+              : content as MessageContentBlock[],
+          },
+        };
+        onOptimisticEntry(optimisticEntry);
+      }
+
+      transport.sendTurn(intent)
+        .then((receipt) => {
+          // For new/fork targets, update selected session to the returned ID
+          if (intent.target.kind !== 'existing') {
+            setSelectedSessionId(receipt.sessionId);
+          }
+        })
+        .catch((err) => {
+          setOptimisticStatus('idle');
+          console.error('[ControlPanel] sendTurn failed:', err);
+          // Restore input on error
+          dispatch({ type: 'SET_INPUT', value: typeof content === 'string' ? content : text });
+          if (forkModeBackup) {
+            dispatch({ type: 'SET_FORK_MODE', forkMode: forkModeBackup });
+          }
+        });
+    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, state.forkMode, selectedSessionId, selectedCwd, setSelectedSessionId, setOptimisticStatus, transport, onScrollToBottom, onOptimisticEntry]);
 
     // Keep ref in sync so forkConfig auto-send always calls the latest handleSend
     useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);

@@ -10,6 +10,7 @@
 import type { HostEvent } from '../host/client-connection.js';
 import type { SessionService, WireSessionInfo } from './transport.js';
 import type { TranscriptEntry } from '../core/transcript.js';
+import type { TurnReceipt } from '../core/agent-adapter.js';
 
 interface VSCodeAPI {
   postMessage(message: unknown): void;
@@ -90,11 +91,8 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     loadSession: (sessionId, options) =>
       request<TranscriptEntry[]>('loadSession', { sessionId, ...options }),
 
-    createSession: (vendor, cwd, options) =>
-      request<{ pendingId: string }>('createSession', { vendor, cwd, ...options }),
-
-    forkSession: (vendor, fromSessionId, options) =>
-      request<{ pendingId: string }>('forkSession', { vendor, fromSessionId, ...options }),
+    sendTurn: (intent) =>
+      request<TurnReceipt>('sendTurn', { intent }),
 
     forkToNewPanel: (params) =>
       request<{ ok: boolean }>('forkToNewPanel', params),
@@ -105,23 +103,11 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     unsubscribe: (sessionId) =>
       request<void>('unsubscribe', { sessionId }),
 
-    send: (sessionId, content, options) =>
-      request<void>('send', { sessionId, content, options }),
-
     resolveApproval: (sessionId, toolUseId, optionId, extra) =>
       request<void>('resolveApproval', { sessionId, toolUseId, optionId, extra }),
 
-    setModel: (sessionId, model) =>
-      request<void>('setModel', { sessionId, model }),
-
-    setPermissions: (sessionId, mode) =>
-      request<void>('setPermissions', { sessionId, mode }),
-
     interrupt: (sessionId) =>
       request<void>('interrupt', { sessionId }),
-
-    reconfigure: (sessionId, updates) =>
-      request<void>('reconfigure', { sessionId, ...updates }),
 
     close: (sessionId) =>
       request<void>('close', { sessionId }),

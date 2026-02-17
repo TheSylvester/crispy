@@ -11,27 +11,24 @@
  * @module client-connection
  */
 
-import type { MessageContent, Vendor } from "../core/transcript.js";
-import type { SendOptions } from "../core/agent-adapter.js";
+import type { ChannelMessage, TurnIntent } from "../core/agent-adapter.js";
+import type {
+  ChannelCatchupMessage,
+  HistoryMessage,
+} from "../core/channel-events.js";
 import type {
   Subscriber,
-  SubscriberEvent,
   SessionChannel,
 } from "../core/session-channel.js";
 import type { SessionListEvent } from "../core/session-list-events.js";
-import { resolveApproval, unsubscribe } from "../core/session-channel.js";
+import { resolveApproval, unsubscribe, getChannel } from "../core/session-channel.js";
 import {
   listAllSessions,
   findSession,
   loadSession,
   subscribeSession,
-  createSession,
-  createForkSession,
-  sendToSession,
-  setSessionModel,
-  setSessionPermissions,
+  sendTurn,
   interruptSession,
-  reconfigureSession,
   closeSession,
 } from "../core/session-manager.js";
 import {
@@ -55,7 +52,7 @@ export type ClientMessage = {
 };
 
 /** Union of all events that can be pushed over the wire. */
-export type HostEvent = SubscriberEvent | SessionListEvent;
+export type HostEvent = ChannelMessage | HistoryMessage | ChannelCatchupMessage | SessionListEvent;
 
 /** Host → Client response or push event. */
 export type HostMessage =
@@ -146,7 +143,7 @@ export function createClientConnection(
 
         const subscriber: Subscriber = {
           id: clientId,
-          send(event: SubscriberEvent) {
+          send(event: ChannelMessage | HistoryMessage | ChannelCatchupMessage) {
             sendFn({ kind: "event", sessionId, event });
           },
         };
@@ -166,22 +163,34 @@ export function createClientConnection(
         return { unsubscribed: true };
       }
 
-      case "createSession": {
-        const vendor = (params.vendor as string) ?? 'claude';
-        const cwdParam = params.cwd as string;
-        const model = params.model as string | undefined;
-        const permissionMode = params.permissionMode as string | undefined;
-        const extraArgs = params.extraArgs as Record<string, string | null> | undefined;
+      case "sendTurn": {
+        const intent = params.intent as TurnIntent;
 
-        let currentSessionId = '';
+        // For existing sessions, use the already-subscribed subscriber
+        if (intent.target.kind === 'existing') {
+          const sessionId = intent.target.sessionId;
+          const sub = subscriptions.get(sessionId);
+          if (!sub) {
+            throw new Error(
+              `Not subscribed to session "${sessionId}". Call subscribe first.`
+            );
+          }
+          return sendTurn(intent, sub.subscriber);
+        }
+
+        // Generate pending ID here so currentSessionId is set before
+        // sendTurn broadcasts the user entry (which triggers subscriber.send).
+        const pendingId = `pending:${crypto.randomUUID()}`;
+        let currentSessionId = pendingId;
 
         const subscriber: Subscriber = {
           id: clientId,
-          send(event: SubscriberEvent) {
+          send(event: ChannelMessage | HistoryMessage | ChannelCatchupMessage) {
             sendFn({ kind: "event", sessionId: currentSessionId, event });
             // Re-key subscription tracking on session_changed
             if (
-              event.type === 'notification' &&
+              event.type === 'event' &&
+              event.event.type === 'notification' &&
               event.event.kind === 'session_changed' &&
               event.event.sessionId
             ) {
@@ -196,60 +205,16 @@ export function createClientConnection(
           },
         };
 
-        const { pendingId, channel } = createSession(
-          vendor as Vendor, cwdParam, subscriber,
-          { model, permissionMode: permissionMode as SendOptions['permissionMode'], extraArgs },
-        );
-        currentSessionId = pendingId;
-        subscriptions.set(pendingId, { channel, subscriber });
-        return { pendingId };
-      }
+        const receipt = sendTurn(intent, subscriber, pendingId);
 
-      case "forkSession": {
-        const vendor = (params.vendor as string) ?? 'claude';
-        const fromSessionId = params.fromSessionId as string;
-        const atMessageId = params.atMessageId as string | undefined;
+        // For new/fork, sendTurn() internally calls createSession/createForkSession
+        // which returns the channel. We need to track it for cleanup.
+        const channel = getChannel(receipt.sessionId);
+        if (channel) {
+          subscriptions.set(receipt.sessionId, { channel, subscriber });
+        }
 
-        let currentSessionId = '';
-
-        const subscriber: Subscriber = {
-          id: clientId,
-          send(event: SubscriberEvent) {
-            sendFn({ kind: "event", sessionId: currentSessionId, event });
-            // Re-key subscription tracking on session_changed
-            if (
-              event.type === 'notification' &&
-              event.event.kind === 'session_changed' &&
-              event.event.sessionId
-            ) {
-              const realId = event.event.sessionId;
-              const sub = subscriptions.get(currentSessionId);
-              if (sub) {
-                subscriptions.delete(currentSessionId);
-                currentSessionId = realId;
-                subscriptions.set(realId, sub);
-              }
-            }
-          },
-        };
-
-        // Note: model/permissionMode/extraArgs are applied via the subsequent send() call,
-        // not at fork-session creation time (SessionOpenSpec for fork only supports atMessageId).
-        const { pendingId, channel } = createForkSession(
-          vendor as Vendor, fromSessionId, subscriber,
-          { atMessageId },
-        );
-        currentSessionId = pendingId;
-        subscriptions.set(pendingId, { channel, subscriber });
-        return { pendingId };
-      }
-
-      case "send": {
-        const sessionId = params.sessionId as string;
-        const content = params.content as MessageContent;
-        const options = params.options as Record<string, unknown> | undefined;
-        sendToSession(sessionId, content, options);
-        return { sent: true };
+        return receipt;
       }
 
       case "resolveApproval": {
@@ -272,33 +237,10 @@ export function createClientConnection(
         return { resolved: true };
       }
 
-      case "setModel": {
-        const sessionId = params.sessionId as string;
-        const model = params.model as string | undefined;
-        await setSessionModel(sessionId, model);
-        return { set: true };
-      }
-
-      case "setPermissions": {
-        const sessionId = params.sessionId as string;
-        const mode = params.mode as string;
-        await setSessionPermissions(sessionId, mode);
-        return { set: true };
-      }
-
       case "interrupt": {
         const sessionId = params.sessionId as string;
         await interruptSession(sessionId);
         return { interrupted: true };
-      }
-
-      case "reconfigure": {
-        const sessionId = params.sessionId as string;
-        reconfigureSession(sessionId, {
-          allowDangerouslySkipPermissions: params.allowDangerouslySkipPermissions as boolean | undefined,
-          extraArgs: params.extraArgs as Record<string, string | null> | undefined,
-        });
-        return { reconfigured: true };
       }
 
       case "close": {

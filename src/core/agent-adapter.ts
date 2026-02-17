@@ -83,11 +83,66 @@ export interface VendorDiscovery {
  * Matches Leto's SendOptions — the control panel gathers UI state and
  * bundles it into a single object so the adapter can apply everything
  * atomically before starting a new query.
+ *
+ * @deprecated Use TurnSettings instead. SendOptions is retained for
+ * backwards compatibility during the migration.
  */
 export interface SendOptions {
   model?: string;
   permissionMode?: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions';
   allowDangerouslySkipPermissions?: boolean;
+}
+
+// ============================================================================
+// Turn Intent Types — unified send surface
+// ============================================================================
+
+/**
+ * Settings bundled with a turn (user message).
+ *
+ * These are applied atomically when the turn is sent:
+ * - model, permissionMode: live-changeable (applied mid-stream if query active)
+ * - allowDangerouslySkipPermissions, extraArgs: require query restart
+ */
+export interface TurnSettings {
+  model?: string;
+  permissionMode?: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions';
+  allowDangerouslySkipPermissions?: boolean;
+  extraArgs?: Record<string, string | null>;
+}
+
+/**
+ * Target for a turn — where to send it.
+ *
+ * 'existing': send to an existing session
+ * 'new': create a new session, then send
+ * 'fork': fork from an existing session, then send
+ */
+export type TurnTarget =
+  | { kind: 'existing'; sessionId: string }
+  | { kind: 'new'; vendor: Vendor; cwd: string }
+  | { kind: 'fork'; vendor: Vendor; fromSessionId: string; atMessageId?: string };
+
+/**
+ * Intent to send a turn (user message + settings).
+ *
+ * The unified shape for all send operations. The session manager routes
+ * by target.kind, broadcasts the user entry, then calls adapter.sendTurn().
+ */
+export interface TurnIntent {
+  target: TurnTarget;
+  content: MessageContent;
+  clientMessageId: string;
+  settings: TurnSettings;
+}
+
+/**
+ * Receipt from sending a turn.
+ *
+ * Contains the session ID (may be pending:<uuid> for new/fork targets).
+ */
+export interface TurnReceipt {
+  sessionId: string;
 }
 
 /** Vendor-agnostic session settings, readable from the adapter. */
@@ -175,8 +230,30 @@ export interface AgentAdapter {
    * Throws if the adapter is closed or awaiting approval.
    * Errors from the underlying vendor session are delivered via the
    * event stream, not thrown from this method.
+   *
+   * @deprecated Use sendTurn() instead. send() is retained for backwards
+   * compatibility during the migration.
    */
   send(content: MessageContent, options?: SendOptions): void;
+
+  /**
+   * Send a user turn with settings applied atomically.
+   *
+   * This is the unified entry point for all user messages. Settings are
+   * applied intelligently:
+   * - model, permissionMode: live-changeable (applied mid-stream if active)
+   * - allowDangerouslySkipPermissions, extraArgs: require query restart
+   *
+   * If query is active and restart-requiring settings changed, the current
+   * query is torn down and a new one started with the new settings.
+   *
+   * User messages sent via sendTurn() are suppressed from echo (the session
+   * manager broadcasts the user entry before calling sendTurn, so the adapter
+   * should not re-emit it when the SDK echoes it back).
+   *
+   * Throws if the adapter is closed or awaiting approval.
+   */
+  sendTurn(content: MessageContent, settings: TurnSettings): void;
 
   /**
    * Respond to a pending approval request.

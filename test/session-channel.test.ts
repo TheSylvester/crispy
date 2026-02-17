@@ -10,8 +10,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AsyncIterableQueue } from '../src/core/async-iterable-queue.js';
 import type { AgentAdapter, AdapterSettings, ChannelMessage } from '../src/core/agent-adapter.js';
 import type { TranscriptEntry, MessageContent, Vendor } from '../src/core/transcript.js';
-import type { ChannelStatus, ApprovalOption, NotificationEvent } from '../src/core/channel-events.js';
-import type { Subscriber, SubscriberEvent } from '../src/core/session-channel.js';
+import type { ChannelStatus, ApprovalOption, NotificationEvent, HistoryMessage, ChannelCatchupMessage } from '../src/core/channel-events.js';
+import type { Subscriber } from '../src/core/session-channel.js';
+
+/** Union of all messages a subscriber can receive. */
+type SubscriberMessage = ChannelMessage | HistoryMessage | ChannelCatchupMessage;
 
 import {
   createChannel,
@@ -100,24 +103,34 @@ function createMockAdapter(options?: {
 // ============================================================================
 
 interface TestSubscriber extends Subscriber {
-  events: SubscriberEvent[];
-  eventsOfType<T extends SubscriberEvent['type']>(
+  events: SubscriberMessage[];
+  eventsOfType<T extends SubscriberMessage['type']>(
     type: T,
-  ): Extract<SubscriberEvent, { type: T }>[];
+  ): Extract<SubscriberMessage, { type: T }>[];
+  /** Get all 'event' type messages (status or notification events). */
+  channelEvents(): ChannelMessage[];
+  /** Get all entry messages. */
+  entries(): ChannelMessage[];
 }
 
 function createTestSubscriber(id: string): TestSubscriber {
-  const events: SubscriberEvent[] = [];
+  const events: SubscriberMessage[] = [];
   return {
     id,
     events,
-    send(event: SubscriberEvent): void {
+    send(event: SubscriberMessage): void {
       events.push(event);
     },
-    eventsOfType<T extends SubscriberEvent['type']>(
+    eventsOfType<T extends SubscriberMessage['type']>(
       type: T,
-    ): Extract<SubscriberEvent, { type: T }>[] {
-      return events.filter((e) => e.type === type) as Extract<SubscriberEvent, { type: T }>[];
+    ): Extract<SubscriberMessage, { type: T }>[] {
+      return events.filter((e) => e.type === type) as Extract<SubscriberMessage, { type: T }>[];
+    },
+    channelEvents(): ChannelMessage[] {
+      return events.filter((e): e is ChannelMessage => e.type === 'event' || e.type === 'entry');
+    },
+    entries(): ChannelMessage[] {
+      return events.filter((e): e is ChannelMessage => e.type === 'entry');
     },
   };
 }
@@ -289,17 +302,17 @@ describe('Subscribe / Unsubscribe', () => {
     const lateSubscriber = createTestSubscriber('late');
     subscribe(ch, lateSubscriber);
 
-    // Late subscriber receives current state on subscribe (idle)
-    const lateStateEvents = lateSubscriber.eventsOfType('state_changed');
-    expect(lateStateEvents.length).toBe(1);
-    expect(lateStateEvents[0].state).toBe('idle');
+    // Late subscriber receives catchup on subscribe (idle state)
+    const lateCatchupEvents = lateSubscriber.eventsOfType('catchup');
+    expect(lateCatchupEvents.length).toBe(1);
+    expect(lateCatchupEvents[0].state).toBe('idle');
 
     // Push second entry — both subscribers get it
     adapter.pushMessage(entryMsg({ type: 'assistant' }));
     await tick();
 
-    // Early subscriber: state_changed(idle) + entry + entry = 3
-    // Late subscriber: state_changed(idle) + entry = 2
+    // Early subscriber: catchup(idle) + entry + entry = 3
+    // Late subscriber: catchup(idle) + entry = 2
     expect(earlySubscriber.eventsOfType('entry').length).toBe(2);
     expect(lateSubscriber.eventsOfType('entry').length).toBe(1);
   });
@@ -320,10 +333,9 @@ describe('Subscribe / Unsubscribe', () => {
     const lateSub = createTestSubscriber('late');
     subscribe(ch, lateSub);
 
-    const stateEvents = lateSub.eventsOfType('state_changed');
-    expect(stateEvents.length).toBe(1);
-    expect(stateEvents[0].state).toBe('streaming');
-    expect(stateEvents[0].snapshot.state).toBe('streaming');
+    const catchupEvents = lateSub.eventsOfType('catchup');
+    expect(catchupEvents.length).toBe(1);
+    expect(catchupEvents[0].state).toBe('streaming');
   });
 
   it('late subscriber receives pending approval on subscribe', async () => {
@@ -345,18 +357,18 @@ describe('Subscribe / Unsubscribe', () => {
     const lateSub = createTestSubscriber('late');
     subscribe(ch, lateSub);
 
-    // Should receive state_changed + approval_request
-    const stateEvents = lateSub.eventsOfType('state_changed');
-    expect(stateEvents.length).toBe(1);
-    expect(stateEvents[0].state).toBe('awaiting_approval');
+    // Should receive catchup with pending approvals
+    const catchupEvents = lateSub.eventsOfType('catchup');
+    expect(catchupEvents.length).toBe(1);
+    expect(catchupEvents[0].state).toBe('awaiting_approval');
+    expect(catchupEvents[0].pendingApprovals).toHaveLength(1);
 
-    const approvalEvents = lateSub.eventsOfType('approval_request');
-    expect(approvalEvents.length).toBe(1);
-    expect(approvalEvents[0].toolUseId).toBe('tool-77');
-    expect(approvalEvents[0].toolName).toBe('Bash');
-    expect(approvalEvents[0].input).toEqual({ command: 'ls' });
-    expect(approvalEvents[0].reason).toBe('wants to list files');
-    expect(approvalEvents[0].options).toHaveLength(2);
+    const approval = catchupEvents[0].pendingApprovals[0];
+    expect(approval.toolUseId).toBe('tool-77');
+    expect(approval.toolName).toBe('Bash');
+    expect(approval.input).toEqual({ command: 'ls' });
+    expect(approval.reason).toBe('wants to list files');
+    expect(approval.options).toHaveLength(2);
   });
 
   it('late subscriber does not receive state for unattached channel', () => {
@@ -386,10 +398,9 @@ describe('Adapter management', () => {
     expect(ch.state).toBe('idle');
     expect(ch.loopDone).not.toBeNull();
 
-    // Subscriber received state_changed to idle
-    const stateEvents = sub.eventsOfType('state_changed');
-    expect(stateEvents.length).toBe(1);
-    expect(stateEvents[0].state).toBe('idle');
+    // No events broadcast on setAdapter — state is just set internally.
+    // Events come from the adapter's message stream.
+    expect(sub.events.length).toBe(0);
   });
 
   it('setAdapter throws if adapter already set', () => {
@@ -410,7 +421,7 @@ describe('Adapter management', () => {
 // ========== 4. Entry Routing ==========
 
 describe('Entry routing', () => {
-  it('entries are broadcast with incrementing index', async () => {
+  it('entries are broadcast and index is tracked', async () => {
     const ch = createChannel('ch-1');
     const adapter = createMockAdapter();
     const sub = createTestSubscriber('sub-1');
@@ -424,11 +435,10 @@ describe('Entry routing', () => {
     adapter.pushMessage(entryMsg({ type: 'system' }));
     await tick();
 
+    // Raw entries are broadcast (no index wrapper — channel is dumb pipe)
     const entries = sub.eventsOfType('entry');
     expect(entries.length).toBe(3);
-    expect(entries[0].index).toBe(0);
-    expect(entries[1].index).toBe(1);
-    expect(entries[2].index).toBe(2);
+    // Index is tracked internally for history backfill coordination
     expect(ch.entryIndex).toBe(3);
   });
 
@@ -467,10 +477,11 @@ describe('Status event routing', () => {
     await tick();
 
     expect(ch.state).toBe('streaming');
-    const stateEvents = sub.eventsOfType('state_changed');
-    // idle (from setAdapter) + streaming (from active status)
-    expect(stateEvents.length).toBe(2);
-    expect(stateEvents[1].state).toBe('streaming');
+    // Raw event is passed through (dumb pipe)
+    const events = sub.eventsOfType('event');
+    expect(events.length).toBe(1);
+    expect(events[0].event.type).toBe('status');
+    expect(events[0].event.status).toBe('active');
   });
 
   it('idle status → idle state and clears pendingApprovals', async () => {
@@ -493,7 +504,7 @@ describe('Status event routing', () => {
     expect(ch.pendingApprovals.size).toBe(0);
   });
 
-  it('awaiting_approval status → awaiting_approval state + approval_request broadcast', async () => {
+  it('awaiting_approval status → awaiting_approval state + raw event broadcast', async () => {
     const ch = createChannel('ch-1');
     const adapter = createMockAdapter();
     const sub = createTestSubscriber('sub-1');
@@ -511,20 +522,26 @@ describe('Status event routing', () => {
     expect(ch.state).toBe('awaiting_approval');
     expect(ch.pendingApprovals.has('tool-42')).toBe(true);
 
-    const approvalReqs = sub.eventsOfType('approval_request');
-    expect(approvalReqs.length).toBe(1);
-    expect(approvalReqs[0].toolUseId).toBe('tool-42');
-    expect(approvalReqs[0].toolName).toBe('Write');
-    expect(approvalReqs[0].input).toEqual({ file_path: '/tmp/foo' });
-    expect(approvalReqs[0].reason).toBe('Wants to write a file');
-    expect(approvalReqs[0].options).toHaveLength(2);
+    // Raw event is passed through (dumb pipe)
+    const events = sub.eventsOfType('event');
+    expect(events.length).toBe(1);
+    expect(events[0].event.type).toBe('status');
+    expect(events[0].event.status).toBe('awaiting_approval');
+    // Type narrowing to access awaiting_approval fields
+    if (events[0].event.status === 'awaiting_approval') {
+      expect(events[0].event.toolUseId).toBe('tool-42');
+      expect(events[0].event.toolName).toBe('Write');
+      expect(events[0].event.input).toEqual({ file_path: '/tmp/foo' });
+      expect(events[0].event.reason).toBe('Wants to write a file');
+      expect(events[0].event.options).toHaveLength(2);
+    }
   });
 });
 
 // ========== 6. Notification Routing ==========
 
 describe('Notification routing', () => {
-  it('error notification → error subscriber event', async () => {
+  it('error notification → passthrough as raw event', async () => {
     const ch = createChannel('ch-1');
     const adapter = createMockAdapter();
     const sub = createTestSubscriber('sub-1');
@@ -540,12 +557,16 @@ describe('Notification routing', () => {
     }));
     await tick();
 
-    const errors = sub.eventsOfType('error');
-    expect(errors.length).toBe(1);
-    expect(errors[0].error).toBe('Something went wrong');
+    // Raw event passed through (dumb pipe)
+    const events = sub.eventsOfType('event');
+    expect(events.length).toBe(1);
+    expect(events[0].event.type).toBe('notification');
+    if (events[0].event.type === 'notification') {
+      expect(events[0].event.kind).toBe('error');
+    }
   });
 
-  it('error notification with Error object → extracts message', async () => {
+  it('error notification with Error object → passthrough as raw event', async () => {
     const ch = createChannel('ch-1');
     const adapter = createMockAdapter();
     const sub = createTestSubscriber('sub-1');
@@ -561,16 +582,17 @@ describe('Notification routing', () => {
     }));
     await tick();
 
-    const errors = sub.eventsOfType('error');
-    expect(errors.length).toBe(1);
-    expect(errors[0].error).toBe('Detailed error');
+    // Raw event passed through (dumb pipe)
+    const events = sub.eventsOfType('event');
+    expect(events.length).toBe(1);
+    expect(events[0].event.type).toBe('notification');
   });
 
   it.each([
     ['session_changed', { type: 'notification' as const, kind: 'session_changed' as const, sessionId: 'new-id', previousSessionId: 'old-id' }],
     ['compacting', { type: 'notification' as const, kind: 'compacting' as const }],
     ['permission_mode_changed', { type: 'notification' as const, kind: 'permission_mode_changed' as const, mode: 'plan' }],
-  ])('%s notification → passthrough as notification subscriber event', async (kind, payload) => {
+  ])('%s notification → passthrough as raw event', async (kind, payload) => {
     const ch = createChannel('ch-1');
     const adapter = createMockAdapter();
     const sub = createTestSubscriber('sub-1');
@@ -582,9 +604,13 @@ describe('Notification routing', () => {
     adapter.pushMessage(notificationMsg(payload as NotificationEvent));
     await tick();
 
-    const notifications = sub.eventsOfType('notification');
-    expect(notifications.length).toBe(1);
-    expect(notifications[0].event.kind).toBe(kind);
+    // Raw event passed through (dumb pipe)
+    const events = sub.eventsOfType('event');
+    expect(events.length).toBe(1);
+    expect(events[0].event.type).toBe('notification');
+    if (events[0].event.type === 'notification') {
+      expect(events[0].event.kind).toBe(kind);
+    }
   });
 });
 
@@ -608,7 +634,7 @@ describe('Approval flow', () => {
     expect(adapter.respondToApproval).toHaveBeenCalledWith('tool-1', 'allow', undefined);
   });
 
-  it('resolveApproval removes from pendingApprovals and broadcasts approval_resolved', async () => {
+  it('resolveApproval removes from pendingApprovals (no broadcast)', async () => {
     const ch = createChannel('ch-1');
     const adapter = createMockAdapter();
     const sub = createTestSubscriber('sub-1');
@@ -621,12 +647,12 @@ describe('Approval flow', () => {
     await tick();
     expect(ch.pendingApprovals.has('tool-1')).toBe(true);
 
+    const eventCountBefore = sub.events.length;
     resolveApproval(ch, 'tool-1', 'allow');
     expect(ch.pendingApprovals.has('tool-1')).toBe(false);
 
-    const resolved = sub.eventsOfType('approval_resolved');
-    expect(resolved.length).toBe(1);
-    expect(resolved[0].toolUseId).toBe('tool-1');
+    // No approval_resolved broadcast — adapter will emit status events when it resumes
+    expect(sub.events.length).toBe(eventCountBefore);
   });
 
   it('resolveApproval warns on unknown toolUseId (no throw)', async () => {
@@ -700,10 +726,7 @@ describe('Approval flow', () => {
     resolveApproval(ch, 'tool-2', 'deny');
     expect(ch.pendingApprovals.size).toBe(0);
 
-    const resolved = sub.eventsOfType('approval_resolved');
-    expect(resolved.length).toBe(2);
-    expect(resolved[0].toolUseId).toBe('tool-1');
-    expect(resolved[1].toolUseId).toBe('tool-2');
+    // No approval_resolved broadcast — resolved internally, adapter emits status events
   });
 });
 
@@ -800,10 +823,8 @@ describe('Stream lifecycle', () => {
     adapter.completeStream();
     await tick();
 
+    // State transitions to unattached (no broadcast — adapter should emit idle before closing)
     expect(ch.state).toBe('unattached');
-    const stateEvents = sub.eventsOfType('state_changed');
-    const lastState = stateEvents[stateEvents.length - 1];
-    expect(lastState.state).toBe('unattached');
   });
 
   it('stream error → error broadcast + unattached state', async () => {
@@ -821,14 +842,13 @@ describe('Stream lifecycle', () => {
     // Stream error kills the loop permanently — unattached, not idle
     expect(ch.state).toBe('unattached');
 
-    const errors = sub.eventsOfType('error');
-    expect(errors.length).toBe(1);
-    expect(errors[0].error).toBe('Connection lost');
-
-    // State change was broadcast
-    const stateEvents = sub.eventsOfType('state_changed');
-    const lastState = stateEvents[stateEvents.length - 1];
-    expect(lastState.state).toBe('unattached');
+    // Error is broadcast as a raw notification event
+    const events = sub.eventsOfType('event');
+    expect(events.length).toBe(1);
+    expect(events[0].event.type).toBe('notification');
+    if (events[0].event.type === 'notification' && events[0].event.kind === 'error') {
+      expect(events[0].event.error).toBe('Connection lost');
+    }
   });
 
   it('stream error clears pendingApprovals', async () => {
@@ -931,49 +951,48 @@ describe('Error resilience', () => {
   });
 });
 
-// ========== 12. Snapshot ==========
+// ========== 12. Catchup (late subscriber sync) ==========
 
-describe('Snapshot', () => {
-  it('state_changed includes current snapshot', async () => {
+describe('Catchup', () => {
+  it('late subscriber receives catchup with session info', async () => {
     const ch = createChannel('ch-1');
     const adapter = createMockAdapter({ vendor: 'claude', sessionId: 'sess-abc' });
-    const sub = createTestSubscriber('sub-1');
 
-    subscribe(ch, sub);
     setAdapter(ch, adapter);
     await tick();
 
-    const stateEvents = sub.eventsOfType('state_changed');
-    expect(stateEvents.length).toBeGreaterThan(0);
+    // Late subscriber joins after adapter is set
+    const sub = createTestSubscriber('sub-1');
+    subscribe(ch, sub);
 
-    const snapshot = stateEvents[0].snapshot;
-    expect(snapshot.state).toBe('idle');
-    expect(snapshot.sessionId).toBe('sess-abc');
-    expect(snapshot.vendor).toBe('claude');
-    expect(snapshot.settings).toBeDefined();
+    const catchups = sub.eventsOfType('catchup');
+    expect(catchups.length).toBe(1);
+    expect(catchups[0].state).toBe('idle');
+    expect(catchups[0].sessionId).toBe('sess-abc');
+    expect(catchups[0].settings).toBeDefined();
   });
 
-  it('snapshot reflects state transitions', async () => {
+  it('catchup reflects current state (streaming)', async () => {
     const ch = createChannel('ch-1');
     const adapter = createMockAdapter({ vendor: 'claude', sessionId: 'sess-1' });
-    const sub = createTestSubscriber('sub-1');
 
-    subscribe(ch, sub);
     setAdapter(ch, adapter);
     await tick();
 
     adapter.pushMessage(statusMsg('active'));
     await tick();
 
-    const stateEvents = sub.eventsOfType('state_changed');
-    const streamingEvent = stateEvents.find((e) => e.state === 'streaming');
-    expect(streamingEvent).toBeDefined();
-    expect(streamingEvent!.snapshot.state).toBe('streaming');
-    expect(streamingEvent!.snapshot.vendor).toBe('claude');
-    expect(streamingEvent!.snapshot.settings).toBeDefined();
+    // Late subscriber joins mid-streaming
+    const sub = createTestSubscriber('sub-1');
+    subscribe(ch, sub);
+
+    const catchups = sub.eventsOfType('catchup');
+    expect(catchups.length).toBe(1);
+    expect(catchups[0].state).toBe('streaming');
+    expect(catchups[0].settings).toBeDefined();
   });
 
-  it('destroyChannel emits state_changed with unattached snapshot', async () => {
+  it('destroyChannel does not broadcast (channel is torn down)', async () => {
     const ch = createChannel('ch-1');
     const adapter = createMockAdapter({ vendor: 'claude', sessionId: 'sess-1' });
     const sub = createTestSubscriber('sub-1');
@@ -988,52 +1007,38 @@ describe('Snapshot', () => {
     destroyChannel(ch.channelId);
     await tick();
 
-    const stateEvents = sub.eventsOfType('state_changed');
-    expect(stateEvents.length).toBe(1);
-    expect(stateEvents[0].state).toBe('unattached');
-    expect(stateEvents[0].snapshot.state).toBe('unattached');
+    // No broadcast on teardown — channel is torn down
+    expect(sub.events.length).toBe(0);
+    expect(ch.state).toBe('unattached');
   });
 
-  it('snapshot includes adapter settings', async () => {
+  it('catchup includes adapter settings', async () => {
     const ch = createChannel('ch-1');
     const adapter = createMockAdapter({ vendor: 'claude', sessionId: 'sess-settings' });
-    const sub = createTestSubscriber('sub-1');
 
-    subscribe(ch, sub);
     setAdapter(ch, adapter);
     await tick();
 
-    const stateEvents = sub.eventsOfType('state_changed');
-    expect(stateEvents.length).toBeGreaterThan(0);
+    // Late subscriber joins
+    const sub = createTestSubscriber('sub-1');
+    subscribe(ch, sub);
 
-    const snapshot = stateEvents[0].snapshot;
-    expect(snapshot.settings).toBeDefined();
-    expect(snapshot.settings).not.toBeNull();
-    expect(snapshot.settings!.allowDangerouslySkipPermissions).toBe(false);
+    const catchups = sub.eventsOfType('catchup');
+    expect(catchups.length).toBe(1);
+    expect(catchups[0].settings).toBeDefined();
+    expect(catchups[0].settings).not.toBeNull();
+    expect(catchups[0].settings!.allowDangerouslySkipPermissions).toBe(false);
   });
 
-  it('snapshot settings are null when no adapter (teardown)', async () => {
+  it('no catchup for unattached channel', () => {
     const ch = createChannel('ch-1');
-    const adapter = createMockAdapter({ vendor: 'claude', sessionId: 'sess-1' });
+    // No adapter set — channel is unattached
+
     const sub = createTestSubscriber('sub-1');
-
     subscribe(ch, sub);
-    setAdapter(ch, adapter);
-    await tick();
 
-    // Clear previous events to isolate teardown
-    sub.events.length = 0;
-
-    destroyChannel(ch.channelId);
-    await tick();
-
-    const stateEvents = sub.eventsOfType('state_changed');
-    expect(stateEvents.length).toBe(1);
-    expect(stateEvents[0].state).toBe('unattached');
-    // After teardown the adapter is closed but still referenced;
-    // the snapshot is built from the torn-down channel state
-    // Settings may be present (adapter still assigned) or null depending on teardown order
-    // The key invariant is that the state is 'unattached'
+    // No catchup sent for unattached channels
+    expect(sub.events.length).toBe(0);
   });
 });
 
@@ -1088,20 +1093,17 @@ describe('Integration: full conversation flow', () => {
     expect(ch.state).toBe('idle');
     expect(ch.entryIndex).toBe(3);
 
-    // Verify event sequence
+    // Verify event sequence — raw passthrough (dumb pipe)
     const allEvents = sub.events;
     const types = allEvents.map((e) => e.type);
     expect(types).toEqual([
-      'state_changed',     // idle (from setAdapter)
-      'state_changed',     // streaming (from active)
-      'entry',             // assistant 1
-      'entry',             // assistant 2
-      'state_changed',     // awaiting_approval
-      'approval_request',  // tool-99
-      'approval_resolved', // tool-99
-      'state_changed',     // streaming (from active)
-      'entry',             // assistant 3
-      'state_changed',     // idle (query done)
+      'event',  // active status
+      'entry',  // assistant 1
+      'entry',  // assistant 2
+      'event',  // awaiting_approval status
+      'event',  // active status (after approval resolved)
+      'entry',  // assistant 3
+      'event',  // idle status
     ]);
   });
 });

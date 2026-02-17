@@ -25,9 +25,9 @@ state, not classes.
 
 - **`session-channel.ts`** — Per-session state machine:
   `unattached → idle → streaming ↔ awaiting_approval`. Manages subscriptions,
-  approval tracking, and history backfill. Emits `SubscriberEvent` union
-  (entry, history, state_changed, approval_request, approval_resolved,
-  notification, error).
+  approval tracking, and history backfill. Broadcasts raw `ChannelMessage`
+  (entry/event) plus `HistoryMessage` and `ChannelCatchupMessage` for late
+  subscribers. Client-side hooks interpret events into UI state.
 - **`session-manager.ts`** — Adapter/channel orchestration. Registers vendor
   adapters, creates/loads/forks sessions, handles pending → real session ID
   re-keying on `session_changed`. `onIdle` hook triggers session list refresh

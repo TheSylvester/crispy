@@ -367,45 +367,6 @@ describe('ClientConnection', () => {
     });
   });
 
-  describe('send', () => {
-    it('sends a message to a subscribed session', async () => {
-      const s1 = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1] });
-      const { factory, lastCreated } = createCapturingFactory({ vendor: 'claude' });
-      registerAdapter(discovery, factory);
-
-      const { messages, sendFn } = createMockSend();
-      const handler = createClientConnection('client-1', sendFn);
-
-      await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
-
-      const resp = await sendRequestAndGetResponse(handler, messages, 'send', {
-        sessionId: 'sess-1',
-        content: 'Hello world',
-      });
-      expect(resp.kind).toBe('response');
-      expect(lastCreated().send).toHaveBeenCalledWith('Hello world', undefined);
-
-      handler.dispose();
-    });
-
-    it('returns error when session has no open channel', async () => {
-      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [] });
-      registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
-
-      const { messages, sendFn } = createMockSend();
-      const handler = createClientConnection('client-1', sendFn);
-
-      const resp = await sendRequestAndGetResponse(handler, messages, 'send', {
-        sessionId: 'nonexistent',
-        content: 'hello',
-      });
-      expect(resp.kind).toBe('error');
-
-      handler.dispose();
-    });
-  });
-
   describe('resolveApproval', () => {
     it('resolves an approval on a subscribed session', async () => {
       const s1 = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
@@ -457,52 +418,6 @@ describe('ClientConnection', () => {
         optionId: 'allow',
       });
       expect(resp.kind).toBe('error');
-
-      handler.dispose();
-    });
-  });
-
-  describe('setModel', () => {
-    it('delegates to adapter.setModel()', async () => {
-      const s1 = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1] });
-      const { factory, lastCreated } = createCapturingFactory({ vendor: 'claude' });
-      registerAdapter(discovery, factory);
-
-      const { messages, sendFn } = createMockSend();
-      const handler = createClientConnection('client-1', sendFn);
-
-      await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
-
-      const resp = await sendRequestAndGetResponse(handler, messages, 'setModel', {
-        sessionId: 'sess-1',
-        model: 'opus',
-      });
-      expect(resp.kind).toBe('response');
-      expect(lastCreated().setModel).toHaveBeenCalledWith('opus');
-
-      handler.dispose();
-    });
-  });
-
-  describe('setPermissions', () => {
-    it('delegates to adapter.setPermissionMode()', async () => {
-      const s1 = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1] });
-      const { factory, lastCreated } = createCapturingFactory({ vendor: 'claude' });
-      registerAdapter(discovery, factory);
-
-      const { messages, sendFn } = createMockSend();
-      const handler = createClientConnection('client-1', sendFn);
-
-      await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
-
-      const resp = await sendRequestAndGetResponse(handler, messages, 'setPermissions', {
-        sessionId: 'sess-1',
-        mode: 'acceptEdits',
-      });
-      expect(resp.kind).toBe('response');
-      expect(lastCreated().setPermissionMode).toHaveBeenCalledWith('acceptEdits');
 
       handler.dispose();
     });

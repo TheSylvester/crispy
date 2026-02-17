@@ -18,6 +18,7 @@ import type {
   VendorDiscovery,
   ChannelMessage,
   SendOptions,
+  TurnSettings,
   SessionInfo as AgentSessionInfo,
 } from '../../agent-adapter.js';
 import type { ChannelStatus } from '../../channel-events.js';
@@ -390,6 +391,8 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   private abortController: AbortController | null = null;
   /** Generation counter to prevent stale drainOutput() finally blocks from clobbering new queries. */
   private queryGeneration = 0;
+  /** Counter for sendTurn() echo suppression — decremented when SDK echoes back user messages. */
+  private pendingSendCount = 0;
 
   private readonly options: ClaudeSessionOptions;
 
@@ -478,6 +481,98 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         this.activeQuery.setPermissionMode(options.permissionMode as PermissionMode);
       }
       this.inputQueue.enqueue(sdkMessage);
+    }
+  }
+
+  sendTurn(content: MessageContent, settings: TurnSettings): void {
+    if (this._closed) {
+      throw new Error('Channel is closed');
+    }
+    if (this._status === 'awaiting_approval') {
+      throw new Error('Cannot send while awaiting approval');
+    }
+
+    const needsRestart = this.diffNeedsRestart(settings);
+    this.applySettings(settings);
+
+    // If restart-requiring settings changed and we have an active query, tear it down
+    if (needsRestart && this.activeQuery) {
+      // Sync session ID so the next query resumes correctly
+      this.options.resume = this._sessionId;
+      // Clear one-shot flags that shouldn't carry over
+      this.options.sessionId = undefined;
+      this.options.forkSession = undefined;
+      this.options.continue = undefined;
+      this.options.resumeSessionAt = undefined;
+
+      this.teardownQuery();
+      this.pendingSendCount = 0;
+    }
+
+    const sdkMessage = this.toSDKUserMessage(content);
+
+    if (this.activeQuery && this.inputQueue) {
+      // Session is running — apply live-changeable settings and enqueue
+      if (settings.model !== undefined) {
+        this.activeQuery.setModel(settings.model || undefined);
+      }
+      if (settings.permissionMode !== undefined) {
+        this.activeQuery.setPermissionMode(settings.permissionMode as PermissionMode);
+      }
+      this.pendingSendCount++;
+      this.inputQueue.enqueue(sdkMessage);
+    } else {
+      // No active session — spin up a new query
+      this.pendingSendCount++;
+      this.startQuery(sdkMessage);
+    }
+  }
+
+  /**
+   * Check if settings changes require a query restart.
+   *
+   * allowDangerouslySkipPermissions and extraArgs are only applied at query
+   * creation time — changing them mid-session requires tearing down and
+   * restarting the query.
+   */
+  private diffNeedsRestart(settings: TurnSettings): boolean {
+    // Check bypass permission change
+    if (settings.allowDangerouslySkipPermissions !== undefined) {
+      const current = this.options.allowDangerouslySkipPermissions ?? false;
+      if (settings.allowDangerouslySkipPermissions !== current) {
+        return true;
+      }
+    }
+
+    // Check extraArgs change (deep compare via JSON.stringify)
+    if (settings.extraArgs !== undefined) {
+      const currentJson = JSON.stringify(this.options.extraArgs ?? {});
+      const newJson = JSON.stringify(settings.extraArgs);
+      if (currentJson !== newJson) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Apply settings to the adapter's options.
+   *
+   * Called before sending a turn to ensure all settings are captured.
+   */
+  private applySettings(settings: TurnSettings): void {
+    if (settings.model !== undefined) {
+      this.options.model = settings.model || undefined;
+    }
+    if (settings.permissionMode !== undefined) {
+      this.options.permissionMode = settings.permissionMode as Options['permissionMode'];
+    }
+    if (settings.allowDangerouslySkipPermissions !== undefined) {
+      this.options.allowDangerouslySkipPermissions = settings.allowDangerouslySkipPermissions;
+    }
+    if (settings.extraArgs !== undefined) {
+      this.options.extraArgs = settings.extraArgs;
     }
   }
 
@@ -797,6 +892,9 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       this.activeQuery = null;
     }
 
+    // Reset echo suppression counter
+    this.pendingSendCount = 0;
+
     // Deny any pending approvals (take snapshot to avoid mutation during iteration)
     const pendingEntries = [...this.pendingApprovals.values()];
     this.pendingApprovals.clear();
@@ -951,6 +1049,13 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   private handleUserMessage(msg: SDKUserMessage): void {
     // Skip replayed messages (they're history, not new content)
     if ('isReplay' in msg && (msg as { isReplay?: boolean }).isReplay) return;
+
+    // Skip echo if this was sent via sendTurn() — channel already broadcast it
+    if (this.pendingSendCount > 0) {
+      this.pendingSendCount--;
+      return;
+    }
+
     this.emitEntry(msg);
   }
 

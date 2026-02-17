@@ -27,43 +27,28 @@
  * @module session-channel
  */
 
-import type { AgentAdapter, AdapterSettings, ChannelMessage, SendOptions } from './agent-adapter.js';
-import type { MessageContent, Vendor, TranscriptEntry, ContextUsage } from './transcript.js';
+import type { AgentAdapter, ChannelMessage, SendOptions } from './agent-adapter.js';
+import type { MessageContent, TranscriptEntry } from './transcript.js';
 import type {
-  ChannelEvent,
-  StatusEvent,
-  NotificationEvent,
-  ApprovalOption,
+  ChannelCatchupMessage,
+  HistoryMessage,
+  PendingApprovalInfo,
 } from './channel-events.js';
 
-// ============================================================================
-// Subscriber Event — discriminated union pushed to all subscribers
-// ============================================================================
-
-/**
- * All events a session channel can emit. Subscribers receive these via a
- * single `send(event)` method — easy to serialize over any transport.
- *
- * Adapted from Leto's ChannelEvent. Key differences:
- * - approval_request/approval_resolved replace interaction_request/interaction_resolved
- * - notification wraps adapter notification events directly
- */
-export type SubscriberEvent =
-  | { type: 'entry'; entry: TranscriptEntry; index: number }
-  | { type: 'history'; entries: TranscriptEntry[] }
-  | { type: 'state_changed'; state: SessionChannelState; snapshot: ChannelSnapshot }
-  | { type: 'approval_request'; toolUseId: string; toolName: string; input: unknown; reason?: string; options: ApprovalOption[] }
-  | { type: 'approval_resolved'; toolUseId: string }
-  | { type: 'notification'; event: NotificationEvent }
-  | { type: 'error'; error: string };
+// Re-export for backwards compatibility
+export type { PendingApprovalInfo } from './channel-events.js';
 
 // ============================================================================
 // Subscriber — anything that wants to receive channel events
 // ============================================================================
 
 /**
- * A subscriber receives channel events via a single send() method.
+ * A subscriber receives channel messages via a single send() method.
  * Could be a VS Code webview panel, an SSE connection, a test harness, etc.
+ *
+ * The channel is a "dumb fan-out pipe" — it broadcasts raw ChannelMessage
+ * from the adapter, plus HistoryMessage for backfill and ChannelCatchupMessage
+ * for late subscriber sync.
  *
  * The single-method interface makes it trivially adaptable:
  *   - Webview: `{ id, send: (e) => panel.webview.postMessage(e) }`
@@ -72,7 +57,7 @@ export type SubscriberEvent =
  */
 export interface Subscriber {
   readonly id: string;
-  send(event: SubscriberEvent): void;
+  send(event: ChannelMessage | HistoryMessage | ChannelCatchupMessage): void;
 }
 
 // ============================================================================
@@ -100,27 +85,6 @@ export interface Subscriber {
  */
 export type SessionChannelState = 'unattached' | 'idle' | 'streaming' | 'awaiting_approval';
 
-// ============================================================================
-// Snapshot
-// ============================================================================
-
-/** Snapshot of channel state pushed to subscribers via state_changed events. */
-export interface ChannelSnapshot {
-  state: SessionChannelState;
-  sessionId: string | undefined;
-  vendor: Vendor | undefined;
-  contextUsage: ContextUsage | null;
-  settings: AdapterSettings | null;
-}
-
-/** Stored approval data for replaying approval_request to late subscribers. */
-export interface PendingApprovalInfo {
-  toolUseId: string;
-  toolName: string;
-  input: unknown;
-  reason?: string;
-  options: ApprovalOption[];
-}
 
 // ============================================================================
 // Session Channel
@@ -229,29 +193,26 @@ export function _resetRegistry(): void {
  * Add a subscriber to the channel. Idempotent — replaces existing
  * subscriber with the same ID.
  *
- * Late subscribers immediately receive the current channel state and any
- * pending approval requests via unicast (subscriber.send), so their UI
- * matches the session's actual state without waiting for the next event.
+ * Late subscribers immediately receive a catchup message with current
+ * channel state (including pending approvals), so their UI matches the
+ * session's actual state without waiting for the next event.
  */
 export function subscribe(channel: SessionChannel, subscriber: Subscriber): void {
   channel.subscribers.set(subscriber.id, subscriber);
 
-  // Sync current state to late subscribers (skip 'unattached' — no useful state)
+  // Emit catchup with current state (skip 'unattached' — no useful state)
   if (channel.state !== 'unattached') {
     try {
-      subscriber.send({
-        type: 'state_changed',
-        state: channel.state,
-        snapshot: getSnapshot(channel),
-      });
+      const catchup: ChannelCatchupMessage = {
+        type: 'catchup',
+        state: channel.state === 'streaming' ? 'streaming' : channel.state,
+        sessionId: channel.adapter?.sessionId,
+        settings: channel.adapter?.settings ?? null,
+        contextUsage: channel.adapter?.contextUsage ?? null,
+        pendingApprovals: Array.from(channel.pendingApprovals.values()),
+      };
+      subscriber.send(catchup);
     } catch { /* swallow — consistent with broadcast() */ }
-
-    // Replay pending approval requests
-    for (const approval of channel.pendingApprovals.values()) {
-      try {
-        subscriber.send({ type: 'approval_request', ...approval });
-      } catch { /* swallow */ }
-    }
   }
 }
 
@@ -267,7 +228,7 @@ export function unsubscribe(channel: SessionChannel, subscriberOrId: Subscriber 
 // Broadcast — single entry point, try-catch per subscriber
 // ============================================================================
 
-function broadcast(channel: SessionChannel, event: SubscriberEvent): void {
+function broadcast(channel: SessionChannel, event: ChannelMessage | HistoryMessage): void {
   for (const [, subscriber] of channel.subscribers) {
     try {
       subscriber.send(event);
@@ -275,27 +236,6 @@ function broadcast(channel: SessionChannel, event: SubscriberEvent): void {
       // Bad subscriber — swallow error, don't crash the channel
     }
   }
-}
-
-/** Build a snapshot of the current channel state. */
-function getSnapshot(channel: SessionChannel): ChannelSnapshot {
-  return {
-    state: channel.state,
-    sessionId: channel.adapter?.sessionId,
-    vendor: channel.adapter?.vendor,
-    contextUsage: channel.adapter?.contextUsage ?? null,
-    settings: channel.adapter?.settings ?? null,
-  };
-}
-
-/** Transition state and notify subscribers of the change. */
-function setState(channel: SessionChannel, state: SessionChannelState): void {
-  channel.state = state;
-  broadcast(channel, {
-    type: 'state_changed',
-    state,
-    snapshot: getSnapshot(channel),
-  });
 }
 
 // ============================================================================
@@ -308,6 +248,9 @@ function setState(channel: SessionChannel, state: SessionChannelState): void {
  * - Throws if an adapter is already set
  * - Transitions to 'idle' (adapter starts idle before first send())
  * - Starts the consumption loop
+ *
+ * Note: We just set state to 'idle' without broadcasting — the adapter
+ * will emit status events that flow through the consumption loop.
  */
 export function setAdapter(channel: SessionChannel, adapter: AgentAdapter): void {
   if (channel.adapter) {
@@ -316,7 +259,7 @@ export function setAdapter(channel: SessionChannel, adapter: AgentAdapter): void
 
   channel.adapter = adapter;
   channel.entryIndex = 0;
-  setState(channel, 'idle');
+  channel.state = 'idle'; // Just set, don't broadcast
   startConsumptionLoop(channel);
 }
 
@@ -325,13 +268,55 @@ export function setAdapter(channel: SessionChannel, adapter: AgentAdapter): void
 // ============================================================================
 
 /**
+ * Broadcast a ChannelMessage to all subscribers and track internal state.
+ *
+ * Internal state tracking is for:
+ * 1. Channel state gating (e.g., can't send while awaiting_approval)
+ * 2. Pending approvals (for late subscriber catchup)
+ * 3. onIdle callback
+ */
+function broadcastAndTrack(channel: SessionChannel, msg: ChannelMessage): void {
+  // Update internal state for gating
+  if (msg.type === 'event') {
+    const event = msg.event;
+    if (event.type === 'status') {
+      switch (event.status) {
+        case 'active':
+          channel.state = 'streaming';
+          break;
+        case 'idle':
+          channel.pendingApprovals.clear();
+          channel.state = 'idle';
+          channel.onIdle?.();
+          break;
+        case 'awaiting_approval': {
+          const { toolUseId, toolName, input, reason, options } = event;
+          channel.pendingApprovals.set(toolUseId, { toolUseId, toolName, input, reason, options });
+          channel.state = 'awaiting_approval';
+          break;
+        }
+      }
+    }
+    // notification events: no internal state change needed (just pass through)
+  }
+
+  // Broadcast to all subscribers
+  broadcast(channel, msg);
+
+  // Track entry index
+  if (msg.type === 'entry') {
+    channel.entryIndex++;
+  }
+}
+
+/**
  * Fire-and-forget async loop that drains the adapter's message stream
- * and routes each message to subscribers.
+ * and broadcasts each message to subscribers.
  *
  * Critical adapter behavior that drives this design:
  * - close() emits idle status, then done() → stream terminates → loop exits → unattached
  * - drainOutput() finally block: emits idle but does NOT done() → stream stays open → idle
- * - drainOutput() catch block: emits error notification → loop routes it → broadcast
+ * - drainOutput() catch block: emits error notification → loop broadcasts it
  */
 function startConsumptionLoop(channel: SessionChannel): void {
   const adapter = channel.adapter!;
@@ -340,109 +325,27 @@ function startConsumptionLoop(channel: SessionChannel): void {
     try {
       for await (const msg of adapter.messages()) {
         if (channel.tearing) break;
-        routeMessage(channel, msg);
+        broadcastAndTrack(channel, msg);
       }
       // Stream exhausted — adapter was close()d
       if (!channel.tearing) {
         channel.pendingApprovals.clear();
-        setState(channel, 'unattached');
+        channel.state = 'unattached';
+        // No broadcast — the adapter should have emitted an idle event before closing
       }
     } catch (err) {
       if (!channel.tearing) {
+        // Broadcast error as an event message
+        const errorMsg = err instanceof Error ? err.message : String(err);
         broadcast(channel, {
-          type: 'error',
-          error: err instanceof Error ? err.message : String(err),
+          type: 'event',
+          event: { type: 'notification', kind: 'error', error: errorMsg },
         });
         channel.pendingApprovals.clear();
-        // Stream error kills the loop permanently — unattached, not idle.
-        // To recover, destroy and recreate the channel with a fresh adapter.
-        setState(channel, 'unattached');
+        channel.state = 'unattached';
       }
     }
   })();
-}
-
-// ============================================================================
-// Message Routing
-// ============================================================================
-
-/**
- * Route a ChannelMessage from the adapter to the appropriate subscriber event(s).
- *
- * Entry messages are broadcast directly with an incrementing index.
- * Event messages are discriminated on their event type (status vs notification).
- */
-function routeMessage(channel: SessionChannel, msg: ChannelMessage): void {
-  if (msg.type === 'entry') {
-    broadcast(channel, {
-      type: 'entry',
-      entry: msg.entry,
-      index: channel.entryIndex++,
-    });
-    return;
-  }
-
-  // msg.type === 'event'
-  const event: ChannelEvent = msg.event;
-
-  if (event.type === 'status') {
-    routeStatusEvent(channel, event);
-  } else {
-    // event.type === 'notification'
-    routeNotificationEvent(channel, event);
-  }
-}
-
-/**
- * Route status events to state transitions.
- */
-function routeStatusEvent(
-  channel: SessionChannel,
-  event: StatusEvent,
-): void {
-  switch (event.status) {
-    case 'active':
-      setState(channel, 'streaming');
-      break;
-
-    case 'idle':
-      channel.pendingApprovals.clear();
-      setState(channel, 'idle');
-      channel.onIdle?.();
-      break;
-
-    case 'awaiting_approval': {
-      // TS narrows to AwaitingApprovalEvent via the switch on event.status
-      const { toolUseId, toolName, input, reason, options } = event;
-      channel.pendingApprovals.set(toolUseId, { toolUseId, toolName, input, reason, options });
-      setState(channel, 'awaiting_approval');
-      broadcast(channel, {
-        type: 'approval_request',
-        toolUseId,
-        toolName,
-        input,
-        reason,
-        options,
-      });
-      break;
-    }
-  }
-}
-
-/**
- * Route notification events to subscriber events.
- */
-function routeNotificationEvent(
-  channel: SessionChannel,
-  event: NotificationEvent,
-): void {
-  if (event.kind === 'error') {
-    const errorMsg = event.error instanceof Error ? event.error.message : String(event.error);
-    broadcast(channel, { type: 'error', error: errorMsg });
-  } else {
-    // session_changed, compacting, permission_mode_changed → pass through
-    broadcast(channel, { type: 'notification', event });
-  }
 }
 
 // ============================================================================
@@ -470,10 +373,7 @@ export function sendMessage(channel: SessionChannel, message: MessageContent, op
  *
  * - Delegates to adapter.respondToApproval() — adapter validates optionId
  * - Removes toolUseId from pendingApprovals set
- * - Broadcasts approval_resolved
- * - Does NOT setState — the adapter will emit an active status event
- *   when all approvals are resolved, which flows through the consumption
- *   loop to routeMessage → setState('streaming')
+ * - Does NOT broadcast — the adapter will emit status events when it resumes
  */
 export function resolveApproval(
   channel: SessionChannel,
@@ -494,7 +394,7 @@ export function resolveApproval(
   // so the caller can retry with a valid option.
   channel.adapter.respondToApproval(toolUseId, optionId, extra);
   channel.pendingApprovals.delete(toolUseId);
-  broadcast(channel, { type: 'approval_resolved', toolUseId });
+  // No broadcast — the adapter will emit status events when it resumes
 }
 
 /**
@@ -515,6 +415,21 @@ export function backfillHistory(
   channel.entryIndex = entries.length;
 }
 
+/**
+ * Broadcast a user entry to all subscribers.
+ *
+ * Called by session-manager before sending to the adapter so subscribers
+ * see the user message immediately (optimistic rendering). The adapter
+ * should suppress re-emission when the SDK echoes the user message back.
+ */
+export function broadcastUserEntry(
+  channel: SessionChannel,
+  entry: TranscriptEntry,
+): void {
+  const msg: ChannelMessage = { type: 'entry', entry };
+  broadcastAndTrack(channel, msg);
+}
+
 // ============================================================================
 // Teardown
 // ============================================================================
@@ -525,7 +440,7 @@ export function backfillHistory(
  * - Sets tearing flag to prevent race conditions in the async loop
  * - Calls adapter.close() (emits idle + done → stream terminates → loop exits)
  * - Clears pendingApprovals
- * - Broadcasts state_changed to unattached
+ * - Sets state to unattached (no broadcast — channel is torn down)
  * - tearing stays true (channel is terminal — prevents async loop double-emit)
  */
 function teardown(channel: SessionChannel): void {
@@ -540,9 +455,10 @@ function teardown(channel: SessionChannel): void {
   }
 
   channel.pendingApprovals.clear();
-  setState(channel, 'unattached');
+  channel.state = 'unattached';
+  // No broadcast — channel is torn down
 
   // Note: tearing stays true. Once torn down, the channel is terminal.
   // This prevents the async consumption loop from emitting duplicate
-  // state_changed events when it wakes up and sees the stream is done.
+  // events when it wakes up and sees the stream is done.
 }

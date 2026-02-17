@@ -87,14 +87,50 @@ export interface SessionChangedEvent {
   previousSessionId?: string;
 }
 
+export interface SettingsChangedEvent {
+  type: 'notification';
+  kind: 'settings_changed';
+  settings: import('./agent-adapter.js').AdapterSettings;
+}
+
 export type NotificationEvent =
   | ErrorEvent
   | CompactingEvent
   | PermissionModeChangedEvent
-  | SessionChangedEvent;
+  | SessionChangedEvent
+  | SettingsChangedEvent;
 
 // ============================================================================
 // Channel Event (union)
 // ============================================================================
 
 export type ChannelEvent = StatusEvent | NotificationEvent;
+
+// ============================================================================
+// Channel Passthrough Types (for session-channel fan-out)
+// ============================================================================
+
+/** Stored approval data for replaying to late subscribers. */
+export interface PendingApprovalInfo {
+  toolUseId: string;
+  toolName: string;
+  input: unknown;
+  reason?: string;
+  options: ApprovalOption[];
+}
+
+/** Catchup message sent to late subscribers on subscribe(). */
+export interface ChannelCatchupMessage {
+  type: 'catchup';
+  state: ChannelStatus | 'unattached' | 'streaming';
+  sessionId: string | undefined;
+  settings: import('./agent-adapter.js').AdapterSettings | null;
+  contextUsage: import('./transcript.js').ContextUsage | null;
+  pendingApprovals: PendingApprovalInfo[];
+}
+
+/** History backfill message sent as a batch to avoid render thrashing. */
+export interface HistoryMessage {
+  type: 'history';
+  entries: import('./transcript.js').TranscriptEntry[];
+}

@@ -3,8 +3,10 @@
  *
  * A context-based hook so all consumers (App glow, TitleBar dot, StopButton,
  * ThinkingIndicator, ControlPanel) share a single state instance.
- * The provider listens for `state_changed` transport events and also exposes
- * `setOptimistic()` so ControlPanel can set 'streaming' immediately on send.
+ * The provider listens for:
+ * - `catchup` events for initial state sync
+ * - `event` status events for state transitions (active/idle/awaiting_approval)
+ * Also exposes `setOptimistic()` so ControlPanel can set 'streaming' immediately on send.
  *
  * @module useSessionStatus
  */
@@ -22,6 +24,21 @@ interface SessionStatusValue {
 
 const SessionStatusContext = createContext<SessionStatusValue | null>(null);
 
+/** Map catchup state string to SessionChannelState. */
+function mapCatchupState(state: string): SessionChannelState {
+  switch (state) {
+    case 'idle':
+    case 'streaming':
+    case 'awaiting_approval':
+    case 'unattached':
+      return state;
+    case 'active':
+      return 'streaming';
+    default:
+      return 'idle';
+  }
+}
+
 export function SessionStatusProvider({ children }: { children: ReactNode }): React.JSX.Element {
   const transport = useTransport();
   const { selectedSessionId } = useSession();
@@ -35,8 +52,26 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
 
     const off = transport.onEvent((sid, event) => {
       if (sid !== selectedSessionId) return;
-      if (event.type === 'state_changed') {
-        setChannelState(event.state);
+
+      // Handle catchup for initial state sync
+      if (event.type === 'catchup') {
+        setChannelState(mapCatchupState(event.state));
+        return;
+      }
+
+      // Handle status events for state transitions
+      if (event.type === 'event' && event.event.type === 'status') {
+        switch (event.event.status) {
+          case 'active':
+            setChannelState('streaming');
+            break;
+          case 'idle':
+            setChannelState('idle');
+            break;
+          case 'awaiting_approval':
+            setChannelState('awaiting_approval');
+            break;
+        }
       }
     });
 

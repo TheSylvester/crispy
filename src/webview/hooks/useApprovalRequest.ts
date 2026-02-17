@@ -1,10 +1,15 @@
 /**
- * useApprovalRequest — listens for approval_request / approval_resolved events
+ * useApprovalRequest — listens for awaiting_approval status events
  *
  * Provides the current pending approval and a resolve callback.
  * Single request, no queue — matches Leto behavior. If a second arrives
  * while one is showing, it replaces the current (shouldn't happen in
  * practice since the SDK waits for each approval before proceeding).
+ *
+ * Listens for:
+ * - catchup with pendingApprovals (for late subscribers)
+ * - status events with awaiting_approval (for new approval requests)
+ * - status events with idle/active (clears approval when resolved)
  *
  * @module useApprovalRequest
  */
@@ -36,18 +41,38 @@ export function useApprovalRequest(sessionId: string | null): UseApprovalRequest
     const off = transport.onEvent((sid, event) => {
       if (sid !== sessionId) return;
 
-      if (event.type === 'approval_request') {
-        setRequest({
-          toolUseId: event.toolUseId,
-          toolName: event.toolName,
-          input: event.input,
-          reason: event.reason,
-          options: event.options,
-        });
-      } else if (event.type === 'approval_resolved') {
-        setRequest((prev) =>
-          prev?.toolUseId === event.toolUseId ? null : prev,
-        );
+      // Handle catchup with pending approvals (for late subscribers)
+      if (event.type === 'catchup') {
+        if (event.pendingApprovals.length > 0) {
+          // Take the first pending approval (single-request model)
+          const approval = event.pendingApprovals[0];
+          setRequest({
+            toolUseId: approval.toolUseId,
+            toolName: approval.toolName,
+            input: approval.input,
+            reason: approval.reason,
+            options: approval.options,
+          });
+        } else {
+          setRequest(null);
+        }
+        return;
+      }
+
+      // Handle status events
+      if (event.type === 'event' && event.event.type === 'status') {
+        if (event.event.status === 'awaiting_approval') {
+          setRequest({
+            toolUseId: event.event.toolUseId,
+            toolName: event.event.toolName,
+            input: event.event.input,
+            reason: event.event.reason,
+            options: event.event.options,
+          });
+        } else if (event.event.status === 'idle' || event.event.status === 'active') {
+          // Approval resolved or session moved on — clear request
+          setRequest(null);
+        }
       }
     });
 
