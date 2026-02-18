@@ -20,9 +20,13 @@ interface StatusIndicatorProps {
 
 export function StatusIndicator({ status, summary }: StatusIndicatorProps): React.JSX.Element {
   const config = STATUS_CONFIG[status] ?? { icon: '?', className: 'crispy-status-pending' };
+  const icon = status === 'running'
+    ? <span className="crispy-status-spinner" />
+    : config.icon;
   return (
     <span className={`crispy-tool-status ${config.className}`}>
-      {status === 'complete' && summary ? `${config.icon} ${summary}` : config.icon}
+      {icon}
+      {status === 'complete' && summary ? ` ${summary}` : ''}
       {status === 'error' && summary ? ` ${summary}` : ''}
     </span>
   );

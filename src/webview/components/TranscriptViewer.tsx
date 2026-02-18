@@ -101,6 +101,7 @@ function TranscriptEntryList({
                 verbs={de.verbs}
                 entries={de.entries}
                 hasRunning={de.hasRunning}
+                textSnippets={de.textSnippets}
               />
             );
         }

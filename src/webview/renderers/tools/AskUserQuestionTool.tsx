@@ -45,7 +45,7 @@ export function AskUserQuestionTool({ toolId }: { toolId: string }): React.JSX.E
       toolId={toolId}
       icon={'\u2753'}
       badgeColor="#14b8a6"
-      badgeLabel="AskUser"
+      badgeLabel="Ask User Question"
       defaultOpen={true}
       resultSummary={resultSummary}
       headerContent={

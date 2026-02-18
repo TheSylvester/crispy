@@ -29,7 +29,7 @@ export interface VerbBucket {
 
 export type DisplayEntry =
   | { kind: 'entry'; entry: TranscriptEntry }
-  | { kind: 'activity-group'; toolIds: string[]; verbs: VerbBucket[]; entries: TranscriptEntry[]; hasRunning: boolean };
+  | { kind: 'activity-group'; toolIds: string[]; verbs: VerbBucket[]; entries: TranscriptEntry[]; hasRunning: boolean; textSnippets: string[] };
 
 // ============================================================================
 // Safe Tools Definition
@@ -55,13 +55,42 @@ function isSafeTool(name: string): boolean {
 // Helper Functions
 // ============================================================================
 
-/** Check if an assistant entry contains ONLY tool_use blocks (no text) */
-function isToolOnlyEntry(entry: TranscriptEntry): boolean {
+// ============================================================================
+// Trivial Text Detection
+// ============================================================================
+
+const TRIVIAL_TEXT_MAX_CHARS = 200;
+const SUBSTANTIAL_PATTERNS = /^#{1,6}\s|^```|^\s*[-*]\s.*\n\s*[-*]\s/m;
+
+/** Check if text is trivial (short, no markdown structure) */
+function isTrivialText(text: string): boolean {
+  if (text.length > TRIVIAL_TEXT_MAX_CHARS) return false;
+  if (SUBSTANTIAL_PATTERNS.test(text)) return false;
+  return true;
+}
+
+/**
+ * Check if an assistant entry has a coalesceable shape:
+ * - Must have at least one tool_use block
+ * - May contain tool_result blocks (OK)
+ * - May contain thinking blocks (ignored for coalescing)
+ * - May contain trivial text (absorbed into group)
+ * - May NOT contain substantial text or image blocks
+ */
+function hasCoalesceableShape(entry: TranscriptEntry): boolean {
   if (entry.type !== 'assistant') return false;
   const content = entry.message?.content;
   if (!Array.isArray(content)) return false;
-  return content.length > 0 &&
-    content.every(b => b.type === 'tool_use' || b.type === 'tool_result');
+
+  let hasToolUse = false;
+  for (const b of content) {
+    if (b.type === 'tool_use') { hasToolUse = true; }
+    else if (b.type === 'tool_result') { /* OK */ }
+    else if (b.type === 'thinking') { /* OK */ }
+    else if (b.type === 'text') { if (!isTrivialText(b.text)) return false; }
+    else { return false; } // image or unknown — not coalesceable
+  }
+  return hasToolUse;
 }
 
 /** Extract tool_use blocks from an entry */
@@ -87,7 +116,7 @@ function isCoalesceableToolBlock(name: string, toolId: string, registry: ToolReg
 
 /** Check if ALL tool_use blocks in an entry are coalesceable */
 function isCoalesceableEntry(entry: TranscriptEntry, registry: ToolRegistry): boolean {
-  if (!isToolOnlyEntry(entry)) return false;
+  if (!hasCoalesceableShape(entry)) return false;
   const tools = getToolUseBlocks(entry);
   if (tools.length === 0) return false;
   return tools.every(t => isCoalesceableToolBlock(t.name, t.id, registry));
@@ -121,8 +150,20 @@ export function coalesceEntries(
       const verbMap = new Map<ToolActivity, VerbBucket>();
       const verbOrder: ToolActivity[] = [];
       let hasRunning = false;
+      const textSnippets: string[] = [];
 
       for (const e of group) {
+        // Collect trivial text snippets from this entry
+        const content = e.message?.content;
+        if (Array.isArray(content)) {
+          for (const b of content) {
+            if (b.type === 'text' && b.text.trim()) {
+              textSnippets.push(b.text.trim());
+            }
+          }
+        }
+
+        // Process tool_use blocks
         for (const t of getToolUseBlocks(e)) {
           const toolEntry = registry.getToolEntry(t.id);
           if (!toolEntry) continue;
@@ -146,7 +187,7 @@ export function coalesceEntries(
       }
 
       const verbs = verbOrder.map(a => verbMap.get(a)!);
-      result.push({ kind: 'activity-group', toolIds, verbs, entries: group, hasRunning });
+      result.push({ kind: 'activity-group', toolIds, verbs, entries: group, hasRunning, textSnippets });
       i = j;
       continue;
     }
