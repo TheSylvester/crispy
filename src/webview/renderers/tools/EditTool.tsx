@@ -39,7 +39,7 @@ export function EditTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       icon={'\uD83D\uDCDD'}
       badgeColor="#f43f5e"
       badgeLabel="Edit"
-      defaultOpen={true}
+      defaultOpen={false}
       resultSummary={resultSummary}
       headerContent={
         <>

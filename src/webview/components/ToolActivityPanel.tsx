@@ -22,6 +22,7 @@ import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { useToolRoots, useToolRegistry } from '../context/ToolRegistryContext.js';
 import { useVisibleToolIds } from '../context/VisibilityContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
+import { RenderLocationProvider } from '../context/RenderLocationContext.js';
 import { ToolPanelCard } from '../renderers/tools/panel/ToolPanelCard.js';
 
 /** Filter modes for the tool panel */
@@ -161,7 +162,9 @@ export function ToolActivityPanel(): React.JSX.Element {
         {displayIds.length === 0 ? (
           <div className="crispy-tool-panel__empty">{emptyMessage}</div>
         ) : (
-          displayIds.map((id) => <ToolPanelCard key={id} toolId={id} />)
+          <RenderLocationProvider location="panel">
+            {displayIds.map((id) => <ToolPanelCard key={id} toolId={id} />)}
+          </RenderLocationProvider>
         )}
       </div>
     </div>

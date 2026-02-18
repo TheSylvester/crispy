@@ -36,7 +36,7 @@ export function WriteTool({ toolId }: { toolId: string }): React.JSX.Element | n
       icon={'\u270E'}
       badgeColor="#10b981"
       badgeLabel="Write"
-      defaultOpen={true}
+      defaultOpen={false}
       resultSummary={resultSummary}
       headerContent={
         <>

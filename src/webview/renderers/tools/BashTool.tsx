@@ -35,6 +35,7 @@ export function BashTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       badgeColor="#f59e0b"
       badgeTextColor="#1e1e1e"
       badgeLabel="Bash"
+      panelOpen={false}
       resultSummary={resultSummary}
       headerContent={
         <>

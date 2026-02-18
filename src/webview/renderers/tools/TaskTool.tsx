@@ -44,7 +44,7 @@ export function TaskTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       icon={'\uD83E\uDD16'}
       badgeColor="#64748b"
       badgeLabel={agentType}
-      defaultOpen={true}
+      defaultOpen={false}
       resultSummary={resultSummary}
       headerContent={
         <span className="crispy-tool-description">{description}</span>

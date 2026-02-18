@@ -23,12 +23,16 @@ import { usePlayback } from "../hooks/usePlayback.js";
 import { useAutoScroll } from "../hooks/useAutoScroll.js";
 import { shouldRenderEntry } from "../utils/entry-filters.js";
 import { EntryRenderer } from "../renderers/EntryRenderer.js";
+import { ActivityGroup } from "../renderers/ActivityGroup.js";
+import { coalesceEntries } from "../utils/coalesce-entries.js";
+import type { DisplayEntry } from "../utils/coalesce-entries.js";
 import { PlaybackControls } from "./PlaybackControls.js";
-import { ToolRegistryProvider } from "../context/ToolRegistryContext.js";
+import { ToolRegistryProvider, useToolRegistry } from "../context/ToolRegistryContext.js";
 import { ForkProvider } from "../context/ForkContext.js";
 import { ControlPanel } from "./control-panel/index.js";
 import { ToolActivityPanel } from "./ToolActivityPanel.js";
 import { VisibilityProvider } from "../context/VisibilityContext.js";
+import { RenderLocationProvider } from "../context/RenderLocationContext.js";
 import { mapPermissionModeToAgency } from './control-panel/types.js';
 import type { AgencyMode } from './control-panel/types.js';
 import { StopButton } from "./control-panel/StopButton.js";
@@ -40,6 +44,7 @@ import { useTransport } from "../context/TransportContext.js";
 import { useSessionStatus } from "../hooks/useSessionStatus.js";
 import type { ApprovalExtra } from "./approval/types.js";
 import type { TranscriptEntry } from "../../core/transcript.js";
+import type { RenderMode } from "../types.js";
 import { WelcomePage } from "./WelcomePage.js";
 import { isPerfMode, PerfProfiler } from "../perf/index.js";
 import { PerfStore } from "../perf/profiler.js";
@@ -47,11 +52,68 @@ import { PerfStore } from "../perf/profiler.js";
 /** Check once whether debug mode is enabled */
 const isDebugMode = window.location.search.includes('debug=1');
 
+// ============================================================================
+// TranscriptEntryList — inner component for rendering entries with coalescing
+// ============================================================================
+// Lives inside ToolRegistryProvider, so it can call useToolRegistry().
+// TranscriptViewer creates the provider, so it can't call the hook directly.
+
+interface TranscriptEntryListProps {
+  filteredEntries: TranscriptEntry[];
+  renderMode: RenderMode;
+  forkTargets: Map<string, string>;
+  toolCoalescing: boolean;
+}
+
+function TranscriptEntryList({
+  filteredEntries,
+  renderMode,
+  forkTargets,
+  toolCoalescing,
+}: TranscriptEntryListProps): React.JSX.Element {
+  const registry = useToolRegistry();
+
+  const displayEntries = useMemo<DisplayEntry[]>(
+    () => toolCoalescing
+      ? coalesceEntries(filteredEntries, registry)
+      : filteredEntries.map(entry => ({ kind: 'entry' as const, entry })),
+    [filteredEntries, registry, toolCoalescing]
+  );
+
+  return (
+    <PerfProfiler id="TranscriptList">
+      {displayEntries.map((de, i) => {
+        switch (de.kind) {
+          case 'entry':
+            return (
+              <EntryRenderer
+                key={de.entry.uuid ?? `entry-${i}`}
+                entry={de.entry}
+                mode={renderMode}
+                forkTargetId={de.entry.uuid ? forkTargets.get(de.entry.uuid) : undefined}
+              />
+            );
+          case 'activity-group':
+            return (
+              <ActivityGroup
+                key={`activity-${de.toolIds[0]}`}
+                toolIds={de.toolIds}
+                verbs={de.verbs}
+                entries={de.entries}
+                hasRunning={de.hasRunning}
+              />
+            );
+        }
+      })}
+    </PerfProfiler>
+  );
+}
+
 export function TranscriptViewer(): React.JSX.Element {
   const { selectedSessionId, setSelectedSessionId } = useSession();
   const transport = useTransport();
   const { entries, isLoading, error, addOptimisticEntry, setForkHistory } = useTranscript(selectedSessionId);
-  const { renderMode, toolPanelOpen } = usePreferences();
+  const { renderMode, toolPanelOpen, toolCoalescing } = usePreferences();
   const { approvalRequest, resolve: resolveApproval } = useApprovalRequest(selectedSessionId);
   const [bypassEnabled, setBypassEnabled] = useState(false);
   const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean } | null>(null);
@@ -326,6 +388,7 @@ export function TranscriptViewer(): React.JSX.Element {
     mainContent = (
       <ToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
         <VisibilityProvider scrollRef={transcriptRef}>
+        <RenderLocationProvider location="transcript">
         <ForkProvider
           onFork={handlePerMessageFork}
           onRewind={handlePerMessageRewind}
@@ -338,17 +401,12 @@ export function TranscriptViewer(): React.JSX.Element {
               {isLoading ? (
                 <div className="crispy-loading">Loading transcript...</div>
               ) : (
-                <PerfProfiler id="TranscriptList">
-                  {filteredEntries
-                    .map((entry, i) => (
-                      <EntryRenderer
-                        key={entry.uuid ?? `entry-${i}`}
-                        entry={entry}
-                        mode={renderMode}
-                        forkTargetId={entry.uuid ? forkTargets.get(entry.uuid) : undefined}
-                      />
-                    ))}
-                </PerfProfiler>
+                <TranscriptEntryList
+                  filteredEntries={filteredEntries}
+                  renderMode={renderMode}
+                  forkTargets={forkTargets}
+                  toolCoalescing={toolCoalescing}
+                />
               )}
               <ThinkingIndicator />
               {/* Spacer: reserves space for the fixed control panel + stop button + gap.
@@ -389,6 +447,7 @@ export function TranscriptViewer(): React.JSX.Element {
           />
         )}
         </ForkProvider>
+        </RenderLocationProvider>
         {toolPanelOpen && <ToolActivityPanel />}
         </VisibilityProvider>
       </ToolRegistryProvider>

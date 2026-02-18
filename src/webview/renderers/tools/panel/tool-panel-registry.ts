@@ -11,14 +11,14 @@
  * @module webview/renderers/tools/panel/tool-panel-registry
  */
 
-import { PanelBashTool } from './PanelBashTool.js';
 import { PanelEditTool } from './PanelEditTool.js';
 import { PanelTaskTool } from './PanelTaskTool.js';
 import { toolRendererMap, GenericTool } from '../index.js';
 
-/** Panel-optimized renderers — tools with dedicated panel variants */
+/** Panel-optimized renderers — tools with dedicated panel variants.
+ *  Bash intentionally omitted — falls back to inline BashTool with ToolCardShell
+ *  so it renders collapsed in the panel. */
 export const toolPanelRendererMap = new Map<string, React.ComponentType<{ toolId: string }>>([
-  ['tool:Bash', PanelBashTool],
   ['tool:Edit', PanelEditTool],
   ['tool:Task', PanelTaskTool],
 ]);

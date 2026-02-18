@@ -19,6 +19,45 @@ import type {
 } from '../core/transcript.js';
 
 // ============================================================================
+// Tool Activity — verb classification for activity groups
+// ============================================================================
+
+export type ToolActivity = 'read' | 'search' | 'fetch' | 'execute' | 'track' | 'invoke';
+
+const TOOL_ACTIVITY_MAP: Record<string, ToolActivity> = {
+  Read: 'read',
+  ReadMcpResource: 'read',
+  Grep: 'search',
+  Glob: 'search',
+  WebSearch: 'search',
+  ListMcpResources: 'search',
+  LS: 'search',
+  WebFetch: 'fetch',
+  Bash: 'execute',
+  TodoWrite: 'track',
+  Skill: 'invoke',
+};
+
+const MCP_ACTIVITY_PATTERNS: [RegExp, ToolActivity][] = [
+  [/search|list|get/, 'search'],
+  [/fetch/, 'fetch'],
+  [/read/, 'read'],
+];
+
+export function classifyToolActivity(name: string): ToolActivity {
+  const known = TOOL_ACTIVITY_MAP[name];
+  if (known) return known;
+  if (name.startsWith('mcp__')) {
+    const lower = name.toLowerCase();
+    for (const [pattern, activity] of MCP_ACTIVITY_PATTERNS) {
+      if (pattern.test(lower)) return activity;
+    }
+    return 'invoke';
+  }
+  return 'invoke';
+}
+
+// ============================================================================
 // ToolEntry — snapshot of a single tool invocation
 // ============================================================================
 
@@ -34,6 +73,7 @@ export interface ToolEntry {
   agentId?: string;
   parentTaskToolId?: string;
   isTaskTool: boolean;              // name === 'Task'
+  activity: ToolActivity;           // verb classification for display grouping
 }
 
 // ============================================================================
@@ -110,6 +150,7 @@ export class ToolRegistry {
       agentId,
       parentTaskToolId,
       isTaskTool: name === 'Task',
+      activity: classifyToolActivity(name),
     };
 
     // Check orphan queue — result arrived before tool_use

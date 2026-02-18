@@ -34,6 +34,7 @@ export function GlobTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       icon={'\uD83D\uDCC2'}
       badgeColor="#d946ef"
       badgeLabel="Glob"
+      panelOpen={false}
       resultSummary={resultSummary}
       headerContent={
         <>

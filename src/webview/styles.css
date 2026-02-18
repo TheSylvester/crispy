@@ -1119,6 +1119,79 @@ h2 {
   border-left: 2px solid rgba(255, 255, 255, 0.08);
 }
 
+/* ---- Activity Group ---- */
+.crispy-activity-group {
+  margin: 2px 0 2px 8px;
+  padding-left: 8px;
+}
+
+.crispy-activity-group__summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: 2px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground, #858585);
+  user-select: none;
+  list-style: none;
+}
+
+.crispy-activity-group__summary::-webkit-details-marker {
+  display: none;
+}
+
+.crispy-activity-group__summary::marker {
+  content: '';
+}
+
+.crispy-activity-group__summary:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  color: var(--vscode-editor-foreground, #d4d4d4);
+}
+
+/* Disclosure triangle */
+.crispy-activity-group__summary::before {
+  content: '\25B8';
+  display: inline-block;
+  width: 12px;
+  flex-shrink: 0;
+  transition: transform 0.1s ease;
+}
+
+.crispy-activity-group[open] > .crispy-activity-group__summary::before {
+  content: '\25BE';
+}
+
+/* Verb chip: icon(s) + label + count */
+.crispy-activity-group__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.crispy-activity-group__icons {
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.crispy-activity-group__error-separator {
+  color: var(--vscode-descriptionForeground, #858585);
+}
+
+.crispy-activity-group__errors {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.crispy-activity-group__tools {
+  padding-left: 12px;
+  border-left: 2px solid rgba(255, 255, 255, 0.06);
+  margin-left: 4px;
+}
+
 /* --- File path (monospace, dark pill like grep params) --- */
 
 .crispy-tool-filepath {
@@ -3462,6 +3535,10 @@ body.agency-bypass-permissions {
   border-radius: 4px;
   background: var(--vscode-editor-background, #1e1e1e);
   overflow: hidden;
+  /* Cap individual cards so multiple tools share the panel viewport */
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .crispy-panel-card--error {
@@ -3589,6 +3666,8 @@ body.agency-bypass-permissions {
   margin-left: 8px;
   padding-left: 8px;
   border-left: 2px solid rgba(255, 255, 255, 0.08);
+  overflow-y: auto;
+  min-height: 0; /* allow flex shrink within capped panel card */
 }
 
 /* --- Panel Task tool: prompt & result rendered as plain children --- */

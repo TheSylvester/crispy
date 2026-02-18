@@ -8,6 +8,8 @@ interface Preferences {
   toolPanelOpen: boolean;
   /** User-dragged panel width override (px). null = use auto-computed width. */
   toolPanelWidthPx: number | null;
+  /** Coalesce consecutive Read/safe-tool entries into collapsed groups. */
+  toolCoalescing: boolean;
 }
 
 interface PreferencesContextValue extends Preferences {
@@ -16,6 +18,7 @@ interface PreferencesContextValue extends Preferences {
   setSidebarCollapsed: (collapsed: boolean) => void;
   setToolPanelOpen: (open: boolean) => void;
   setToolPanelWidthPx: (px: number | null) => void;
+  setToolCoalescing: (enabled: boolean) => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
@@ -26,6 +29,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [toolPanelOpen, setToolPanelOpen] = useState(false);
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
+  const [toolCoalescing, setToolCoalescing] = useState(true);
 
   const value: PreferencesContextValue = {
     renderMode,
@@ -33,11 +37,13 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     sidebarCollapsed,
     toolPanelOpen,
     toolPanelWidthPx,
+    toolCoalescing,
     setRenderMode,
     setSettingsPinned,
     setSidebarCollapsed,
     setToolPanelOpen,
     setToolPanelWidthPx,
+    setToolCoalescing,
   };
 
   return (

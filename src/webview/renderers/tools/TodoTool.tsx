@@ -36,7 +36,8 @@ export function TodoTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       icon="☑"
       badgeColor="#8b5cf6"
       badgeLabel="Todo"
-      defaultOpen={true}
+      defaultOpen={false}
+      panelOpen={false}
       resultSummary="Updated"
       headerContent={
         <span className="crispy-tool-description">({itemCount} items)</span>

@@ -1,16 +1,20 @@
 /**
  * Visibility Tracker — IntersectionObserver-driven viewport sync for tool cards
  *
- * Tracks which tool cards (identified by `data-tool-id` attributes) are
- * currently visible in the transcript scroll viewport. The tool panel
- * consumes this to show only visible tools, creating a synchronized
+ * Tracks which tool cards (identified by `data-tool-id` or `data-tool-ids`
+ * attributes) are currently visible in the transcript scroll viewport. The
+ * tool panel consumes this to show only visible tools, creating a synchronized
  * "detail inspector" experience.
  *
+ * Supports both singular (`data-tool-id="abc"`) and plural
+ * (`data-tool-ids="abc,def,ghi"`) attributes. Plural is used for coalesced
+ * entries that represent multiple tools (e.g., "Read 5 files" shown as one line).
+ *
  * Architecture:
- * - A single IntersectionObserver watches [data-tool-id] elements within
- *   the transcript scroll container
- * - A MutationObserver auto-discovers new [data-tool-id] elements as they
- *   stream into the DOM (new tools during streaming)
+ * - A single IntersectionObserver watches [data-tool-id] and [data-tool-ids]
+ *   elements within the transcript scroll container
+ * - A MutationObserver auto-discovers new elements with either attribute as
+ *   they stream into the DOM (new tools during streaming)
  * - Visible tool IDs are maintained in DOM order (top-to-bottom) via
  *   `useSyncExternalStore` for React integration
  * - Updates are batched with `requestAnimationFrame` to avoid per-element
@@ -59,15 +63,24 @@ class VisibilityStore {
   /** IntersectionObserver callback — batches changes via rAF */
   handleIntersection = (entries: IntersectionObserverEntry[]): void => {
     for (const entry of entries) {
-      const toolId = (entry.target as HTMLElement).dataset.toolId;
-      if (!toolId) continue;
+      const el = entry.target as HTMLElement;
+      // Support both singular data-tool-id and plural data-tool-ids
+      const ids = el.dataset.toolIds
+        ? el.dataset.toolIds.split(',')
+        : el.dataset.toolId
+          ? [el.dataset.toolId]
+          : [];
 
-      if (entry.isIntersecting) {
-        this._pendingAdds.add(toolId);
-        this._pendingRemoves.delete(toolId);
-      } else {
-        this._pendingRemoves.add(toolId);
-        this._pendingAdds.delete(toolId);
+      if (ids.length === 0) continue;
+
+      for (const toolId of ids) {
+        if (entry.isIntersecting) {
+          this._pendingAdds.add(toolId);
+          this._pendingRemoves.delete(toolId);
+        } else {
+          this._pendingRemoves.add(toolId);
+          this._pendingAdds.delete(toolId);
+        }
       }
     }
 
@@ -120,7 +133,21 @@ class VisibilityStore {
     // Collect elements with their positions for sorting
     const withPosition: { id: string; top: number }[] = [];
     for (const id of ids) {
-      const el = root.querySelector(`[data-tool-id="${id}"]`) as HTMLElement | null;
+      // Try singular first
+      let el = root.querySelector(`[data-tool-id="${id}"]`) as HTMLElement | null;
+
+      // If not found, search in plural elements
+      if (!el) {
+        const pluralEls = root.querySelectorAll('[data-tool-ids]');
+        pluralEls.forEach(pe => {
+          if (el) return; // Already found
+          const idsAttr = (pe as HTMLElement).dataset.toolIds;
+          if (idsAttr && idsAttr.split(',').includes(id)) {
+            el = pe as HTMLElement;
+          }
+        });
+      }
+
       if (el) {
         withPosition.push({ id, top: el.offsetTop });
       } else {
@@ -202,26 +229,32 @@ export function VisibilityProvider({
       threshold: 0,
     });
 
-    // Observe existing [data-tool-id] elements
+    // Observe existing [data-tool-id] and [data-tool-ids] elements
     const observeAll = () => {
       scrollEl.querySelectorAll('[data-tool-id]').forEach(el => {
+        io.observe(el);
+      });
+      scrollEl.querySelectorAll('[data-tool-ids]').forEach(el => {
         io.observe(el);
       });
     };
 
     observeAll();
 
-    // --- MutationObserver: auto-discover new [data-tool-id] elements ---
+    // --- MutationObserver: auto-discover new [data-tool-id] and [data-tool-ids] elements ---
     const mo = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         mutation.addedNodes.forEach(node => {
           if (!(node instanceof HTMLElement)) return;
-          // Check the node itself
-          if (node.dataset.toolId) {
+          // Check the node itself for both singular and plural
+          if (node.dataset.toolId || node.dataset.toolIds) {
             io.observe(node);
           }
           // Check descendants
           node.querySelectorAll('[data-tool-id]').forEach(desc => {
+            io.observe(desc);
+          });
+          node.querySelectorAll('[data-tool-ids]').forEach(desc => {
             io.observe(desc);
           });
         });

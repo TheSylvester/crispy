@@ -34,6 +34,7 @@ export function WebSearchTool({ toolId }: { toolId: string }): React.JSX.Element
       icon={'\uD83C\uDF10'}
       badgeColor="#8b5cf6"
       badgeLabel="WebSearch"
+      panelOpen={false}
       resultSummary={resultSummary}
       headerContent={
         <span className="crispy-tool-secondary">{query}</span>

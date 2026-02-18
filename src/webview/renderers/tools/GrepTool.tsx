@@ -35,6 +35,7 @@ export function GrepTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       badgeColor="#06b6d4"
       badgeTextColor="#1e1e1e"
       badgeLabel="Grep"
+      panelOpen={false}
       resultSummary={resultSummary}
       headerContent={
         <>

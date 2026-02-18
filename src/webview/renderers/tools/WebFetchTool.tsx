@@ -37,6 +37,7 @@ export function WebFetchTool({ toolId }: { toolId: string }): React.JSX.Element 
       icon={'\uD83C\uDF0E'}
       badgeColor="#6366f1"
       badgeLabel="WebFetch"
+      panelOpen={false}
       resultSummary={resultSummary}
       headerContent={
         <span className="crispy-tool-secondary">{truncatedUrl}</span>

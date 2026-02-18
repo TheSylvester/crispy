@@ -44,6 +44,7 @@ export function ReadTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       icon={'\uD83D\uDCC4'}
       badgeColor="#0ea5e9"
       badgeLabel="Read"
+      panelOpen={false}
       resultSummary={resultSummary}
       headerContent={
         <>
