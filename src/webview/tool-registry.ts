@@ -106,6 +106,12 @@ export class ToolRegistry {
   private _dirtyTools = new Set<string>();
   private _dirtyGlobal = false;
 
+  // Status version — monotonic counter that increments on every resolveTool
+  // or reset. Used by coalescing useMemo to re-run when tool statuses change.
+  private _statusVersion = 0;
+  private _statusListeners = new Set<() => void>();
+  private _dirtyStatus = false;
+
   // --------------------------------------------------------------------------
   // Registration
   // --------------------------------------------------------------------------
@@ -191,7 +197,9 @@ export class ToolRegistry {
       status: result.is_error ? 'error' : 'complete',
     });
 
+    this._statusVersion++;
     this.notifyTool(toolUseId);
+    this.notifyStatus();
   }
 
   // --------------------------------------------------------------------------
@@ -214,9 +222,23 @@ export class ToolRegistry {
     return this.orphanResults.size;
   }
 
+  /**
+   * Monotonic counter that increments when any tool is resolved or the
+   * registry is reset. Used as a useMemo dependency so coalescing re-runs
+   * when tool statuses change (not just when new entries arrive).
+   */
+  getStatusVersion(): number {
+    return this._statusVersion;
+  }
+
   // --------------------------------------------------------------------------
   // Subscriptions
   // --------------------------------------------------------------------------
+
+  subscribeStatus(callback: () => void): () => void {
+    this._statusListeners.add(callback);
+    return () => { this._statusListeners.delete(callback); };
+  }
 
   subscribeTool(id: string, callback: () => void): () => void {
     let listeners = this.toolListeners.get(id);
@@ -268,6 +290,11 @@ export class ToolRegistry {
         this._pendingGlobalNotification = false;
         for (const cb of this.globalListeners) cb();
       }
+
+      if (this._dirtyStatus) {
+        this._dirtyStatus = false;
+        for (const cb of this._statusListeners) cb();
+      }
     }
   }
 
@@ -316,7 +343,7 @@ export class ToolRegistry {
    * Returns true if any notifications were flushed.
    */
   flushDirty(): boolean {
-    if (this._dirtyTools.size === 0 && !this._dirtyGlobal) return false;
+    if (this._dirtyTools.size === 0 && !this._dirtyGlobal && !this._dirtyStatus) return false;
 
     for (const toolId of this._dirtyTools) {
       const listeners = this.toolListeners.get(toolId);
@@ -329,6 +356,11 @@ export class ToolRegistry {
     if (this._dirtyGlobal) {
       this._dirtyGlobal = false;
       for (const cb of this.globalListeners) cb();
+    }
+
+    if (this._dirtyStatus) {
+      this._dirtyStatus = false;
+      for (const cb of this._statusListeners) cb();
     }
 
     return true;
@@ -357,8 +389,11 @@ export class ToolRegistry {
     this._pendingGlobalNotification = false;
     this._dirtyTools.clear();
     this._dirtyGlobal = false;
+    this._dirtyStatus = false;
+    this._statusVersion++;
     if (!opts?.silent) {
       this.notifyGlobal();
+      this.notifyStatus();
     }
   }
 
@@ -383,6 +418,16 @@ export class ToolRegistry {
       return;
     }
     for (const cb of this.globalListeners) cb();
+  }
+
+  private notifyStatus(): void {
+    if (this._batching) {
+      // Status notifications are deferred like global — they'll flush
+      // via flushDirty() after render or at batch end.
+      this._dirtyStatus = true;
+      return;
+    }
+    for (const cb of this._statusListeners) cb();
   }
 
   private rebuildRootCache(): void {

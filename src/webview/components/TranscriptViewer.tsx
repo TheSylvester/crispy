@@ -27,7 +27,7 @@ import { ActivityGroup } from "../renderers/ActivityGroup.js";
 import { coalesceEntries } from "../utils/coalesce-entries.js";
 import type { DisplayEntry } from "../utils/coalesce-entries.js";
 import { PlaybackControls } from "./PlaybackControls.js";
-import { ToolRegistryProvider, useToolRegistry } from "../context/ToolRegistryContext.js";
+import { ToolRegistryProvider, useToolRegistry, useStatusVersion } from "../context/ToolRegistryContext.js";
 import { ForkProvider } from "../context/ForkContext.js";
 import { ControlPanel } from "./control-panel/index.js";
 import { ToolActivityPanel } from "./ToolActivityPanel.js";
@@ -72,12 +72,16 @@ function TranscriptEntryList({
   toolCoalescing,
 }: TranscriptEntryListProps): React.JSX.Element {
   const registry = useToolRegistry();
+  const statusVersion = useStatusVersion();
 
   const displayEntries = useMemo<DisplayEntry[]>(
     () => (toolCoalescing && renderMode === 'rich')
       ? coalesceEntries(filteredEntries, registry)
       : filteredEntries.map(entry => ({ kind: 'entry' as const, entry })),
-    [filteredEntries, registry, toolCoalescing, renderMode]
+    // statusVersion triggers re-coalescing when tool statuses change
+    // (e.g. running → complete), not just when new entries arrive.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filteredEntries, registry, toolCoalescing, renderMode, statusVersion]
   );
 
   return (

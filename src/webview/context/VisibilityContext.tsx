@@ -229,33 +229,47 @@ export function VisibilityProvider({
       threshold: 0,
     });
 
+    // Skip observing [data-tool-id] elements nested inside an ActivityGroup
+    // ([data-tool-ids]). The group element tracks visibility for all children.
+    // Without this, collapsed ToolCards inside the group report as
+    // not-intersecting and override the group-level additions.
+    const isInsideActivityGroup = (el: Element): boolean =>
+      el.closest('[data-tool-ids]') !== null;
+
     // Observe existing [data-tool-id] and [data-tool-ids] elements
     const observeAll = () => {
-      scrollEl.querySelectorAll('[data-tool-id]').forEach(el => {
-        io.observe(el);
-      });
       scrollEl.querySelectorAll('[data-tool-ids]').forEach(el => {
         io.observe(el);
+      });
+      scrollEl.querySelectorAll('[data-tool-id]').forEach(el => {
+        if (!isInsideActivityGroup(el)) {
+          io.observe(el);
+        }
       });
     };
 
     observeAll();
 
-    // --- MutationObserver: auto-discover new [data-tool-id] and [data-tool-ids] elements ---
+    // --- MutationObserver: auto-discover new tool elements ---
     const mo = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         mutation.addedNodes.forEach(node => {
           if (!(node instanceof HTMLElement)) return;
-          // Check the node itself for both singular and plural
-          if (node.dataset.toolId || node.dataset.toolIds) {
+          // Check the node itself
+          if (node.dataset.toolIds) {
+            io.observe(node);
+          } else if (node.dataset.toolId && !isInsideActivityGroup(node)) {
             io.observe(node);
           }
-          // Check descendants
-          node.querySelectorAll('[data-tool-id]').forEach(desc => {
-            io.observe(desc);
-          });
+          // Check descendants — plural (activity groups) always observed
           node.querySelectorAll('[data-tool-ids]').forEach(desc => {
             io.observe(desc);
+          });
+          // Singular: only if NOT inside an activity group
+          node.querySelectorAll('[data-tool-id]').forEach(desc => {
+            if (!isInsideActivityGroup(desc)) {
+              io.observe(desc);
+            }
           });
         });
       }

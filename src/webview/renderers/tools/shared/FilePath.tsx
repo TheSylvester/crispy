@@ -43,10 +43,17 @@ export function FilePath({ path, lineRange }: FilePathProps): React.JSX.Element 
     return index.match(relativePath);
   }, [index, relativePath]);
 
+  // Show parent/filename for compact display, full relative path in tooltip.
+  // e.g. "src/webview/components/TranscriptViewer.tsx" → "components/TranscriptViewer.tsx"
+  const shortPath = useMemo(() => {
+    const parts = relativePath.split('/');
+    return parts.length > 2 ? parts.slice(-2).join('/') : relativePath;
+  }, [relativePath]);
+
   const line = parseLineFromRange(lineRange);
   const content = (
-    <span className="crispy-tool-filepath">
-      {path}
+    <span className="crispy-tool-filepath" title={relativePath + (lineRange ?? '')}>
+      {shortPath}
       {lineRange && <span style={{ opacity: 0.6 }}>{lineRange}</span>}
     </span>
   );

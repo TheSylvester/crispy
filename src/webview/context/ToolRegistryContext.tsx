@@ -185,6 +185,28 @@ export function useToolEntry(id: string): ToolEntry | undefined {
 }
 
 /**
+ * Subscribe to the registry's status version — a monotonic counter that
+ * increments whenever any tool is resolved or the registry is reset.
+ * Used as a useMemo dependency so coalescing re-runs when tool statuses
+ * change, not just when new entries arrive.
+ */
+export function useStatusVersion(): number {
+  const registry = useToolRegistry();
+
+  const subscribe = useCallback(
+    (cb: () => void) => registry.subscribeStatus(cb),
+    [registry],
+  );
+
+  const getSnapshot = useCallback(
+    () => registry.getStatusVersion(),
+    [registry],
+  );
+
+  return useSyncExternalStore(subscribe, getSnapshot);
+}
+
+/**
  * Subscribe to the list of root tool IDs (tools with no parent).
  * Re-renders only when the root list changes structurally.
  */
