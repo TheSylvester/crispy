@@ -1036,6 +1036,17 @@ h2 {
   color: var(--vscode-errorForeground, #f48771);
 }
 
+.crispy-status-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--vscode-charts-yellow, #dcdcaa);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: crispy-spin 0.8s linear infinite;
+  vertical-align: middle;
+}
+
 /* --- Body (expanded content) --- */
 
 .crispy-tool-card__body {
@@ -1129,14 +1140,12 @@ h2 {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
   padding: 2px 4px;
   cursor: pointer;
   border-radius: 2px;
   font-size: 12px;
-  color: var(--vscode-descriptionForeground, #858585);
   user-select: none;
-  list-style: none;
 }
 
 .crispy-activity-group__summary::-webkit-details-marker {
@@ -1149,20 +1158,6 @@ h2 {
 
 .crispy-activity-group__summary:hover {
   background: var(--vscode-list-hoverBackground, #2a2d2e);
-  color: var(--vscode-editor-foreground, #d4d4d4);
-}
-
-/* Disclosure triangle */
-.crispy-activity-group__summary::before {
-  content: '\25B8';
-  display: inline-block;
-  width: 12px;
-  flex-shrink: 0;
-  transition: transform 0.1s ease;
-}
-
-.crispy-activity-group[open] > .crispy-activity-group__summary::before {
-  content: '\25BE';
 }
 
 /* Verb chip: icon(s) + label + count */
@@ -1178,6 +1173,11 @@ h2 {
   flex-shrink: 0;
 }
 
+.crispy-activity-group__count {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
 .crispy-activity-group__error-separator {
   color: var(--vscode-descriptionForeground, #858585);
 }
@@ -1186,10 +1186,26 @@ h2 {
   color: var(--vscode-errorForeground, #f48771);
 }
 
-.crispy-activity-group__tools {
+.crispy-activity-group__content {
   padding-left: 12px;
   border-left: 2px solid rgba(255, 255, 255, 0.06);
   margin-left: 4px;
+}
+
+.crispy-activity-group__snippets {
+  padding: 4px 0;
+}
+
+.crispy-activity-group__text-snippet {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground, #858585);
+  font-style: italic;
+  padding: 1px 0;
+  line-height: 1.4;
+}
+
+.crispy-activity-group__tools {
+  /* Tools are now inside __content, no separate border-left needed */
 }
 
 /* --- File path (monospace, dark pill like grep params) --- */
@@ -1599,7 +1615,7 @@ body.agency-bypass-permissions {
   backdrop-filter: blur(40px) saturate(170%);
   border: 1px solid rgba(255, 255, 255, 0.05);
   max-width: 800px;
-  width: calc(var(--container-width, 100vw) - var(--tool-panel-width, 0px) - 2rem);
+  width: calc(var(--container-width, 100vw) - var(--tool-panel-width, 0px) - 3rem);
   border-radius: 14px;
   box-shadow:
     0 4px 24px rgba(0, 0, 0, 0.4),
@@ -1815,39 +1831,17 @@ body.agency-bypass-permissions {
   display: inline-block;
 }
 
-.crispy-cp-send__icon.hovering {
-  animation: crispy-cp-send-jiggle-in 0.3s ease forwards;
+/* Hover jiggle — pure CSS, no React state needed */
+.crispy-cp-send:hover:not(:disabled) .crispy-cp-send__icon {
+  animation: crispy-cp-send-jiggle 0.3s ease;
 }
 
-.crispy-cp-send__icon.hover-out {
-  animation: crispy-cp-send-jiggle-out 0.2s ease forwards;
-}
-
-@keyframes crispy-cp-send-jiggle-in {
-  0% {
-    transform: translateX(0);
-  }
-  25% {
-    transform: translateX(-1px);
-  }
-  50% {
-    transform: translateX(1px);
-  }
-  75% {
-    transform: translateX(-0.5px);
-  }
-  100% {
-    transform: translateX(0);
-  }
-}
-
-@keyframes crispy-cp-send-jiggle-out {
-  0% {
-    transform: translateX(-0.5px);
-  }
-  100% {
-    transform: translateX(0);
-  }
+@keyframes crispy-cp-send-jiggle {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-1px); }
+  50% { transform: translateX(1px); }
+  75% { transform: translateX(-0.5px); }
+  100% { transform: translateX(0); }
 }
 
 /* --------------------------------------------------------------------------
@@ -2087,100 +2081,41 @@ body.agency-bypass-permissions {
   }
 }
 
-/* Persistent danger pulse when checked */
+/* Danger pulse — 3 iterations then settles to static glow */
 .crispy-cp-bypass--checked .crispy-cp-bypass__icon:not(.animate-in) {
-  animation: crispy-cp-bypass-pulse 2s ease-in-out infinite;
+  animation: crispy-cp-bypass-pulse 2s ease-in-out 3;
+  filter: drop-shadow(0 0 4px rgba(232, 64, 64, 0.4));
 }
 
 @keyframes crispy-cp-bypass-pulse {
-  0%,
-  100% {
-    filter: drop-shadow(0 0 4px rgba(232, 64, 64, 0.4));
-  }
-  50% {
-    filter: drop-shadow(0 0 10px rgba(232, 64, 64, 0.8));
-  }
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(232, 64, 64, 0.4)); }
+  50% { filter: drop-shadow(0 0 10px rgba(232, 64, 64, 0.8)); }
 }
 
-/* Unchecked hover in */
-.crispy-cp-bypass:not(.crispy-cp-bypass--checked)
-  .crispy-cp-bypass__icon.hovering {
-  animation: crispy-cp-bypass-wobble-in 0.5s ease forwards;
+/* Hover wobble — pure CSS, no React state needed */
+.crispy-cp-bypass:not(.crispy-cp-bypass--checked):hover
+  .crispy-cp-bypass__icon {
+  animation: crispy-cp-bypass-wobble 0.5s ease;
 }
 
-/* Unchecked hover out */
-.crispy-cp-bypass:not(.crispy-cp-bypass--checked)
-  .crispy-cp-bypass__icon.hover-out {
-  animation: crispy-cp-bypass-wobble-out 0.3s ease forwards;
+.crispy-cp-bypass--checked:hover .crispy-cp-bypass__icon:not(.animate-in) {
+  animation: crispy-cp-bypass-wobble-danger 0.5s ease;
 }
 
-/* Checked hover in */
-.crispy-cp-bypass--checked .crispy-cp-bypass__icon.hovering {
-  animation: crispy-cp-bypass-wobble-danger-in 0.5s ease forwards;
+@keyframes crispy-cp-bypass-wobble {
+  0% { transform: scale(1) rotate(0deg); }
+  25% { transform: scale(1.1) rotate(-10deg); }
+  50% { transform: scale(0.95) rotate(10deg); }
+  75% { transform: scale(1.05) rotate(-5deg); }
+  100% { transform: scale(1) rotate(0deg); }
 }
 
-/* Checked hover out */
-.crispy-cp-bypass--checked .crispy-cp-bypass__icon.hover-out {
-  animation: crispy-cp-bypass-wobble-danger-out 0.3s ease forwards;
-}
-
-@keyframes crispy-cp-bypass-wobble-in {
-  0% {
-    transform: scale(1) rotate(0deg);
-  }
-  25% {
-    transform: scale(1.1) rotate(-10deg);
-  }
-  50% {
-    transform: scale(0.95) rotate(10deg);
-  }
-  75% {
-    transform: scale(1.05) rotate(-5deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-    color: #888;
-  }
-}
-
-@keyframes crispy-cp-bypass-wobble-out {
-  0% {
-    transform: scale(1) rotate(0deg);
-    color: #888;
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-    color: #666;
-  }
-}
-
-@keyframes crispy-cp-bypass-wobble-danger-in {
-  0% {
-    transform: scale(1) rotate(0deg);
-  }
-  25% {
-    transform: scale(1.15) rotate(-15deg);
-  }
-  50% {
-    transform: scale(0.9) rotate(15deg);
-  }
-  75% {
-    transform: scale(1.1) rotate(-8deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-    filter: drop-shadow(0 0 8px rgba(232, 64, 64, 1));
-  }
-}
-
-@keyframes crispy-cp-bypass-wobble-danger-out {
-  0% {
-    transform: scale(1) rotate(0deg);
-    filter: drop-shadow(0 0 8px rgba(232, 64, 64, 1));
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-  }
+@keyframes crispy-cp-bypass-wobble-danger {
+  0% { transform: scale(1) rotate(0deg); }
+  25% { transform: scale(1.15) rotate(-15deg); }
+  50% { transform: scale(0.9) rotate(15deg); }
+  75% { transform: scale(1.1) rotate(-8deg); }
+  100% { transform: scale(1) rotate(0deg); }
 }
 
 /* --------------------------------------------------------------------------
@@ -2191,53 +2126,17 @@ body.agency-bypass-permissions {
   transition: transform 0.2s ease;
 }
 
-/* Unchecked hover in */
-.crispy-cp-chrome:not(.crispy-cp-chrome--checked)
-  .crispy-cp-chrome__icon.hovering {
-  animation: crispy-cp-chrome-wobble-in 0.5s ease forwards;
+/* Hover wobble — pure CSS, no React state needed */
+.crispy-cp-chrome:hover .crispy-cp-chrome__icon {
+  animation: crispy-cp-chrome-wobble 0.5s ease;
 }
 
-/* Unchecked hover out */
-.crispy-cp-chrome:not(.crispy-cp-chrome--checked)
-  .crispy-cp-chrome__icon.hover-out {
-  animation: crispy-cp-chrome-wobble-out 0.3s ease forwards;
-}
-
-/* Checked hover in */
-.crispy-cp-chrome--checked .crispy-cp-chrome__icon.hovering {
-  animation: crispy-cp-chrome-wobble-in 0.5s ease forwards;
-}
-
-/* Checked hover out */
-.crispy-cp-chrome--checked .crispy-cp-chrome__icon.hover-out {
-  animation: crispy-cp-chrome-wobble-out 0.3s ease forwards;
-}
-
-@keyframes crispy-cp-chrome-wobble-in {
-  0% {
-    transform: scale(1);
-  }
-  25% {
-    transform: scale(1.15);
-  }
-  50% {
-    transform: scale(0.95);
-  }
-  75% {
-    transform: scale(1.1);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-@keyframes crispy-cp-chrome-wobble-out {
-  0% {
-    transform: scale(1);
-  }
-  100% {
-    transform: scale(1);
-  }
+@keyframes crispy-cp-chrome-wobble {
+  0% { transform: scale(1); }
+  25% { transform: scale(1.15); }
+  50% { transform: scale(0.95); }
+  75% { transform: scale(1.1); }
+  100% { transform: scale(1); }
 }
 
 /* Pop animation on activation */
@@ -2420,17 +2319,11 @@ body.agency-bypass-permissions {
   transform: scale(0.9);
 }
 
-/* Unpinned hover in */
-.crispy-cp-settings:not(.crispy-cp-settings--pinned)
-  .crispy-cp-settings__btn.hovering {
+/* Hover wobble — pure CSS, no React state needed */
+.crispy-cp-settings:not(.crispy-cp-settings--pinned):hover
+  .crispy-cp-settings__btn {
   color: var(--vscode-foreground, #d4d4d4);
-  animation: crispy-cp-settings-wobble-in 0.5s ease forwards;
-}
-
-/* Unpinned hover out */
-.crispy-cp-settings:not(.crispy-cp-settings--pinned)
-  .crispy-cp-settings__btn.hover-out {
-  animation: crispy-cp-settings-wobble-out 0.3s ease forwards;
+  animation: crispy-cp-settings-wobble 0.5s ease;
 }
 
 /* Pinned state — rotated */
@@ -2444,50 +2337,19 @@ body.agency-bypass-permissions {
   animation: crispy-cp-settings-pop 0.3s ease forwards;
 }
 
-/* Pinned hover in */
-.crispy-cp-settings--pinned .crispy-cp-settings__btn.hovering {
-  animation: crispy-cp-settings-wobble-pinned-in 0.5s ease forwards;
+/* Pinned hover wobble */
+.crispy-cp-settings--pinned:hover .crispy-cp-settings__btn:not(.animate-in) {
+  animation: crispy-cp-settings-wobble-pinned 0.5s ease;
 }
 
-/* Pinned hover out */
-.crispy-cp-settings--pinned .crispy-cp-settings__btn.hover-out {
-  animation: crispy-cp-settings-wobble-pinned-out 0.3s ease forwards;
+@keyframes crispy-cp-settings-wobble {
+  0% { transform: scale(1) rotate(0deg); }
+  100% { transform: scale(1.1) rotate(90deg); }
 }
 
-@keyframes crispy-cp-settings-wobble-in {
-  0% {
-    transform: scale(1) rotate(0deg);
-  }
-  100% {
-    transform: scale(1.1) rotate(90deg);
-  }
-}
-
-@keyframes crispy-cp-settings-wobble-out {
-  0% {
-    transform: scale(1.1) rotate(90deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-  }
-}
-
-@keyframes crispy-cp-settings-wobble-pinned-in {
-  0% {
-    transform: scale(1) rotate(45deg);
-  }
-  100% {
-    transform: scale(1.1) rotate(135deg);
-  }
-}
-
-@keyframes crispy-cp-settings-wobble-pinned-out {
-  0% {
-    transform: scale(1.1) rotate(135deg);
-  }
-  100% {
-    transform: scale(1) rotate(45deg);
-  }
+@keyframes crispy-cp-settings-wobble-pinned {
+  0% { transform: scale(1) rotate(45deg); }
+  100% { transform: scale(1.1) rotate(135deg); }
 }
 
 @keyframes crispy-cp-settings-pop {
@@ -2573,39 +2435,17 @@ body.agency-bypass-permissions {
   display: inline-block;
 }
 
-.crispy-cp-fork:not(:disabled) .crispy-cp-fork__icon.hovering {
-  animation: crispy-cp-fork-jiggle-in 0.3s ease forwards;
+/* Hover jiggle — pure CSS, no React state needed */
+.crispy-cp-fork:not(:disabled):hover .crispy-cp-fork__icon {
+  animation: crispy-cp-fork-jiggle 0.3s ease;
 }
 
-.crispy-cp-fork:not(:disabled) .crispy-cp-fork__icon.hover-out {
-  animation: crispy-cp-fork-jiggle-out 0.2s ease forwards;
-}
-
-@keyframes crispy-cp-fork-jiggle-in {
-  0% {
-    transform: translateX(0);
-  }
-  25% {
-    transform: translateX(-1px);
-  }
-  50% {
-    transform: translateX(1px);
-  }
-  75% {
-    transform: translateX(-0.5px);
-  }
-  100% {
-    transform: translateX(0);
-  }
-}
-
-@keyframes crispy-cp-fork-jiggle-out {
-  0% {
-    transform: translateX(-0.5px);
-  }
-  100% {
-    transform: translateX(0);
-  }
+@keyframes crispy-cp-fork-jiggle {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  50% { transform: translateX(2px); }
+  75% { transform: translateX(-1px); }
+  100% { transform: translateX(0); }
 }
 
 /* --------------------------------------------------------------------------
@@ -3539,6 +3379,8 @@ body.agency-bypass-permissions {
   max-height: 60vh;
   display: flex;
   flex-direction: column;
+  /* Entrance animation handled by usePanelFLIP via WAAPI — no CSS keyframe
+     needed here. WAAPI provides staggered entrance and reduced-motion support. */
 }
 
 .crispy-panel-card--error {
@@ -3555,7 +3397,6 @@ body.agency-bypass-permissions {
   padding: 6px 10px;
   background: rgba(255, 255, 255, 0.03);
   border-bottom: 1px solid var(--vscode-panel-border, #2b2b2b);
-  flex-wrap: wrap;
   min-width: 0;
 }
 
@@ -3683,5 +3524,23 @@ body.agency-bypass-permissions {
   padding: 6px 10px;
   max-height: 500px;
   overflow-y: auto;
+}
+
+/* --------------------------------------------------------------------------
+   Reduced motion — accessibility kill-switch for all animations
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .crispy-panel-card,
+  .crispy-tool-card,
+  .crispy-cp-bypass__icon,
+  .crispy-cp-chrome__icon,
+  .crispy-cp-fork__icon,
+  .crispy-cp-send__icon,
+  .crispy-cp-settings__btn,
+  .crispy-titlebar__dot {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 

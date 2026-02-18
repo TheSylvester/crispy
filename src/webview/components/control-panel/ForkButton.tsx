@@ -8,7 +8,6 @@
  * @module control-panel/ForkButton
  */
 
-import { useState } from 'react';
 import { ForkIcon } from './icons.js';
 
 interface ForkButtonProps {
@@ -18,8 +17,6 @@ interface ForkButtonProps {
 }
 
 export function ForkButton({ disabled, onFork, onHoverChange }: ForkButtonProps): React.JSX.Element {
-  const [hoverClass, setHoverClass] = useState('');
-
   return (
     <button
       className="crispy-cp-fork"
@@ -27,17 +24,11 @@ export function ForkButton({ disabled, onFork, onHoverChange }: ForkButtonProps)
       data-shortcut="Ctrl+Shift+Enter"
       disabled={disabled}
       onClick={onFork}
-      onMouseEnter={() => {
-        onHoverChange(true);
-        if (!disabled) setHoverClass('hovering');
-      }}
-      onMouseLeave={() => {
-        onHoverChange(false);
-        if (hoverClass === 'hovering') setHoverClass('hover-out');
-      }}
+      onMouseEnter={() => onHoverChange(true)}
+      onMouseLeave={() => onHoverChange(false)}
     >
       Fork{' '}
-      <span className={`crispy-cp-fork__icon ${hoverClass}`}>
+      <span className="crispy-cp-fork__icon">
         <ForkIcon />
       </span>
     </button>

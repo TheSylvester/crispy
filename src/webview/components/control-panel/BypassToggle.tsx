@@ -3,7 +3,8 @@
  *
  * Renders a hidden checkbox with conditional shield icons (safe/danger).
  * Uses React conditional rendering for icon swapping (not CSS display toggling).
- * Danger icon has activate animation on check and persistent pulse when active.
+ * Danger icon has activate animation on check and finite danger pulse when active.
+ * Hover wobble animations are pure CSS — no React state needed.
  *
  * @module control-panel/BypassToggle
  */
@@ -20,7 +21,6 @@ interface BypassToggleProps {
 export function BypassToggle({ checked, onChange, disabled }: BypassToggleProps): React.JSX.Element {
   const inputId = useId();
   const [justActivated, setJustActivated] = useState(false);
-  const [hoverClass, setHoverClass] = useState('');
 
   const handleChange = () => {
     const newVal = !checked;
@@ -41,8 +41,6 @@ export function BypassToggle({ checked, onChange, disabled }: BypassToggleProps)
       title="Enable --dangerously-skip-permissions mode (Alt+`)"
       data-shortcut="Alt+`"
       style={disabled ? { opacity: 0.4, pointerEvents: 'none' } : undefined}
-      onMouseEnter={() => setHoverClass('hovering')}
-      onMouseLeave={() => setHoverClass('hover-out')}
     >
       <input
         id={inputId}
@@ -54,12 +52,12 @@ export function BypassToggle({ checked, onChange, disabled }: BypassToggleProps)
       />
       {checked ? (
         <ShieldDangerIcon
-          className={`crispy-cp-bypass__icon ${hoverClass} ${justActivated ? 'animate-in' : ''}`}
+          className={`crispy-cp-bypass__icon ${justActivated ? 'animate-in' : ''}`}
           onAnimationEnd={() => setJustActivated(false)}
         />
       ) : (
         <ShieldSafeIcon
-          className={`crispy-cp-bypass__icon ${hoverClass}`}
+          className="crispy-cp-bypass__icon"
         />
       )}
     </label>

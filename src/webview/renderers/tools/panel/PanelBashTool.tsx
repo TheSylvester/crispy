@@ -67,7 +67,7 @@ function PanelStatusBar({ status }: { status: string }): React.JSX.Element {
   const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.running;
   return (
     <span className={`crispy-panel-status ${config.className}`}>
-      {config.icon} {config.label}
+      {status === 'running' ? <span className="crispy-status-spinner" /> : config.icon} {config.label}
     </span>
   );
 }

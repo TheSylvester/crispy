@@ -2,7 +2,7 @@
  * Chrome Toggle — icon toggle for Chrome browser integration
  *
  * Conditional rendering swaps between mono and color Chrome icons.
- * Pop animation on activation, wobble on hover.
+ * Pop animation on activation, wobble on hover (pure CSS).
  *
  * @module control-panel/ChromeToggle
  */
@@ -19,7 +19,6 @@ interface ChromeToggleProps {
 export function ChromeToggle({ checked, onChange, disabled }: ChromeToggleProps): React.JSX.Element {
   const inputId = useId();
   const [justActivated, setJustActivated] = useState(false);
-  const [hoverClass, setHoverClass] = useState('');
 
   const handleChange = () => {
     const newVal = !checked;
@@ -39,8 +38,6 @@ export function ChromeToggle({ checked, onChange, disabled }: ChromeToggleProps)
       className={containerClass}
       title="Enable Chrome browser integration"
       style={disabled ? { opacity: 0.4, pointerEvents: 'none' } : undefined}
-      onMouseEnter={() => setHoverClass('hovering')}
-      onMouseLeave={() => setHoverClass('hover-out')}
     >
       <input
         id={inputId}
@@ -52,12 +49,12 @@ export function ChromeToggle({ checked, onChange, disabled }: ChromeToggleProps)
       />
       {checked ? (
         <ChromeColorIcon
-          className={`crispy-cp-chrome__icon ${hoverClass} ${justActivated ? 'animate-in' : ''}`}
+          className={`crispy-cp-chrome__icon ${justActivated ? 'animate-in' : ''}`}
           onAnimationEnd={() => setJustActivated(false)}
         />
       ) : (
         <ChromeMonoIcon
-          className={`crispy-cp-chrome__icon ${hoverClass}`}
+          className="crispy-cp-chrome__icon"
         />
       )}
     </label>

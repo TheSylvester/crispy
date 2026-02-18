@@ -8,7 +8,7 @@
  * @module control-panel/ChatInput
  */
 
-import { useRef, useLayoutEffect, useEffect, useState, useCallback } from 'react';
+import { useRef, useLayoutEffect, useEffect, useCallback } from 'react';
 import type { AttachedImage } from './types.js';
 import { ForkIcon } from './icons.js';
 import { useMention } from '../../hooks/useMention.js';
@@ -26,7 +26,6 @@ interface ChatInputProps {
 
 export function ChatInput({ value, attachedImages, onInput, onSend, placeholder, forkMode, onFork }: ChatInputProps): React.JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [hoverClass, setHoverClass] = useState('');
   const mention = useMention(textareaRef, value, onInput);
 
   // Auto-focus textarea on mount
@@ -125,10 +124,8 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
         title={forkMode ? "Send forked message (Ctrl+Enter)" : "Send message (Ctrl+Enter)"}
         disabled={isEmpty}
         onClick={onSend}
-        onMouseEnter={() => setHoverClass('hovering')}
-        onMouseLeave={() => setHoverClass('hover-out')}
       >
-        <span className={`crispy-cp-send__icon ${hoverClass}`}>
+        <span className="crispy-cp-send__icon">
           {forkMode ? <ForkIcon /> : <>&#9654;</>}
         </span>
       </button>

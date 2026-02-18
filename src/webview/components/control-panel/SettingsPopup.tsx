@@ -3,7 +3,7 @@
  *
  * Gear icon rotates 45deg when pinned. Pop animation on initial pin.
  * Popup contains render mode select. Click-outside closes popup.
- * Different hover wobble keyframes for pinned vs unpinned states.
+ * Hover wobble animations are pure CSS — no React state needed.
  *
  * @module control-panel/SettingsPopup
  */
@@ -28,7 +28,6 @@ const RENDER_MODES: { value: RenderMode; label: string }[] = [
 export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
-  const [hoverClass, setHoverClass] = useState('');
 
   const handleClickOutside = useCallback(
     (e: MouseEvent) => {
@@ -59,7 +58,6 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
 
   const btnClass = [
     'crispy-cp-settings__btn',
-    hoverClass,
     justPinned ? 'animate-in' : '',
   ]
     .filter(Boolean)
@@ -69,8 +67,6 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
     <span
       ref={containerRef}
       className={containerClass}
-      onMouseEnter={() => setHoverClass('hovering')}
-      onMouseLeave={() => setHoverClass('hover-out')}
     >
       <button
         className={btnClass}

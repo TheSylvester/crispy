@@ -24,6 +24,7 @@ import { useVisibleToolIds } from '../context/VisibilityContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
 import { RenderLocationProvider } from '../context/RenderLocationContext.js';
 import { ToolPanelCard } from '../renderers/tools/panel/ToolPanelCard.js';
+import { usePanelFLIP } from '../hooks/usePanelFLIP.js';
 
 /** Filter modes for the tool panel */
 type FilterMode = 'visible' | 'all' | 'active';
@@ -92,6 +93,9 @@ export function ToolActivityPanel(): React.JSX.Element {
       }
     }
   }, [displayIds.length]);
+
+  // FLIP animation: surviving cards slide smoothly to new positions when the list changes
+  usePanelFLIP(scrollRef);
 
   /** Drag-to-resize: mousedown on the handle starts tracking.
    *  Computes new width in px from drag delta.

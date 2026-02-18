@@ -4,6 +4,9 @@
  * Like `ToolCard` but uses `resolvePanelRenderer` to prefer panel-optimized
  * renderers over inline renderers.
  *
+ * Centralizes the `data-tool-id` attribute that usePanelFLIP needs for FLIP
+ * animations — individual panel renderers don't need to add it.
+ *
  * @module webview/renderers/tools/panel/ToolPanelCard
  */
 
@@ -17,5 +20,9 @@ export function ToolPanelCard({ toolId }: { toolId: string }): React.JSX.Element
 
   const key = resolveToolKey(entry.name);
   const Renderer = resolvePanelRenderer(key);
-  return <Renderer toolId={toolId} />;
+  return (
+    <div data-tool-id={toolId}>
+      <Renderer toolId={toolId} />
+    </div>
+  );
 }
