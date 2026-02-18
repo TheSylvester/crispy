@@ -1,14 +1,18 @@
 /**
  * Panel Task Tool — panel-optimized renderer for Task (sub-agent) tools
  *
- * Shows agent info, prompt, nested children via ToolPanelCard dispatch,
- * and result — all always-expanded with a tree-like layout.
+ * Shows agent info in the header, then renders prompt as plain markdown
+ * (first child), nested tool cards, and the result as the last child.
+ * Mirrors the inline TaskTool's layout: no section labels, no boxes —
+ * just content flowing naturally in the tree.
  *
  * @module webview/renderers/tools/panel/PanelTaskTool
  */
 
+import { useRef, useEffect } from 'react';
 import { CrispyMarkdown } from '../../CrispyMarkdown.js';
 import { useToolEntry } from '../../../context/ToolRegistryContext.js';
+import { useSessionStatus } from '../../../hooks/useSessionStatus.js';
 import { ToolBadge } from '../shared/ToolBadge.js';
 import { PanelStatusBar } from './PanelBashTool.js';
 import { ToolPanelCard } from './ToolPanelCard.js';
@@ -17,6 +21,13 @@ import type { ToolInput } from '../../../../core/transcript.js';
 
 export function PanelTaskTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   const entry = useToolEntry(toolId);
+  const { channelState } = useSessionStatus();
+  const tailRef = useRef<HTMLDivElement>(null);
+  const prevChildCountRef = useRef(0);
+  const hadResultRef = useRef(false);
+
+  const isStreaming = channelState === 'streaming';
+
   if (!entry) return null;
 
   const input = isAgentInput(entry.input as ToolInput)
@@ -28,6 +39,21 @@ export function PanelTaskTool({ toolId }: { toolId: string }): React.JSX.Element
   const prompt = input?.prompt ?? null;
 
   const resultText = extractResultText(entry.result?.content);
+  const hasResult = !!(entry.result && resultText);
+  const childCount = entry.childIds.length;
+
+  // Auto-track: scroll the tail element into view when a new child appears
+  // or the result materialises, but only during active streaming.
+  useEffect(() => {
+    const childAdded = childCount > prevChildCountRef.current;
+    const resultAppeared = hasResult && !hadResultRef.current;
+    prevChildCountRef.current = childCount;
+    hadResultRef.current = hasResult;
+
+    if (isStreaming && (childAdded || resultAppeared)) {
+      tailRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [childCount, hasResult, isStreaming]);
 
   return (
     <div className={`crispy-panel-card ${entry.status === 'error' ? 'crispy-panel-card--error' : ''}`}>
@@ -39,20 +65,15 @@ export function PanelTaskTool({ toolId }: { toolId: string }): React.JSX.Element
         <PanelStatusBar status={entry.status} />
       </div>
 
-      {/* Prompt — collapsible since prompts can be long */}
+      {/* Prompt — plain markdown, first child after header */}
       {prompt && (
-        <details className="crispy-panel-card__section" open>
-          <summary className="crispy-panel-card__section-label crispy-panel-card__section-label--clickable">
-            Prompt
-          </summary>
-          <div className="crispy-panel-card__prompt prose">
-            <CrispyMarkdown>{prompt}</CrispyMarkdown>
-          </div>
-        </details>
+        <div className="prose user-text crispy-task-prompt crispy-panel-card__task-prompt">
+          <CrispyMarkdown>{prompt}</CrispyMarkdown>
+        </div>
       )}
 
       {/* Nested child tools — rendered via panel dispatch */}
-      {entry.childIds.length > 0 && (
+      {childCount > 0 && (
         <div className="crispy-panel-card__children">
           {entry.childIds.map(childId => (
             <ToolPanelCard key={childId} toolId={childId} />
@@ -60,15 +81,15 @@ export function PanelTaskTool({ toolId }: { toolId: string }): React.JSX.Element
         </div>
       )}
 
-      {/* Result output */}
-      {entry.result && resultText && (
-        <div className="crispy-panel-card__section">
-          <div className="crispy-panel-card__section-label">Result</div>
-          <div className={`crispy-panel-card__prose prose assistant-text ${entry.result.is_error ? 'crispy-panel-card__output--error' : ''}`}>
-            <CrispyMarkdown>{resultText}</CrispyMarkdown>
-          </div>
+      {/* Result — last child, rendered inline like the children above */}
+      {hasResult && (
+        <div className={`prose assistant-text crispy-task-result crispy-panel-card__task-result ${entry.result!.is_error ? 'crispy-panel-card__output--error' : ''}`}>
+          <CrispyMarkdown>{resultText!}</CrispyMarkdown>
         </div>
       )}
+
+      {/* Invisible scroll anchor — always the last element in the card */}
+      <div ref={tailRef} aria-hidden />
     </div>
   );
 }

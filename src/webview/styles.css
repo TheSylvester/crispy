@@ -3591,3 +3591,18 @@ body.agency-bypass-permissions {
   border-left: 2px solid rgba(255, 255, 255, 0.08);
 }
 
+/* --- Panel Task tool: prompt & result rendered as plain children --- */
+
+.crispy-panel-card__task-prompt {
+  padding: 6px 10px;
+  max-height: 150px;
+  overflow-y: auto;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.crispy-panel-card__task-result {
+  padding: 6px 10px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
