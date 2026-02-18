@@ -28,6 +28,7 @@ import { ToolRegistryProvider } from "../context/ToolRegistryContext.js";
 import { ForkProvider } from "../context/ForkContext.js";
 import { ControlPanel } from "./control-panel/index.js";
 import { ToolActivityPanel } from "./ToolActivityPanel.js";
+import { VisibilityProvider } from "../context/VisibilityContext.js";
 import { mapPermissionModeToAgency } from './control-panel/types.js';
 import type { AgencyMode } from './control-panel/types.js';
 import { StopButton } from "./control-panel/StopButton.js";
@@ -324,6 +325,7 @@ export function TranscriptViewer(): React.JSX.Element {
   } else {
     mainContent = (
       <ToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
+        <VisibilityProvider scrollRef={transcriptRef}>
         <ForkProvider
           onFork={handlePerMessageFork}
           onRewind={handlePerMessageRewind}
@@ -388,6 +390,7 @@ export function TranscriptViewer(): React.JSX.Element {
         )}
         </ForkProvider>
         {toolPanelOpen && <ToolActivityPanel />}
+        </VisibilityProvider>
       </ToolRegistryProvider>
     );
   }

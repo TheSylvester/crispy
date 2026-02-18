@@ -45,7 +45,7 @@ export function ToolCardShell({
   const statusClass = status === 'complete' ? 'tool-success' : status === 'error' ? 'tool-error' : '';
 
   return (
-    <details className={`crispy-tool-card ${statusClass}`} open={defaultOpen || undefined}>
+    <details className={`crispy-tool-card ${statusClass}`} data-tool-id={toolId} open={defaultOpen || undefined}>
       <summary className="crispy-tool-card__summary">
         <span className="crispy-tool-header-content">
           <span className="crispy-tool-icon">{icon}</span>

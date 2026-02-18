@@ -1,31 +1,74 @@
 /**
- * ToolActivityPanel — Right-side panel mirroring all root-level tool activity
+ * ToolActivityPanel v2 — Viewport-aware modular tool panel
  *
- * Renders the same ToolCard components used inline in the chat stream,
- * but in a dedicated scrollable panel. Auto-scrolls to bottom when near
- * the bottom edge (same UX as the main transcript).
+ * Three filter modes:
+ * - **Visible** — IntersectionObserver-driven: only tools currently visible
+ *   in the transcript viewport are shown, creating a synchronized "detail
+ *   inspector" experience.
+ * - **All** — every root tool (original behavior).
+ * - **Active** — only tools with status: 'running'.
  *
- * Includes a draggable left-edge resize handle. Drag sets an absolute px
- * override in preferences (clamped by AppLayout to MIN/MAX bounds).
+ * Uses panel-optimized renderers via ToolPanelCard dispatch, which prefers
+ * dedicated panel renderers (PanelBashTool, PanelEditTool, etc.) and falls
+ * back to inline renderers for tools without a panel variant.
  *
- * Must be rendered inside ToolRegistryProvider (needs useToolRoots()).
+ * Must be rendered inside ToolRegistryProvider (needs useToolRoots())
+ * and VisibilityProvider (needs useVisibleToolIds()).
  *
  * @module ToolActivityPanel
  */
 
-import { useRef, useEffect, useCallback } from 'react';
-import { useToolRoots } from '../context/ToolRegistryContext.js';
+import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
+import { useToolRoots, useToolRegistry } from '../context/ToolRegistryContext.js';
+import { useVisibleToolIds } from '../context/VisibilityContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
-import { ToolCard } from '../renderers/tools/ToolCard.js';
+import { ToolPanelCard } from '../renderers/tools/panel/ToolPanelCard.js';
+
+/** Filter modes for the tool panel */
+type FilterMode = 'visible' | 'all' | 'active';
+
+const FILTER_LABELS: Record<FilterMode, string> = {
+  visible: 'Visible',
+  all: 'All',
+  active: 'Active',
+};
+
+const FILTER_MODES: FilterMode[] = ['visible', 'all', 'active'];
 
 /** Threshold in px — auto-scroll when within this distance of the bottom */
 const AUTO_SCROLL_THRESHOLD = 80;
 
 export function ToolActivityPanel(): React.JSX.Element {
   const rootIds = useToolRoots();
-  const { toolPanelWidthPx, setToolPanelWidthPx } = usePreferences();
+  const visibleIds = useVisibleToolIds();
+  const registry = useToolRegistry();
+  const { setToolPanelWidthPx } = usePreferences();
   const scrollRef = useRef<HTMLDivElement>(null);
   const wasNearBottomRef = useRef(true);
+  const [filterMode, setFilterMode] = useState<FilterMode>('visible');
+
+  // --- Filter logic ---
+  const displayIds = useMemo(() => {
+    switch (filterMode) {
+      case 'visible': {
+        // Only show root-level tools that are visible in the transcript viewport.
+        // visibleIds contains IDs of tool cards visible in the transcript;
+        // we filter to root-level only (depth 0) since nested children are
+        // rendered by their parent's panel renderer.
+        const rootSet = new Set(rootIds);
+        return visibleIds.filter(id => rootSet.has(id));
+      }
+      case 'active': {
+        return rootIds.filter(id => {
+          const entry = registry.getToolEntry(id);
+          return entry?.status === 'running';
+        });
+      }
+      case 'all':
+      default:
+        return rootIds;
+    }
+  }, [filterMode, rootIds, visibleIds, registry]);
 
   /** Check if the scroll container is near the bottom */
   const isNearBottom = useCallback(() => {
@@ -47,7 +90,7 @@ export function ToolActivityPanel(): React.JSX.Element {
         el.scrollTop = el.scrollHeight;
       }
     }
-  }, [rootIds.length]);
+  }, [displayIds.length]);
 
   /** Drag-to-resize: mousedown on the handle starts tracking.
    *  Computes new width in px from drag delta.
@@ -81,6 +124,13 @@ export function ToolActivityPanel(): React.JSX.Element {
     document.addEventListener('mouseup', handleMouseUp);
   }, [setToolPanelWidthPx]);
 
+  // Empty state message depends on filter mode
+  const emptyMessage = filterMode === 'visible'
+    ? 'No tools visible in viewport'
+    : filterMode === 'active'
+      ? 'No active tools'
+      : 'No tool activity yet';
+
   return (
     <div className="crispy-tool-panel">
       {/* Drag handle — left edge resize grip */}
@@ -88,16 +138,30 @@ export function ToolActivityPanel(): React.JSX.Element {
         className="crispy-tool-panel__resize-handle"
         onMouseDown={handleResizeStart}
       />
-      <div className="crispy-tool-panel__header">TOOLS</div>
+      <div className="crispy-tool-panel__header">
+        <span className="crispy-tool-panel__title">TOOLS</span>
+        <div className="crispy-tool-panel__filters">
+          {FILTER_MODES.map(mode => (
+            <button
+              key={mode}
+              className={`crispy-tool-panel__filter-btn ${filterMode === mode ? 'crispy-tool-panel__filter-btn--active' : ''}`}
+              onClick={() => setFilterMode(mode)}
+              title={`Show ${FILTER_LABELS[mode].toLowerCase()} tools`}
+            >
+              {FILTER_LABELS[mode]}
+            </button>
+          ))}
+        </div>
+      </div>
       <div
         className="crispy-tool-panel__scroll"
         ref={scrollRef}
         onScroll={handleScroll}
       >
-        {rootIds.length === 0 ? (
-          <div className="crispy-tool-panel__empty">No tool activity yet</div>
+        {displayIds.length === 0 ? (
+          <div className="crispy-tool-panel__empty">{emptyMessage}</div>
         ) : (
-          rootIds.map((id) => <ToolCard key={id} toolId={id} />)
+          displayIds.map((id) => <ToolPanelCard key={id} toolId={id} />)
         )}
       </div>
     </div>
