@@ -74,10 +74,10 @@ function TranscriptEntryList({
   const registry = useToolRegistry();
 
   const displayEntries = useMemo<DisplayEntry[]>(
-    () => toolCoalescing
+    () => (toolCoalescing && renderMode === 'rich')
       ? coalesceEntries(filteredEntries, registry)
       : filteredEntries.map(entry => ({ kind: 'entry' as const, entry })),
-    [filteredEntries, registry, toolCoalescing]
+    [filteredEntries, registry, toolCoalescing, renderMode]
   );
 
   return (
