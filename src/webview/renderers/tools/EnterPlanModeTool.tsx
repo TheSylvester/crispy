@@ -9,6 +9,9 @@
 
 import { useToolEntry } from '../../context/ToolRegistryContext.js';
 import { ToolCardShell } from './shared/ToolCardShell.js';
+import { getToolMeta } from './shared/tool-metadata.js';
+
+const meta = getToolMeta('EnterPlanMode');
 
 export function EnterPlanModeTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   const entry = useToolEntry(toolId);
@@ -22,8 +25,8 @@ export function EnterPlanModeTool({ toolId }: { toolId: string }): React.JSX.Ele
   return (
     <ToolCardShell
       toolId={toolId}
-      icon={'\uD83D\uDCCB'}
-      badgeColor="#3b82f6"
+      icon={meta.icon}
+      badgeColor={meta.badgeColor}
       badgeLabel="EnterPlanMode"
       resultSummary={resultSummary}
       headerContent={

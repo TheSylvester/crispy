@@ -8,8 +8,12 @@
 
 import { useToolEntry } from '../../context/ToolRegistryContext.js';
 import { ToolCardShell } from './shared/ToolCardShell.js';
+import { getToolMeta } from './shared/tool-metadata.js';
+import { formatCount } from './shared/tool-utils.js';
 import { isGlobInput } from '../../../core/transcript.js';
 import type { ToolInput } from '../../../core/transcript.js';
+
+const meta = getToolMeta('Glob');
 
 export function GlobTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   const entry = useToolEntry(toolId);
@@ -25,20 +29,20 @@ export function GlobTool({ toolId }: { toolId: string }): React.JSX.Element | nu
   // Result summary
   const resultText = entry.result && typeof entry.result.content === 'string' ? entry.result.content : null;
   const resultSummary = entry.result
-    ? entry.result.is_error ? 'Error' : extractFileCount(resultText)
+    ? entry.result.is_error ? 'Error' : formatCount(resultText, 'file', true)
     : undefined;
 
   return (
     <ToolCardShell
       toolId={toolId}
-      icon={'\uD83D\uDCC2'}
-      badgeColor="#d946ef"
+      icon={meta.icon}
+      badgeColor={meta.badgeColor}
       badgeLabel="Glob"
       panelOpen={false}
       resultSummary={resultSummary}
       headerContent={
         <>
-          <span className="crispy-tool-secondary">{pattern}</span>
+          <span className="u-mono-pill crispy-tool-secondary">{pattern}</span>
           {searchPath && <span className="crispy-tool-description">in {searchPath}</span>}
         </>
       }
@@ -52,10 +56,4 @@ export function GlobTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       )}
     </ToolCardShell>
   );
-}
-
-function extractFileCount(text: string | null): string {
-  if (!text) return '';
-  const lines = text.trim().split('\n').filter(Boolean);
-  return `${lines.length} file${lines.length !== 1 ? 's' : ''}`;
 }

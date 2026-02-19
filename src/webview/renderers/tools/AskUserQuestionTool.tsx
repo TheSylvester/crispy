@@ -11,8 +11,11 @@
 
 import { useToolEntry } from '../../context/ToolRegistryContext.js';
 import { ToolCardShell } from './shared/ToolCardShell.js';
+import { getToolMeta } from './shared/tool-metadata.js';
 import { isAskUserQuestionInput } from '../../../core/transcript.js';
 import type { ToolInput } from '../../../core/transcript.js';
+
+const meta = getToolMeta('AskUserQuestion');
 
 interface Question {
   question: string;
@@ -43,8 +46,8 @@ export function AskUserQuestionTool({ toolId }: { toolId: string }): React.JSX.E
   return (
     <ToolCardShell
       toolId={toolId}
-      icon={'\u2753'}
-      badgeColor="#14b8a6"
+      icon={meta.icon}
+      badgeColor={meta.badgeColor}
       badgeLabel="Ask User Question"
       defaultOpen={true}
       resultSummary={resultSummary}

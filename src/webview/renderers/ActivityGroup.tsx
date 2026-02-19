@@ -14,32 +14,17 @@
  */
 
 import type { VerbBucket } from '../utils/coalesce-entries.js';
-import type { ToolActivity } from '../tool-registry.js';
 import type { TranscriptEntry } from '../../core/transcript.js';
 import { ToolCard } from './tools/ToolCard.js';
 import { ToolBadge } from './tools/shared/ToolBadge.js';
+import { getToolMeta, ACTIVITY_BADGE_COLOR, type ToolActivity } from './tools/shared/tool-metadata.js';
 
 // ============================================================================
-// Tool icon map — matches icons used in individual tool renderers
+// Tool icon helper — delegates to shared tool-metadata
 // ============================================================================
-
-const TOOL_ICON_MAP: Record<string, string> = {
-  Read:            '\uD83D\uDCC4', // 📄
-  ReadMcpResource: '\uD83D\uDCC4', // 📄
-  Grep:            '\uD83D\uDD0D', // 🔍
-  Glob:            '\uD83D\uDCC2', // 📂
-  WebSearch:       '\uD83C\uDF10', // 🌐
-  WebFetch:        '\uD83C\uDF0E', // 🌎
-  Bash:            '\uD83D\uDCBB', // 💻
-  TodoWrite:       '\u2611',       // ☑
-  Skill:           '\u2728',       // ✨
-  ListMcpResources:'\uD83D\uDD0D', // 🔍
-};
-
-const DEFAULT_ICON = '\uD83D\uDD27'; // 🔧
 
 function getToolIcon(name: string): string {
-  return TOOL_ICON_MAP[name] ?? DEFAULT_ICON;
+  return getToolMeta(name).icon;
 }
 
 /** Get unique icons for a verb bucket's tool names, preserving first-occurrence order */
@@ -91,37 +76,13 @@ function getChipLabel(v: VerbBucket, mode: 'past' | 'gerund'): string {
 }
 
 // ============================================================================
-// Badge colors — per-tool colors match individual ToolCard badges
+// Badge colors — delegates to shared tool-metadata
 // ============================================================================
-
-/** Per-tool badge colors (must match badgeColor in each tool renderer) */
-const TOOL_BADGE_COLOR: Record<string, string> = {
-  Read:             '#0ea5e9', // sky blue
-  ReadMcpResource:  '#0ea5e9',
-  Grep:             '#06b6d4', // cyan
-  Glob:             '#d946ef', // fuchsia
-  WebSearch:        '#8b5cf6', // purple
-  WebFetch:         '#6366f1', // indigo
-  Bash:             '#f59e0b', // amber
-  TodoWrite:        '#8b5cf6', // purple (matches card)
-  Skill:            '#7c3aed', // violet
-  ListMcpResources: '#06b6d4', // cyan
-};
-
-/** Fallback colors for multi-tool buckets (blended/shared per activity) */
-const ACTIVITY_BADGE_COLOR: Record<ToolActivity, string> = {
-  read:    '#0ea5e9', // sky blue
-  search:  '#8b5cf6', // purple
-  fetch:   '#6366f1', // indigo
-  execute: '#f59e0b', // amber
-  track:   '#8b5cf6', // purple
-  invoke:  '#7c3aed', // violet
-};
 
 /** Pick badge color: single tool type → exact tool color; multi → activity fallback */
 function getChipColor(v: VerbBucket): string {
   if (v.toolNames.length === 1) {
-    return TOOL_BADGE_COLOR[v.toolNames[0]] ?? ACTIVITY_BADGE_COLOR[v.activity];
+    return getToolMeta(v.toolNames[0]).badgeColor;
   }
   return ACTIVITY_BADGE_COLOR[v.activity];
 }

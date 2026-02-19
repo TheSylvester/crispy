@@ -11,8 +11,11 @@
 
 import { useToolEntry } from '../../../context/ToolRegistryContext.js';
 import { ToolBadge } from '../shared/ToolBadge.js';
+import { getToolMeta } from '../shared/tool-metadata.js';
 import { isBashInput } from '../../../../core/transcript.js';
 import type { ToolInput } from '../../../../core/transcript.js';
+
+const meta = getToolMeta('Bash');
 
 export function PanelBashTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   const entry = useToolEntry(toolId);
@@ -35,8 +38,8 @@ export function PanelBashTool({ toolId }: { toolId: string }): React.JSX.Element
     <div className={`crispy-panel-card ${entry.status === 'error' ? 'crispy-panel-card--error' : ''}`}>
       {/* Header — always visible */}
       <div className="crispy-panel-card__header">
-        <span className="crispy-tool-icon">{'\uD83D\uDCBB'}</span>
-        <ToolBadge color="#f59e0b" textColor="#1e1e1e" label="Bash" />
+        <span className="crispy-tool-icon">{meta.icon}</span>
+        <ToolBadge color={meta.badgeColor} textColor="#1e1e1e" label="Bash" />
         {description && <span className="crispy-panel-card__description">{description}</span>}
         <PanelStatusBar status={entry.status} />
       </div>

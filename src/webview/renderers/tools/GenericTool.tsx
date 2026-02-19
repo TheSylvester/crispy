@@ -8,13 +8,16 @@
 
 import { useToolEntry } from '../../context/ToolRegistryContext.js';
 import { ToolCardShell } from './shared/ToolCardShell.js';
+import { getToolMeta } from './shared/tool-metadata.js';
 import { YamlDump } from '../YamlDump.js';
+import { formatLineCount } from './shared/tool-utils.js';
 import type { ContentBlock } from '../../../core/transcript.js';
 
 export function GenericTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   const entry = useToolEntry(toolId);
   if (!entry) return null;
 
+  const meta = getToolMeta(entry.name);
   const resultSummary = entry.result
     ? entry.result.is_error ? 'Error' : formatLineCount(entry.result.content)
     : undefined;
@@ -22,8 +25,8 @@ export function GenericTool({ toolId }: { toolId: string }): React.JSX.Element |
   return (
     <ToolCardShell
       toolId={toolId}
-      icon={'\uD83D\uDD27'}
-      badgeColor="#4b5563"
+      icon={meta.icon}
+      badgeColor={meta.badgeColor}
       badgeLabel={entry.name}
       resultSummary={resultSummary}
     >
@@ -57,10 +60,4 @@ function ToolResultContent({ content, isError }: { content: string | ContentBloc
       <YamlDump value={content} />
     </pre>
   );
-}
-
-function formatLineCount(content: string | ContentBlock[]): string {
-  if (typeof content !== 'string') return '';
-  const lines = content.split('\n').length;
-  return `${lines} line${lines !== 1 ? 's' : ''}`;
 }

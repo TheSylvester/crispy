@@ -10,8 +10,12 @@ import { useToolEntry } from '../../context/ToolRegistryContext.js';
 import { ToolCardShell } from './shared/ToolCardShell.js';
 import { FilePath } from './shared/FilePath.js';
 import { CodePreview } from './shared/CodePreview.js';
+import { getToolMeta } from './shared/tool-metadata.js';
+import { inferLanguage } from './shared/tool-utils.js';
 import { isFileWriteInput } from '../../../core/transcript.js';
 import type { ToolInput } from '../../../core/transcript.js';
+
+const meta = getToolMeta('Write');
 
 export function WriteTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   const entry = useToolEntry(toolId);
@@ -24,7 +28,7 @@ export function WriteTool({ toolId }: { toolId: string }): React.JSX.Element | n
   const filePath = input?.file_path ?? '(unknown)';
   const content = input?.content ?? '';
   const lineCount = content.split('\n').length;
-  const lang = guessLanguage(filePath);
+  const lang = inferLanguage(filePath);
 
   const resultSummary = entry.result
     ? entry.result.is_error ? 'Failed' : 'Written'
@@ -33,8 +37,8 @@ export function WriteTool({ toolId }: { toolId: string }): React.JSX.Element | n
   return (
     <ToolCardShell
       toolId={toolId}
-      icon={'\u270E'}
-      badgeColor="#10b981"
+      icon={meta.icon}
+      badgeColor={meta.badgeColor}
       badgeLabel="Write"
       defaultOpen={false}
       resultSummary={resultSummary}
@@ -56,16 +60,4 @@ export function WriteTool({ toolId }: { toolId: string }): React.JSX.Element | n
       )}
     </ToolCardShell>
   );
-}
-
-function guessLanguage(filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
-  const map: Record<string, string> = {
-    ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
-    py: 'python', rs: 'rust', go: 'go', java: 'java',
-    css: 'css', html: 'html', json: 'json', md: 'markdown',
-    sh: 'bash', bash: 'bash', yml: 'yaml', yaml: 'yaml',
-    toml: 'toml', sql: 'sql', c: 'c', cpp: 'cpp', h: 'c',
-  };
-  return map[ext] ?? 'text';
 }

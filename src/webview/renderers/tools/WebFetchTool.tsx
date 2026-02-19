@@ -10,8 +10,12 @@
 import { CrispyMarkdown } from '../CrispyMarkdown.js';
 import { useToolEntry } from '../../context/ToolRegistryContext.js';
 import { ToolCardShell } from './shared/ToolCardShell.js';
+import { getToolMeta } from './shared/tool-metadata.js';
+import { formatCount, extractResultText } from './shared/tool-utils.js';
 import { isWebFetchInput } from '../../../core/transcript.js';
 import type { ToolInput } from '../../../core/transcript.js';
+
+const meta = getToolMeta('WebFetch');
 
 export function WebFetchTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   const entry = useToolEntry(toolId);
@@ -28,19 +32,19 @@ export function WebFetchTool({ toolId }: { toolId: string }): React.JSX.Element 
   // Result summary
   const resultText = extractResultText(entry.result?.content);
   const resultSummary = entry.result
-    ? entry.result.is_error ? 'Failed' : formatLineCount(resultText)
+    ? entry.result.is_error ? 'Failed' : formatCount(resultText, 'line')
     : undefined;
 
   return (
     <ToolCardShell
       toolId={toolId}
-      icon={'\uD83C\uDF0E'}
-      badgeColor="#6366f1"
+      icon={meta.icon}
+      badgeColor={meta.badgeColor}
       badgeLabel="WebFetch"
       panelOpen={false}
       resultSummary={resultSummary}
       headerContent={
-        <span className="crispy-tool-secondary">{truncatedUrl}</span>
+        <span className="u-mono-pill crispy-tool-secondary">{truncatedUrl}</span>
       }
     >
       {prompt && (
@@ -53,23 +57,4 @@ export function WebFetchTool({ toolId }: { toolId: string }): React.JSX.Element 
       )}
     </ToolCardShell>
   );
-}
-
-/** Extract display text from tool_result content (string or array of text blocks). */
-function extractResultText(content: unknown): string | null {
-  if (typeof content === 'string') return content || null;
-  if (Array.isArray(content)) {
-    const texts = content
-      .filter((b): b is { type: string; text: string } =>
-        typeof b === 'object' && b !== null && 'text' in b && typeof b.text === 'string')
-      .map((b) => b.text);
-    return texts.length > 0 ? texts.join('\n') : null;
-  }
-  return null;
-}
-
-function formatLineCount(text: string | null): string {
-  if (!text) return '';
-  const lines = text.split('\n').length;
-  return `${lines} line${lines !== 1 ? 's' : ''}`;
 }

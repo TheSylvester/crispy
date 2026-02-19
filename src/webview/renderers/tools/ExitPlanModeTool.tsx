@@ -11,8 +11,11 @@
 import { CrispyMarkdown } from '../CrispyMarkdown.js';
 import { useToolEntry } from '../../context/ToolRegistryContext.js';
 import { ToolCardShell } from './shared/ToolCardShell.js';
+import { getToolMeta } from './shared/tool-metadata.js';
 import { isExitPlanModeInput } from '../../../core/transcript.js';
 import type { ToolInput } from '../../../core/transcript.js';
+
+const meta = getToolMeta('ExitPlanMode');
 
 interface ExitPlanInput {
   allowedPrompts?: Array<{ tool: string; prompt: string }>;
@@ -39,8 +42,8 @@ export function ExitPlanModeTool({ toolId }: { toolId: string }): React.JSX.Elem
   return (
     <ToolCardShell
       toolId={toolId}
-      icon={'\uD83D\uDCCB'}
-      badgeColor="#3b82f6"
+      icon={meta.icon}
+      badgeColor={meta.badgeColor}
       badgeLabel="ExitPlanMode"
       resultSummary={resultSummary}
       headerContent={
@@ -61,7 +64,7 @@ export function ExitPlanModeTool({ toolId }: { toolId: string }): React.JSX.Elem
           <ul className="crispy-plan-permissions-list">
             {allowedPrompts.map((p, i) => (
               <li key={i}>
-                <code className="crispy-plan-permission__tool">{p.tool}</code>
+                <code className="u-mono-pill crispy-plan-permission__tool">{p.tool}</code>
                 <span className="crispy-plan-permission__prompt"> — {p.prompt}</span>
               </li>
             ))}

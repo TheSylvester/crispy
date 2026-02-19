@@ -29,6 +29,66 @@ h2 {
 :root {
   --sidebar-transition: 0.25s ease-in-out;
   --titlebar-height: 36px;
+
+  /* --- Color tokens --- */
+  --color-accent: #e88040;
+  --color-accent-hover: #d06a2c;
+  --color-link: #60a5fa;
+  --color-keyword: #569cd6;
+  --color-diff-added: #4ec9b0;
+  --color-diff-removed: #f14c4c;
+  --color-send-text: #f0f0f0;
+
+  /* Agency mode colors */
+  --agency-white: #ffffff;
+  --agency-blue: #40a8e8;
+  --agency-teal: #47988c;
+  --agency-red: #e84040;
+
+  /* Context health gradient */
+  --context-minimal: #6c6c6c;
+  --context-low: #a0a0a0;
+  --context-healthy: #89d185;
+  --context-moderate: #dcdcaa;
+  --context-high: #f48771;
+  --context-critical: #ff5555;
+
+  /* --- Radius tokens --- */
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-2xl: 14px;
+  --radius-full: 50%;
+
+  /* --- Font-size tokens --- */
+  --font-2xs: 10px;
+  --font-xs: 11px;
+  --font-sm: 12px;
+  --font-base: 13px;
+  --font-md: 14px;
+
+  /* --- Shared backgrounds & borders --- */
+  --bg-code: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
+  --bg-editor: var(--vscode-editor-background, #1e1e1e);
+  --border-panel: var(--vscode-panel-border, #333);
+  --font-mono: var(--vscode-editor-font-family, monospace);
+}
+
+/* --- Utility classes --- */
+.u-flex-center { display: flex; align-items: center; justify-content: center; }
+.u-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.u-mono-pill {
+  font-family: var(--font-mono);
+  background: var(--bg-code);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85em;
+}
+.u-backdrop-blur {
+  -webkit-backdrop-filter: blur(40px) saturate(170%);
+  backdrop-filter: blur(40px) saturate(170%);
 }
 
 /* --- Layout --- */
@@ -52,7 +112,7 @@ h2 {
   );
   background: var(--vscode-sideBar-background);
   color: var(--vscode-sideBar-foreground);
-  border: 1px solid var(--vscode-panel-border);
+  border: 1px solid var(--border-panel);
   border-top: none;
   overflow-y: auto;
   padding: 8px 0;
@@ -78,7 +138,7 @@ h2 {
 .crispy-sidebar__header {
   padding: 8px 12px;
   font-weight: 600;
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   opacity: 0.7;
@@ -96,7 +156,7 @@ h2 {
   padding: 8px 12px;
   margin: 2px 4px;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   transition: background 0.1s;
   display: flex;
   flex-direction: column;
@@ -115,7 +175,7 @@ h2 {
 .crispy-session-item--show-more {
   justify-content: center;
   opacity: 0.6;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .crispy-session-item--show-more:hover {
@@ -130,7 +190,7 @@ h2 {
 }
 
 .crispy-session-item__label {
-  font-size: 13px;
+  font-size: var(--font-base);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -138,13 +198,13 @@ h2 {
 }
 
 .crispy-session-item__time {
-  font-size: 11px;
+  font-size: var(--font-xs);
   opacity: 0.5;
   flex-shrink: 0;
 }
 
 .crispy-session-item__preview {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--vscode-descriptionForeground, #858585);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -166,9 +226,9 @@ h2 {
   background: var(--vscode-input-background, #3c3c3c);
   color: var(--vscode-input-foreground, #d4d4d4);
   border: 1px solid var(--vscode-input-border, #3c3c3c);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   outline: none;
   box-sizing: border-box;
 }
@@ -194,7 +254,7 @@ h2 {
 .crispy-session-item--empty {
   justify-content: center;
   opacity: 0.5;
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: default;
 }
 
@@ -202,12 +262,21 @@ h2 {
   background: transparent;
 }
 
+/* --- Placeholder (generic empty state) --- */
+
+.crispy-placeholder {
+  color: var(--vscode-descriptionForeground, #888);
+  font-size: var(--font-xs);
+  padding: 12px 16px;
+  text-align: center;
+}
+
 /* --- Full-Text Search Button --- */
 
 .crispy-session-item--full-text {
   justify-content: center;
   opacity: 0.6;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--vscode-textLink-foreground, #3794ff);
 }
 
@@ -243,20 +312,24 @@ h2 {
 .crispy-main[data-streaming]:has(
     .crispy-cp[data-agency="ask-before-edits"]
   )::after {
-  animation: crispy-cp-glow-white 2s ease-in-out infinite;
+  --frame-highlight: var(--agency-white);
+  animation: crispy-cp-glow 2s ease-in-out infinite;
 }
 .crispy-main[data-streaming]:has(
     .crispy-cp[data-agency="edit-automatically"]
   )::after {
-  animation: crispy-cp-glow-blue 2s ease-in-out infinite;
+  --frame-highlight: var(--agency-blue);
+  animation: crispy-cp-glow 2s ease-in-out infinite;
 }
 .crispy-main[data-streaming]:has(.crispy-cp[data-agency="plan-mode"])::after {
-  animation: crispy-cp-glow-teal 2s ease-in-out infinite;
+  --frame-highlight: var(--agency-teal);
+  animation: crispy-cp-glow 2s ease-in-out infinite;
 }
 .crispy-main[data-streaming]:has(
     .crispy-cp[data-agency="bypass-permissions"]
   )::after {
-  animation: crispy-cp-glow-red 2s ease-in-out infinite;
+  --frame-highlight: var(--agency-red);
+  animation: crispy-cp-glow 2s ease-in-out infinite;
 }
 
 /* --- Transcript Viewer --- */
@@ -287,7 +360,7 @@ h2 {
   gap: 10px;
   padding: 12px 16px;
   color: var(--vscode-descriptionForeground, #888);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .crispy-thinking__spinner {
@@ -295,7 +368,7 @@ h2 {
   height: 16px;
   border: 2px solid var(--vscode-descriptionForeground, #555);
   border-top-color: transparent;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   animation: crispy-spin 0.8s linear infinite;
 }
 
@@ -364,7 +437,7 @@ h2 {
   right: 1.5rem;
   width: 36px;
   height: 36px;
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   background: linear-gradient(180deg, #3a3d41 0%, #2d2f33 100%);
   color: #d4d4d4;
   border: 1px solid #222;
@@ -455,7 +528,7 @@ h2 {
 .message {
   margin: 12px 0;
   padding: 2px 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   border-left: 3px solid transparent;
 }
 
@@ -482,7 +555,7 @@ h2 {
 }
 
 .message.tool {
-  border-left-color: #569cd6;
+  border-left-color: var(--color-keyword);
   background: rgba(255, 255, 255, 0.02);
 }
 
@@ -491,14 +564,14 @@ h2 {
 .block-yaml-default {
   margin: 4px 0;
   font-family: monospace;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .block-yaml-default .yaml-dump {
   margin: 0;
   padding: 6px 10px;
-  border: 1px solid var(--vscode-panel-border);
-  border-radius: 4px;
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.02);
 }
 
@@ -507,7 +580,7 @@ h2 {
 }
 
 [data-block-type*=":tool:"] .yaml-dump {
-  border-left: 2px solid #569cd6;
+  border-left: 2px solid var(--color-keyword);
 }
 
 /* --- Thinking (Rich mode) --- */
@@ -518,7 +591,7 @@ h2 {
 
 .message details:not(.crispy-tool-card) summary {
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-sm);
   opacity: 0.6;
   padding: 4px 0;
   user-select: none;
@@ -532,8 +605,8 @@ h2 {
   margin: 4px 0;
   padding: 8px;
   background: rgba(0, 0, 0, 0.1);
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 200px;
@@ -546,7 +619,7 @@ h2 {
 
 .yaml-entry {
   font-family: monospace;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .yaml-dump {
@@ -557,7 +630,7 @@ h2 {
 }
 
 .yaml-key {
-  color: #569cd6;
+  color: var(--color-keyword);
   font-weight: 600;
 }
 
@@ -568,7 +641,7 @@ h2 {
 .compact-entry {
   padding: 4px 12px;
   margin-bottom: 2px;
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.4;
   white-space: nowrap;
   overflow: hidden;
@@ -579,13 +652,13 @@ h2 {
   font-weight: 600;
   opacity: 0.7;
   font-family: monospace;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .compact-tools-summary {
   opacity: 0.5;
   font-family: monospace;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 /* --- Playback Controls --- */
@@ -595,7 +668,7 @@ h2 {
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  border-top: 1px solid var(--vscode-panel-border);
+  border-top: 1px solid var(--border-panel);
   background: var(--vscode-sideBar-background);
   flex-shrink: 0;
 }
@@ -605,9 +678,9 @@ h2 {
   color: var(--vscode-button-foreground);
   border: none;
   padding: 4px 8px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--font-md);
   min-width: 32px;
   display: flex;
   align-items: center;
@@ -624,7 +697,7 @@ h2 {
 }
 
 .crispy-playback__counter {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-family: monospace;
   opacity: 0.7;
   min-width: 100px;
@@ -679,7 +752,7 @@ h2 {
 }
 
 .crispy-welcome__subtitle {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 400;
   color: var(--vscode-descriptionForeground, #888);
   margin: 0;
@@ -711,7 +784,7 @@ h2 {
   padding: 16px;
   color: var(--vscode-errorForeground);
   background: rgba(244, 135, 113, 0.1);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   margin: 16px;
 }
 
@@ -745,19 +818,19 @@ h2 {
   font-family: monospace;
   font-size: 0.85em;
   padding: 2px 6px;
-  border-radius: 3px;
-  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
+  border-radius: var(--radius-sm);
+  background: var(--bg-code);
 }
 
 /* Fenced code blocks (standalone selectors — work inside or outside .prose) */
 .md-code-block {
   margin: 1em 0;
   padding: 1em;
-  border-radius: 6px;
-  background: var(--vscode-editor-background, rgba(0, 0, 0, 0.2));
-  border: 1px solid var(--vscode-panel-border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-editor);
+  border: 1px solid var(--border-panel);
   overflow-x: auto;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
 }
 
@@ -837,7 +910,7 @@ h2 {
 
 /* Links */
 .prose a {
-  color: #60a5fa;
+  color: var(--color-link);
   text-decoration: none;
 }
 
@@ -852,7 +925,7 @@ h2 {
   margin: 0.67em 0 0.5em;
   font-weight: 600;
   padding-bottom: 0.3em;
-  border-bottom: 1px solid var(--vscode-panel-border, #333);
+  border-bottom: 1px solid var(--border-panel);
 }
 .prose h2 {
   font-size: 1.5em;
@@ -860,7 +933,7 @@ h2 {
   margin: 1em 0 0.5em;
   font-weight: 600;
   padding-bottom: 0.25em;
-  border-bottom: 1px solid var(--vscode-panel-border, #333);
+  border-bottom: 1px solid var(--border-panel);
 }
 .prose h3 {
   font-size: 1.25em;
@@ -891,7 +964,7 @@ h2 {
 /* Horizontal rules */
 .prose hr {
   border: none;
-  border-top: 1px solid var(--vscode-panel-border, #333);
+  border-top: 1px solid var(--border-panel);
   margin: 1em 0;
 }
 
@@ -905,13 +978,13 @@ h2 {
 }
 .prose th,
 .prose td {
-  border: 1px solid var(--vscode-panel-border, #444);
+  border: 1px solid var(--border-panel);
   padding: 8px 16px;
   text-align: left;
   line-height: 1.5;
 }
 .prose th {
-  background: var(--vscode-editor-background, #1e1e1e);
+  background: var(--bg-editor);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -928,7 +1001,7 @@ h2 {
   margin-left: auto;
   max-width: 80%;
   background: var(--vscode-button-secondaryBackground, #3a3d41);
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
   padding: 10px 14px;
 }
 
@@ -941,7 +1014,7 @@ h2 {
 .transcript-image img {
   max-width: 400px;
   max-height: 400px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   object-fit: contain;
   display: block;
 }
@@ -980,8 +1053,8 @@ h2 {
   padding: 2px 4px;
   cursor: pointer;
   user-select: none;
-  font-size: 12px;
-  border-radius: 2px;
+  font-size: var(--font-sm);
+  border-radius: var(--radius-xs);
   list-style: none;
 }
 
@@ -1019,7 +1092,7 @@ h2 {
 
 .crispy-tool-status {
   margin-left: 1rem;
-  font-size: 11px;
+  font-size: var(--font-xs);
   flex-shrink: 0;
   white-space: nowrap;
   font-weight: 700;
@@ -1043,7 +1116,7 @@ h2 {
   height: 10px;
   border: 1.5px solid var(--vscode-charts-yellow, #dcdcaa);
   border-top-color: transparent;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   animation: crispy-spin 0.8s linear infinite;
   vertical-align: middle;
 }
@@ -1069,12 +1142,19 @@ h2 {
   overflow-y: auto;
 }
 
+/* Task result wrapper — semantic hook for Task/WebFetch/Skill tool output */
+.crispy-task-result { /* styling comes from .prose and .assistant-text */ }
+
+.crispy-task-result--error {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
 .crispy-tool-result__text {
   margin: 0;
   white-space: pre-wrap;
   word-wrap: break-word;
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
   line-height: 1.4;
 }
 
@@ -1090,7 +1170,7 @@ h2 {
 
 .crispy-tool-input-details summary {
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-xs);
   opacity: 0.6;
   user-select: none;
 }
@@ -1102,7 +1182,7 @@ h2 {
 .crispy-tool-input-details .yaml-dump {
   margin: 0;
   padding: 4px 0;
-  font-size: 11px;
+  font-size: var(--font-xs);
   max-height: 300px;
   overflow-y: auto;
 }
@@ -1116,7 +1196,7 @@ h2 {
 .crispy-tool-badge {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   font-size: 0.8em;
   font-weight: 600;
   white-space: nowrap;
@@ -1144,8 +1224,8 @@ h2 {
   gap: 6px;
   padding: 2px 4px;
   cursor: pointer;
-  border-radius: 2px;
-  font-size: 12px;
+  border-radius: var(--radius-xs);
+  font-size: var(--font-sm);
   user-select: none;
 }
 
@@ -1169,13 +1249,13 @@ h2 {
 }
 
 .crispy-activity-group__icons {
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1;
   flex-shrink: 0;
 }
 
 .crispy-activity-group__count {
-  font-size: 11px;
+  font-size: var(--font-xs);
   opacity: 0.7;
 }
 
@@ -1198,7 +1278,7 @@ h2 {
 }
 
 .crispy-activity-group__text-snippet {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--vscode-descriptionForeground, #858585);
   font-style: italic;
   padding: 1px 0;
@@ -1212,19 +1292,14 @@ h2 {
 /* --- File path (monospace, dark pill like grep params) --- */
 
 .crispy-tool-filepath {
-  font-family: var(--vscode-editor-font-family, monospace);
-  color: #60a5fa;
-  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 0.85em;
+  color: var(--color-link);
   white-space: nowrap;
 }
 
 /* --- Clickable file link (linkification) --- */
 
 .crispy-file-link {
-  color: #60a5fa;
+  color: var(--color-link);
   text-decoration: none;
   cursor: pointer;
   border-bottom: 1px dotted rgba(96, 165, 250, 0.4);
@@ -1253,12 +1328,7 @@ h2 {
 /* --- Secondary text (monospace pill for patterns/commands) --- */
 
 .crispy-tool-secondary {
-  font-family: var(--vscode-editor-font-family, monospace);
   color: var(--vscode-textPreformat-foreground, #9cdcfe);
-  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 0.85em;
 }
 
 /* --- Description text (gray secondary) --- */
@@ -1271,12 +1341,7 @@ h2 {
 /* --- Bash command inline (dark pill, max 5 lines with scroll, never truncated) --- */
 
 .crispy-tool-bash-inline {
-  font-family: var(--vscode-editor-font-family, monospace);
   color: var(--vscode-editor-foreground, #d4d4d4);
-  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-size: 0.85em;
   white-space: pre-wrap;
   word-break: break-all;
   max-height: calc(1.4em * 5);
@@ -1291,27 +1356,27 @@ h2 {
   display: inline-flex;
   gap: 6px;
   font-size: 0.85em;
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--font-mono);
 }
 
 .crispy-diff-stats-added {
-  color: #4ec9b0;
+  color: var(--color-diff-added);
 }
 
 .crispy-diff-stats-removed {
-  color: #f14c4c;
+  color: var(--color-diff-removed);
 }
 
 /* --- Diff view --- */
 
 .crispy-diff {
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
   margin: 2px 0;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   overflow: hidden;
-  background: var(--vscode-editor-background, #1e1e1e);
-  border: 1px solid var(--vscode-panel-border, #2a2a2a);
+  background: var(--bg-editor);
+  border: 1px solid var(--border-panel);
 }
 
 .crispy-diff-added {
@@ -1323,7 +1388,7 @@ h2 {
 }
 
 .crispy-diff-context {
-  background: var(--vscode-editor-background, #1e1e1e);
+  background: var(--bg-editor);
 }
 
 /* --- Diff view internals --- */
@@ -1331,7 +1396,7 @@ h2 {
 .crispy-diff-pre {
   margin: 0;
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
   background: transparent;
 }
@@ -1358,7 +1423,7 @@ h2 {
 
 .crispy-diff-scroll:not(:has(.crispy-diff-split))::-webkit-scrollbar-thumb {
   background: var(--vscode-scrollbarSlider-background, #79797966);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 .crispy-diff-scroll:not(:has(.crispy-diff-split))::-webkit-scrollbar-thumb:hover {
@@ -1397,7 +1462,7 @@ h2 {
 
 .crispy-diff-split {
   display: flex;
-  background: var(--vscode-editor-background, #1e1e1e);
+  background: var(--bg-editor);
 }
 
 .crispy-diff-split-pane {
@@ -1415,7 +1480,7 @@ h2 {
 
 .crispy-diff-split-pane::-webkit-scrollbar-thumb {
   background: var(--vscode-scrollbarSlider-background, #79797966);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
 }
 
 .crispy-diff-split-pane::-webkit-scrollbar-thumb:hover {
@@ -1423,7 +1488,7 @@ h2 {
 }
 
 .crispy-diff-split-left {
-  border-right: 1px solid var(--vscode-panel-border, #2a2a2a);
+  border-right: 1px solid var(--border-panel);
 }
 
 .crispy-diff-split-row {
@@ -1439,13 +1504,13 @@ h2 {
 /* --- Code preview --- */
 
 .crispy-code-preview {
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
   margin: 2px 0;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   overflow: auto;
-  background: var(--vscode-editor-background, #1e1e1e);
-  border: 1px solid var(--vscode-panel-border, #2a2a2a);
+  background: var(--bg-editor);
+  border: 1px solid var(--border-panel);
 }
 
 /* --- TodoWrite checklist --- */
@@ -1519,7 +1584,7 @@ h2 {
 }
 
 .message.crispy-fork-preview {
-  border-color: #e88040 !important;
+  border-color: var(--color-accent) !important;
   animation: crispy-fork-preview-glow 1.5s ease-in-out infinite;
   position: relative;
   z-index: 1;
@@ -1548,14 +1613,14 @@ h2 {
 .message.user .crispy-message-actions button {
   padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--vscode-descriptionForeground, #858585);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: var(--font-md);
   margin: 5px;
 }
 
@@ -1568,41 +1633,31 @@ h2 {
   cursor: not-allowed;
 }
 
+/* Individual action button class — styling inherited from button rules above */
+.crispy-message-action { /* styling inherited from .crispy-message-actions button */ }
+
 /* ============================================================================
  * Control Panel — floating bottom-center bar
  *
- * Agency mode frame highlight colors (applied to body via data-agency on panel)
+ * Agency mode frame highlight colors (set via data-agency on panel)
  * ============================================================================ */
 
-body {
-  --frame-highlight: #ffffff;
-}
-
-body.agency-ask-before-edits {
-  --frame-highlight: #ffffff;
-}
-body.agency-edit-automatically {
-  --frame-highlight: #40a8e8;
-}
-body.agency-plan-mode {
-  --frame-highlight: #47988c;
-}
-body.agency-bypass-permissions {
-  --frame-highlight: #e84040;
-}
-
-/* Also support data-agency on the panel itself for local state */
+/* Agency mode colors — set --frame-highlight and --agency-glow-shadow per mode */
 .crispy-cp[data-agency="ask-before-edits"] {
-  --frame-highlight: #ffffff;
+  --frame-highlight: var(--agency-white);
+  --agency-glow-shadow: 0 0 12px rgba(255, 255, 255, 0.3);
 }
 .crispy-cp[data-agency="edit-automatically"] {
-  --frame-highlight: #40a8e8;
+  --frame-highlight: var(--agency-blue);
+  --agency-glow-shadow: 0 0 12px rgba(64, 168, 232, 0.3);
 }
 .crispy-cp[data-agency="plan-mode"] {
-  --frame-highlight: #47988c;
+  --frame-highlight: var(--agency-teal);
+  --agency-glow-shadow: 0 0 12px rgba(71, 152, 140, 0.3);
 }
 .crispy-cp[data-agency="bypass-permissions"] {
-  --frame-highlight: #e84040;
+  --frame-highlight: var(--agency-red);
+  --agency-glow-shadow: 0 0 12px rgba(232, 64, 64, 0.3);
 }
 
 /* --- Main container --- */
@@ -1618,7 +1673,7 @@ body.agency-bypass-permissions {
   border: 1px solid rgba(255, 255, 255, 0.05);
   max-width: 800px;
   width: calc(var(--container-width, 100vw) - var(--tool-panel-width, 0px) - 3rem);
-  border-radius: 14px;
+  border-radius: var(--radius-2xl);
   box-shadow:
     0 4px 24px rgba(0, 0, 0, 0.4),
     0 1px 4px rgba(0, 0, 0, 0.2);
@@ -1632,7 +1687,7 @@ body.agency-bypass-permissions {
 
 @supports not (backdrop-filter: blur(1px)) {
   .crispy-cp {
-    background: var(--vscode-editor-background, #1e1e1e);
+    background: var(--bg-editor);
   }
 }
 
@@ -1671,10 +1726,10 @@ body.agency-bypass-permissions {
   -webkit-backdrop-filter: blur(40px) saturate(170%);
   backdrop-filter: blur(40px) saturate(170%);
   color: var(--vscode-button-secondaryForeground, #d4d4d4);
-  border: 1px solid #ffffff;
-  border-radius: 8px;
+  border: 1px solid var(--agency-white);
+  border-radius: var(--radius-xl);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-base);
   font-family: inherit;
   transition:
     background 0.15s,
@@ -1684,14 +1739,14 @@ body.agency-bypass-permissions {
 /* Agency-mode border colors — :has() reads data-agency from sibling ControlPanel */
 .crispy-main:has(.crispy-cp[data-agency="edit-automatically"])
   .crispy-stop__btn {
-  border-color: #40a8e8;
+  border-color: var(--agency-blue);
 }
 .crispy-main:has(.crispy-cp[data-agency="plan-mode"]) .crispy-stop__btn {
-  border-color: #47988c;
+  border-color: var(--agency-teal);
 }
 .crispy-main:has(.crispy-cp[data-agency="bypass-permissions"])
   .crispy-stop__btn {
-  border-color: #e84040;
+  border-color: var(--agency-red);
 }
 
 .crispy-stop__btn:hover {
@@ -1700,7 +1755,7 @@ body.agency-bypass-permissions {
 
 @supports not (backdrop-filter: blur(1px)) {
   .crispy-stop__btn {
-    background: var(--vscode-editor-background, #1e1e1e);
+    background: var(--bg-editor);
   }
 }
 
@@ -1725,7 +1780,7 @@ body.agency-bypass-permissions {
   background: rgba(255, 255, 255, 0.06);
   color: var(--vscode-input-foreground, #d4d4d4);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   font-family: inherit;
   font-size: inherit;
   resize: none;
@@ -1770,7 +1825,7 @@ body.agency-bypass-permissions {
 .crispy-cp-mention__item {
   padding: 4px 10px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-base);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1791,7 +1846,7 @@ body.agency-bypass-permissions {
   font-style: italic;
   text-align: center;
   color: var(--vscode-descriptionForeground, #858585);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .crispy-cp-mention__highlight {
@@ -1806,12 +1861,12 @@ body.agency-bypass-permissions {
 .crispy-cp-send {
   width: 5em;
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
-  background: #e88040;
-  color: #f0f0f0;
+  background: var(--color-accent);
+  color: var(--color-send-text);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   cursor: pointer;
   transition: background 0.15s;
   appearance: none;
@@ -1821,7 +1876,7 @@ body.agency-bypass-permissions {
 }
 
 .crispy-cp-send:hover:not(:disabled) {
-  background: #d06a2c;
+  background: var(--color-accent-hover);
 }
 
 .crispy-cp-send:disabled {
@@ -1846,6 +1901,17 @@ body.agency-bypass-permissions {
   100% { transform: translateX(0); }
 }
 
+/* Fork mode variant — different background for fork action */
+.crispy-cp-send--fork {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.crispy-cp-send--fork:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
 /* --------------------------------------------------------------------------
    Image Attachments Row
    -------------------------------------------------------------------------- */
@@ -1864,8 +1930,8 @@ body.agency-bypass-permissions {
   padding: 4px 8px;
   background: var(--vscode-badge-background, #4d4d4d);
   border: 1px solid var(--vscode-input-border, #3c3c3c);
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
   cursor: default;
   transition:
     border-color 0.15s,
@@ -1880,7 +1946,7 @@ body.agency-bypass-permissions {
   width: 24px;
   height: 24px;
   object-fit: cover;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
 }
 
 .crispy-cp-image-chip__name {
@@ -1902,9 +1968,9 @@ body.agency-bypass-permissions {
   background: transparent;
   color: var(--vscode-descriptionForeground, #888);
   border: none;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--font-md);
   line-height: 1;
   transition:
     background 0.15s,
@@ -1931,11 +1997,11 @@ body.agency-bypass-permissions {
 
 .crispy-cp-controls select {
   padding: 4px 12px;
-  background: var(--vscode-editor-background, #1e1e1e);
+  background: var(--bg-editor);
   color: var(--vscode-descriptionForeground, #888);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  font-size: 12px;
+  border-radius: var(--radius-xl);
+  font-size: var(--font-sm);
   cursor: pointer;
   transition:
     background 0.15s,
@@ -1981,6 +2047,9 @@ body.agency-bypass-permissions {
   color: var(--vscode-dropdown-foreground, #cccccc);
 }
 
+/* Model select — inherits from .crispy-cp-controls select */
+.crispy-cp-model { /* styling inherited from .crispy-cp-controls select */ }
+
 /* --- Right controls cluster --- */
 
 .crispy-cp-right {
@@ -2002,7 +2071,7 @@ body.agency-bypass-permissions {
   padding: 4px 6px;
   cursor: pointer;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   transition:
     background 0.15s,
     border-color 0.15s;
@@ -2171,11 +2240,11 @@ body.agency-bypass-permissions {
   justify-content: center;
   gap: 6px;
   padding: 4px 12px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--vscode-descriptionForeground, #888);
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   cursor: pointer;
   transition:
     background 0.15s,
@@ -2215,12 +2284,12 @@ body.agency-bypass-permissions {
 }
 
 .crispy-cp-context {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 400;
   padding: 4px 12px;
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-family: var(--font-mono);
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   transition: background 0.15s;
 }
 
@@ -2234,22 +2303,22 @@ body.agency-bypass-permissions {
 
 /* Context color classes */
 .crispy-cp-context--minimal {
-  color: #6c6c6c;
+  color: var(--context-minimal);
 }
 .crispy-cp-context--low {
-  color: #a0a0a0;
+  color: var(--context-low);
 }
 .crispy-cp-context--healthy {
-  color: #89d185;
+  color: var(--context-healthy);
 }
 .crispy-cp-context--moderate {
-  color: #dcdcaa;
+  color: var(--context-moderate);
 }
 .crispy-cp-context--high {
-  color: #f48771;
+  color: var(--context-high);
 }
 .crispy-cp-context--critical {
-  color: #ff5555;
+  color: var(--context-critical);
   font-weight: 600;
 }
 
@@ -2262,12 +2331,12 @@ body.agency-bypass-permissions {
   max-width: 300px;
   background: var(--vscode-editorWidget-background, #252526);
   border: 1px solid var(--vscode-editorWidget-border, #454545);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   z-index: 500;
   padding: 8px;
-  font-size: 11px;
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
 }
 
 .crispy-cp-context-tooltip__empty {
@@ -2289,7 +2358,7 @@ body.agency-bypass-permissions {
 }
 
 .crispy-cp-context-tooltip__divider {
-  border-top: 1px solid var(--vscode-panel-border, #333);
+  border-top: 1px solid var(--border-panel);
   margin: 4px 0;
 }
 
@@ -2309,7 +2378,7 @@ body.agency-bypass-permissions {
   padding: 4px 12px;
   background: transparent;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   cursor: pointer;
   color: var(--vscode-descriptionForeground, #888);
   transition:
@@ -2374,17 +2443,17 @@ body.agency-bypass-permissions {
   bottom: calc(100% + 8px);
   right: -8px;
   min-width: 200px;
-  background: var(--vscode-editor-background, #1e1e1e);
-  border: 1px solid var(--vscode-panel-border, #333);
-  border-radius: 4px;
+  background: var(--bg-editor);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-md);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   z-index: 500;
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .crispy-cp-settings__popup-header {
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   text-transform: uppercase;
   color: var(--vscode-descriptionForeground, #888);
@@ -2403,8 +2472,8 @@ body.agency-bypass-permissions {
   background: var(--vscode-dropdown-background, #3c3c3c);
   color: var(--vscode-dropdown-foreground, #d4d4d4);
   border: 1px solid var(--vscode-input-border, #3c3c3c);
-  border-radius: 8px;
-  font-size: 12px;
+  border-radius: var(--radius-xl);
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 
@@ -2418,8 +2487,8 @@ body.agency-bypass-permissions {
   background: var(--vscode-descriptionForeground, #888);
   color: #1e1e1e;
   border: none;
-  border-radius: 8px;
-  font-size: 12px;
+  border-radius: var(--radius-xl);
+  font-size: var(--font-sm);
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -2451,77 +2520,21 @@ body.agency-bypass-permissions {
 }
 
 /* --------------------------------------------------------------------------
-   Glow Pulse Animations — per-agency mode running state glow
+   Glow Pulse Animation — unified keyframe using --frame-highlight
    -------------------------------------------------------------------------- */
 
-@keyframes crispy-cp-glow-white {
-  0%,
-  100% {
-    box-shadow: inset 0 0 12px #ffffff;
-  }
-  50% {
-    box-shadow: inset 0 0 25px #ffffff;
-  }
+@keyframes crispy-cp-glow {
+  0%, 100% { box-shadow: inset 0 0 12px var(--frame-highlight); }
+  50% { box-shadow: inset 0 0 25px var(--frame-highlight); }
 }
 
-@keyframes crispy-cp-glow-blue {
-  0%,
-  100% {
-    box-shadow: inset 0 0 12px #40a8e8;
-  }
-  50% {
-    box-shadow: inset 0 0 25px #40a8e8;
-  }
-}
+/* --- Streaming neon glow on container (uses --agency-glow-shadow) --- */
 
-@keyframes crispy-cp-glow-teal {
-  0%,
-  100% {
-    box-shadow: inset 0 0 12px #47988c;
-  }
-  50% {
-    box-shadow: inset 0 0 25px #47988c;
-  }
-}
-
-@keyframes crispy-cp-glow-red {
-  0%,
-  100% {
-    box-shadow: inset 0 0 12px #e84040;
-  }
-  50% {
-    box-shadow: inset 0 0 25px #e84040;
-  }
-}
-
-/* --- Streaming neon glow on container (per-agency color) --- */
-
-.crispy-main[data-streaming] .crispy-cp[data-agency="ask-before-edits"] {
+.crispy-main[data-streaming] .crispy-cp {
   box-shadow:
     0 4px 24px rgba(0, 0, 0, 0.4),
     0 1px 4px rgba(0, 0, 0, 0.2),
-    0 0 12px rgba(255, 255, 255, 0.3);
-}
-
-.crispy-main[data-streaming] .crispy-cp[data-agency="edit-automatically"] {
-  box-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.4),
-    0 1px 4px rgba(0, 0, 0, 0.2),
-    0 0 12px rgba(64, 168, 232, 0.3);
-}
-
-.crispy-main[data-streaming] .crispy-cp[data-agency="plan-mode"] {
-  box-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.4),
-    0 1px 4px rgba(0, 0, 0, 0.2),
-    0 0 12px rgba(71, 152, 140, 0.3);
-}
-
-.crispy-main[data-streaming] .crispy-cp[data-agency="bypass-permissions"] {
-  box-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.4),
-    0 1px 4px rgba(0, 0, 0, 0.2),
-    0 0 12px rgba(232, 64, 64, 0.3);
+    var(--agency-glow-shadow, 0 0 12px rgba(255, 255, 255, 0.3));
 }
 
 /* ============================================================================
@@ -2561,9 +2574,9 @@ body.agency-bypass-permissions {
   background: var(--vscode-button-secondaryBackground, #3a3d41);
   color: var(--vscode-button-secondaryForeground, #d4d4d4);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-family: inherit;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
   transition: background 0.15s;
@@ -2612,18 +2625,18 @@ body.agency-bypass-permissions {
   flex: 1;
   min-width: 0;
   justify-content: center;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 /* CWD dropdown — native select with link-blue text, dark background.
    Keeps native appearance for consistent dropdown popup rendering. */
 .crispy-titlebar__cwd-select {
   color: var(--vscode-textLink-foreground, #3794ff);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-family: inherit;
   background: var(--vscode-dropdown-background, #3c3c3c);
   border: 1px solid var(--vscode-dropdown-border, transparent);
-  border-radius: 8px;
+  border-radius: var(--radius-xl);
   padding: 2px 6px;
   cursor: pointer;
   white-space: nowrap;
@@ -2657,7 +2670,7 @@ body.agency-bypass-permissions {
 .crispy-titlebar__dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   flex-shrink: 0;
   cursor: pointer;
   transition:
@@ -2757,14 +2770,14 @@ body.agency-bypass-permissions {
 /* Approval header — colored with --frame-highlight (agency-aware) */
 .crispy-approval-header {
   margin: 0 0 4px 0;
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 600;
   color: var(--frame-highlight, #e88040);
 }
 
 .crispy-approval-header__subtitle {
   font-weight: 400;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--vscode-descriptionForeground, #858585);
   margin-top: 2px;
 }
@@ -2778,10 +2791,10 @@ body.agency-bypass-permissions {
 .crispy-approval-content pre {
   margin: 0;
   padding: 8px;
-  background: var(--vscode-editor-background, #1e1e1e);
-  border-radius: 4px;
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 11px;
+  background: var(--bg-editor);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
   max-height: 150px;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -2797,9 +2810,9 @@ body.agency-bypass-permissions {
 
 .crispy-approval-btn {
   padding: 6px 12px;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-family: inherit;
   transition:
     background 0.15s,
@@ -2807,18 +2820,18 @@ body.agency-bypass-permissions {
 }
 
 .crispy-approval-btn--primary {
-  background: #e88040;
+  background: var(--color-accent);
   color: #fff;
-  border: 1px solid #e88040;
+  border: 1px solid var(--color-accent);
 }
 
 .crispy-approval-btn--primary:hover {
-  background: #d06a2c;
-  border-color: #d06a2c;
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
 }
 
 .crispy-approval-btn--secondary {
-  background: var(--vscode-editor-background, #1e1e1e);
+  background: var(--bg-editor);
   color: var(--vscode-button-secondaryForeground, #d4d4d4);
   border: 1px solid var(--vscode-input-border, #3c3c3c);
 }
@@ -2847,14 +2860,14 @@ body.agency-bypass-permissions {
 .crispy-approval-tabs {
   display: flex;
   gap: 4px;
-  border-bottom: 1px solid var(--vscode-panel-border, #333);
+  border-bottom: 1px solid var(--border-panel);
   padding-bottom: 4px;
   margin-bottom: 8px;
 }
 
 .crispy-approval-tab {
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   background: none;
   border: 1px solid transparent;
   border-radius: 3px 3px 0 0;
@@ -2864,9 +2877,9 @@ body.agency-bypass-permissions {
 
 .crispy-approval-tab--active {
   color: var(--vscode-foreground, #d4d4d4);
-  border-color: var(--vscode-panel-border, #333);
+  border-color: var(--border-panel);
   border-bottom-color: var(--vscode-editor-background, #1e1e1e);
-  background: var(--vscode-editor-background, #1e1e1e);
+  background: var(--bg-editor);
 }
 
 .crispy-approval-tab__check {
@@ -2887,7 +2900,7 @@ body.agency-bypass-permissions {
   align-items: flex-start;
   gap: 8px;
   padding: 6px 8px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
@@ -2906,17 +2919,17 @@ body.agency-bypass-permissions {
 }
 
 .crispy-approval-option__label {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
 }
 
 .crispy-approval-option__desc {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--vscode-descriptionForeground, #888);
 }
 
 .crispy-approval-question {
-  font-size: 13px;
+  font-size: var(--font-base);
   margin-bottom: 8px;
   color: var(--vscode-foreground, #d4d4d4);
 }
@@ -2935,7 +2948,7 @@ body.agency-bypass-permissions {
 .crispy-approval-permissions-list {
   margin: 4px 0 0 0;
   padding-left: 16px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--vscode-foreground, #d4d4d4);
 }
 
@@ -2949,7 +2962,7 @@ body.agency-bypass-permissions {
 }
 
 .crispy-approval-plan__summary {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
   color: var(--vscode-descriptionForeground, #858585);
   cursor: pointer;
@@ -2966,9 +2979,9 @@ body.agency-bypass-permissions {
   overflow-y: auto;
   padding: 8px;
   margin-top: 4px;
-  background: var(--vscode-editor-background, #1e1e1e);
-  border-radius: 4px;
-  font-size: 12px;
+  background: var(--bg-editor);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
 }
 
 /* ============================================================================
@@ -2980,11 +2993,11 @@ body.agency-bypass-permissions {
 
 .crispy-perf-overlay {
   background: rgba(30, 30, 30, 0.95);
-  border: 1px solid var(--vscode-panel-border, #333);
-  border-radius: 6px;
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-lg);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-  font-size: 11px;
-  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
   color: var(--vscode-foreground, #d4d4d4);
   min-width: 420px;
   max-width: 560px;
@@ -3014,12 +3027,12 @@ body.agency-bypass-permissions {
 }
 
 .crispy-perf-overlay--collapsed .crispy-perf-titlebar {
-  border-radius: 6px;
+  border-radius: var(--radius-lg);
 }
 
 .crispy-perf-title {
   font-weight: 600;
-  font-size: 11px;
+  font-size: var(--font-xs);
   cursor: pointer;
   color: var(--vscode-foreground, #d4d4d4);
 }
@@ -3031,7 +3044,7 @@ body.agency-bypass-permissions {
 .crispy-perf-summary {
   flex: 1;
   color: var(--vscode-descriptionForeground, #888);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3047,9 +3060,9 @@ body.agency-bypass-permissions {
   background: transparent;
   border: 1px solid var(--vscode-input-border, #3c3c3c);
   color: var(--vscode-descriptionForeground, #888);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   padding: 1px 6px;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   cursor: pointer;
   font-family: inherit;
 }
@@ -3077,7 +3090,7 @@ body.agency-bypass-permissions {
 }
 
 .crispy-perf-section-title {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -3111,13 +3124,13 @@ body.agency-bypass-permissions {
 }
 
 .crispy-perf-component-row .crispy-perf-value {
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .crispy-perf-dim {
   color: var(--vscode-descriptionForeground, #666);
   font-style: italic;
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 /* ============================================================================
@@ -3173,7 +3186,7 @@ body.agency-bypass-permissions {
 
 .crispy-plan-summary {
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
   color: var(--vscode-descriptionForeground, #858585);
   user-select: none;
@@ -3191,7 +3204,7 @@ body.agency-bypass-permissions {
 
 .crispy-plan-permissions__title {
   color: var(--vscode-descriptionForeground, #999);
-  font-size: 11px;
+  font-size: var(--font-xs);
   margin-bottom: 4px;
 }
 
@@ -3206,11 +3219,8 @@ body.agency-bypass-permissions {
 }
 
 .crispy-plan-permission__tool {
-  font-family: var(--vscode-editor-font-family, monospace);
   color: var(--vscode-textPreformat-foreground, #9cdcfe);
-  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
   padding: 1px 4px;
-  border-radius: 2px;
   font-size: 0.9em;
 }
 
@@ -3232,7 +3242,7 @@ body.agency-bypass-permissions {
   width: var(--tool-panel-actual-width, var(--tool-panel-width, 0px));
   height: calc(100vh - var(--titlebar-height));
   background: var(--vscode-sideBar-background, #252526);
-  border-left: 1px solid var(--vscode-panel-border, #2b2b2b);
+  border-left: 1px solid var(--border-panel);
   display: flex;
   flex-direction: column;
   z-index: 100;
@@ -3281,12 +3291,12 @@ body.agency-bypass-permissions {
   gap: 8px;
   padding: 6px 12px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--vscode-panel-border, #2b2b2b);
+  border-bottom: 1px solid var(--border-panel);
 }
 
 .crispy-tool-panel__title {
   font-weight: 600;
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   opacity: 0.7;
@@ -3301,9 +3311,9 @@ body.agency-bypass-permissions {
 .crispy-tool-panel__filter-btn {
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   color: var(--vscode-descriptionForeground, #858585);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 500;
   padding: 2px 6px;
   cursor: pointer;
@@ -3333,7 +3343,7 @@ body.agency-bypass-permissions {
   padding: 24px 12px;
   text-align: center;
   color: var(--vscode-descriptionForeground, #858585);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-style: italic;
 }
 
@@ -3373,9 +3383,9 @@ body.agency-bypass-permissions {
 
 .crispy-panel-card {
   margin: 4px 0;
-  border: 1px solid var(--vscode-panel-border, #2b2b2b);
-  border-radius: 4px;
-  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-md);
+  background: var(--bg-editor);
   overflow: hidden;
   /* Cap individual cards so multiple tools share the panel viewport */
   max-height: 60vh;
@@ -3398,13 +3408,13 @@ body.agency-bypass-permissions {
   gap: 8px;
   padding: 6px 10px;
   background: rgba(255, 255, 255, 0.03);
-  border-bottom: 1px solid var(--vscode-panel-border, #2b2b2b);
+  border-bottom: 1px solid var(--border-panel);
   min-width: 0;
 }
 
 .crispy-panel-card__description {
   color: var(--vscode-descriptionForeground, #858585);
-  font-size: 12px;
+  font-size: var(--font-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3416,7 +3426,7 @@ body.agency-bypass-permissions {
 
 .crispy-panel-status {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;
@@ -3434,7 +3444,7 @@ body.agency-bypass-permissions {
 }
 
 .crispy-panel-card__section-label {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -3451,33 +3461,28 @@ body.agency-bypass-permissions {
   color: var(--vscode-editor-foreground, #d4d4d4);
 }
 
-/* --- Panel card code blocks --- */
+/* --- Panel card code blocks & output (shared base) --- */
 
-.crispy-panel-card__code {
-  margin: 0;
-  padding: 6px 8px;
-  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
-  border-radius: 3px;
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  overflow-x: auto;
-}
-
-/* --- Panel card output --- */
-
+.crispy-panel-card__code,
 .crispy-panel-card__output {
   margin: 0;
   padding: 6px 8px;
-  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
-  border-radius: 3px;
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 11px;
-  line-height: 1.4;
+  background: var(--bg-code);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
   white-space: pre-wrap;
   word-wrap: break-word;
+}
+
+.crispy-panel-card__code {
+  font-size: var(--font-sm);
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+.crispy-panel-card__output {
+  font-size: var(--font-xs);
+  line-height: 1.4;
   max-height: 500px;
   overflow-y: auto;
 }
@@ -3499,7 +3504,7 @@ body.agency-bypass-permissions {
   max-height: 300px;
   overflow-y: auto;
   padding: 4px 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.5;
 }
 

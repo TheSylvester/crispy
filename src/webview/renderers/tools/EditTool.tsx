@@ -9,9 +9,13 @@
 import { useToolEntry } from '../../context/ToolRegistryContext.js';
 import { ToolCardShell } from './shared/ToolCardShell.js';
 import { FilePath } from './shared/FilePath.js';
-import { DiffView, inferLanguage } from './shared/DiffView.js';
+import { DiffView } from './shared/DiffView.js';
+import { getToolMeta } from './shared/tool-metadata.js';
+import { inferLanguage } from './shared/tool-utils.js';
 import { isFileEditInput } from '../../../core/transcript.js';
 import type { ToolInput } from '../../../core/transcript.js';
+
+const meta = getToolMeta('Edit');
 
 export function EditTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   const entry = useToolEntry(toolId);
@@ -36,8 +40,8 @@ export function EditTool({ toolId }: { toolId: string }): React.JSX.Element | nu
   return (
     <ToolCardShell
       toolId={toolId}
-      icon={'\uD83D\uDCDD'}
-      badgeColor="#f43f5e"
+      icon={meta.icon}
+      badgeColor={meta.badgeColor}
       badgeLabel="Edit"
       defaultOpen={false}
       resultSummary={resultSummary}

@@ -10,8 +10,11 @@
 
 import { useToolEntry } from '../../context/ToolRegistryContext.js';
 import { ToolCardShell } from './shared/ToolCardShell.js';
+import { getToolMeta } from './shared/tool-metadata.js';
 import { isTodoWriteInput } from '../../../core/transcript.js';
 import type { ToolInput } from '../../../core/transcript.js';
+
+const meta = getToolMeta('TodoWrite');
 
 interface TodoItem {
   content: string;
@@ -33,8 +36,8 @@ export function TodoTool({ toolId }: { toolId: string }): React.JSX.Element | nu
   return (
     <ToolCardShell
       toolId={toolId}
-      icon="☑"
-      badgeColor="#8b5cf6"
+      icon={meta.icon}
+      badgeColor={meta.badgeColor}
       badgeLabel="Todo"
       defaultOpen={false}
       panelOpen={false}

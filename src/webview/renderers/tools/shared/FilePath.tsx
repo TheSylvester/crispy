@@ -52,7 +52,7 @@ export function FilePath({ path, lineRange }: FilePathProps): React.JSX.Element 
 
   const line = parseLineFromRange(lineRange);
   const content = (
-    <span className="crispy-tool-filepath" title={relativePath + (lineRange ?? '')}>
+    <span className="u-mono-pill crispy-tool-filepath" title={relativePath + (lineRange ?? '')}>
       {shortPath}
       {lineRange && <span style={{ opacity: 0.6 }}>{lineRange}</span>}
     </span>

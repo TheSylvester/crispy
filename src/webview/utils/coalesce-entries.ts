@@ -13,6 +13,7 @@
 import type { TranscriptEntry, ToolUseBlock } from '../../core/transcript.js';
 import type { ToolRegistry } from '../tool-registry.js';
 import type { ToolActivity } from '../tool-registry.js';
+import { getToolMeta } from '../renderers/tools/shared/tool-metadata.js';
 
 // ============================================================================
 // Types
@@ -32,18 +33,13 @@ export type DisplayEntry =
   | { kind: 'activity-group'; toolIds: string[]; verbs: VerbBucket[]; entries: TranscriptEntry[]; hasRunning: boolean; textSnippets: string[] };
 
 // ============================================================================
-// Safe Tools Definition
+// Safe Tools Definition — delegates to shared tool-metadata
 // ============================================================================
-
-const SAFE_TOOLS = new Set([
-  'Read', 'Grep', 'Glob', 'WebSearch', 'WebFetch',
-  'TodoWrite', 'Skill',
-]);
 
 const SAFE_MCP_PATTERNS = ['read', 'get', 'list', 'search', 'fetch'];
 
 function isSafeTool(name: string): boolean {
-  if (SAFE_TOOLS.has(name)) return true;
+  if (getToolMeta(name).safe === true) return true;
   if (name.startsWith('mcp__')) {
     const lower = name.toLowerCase();
     return SAFE_MCP_PATTERNS.some(p => lower.includes(p));

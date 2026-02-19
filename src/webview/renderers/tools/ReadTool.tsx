@@ -9,8 +9,12 @@
 import { useToolEntry } from '../../context/ToolRegistryContext.js';
 import { ToolCardShell } from './shared/ToolCardShell.js';
 import { FilePath } from './shared/FilePath.js';
+import { getToolMeta } from './shared/tool-metadata.js';
+import { formatCount } from './shared/tool-utils.js';
 import { isFileReadInput } from '../../../core/transcript.js';
 import type { ToolInput } from '../../../core/transcript.js';
+
+const meta = getToolMeta('Read');
 
 export function ReadTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   const entry = useToolEntry(toolId);
@@ -35,14 +39,14 @@ export function ReadTool({ toolId }: { toolId: string }): React.JSX.Element | nu
   // Result summary
   const resultText = entry.result && typeof entry.result.content === 'string' ? entry.result.content : null;
   const resultSummary = entry.result
-    ? entry.result.is_error ? 'Not found' : formatLineCount(resultText)
+    ? entry.result.is_error ? 'Not found' : formatCount(resultText, 'line')
     : undefined;
 
   return (
     <ToolCardShell
       toolId={toolId}
-      icon={'\uD83D\uDCC4'}
-      badgeColor="#0ea5e9"
+      icon={meta.icon}
+      badgeColor={meta.badgeColor}
       badgeLabel="Read"
       panelOpen={false}
       resultSummary={resultSummary}
@@ -62,10 +66,4 @@ export function ReadTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       )}
     </ToolCardShell>
   );
-}
-
-function formatLineCount(text: string | null): string {
-  if (!text) return '';
-  const lines = text.split('\n').length;
-  return `${lines} line${lines !== 1 ? 's' : ''}`;
 }

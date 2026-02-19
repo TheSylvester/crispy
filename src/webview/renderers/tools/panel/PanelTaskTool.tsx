@@ -14,10 +14,14 @@ import { CrispyMarkdown } from '../../CrispyMarkdown.js';
 import { useToolEntry } from '../../../context/ToolRegistryContext.js';
 import { useSessionStatus } from '../../../hooks/useSessionStatus.js';
 import { ToolBadge } from '../shared/ToolBadge.js';
+import { getToolMeta } from '../shared/tool-metadata.js';
+import { extractResultText } from '../shared/tool-utils.js';
 import { PanelStatusBar } from './PanelBashTool.js';
 import { ToolPanelCard } from './ToolPanelCard.js';
 import { isAgentInput } from '../../../../core/transcript.js';
 import type { ToolInput } from '../../../../core/transcript.js';
+
+const meta = getToolMeta('Task');
 
 export function PanelTaskTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   const entry = useToolEntry(toolId);
@@ -59,8 +63,8 @@ export function PanelTaskTool({ toolId }: { toolId: string }): React.JSX.Element
     <div className={`crispy-panel-card ${entry.status === 'error' ? 'crispy-panel-card--error' : ''}`}>
       {/* Header */}
       <div className="crispy-panel-card__header">
-        <span className="crispy-tool-icon">{'\uD83E\uDD16'}</span>
-        <ToolBadge color="#64748b" label={agentType} />
+        <span className="crispy-tool-icon">{meta.icon}</span>
+        <ToolBadge color={meta.badgeColor} label={agentType} />
         <span className="crispy-panel-card__description">{description}</span>
         <PanelStatusBar status={entry.status} />
       </div>
@@ -92,17 +96,4 @@ export function PanelTaskTool({ toolId }: { toolId: string }): React.JSX.Element
       <div ref={tailRef} aria-hidden />
     </div>
   );
-}
-
-/** Extract display text from tool_result content. */
-function extractResultText(content: unknown): string | null {
-  if (typeof content === 'string') return content || null;
-  if (Array.isArray(content)) {
-    const texts = content
-      .filter((b): b is { type: string; text: string } =>
-        typeof b === 'object' && b !== null && 'text' in b && typeof b.text === 'string')
-      .map(b => b.text);
-    return texts.length > 0 ? texts.join('\n') : null;
-  }
-  return null;
 }

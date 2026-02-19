@@ -11,10 +11,14 @@
 import { useToolEntry } from '../../../context/ToolRegistryContext.js';
 import { ToolBadge } from '../shared/ToolBadge.js';
 import { FilePath } from '../shared/FilePath.js';
-import { DiffView, inferLanguage } from '../shared/DiffView.js';
+import { DiffView } from '../shared/DiffView.js';
+import { getToolMeta } from '../shared/tool-metadata.js';
+import { inferLanguage } from '../shared/tool-utils.js';
 import { PanelStatusBar } from './PanelBashTool.js';
 import { isFileEditInput } from '../../../../core/transcript.js';
 import type { ToolInput } from '../../../../core/transcript.js';
+
+const meta = getToolMeta('Edit');
 
 export function PanelEditTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   const entry = useToolEntry(toolId);
@@ -36,8 +40,8 @@ export function PanelEditTool({ toolId }: { toolId: string }): React.JSX.Element
     <div className={`crispy-panel-card ${entry.status === 'error' ? 'crispy-panel-card--error' : ''}`}>
       {/* Header */}
       <div className="crispy-panel-card__header">
-        <span className="crispy-tool-icon">{'\uD83D\uDCDD'}</span>
-        <ToolBadge color="#f43f5e" label="Edit" />
+        <span className="crispy-tool-icon">{meta.icon}</span>
+        <ToolBadge color={meta.badgeColor} label="Edit" />
         <FilePath path={filePath} />
         <span className="crispy-diff-stats">
           <span className="crispy-diff-stats-added">+{newLines}</span>

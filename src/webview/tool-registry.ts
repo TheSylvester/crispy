@@ -17,26 +17,14 @@ import type {
   ToolResultBlock,
   ContentBlock,
 } from '../core/transcript.js';
+import { getToolMeta, type ToolActivity } from './renderers/tools/shared/tool-metadata.js';
+
+// Re-export ToolActivity for consumers that import from tool-registry
+export type { ToolActivity };
 
 // ============================================================================
 // Tool Activity — verb classification for activity groups
 // ============================================================================
-
-export type ToolActivity = 'read' | 'search' | 'fetch' | 'execute' | 'track' | 'invoke';
-
-const TOOL_ACTIVITY_MAP: Record<string, ToolActivity> = {
-  Read: 'read',
-  ReadMcpResource: 'read',
-  Grep: 'search',
-  Glob: 'search',
-  WebSearch: 'search',
-  ListMcpResources: 'search',
-  LS: 'search',
-  WebFetch: 'fetch',
-  Bash: 'execute',
-  TodoWrite: 'track',
-  Skill: 'invoke',
-};
 
 const MCP_ACTIVITY_PATTERNS: [RegExp, ToolActivity][] = [
   [/search|list|get/, 'search'],
@@ -45,7 +33,7 @@ const MCP_ACTIVITY_PATTERNS: [RegExp, ToolActivity][] = [
 ];
 
 export function classifyToolActivity(name: string): ToolActivity {
-  const known = TOOL_ACTIVITY_MAP[name];
+  const known = getToolMeta(name).activity;
   if (known) return known;
   if (name.startsWith('mcp__')) {
     const lower = name.toLowerCase();

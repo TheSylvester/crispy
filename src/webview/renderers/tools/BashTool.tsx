@@ -8,8 +8,12 @@
 
 import { useToolEntry } from '../../context/ToolRegistryContext.js';
 import { ToolCardShell } from './shared/ToolCardShell.js';
+import { getToolMeta } from './shared/tool-metadata.js';
+import { formatCount } from './shared/tool-utils.js';
 import { isBashInput } from '../../../core/transcript.js';
 import type { ToolInput } from '../../../core/transcript.js';
+
+const meta = getToolMeta('Bash');
 
 export function BashTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   const entry = useToolEntry(toolId);
@@ -25,14 +29,14 @@ export function BashTool({ toolId }: { toolId: string }): React.JSX.Element | nu
   // Result summary
   const resultText = entry.result && typeof entry.result.content === 'string' ? entry.result.content : null;
   const resultSummary = entry.result
-    ? entry.result.is_error ? 'Failed' : formatLineCount(resultText)
+    ? entry.result.is_error ? 'Failed' : formatCount(resultText, 'line')
     : undefined;
 
   return (
     <ToolCardShell
       toolId={toolId}
-      icon={'\uD83D\uDCBB'}
-      badgeColor="#f59e0b"
+      icon={meta.icon}
+      badgeColor={meta.badgeColor}
       badgeTextColor="#1e1e1e"
       badgeLabel="Bash"
       panelOpen={false}
@@ -40,7 +44,7 @@ export function BashTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       headerContent={
         <>
           {description && <span className="crispy-tool-description">{description}</span>}
-          <code className="crispy-tool-bash-inline">{command}</code>
+          <code className="u-mono-pill crispy-tool-bash-inline">{command}</code>
         </>
       }
     >
@@ -54,10 +58,4 @@ export function BashTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       )}
     </ToolCardShell>
   );
-}
-
-function formatLineCount(text: string | null): string {
-  if (!text) return '';
-  const lines = text.split('\n').length;
-  return `${lines} line${lines !== 1 ? 's' : ''}`;
 }

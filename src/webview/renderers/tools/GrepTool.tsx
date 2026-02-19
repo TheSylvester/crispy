@@ -8,8 +8,12 @@
 
 import { useToolEntry } from '../../context/ToolRegistryContext.js';
 import { ToolCardShell } from './shared/ToolCardShell.js';
+import { getToolMeta } from './shared/tool-metadata.js';
+import { formatCount } from './shared/tool-utils.js';
 import { isGrepInput } from '../../../core/transcript.js';
 import type { ToolInput } from '../../../core/transcript.js';
+
+const meta = getToolMeta('Grep');
 
 export function GrepTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   const entry = useToolEntry(toolId);
@@ -25,21 +29,21 @@ export function GrepTool({ toolId }: { toolId: string }): React.JSX.Element | nu
   // Result summary
   const resultText = entry.result && typeof entry.result.content === 'string' ? entry.result.content : null;
   const resultSummary = entry.result
-    ? entry.result.is_error ? 'Error' : extractMatchCount(resultText)
+    ? entry.result.is_error ? 'Error' : formatCount(resultText, 'match', true)
     : undefined;
 
   return (
     <ToolCardShell
       toolId={toolId}
-      icon={'\uD83D\uDD0D'}
-      badgeColor="#06b6d4"
+      icon={meta.icon}
+      badgeColor={meta.badgeColor}
       badgeTextColor="#1e1e1e"
       badgeLabel="Grep"
       panelOpen={false}
       resultSummary={resultSummary}
       headerContent={
         <>
-          <span className="crispy-tool-secondary">{pattern}</span>
+          <span className="u-mono-pill crispy-tool-secondary">{pattern}</span>
           {scope && <span className="crispy-tool-description">in {scope}</span>}
         </>
       }
@@ -53,10 +57,4 @@ export function GrepTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       )}
     </ToolCardShell>
   );
-}
-
-function extractMatchCount(text: string | null): string {
-  if (!text) return '';
-  const lines = text.trim().split('\n').filter(Boolean);
-  return `${lines.length} match${lines.length !== 1 ? 'es' : ''}`;
 }

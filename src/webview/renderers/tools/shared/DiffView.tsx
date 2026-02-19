@@ -12,6 +12,9 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { Highlight, themes, type Token } from 'prism-react-renderer';
 
+// Re-export for backwards compatibility
+export { inferLanguage } from './tool-utils.js';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -40,35 +43,6 @@ interface DiffPair {
   right: { lineNo: number; text: string; type: 'context' | 'added' } | null;
 }
 
-
-// ---------------------------------------------------------------------------
-// Language inference
-// ---------------------------------------------------------------------------
-
-/** Map file extensions to Prism language identifiers. */
-const EXT_TO_LANG: Record<string, string> = {
-  ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
-  py: 'python', rb: 'ruby', rs: 'rust', go: 'go',
-  java: 'java', kt: 'kotlin', swift: 'swift',
-  c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp',
-  cs: 'csharp', css: 'css', scss: 'scss', less: 'less',
-  html: 'markup', xml: 'markup', svg: 'markup',
-  json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml',
-  md: 'markdown', sql: 'sql', sh: 'bash', bash: 'bash', zsh: 'bash',
-  dockerfile: 'docker', makefile: 'makefile',
-};
-
-/** Infer a Prism language from a file path's extension. */
-export function inferLanguage(filePath: string): string {
-  const basename = filePath.split('/').pop() ?? '';
-  const lower = basename.toLowerCase();
-
-  // Handle extensionless filenames like Dockerfile, Makefile
-  if (EXT_TO_LANG[lower]) return EXT_TO_LANG[lower];
-
-  const ext = lower.split('.').pop() ?? '';
-  return EXT_TO_LANG[ext] ?? 'text';
-}
 
 // ---------------------------------------------------------------------------
 // Diff algorithms
