@@ -11,21 +11,35 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { SettingsIcon } from './icons.js';
 import type { RenderMode } from '../../types.js';
+import type { ToolViewOverride } from '../../context/PreferencesContext.js';
 
 interface SettingsPopupProps {
   pinned: boolean;
   onToggle: () => void;
   renderMode: RenderMode;
   onRenderModeChange: (mode: RenderMode) => void;
+  toolViewOverride?: ToolViewOverride;
+  onToolViewOverrideChange?: (override: ToolViewOverride) => void;
 }
 
 const RENDER_MODES: { value: RenderMode; label: string }[] = [
   { value: 'rich', label: 'Rich' },
+  { value: 'blocks', label: 'Blocks' },
   { value: 'yaml', label: 'YAML' },
   { value: 'compact', label: 'Compact' },
 ];
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange }: SettingsPopupProps): React.JSX.Element {
+const TOOL_VIEW_MODES: { value: string; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'collapsed', label: 'Collapsed' },
+  { value: 'compact', label: 'Compact' },
+  { value: 'expanded', label: 'Expanded' },
+];
+
+/** Check once whether debug mode is enabled */
+const isDebugMode = window.location.search.includes('debug=1');
+
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
 
@@ -92,6 +106,24 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               ))}
             </select>
           </label>
+          {isDebugMode && onToolViewOverrideChange && (
+            <label className="crispy-cp-settings__row">
+              <span>Tool View</span>
+              <select
+                value={toolViewOverride ?? 'auto'}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  onToolViewOverrideChange(val === 'auto' ? null : val as ToolViewOverride);
+                }}
+              >
+                {TOOL_VIEW_MODES.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </div>
       )}
     </span>

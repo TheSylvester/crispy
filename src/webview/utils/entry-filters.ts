@@ -54,3 +54,25 @@ export function shouldRenderEntry(entry: TranscriptEntry): boolean {
 
   return true;
 }
+
+/**
+ * Blocks-mode entry filter — excludes nested entries (parentToolUseID).
+ *
+ * In blocks mode, nested entries (sub-agent children) render inside their
+ * parent Task card via the child entries map in BlocksToolRegistryProvider.
+ * Only top-level entries appear in the main transcript stream.
+ */
+export function shouldRenderEntryForBlocks(entry: TranscriptEntry): boolean {
+  if (SKIP_ENTRY_TYPES.has(entry.type)) return false;
+  if (entry.parentToolUseID) return false;
+
+  // Summary entries use entry.summary, not entry.message — let them through
+  if (entry.type === 'summary' && entry.summary) return true;
+
+  if (!entry.message) return false;
+
+  // Tool-result user entries render via registry pairing, not as standalone messages.
+  if (entry.type === 'user' && entry.toolUseResult) return false;
+
+  return true;
+}

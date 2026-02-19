@@ -21,7 +21,7 @@ import { usePreferences } from "../context/PreferencesContext.js";
 import { useTranscript } from "../hooks/useTranscript.js";
 import { usePlayback } from "../hooks/usePlayback.js";
 import { useAutoScroll } from "../hooks/useAutoScroll.js";
-import { shouldRenderEntry } from "../utils/entry-filters.js";
+import { shouldRenderEntry, shouldRenderEntryForBlocks } from "../utils/entry-filters.js";
 import { EntryRenderer } from "../renderers/EntryRenderer.js";
 import { ActivityGroup } from "../renderers/ActivityGroup.js";
 import { coalesceEntries } from "../utils/coalesce-entries.js";
@@ -48,6 +48,7 @@ import type { RenderMode } from "../types.js";
 import { WelcomePage } from "./WelcomePage.js";
 import { isPerfMode, PerfProfiler } from "../perf/index.js";
 import { PerfStore } from "../perf/profiler.js";
+import { BlocksToolRegistryProvider } from "../blocks/BlocksToolRegistryContext.js";
 
 /** Check once whether debug mode is enabled */
 const isDebugMode = window.location.search.includes('debug=1');
@@ -163,9 +164,10 @@ export function TranscriptViewer(): React.JSX.Element {
     () => entries.slice(0, visibleCount),
     [entries, visibleCount]
   );
+  const filterFn = renderMode === 'blocks' ? shouldRenderEntryForBlocks : shouldRenderEntry;
   const filteredEntries = useMemo(
-    () => visibleEntries.filter(shouldRenderEntry),
-    [visibleEntries]
+    () => visibleEntries.filter(filterFn),
+    [visibleEntries, filterFn]
   );
 
   // Record entry stats for perf profiler
@@ -405,6 +407,15 @@ export function TranscriptViewer(): React.JSX.Element {
             <div className="crispy-transcript-content">
               {isLoading ? (
                 <div className="crispy-loading">Loading transcript...</div>
+              ) : renderMode === 'blocks' ? (
+                <BlocksToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
+                  <TranscriptEntryList
+                    filteredEntries={filteredEntries}
+                    renderMode={renderMode}
+                    forkTargets={forkTargets}
+                    toolCoalescing={toolCoalescing}
+                  />
+                </BlocksToolRegistryProvider>
               ) : (
                 <TranscriptEntryList
                   filteredEntries={filteredEntries}

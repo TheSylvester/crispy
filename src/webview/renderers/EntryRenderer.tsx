@@ -15,6 +15,7 @@ import type { RenderMode } from "../types.js";
 import { YamlEntry } from "./YamlEntry.js";
 import { CompactEntry } from "./CompactEntry.js";
 import { RichEntry } from "./RichEntry.js";
+import { BlocksEntryWithRegistry } from "../blocks/BlocksEntryWithRegistry.js";
 
 // ============================================================================
 // Entry Renderer — mode dispatch (memoized)
@@ -48,6 +49,8 @@ export const EntryRenderer = memo(
         return <CompactEntry entry={entry} />;
       case "rich":
         return <RichEntry entry={entry} forkTargetId={forkTargetId} />;
+      case "blocks":
+        return <BlocksEntryWithRegistry entry={entry} forkTargetId={forkTargetId} />;
     }
   },
   (prev, next) =>

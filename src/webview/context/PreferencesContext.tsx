@@ -1,6 +1,9 @@
 import { createContext, useContext, useState, ReactNode } from 'react';
 import type { RenderMode } from '../types.js';
 
+/** Debug override for tool view mode. null = automatic (normal selectView logic). */
+export type ToolViewOverride = 'collapsed' | 'compact' | 'expanded' | null;
+
 interface Preferences {
   renderMode: RenderMode;
   settingsPinned: boolean;
@@ -10,6 +13,8 @@ interface Preferences {
   toolPanelWidthPx: number | null;
   /** Coalesce consecutive Read/safe-tool entries into collapsed groups. */
   toolCoalescing: boolean;
+  /** Debug: force all tools to render in a specific view mode. null = auto. */
+  toolViewOverride: ToolViewOverride;
 }
 
 interface PreferencesContextValue extends Preferences {
@@ -19,17 +24,31 @@ interface PreferencesContextValue extends Preferences {
   setToolPanelOpen: (open: boolean) => void;
   setToolPanelWidthPx: (px: number | null) => void;
   setToolCoalescing: (enabled: boolean) => void;
+  setToolViewOverride: (override: ToolViewOverride) => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
 
+/**
+ * Read initial render mode from URL (e.g., ?mode=rich), default to 'blocks'.
+ */
+function getInitialRenderMode(): RenderMode {
+  const params = new URLSearchParams(window.location.search);
+  const mode = params.get('mode');
+  if (mode === 'yaml' || mode === 'compact' || mode === 'rich' || mode === 'blocks') {
+    return mode;
+  }
+  return 'blocks';
+}
+
 export function PreferencesProvider({ children }: { children: ReactNode }) {
-  const [renderMode, setRenderMode] = useState<RenderMode>('rich');
+  const [renderMode, setRenderMode] = useState<RenderMode>(getInitialRenderMode);
   const [settingsPinned, setSettingsPinned] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [toolPanelOpen, setToolPanelOpen] = useState(false);
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
   const [toolCoalescing, setToolCoalescing] = useState(true);
+  const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
 
   const value: PreferencesContextValue = {
     renderMode,
@@ -38,12 +57,14 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     toolPanelOpen,
     toolPanelWidthPx,
     toolCoalescing,
+    toolViewOverride,
     setRenderMode,
     setSettingsPinned,
     setSidebarCollapsed,
     setToolPanelOpen,
     setToolPanelWidthPx,
     setToolCoalescing,
+    setToolViewOverride,
   };
 
   return (

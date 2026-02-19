@@ -1,0 +1,109 @@
+/**
+ * Blocks Entry — top-level component for rendering an entry in blocks mode
+ *
+ * Equivalent of RichEntry for the blocks rendering pipeline.
+ * Takes a TranscriptEntry, normalizes to RichBlocks, builds runs,
+ * and renders through the blocks pipeline.
+ *
+ * @module webview/blocks/BlocksEntry
+ */
+
+import { useMemo, useEffect } from 'react';
+import type { TranscriptEntry } from '../../core/transcript.js';
+import type { AnchorPoint } from './types.js';
+import { BlocksToolRegistry } from './blocks-tool-registry.js';
+import { normalizeToRichBlocks } from './normalize.js';
+import { buildRuns } from './build-runs.js';
+import { RunRenderer, runKey } from './RunRenderer.js';
+import { MessageActions } from '../components/MessageActions.js';
+
+interface BlocksEntryProps {
+  entry: TranscriptEntry;
+  /** Registry instance (shared across entries in a session) */
+  registry: BlocksToolRegistry;
+  /** Fork target assistant message ID (for fork/rewind buttons) */
+  forkTargetId?: string;
+  /** Optional depth lookup for nested entries */
+  depthLookup?: (parentToolUseId: string) => number;
+}
+
+export function BlocksEntry({
+  entry,
+  registry,
+  forkTargetId,
+  depthLookup,
+}: BlocksEntryProps): React.JSX.Element | null {
+  // Normalize entry to rich blocks
+  const blocks = useMemo(
+    () => normalizeToRichBlocks(entry, depthLookup),
+    [entry, depthLookup],
+  );
+
+  // Register tool_use blocks and resolve tool_result blocks
+  // This runs during render (silent mode) to populate registry before children render
+  useEffect(() => {
+    registry.silent(() => {
+      for (const block of blocks) {
+        if (block.type === 'tool_use') {
+          registry.register(block.id);
+        } else if (block.type === 'tool_result') {
+          registry.resolve(block.tool_use_id, block);
+        }
+      }
+    });
+  }, [blocks, registry]);
+
+  // Flush any deferred notifications after render
+  useEffect(() => {
+    registry.flushDirty();
+  });
+
+  // Skip empty entries
+  if (blocks.length === 0) return null;
+
+  // Build render runs (coalescing consecutive collapsible tools)
+  const runs = useMemo(
+    () => buildRuns(blocks, registry),
+    [blocks, registry],
+  );
+
+  // Count tool_use blocks for view selection
+  const siblingCount = blocks.filter((b) => b.type === 'tool_use').length;
+
+  // Determine anchor point
+  const anchor: AnchorPoint = { type: 'main-thread' };
+
+  // Get role for message class
+  const role = blocks[0]?.context.role ?? 'unknown';
+
+  // Determine if we should show message actions
+  // Only show on user messages (role includes user prompt)
+  const showActions = role === 'user' && forkTargetId !== undefined;
+
+  return (
+    <div className={`message ${role}`} data-uuid={entry.uuid}>
+      {runs.map((run, i) => (
+        <RunRenderer
+          key={runKey(run, i)}
+          run={run}
+          anchor={anchor}
+          registry={registry}
+          siblingCount={siblingCount}
+        />
+      ))}
+      {showActions && <MessageActions targetAssistantId={forkTargetId || null} />}
+    </div>
+  );
+}
+
+// ============================================================================
+// Convenience Hook for Registry Instance
+// ============================================================================
+
+/**
+ * Create a BlocksToolRegistry instance for use in a session.
+ * Should be created once per session and passed to all BlocksEntry components.
+ */
+export function createBlocksToolRegistry(): BlocksToolRegistry {
+  return new BlocksToolRegistry();
+}
