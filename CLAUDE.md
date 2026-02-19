@@ -8,6 +8,8 @@ transcript-as-data.
 **Current status:** Fully interactive agent client — chat, approvals,
 fork/rewind, session management all wired. Only Claude adapter implemented.
 
+**Codex adapter work lives in the `codex-adapter` branch / `../crispy-codex-adapter` worktree.**
+
 ## Architecture
 
 Three layers: **core** (`src/core/`), **host** (`src/host/`), and **webview**
