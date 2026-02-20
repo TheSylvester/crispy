@@ -10,7 +10,7 @@
  *
  * Renders the ControlPanel as a fixed-position sibling outside the
  * ToolRegistryProvider (it doesn't need registry data). PlaybackControls
- * are gated behind ?debug=1 URL param.
+ * are gated behind the debugMode preference (toggleable in Settings).
  *
  * @module TranscriptViewer
  */
@@ -49,9 +49,10 @@ import { WelcomePage } from "./WelcomePage.js";
 import { isPerfMode, PerfProfiler } from "../perf/index.js";
 import { PerfStore } from "../perf/profiler.js";
 import { BlocksToolRegistryProvider } from "../blocks/BlocksToolRegistryContext.js";
+import { BlocksVisibilityProvider } from "../blocks/BlocksVisibilityContext.js";
+import { BlocksToolPanel } from "../blocks/BlocksToolPanel.js";
 
-/** Check once whether debug mode is enabled */
-const isDebugMode = window.location.search.includes('debug=1');
+// Debug mode now lives in PreferencesContext (default: on during development).
 
 // ============================================================================
 // TranscriptEntryList — inner component for rendering entries with coalescing
@@ -119,7 +120,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const { selectedSessionId, setSelectedSessionId } = useSession();
   const transport = useTransport();
   const { entries, isLoading, error, addOptimisticEntry, setForkHistory } = useTranscript(selectedSessionId);
-  const { renderMode, toolPanelOpen, toolCoalescing } = usePreferences();
+  const { renderMode, toolPanelOpen, toolCoalescing, debugMode } = usePreferences();
   const { approvalRequest, resolve: resolveApproval } = useApprovalRequest(selectedSessionId);
   const [bypassEnabled, setBypassEnabled] = useState(false);
   const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean } | null>(null);
@@ -127,12 +128,15 @@ export function TranscriptViewer(): React.JSX.Element {
   const {
     visibleCount,
     isPlaying,
+    speed,
     play,
     pause,
     stepForward,
+    stepForward10,
     stepBack,
     reset,
     jumpToEnd,
+    setSpeed,
   } = usePlayback(entries.length);
 
   // Refs for dynamic transcript padding
@@ -392,79 +396,72 @@ export function TranscriptViewer(): React.JSX.Element {
   } else if (error) {
     mainContent = <div className="crispy-error">{error}</div>;
   } else {
-    mainContent = (
+    const isBlocks = renderMode === 'blocks';
+
+    const transcriptArea = (
+      <RenderLocationProvider location="transcript">
+      <ForkProvider
+        onFork={handlePerMessageFork}
+        onRewind={handlePerMessageRewind}
+        onForkPreviewHover={handleForkPreviewHover}
+        isStreaming={channelState === 'streaming'}
+        forkTargets={forkTargets}
+      >
+        <div className="crispy-transcript" ref={transcriptRef}>
+          <div className="crispy-transcript-content">
+            {isLoading ? (
+              <div className="crispy-loading">Loading transcript...</div>
+            ) : (
+              <TranscriptEntryList
+                filteredEntries={filteredEntries}
+                renderMode={renderMode}
+                forkTargets={forkTargets}
+                toolCoalescing={toolCoalescing}
+              />
+            )}
+            <ThinkingIndicator />
+            {/* Spacer: reserves space for the fixed control panel + stop button + gap.
+                Sized via CSS using --cp-height. Always reserves stop button space so
+                layout doesn't shift when it appears/disappears. */}
+            <div className="crispy-transcript-spacer" />
+          </div>
+        </div>
+      <button
+        className={`crispy-scroll-nav crispy-scroll-to-top ${isAtTop ? 'crispy-scroll-to-top--hidden' : ''}`}
+        onClick={scrollToTop}
+        aria-label="Scroll to top"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+          <polyline points="18 15 12 9 6 15" />
+        </svg>
+      </button>
+      <button
+        className={`crispy-scroll-nav crispy-scroll-to-bottom ${parked ? 'crispy-scroll-to-bottom--hidden' : ''}`}
+        onClick={scrollToBottom}
+        aria-label="Scroll to bottom"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      </ForkProvider>
+      </RenderLocationProvider>
+    );
+
+    mainContent = isBlocks ? (
+      <ToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
+        <BlocksToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
+          <BlocksVisibilityProvider scrollRef={transcriptRef}>
+            {transcriptArea}
+            {toolPanelOpen && <BlocksToolPanel />}
+          </BlocksVisibilityProvider>
+        </BlocksToolRegistryProvider>
+      </ToolRegistryProvider>
+    ) : (
       <ToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
         <VisibilityProvider scrollRef={transcriptRef}>
-        <RenderLocationProvider location="transcript">
-        <ForkProvider
-          onFork={handlePerMessageFork}
-          onRewind={handlePerMessageRewind}
-          onForkPreviewHover={handleForkPreviewHover}
-          isStreaming={channelState === 'streaming'}
-          forkTargets={forkTargets}
-        >
-          <div className="crispy-transcript" ref={transcriptRef}>
-            <div className="crispy-transcript-content">
-              {isLoading ? (
-                <div className="crispy-loading">Loading transcript...</div>
-              ) : renderMode === 'blocks' ? (
-                <BlocksToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
-                  <TranscriptEntryList
-                    filteredEntries={filteredEntries}
-                    renderMode={renderMode}
-                    forkTargets={forkTargets}
-                    toolCoalescing={toolCoalescing}
-                  />
-                </BlocksToolRegistryProvider>
-              ) : (
-                <TranscriptEntryList
-                  filteredEntries={filteredEntries}
-                  renderMode={renderMode}
-                  forkTargets={forkTargets}
-                  toolCoalescing={toolCoalescing}
-                />
-              )}
-              <ThinkingIndicator />
-              {/* Spacer: reserves space for the fixed control panel + stop button + gap.
-                  Sized via CSS using --cp-height. Always reserves stop button space so
-                  layout doesn't shift when it appears/disappears. */}
-              <div className="crispy-transcript-spacer" />
-            </div>
-          </div>
-        <button
-          className={`crispy-scroll-nav crispy-scroll-to-top ${isAtTop ? 'crispy-scroll-to-top--hidden' : ''}`}
-          onClick={scrollToTop}
-          aria-label="Scroll to top"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-            <polyline points="18 15 12 9 6 15" />
-          </svg>
-        </button>
-        <button
-          className={`crispy-scroll-nav crispy-scroll-to-bottom ${parked ? 'crispy-scroll-to-bottom--hidden' : ''}`}
-          onClick={scrollToBottom}
-          aria-label="Scroll to bottom"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </button>
-        {isDebugMode && (
-          <PlaybackControls
-            visibleCount={visibleCount}
-            totalEntries={entries.length}
-            isPlaying={isPlaying}
-            onPlay={play}
-            onPause={pause}
-            onStepForward={stepForward}
-            onStepBack={stepBack}
-            onReset={reset}
-            onJumpToEnd={jumpToEnd}
-          />
-        )}
-        </ForkProvider>
-        </RenderLocationProvider>
-        {toolPanelOpen && <ToolActivityPanel />}
+          {transcriptArea}
+          {toolPanelOpen && <ToolActivityPanel />}
         </VisibilityProvider>
       </ToolRegistryProvider>
     );
@@ -474,6 +471,22 @@ export function TranscriptViewer(): React.JSX.Element {
     <>
       {mainContent}
       {selectedSessionId && !error && <StopButton ref={stopButtonRef} />}
+      {debugMode && (
+        <PlaybackControls
+          visibleCount={visibleCount}
+          totalEntries={entries.length}
+          isPlaying={isPlaying}
+          speed={speed}
+          onPlay={play}
+          onPause={pause}
+          onStepForward={stepForward}
+          onStepForward10={stepForward10}
+          onStepBack={stepBack}
+          onReset={reset}
+          onJumpToEnd={jumpToEnd}
+          onSpeedChange={setSpeed}
+        />
+      )}
       <ControlPanel
         ref={controlPanelRef}
         onForkHoverChange={handleForkHoverChange}

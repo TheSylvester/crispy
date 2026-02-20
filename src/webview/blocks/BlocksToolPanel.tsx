@@ -204,13 +204,10 @@ function ExpandedPanelTool({
   onPin,
 }: ExpandedPanelToolProps): React.JSX.Element | null {
   const result = registry.useResult(toolId);
+  const toolName = registry.getName(toolId) ?? 'Unknown';
 
-  // We don't have the original RichBlock here — construct minimal props
-  // For proper rendering we'd need the block from somewhere.
-  // For now, show a simple expanded card with tool metadata.
-
-  const def = getToolDefinition(toolId);
-  const data = getToolData(toolId);
+  const def = getToolDefinition(toolName);
+  const data = getToolData(toolName);
   const status: 'running' | 'complete' | 'error' = result
     ? result.is_error
       ? 'error'
@@ -227,8 +224,8 @@ function ExpandedPanelTool({
   return (
     <div className={cardClass} onClick={onPin}>
       <div className="crispy-blocks-panel-tool__header">
-        <span className="crispy-blocks-panel-tool__icon">{data?.icon ?? '🔧'}</span>
-        <span className="crispy-blocks-panel-tool__name">{toolId.slice(0, 8)}...</span>
+        <span className="crispy-blocks-panel-tool__icon">{data.icon}</span>
+        <span className="crispy-blocks-panel-tool__name">{toolName}</span>
         <StatusIndicator status={status} />
         {isPinned && <span className="crispy-blocks-panel-tool__pin">📌</span>}
       </div>
@@ -260,7 +257,8 @@ function CollapsedPanelHeader({
   onClick,
 }: CollapsedPanelHeaderProps): React.JSX.Element {
   const result = registry.useResult(toolId);
-  const data = getToolData(toolId);
+  const toolName = registry.getName(toolId) ?? 'Unknown';
+  const data = getToolData(toolName);
   const status: 'running' | 'complete' | 'error' = result
     ? result.is_error
       ? 'error'
@@ -272,9 +270,9 @@ function CollapsedPanelHeader({
       className="crispy-blocks-panel-header"
       onClick={onClick}
     >
-      <span className="crispy-blocks-panel-header__icon">{data?.icon ?? '🔧'}</span>
+      <span className="crispy-blocks-panel-header__icon">{data.icon}</span>
       <span className="crispy-blocks-panel-header__name">
-        {toolId.slice(0, 12)}...
+        {toolName}
       </span>
       <StatusIndicator status={status} />
     </button>

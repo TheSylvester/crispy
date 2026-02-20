@@ -132,6 +132,14 @@ React 19, esbuild, vanilla CSS with `var(--vscode-*)` theme variables.
   `adaptClaudeEntry`) to avoid confusion with universal types.
 - **Schema versioning:** Claude Code's app version is the de facto schema
   version. Fixtures in `test/fixtures/claude/` are keyed by version.
+- **One source of truth per concept.** Before adding a new map, registry,
+  lookup table, or type union — check if an existing one should be extended.
+  If you're creating a second place that stores the same kind of information,
+  stop and consolidate.
+- **File headers are contracts.** Every module's top comment declares what it
+  does and what it does NOT do. Respect those boundaries. If you need to
+  expand a module's responsibility, update the header first and flag it for
+  review.
 
 ### Frozen layer boundaries — do not modify without approval
 

@@ -21,6 +21,9 @@ export class BlocksToolRegistry {
   /** Resolved results keyed by tool_use_id */
   private results = new Map<string, ToolResultBlock>();
 
+  /** Tool name keyed by tool_use_id (e.g., "Bash", "Read") */
+  private names = new Map<string, string>();
+
   /** Registered tool_use IDs awaiting their result */
   private pending = new Set<string>();
 
@@ -45,8 +48,16 @@ export class BlocksToolRegistry {
    *
    * If a result was previously orphaned (arrived before registration),
    * it will be immediately paired.
+   *
+   * @param toolUseId - The tool_use block ID (UUID)
+   * @param toolName - The tool name (e.g., "Bash", "Read") for definition lookups
    */
-  register(toolUseId: string): void {
+  register(toolUseId: string, toolName?: string): void {
+    // Store name mapping (even on re-register, in case name was missing before)
+    if (toolName && !this.names.has(toolUseId)) {
+      this.names.set(toolUseId, toolName);
+    }
+
     // Idempotent — don't re-register
     if (this.pending.has(toolUseId) || this.results.has(toolUseId)) {
       return;
@@ -99,6 +110,14 @@ export class BlocksToolRegistry {
    */
   getResult(toolUseId: string): ToolResultBlock | undefined {
     return this.results.get(toolUseId);
+  }
+
+  /**
+   * Get the tool name for a tool_use_id (e.g., "Bash", "Read").
+   * Returns undefined if the tool hasn't been registered with a name.
+   */
+  getName(toolUseId: string): string | undefined {
+    return this.names.get(toolUseId);
   }
 
   /**
@@ -189,6 +208,7 @@ export class BlocksToolRegistry {
    */
   reset(): void {
     this.results.clear();
+    this.names.clear();
     this.pending.clear();
     this.orphans.clear();
     this.dirtyIds.clear();

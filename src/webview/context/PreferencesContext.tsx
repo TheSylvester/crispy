@@ -15,6 +15,8 @@ interface Preferences {
   toolCoalescing: boolean;
   /** Debug: force all tools to render in a specific view mode. null = auto. */
   toolViewOverride: ToolViewOverride;
+  /** Show debug UI (playback controls, tool view override). On by default during development. */
+  debugMode: boolean;
 }
 
 interface PreferencesContextValue extends Preferences {
@@ -25,6 +27,7 @@ interface PreferencesContextValue extends Preferences {
   setToolPanelWidthPx: (px: number | null) => void;
   setToolCoalescing: (enabled: boolean) => void;
   setToolViewOverride: (override: ToolViewOverride) => void;
+  setDebugMode: (enabled: boolean) => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
@@ -49,6 +52,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
   const [toolCoalescing, setToolCoalescing] = useState(true);
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
+  const [debugMode, setDebugMode] = useState(true);
 
   const value: PreferencesContextValue = {
     renderMode,
@@ -58,6 +62,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     toolPanelWidthPx,
     toolCoalescing,
     toolViewOverride,
+    debugMode,
     setRenderMode,
     setSettingsPinned,
     setSidebarCollapsed,
@@ -65,6 +70,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setToolPanelWidthPx,
     setToolCoalescing,
     setToolViewOverride,
+    setDebugMode,
   };
 
   return (

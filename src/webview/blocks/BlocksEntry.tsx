@@ -45,7 +45,7 @@ export function BlocksEntry({
     registry.silent(() => {
       for (const block of blocks) {
         if (block.type === 'tool_use') {
-          registry.register(block.id);
+          registry.register(block.id, block.name);
         } else if (block.type === 'tool_result') {
           registry.resolve(block.tool_use_id, block);
         }

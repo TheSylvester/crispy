@@ -165,7 +165,7 @@ function processEntryForBlocksRegistry(
 
   for (const block of content) {
     if (block.type === 'tool_use') {
-      registry.register(block.id);
+      registry.register(block.id, block.name);
     } else if (block.type === 'tool_result') {
       registry.resolve(block.tool_use_id, block);
       // Recurse into nested content (Task results contain sub-agent blocks)
@@ -186,7 +186,7 @@ function walkNestedForRegistry(
   for (const item of content) {
     if (typeof item === 'string') continue;
     if (item.type === 'tool_use') {
-      registry.register(item.id);
+      registry.register(item.id, item.name);
     } else if (item.type === 'tool_result') {
       registry.resolve(item.tool_use_id, item as ToolResultBlock);
       if (Array.isArray((item as ToolResultBlock).content)) {

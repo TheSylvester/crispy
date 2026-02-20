@@ -20,6 +20,8 @@ interface SettingsPopupProps {
   onRenderModeChange: (mode: RenderMode) => void;
   toolViewOverride?: ToolViewOverride;
   onToolViewOverrideChange?: (override: ToolViewOverride) => void;
+  debugMode: boolean;
+  onDebugModeChange: (enabled: boolean) => void;
 }
 
 const RENDER_MODES: { value: RenderMode; label: string }[] = [
@@ -36,10 +38,7 @@ const TOOL_VIEW_MODES: { value: string; label: string }[] = [
   { value: 'expanded', label: 'Expanded' },
 ];
 
-/** Check once whether debug mode is enabled */
-const isDebugMode = window.location.search.includes('debug=1');
-
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
 
@@ -106,7 +105,7 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               ))}
             </select>
           </label>
-          {isDebugMode && onToolViewOverrideChange && (
+          {debugMode && onToolViewOverrideChange && (
             <label className="crispy-cp-settings__row">
               <span>Tool View</span>
               <select
@@ -124,6 +123,14 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               </select>
             </label>
           )}
+          <label className="crispy-cp-settings__row">
+            <span>Debug Mode</span>
+            <input
+              type="checkbox"
+              checked={debugMode}
+              onChange={(e) => onDebugModeChange(e.target.checked)}
+            />
+          </label>
         </div>
       )}
     </span>

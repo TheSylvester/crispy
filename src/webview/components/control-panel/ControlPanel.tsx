@@ -154,7 +154,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         (ref as React.RefObject<HTMLDivElement | null>).current = node;
       }
     }, [ref]);
-    const { renderMode, setRenderMode, settingsPinned, setSettingsPinned, toolViewOverride, setToolViewOverride } = usePreferences();
+    const { renderMode, setRenderMode, settingsPinned, setSettingsPinned, toolViewOverride, setToolViewOverride, debugMode, setDebugMode } = usePreferences();
     const transport = useTransport();
     const { selectedSessionId, selectedCwd, setSelectedSessionId } = useSession();
     const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
@@ -792,6 +792,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onRenderModeChange={setRenderMode}
               toolViewOverride={toolViewOverride}
               onToolViewOverrideChange={setToolViewOverride}
+              debugMode={debugMode}
+              onDebugModeChange={setDebugMode}
             />
             <ForkButton
               disabled={!selectedSessionId || selectedSessionId.startsWith('pending:')}
