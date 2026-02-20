@@ -154,7 +154,7 @@ registerToolViews('ExitPlanMode', {
 // Register Tools Using Default Views Only
 // ============================================================================
 
-// These tools use default collapsed + compact + generic expanded views
+// These tools use default compact + generic expanded views
 const defaultOnlyTools = [
   'LS',
   'NotebookEdit',

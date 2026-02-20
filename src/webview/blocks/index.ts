@@ -4,7 +4,7 @@
  * Public API:
  *
  * Types:
- * - BlockContext, RichBlock, AnchorPoint, RenderRun, ToolViewProps,
+ * - BlockContext, RichBlock, AnchorPoint, ToolViewProps,
  *   ToolDefinition, PanelAction, PanelState
  *
  * Registry:
@@ -12,11 +12,10 @@
  *
  * Pipeline:
  * - normalizeToRichBlocks: Enriches TranscriptEntry into RichBlock[]
- * - buildRuns: Coalesces blocks into RenderRuns
  * - selectView: Chooses view mode based on anchor point
  *
  * Tool Definitions:
- * - getToolDefinition, getToolData, isToolCollapsible, extractSubject
+ * - getToolDefinition, getToolData, extractSubject
  * - registerToolViews: Register view implementations
  *
  * Components:
@@ -31,7 +30,6 @@ export type {
   BlockContext,
   RichBlock,
   AnchorPoint,
-  RenderRun,
   ToolViewProps,
   ToolDefinition,
   PanelAction,
@@ -44,9 +42,6 @@ export { BlocksToolRegistry } from './blocks-tool-registry.js';
 // Normalization
 export { normalizeToRichBlocks } from './normalize.js';
 
-// Coalescing
-export { buildRuns } from './build-runs.js';
-
 // View Selection
 export { selectView } from './select-view.js';
 
@@ -54,7 +49,6 @@ export { selectView } from './select-view.js';
 export {
   getToolDefinition,
   getToolData,
-  isToolCollapsible,
   extractSubject,
   registerToolViews,
 } from './tool-definitions.js';
@@ -64,8 +58,6 @@ export { BlocksEntry, createBlocksToolRegistry } from './BlocksEntry.js';
 export { BlocksEntryWithRegistry } from './BlocksEntryWithRegistry.js';
 export { BlocksBlockRenderer } from './BlocksBlockRenderer.js';
 export { ToolBlockRenderer } from './ToolBlockRenderer.js';
-export { RunRenderer, runKey } from './RunRenderer.js';
-export { CollapsedGroup } from './CollapsedGroup.js';
 
 // Context Providers
 export {

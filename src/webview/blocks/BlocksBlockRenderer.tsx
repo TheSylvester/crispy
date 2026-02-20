@@ -13,26 +13,23 @@
  * @module webview/blocks/BlocksBlockRenderer
  */
 
-import type { RichBlock, AnchorPoint } from './types.js';
-import type { BlocksToolRegistry } from './blocks-tool-registry.js';
-import { ToolBlockRenderer } from './ToolBlockRenderer.js';
+import type { RichBlock } from './types.js';
 import { AssistantTextRenderer } from '../renderers/AssistantTextRenderer.js';
 import { UserTextRenderer } from '../renderers/UserTextRenderer.js';
 import { ImageRenderer } from '../renderers/ImageRenderer.js';
 
-interface BlocksBlockRendererProps {
+export interface BlocksBlockRendererProps {
   block: RichBlock;
-  anchor: AnchorPoint;
-  registry: BlocksToolRegistry;
-  /** Number of sibling tool_use blocks in same entry */
-  siblingCount: number;
 }
 
+/**
+ * Renders a non-tool block (text, thinking, image, tool_result, unknown).
+ *
+ * tool_use blocks are handled directly by the parent entry component via
+ * ToolBlockRenderer — they should not reach this component.
+ */
 export function BlocksBlockRenderer({
   block,
-  anchor,
-  registry,
-  siblingCount,
 }: BlocksBlockRendererProps): React.JSX.Element | null {
   switch (block.type) {
     case 'tool_result':
@@ -41,14 +38,9 @@ export function BlocksBlockRenderer({
       return null;
 
     case 'tool_use':
-      return (
-        <ToolBlockRenderer
-          block={block}
-          anchor={anchor}
-          registry={registry}
-          siblingCount={siblingCount}
-        />
-      );
+      // tool_use blocks are handled by the parent entry component
+      // via ToolBlockRenderer directly — should not reach here.
+      return null;
 
     case 'text':
       if (block.context.role === 'user') {

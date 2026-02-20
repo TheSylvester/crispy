@@ -408,7 +408,7 @@ export function TranscriptViewer(): React.JSX.Element {
         isStreaming={channelState === 'streaming'}
         forkTargets={forkTargets}
       >
-        <div className="crispy-transcript" ref={transcriptRef}>
+        <div className="crispy-transcript" ref={transcriptRef} data-render-mode={renderMode}>
           <div className="crispy-transcript-content">
             {isLoading ? (
               <div className="crispy-loading">Loading transcript...</div>

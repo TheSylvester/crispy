@@ -1,5 +1,5 @@
 /**
- * Default Views — generic collapsed + compact views for all tools
+ * Default Views — generic compact view for all tools
  *
  * Provides `defaultToolViews()` helper that creates standard views
  * for any tool. Tools can override specific views while keeping defaults
@@ -20,42 +20,20 @@ import { extractResultText, formatCount } from '../../renderers/tools/shared/too
 // ============================================================================
 
 /**
- * Create standard collapsed + compact views for a tool.
+ * Create a standard compact view for a tool.
  *
  * Used as a base for most tools. Tools only need to provide a custom
- * expanded view, using these defaults for collapsed/compact.
+ * expanded view, using this default for compact.
  *
  * @param def - Partial tool definition with icon and activity
- * @returns Views object with collapsed and compact renderers
+ * @returns Views object with compact renderer
  */
 export function defaultToolViews(def: Pick<ToolDefinition, 'icon' | 'activity' | 'color'>): {
-  collapsed: (props: ToolViewProps) => ReactNode;
   compact: (props: ToolViewProps) => ReactNode;
 } {
   return {
-    collapsed: (props) => <DefaultCollapsedView {...props} def={def} />,
     compact: (props) => <DefaultCompactView {...props} def={def} />,
   };
-}
-
-// ============================================================================
-// Collapsed View — single-line summary for activity groups
-// ============================================================================
-
-interface DefaultCollapsedViewProps extends ToolViewProps {
-  def: Pick<ToolDefinition, 'icon' | 'activity'>;
-}
-
-function DefaultCollapsedView({ block, def }: DefaultCollapsedViewProps): ReactNode {
-  const subject = extractSubject(block);
-
-  return (
-    <span className="crispy-blocks-collapsed-item">
-      <span className="crispy-blocks-collapsed-icon">{def.icon}</span>
-      <span className="crispy-blocks-collapsed-verb">{def.activity.pastVerb}</span>
-      <span className="crispy-blocks-collapsed-subject">{subject}</span>
-    </span>
-  );
 }
 
 // ============================================================================

@@ -33,7 +33,6 @@ const RENDER_MODES: { value: RenderMode; label: string }[] = [
 
 const TOOL_VIEW_MODES: { value: string; label: string }[] = [
   { value: 'auto', label: 'Auto' },
-  { value: 'collapsed', label: 'Collapsed' },
   { value: 'compact', label: 'Compact' },
   { value: 'expanded', label: 'Expanded' },
 ];

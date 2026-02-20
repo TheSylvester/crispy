@@ -7,8 +7,7 @@
  * - toolPanelRendererMap
  * - TOOL_KEY_MAP
  *
- * Each tool has one ToolDefinition with views for collapsed, compact, expanded.
- * Tools with `collapsed` view can be coalesced into activity groups.
+ * Each tool has one ToolDefinition with views for compact and expanded modes.
  *
  * @module webview/blocks/tool-definitions
  */
@@ -19,7 +18,6 @@ import type { ToolDefinition, ToolViewProps, RichBlock } from './types.js';
 // Lazy-loaded view imports to avoid circular dependencies
 // Views are imported and assigned at runtime by the view modules
 const viewRegistry: Map<string, {
-  collapsed?: (props: ToolViewProps) => ReactNode;
   compact: (props: ToolViewProps) => ReactNode;
   expanded: (props: ToolViewProps) => ReactNode;
 }> = new Map();
@@ -31,7 +29,6 @@ const viewRegistry: Map<string, {
 export function registerToolViews(
   name: string,
   views: {
-    collapsed?: (props: ToolViewProps) => ReactNode;
     compact: (props: ToolViewProps) => ReactNode;
     expanded: (props: ToolViewProps) => ReactNode;
   },
@@ -47,8 +44,6 @@ interface ToolDefinitionData {
   icon: string;
   color: string;
   activity: { verb: string; pastVerb: string };
-  /** If true, tool can be collapsed when completed without error */
-  collapsible: boolean;
 }
 
 /**
@@ -63,37 +58,31 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     icon: '\uD83D\uDCBB',
     color: '#f59e0b',
     activity: { verb: 'Running', pastVerb: 'Ran' },
-    collapsible: false,
   },
   Read: {
     icon: '\uD83D\uDCC4',
     color: '#0ea5e9',
     activity: { verb: 'Reading', pastVerb: 'Read' },
-    collapsible: true,
   },
   Write: {
     icon: '\u270E',
     color: '#10b981',
     activity: { verb: 'Writing', pastVerb: 'Wrote' },
-    collapsible: false,
   },
   Edit: {
     icon: '\uD83D\uDCDD',
     color: '#f43f5e',
     activity: { verb: 'Editing', pastVerb: 'Edited' },
-    collapsible: false,
   },
   MultiEdit: {
     icon: '\uD83D\uDCDD',
     color: '#f43f5e',
     activity: { verb: 'Editing', pastVerb: 'Edited' },
-    collapsible: false,
   },
   NotebookEdit: {
     icon: '\uD83D\uDCD3',
     color: '#10b981',
     activity: { verb: 'Editing notebook', pastVerb: 'Edited notebook' },
-    collapsible: false,
   },
 
   // Search tools
@@ -101,19 +90,16 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     icon: '\uD83D\uDCC2',
     color: '#d946ef',
     activity: { verb: 'Searching', pastVerb: 'Found' },
-    collapsible: true,
   },
   Grep: {
     icon: '\uD83D\uDD0D',
     color: '#06b6d4',
     activity: { verb: 'Searching', pastVerb: 'Searched' },
-    collapsible: true,
   },
   LS: {
     icon: '\uD83D\uDD0D',
     color: '#06b6d4',
     activity: { verb: 'Listing', pastVerb: 'Listed' },
-    collapsible: false,
   },
 
   // Web tools
@@ -121,13 +107,11 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     icon: '\uD83C\uDF10',
     color: '#8b5cf6',
     activity: { verb: 'Searching', pastVerb: 'Searched' },
-    collapsible: true,
   },
   WebFetch: {
     icon: '\uD83C\uDF0E',
     color: '#6366f1',
     activity: { verb: 'Fetching', pastVerb: 'Fetched' },
-    collapsible: true,
   },
 
   // Agent tools
@@ -135,19 +119,16 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     icon: '\uD83E\uDD16',
     color: '#64748b',
     activity: { verb: 'Running agent', pastVerb: 'Agent completed' },
-    collapsible: false,
   },
   TaskOutput: {
     icon: '\uD83E\uDD16',
     color: '#64748b',
     activity: { verb: 'Getting output', pastVerb: 'Got output' },
-    collapsible: false,
   },
   KillShell: {
     icon: '\uD83E\uDD16',
     color: '#64748b',
     activity: { verb: 'Killing shell', pastVerb: 'Killed shell' },
-    collapsible: false,
   },
 
   // Utility tools
@@ -155,13 +136,11 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     icon: '\u2611',
     color: '#8b5cf6',
     activity: { verb: 'Updating todos', pastVerb: 'Updated todos' },
-    collapsible: true,
   },
   Skill: {
     icon: '\u2728',
     color: '#7c3aed',
     activity: { verb: 'Running skill', pastVerb: 'Ran skill' },
-    collapsible: true,
   },
 
   // User interaction tools
@@ -169,19 +148,16 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     icon: '\u2753',
     color: '#14b8a6',
     activity: { verb: 'Asking', pastVerb: 'Asked' },
-    collapsible: false,
   },
   ExitPlanMode: {
     icon: '\uD83D\uDCCB',
     color: '#3b82f6',
     activity: { verb: 'Exiting plan mode', pastVerb: 'Exited plan mode' },
-    collapsible: false,
   },
   EnterPlanMode: {
     icon: '\uD83D\uDCCB',
     color: '#3b82f6',
     activity: { verb: 'Entering plan mode', pastVerb: 'Entered plan mode' },
-    collapsible: false,
   },
 
   // MCP tools
@@ -189,13 +165,11 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     icon: '\uD83D\uDCC4',
     color: '#0ea5e9',
     activity: { verb: 'Reading MCP', pastVerb: 'Read MCP' },
-    collapsible: false,
   },
   ListMcpResources: {
     icon: '\uD83D\uDD0D',
     color: '#06b6d4',
     activity: { verb: 'Listing MCP', pastVerb: 'Listed MCP' },
-    collapsible: false,
   },
 };
 
@@ -204,7 +178,6 @@ const DEFAULT_DATA: ToolDefinitionData = {
   icon: '\uD83D\uDD27',
   color: '#4b5563',
   activity: { verb: 'Running', pastVerb: 'Ran' },
-  collapsible: false,
 };
 
 // ============================================================================
@@ -228,26 +201,15 @@ export function getToolDefinition(name: string): ToolDefinition | undefined {
     icon: data.icon,
     color: data.color,
     activity: data.activity,
-    views: data.collapsible
-      ? views
-      : { compact: views.compact, expanded: views.expanded },
+    views: { compact: views.compact, expanded: views.expanded },
   };
 }
 
 /**
  * Get static tool data (icon, color, activity) without views.
- * Used by buildRuns to check collapsibility without needing views loaded.
  */
 export function getToolData(name: string): ToolDefinitionData {
   return TOOL_DATA[name] ?? getDefaultData(name);
-}
-
-/**
- * Check if a tool is collapsible (has a collapsed view).
- */
-export function isToolCollapsible(name: string): boolean {
-  const data = TOOL_DATA[name];
-  return data?.collapsible ?? false;
 }
 
 /**
@@ -260,18 +222,17 @@ function getDefaultData(name: string): ToolDefinitionData {
       icon: '\uD83D\uDD0C',  // 🔌 plug icon for MCP
       color: '#6366f1',
       activity: { verb: 'Running MCP', pastVerb: 'Ran MCP' },
-      collapsible: false,
     };
   }
   return DEFAULT_DATA;
 }
 
 // ============================================================================
-// Subject Extraction — for collapsed view summaries
+// Subject Extraction — for compact view summaries
 // ============================================================================
 
 /**
- * Extract the primary subject from a tool_use block for display in collapsed view.
+ * Extract the primary subject from a tool_use block for display in compact view.
  * Returns the most meaningful identifier (file path, command, pattern, etc.)
  */
 export function extractSubject(block: RichBlock & { type: 'tool_use' }): string {

@@ -4,8 +4,8 @@
  * Equivalent of TranscriptEntryList in TranscriptViewer.tsx.
  * Renders entries through the blocks pipeline using BlocksEntry.
  *
- * Coalescing happens inside BlocksEntry at the block level via buildRuns,
- * not at the entry level — so this component is intentionally simple.
+ * Each entry renders its blocks directly — no run coalescing.
+ * This component is intentionally simple.
  *
  * @module webview/blocks/BlocksTranscriptRenderer
  */

@@ -27,8 +27,6 @@ interface ToolBlockRendererProps {
   registry: BlocksToolRegistry;
   /** Number of sibling tool_use blocks in same entry (for view selection) */
   siblingCount: number;
-  /** Override the view selection (for collapsed groups rendering in compact) */
-  viewOverride?: 'collapsed' | 'compact' | 'expanded';
 }
 
 export function ToolBlockRenderer({
@@ -36,7 +34,6 @@ export function ToolBlockRenderer({
   anchor,
   registry,
   siblingCount,
-  viewOverride,
 }: ToolBlockRendererProps): React.JSX.Element {
   // Get result from registry
   const result = registry.useResult(block.id);
@@ -85,8 +82,8 @@ export function ToolBlockRenderer({
 
   // Render with definition if available
   if (def) {
-    // Select view: global debug override > prop override > auto selection
-    const viewMode = globalOverride ?? viewOverride ?? selectView(def, anchor, block, siblingCount, registry);
+    // Select view: global debug override > auto selection
+    const viewMode = globalOverride ?? selectView(def, anchor, block, siblingCount, registry);
 
     // Get the view renderer
     const viewFn = def.views[viewMode];

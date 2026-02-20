@@ -1,8 +1,8 @@
 /**
  * Select View — anchor-based view selection for tool blocks
  *
- * Determines which view (collapsed, compact, expanded) to render
- * based on the block's anchor point, completion status, and siblings.
+ * Determines which view (compact or expanded) to render based on
+ * the block's anchor point and completion status.
  *
  * @module webview/blocks/select-view
  */
@@ -18,9 +18,6 @@ import type { BlocksToolRegistry } from './blocks-tool-registry.js';
  * - task-tool: compact if completed, expanded if running
  * - main-thread: always compact (expanded views live in the tool panel)
  *
- * Note: collapsed view is handled by buildRuns — blocks that reach selectView
- * are already determined to NOT be in a collapsed group.
- *
  * @param def - Tool definition with available views
  * @param anchor - Where the block is being rendered
  * @param block - The tool_use block
@@ -34,7 +31,7 @@ export function selectView(
   block: RichBlock,
   _siblingCount: number,
   registry: BlocksToolRegistry,
-): 'collapsed' | 'compact' | 'expanded' {
+): 'compact' | 'expanded' {
   // Check if block has result
   const hasResult = block.type === 'tool_use'
     ? registry.getResult(block.id) !== undefined

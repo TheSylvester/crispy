@@ -2,7 +2,7 @@ import { createContext, useContext, useState, ReactNode } from 'react';
 import type { RenderMode } from '../types.js';
 
 /** Debug override for tool view mode. null = automatic (normal selectView logic). */
-export type ToolViewOverride = 'collapsed' | 'compact' | 'expanded' | null;
+export type ToolViewOverride = 'compact' | 'expanded' | null;
 
 interface Preferences {
   renderMode: RenderMode;

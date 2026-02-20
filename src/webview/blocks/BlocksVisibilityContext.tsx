@@ -1,12 +1,8 @@
 /**
  * Blocks Visibility Context — run-level IntersectionObserver for blocks mode
  *
- * Tracks which runs (and their contained tools) are currently visible in the
- * transcript scroll viewport. Simplified version of VisibilityContext that
- * watches `[data-run-id]` elements instead of individual tools.
- *
- * For collapsed groups, reads `data-tool-ids` to expand visibility to all
- * tool IDs within the group.
+ * Tracks which tool_use blocks are currently visible in the transcript scroll
+ * viewport. Watches `[data-run-id]` elements (one per tool_use block).
  *
  * Architecture:
  * - A single IntersectionObserver watches [data-run-id] elements
@@ -59,14 +55,10 @@ class BlocksVisibilityStore {
     for (const entry of entries) {
       const el = entry.target as HTMLElement;
 
-      // Extract tool IDs from the run element
-      // Single tool: data-run-id is the tool ID
-      // Collapsed group: data-tool-ids contains comma-separated IDs
-      const toolIds = el.dataset.toolIds
-        ? el.dataset.toolIds.split(',')
-        : el.dataset.runId
-          ? [el.dataset.runId]
-          : [];
+      // Extract tool ID from the run element
+      const toolIds = el.dataset.runId
+        ? [el.dataset.runId]
+        : [];
 
       if (toolIds.length === 0) continue;
 
@@ -130,20 +122,7 @@ class BlocksVisibilityStore {
     // Collect elements with their positions for sorting
     const withPosition: { id: string; top: number }[] = [];
     for (const id of ids) {
-      // Try single run first
-      let el = root.querySelector(`[data-run-id="${id}"]`) as HTMLElement | null;
-
-      // If not found, search in collapsed groups
-      if (!el) {
-        const groupEls = root.querySelectorAll('[data-tool-ids]');
-        groupEls.forEach(ge => {
-          if (el) return; // Already found
-          const idsAttr = (ge as HTMLElement).dataset.toolIds;
-          if (idsAttr && idsAttr.split(',').includes(id)) {
-            el = ge as HTMLElement;
-          }
-        });
-      }
+      const el = root.querySelector(`[data-run-id="${id}"]`) as HTMLElement | null;
 
       if (el) {
         withPosition.push({ id, top: el.offsetTop });
@@ -233,11 +212,6 @@ export function BlocksVisibilityProvider({
 
     // Observe existing run elements
     const observeAll = () => {
-      // Observe collapsed groups (have data-tool-ids)
-      scrollEl.querySelectorAll('[data-tool-ids]').forEach(el => {
-        io.observe(el);
-      });
-      // Observe single runs (have data-run-id)
       scrollEl.querySelectorAll('[data-run-id]').forEach(el => {
         io.observe(el);
       });
@@ -251,13 +225,10 @@ export function BlocksVisibilityProvider({
         mutation.addedNodes.forEach(node => {
           if (!(node instanceof HTMLElement)) return;
           // Check the node itself
-          if (node.dataset.toolIds || node.dataset.runId) {
+          if (node.dataset.runId) {
             io.observe(node);
           }
           // Check descendants
-          node.querySelectorAll('[data-tool-ids]').forEach(desc => {
-            io.observe(desc);
-          });
           node.querySelectorAll('[data-run-id]').forEach(desc => {
             io.observe(desc);
           });

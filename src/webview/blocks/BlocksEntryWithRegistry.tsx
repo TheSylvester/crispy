@@ -14,8 +14,8 @@ import type { TranscriptEntry } from '../../core/transcript.js';
 import type { AnchorPoint } from './types.js';
 import { useBlocksToolRegistry } from './BlocksToolRegistryContext.js';
 import { normalizeToRichBlocks } from './normalize.js';
-import { buildRuns } from './build-runs.js';
-import { RunRenderer, runKey } from './RunRenderer.js';
+import { ToolBlockRenderer } from './ToolBlockRenderer.js';
+import { BlocksBlockRenderer } from './BlocksBlockRenderer.js';
 import { MessageActions } from '../components/MessageActions.js';
 
 interface BlocksEntryWithRegistryProps {
@@ -38,12 +38,6 @@ export function BlocksEntryWithRegistry({
 
   // Skip empty entries
   if (blocks.length === 0) return null;
-
-  // Build render runs (coalescing consecutive collapsible tools)
-  const runs = useMemo(
-    () => buildRuns(blocks, registry),
-    [blocks, registry],
-  );
 
   // Count tool_use blocks for view selection
   const siblingCount = blocks.filter((b) => b.type === 'tool_use').length;
@@ -68,15 +62,23 @@ export function BlocksEntryWithRegistry({
       className={`message ${role}`}
       data-uuid={entry.uuid}
     >
-      {runs.map((run, i) => (
-        <RunRenderer
-          key={runKey(run, i)}
-          run={run}
-          anchor={anchor}
-          registry={registry}
-          siblingCount={siblingCount}
-        />
-      ))}
+      {blocks.map((block, i) =>
+        block.type === 'tool_use' ? (
+          <div key={`tool-${block.id}`} data-run-id={block.id}>
+            <ToolBlockRenderer
+              block={block}
+              anchor={anchor}
+              registry={registry}
+              siblingCount={siblingCount}
+            />
+          </div>
+        ) : (
+          <BlocksBlockRenderer
+            key={`block-${block.context.entryUuid}-${i}`}
+            block={block}
+          />
+        )
+      )}
       {showActions && <MessageActions targetAssistantId={forkTargetId || null} />}
     </div>
   );

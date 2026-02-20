@@ -2,8 +2,7 @@
  * Block Types — type foundation for the blocks rendering mode
  *
  * Defines the structural context that enriches ContentBlock into RichBlock,
- * plus supporting types for anchor points, render runs, tool views, and
- * tool definitions.
+ * plus supporting types for anchor points, tool views, and tool definitions.
  *
  * @module webview/blocks/types
  */
@@ -64,20 +63,6 @@ export type AnchorPoint =
   | { type: 'task-in-panel'; parentId: string };
 
 // ============================================================================
-// Render Run — grouping for consecutive blocks
-// ============================================================================
-
-/**
- * A render run is either a single block or a collapsed group of blocks.
- *
- * Used by the block renderer to handle coalescing of similar tool uses
- * (e.g., multiple Read calls collapsed into an expandable group).
- */
-export type RenderRun =
-  | { type: 'single'; block: RichBlock }
-  | { type: 'collapsed-group'; blocks: RichBlock[] };
-
-// ============================================================================
 // Tool View Props — standard props passed to tool renderers
 // ============================================================================
 
@@ -121,7 +106,6 @@ export interface ToolDefinition {
   activity: { verb: string; pastVerb: string };
   /** View components for different display states */
   views: {
-    collapsed?: (props: ToolViewProps) => ReactNode;
     compact: (props: ToolViewProps) => ReactNode;
     expanded: (props: ToolViewProps) => ReactNode;
   };
