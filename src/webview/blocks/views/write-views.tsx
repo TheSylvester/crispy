@@ -23,6 +23,33 @@ interface WriteInput {
 }
 
 // ============================================================================
+// Compact View
+// ============================================================================
+
+export function WriteCompactView({ block, result, status }: ToolViewProps): ReactNode {
+  const input = block.input as WriteInput;
+  const filePath = input.file_path ?? '(unknown)';
+  const content = input.content ?? '';
+  const lineCount = content.split('\n').length;
+
+  const resultSummary = result
+    ? result.is_error
+      ? 'Failed'
+      : 'Written'
+    : undefined;
+
+  return (
+    <div className="crispy-blocks-compact-row">
+      <span className="crispy-blocks-compact-icon">{meta.icon}</span>
+      <ToolBadge color={meta.color} label="Write" />
+      <FilePath path={filePath} />
+      <span className="crispy-tool-line-info">({lineCount} lines)</span>
+      <StatusIndicator status={status} summary={resultSummary} />
+    </div>
+  );
+}
+
+// ============================================================================
 // Expanded View
 // ============================================================================
 

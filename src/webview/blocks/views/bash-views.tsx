@@ -1,7 +1,7 @@
 /**
  * Bash Tool Views — custom renderers for Bash tool
  *
- * - Compact: command preview + exit status
+ * - Compact: icon + badge + description + exit status
  * - Expanded: full command + stdout/stderr output
  *
  * @module webview/blocks/views/bash-views
@@ -28,9 +28,6 @@ interface BashInput {
 
 export function BashCompactView({ block, result, status }: ToolViewProps): ReactNode {
   const input = block.input as BashInput;
-  const command = input.command ?? '';
-  const firstLine = command.split('\n')[0];
-  const truncated = firstLine.length > 60 ? firstLine.slice(0, 59) + '…' : firstLine;
 
   const resultText = extractResultText(result?.content);
   const resultSummary = result
@@ -39,15 +36,21 @@ export function BashCompactView({ block, result, status }: ToolViewProps): React
       : formatCount(resultText, 'line')
     : undefined;
 
+  const command = input.command ?? '';
+
   return (
-    <div className="crispy-blocks-compact-row">
-      <span className="crispy-blocks-compact-icon">{meta.icon}</span>
-      <ToolBadge color={meta.color} textColor="#1e1e1e" label="Bash" />
-      {input.description && (
-        <span className="crispy-blocks-compact-description">{input.description}</span>
+    <div className="crispy-blocks-bash-compact">
+      <div className="crispy-blocks-compact-row">
+        <span className="crispy-blocks-compact-icon">{meta.icon}</span>
+        <ToolBadge color={meta.color} textColor="#1e1e1e" label="Bash" />
+        {input.description && (
+          <span className="crispy-blocks-compact-description">{input.description}</span>
+        )}
+        <StatusIndicator status={status} summary={resultSummary} />
+      </div>
+      {command && (
+        <code className="u-mono-pill crispy-tool-bash-inline crispy-tool-bash-inline--compact">{command}</code>
       )}
-      <code className="crispy-blocks-bash-command">{truncated}</code>
-      <StatusIndicator status={status} summary={resultSummary} />
     </div>
   );
 }

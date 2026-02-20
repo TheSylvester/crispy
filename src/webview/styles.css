@@ -1460,6 +1460,18 @@ h2 {
   line-height: 1.4;
 }
 
+.crispy-tool-bash-inline--compact {
+  max-height: calc(1.4em * 3);
+  display: block;
+  max-width: 100%;
+}
+
+.crispy-blocks-bash-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 /* --- Diff stats --- */
 
 .crispy-diff-stats {
@@ -3831,6 +3843,7 @@ h2 {
 .crispy-blocks-compact-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 2px 4px;
   font-size: var(--font-sm);
@@ -4031,6 +4044,12 @@ h2 {
 }
 
 .crispy-blocks-task-children {
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 2px solid rgba(255, 255, 255, 0.08);
+}
+
+.crispy-blocks-task-compact > .crispy-blocks-task-children {
   margin-left: 8px;
   padding-left: 8px;
   border-left: 2px solid rgba(255, 255, 255, 0.08);

@@ -15,10 +15,14 @@ import { defaultToolViews, GenericExpandedView } from './views/default-views.js'
 import { BashCompactView, BashExpandedView } from './views/bash-views.js';
 import { EditCompactView, EditExpandedView } from './views/edit-views.js';
 import { TaskCompactView, TaskExpandedView } from './views/task-views.js';
-import { ReadExpandedView } from './views/read-views.js';
-import { WriteExpandedView } from './views/write-views.js';
-import { GrepExpandedView } from './views/grep-views.js';
-import { GlobExpandedView } from './views/glob-views.js';
+import { ReadCompactView, ReadExpandedView } from './views/read-views.js';
+import { WriteCompactView, WriteExpandedView } from './views/write-views.js';
+import { GrepCompactView, GrepExpandedView } from './views/grep-views.js';
+import { GlobCompactView, GlobExpandedView } from './views/glob-views.js';
+import { TodoWriteCompactView } from './views/todowrite-views.js';
+import { SkillCompactView } from './views/skill-views.js';
+import { AskUserQuestionCompactView } from './views/askuserquestion-views.js';
+import { ExitPlanModeCompactView } from './views/exitplanmode-views.js';
 
 // ============================================================================
 // Register Default Views (fallback for unknown tools)
@@ -77,6 +81,7 @@ registerToolViews('Task', {
 const readMeta = getToolData('Read');
 registerToolViews('Read', {
   ...defaultToolViews(readMeta),
+  compact: ReadCompactView,
   expanded: ReadExpandedView,
 });
 
@@ -87,6 +92,7 @@ registerToolViews('Read', {
 const writeMeta = getToolData('Write');
 registerToolViews('Write', {
   ...defaultToolViews(writeMeta),
+  compact: WriteCompactView,
   expanded: WriteExpandedView,
 });
 
@@ -97,13 +103,51 @@ registerToolViews('Write', {
 const grepMeta = getToolData('Grep');
 registerToolViews('Grep', {
   ...defaultToolViews(grepMeta),
+  compact: GrepCompactView,
   expanded: GrepExpandedView,
 });
 
 const globMeta = getToolData('Glob');
 registerToolViews('Glob', {
   ...defaultToolViews(globMeta),
+  compact: GlobCompactView,
   expanded: GlobExpandedView,
+});
+
+// ============================================================================
+// Register TodoWrite Views
+// ============================================================================
+
+const todoWriteMeta = getToolData('TodoWrite');
+registerToolViews('TodoWrite', {
+  ...defaultToolViews(todoWriteMeta),
+  compact: TodoWriteCompactView,
+  expanded: GenericExpandedView,
+});
+
+// ============================================================================
+// Register Interaction Tool Views (Skill, AskUserQuestion, ExitPlanMode)
+// ============================================================================
+
+const skillMeta = getToolData('Skill');
+registerToolViews('Skill', {
+  ...defaultToolViews(skillMeta),
+  compact: SkillCompactView,
+  expanded: GenericExpandedView,
+});
+
+const askMeta = getToolData('AskUserQuestion');
+registerToolViews('AskUserQuestion', {
+  ...defaultToolViews(askMeta),
+  compact: AskUserQuestionCompactView,
+  expanded: GenericExpandedView,
+});
+
+const exitPlanMeta = getToolData('ExitPlanMode');
+registerToolViews('ExitPlanMode', {
+  ...defaultToolViews(exitPlanMeta),
+  compact: ExitPlanModeCompactView,
+  expanded: GenericExpandedView,
 });
 
 // ============================================================================
@@ -116,10 +160,6 @@ const defaultOnlyTools = [
   'NotebookEdit',
   'WebSearch',
   'WebFetch',
-  'TodoWrite',
-  'Skill',
-  'AskUserQuestion',
-  'ExitPlanMode',
   'EnterPlanMode',
   'TaskOutput',
   'KillShell',

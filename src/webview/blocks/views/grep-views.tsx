@@ -1,6 +1,7 @@
 /**
  * Grep Tool Views — custom renderers for Grep tool
  *
+ * - Compact: pattern + scope + match count
  * - Expanded: pattern + scope + match results
  *
  * @module webview/blocks/views/grep-views
@@ -20,6 +21,33 @@ interface GrepInput {
   path?: string;
   glob?: string;
   type?: string;
+}
+
+// ============================================================================
+// Compact View
+// ============================================================================
+
+export function GrepCompactView({ block, result, status }: ToolViewProps): ReactNode {
+  const input = block.input as GrepInput;
+  const pattern = input.pattern ?? '(unknown)';
+  const scope = input.path ?? input.glob ?? input.type;
+
+  const resultText = extractResultText(result?.content);
+  const resultSummary = result
+    ? result.is_error
+      ? 'Error'
+      : formatCount(resultText, 'match', true)
+    : undefined;
+
+  return (
+    <div className="crispy-blocks-compact-row">
+      <span className="crispy-blocks-compact-icon">{meta.icon}</span>
+      <ToolBadge color={meta.color} textColor="#1e1e1e" label="Grep" />
+      <span className="u-mono-pill crispy-tool-secondary">{pattern}</span>
+      {scope && <span className="crispy-blocks-compact-description">in {scope}</span>}
+      <StatusIndicator status={status} summary={resultSummary} />
+    </div>
+  );
 }
 
 // ============================================================================

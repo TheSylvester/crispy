@@ -1,6 +1,7 @@
 /**
  * Glob Tool Views — custom renderers for Glob tool
  *
+ * - Compact: pattern + search path + file count
  * - Expanded: pattern + search path + file matches
  *
  * @module webview/blocks/views/glob-views
@@ -18,6 +19,33 @@ const meta = getToolData('Glob');
 interface GlobInput {
   pattern?: string;
   path?: string;
+}
+
+// ============================================================================
+// Compact View
+// ============================================================================
+
+export function GlobCompactView({ block, result, status }: ToolViewProps): ReactNode {
+  const input = block.input as GlobInput;
+  const pattern = input.pattern ?? '(unknown)';
+  const searchPath = input.path;
+
+  const resultText = extractResultText(result?.content);
+  const resultSummary = result
+    ? result.is_error
+      ? 'Error'
+      : formatCount(resultText, 'file', true)
+    : undefined;
+
+  return (
+    <div className="crispy-blocks-compact-row">
+      <span className="crispy-blocks-compact-icon">{meta.icon}</span>
+      <ToolBadge color={meta.color} label="Glob" />
+      <span className="u-mono-pill crispy-tool-secondary">{pattern}</span>
+      {searchPath && <span className="crispy-blocks-compact-description">in {searchPath}</span>}
+      <StatusIndicator status={status} summary={resultSummary} />
+    </div>
+  );
 }
 
 // ============================================================================

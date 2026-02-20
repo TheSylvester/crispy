@@ -259,7 +259,7 @@ describe('Message routing', () => {
       msg({ type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'auto', pre_tokens: 1000 }, uuid: 'u7', session_id: 's1' }),
       // system without subtype → entry (fallback)
       msg({ type: 'system', uuid: 'u8', session_id: 's1' }),
-      // stream_event → entry
+      // stream_event → intentionally not emitted (partial deltas have no useful content)
       msg({ type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }, parent_tool_use_id: null, uuid: 'u9', session_id: 's1' }),
       // tool_progress → no output
       msg({ type: 'tool_progress', tool_use_id: 'tu1', tool_name: 'Bash', parent_tool_use_id: null, elapsed_time_seconds: 2, uuid: 'u10', session_id: 's1' }),
@@ -287,8 +287,9 @@ describe('Message routing', () => {
     const events = output.filter((m) => m.type === 'event');
 
     // Entries: init, assistant, user (not replay), compact_boundary,
-    //          system-no-subtype, stream_event, tool_use_summary, result = 8
-    expect(entries.length).toBe(8);
+    //          system-no-subtype, tool_use_summary, result = 7
+    //          (stream_event intentionally not emitted — partial deltas have no content)
+    expect(entries.length).toBe(7);
 
     // Events: session_changed (first session_id), active (from startQuery),
     //         compacting, permission_mode_changed, idle = 5

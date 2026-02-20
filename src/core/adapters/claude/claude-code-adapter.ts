@@ -1050,13 +1050,34 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     // Skip replayed messages (they're history, not new content)
     if ('isReplay' in msg && (msg as { isReplay?: boolean }).isReplay) return;
 
-    // Skip echo if this was sent via sendTurn() — channel already broadcast it
-    if (this.pendingSendCount > 0) {
+    // Tool-result user messages are system-generated (Claude Code feeding tool
+    // output back to the model). They must NEVER be swallowed by echo
+    // suppression — only the original user text input should be skipped.
+    // Detect tool results by checking for tool_use_result (structured result
+    // data) or tool_result content blocks in the message.
+    const isToolResult = 'tool_use_result' in msg || this.hasToolResultContent(msg);
+
+    // Skip echo if this was sent via sendTurn() — channel already broadcast it.
+    // Only suppress genuine user-input echoes, never tool results.
+    if (!isToolResult && this.pendingSendCount > 0) {
       this.pendingSendCount--;
       return;
     }
 
     this.emitEntry(msg);
+  }
+
+  /**
+   * Check if a user message contains tool_result content blocks.
+   * These are system-generated messages carrying tool execution output
+   * back to the model — not user-typed input echoes.
+   */
+  private hasToolResultContent(msg: SDKUserMessage): boolean {
+    const content = msg.message?.content;
+    if (!Array.isArray(content)) return false;
+    return content.some(
+      (block) => typeof block === 'object' && block !== null && 'type' in block && block.type === 'tool_result',
+    );
   }
 
   private handleResultMessage(msg: SDKResultMessage): void {
@@ -1197,8 +1218,19 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     }
   }
 
-  private handleStreamEvent(msg: SDKPartialAssistantMessage): void {
-    this.emitEntry(msg);
+  private handleStreamEvent(_msg: SDKPartialAssistantMessage): void {
+    // Intentionally not emitted. Stream events are partial deltas (content_block_start,
+    // content_block_delta, etc.) that lack a complete message.content array.
+    // adaptClaudeEntry produces entries with message: undefined for these, which:
+    // 1. Are already filtered from rendering by SKIP_ENTRY_TYPES ('stream_event')
+    // 2. Provide no content for tool registry pairing (no tool_use blocks)
+    // 3. Bloat the entries array with empty entries during live streaming
+    //
+    // The complete assistant message (type: 'assistant') arrives after streaming
+    // finishes and contains the full content array with all tool_use blocks.
+    // Text streaming in the webview is handled by progressive JSONL entries
+    // when loading from disk; during live SDK sessions, the assistant message
+    // provides the complete content in one shot.
   }
 
   // --------------------------------------------------------------------------
