@@ -1,32 +1,30 @@
 /**
- * Blocks Tool Panel — reducer-based tool panel for blocks mode
+ * Blocks Tool Panel — tool mirror panel for blocks mode
  *
- * Uses the panel reducer for expansion state with:
- * - Sticky user pin (click to lock expansion)
- * - Active/streaming tools always expanded
- * - Latest arrived tool auto-focused
+ * Renders all visible tools from the transcript using the same
+ * ToolBlockRenderer pipeline. Tools default to compact; only active
+ * (streaming) tools render expanded. Task children nest inside their
+ * parent Task tool exactly as in the transcript.
  *
- * Syncs with BlocksVisibilityContext to track visible tools.
- * Renders expanded views for focused tools, collapsed headers for others.
+ * Syncs with BlocksVisibilityContext to track which tools are in view.
  *
  * @module webview/blocks/BlocksToolPanel
  */
 
-import { useReducer, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import { useBlocksToolRegistry } from './BlocksToolRegistryContext.js';
 import { useBlocksVisibleToolIds } from './BlocksVisibilityContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
 import { RenderLocationProvider } from '../context/RenderLocationContext.js';
-import { panelReducer, initialPanelState, isToolExpanded, getFocusedToolId } from './panel-reducer.js';
-import { getToolDefinition, getToolData } from './tool-definitions.js';
-import { StatusIndicator } from '../renderers/tools/shared/StatusIndicator.js';
-import type { ToolResultBlock } from '../../core/transcript.js';
+import { usePanelDispatch } from './PanelStateContext.js';
+import { ToolBlockRenderer } from './ToolBlockRenderer.js';
+import type { RichBlock } from './types.js';
 
 /** Threshold in px — auto-scroll when within this distance of the bottom */
 const AUTO_SCROLL_THRESHOLD = 80;
 
 export function BlocksToolPanel(): React.JSX.Element {
-  const [state, dispatch] = useReducer(panelReducer, initialPanelState);
+  const dispatch = usePanelDispatch();
   const visibleToolIds = useBlocksVisibleToolIds();
   const registry = useBlocksToolRegistry();
   const { setToolPanelWidthPx } = usePreferences();
@@ -45,6 +43,10 @@ export function BlocksToolPanel(): React.JSX.Element {
     for (const id of visibleToolIds) {
       if (!prevSet.has(id)) {
         dispatch({ type: 'TOOL_ARRIVED', toolId: id });
+        // Mark tools without results as actively streaming
+        if (!registry.getResult(id)) {
+          dispatch({ type: 'STREAM_STARTED', toolId: id });
+        }
       }
     }
 
@@ -56,25 +58,7 @@ export function BlocksToolPanel(): React.JSX.Element {
     }
 
     prevVisibleRef.current = currentSet;
-  }, [visibleToolIds]);
-
-  // ---------------------------------------------------------------------------
-  // Expansion logic: partition visible tools
-  // ---------------------------------------------------------------------------
-  const { expandedIds, collapsedIds } = useMemo(() => {
-    const expanded: string[] = [];
-    const collapsed: string[] = [];
-    for (const id of visibleToolIds) {
-      if (isToolExpanded(id, state)) {
-        expanded.push(id);
-      } else {
-        collapsed.push(id);
-      }
-    }
-    return { expandedIds: expanded, collapsedIds: collapsed };
-  }, [visibleToolIds, state]);
-
-  const focusedId = getFocusedToolId(state);
+  }, [visibleToolIds, dispatch, registry]);
 
   // ---------------------------------------------------------------------------
   // Auto-scroll
@@ -132,10 +116,6 @@ export function BlocksToolPanel(): React.JSX.Element {
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
-  const emptyMessage = visibleToolIds.length === 0
-    ? 'No tools in view'
-    : 'No tools to display';
-
   return (
     <div className="crispy-tool-panel">
       <div
@@ -154,28 +134,11 @@ export function BlocksToolPanel(): React.JSX.Element {
         onScroll={handleScroll}
       >
         {visibleToolIds.length === 0 ? (
-          <div className="crispy-tool-panel__empty">{emptyMessage}</div>
+          <div className="crispy-tool-panel__empty">No tools in view</div>
         ) : (
           <RenderLocationProvider location="panel">
-            {/* Expanded tools first */}
-            {expandedIds.map(id => (
-              <ExpandedPanelTool
-                key={id}
-                toolId={id}
-                registry={registry}
-                isPinned={state.userPinnedId === id}
-                isFocused={focusedId === id}
-                onPin={() => dispatch({ type: 'USER_CLICKED', toolId: id })}
-              />
-            ))}
-            {/* Collapsed headers */}
-            {collapsedIds.map(id => (
-              <CollapsedPanelHeader
-                key={id}
-                toolId={id}
-                registry={registry}
-                onClick={() => dispatch({ type: 'USER_CLICKED', toolId: id })}
-              />
+            {visibleToolIds.map(id => (
+              <PanelTool key={id} toolId={id} />
             ))}
           </RenderLocationProvider>
         )}
@@ -185,116 +148,32 @@ export function BlocksToolPanel(): React.JSX.Element {
 }
 
 // ============================================================================
-// Expanded Panel Tool
+// Panel Tool — renders a single tool via ToolBlockRenderer
 // ============================================================================
 
-interface ExpandedPanelToolProps {
-  toolId: string;
-  registry: import('./blocks-tool-registry.js').BlocksToolRegistry;
-  isPinned: boolean;
-  isFocused: boolean;
-  onPin: () => void;
-}
+/**
+ * Renders a tool in the panel using the same ToolBlockRenderer pipeline
+ * as the transcript. The `tool-panel` anchor drives selectView() to use
+ * compact for completed tools and expanded for running tools.
+ *
+ * Task children render nested inside via useBlocksChildEntries (handled
+ * internally by ToolBlockRenderer).
+ */
+function PanelTool({ toolId }: { toolId: string }): React.JSX.Element | null {
+  const registry = useBlocksToolRegistry();
+  const block = registry.useBlock(toolId);
 
-function ExpandedPanelTool({
-  toolId,
-  registry,
-  isPinned,
-  isFocused,
-  onPin,
-}: ExpandedPanelToolProps): React.JSX.Element | null {
-  const result = registry.useResult(toolId);
-  const toolName = registry.getName(toolId) ?? 'Unknown';
-
-  const def = getToolDefinition(toolName);
-  const data = getToolData(toolName);
-  const status: 'running' | 'complete' | 'error' = result
-    ? result.is_error
-      ? 'error'
-      : 'complete'
-    : 'running';
-
-  // Pin indicator
-  const cardClass = [
-    'crispy-blocks-panel-tool',
-    isPinned ? 'crispy-blocks-panel-tool--pinned' : '',
-    isFocused ? 'crispy-blocks-panel-tool--focused' : '',
-  ].filter(Boolean).join(' ');
+  // Block not yet available (registry hasn't processed the entry yet)
+  if (!block || block.type !== 'tool_use') {
+    return null;
+  }
 
   return (
-    <div className={cardClass} onClick={onPin}>
-      <div className="crispy-blocks-panel-tool__header">
-        <span className="crispy-blocks-panel-tool__icon">{data.icon}</span>
-        <span className="crispy-blocks-panel-tool__name">{toolName}</span>
-        <StatusIndicator status={status} />
-        {isPinned && <span className="crispy-blocks-panel-tool__pin">📌</span>}
-      </div>
-      {def?.views.expanded && result && (
-        <div className="crispy-blocks-panel-tool__body">
-          {/* Render expanded view if we had the full block */}
-          <div className="crispy-blocks-panel-tool__result">
-            {extractResultPreview(result)}
-          </div>
-        </div>
-      )}
-    </div>
+    <ToolBlockRenderer
+      block={block as RichBlock & { type: 'tool_use' }}
+      anchor={{ type: 'tool-panel', toolId }}
+      registry={registry}
+      siblingCount={1}
+    />
   );
-}
-
-// ============================================================================
-// Collapsed Panel Header
-// ============================================================================
-
-interface CollapsedPanelHeaderProps {
-  toolId: string;
-  registry: import('./blocks-tool-registry.js').BlocksToolRegistry;
-  onClick: () => void;
-}
-
-function CollapsedPanelHeader({
-  toolId,
-  registry,
-  onClick,
-}: CollapsedPanelHeaderProps): React.JSX.Element {
-  const result = registry.useResult(toolId);
-  const toolName = registry.getName(toolId) ?? 'Unknown';
-  const data = getToolData(toolName);
-  const status: 'running' | 'complete' | 'error' = result
-    ? result.is_error
-      ? 'error'
-      : 'complete'
-    : 'running';
-
-  return (
-    <button
-      className="crispy-blocks-panel-header"
-      onClick={onClick}
-    >
-      <span className="crispy-blocks-panel-header__icon">{data.icon}</span>
-      <span className="crispy-blocks-panel-header__name">
-        {toolName}
-      </span>
-      <StatusIndicator status={status} />
-    </button>
-  );
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function extractResultPreview(result: ToolResultBlock): string {
-  const content = result.content;
-  if (typeof content === 'string') {
-    return content.slice(0, 200) + (content.length > 200 ? '...' : '');
-  }
-  if (Array.isArray(content)) {
-    for (const item of content) {
-      if (item.type === 'text' && 'text' in item) {
-        const text = (item as { text: string }).text;
-        return text.slice(0, 200) + (text.length > 200 ? '...' : '');
-      }
-    }
-  }
-  return '[Result]';
 }

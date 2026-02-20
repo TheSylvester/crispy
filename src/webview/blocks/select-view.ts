@@ -14,9 +14,9 @@ import type { BlocksToolRegistry } from './blocks-tool-registry.js';
  * Select which view to render for a tool block.
  *
  * Rules by anchor:
- * - tool-panel / task-in-panel: always expanded
+ * - tool-panel / task-in-panel: compact if completed, expanded if running
  * - task-tool: compact if completed, expanded if running
- * - main-thread: expanded if running or few siblings, compact if many siblings
+ * - main-thread: always compact (expanded views live in the tool panel)
  *
  * Note: collapsed view is handled by buildRuns — blocks that reach selectView
  * are already determined to NOT be in a collapsed group.
@@ -32,32 +32,24 @@ export function selectView(
   _def: ToolDefinition,
   anchor: AnchorPoint,
   block: RichBlock,
-  siblingCount: number,
+  _siblingCount: number,
   registry: BlocksToolRegistry,
 ): 'collapsed' | 'compact' | 'expanded' {
-  // Panel always uses expanded
-  if (anchor.type === 'tool-panel' || anchor.type === 'task-in-panel') {
-    return 'expanded';
-  }
-
   // Check if block has result
   const hasResult = block.type === 'tool_use'
     ? registry.getResult(block.id) !== undefined
     : false;
 
-  // Inside a task tool: completed tools are compact, active tools are expanded
+  // Panel: compact if completed, expanded if actively running
+  if (anchor.type === 'tool-panel' || anchor.type === 'task-in-panel') {
+    return hasResult ? 'compact' : 'expanded';
+  }
+
+  // Inside a task tool: compact if completed, expanded if running
   if (anchor.type === 'task-tool') {
     return hasResult ? 'compact' : 'expanded';
   }
 
-  // Main thread:
-  // - Still running → expanded
-  // - Few siblings → expanded (for readability)
-  // - Many siblings → compact (to reduce visual noise)
-  if (!hasResult) {
-    return 'expanded';
-  }
-
-  // Threshold: if more than 5 tool_use blocks in same entry, use compact
-  return siblingCount > 5 ? 'compact' : 'expanded';
+  // Main thread: always compact — expanded views live in the tool panel
+  return 'compact';
 }

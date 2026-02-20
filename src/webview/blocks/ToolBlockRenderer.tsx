@@ -7,6 +7,7 @@
  * @module webview/blocks/ToolBlockRenderer
  */
 
+import { useCallback } from 'react';
 import type { RichBlock, AnchorPoint, ToolViewProps } from './types.js';
 import type { BlocksToolRegistry } from './blocks-tool-registry.js';
 import { getToolDefinition, getToolData, extractSubject } from './tool-definitions.js';
@@ -18,6 +19,7 @@ import { extractResultText, formatCount } from '../renderers/tools/shared/tool-u
 import { useBlocksChildEntries } from './BlocksToolRegistryContext.js';
 import { BlocksEntryWithRegistry } from './BlocksEntryWithRegistry.js';
 import { usePreferences } from '../context/PreferencesContext.js';
+import { usePanelDispatch } from './PanelStateContext.js';
 
 interface ToolBlockRendererProps {
   block: RichBlock & { type: 'tool_use' };
@@ -45,6 +47,13 @@ export function ToolBlockRenderer({
 
   // Debug: global tool view override from preferences (?debug=1 settings)
   const { toolViewOverride: globalOverride } = usePreferences();
+
+  // Click-to-panel: dispatch USER_CLICKED for main-thread and task-tool anchors
+  const panelDispatch = usePanelDispatch();
+  const clickable = anchor.type === 'main-thread' || anchor.type === 'task-tool';
+  const handleClick = useCallback(() => {
+    panelDispatch({ type: 'USER_CLICKED', toolId: block.id });
+  }, [panelDispatch, block.id]);
 
   // Compute status
   const status: ToolViewProps['status'] = !result
@@ -84,7 +93,7 @@ export function ToolBlockRenderer({
 
     if (viewFn) {
       return (
-        <div className="crispy-blocks-tool" data-tool-id={block.id} data-tool-name={block.name}>
+        <div className="crispy-blocks-tool" data-tool-id={block.id} data-tool-name={block.name} onClick={clickable ? handleClick : undefined}>
           {viewFn(viewProps)}
         </div>
       );
@@ -95,7 +104,7 @@ export function ToolBlockRenderer({
   const data = getToolData(block.name);
 
   return (
-    <div className="crispy-blocks-tool crispy-blocks-tool--unknown" data-tool-id={block.id} data-tool-name={block.name}>
+    <div className="crispy-blocks-tool crispy-blocks-tool--unknown" data-tool-id={block.id} data-tool-name={block.name} onClick={clickable ? handleClick : undefined}>
       <FallbackToolView block={block} result={result} status={status} anchor={anchor} data={data} />
     </div>
   );

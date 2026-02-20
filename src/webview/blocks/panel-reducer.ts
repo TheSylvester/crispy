@@ -16,7 +16,6 @@ import type { PanelAction, PanelState } from './types.js';
 // ============================================================================
 
 export const initialPanelState: PanelState = {
-  inViewTools: [],
   userPinnedId: null,
   latestArrivedId: null,
   activeToolIds: new Set(),
@@ -34,14 +33,20 @@ export function panelReducer(state: PanelState, action: PanelAction): PanelState
         latestArrivedId: action.toolId,
       };
 
-    case 'TOOL_LEFT_VIEW':
-      return {
-        ...state,
-        // If the tool that left was pinned, unpin
-        userPinnedId: state.userPinnedId === action.toolId ? null : state.userPinnedId,
-        // If the tool that left was latest, clear
-        latestArrivedId: state.latestArrivedId === action.toolId ? null : state.latestArrivedId,
-      };
+    case 'TOOL_LEFT_VIEW': {
+      const next = { ...state };
+      // If the tool that left was pinned, unpin
+      if (state.userPinnedId === action.toolId) next.userPinnedId = null;
+      // If the tool that left was latest, clear
+      if (state.latestArrivedId === action.toolId) next.latestArrivedId = null;
+      // If the tool that left was active/streaming, remove it
+      if (state.activeToolIds.has(action.toolId)) {
+        const s = new Set(state.activeToolIds);
+        s.delete(action.toolId);
+        next.activeToolIds = s;
+      }
+      return next;
+    }
 
     case 'USER_CLICKED':
       return {

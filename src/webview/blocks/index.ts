@@ -87,6 +87,11 @@ export {
   isToolExpanded,
   getFocusedToolId,
 } from './panel-reducer.js';
+export {
+  PanelStateProvider,
+  usePanelState,
+  usePanelDispatch,
+} from './PanelStateContext.js';
 
 // Transcript
 export { BlocksTranscriptRenderer } from './BlocksTranscriptRenderer.js';

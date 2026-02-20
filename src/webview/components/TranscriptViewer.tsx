@@ -51,6 +51,7 @@ import { PerfStore } from "../perf/profiler.js";
 import { BlocksToolRegistryProvider } from "../blocks/BlocksToolRegistryContext.js";
 import { BlocksVisibilityProvider } from "../blocks/BlocksVisibilityContext.js";
 import { BlocksToolPanel } from "../blocks/BlocksToolPanel.js";
+import { PanelStateProvider } from "../blocks/PanelStateContext.js";
 
 // Debug mode now lives in PreferencesContext (default: on during development).
 
@@ -451,10 +452,12 @@ export function TranscriptViewer(): React.JSX.Element {
     mainContent = isBlocks ? (
       <ToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
         <BlocksToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
-          <BlocksVisibilityProvider scrollRef={transcriptRef}>
-            {transcriptArea}
-            {toolPanelOpen && <BlocksToolPanel />}
-          </BlocksVisibilityProvider>
+          <PanelStateProvider>
+            <BlocksVisibilityProvider scrollRef={transcriptRef}>
+              {transcriptArea}
+              {toolPanelOpen && <BlocksToolPanel />}
+            </BlocksVisibilityProvider>
+          </PanelStateProvider>
         </BlocksToolRegistryProvider>
       </ToolRegistryProvider>
     ) : (

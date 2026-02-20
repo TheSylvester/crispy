@@ -144,11 +144,9 @@ export type PanelAction =
 /**
  * State for the tool detail panel.
  *
- * Tracks which tools are in view, user pinning, and streaming activity.
+ * Tracks user pinning, recency, and streaming activity.
  */
 export interface PanelState {
-  /** Tools currently visible in the viewport */
-  inViewTools: RichBlock[];
   /** User-pinned tool ID (takes priority over auto-selection) */
   userPinnedId: string | null;
   /** Most recently arrived tool ID (for auto-follow) */

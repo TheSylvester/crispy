@@ -35,6 +35,7 @@ import {
   useEffect,
 } from 'react';
 import type { TranscriptEntry, ContentBlock, ToolResultBlock } from '../../core/transcript.js';
+import type { RichBlock } from './types.js';
 import { BlocksToolRegistry } from './blocks-tool-registry.js';
 
 // Side-effect import: registers all tool views with the definition registry.
@@ -165,7 +166,19 @@ function processEntryForBlocksRegistry(
 
   for (const block of content) {
     if (block.type === 'tool_use') {
-      registry.register(block.id, block.name);
+      // Build RichBlock with structural context for panel expanded views
+      const richBlock: RichBlock = {
+        ...block,
+        context: {
+          entryUuid: entry.uuid ?? '',
+          role: entry.message?.role ?? entry.type,
+          parentToolUseId: entry.parentToolUseID,
+          agentId: entry.agentId,
+          depth: 0,
+          isSidechain: entry.isSidechain,
+        },
+      };
+      registry.register(block.id, block.name, richBlock);
     } else if (block.type === 'tool_result') {
       registry.resolve(block.tool_use_id, block);
       // Recurse into nested content (Task results contain sub-agent blocks)

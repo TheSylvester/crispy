@@ -12,6 +12,7 @@
 
 import { useSyncExternalStore } from 'react';
 import type { ToolResultBlock } from '../../core/transcript.js';
+import type { RichBlock } from './types.js';
 
 // ============================================================================
 // BlocksToolRegistry — pairing-only external store
@@ -23,6 +24,9 @@ export class BlocksToolRegistry {
 
   /** Tool name keyed by tool_use_id (e.g., "Bash", "Read") */
   private names = new Map<string, string>();
+
+  /** RichBlock data keyed by tool_use_id — stored for panel expanded views */
+  private blocks = new Map<string, RichBlock>();
 
   /** Registered tool_use IDs awaiting their result */
   private pending = new Set<string>();
@@ -51,8 +55,15 @@ export class BlocksToolRegistry {
    *
    * @param toolUseId - The tool_use block ID (UUID)
    * @param toolName - The tool name (e.g., "Bash", "Read") for definition lookups
+   * @param block - Optional RichBlock data for panel expanded views
    */
-  register(toolUseId: string, toolName?: string): void {
+  register(toolUseId: string, toolName?: string, block?: RichBlock): void {
+    // Store block BEFORE the idempotent early-return so re-registration
+    // updates the block (e.g., on playback rewind reprocessing)
+    if (block) {
+      this.blocks.set(toolUseId, block);
+    }
+
     // Store name mapping (even on re-register, in case name was missing before)
     if (toolName && !this.names.has(toolUseId)) {
       this.names.set(toolUseId, toolName);
@@ -118,6 +129,34 @@ export class BlocksToolRegistry {
    */
   getName(toolUseId: string): string | undefined {
     return this.names.get(toolUseId);
+  }
+
+  /**
+   * Get the RichBlock data for a tool_use_id.
+   * Returns undefined if the tool hasn't been registered with a block.
+   */
+  getBlock(toolUseId: string): RichBlock | undefined {
+    return this.blocks.get(toolUseId);
+  }
+
+  /**
+   * Check if a tool is still pending (registered but no result yet).
+   */
+  isPending(toolUseId: string): boolean {
+    return this.pending.has(toolUseId);
+  }
+
+  /**
+   * React hook that subscribes to a specific tool's block data.
+   *
+   * Re-renders only when this specific tool's block is stored.
+   */
+  useBlock(toolUseId: string): RichBlock | undefined {
+    return useSyncExternalStore(
+      (callback) => this.subscribeTool(toolUseId, callback),
+      () => this.getBlock(toolUseId),
+      () => this.getBlock(toolUseId),
+    );
   }
 
   /**
@@ -209,6 +248,7 @@ export class BlocksToolRegistry {
   reset(): void {
     this.results.clear();
     this.names.clear();
+    this.blocks.clear();
     this.pending.clear();
     this.orphans.clear();
     this.dirtyIds.clear();
