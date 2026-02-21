@@ -3519,9 +3519,10 @@ h2 {
   pointer-events: none;
 }
 
-/* Overlay mode — panel floats over content with shadow */
+/* Overlay mode — panel floats over content with shadow, above control panel */
 [data-tool-panel="overlay"] .crispy-tool-panel {
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+  z-index: 250;
 }
 
 /* --- Resize handle — draggable left edge --- */
