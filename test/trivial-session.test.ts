@@ -63,7 +63,7 @@ describe('isTrivialSession', () => {
     expect(isTrivialSession([], 0)).toBe(true);
   });
 
-  it('detects queue-operation only session', () => {
+  it('detects queue-operation only session (small file)', () => {
     const entries = [makeEntry('queue-operation')];
     expect(isTrivialSession(entries, 200)).toBe(true);
   });
@@ -202,5 +202,18 @@ describe('isTrivialSession', () => {
     // A session where the only "user" entry is a meta entry — no real messages
     const entries = [makeUser('system context', { isMeta: true })];
     expect(isTrivialSession(entries, 150)).toBe(true);
+  });
+
+  // -- Large file guard (image attachment sessions) --
+
+  it('keeps session when entries are incomplete due to large file (image attachment)', () => {
+    // queue-operation only in entries, but file is 100KB — entries are truncated, not empty
+    const entries = [makeEntry('queue-operation')];
+    expect(isTrivialSession(entries, 100 * 1024)).toBe(false);
+  });
+
+  it('keeps session when only non-message entries but file exceeds 64KB', () => {
+    const entries = [makeEntry('queue-operation'), makeEntry('file-history-snapshot')];
+    expect(isTrivialSession(entries, 80 * 1024)).toBe(false);
   });
 });

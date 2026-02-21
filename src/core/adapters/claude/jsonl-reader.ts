@@ -125,6 +125,13 @@ export interface ClaudeQuickMeta {
   lastMessage?: string;
 }
 
+/** Structured metadata extracted from the tail (last 32KB) of a JSONL file. */
+export interface TailMetadata {
+  lastMessage?: string; // last user/assistant text
+  summary?: string; // from type:"summary" entry (AI-generated title)
+  slug?: string; // three-word session name from any entry
+}
+
 // ============================================================================
 // Incremental JSONL Reading
 // ============================================================================
@@ -525,10 +532,12 @@ export function isTrivialSession(
     (e) => (e.type === "user" || e.type === "assistant") && !e.isMeta,
   );
 
-  // 3. No user/assistant messages at all — trivial
-  //    (queue-ops, file-history-snapshots, system-only sessions)
+  // 3. No user/assistant messages at all.
+  //    But if the file is larger than the typical read buffer (64KB),
+  //    entries are likely incomplete — a large entry (e.g. base64 image)
+  //    exceeded the first-chunk read. Don't classify as trivial.
   if (messages.length === 0) {
-    return true;
+    return fileSize <= 64 * 1024;
   }
 
   // Real user prompts: user entries that aren't tool_result responses.
@@ -619,7 +628,7 @@ export function extractMetadataFast(
         label: "No prompt",
         isSidechain: false,
         isTrivial: true,
-        lastMessage: extractLastMessage(filepath),
+        lastMessage: extractTailMetadata(filepath).lastMessage,
       };
     }
 
@@ -651,18 +660,25 @@ export function extractMetadataFast(
     const firstEntry = entries[0];
     const parentSessionId = firstEntry?.sessionId;
 
-    // Extract last message (read from end of file)
-    const lastMessage = extractLastMessage(filepath);
+    // Extract tail metadata (read from end of file)
+    const tail = extractTailMetadata(filepath);
 
     const isSidechain = isSidechainSession(entries);
     const isTrivial = isTrivialSession(entries, stat.size);
 
+    // Determine label — fall back through tail metadata when head-chunk
+    // had no usable text (e.g. image exceeded buffer, or no text blocks)
+    let label = extractLabel(entries);
+    if (label === "No prompt") {
+      label = tail.summary || tail.slug || tail.lastMessage || "No prompt";
+    }
+
     return {
-      label: extractLabel(entries),
+      label,
       isSidechain,
       isTrivial,
       parentSessionId,
-      lastMessage,
+      lastMessage: tail.lastMessage,
     };
   } catch {
     // File read error
@@ -679,17 +695,18 @@ export function extractMetadataFast(
 }
 
 /**
- * Extract the last message content from the end of a JSONL file.
- * Reads the last maxBytes to find the most recent user/assistant message.
+ * Extract structured metadata from the tail (last maxBytes) of a JSONL file.
+ * Reads in reverse to find the most recent user/assistant message, plus
+ * summary and slug fields when present.
  *
  * @param filepath - Path to the JSONL file
  * @param maxBytes - Maximum bytes to read from end (default 32KB)
- * @returns Truncated last message text, or undefined if not found
+ * @returns TailMetadata with lastMessage, summary, and slug (all optional)
  */
-export function extractLastMessage(
+export function extractTailMetadata(
   filepath: string,
   maxBytes = 32 * 1024,
-): string | undefined {
+): TailMetadata {
   let fd: number | null = null;
 
   try {
@@ -698,7 +715,7 @@ export function extractLastMessage(
     const fileSize = stat.size;
 
     if (fileSize === 0) {
-      return undefined;
+      return {};
     }
 
     // Calculate read position (seek to end - maxBytes)
@@ -710,7 +727,7 @@ export function extractLastMessage(
     const bytesRead = fs.readSync(fd, buffer, 0, bytesToRead, startPos);
 
     if (bytesRead === 0) {
-      return undefined;
+      return {};
     }
 
     const content = buffer.toString("utf-8", 0, bytesRead);
@@ -721,7 +738,9 @@ export function extractLastMessage(
       lines.shift();
     }
 
-    // Parse lines in reverse to find last user/assistant message
+    const result: TailMetadata = {};
+
+    // Parse lines in reverse to find metadata (most recent first, first hit wins per field)
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i].trim();
       if (!line) continue;
@@ -729,8 +748,19 @@ export function extractLastMessage(
       try {
         const entry = JSON.parse(line) as ClaudeTranscriptEntry;
 
-        // Look for user or assistant messages with text content
+        // Extract summary from type:"summary" entries
+        if (entry.type === "summary" && entry.summary && !result.summary) {
+          result.summary = entry.summary;
+        }
+
+        // Extract slug (three-word session name, present on various entry types)
+        if ((entry as Record<string, unknown>).slug && !result.slug) {
+          result.slug = String((entry as Record<string, unknown>).slug);
+        }
+
+        // Extract lastMessage from user/assistant messages with text content
         if (
+          !result.lastMessage &&
           (entry.type === "user" || entry.type === "assistant") &&
           !entry.isMeta
         ) {
@@ -741,8 +771,8 @@ export function extractLastMessage(
             text = msgContent;
           } else if (Array.isArray(msgContent)) {
             // Find last text block (user messages often have system context prepended)
-            for (let i = msgContent.length - 1; i >= 0; i--) {
-              const block = msgContent[i];
+            for (let j = msgContent.length - 1; j >= 0; j--) {
+              const block = msgContent[j];
               if (block.type === "text" && block.text) {
                 text = block.text;
                 break;
@@ -752,9 +782,13 @@ export function extractLastMessage(
 
           if (text) {
             // Normalize: remove newlines and trim (CSS handles truncation via ellipsis)
-            text = text.replace(/\n/g, " ").trim();
-            return text;
+            result.lastMessage = text.replace(/\n/g, " ").trim();
           }
+        }
+
+        // Stop early if we've found all fields
+        if (result.lastMessage && result.summary && result.slug) {
+          break;
         }
       } catch {
         // Skip invalid JSON lines
@@ -762,9 +796,9 @@ export function extractLastMessage(
       }
     }
 
-    return undefined;
+    return result;
   } catch {
-    return undefined;
+    return {};
   } finally {
     if (fd !== null) {
       try {
@@ -774,6 +808,17 @@ export function extractLastMessage(
       }
     }
   }
+}
+
+/**
+ * Extract the last message content from the end of a JSONL file.
+ * @deprecated Use extractTailMetadata() instead for richer metadata.
+ */
+export function extractLastMessage(
+  filepath: string,
+  maxBytes = 32 * 1024,
+): string | undefined {
+  return extractTailMetadata(filepath, maxBytes).lastMessage;
 }
 
 // ============================================================================
@@ -858,7 +903,7 @@ export function buildSessionMeta(
     projectSlug,
     worktree,
     etag: generateEtag(Math.floor(mtime / 1000), size, entryCount),
-    lastMessage: extractLastMessage(filepath),
+    lastMessage: extractTailMetadata(filepath).lastMessage,
   };
 }
 
