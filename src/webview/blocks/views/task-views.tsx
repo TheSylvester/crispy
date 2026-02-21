@@ -33,7 +33,7 @@ interface TaskInput {
 // Compact View
 // ============================================================================
 
-export function TaskCompactView({ block, result, status, children }: ToolViewProps): ReactNode {
+export function TaskCompactView({ block, result, status }: ToolViewProps): ReactNode {
   const input = block.input as TaskInput;
   const agentType = input.subagent_type ?? 'agent';
   const description = input.description ?? '';
@@ -56,7 +56,6 @@ export function TaskCompactView({ block, result, status, children }: ToolViewPro
         <span className="crispy-blocks-compact-description">{description}</span>
         <StatusIndicator status={status} summary={resultSummary} />
       </div>
-      {children}
     </div>
   );
 }
