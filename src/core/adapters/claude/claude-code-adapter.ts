@@ -45,6 +45,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { AsyncIterableQueue } from '../../async-iterable-queue.js';
 import { adaptClaudeEntry } from './claude-entry-adapter.js';
 import { parseJsonlFile, extractMetadataFast } from './jsonl-reader.js';
+import { loadSubagentEntries } from './subagent-loader.js';
 
 import type { TranscriptEntry, ContextUsage, MessageContent } from '../../transcript.js';
 
@@ -1521,9 +1522,13 @@ export function findSession(sessionId: string): SessionInfo | undefined {
  */
 export async function loadHistory(sessionPath: string): Promise<TranscriptEntry[]> {
   const rawEntries = parseJsonlFile(sessionPath);
-  return rawEntries
+  let entries = rawEntries
     .map((entry) => adaptClaudeEntry(entry as unknown as Record<string, unknown>))
     .filter((entry): entry is TranscriptEntry => entry !== null);
+
+  // Load sub-agent transcripts and merge into the entry stream
+  entries = loadSubagentEntries(sessionPath, entries);
+  return entries;
 }
 
 // ============================================================================
