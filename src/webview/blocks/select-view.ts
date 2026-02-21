@@ -14,8 +14,8 @@ import type { BlocksToolRegistry } from './blocks-tool-registry.js';
  * Select which view to render for a tool block.
  *
  * Rules by anchor:
- * - tool-panel / task-in-panel: compact if completed, expanded if running
- * - task-tool: compact if completed, expanded if running
+ * - tool-panel / task-in-panel: always expanded (collapsible via <details>)
+ * - task-tool: always expanded (collapsible via <details>)
  * - main-thread: always compact (expanded views live in the tool panel)
  *
  * @param def - Tool definition with available views
@@ -28,23 +28,19 @@ import type { BlocksToolRegistry } from './blocks-tool-registry.js';
 export function selectView(
   _def: ToolDefinition,
   anchor: AnchorPoint,
-  block: RichBlock,
+  _block: RichBlock,
   _siblingCount: number,
-  registry: BlocksToolRegistry,
+  _registry: BlocksToolRegistry,
 ): 'compact' | 'expanded' {
-  // Check if block has result
-  const hasResult = block.type === 'tool_use'
-    ? registry.getResult(block.id) !== undefined
-    : false;
-
-  // Panel: compact if completed, expanded if actively running
+  // Panel and nested task tools: always expanded — native <details>
+  // handles collapse/expand. Completed tools render collapsed (no `open`
+  // attr), running tools render expanded (`open`).
   if (anchor.type === 'tool-panel' || anchor.type === 'task-in-panel') {
-    return hasResult ? 'compact' : 'expanded';
+    return 'expanded';
   }
 
-  // Inside a task tool: compact if completed, expanded if running
   if (anchor.type === 'task-tool') {
-    return hasResult ? 'compact' : 'expanded';
+    return 'expanded';
   }
 
   // Main thread: always compact — expanded views live in the tool panel

@@ -7,7 +7,7 @@
  * @module webview/blocks/ToolBlockRenderer
  */
 
-import { useCallback } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import type { RichBlock, AnchorPoint, ToolViewProps } from './types.js';
 import type { BlocksToolRegistry } from './blocks-tool-registry.js';
 import { getToolDefinition, getToolData, extractSubject } from './tool-definitions.js';
@@ -19,7 +19,55 @@ import { extractResultText, formatCount } from '../renderers/tools/shared/tool-u
 import { useBlocksChildEntries } from './BlocksToolRegistryContext.js';
 import { BlocksEntryWithRegistry } from './BlocksEntryWithRegistry.js';
 import { usePreferences } from '../context/PreferencesContext.js';
-import { usePanelDispatch } from './PanelStateContext.js';
+import { usePanelDispatch, usePanelState } from './PanelStateContext.js';
+import { isToolExpanded } from './panel-reducer.js';
+
+/** Max children visible in the transcript content tail preview. */
+const TAIL_SIZE = 3;
+
+/**
+ * Two-phase tail window: when items grow beyond tailSize, first render
+ * drops the oldest entry (shrink), then a rAF later adds the newest (grow).
+ * Prevents simultaneous add+remove layout flash.
+ *
+ * No-op when items.length <= tailSize or when the array didn't grow.
+ */
+function useDeferredTail<T>(items: T[], tailSize: number): T[] {
+  // Phase flag: when non-null, we're in the "shrink" frame showing trimmed
+  const [pending, setPending] = useState<T[] | null>(null);
+  const prevLenRef = useRef(items.length);
+
+  const len = items.length;
+  const prevLen = prevLenRef.current;
+
+  // Detect growth beyond tailSize — enter shrink phase
+  if (len > prevLen && len > tailSize) {
+    // New tail window minus the newest entry: [B, C] not [B, C, D]
+    const trimmed = items.slice(-tailSize - 1, -1);
+    prevLenRef.current = len;
+    // Render-phase setState: legal when conditional and non-looping.
+    // React will re-render, but we return trimmed synchronously below
+    // so THIS render already shows the shrunk state.
+    setPending(trimmed);
+    return trimmed;
+  }
+
+  prevLenRef.current = len;
+
+  // After the shrink render paints, clear pending → triggers grow render
+  useEffect(() => {
+    if (pending !== null) {
+      const id = requestAnimationFrame(() => setPending(null));
+      return () => cancelAnimationFrame(id);
+    }
+  }, [pending]);
+
+  // Shrink phase (re-render from setPending): return the trimmed array
+  if (pending !== null) return pending;
+
+  // Normal: return the tail slice (or full array if within tailSize)
+  return len > tailSize ? items.slice(-tailSize) : items;
+}
 
 interface ToolBlockRendererProps {
   block: RichBlock & { type: 'tool_use' };
@@ -45,9 +93,13 @@ export function ToolBlockRenderer({
   // Debug: global tool view override from preferences (?debug=1 settings)
   const { toolViewOverride: globalOverride } = usePreferences();
 
-  // Click-to-panel: dispatch USER_CLICKED for main-thread and task-tool anchors
+  // Panel state: used for expansion override in tool-panel anchors
+  const panelState = usePanelState();
+
+  // Click-to-panel: dispatch USER_CLICKED to pin/expand the tool.
+  // Active on main-thread, task-tool, AND tool-panel (so compact panel tools can be clicked to expand).
   const panelDispatch = usePanelDispatch();
-  const clickable = anchor.type === 'main-thread' || anchor.type === 'task-tool';
+  const clickable = anchor.type === 'main-thread' || anchor.type === 'task-tool' || anchor.type === 'tool-panel';
   const handleClick = useCallback(() => {
     panelDispatch({ type: 'USER_CLICKED', toolId: block.id });
   }, [panelDispatch, block.id]);
@@ -62,10 +114,25 @@ export function ToolBlockRenderer({
   // Get tool definition
   const def = getToolDefinition(block.name);
 
-  // Render child entries for Task tools (zero cost for non-Task tools)
-  const renderedChildren = childEntries.length > 0 ? (
+  // Deferred tail: two-phase add/remove to prevent layout flash.
+  // Called unconditionally (React hook rules) but no-op for non-Task tools.
+  const deferredTail = useDeferredTail(childEntries, TAIL_SIZE);
+
+  // Render child entries for Task tools (zero cost for non-Task tools).
+  // Main-thread: completed Tasks hide children, running Tasks show tail.
+  // Panel / nested: always show all children.
+  let visibleChildren = childEntries;
+  if (anchor.type === 'main-thread' && childEntries.length > 0) {
+    if (status === 'complete' || status === 'error') {
+      visibleChildren = [];
+    } else {
+      visibleChildren = deferredTail;
+    }
+  }
+
+  const renderedChildren = visibleChildren.length > 0 ? (
     <div className="crispy-blocks-task-children">
-      {childEntries.map((entry) => (
+      {visibleChildren.map((entry) => (
         <BlocksEntryWithRegistry key={entry.uuid} entry={entry} />
       ))}
     </div>
@@ -83,7 +150,13 @@ export function ToolBlockRenderer({
   // Render with definition if available
   if (def) {
     // Select view: global debug override > auto selection
-    const viewMode = globalOverride ?? selectView(def, anchor, block, siblingCount, registry);
+    let viewMode = globalOverride ?? selectView(def, anchor, block, siblingCount, registry);
+
+    // Panel expansion override: tools in tool-panel default to compact unless
+    // isToolExpanded says otherwise (active/streaming, pinned, or latest).
+    if (viewMode === 'expanded' && anchor.type === 'tool-panel' && !isToolExpanded(block.id, panelState, !!result)) {
+      viewMode = 'compact';
+    }
 
     // Get the view renderer
     const viewFn = def.views[viewMode];
@@ -125,7 +198,7 @@ function FallbackToolView({ block, result, status, data }: FallbackToolViewProps
     : undefined;
 
   return (
-    <details className="crispy-blocks-tool-card" open>
+    <details className="crispy-blocks-tool-card" open={status === 'running'}>
       <summary className="crispy-blocks-tool-summary">
         <span className="crispy-blocks-tool-header">
           <span className="crispy-blocks-tool-icon">{data.icon}</span>

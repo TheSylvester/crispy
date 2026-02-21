@@ -67,7 +67,7 @@ export function GrepExpandedView({ block, result, status }: ToolViewProps): Reac
     : undefined;
 
   return (
-    <details className="crispy-blocks-tool-card" open>
+    <details className="crispy-blocks-tool-card" open={status === 'running'}>
       <summary className="crispy-blocks-tool-summary">
         <span className="crispy-blocks-tool-header">
           <span className="crispy-blocks-tool-icon">{meta.icon}</span>

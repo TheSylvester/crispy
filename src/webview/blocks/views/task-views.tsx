@@ -2,7 +2,7 @@
  * Task Tool Views — custom renderers for Task (sub-agent) tool
  *
  * - Compact: agent type badge + description + child count
- * - Expanded: prompt + nested children + result
+ * - Expanded: nested children + result (prompt comes as first child entry)
  *
  * Task is special: it renders its children recursively using the blocks
  * pipeline. Children are tool_use blocks with parentToolUseId matching
@@ -67,11 +67,10 @@ export function TaskCompactView({ block, result, status, children }: ToolViewPro
  * using the same blocks pipeline recursively. The ToolBlockRenderer passes
  * rendered children via props.children (from useBlocksChildEntries).
  */
-export function TaskExpandedView({ block, result, status, children }: ToolViewProps): ReactNode {
+export function TaskExpandedView({ block, result, status, anchor, children }: ToolViewProps): ReactNode {
   const input = block.input as TaskInput;
   const agentType = input.subagent_type ?? 'agent';
   const description = input.description ?? '';
-  const prompt = input.prompt ?? null;
 
   const resultText = extractResultText(result?.content);
   const resultSummary = result
@@ -80,8 +79,16 @@ export function TaskExpandedView({ block, result, status, children }: ToolViewPr
       : formatCount(resultText, 'line')
     : undefined;
 
+  // Panel and nested-in-panel always render open so children are visible.
+  // Main-thread and task-tool only open while running (collapsed when complete).
+  // IMPORTANT: changing this to status-only gating breaks panel child rendering
+  // because completed Tasks collapse and hide their children. See session
+  // bcb318b8 for the full debugging history.
+  const isPanel = anchor.type === 'tool-panel' || anchor.type === 'task-in-panel';
+  const shouldOpen = isPanel || status === 'running';
+
   return (
-    <details className="crispy-blocks-tool-card crispy-blocks-task-card" open>
+    <details className="crispy-blocks-tool-card crispy-blocks-task-card" open={shouldOpen}>
       <summary className="crispy-blocks-tool-summary">
         <span className="crispy-blocks-tool-header">
           <span className="crispy-blocks-tool-icon">{meta.icon}</span>
@@ -91,14 +98,9 @@ export function TaskExpandedView({ block, result, status, children }: ToolViewPr
         <StatusIndicator status={status} summary={resultSummary} />
       </summary>
       <div className="crispy-blocks-tool-body">
-        {/* Initial prompt — rendered as user-style message */}
-        {prompt && (
-          <div className="prose user-text crispy-task-prompt">
-            <CrispyMarkdown>{prompt}</CrispyMarkdown>
-          </div>
-        )}
-
-        {/* Child entries — sub-agent tools rendered recursively */}
+        {/* Child entries — sub-agent tools rendered recursively.
+            The first child is the user prompt echo (same as block.input.prompt),
+            so we don't render the prompt separately to avoid duplication. */}
         {children}
 
         {/* Result output — rich markdown rendering */}

@@ -33,6 +33,7 @@ import {
   useContext,
   useRef,
   useEffect,
+  useState,
 } from 'react';
 import type { TranscriptEntry, ContentBlock, ToolResultBlock } from '../../core/transcript.js';
 import type { RichBlock } from './types.js';
@@ -75,8 +76,30 @@ export function BlocksToolRegistryProvider({
   // Child entries map: parentToolUseID → TranscriptEntry[].
   // Groups nested entries by their parent Task tool_use_id so Task cards
   // can render their children inside the card body.
-  const childEntriesMapRef = useRef<Map<string, TranscriptEntry[]>>(new Map());
-  const childEntriesMap = childEntriesMapRef.current;
+  //
+  // Two-layer design:
+  //   1. workingMap (useRef) — mutable map, populated during render. Cheap to
+  //      push into, no React overhead.
+  //   2. childEntriesMap (useState) — immutable snapshot exposed via context.
+  //      New reference = React re-renders all context consumers.
+  //
+  // After the processing block mutates the working map, we compare a generation
+  // counter to decide whether a fresh snapshot is needed. This is MORE reliable
+  // than useMemo (whose caching semantics are advisory, not guaranteed) and
+  // avoids useEffect timing gaps (which run post-render, too late for panel
+  // components mounting via IntersectionObserver).
+  //
+  // IMPORTANT — DO NOT replace this with useMemo. useMemo's cache can be
+  // discarded or retained unpredictably across React re-renders, causing
+  // intermittent failures where Task children disappear. See session
+  // bcb318b8 for the full debugging history.
+  const workingMapRef = useRef<Map<string, TranscriptEntry[]>>(new Map());
+  const workingMap = workingMapRef.current;
+  const [childEntriesMap, setChildEntriesMap] = useState<Map<string, TranscriptEntry[]>>(() => new Map());
+  // Generation counter: bumped every time processing adds to the working map.
+  // Compared against the snapshot's generation to know when to re-snapshot.
+  const generationRef = useRef(0);
+  const snapshotGenRef = useRef(0);
 
   const processedCountRef = useRef(0);
   const sessionIdRef = useRef<string | null>(null);
@@ -89,8 +112,9 @@ export function BlocksToolRegistryProvider({
   if (sessionChanged) {
     sessionIdRef.current = sessionId;
     registry.reset();
-    childEntriesMap.clear();
+    workingMap.clear();
     processedCountRef.current = 0;
+    generationRef.current++;
   }
 
   const len = entries.length;
@@ -99,26 +123,41 @@ export function BlocksToolRegistryProvider({
   if (len === 0) {
     if (processed > 0) {
       registry.reset();
-      childEntriesMap.clear();
+      workingMap.clear();
       processedCountRef.current = 0;
+      generationRef.current++;
     }
   } else if (len > processed) {
     registry.silent(() => {
       for (let i = processed; i < len; i++) {
-        processEntryForBlocksRegistry(entries[i], registry, childEntriesMap);
+        processEntryForBlocksRegistry(entries[i], registry, workingMap);
       }
     });
     processedCountRef.current = len;
+    generationRef.current++;
   } else if (len < processed) {
     // Playback rewind / fork — full reset + reprocess
     registry.reset();
-    childEntriesMap.clear();
+    workingMap.clear();
     registry.silent(() => {
       for (const entry of entries) {
-        processEntryForBlocksRegistry(entry, registry, childEntriesMap);
+        processEntryForBlocksRegistry(entry, registry, workingMap);
       }
     });
     processedCountRef.current = len;
+    generationRef.current++;
+  }
+
+  // Snapshot: when generation has advanced, create a new Map reference so
+  // React context consumers re-render. We call setChildEntriesMap during
+  // render (not in an effect) so the new value is available to children in
+  // the SAME render pass — no timing gap.
+  if (generationRef.current !== snapshotGenRef.current) {
+    snapshotGenRef.current = generationRef.current;
+    // setState during render is legal in React when it's conditional and
+    // won't loop. The generation guard ensures it fires exactly once per
+    // data change. React will schedule a re-render with the new value.
+    setChildEntriesMap(new Map(workingMap));
   }
 
   // ---------------------------------------------------------------------------

@@ -81,7 +81,7 @@ export function GenericExpandedView({ block, result, status }: ToolViewProps): R
     : undefined;
 
   return (
-    <details className="crispy-blocks-generic-tool" open>
+    <details className="crispy-blocks-generic-tool" open={status === 'running'}>
       <summary className="crispy-blocks-generic-summary">
         <span className="crispy-blocks-generic-name">{block.name}</span>
         <StatusIndicator status={status} summary={resultSummary} />

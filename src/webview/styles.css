@@ -305,9 +305,33 @@ h2 {
   transition: margin-right var(--sidebar-transition);
 }
 
-/* Streaming glow overlay — inset box-shadow on the main content area.
-   Reads data-streaming from .crispy-main and agency mode from the
-   ControlPanel's data-agency via :has(). Matches Leto's #main::after pattern. */
+/* Streaming glow — agency-colored inset glow on both the main content area
+   and the tool panel.  --frame-highlight is set on .crispy-main itself (not
+   just ::after) so descendants — including the tool panel's ::after — inherit
+   the current agency color.  Reads data-streaming from .crispy-main and
+   agency mode from the ControlPanel's data-agency via :has(). */
+
+/* 1. Set --frame-highlight on .crispy-main per agency mode */
+.crispy-main[data-streaming]:has(
+    .crispy-cp[data-agency="ask-before-edits"]
+  ) {
+  --frame-highlight: var(--agency-white);
+}
+.crispy-main[data-streaming]:has(
+    .crispy-cp[data-agency="edit-automatically"]
+  ) {
+  --frame-highlight: var(--agency-blue);
+}
+.crispy-main[data-streaming]:has(.crispy-cp[data-agency="plan-mode"]) {
+  --frame-highlight: var(--agency-teal);
+}
+.crispy-main[data-streaming]:has(
+    .crispy-cp[data-agency="bypass-permissions"]
+  ) {
+  --frame-highlight: var(--agency-red);
+}
+
+/* 2. Primary glow overlay — main content area */
 .crispy-main::after {
   content: "";
   position: absolute;
@@ -317,27 +341,19 @@ h2 {
   border-radius: inherit;
 }
 
-.crispy-main[data-streaming]:has(
-    .crispy-cp[data-agency="ask-before-edits"]
-  )::after {
-  --frame-highlight: var(--agency-white);
+.crispy-main[data-streaming]::after {
   animation: crispy-cp-glow 2s ease-in-out infinite;
 }
-.crispy-main[data-streaming]:has(
-    .crispy-cp[data-agency="edit-automatically"]
-  )::after {
-  --frame-highlight: var(--agency-blue);
-  animation: crispy-cp-glow 2s ease-in-out infinite;
-}
-.crispy-main[data-streaming]:has(.crispy-cp[data-agency="plan-mode"])::after {
-  --frame-highlight: var(--agency-teal);
-  animation: crispy-cp-glow 2s ease-in-out infinite;
-}
-.crispy-main[data-streaming]:has(
-    .crispy-cp[data-agency="bypass-permissions"]
-  )::after {
-  --frame-highlight: var(--agency-red);
-  animation: crispy-cp-glow 2s ease-in-out infinite;
+
+/* 3. Secondary glow overlay — tool panel (subtler, same rhythm) */
+.crispy-main[data-streaming] .crispy-tool-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  border-radius: inherit;
+  animation: crispy-tool-glow 2s ease-in-out infinite;
 }
 
 /* --- Transcript Viewer --- */
@@ -2758,6 +2774,16 @@ h2 {
   }
 }
 
+@keyframes crispy-tool-glow {
+  0%,
+  100% {
+    box-shadow: inset 0 0 6px var(--frame-highlight);
+  }
+  50% {
+    box-shadow: inset 0 0 14px var(--frame-highlight);
+  }
+}
+
 /* --- Streaming neon glow on container (uses --agency-glow-shadow) --- */
 
 .crispy-main[data-streaming] .crispy-cp {
@@ -3563,10 +3589,69 @@ h2 {
 
 .crispy-tool-panel__scroll {
   flex: 1;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 8px;
   min-width: 0;
+  min-height: 0;
+}
+
+/* --- Panel flex layout: active Task tools share vertical space --- */
+
+/* Default: all tools stay at natural height */
+.crispy-tool-panel__scroll > [data-run-id] {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+/* Active (open) Task tools grow to share free vertical space.
+   open attr is only set on running tasks (status === 'running').
+   :has() is safe — VS Code webview is Chromium 105+. */
+.crispy-tool-panel__scroll > [data-run-id][data-tool-name="Task"]:has(.crispy-blocks-task-card[open]) {
+  flex: 1 1 0;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Flex passthrough: .crispy-blocks-tool must also flex to pass height down */
+.crispy-tool-panel__scroll > [data-run-id][data-tool-name="Task"]:has(.crispy-blocks-task-card[open]) > .crispy-blocks-tool {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* The <details> card fills available space */
+.crispy-tool-panel__scroll > [data-run-id][data-tool-name="Task"]:has(.crispy-blocks-task-card[open]) .crispy-blocks-task-card[open] {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Task card body scrolls internally */
+.crispy-tool-panel__scroll > [data-run-id][data-tool-name="Task"]:has(.crispy-blocks-task-card[open]) .crispy-blocks-tool-body {
+  flex: 1 1 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* All panel tool bodies are scrollable when expanded.
+   max-height caps growth so overflow-y triggers even without
+   the flex chain (e.g. completed Task cards toggled open). */
+.crispy-tool-panel .crispy-blocks-tool-body {
+  overflow-y: auto;
+  max-height: 60vh;
+}
+
+/* Panel: first user message in Task children (the prompt echo) — moderate height */
+.crispy-tool-panel .crispy-blocks-task-children > .message.user:first-child .prose {
+  max-height: 6em;
+  overflow: hidden;
 }
 
 .crispy-tool-panel__empty {
@@ -3801,6 +3886,15 @@ h2 {
   border-radius: 4px;
 }
 
+/* In the panel, tools don't need click-to-panel cursor */
+.crispy-tool-panel .crispy-blocks-tool {
+  cursor: default;
+  margin-left: 0;
+}
+.crispy-tool-panel .crispy-blocks-tool:hover {
+  background: transparent;
+}
+
 .crispy-blocks-tool--unknown {
 }
 
@@ -4006,20 +4100,22 @@ h2 {
 
 /* --- Blocks Task Card --- */
 
-.crispy-blocks-task-card {
-  border-left: 2px solid var(--color-keyword);
-}
-
 .crispy-blocks-task-children {
-  margin-left: 8px;
-  padding-left: 8px;
+  margin-left: 4px;
+  padding-left: 6px;
   border-left: 2px solid rgba(255, 255, 255, 0.08);
 }
 
 .crispy-blocks-task-compact > .crispy-blocks-task-children {
-  margin-left: 8px;
-  padding-left: 8px;
+  margin-left: 4px;
+  padding-left: 6px;
   border-left: 2px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Task children user prompt in main-thread compact — clamp height */
+.crispy-blocks-task-compact > .crispy-blocks-task-children > .message.user:first-child .prose {
+  max-height: 4.2em;
+  overflow: hidden;
 }
 
 /* --- Blocks Bash Command --- */

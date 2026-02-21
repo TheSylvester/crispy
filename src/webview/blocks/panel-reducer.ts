@@ -60,15 +60,6 @@ export function panelReducer(state: PanelState, action: PanelAction): PanelState
         activeToolIds: new Set([...state.activeToolIds, action.toolId]),
       };
 
-    case 'STREAM_ENDED': {
-      const next = new Set(state.activeToolIds);
-      next.delete(action.toolId);
-      return {
-        ...state,
-        activeToolIds: next,
-      };
-    }
-
     default:
       return state;
   }
@@ -87,9 +78,13 @@ export function panelReducer(state: PanelState, action: PanelAction): PanelState
  * 3. Latest arrived → expanded (auto-focus behavior)
  * 4. Everything else → collapsed
  */
-export function isToolExpanded(toolId: string, state: PanelState): boolean {
-  // Active/streaming → always expanded
-  if (state.activeToolIds.has(toolId)) return true;
+export function isToolExpanded(
+  toolId: string,
+  state: PanelState,
+  hasResult?: boolean,
+): boolean {
+  // Active/streaming → expanded, BUT NOT if tool already has a result
+  if (state.activeToolIds.has(toolId) && !hasResult) return true;
   // User-pinned → expanded
   if (state.userPinnedId === toolId) return true;
   // Latest arrived → expanded (if nothing else claims expansion)

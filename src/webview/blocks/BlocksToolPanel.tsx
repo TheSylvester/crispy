@@ -130,6 +130,7 @@ export function BlocksToolPanel(): React.JSX.Element {
       </div>
       <div
         className="crispy-tool-panel__scroll"
+        data-render-mode="blocks"
         ref={scrollRef}
         onScroll={handleScroll}
       >
@@ -169,11 +170,13 @@ function PanelTool({ toolId }: { toolId: string }): React.JSX.Element | null {
   }
 
   return (
-    <ToolBlockRenderer
-      block={block as RichBlock & { type: 'tool_use' }}
-      anchor={{ type: 'tool-panel', toolId }}
-      registry={registry}
-      siblingCount={1}
-    />
+    <div data-run-id={toolId} data-tool-name={block.name}>
+      <ToolBlockRenderer
+        block={block as RichBlock & { type: 'tool_use' }}
+        anchor={{ type: 'tool-panel', toolId }}
+        registry={registry}
+        siblingCount={1}
+      />
+    </div>
   );
 }

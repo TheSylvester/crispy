@@ -19,7 +19,7 @@ import { ReadCompactView, ReadExpandedView } from './views/read-views.js';
 import { WriteCompactView, WriteExpandedView } from './views/write-views.js';
 import { GrepCompactView, GrepExpandedView } from './views/grep-views.js';
 import { GlobCompactView, GlobExpandedView } from './views/glob-views.js';
-import { TodoWriteCompactView } from './views/todowrite-views.js';
+import { TodoWriteCompactView, TodoWriteExpandedView } from './views/todowrite-views.js';
 import { SkillCompactView } from './views/skill-views.js';
 import { AskUserQuestionCompactView } from './views/askuserquestion-views.js';
 import { ExitPlanModeCompactView } from './views/exitplanmode-views.js';
@@ -122,7 +122,7 @@ const todoWriteMeta = getToolData('TodoWrite');
 registerToolViews('TodoWrite', {
   ...defaultToolViews(todoWriteMeta),
   compact: TodoWriteCompactView,
-  expanded: GenericExpandedView,
+  expanded: TodoWriteExpandedView,
 });
 
 // ============================================================================

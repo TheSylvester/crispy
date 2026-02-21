@@ -122,8 +122,7 @@ export type PanelAction =
   | { type: 'TOOL_ARRIVED'; toolId: string }
   | { type: 'TOOL_LEFT_VIEW'; toolId: string }
   | { type: 'USER_CLICKED'; toolId: string }
-  | { type: 'STREAM_STARTED'; toolId: string }
-  | { type: 'STREAM_ENDED'; toolId: string };
+  | { type: 'STREAM_STARTED'; toolId: string };
 
 /**
  * State for the tool detail panel.
