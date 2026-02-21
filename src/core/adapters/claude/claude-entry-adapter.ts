@@ -132,6 +132,7 @@ export function adaptClaudeEntry(raw: Record<string, unknown>): TranscriptEntry 
     cwd,
     message,
     toolUseResult,
+    tool_use_result,          // SDK snake_case variant
     summary,
     leafUuid,
     customTitle,
@@ -172,8 +173,8 @@ export function adaptClaudeEntry(raw: Record<string, unknown>): TranscriptEntry 
     // Working directory
     cwd: cwd as string | undefined,
 
-    // Structured tool result
-    toolUseResult: toolUseResult as ToolResult | undefined,
+    // Structured tool result (prefer camelCase, fall back to SDK snake_case)
+    toolUseResult: (toolUseResult ?? tool_use_result) as ToolResult | undefined,
 
     // Session display
     isMeta: isMeta as boolean | undefined,

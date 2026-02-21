@@ -10,6 +10,7 @@ import { useToolEntry } from '../../context/ToolRegistryContext.js';
 import { ToolCardShell } from './shared/ToolCardShell.js';
 import { getToolMeta } from './shared/tool-metadata.js';
 import { formatCount } from './shared/tool-utils.js';
+import { renderAnsi, hasAnsi, stripAnsi } from './shared/ansi.js';
 import { isBashInput } from '../../../core/transcript.js';
 import type { ToolInput } from '../../../core/transcript.js';
 
@@ -26,11 +27,13 @@ export function BashTool({ toolId }: { toolId: string }): React.JSX.Element | nu
   const command = input?.command ?? '';
   const description = input?.description;
 
-  // Result summary
-  const resultText = entry.result && typeof entry.result.content === 'string' ? entry.result.content : null;
+  // Result summary (strip ANSI for line count)
+  const rawResultText = entry.result && typeof entry.result.content === 'string' ? entry.result.content : null;
+  const resultText = rawResultText ? stripAnsi(rawResultText) : null;
   const resultSummary = entry.result
     ? entry.result.is_error ? 'Failed' : formatCount(resultText, 'line')
     : undefined;
+  const useAnsiRender = rawResultText !== null && hasAnsi(rawResultText);
 
   return (
     <ToolCardShell
@@ -52,7 +55,9 @@ export function BashTool({ toolId }: { toolId: string }): React.JSX.Element | nu
       {entry.result && (
         <div className="crispy-tool-result">
           <pre className={`crispy-tool-result__text ${entry.result.is_error ? 'crispy-tool-result__text--error' : ''}`}>
-            {typeof entry.result.content === 'string' ? entry.result.content : JSON.stringify(entry.result.content, null, 2)}
+            {useAnsiRender
+              ? renderAnsi(rawResultText!)
+              : (resultText ?? JSON.stringify(entry.result.content, null, 2))}
           </pre>
         </div>
       )}

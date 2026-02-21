@@ -12,6 +12,7 @@ import type { ToolViewProps } from '../types.js';
 import { getToolData } from '../tool-definitions.js';
 import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
+import { ToolCard } from './ToolCard.js';
 
 const meta = getToolData('TodoWrite');
 
@@ -62,7 +63,7 @@ export function TodoWriteCompactView({ block, result, status }: ToolViewProps): 
   return (
     <div className="crispy-blocks-compact-row">
       <span className="crispy-blocks-compact-icon">{meta.icon}</span>
-      <ToolBadge color={meta.color} label="TodoWrite" />
+      <ToolBadge color={meta.color} label="Todo" />
       {description}
       <StatusIndicator status={status} summary={resultSummary} />
     </div>
@@ -73,7 +74,7 @@ export function TodoWriteCompactView({ block, result, status }: ToolViewProps): 
 // Expanded View — full checklist with status icons
 // ============================================================================
 
-export function TodoWriteExpandedView({ block, result, status }: ToolViewProps): ReactNode {
+export function TodoWriteExpandedView({ block, result, status, anchor }: ToolViewProps): ReactNode {
   const input = block.input as TodoWriteInput;
   const todos = input.todos ?? [];
 
@@ -85,15 +86,14 @@ export function TodoWriteExpandedView({ block, result, status }: ToolViewProps):
     : undefined;
 
   return (
-    <details className="crispy-blocks-tool-card" open={status === 'running'}>
-      <summary className="crispy-blocks-tool-summary">
-        <span className="crispy-blocks-tool-header">
-          <span className="crispy-blocks-tool-icon">{meta.icon}</span>
-          <ToolBadge color={meta.color} label="TodoWrite" />
-          <span className="crispy-blocks-compact-subject">({itemCount} items)</span>
-        </span>
-        <StatusIndicator status={status} summary={resultSummary} />
-      </summary>
+    <ToolCard anchor={anchor} open={status === 'running'} summary={<>
+      <span className="crispy-blocks-tool-header">
+        <span className="crispy-blocks-tool-icon">{meta.icon}</span>
+        <ToolBadge color={meta.color} label="Todo" />
+        <span className="crispy-blocks-compact-subject">({itemCount} items)</span>
+      </span>
+      <StatusIndicator status={status} summary={resultSummary} />
+    </>}>
       {todos.length > 0 && (
         <ul className="crispy-todo-list">
           {todos.map((todo, i) => {
@@ -113,6 +113,6 @@ export function TodoWriteExpandedView({ block, result, status }: ToolViewProps):
           })}
         </ul>
       )}
-    </details>
+    </ToolCard>
   );
 }

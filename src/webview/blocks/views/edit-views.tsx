@@ -15,6 +15,7 @@ import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js
 import { FilePath } from '../../renderers/tools/shared/FilePath.js';
 import { DiffView } from '../../renderers/tools/shared/DiffView.js';
 import { inferLanguage } from '../../renderers/tools/shared/tool-utils.js';
+import { ToolCard } from './ToolCard.js';
 
 const meta = getToolData('Edit');
 
@@ -58,7 +59,7 @@ export function EditCompactView({ block, result, status }: ToolViewProps): React
 // Expanded View
 // ============================================================================
 
-export function EditExpandedView({ block, result, status }: ToolViewProps): ReactNode {
+export function EditExpandedView({ block, result, status, anchor }: ToolViewProps): ReactNode {
   const input = block.input as EditInput;
   const filePath = input.file_path ?? '(unknown)';
   const oldString = input.old_string ?? '';
@@ -73,19 +74,18 @@ export function EditExpandedView({ block, result, status }: ToolViewProps): Reac
     : undefined;
 
   return (
-    <details className="crispy-blocks-tool-card" open={status === 'running'}>
-      <summary className="crispy-blocks-tool-summary">
-        <span className="crispy-blocks-tool-header">
-          <span className="crispy-blocks-tool-icon">{meta.icon}</span>
-          <ToolBadge color={meta.color} label="Edit" />
-          <FilePath path={filePath} />
-          <span className="crispy-diff-stats">
-            <span className="crispy-diff-stats-added">+{newLines}</span>
-            <span className="crispy-diff-stats-removed">-{oldLines}</span>
-          </span>
+    <ToolCard anchor={anchor} open={status === 'running'} summary={<>
+      <span className="crispy-blocks-tool-header">
+        <span className="crispy-blocks-tool-icon">{meta.icon}</span>
+        <ToolBadge color={meta.color} label="Edit" />
+        <FilePath path={filePath} />
+        <span className="crispy-diff-stats">
+          <span className="crispy-diff-stats-added">+{newLines}</span>
+          <span className="crispy-diff-stats-removed">-{oldLines}</span>
         </span>
-        <StatusIndicator status={status} summary={resultSummary} />
-      </summary>
+      </span>
+      <StatusIndicator status={status} summary={resultSummary} />
+    </>}>
       <div className="crispy-blocks-tool-body">
         {(oldString || newString) && (
           <DiffView
@@ -102,6 +102,6 @@ export function EditExpandedView({ block, result, status }: ToolViewProps): Reac
           </pre>
         )}
       </div>
-    </details>
+    </ToolCard>
   );
 }

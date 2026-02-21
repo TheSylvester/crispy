@@ -1676,7 +1676,7 @@ h2 {
 
 .crispy-todo-list {
   list-style: none;
-  padding: 0;
+  padding: 0 0 0 8px;
   margin: 2px 0;
 }
 
@@ -3606,38 +3606,10 @@ h2 {
   min-width: 0;
 }
 
-/* Active (open) Task tools grow to share free vertical space.
-   open attr is only set on running tasks (status === 'running').
-   :has() is safe — VS Code webview is Chromium 105+. */
-.crispy-tool-panel__scroll > [data-run-id][data-tool-name="Task"]:has(.crispy-blocks-task-card[open]) {
-  flex: 1 1 0;
-  min-height: 120px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* Flex passthrough: .crispy-blocks-tool must also flex to pass height down */
-.crispy-tool-panel__scroll > [data-run-id][data-tool-name="Task"]:has(.crispy-blocks-task-card[open]) > .crispy-blocks-tool {
-  flex: 1 1 0;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-/* The <details> card fills available space */
-.crispy-tool-panel__scroll > [data-run-id][data-tool-name="Task"]:has(.crispy-blocks-task-card[open]) .crispy-blocks-task-card[open] {
-  flex: 1 1 0;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-/* Task card body scrolls internally */
-.crispy-tool-panel__scroll > [data-run-id][data-tool-name="Task"]:has(.crispy-blocks-task-card[open]) .crispy-blocks-tool-body {
-  flex: 1 1 0;
+/* Panel Task tools: natural height, no flex-grow. Children scroll if needed. */
+.crispy-tool-panel__scroll > [data-run-id][data-tool-name="Task"] .crispy-blocks-task-children {
   overflow-y: auto;
-  min-height: 0;
+  max-height: 40vh;
 }
 
 /* All panel tool bodies are scrollable when expanded.
@@ -3886,13 +3858,18 @@ h2 {
   border-radius: 4px;
 }
 
-/* In the panel, tools don't need click-to-panel cursor */
+/* Panel tools: header row is clickable to toggle expand/collapse */
 .crispy-tool-panel .crispy-blocks-tool {
-  cursor: default;
+  cursor: pointer;
   margin-left: 0;
 }
 .crispy-tool-panel .crispy-blocks-tool:hover {
   background: transparent;
+}
+/* Expanded tool bodies in panel: no pointer (only header toggles) */
+.crispy-tool-panel .crispy-blocks-tool-body,
+.crispy-tool-panel .crispy-blocks-task-children {
+  cursor: default;
 }
 
 .crispy-blocks-tool--unknown {

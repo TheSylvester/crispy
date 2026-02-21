@@ -20,7 +20,7 @@ import { WriteCompactView, WriteExpandedView } from './views/write-views.js';
 import { GrepCompactView, GrepExpandedView } from './views/grep-views.js';
 import { GlobCompactView, GlobExpandedView } from './views/glob-views.js';
 import { TodoWriteCompactView, TodoWriteExpandedView } from './views/todowrite-views.js';
-import { SkillCompactView } from './views/skill-views.js';
+import { SkillCompactView, SkillExpandedView } from './views/skill-views.js';
 import { AskUserQuestionCompactView } from './views/askuserquestion-views.js';
 import { ExitPlanModeCompactView } from './views/exitplanmode-views.js';
 
@@ -133,7 +133,7 @@ const skillMeta = getToolData('Skill');
 registerToolViews('Skill', {
   ...defaultToolViews(skillMeta),
   compact: SkillCompactView,
-  expanded: GenericExpandedView,
+  expanded: SkillExpandedView,
 });
 
 const askMeta = getToolData('AskUserQuestion');

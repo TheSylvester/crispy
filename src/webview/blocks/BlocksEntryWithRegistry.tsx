@@ -64,7 +64,7 @@ export function BlocksEntryWithRegistry({
     >
       {blocks.map((block, i) =>
         block.type === 'tool_use' ? (
-          <div key={`tool-${block.id}`} data-run-id={block.id}>
+          <div key={`tool-${block.id}`} {...(!parentToolUseId ? { 'data-run-id': block.id } : undefined)}>
             <ToolBlockRenderer
               block={block}
               anchor={anchor}

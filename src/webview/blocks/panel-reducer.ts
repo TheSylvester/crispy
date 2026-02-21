@@ -3,7 +3,8 @@
  *
  * Manages tool expansion state with:
  * - Sticky user pin (persists until tool leaves view)
- * - Active/streaming tools always expanded
+ * - User-collapsed override (click expanded tool to collapse)
+ * - Active/streaming tools auto-expanded (unless user-collapsed)
  * - Recency-based auto-focus for latest arrived tool
  *
  * @module webview/blocks/panel-reducer
@@ -19,6 +20,7 @@ export const initialPanelState: PanelState = {
   userPinnedId: null,
   latestArrivedId: null,
   activeToolIds: new Set(),
+  userCollapsedIds: new Set(),
 };
 
 // ============================================================================
@@ -45,14 +47,38 @@ export function panelReducer(state: PanelState, action: PanelAction): PanelState
         s.delete(action.toolId);
         next.activeToolIds = s;
       }
+      // Clear collapsed state
+      if (state.userCollapsedIds.has(action.toolId)) {
+        const s = new Set(state.userCollapsedIds);
+        s.delete(action.toolId);
+        next.userCollapsedIds = s;
+      }
       return next;
     }
 
-    case 'USER_CLICKED':
+    case 'USER_CLICKED': {
+      // If user explicitly collapsed this tool, re-expand it
+      if (state.userCollapsedIds.has(action.toolId)) {
+        const s = new Set(state.userCollapsedIds);
+        s.delete(action.toolId);
+        return { ...state, userCollapsedIds: s };
+      }
+      // If tool is expanded by active/latest (not by pin), collapse it
+      const expandedByAutomatic =
+        (state.activeToolIds.has(action.toolId) || state.latestArrivedId === action.toolId)
+        && state.userPinnedId !== action.toolId;
+      if (expandedByAutomatic) {
+        return {
+          ...state,
+          userCollapsedIds: new Set([...state.userCollapsedIds, action.toolId]),
+        };
+      }
+      // Otherwise toggle pin as before
       return {
         ...state,
-        userPinnedId: action.toolId,
+        userPinnedId: state.userPinnedId === action.toolId ? null : action.toolId,
       };
+    }
 
     case 'STREAM_STARTED':
       return {
@@ -73,7 +99,8 @@ export function panelReducer(state: PanelState, action: PanelAction): PanelState
  * Determine if a tool should be expanded in the panel.
  *
  * Priority:
- * 1. Active/streaming → always expanded
+ * 0. User-collapsed → always collapsed (overrides everything)
+ * 1. Active/streaming → expanded (unless tool has a result)
  * 2. User-pinned → expanded
  * 3. Latest arrived → expanded (auto-focus behavior)
  * 4. Everything else → collapsed
@@ -83,6 +110,8 @@ export function isToolExpanded(
   state: PanelState,
   hasResult?: boolean,
 ): boolean {
+  // User explicitly collapsed → respect their choice
+  if (state.userCollapsedIds.has(toolId)) return false;
   // Active/streaming → expanded, BUT NOT if tool already has a result
   if (state.activeToolIds.has(toolId) && !hasResult) return true;
   // User-pinned → expanded

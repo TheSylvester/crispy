@@ -14,6 +14,7 @@ import { extractSubject } from '../tool-definitions.js';
 import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { extractResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
+import { ToolCard } from './ToolCard.js';
 
 // ============================================================================
 // Default Views Helper
@@ -71,7 +72,7 @@ function DefaultCompactView({ block, result, status, def }: DefaultCompactViewPr
  * Generic expanded view that shows tool input as YAML and result as text.
  * Used for unknown/MCP tools without custom renderers.
  */
-export function GenericExpandedView({ block, result, status }: ToolViewProps): ReactNode {
+export function GenericExpandedView({ block, result, status, anchor }: ToolViewProps): ReactNode {
   const inputYaml = formatAsYaml(block.input as Record<string, unknown>);
   const resultText = extractResultText(result?.content);
   const resultSummary = result
@@ -81,11 +82,10 @@ export function GenericExpandedView({ block, result, status }: ToolViewProps): R
     : undefined;
 
   return (
-    <details className="crispy-blocks-generic-tool" open={status === 'running'}>
-      <summary className="crispy-blocks-generic-summary">
-        <span className="crispy-blocks-generic-name">{block.name}</span>
-        <StatusIndicator status={status} summary={resultSummary} />
-      </summary>
+    <ToolCard anchor={anchor} open={status === 'running'} className="crispy-blocks-generic-tool" summaryClassName="crispy-blocks-generic-summary" summary={<>
+      <span className="crispy-blocks-generic-name">{block.name}</span>
+      <StatusIndicator status={status} summary={resultSummary} />
+    </>}>
       <div className="crispy-blocks-generic-body">
         <pre className="crispy-blocks-generic-input">{inputYaml}</pre>
         {result && (
@@ -94,7 +94,7 @@ export function GenericExpandedView({ block, result, status }: ToolViewProps): R
           </pre>
         )}
       </div>
-    </details>
+    </ToolCard>
   );
 }
 

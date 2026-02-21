@@ -13,6 +13,7 @@ import type { BlocksToolRegistry } from './blocks-tool-registry.js';
 import { getToolDefinition, getToolData, extractSubject } from './tool-definitions.js';
 import { selectView } from './select-view.js';
 import { GenericExpandedView } from './views/default-views.js';
+import { ToolCard } from './views/ToolCard.js';
 import { ToolBadge } from '../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../renderers/tools/shared/StatusIndicator.js';
 import { extractResultText, formatCount } from '../renderers/tools/shared/tool-utils.js';
@@ -24,6 +25,9 @@ import { isToolExpanded } from './panel-reducer.js';
 
 /** Max children visible in the transcript content tail preview. */
 const TAIL_SIZE = 3;
+
+/** Tools that should never auto-expand in the tool panel (read-only / low-signal). */
+const COMPACT_ONLY_TOOLS = new Set(['Read', 'Grep', 'WebFetch', 'WebSearch']);
 
 /**
  * Two-phase tail window: when items grow beyond tailSize, first render
@@ -100,9 +104,17 @@ export function ToolBlockRenderer({
   // Active on main-thread, task-tool, AND tool-panel (so compact panel tools can be clicked to expand).
   const panelDispatch = usePanelDispatch();
   const clickable = anchor.type === 'main-thread' || anchor.type === 'task-tool' || anchor.type === 'tool-panel';
-  const handleClick = useCallback(() => {
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    // In the panel, only toggle on header clicks — ignore clicks inside
+    // the tool body (children, result text, code blocks, etc.)
+    if (anchor.type === 'tool-panel') {
+      const target = e.target as HTMLElement;
+      if (target.closest('.crispy-blocks-tool-body, .crispy-blocks-task-children')) {
+        return;
+      }
+    }
     panelDispatch({ type: 'USER_CLICKED', toolId: block.id });
-  }, [panelDispatch, block.id]);
+  }, [panelDispatch, block.id, anchor.type]);
 
   // Compute status
   const status: ToolViewProps['status'] = !result
@@ -154,8 +166,14 @@ export function ToolBlockRenderer({
 
     // Panel expansion override: tools in tool-panel default to compact unless
     // isToolExpanded says otherwise (active/streaming, pinned, or latest).
-    if (viewMode === 'expanded' && anchor.type === 'tool-panel' && !isToolExpanded(block.id, panelState, !!result)) {
-      viewMode = 'compact';
+    // Compact-only tools (Read, Grep, Web*) never auto-expand — only explicit
+    // user pin can expand them (ignores active, latest-arrived, etc.)
+    if (viewMode === 'expanded' && anchor.type === 'tool-panel') {
+      if (COMPACT_ONLY_TOOLS.has(block.name)) {
+        viewMode = panelState.userPinnedId === block.id ? 'expanded' : 'compact';
+      } else if (!isToolExpanded(block.id, panelState, !!result)) {
+        viewMode = 'compact';
+      }
     }
 
     // Get the view renderer
@@ -188,7 +206,7 @@ interface FallbackToolViewProps extends ToolViewProps {
   data: ReturnType<typeof getToolData>;
 }
 
-function FallbackToolView({ block, result, status, data }: FallbackToolViewProps): React.JSX.Element {
+function FallbackToolView({ block, result, status, anchor, data }: FallbackToolViewProps): React.JSX.Element {
   const subject = extractSubject(block);
   const resultText = extractResultText(result?.content);
   const resultSummary = result
@@ -198,23 +216,22 @@ function FallbackToolView({ block, result, status, data }: FallbackToolViewProps
     : undefined;
 
   return (
-    <details className="crispy-blocks-tool-card" open={status === 'running'}>
-      <summary className="crispy-blocks-tool-summary">
-        <span className="crispy-blocks-tool-header">
-          <span className="crispy-blocks-tool-icon">{data.icon}</span>
-          <ToolBadge color={data.color} label={block.name} />
-          <span className="crispy-blocks-compact-subject">{subject}</span>
-        </span>
-        <StatusIndicator status={status} summary={resultSummary} />
-      </summary>
+    <ToolCard anchor={anchor} open={status === 'running'} summary={<>
+      <span className="crispy-blocks-tool-header">
+        <span className="crispy-blocks-tool-icon">{data.icon}</span>
+        <ToolBadge color={data.color} label={block.name} />
+        <span className="crispy-blocks-compact-subject">{subject}</span>
+      </span>
+      <StatusIndicator status={status} summary={resultSummary} />
+    </>}>
       <div className="crispy-blocks-tool-body">
         <GenericExpandedView
           block={block}
           result={result}
           status={status}
-          anchor={{ type: 'main-thread' }}
+          anchor={anchor}
         />
       </div>
-    </details>
+    </ToolCard>
   );
 }

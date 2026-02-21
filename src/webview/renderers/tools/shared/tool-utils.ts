@@ -5,6 +5,8 @@
  * @module webview/renderers/tools/shared/tool-utils
  */
 
+import { stripAnsi } from './ansi.js';
+
 /**
  * Count lines in text and format as "{n} {noun}(s)".
  * Used by most tool renderers for result summaries.
@@ -34,8 +36,20 @@ export function formatLineCount(content: string | unknown[] | null): string {
 /**
  * Extract text from tool result content (string or ContentBlock[]).
  * Handles both plain string results and array-of-blocks results.
+ * ANSI escape codes are stripped for clean display in summaries and counts.
+ * Use extractRawResultText() when you need the original text with ANSI codes
+ * (e.g., for colored terminal output rendering).
  */
 export function extractResultText(content: unknown): string | null {
+  const raw = extractRawResultText(content);
+  return raw ? stripAnsi(raw) : null;
+}
+
+/**
+ * Extract text from tool result content without stripping ANSI codes.
+ * Use this when you need the raw terminal output for colored rendering.
+ */
+export function extractRawResultText(content: unknown): string | null {
   if (typeof content === 'string') return content || null;
   if (Array.isArray(content)) {
     const texts = content

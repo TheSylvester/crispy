@@ -14,6 +14,7 @@ import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js
 import { FilePath } from '../../renderers/tools/shared/FilePath.js';
 import { CodePreview } from '../../renderers/tools/shared/CodePreview.js';
 import { inferLanguage } from '../../renderers/tools/shared/tool-utils.js';
+import { ToolCard } from './ToolCard.js';
 
 const meta = getToolData('Write');
 
@@ -53,7 +54,7 @@ export function WriteCompactView({ block, result, status }: ToolViewProps): Reac
 // Expanded View
 // ============================================================================
 
-export function WriteExpandedView({ block, result, status }: ToolViewProps): ReactNode {
+export function WriteExpandedView({ block, result, status, anchor }: ToolViewProps): ReactNode {
   const input = block.input as WriteInput;
   const filePath = input.file_path ?? '(unknown)';
   const content = input.content ?? '';
@@ -67,16 +68,15 @@ export function WriteExpandedView({ block, result, status }: ToolViewProps): Rea
     : undefined;
 
   return (
-    <details className="crispy-blocks-tool-card" open={status === 'running'}>
-      <summary className="crispy-blocks-tool-summary">
-        <span className="crispy-blocks-tool-header">
-          <span className="crispy-blocks-tool-icon">{meta.icon}</span>
-          <ToolBadge color={meta.color} label="Write" />
-          <FilePath path={filePath} />
-          <span className="crispy-tool-line-info">({lineCount} lines)</span>
-        </span>
-        <StatusIndicator status={status} summary={resultSummary} />
-      </summary>
+    <ToolCard anchor={anchor} open={status === 'running'} summary={<>
+      <span className="crispy-blocks-tool-header">
+        <span className="crispy-blocks-tool-icon">{meta.icon}</span>
+        <ToolBadge color={meta.color} label="Write" />
+        <FilePath path={filePath} />
+        <span className="crispy-tool-line-info">({lineCount} lines)</span>
+      </span>
+      <StatusIndicator status={status} summary={resultSummary} />
+    </>}>
       <div className="crispy-blocks-tool-body">
         {content && <CodePreview code={content} language={lang} />}
         {result && result.is_error && (
@@ -87,6 +87,6 @@ export function WriteExpandedView({ block, result, status }: ToolViewProps): Rea
           </pre>
         )}
       </div>
-    </details>
+    </ToolCard>
   );
 }

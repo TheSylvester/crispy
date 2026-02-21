@@ -18,6 +18,7 @@ import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
 import { extractResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
+import { ToolCard } from './ToolCard.js';
 
 const meta = getToolData('Task');
 
@@ -88,15 +89,14 @@ export function TaskExpandedView({ block, result, status, anchor, children }: To
   const shouldOpen = isPanel || status === 'running';
 
   return (
-    <details className="crispy-blocks-tool-card crispy-blocks-task-card" open={shouldOpen}>
-      <summary className="crispy-blocks-tool-summary">
-        <span className="crispy-blocks-tool-header">
-          <span className="crispy-blocks-tool-icon">{meta.icon}</span>
-          <ToolBadge color={meta.color} label={agentType} />
-          <span className="crispy-blocks-tool-description">{description}</span>
-        </span>
-        <StatusIndicator status={status} summary={resultSummary} />
-      </summary>
+    <ToolCard anchor={anchor} open={shouldOpen} className="crispy-blocks-tool-card crispy-blocks-task-card" summary={<>
+      <span className="crispy-blocks-tool-header">
+        <span className="crispy-blocks-tool-icon">{meta.icon}</span>
+        <ToolBadge color={meta.color} label={agentType} />
+        <span className="crispy-blocks-tool-description">{description}</span>
+      </span>
+      <StatusIndicator status={status} summary={resultSummary} />
+    </>}>
       <div className="crispy-blocks-tool-body">
         {/* Child entries — sub-agent tools rendered recursively.
             The first child is the user prompt echo (same as block.input.prompt),
@@ -110,6 +110,6 @@ export function TaskExpandedView({ block, result, status, anchor, children }: To
           </div>
         )}
       </div>
-    </details>
+    </ToolCard>
   );
 }

@@ -136,4 +136,6 @@ export interface PanelState {
   latestArrivedId: string | null;
   /** Set of tool IDs currently streaming */
   activeToolIds: Set<string>;
+  /** Tool IDs the user explicitly collapsed (overrides active/latest expansion) */
+  userCollapsedIds: Set<string>;
 }

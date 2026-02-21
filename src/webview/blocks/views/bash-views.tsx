@@ -12,7 +12,9 @@ import type { ToolViewProps } from '../types.js';
 import { getToolData } from '../tool-definitions.js';
 import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
-import { extractResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
+import { extractResultText, extractRawResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
+import { renderAnsi, hasAnsi } from '../../renderers/tools/shared/ansi.js';
+import { ToolCard } from './ToolCard.js';
 
 const meta = getToolData('Bash');
 
@@ -59,7 +61,7 @@ export function BashCompactView({ block, result, status }: ToolViewProps): React
 // Expanded View
 // ============================================================================
 
-export function BashExpandedView({ block, result, status }: ToolViewProps): ReactNode {
+export function BashExpandedView({ block, result, status, anchor }: ToolViewProps): ReactNode {
   const input = block.input as BashInput;
   const command = input.command ?? '';
 
@@ -70,26 +72,29 @@ export function BashExpandedView({ block, result, status }: ToolViewProps): Reac
       : formatCount(resultText, 'line')
     : undefined;
 
+  // Use raw text (with ANSI codes) for colored rendering
+  const rawText = extractRawResultText(result?.content);
+  const useAnsiRender = rawText !== null && hasAnsi(rawText);
+
   return (
-    <details className="crispy-blocks-tool-card" open={status === 'running'}>
-      <summary className="crispy-blocks-tool-summary">
-        <span className="crispy-blocks-tool-header">
-          <span className="crispy-blocks-tool-icon">{meta.icon}</span>
-          <ToolBadge color={meta.color} textColor="#1e1e1e" label="Bash" />
-          {input.description && (
-            <span className="crispy-blocks-tool-description">{input.description}</span>
-          )}
-          <code className="u-mono-pill crispy-tool-bash-inline">{command}</code>
-        </span>
-        <StatusIndicator status={status} summary={resultSummary} />
-      </summary>
+    <ToolCard anchor={anchor} open={status === 'running'} summary={<>
+      <span className="crispy-blocks-tool-header">
+        <span className="crispy-blocks-tool-icon">{meta.icon}</span>
+        <ToolBadge color={meta.color} textColor="#1e1e1e" label="Bash" />
+        {input.description && (
+          <span className="crispy-blocks-tool-description">{input.description}</span>
+        )}
+        <code className="u-mono-pill crispy-tool-bash-inline">{command}</code>
+      </span>
+      <StatusIndicator status={status} summary={resultSummary} />
+    </>}>
       {result && (
         <div className="crispy-blocks-tool-body">
           <pre className={`crispy-tool-result__text ${result.is_error ? 'crispy-tool-result__text--error' : ''}`}>
-            {resultText ?? JSON.stringify(result.content, null, 2)}
+            {useAnsiRender ? renderAnsi(rawText!) : (resultText ?? JSON.stringify(result.content, null, 2))}
           </pre>
         </div>
       )}
-    </details>
+    </ToolCard>
   );
 }
