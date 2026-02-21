@@ -63,6 +63,8 @@ export function BlocksToolPanel(): React.JSX.Element {
   // ---------------------------------------------------------------------------
   // Auto-scroll
   // ---------------------------------------------------------------------------
+  const lastScrollHeightRef = useRef(0);
+
   const isNearBottom = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return true;
@@ -73,13 +75,31 @@ export function BlocksToolPanel(): React.JSX.Element {
     wasNearBottomRef.current = isNearBottom();
   }, [isNearBottom]);
 
+  // ResizeObserver on the panel scroll content — catches all height changes:
+  // card expansion, streaming content growth, new task children, etc.
+  // Mirrors the proven pattern from useAutoScroll.ts (transcript scroll).
   useEffect(() => {
-    if (wasNearBottomRef.current) {
+    const scrollEl = scrollRef.current;
+    if (!scrollEl) return;
+
+    lastScrollHeightRef.current = scrollEl.scrollHeight;
+
+    const observer = new ResizeObserver(() => {
       const el = scrollRef.current;
-      if (el) {
-        el.scrollTop = el.scrollHeight;
+      if (!el) return;
+      const newScrollHeight = el.scrollHeight;
+      const grew = newScrollHeight > lastScrollHeightRef.current;
+      lastScrollHeightRef.current = newScrollHeight;
+
+      if (grew && wasNearBottomRef.current) {
+        el.scrollTop = newScrollHeight;
       }
-    }
+    });
+
+    // Observe the scroll container itself — its scrollHeight changes when
+    // any child (tool card, task children, streaming output) grows.
+    observer.observe(scrollEl);
+    return () => observer.disconnect();
   }, [visibleToolIds.length]);
 
   // ---------------------------------------------------------------------------
