@@ -1490,9 +1490,11 @@ h2 {
   white-space: pre-wrap;
   word-break: break-all;
   max-height: calc(1.4em * 5);
-  overflow-y: auto;
+  overflow: hidden;
   display: block;
   line-height: 1.4;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .crispy-tool-bash-inline--compact {

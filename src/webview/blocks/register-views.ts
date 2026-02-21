@@ -21,8 +21,11 @@ import { GrepCompactView, GrepExpandedView } from './views/grep-views.js';
 import { GlobCompactView, GlobExpandedView } from './views/glob-views.js';
 import { TodoWriteCompactView, TodoWriteExpandedView } from './views/todowrite-views.js';
 import { SkillCompactView, SkillExpandedView } from './views/skill-views.js';
-import { AskUserQuestionCompactView } from './views/askuserquestion-views.js';
-import { ExitPlanModeCompactView } from './views/exitplanmode-views.js';
+import { AskUserQuestionCompactView, AskUserQuestionExpandedView } from './views/askuserquestion-views.js';
+import { ExitPlanModeCompactView, ExitPlanModeExpandedView } from './views/exitplanmode-views.js';
+import { WebSearchCompactView, WebSearchExpandedView } from './views/websearch-views.js';
+import { WebFetchCompactView, WebFetchExpandedView } from './views/webfetch-views.js';
+import { EnterPlanModeCompactView } from './views/enterplanmode-views.js';
 
 // ============================================================================
 // Register Default Views (fallback for unknown tools)
@@ -140,13 +143,42 @@ const askMeta = getToolData('AskUserQuestion');
 registerToolViews('AskUserQuestion', {
   ...defaultToolViews(askMeta),
   compact: AskUserQuestionCompactView,
-  expanded: GenericExpandedView,
+  expanded: AskUserQuestionExpandedView,
 });
 
 const exitPlanMeta = getToolData('ExitPlanMode');
 registerToolViews('ExitPlanMode', {
   ...defaultToolViews(exitPlanMeta),
   compact: ExitPlanModeCompactView,
+  expanded: ExitPlanModeExpandedView,
+});
+
+// ============================================================================
+// Register Web Tool Views
+// ============================================================================
+
+const webSearchMeta = getToolData('WebSearch');
+registerToolViews('WebSearch', {
+  ...defaultToolViews(webSearchMeta),
+  compact: WebSearchCompactView,
+  expanded: WebSearchExpandedView,
+});
+
+const webFetchMeta = getToolData('WebFetch');
+registerToolViews('WebFetch', {
+  ...defaultToolViews(webFetchMeta),
+  compact: WebFetchCompactView,
+  expanded: WebFetchExpandedView,
+});
+
+// ============================================================================
+// Register EnterPlanMode Views
+// ============================================================================
+
+const enterPlanMeta = getToolData('EnterPlanMode');
+registerToolViews('EnterPlanMode', {
+  ...defaultToolViews(enterPlanMeta),
+  compact: EnterPlanModeCompactView,
   expanded: GenericExpandedView,
 });
 
@@ -158,9 +190,6 @@ registerToolViews('ExitPlanMode', {
 const defaultOnlyTools = [
   'LS',
   'NotebookEdit',
-  'WebSearch',
-  'WebFetch',
-  'EnterPlanMode',
   'TaskOutput',
   'KillShell',
   'ReadMcpResource',

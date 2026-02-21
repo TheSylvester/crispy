@@ -185,8 +185,13 @@ export function renderAnsi(text: string): ReactNode[] {
   return parts;
 }
 
-/** Check if text contains any ANSI escape sequences. */
+/**
+ * Check if text contains ANSI SGR (styling) sequences.
+ *
+ * Only detects sequences ending with 'm' (colors, bold, etc.) — not cursor
+ * movement, erase, or other terminal control codes. This avoids false
+ * positives that would route plain text through renderAnsi() unnecessarily.
+ */
 export function hasAnsi(text: string): boolean {
-  ANSI_RE.lastIndex = 0;
-  return ANSI_RE.test(text);
+  return /\x1b\[[0-9;]*m/.test(text);
 }
