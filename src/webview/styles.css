@@ -3595,6 +3595,7 @@ h2 {
   flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
+  overflow-anchor: none;
   padding: 8px;
   min-width: 0;
   min-height: 0;
@@ -3853,6 +3854,7 @@ h2 {
 .crispy-blocks-tool {
   margin: 2px 0 2px 8px;
   cursor: pointer;
+  contain: layout style;
 }
 
 .crispy-blocks-tool:hover {
@@ -3864,6 +3866,8 @@ h2 {
 .crispy-tool-panel .crispy-blocks-tool {
   cursor: pointer;
   margin-left: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 48px;
 }
 .crispy-tool-panel .crispy-blocks-tool:hover {
   background: transparent;
@@ -4083,6 +4087,28 @@ h2 {
   margin-left: 4px;
   padding-left: 6px;
   border-left: 2px solid rgba(255, 255, 255, 0.08);
+  contain: layout style;
+  overflow-anchor: none;
+}
+
+/* Task tail child wrappers — only present when isMainTail is active */
+.crispy-blocks-task-child {
+  /* Inert wrapper for non-exiting tail entries. No visual effect. */
+}
+
+/* Exiting child: grid collapse to zero height.
+   grid-template-rows 0fr collapses any content height to zero so
+   the entry's unmount on the next update causes no layout shift. */
+.crispy-blocks-task-child--exiting {
+  display: grid;
+  grid-template-rows: 0fr;
+  overflow: hidden;
+  opacity: 0;
+  transition: grid-template-rows 120ms ease-out, opacity 80ms ease-out;
+}
+.crispy-blocks-task-child--exiting > * {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .crispy-blocks-task-compact > .crispy-blocks-task-children {

@@ -7,7 +7,7 @@
  * @module webview/blocks/ToolBlockRenderer
  */
 
-import { useCallback, useState, useEffect, useRef } from 'react';
+import { useCallback } from 'react';
 import type { RichBlock, AnchorPoint, ToolViewProps } from './types.js';
 import type { BlocksToolRegistry } from './blocks-tool-registry.js';
 import { getToolDefinition, getToolData, extractSubject } from './tool-definitions.js';
@@ -30,47 +30,12 @@ const TAIL_SIZE = 3;
 const COMPACT_ONLY_TOOLS = new Set(['Read', 'Grep', 'WebFetch', 'WebSearch']);
 
 /**
- * Two-phase tail window: when items grow beyond tailSize, first render
- * drops the oldest entry (shrink), then a rAF later adds the newest (grow).
- * Prevents simultaneous add+remove layout flash.
- *
- * No-op when items.length <= tailSize or when the array didn't grow.
+ * Extended tail: returns the last `tailSize + 1` items so the oldest
+ * can be CSS-collapsed, preventing layout shift on unmount.
  */
-function useDeferredTail<T>(items: T[], tailSize: number): T[] {
-  // Phase flag: when non-null, we're in the "shrink" frame showing trimmed
-  const [pending, setPending] = useState<T[] | null>(null);
-  const prevLenRef = useRef(items.length);
-
-  const len = items.length;
-  const prevLen = prevLenRef.current;
-
-  // Detect growth beyond tailSize — enter shrink phase
-  if (len > prevLen && len > tailSize) {
-    // New tail window minus the newest entry: [B, C] not [B, C, D]
-    const trimmed = items.slice(-tailSize - 1, -1);
-    prevLenRef.current = len;
-    // Render-phase setState: legal when conditional and non-looping.
-    // React will re-render, but we return trimmed synchronously below
-    // so THIS render already shows the shrunk state.
-    setPending(trimmed);
-    return trimmed;
-  }
-
-  prevLenRef.current = len;
-
-  // After the shrink render paints, clear pending → triggers grow render
-  useEffect(() => {
-    if (pending !== null) {
-      const id = requestAnimationFrame(() => setPending(null));
-      return () => cancelAnimationFrame(id);
-    }
-  }, [pending]);
-
-  // Shrink phase (re-render from setPending): return the trimmed array
-  if (pending !== null) return pending;
-
-  // Normal: return the tail slice (or full array if within tailSize)
-  return len > tailSize ? items.slice(-tailSize) : items;
+function tailSlicePlus<T>(items: T[], tailSize: number): T[] {
+  const take = tailSize + 1;
+  return items.length > take ? items.slice(-take) : items;
 }
 
 interface ToolBlockRendererProps {
@@ -126,9 +91,9 @@ export function ToolBlockRenderer({
   // Get tool definition
   const def = getToolDefinition(block.name);
 
-  // Deferred tail: two-phase add/remove to prevent layout flash.
-  // Called unconditionally (React hook rules) but no-op for non-Task tools.
-  const deferredTail = useDeferredTail(childEntries, TAIL_SIZE);
+  // Extended tail: last N+1 children for main-thread running Task.
+  // The oldest gets CSS-collapsed to zero height so its unmount is invisible.
+  const deferredTail = tailSlicePlus(childEntries, TAIL_SIZE);
 
   // Render child entries for Task tools (zero cost for non-Task tools).
   // Main-thread: completed Tasks hide children, running Tasks show tail.
@@ -142,11 +107,24 @@ export function ToolBlockRenderer({
     }
   }
 
+  // True when showing a tail window with an extra entry to collapse
+  const isMainTail = anchor.type === 'main-thread' && visibleChildren.length > TAIL_SIZE;
+
   const renderedChildren = visibleChildren.length > 0 ? (
     <div className="crispy-blocks-task-children">
-      {visibleChildren.map((entry) => (
-        <BlocksEntryWithRegistry key={entry.uuid} entry={entry} />
-      ))}
+      {isMainTail
+        ? visibleChildren.map((entry, i) => (
+            <div
+              key={entry.uuid}
+              className={i === 0 ? 'crispy-blocks-task-child--exiting' : 'crispy-blocks-task-child'}
+            >
+              <BlocksEntryWithRegistry entry={entry} />
+            </div>
+          ))
+        : visibleChildren.map((entry) => (
+            <BlocksEntryWithRegistry key={entry.uuid} entry={entry} />
+          ))
+      }
     </div>
   ) : undefined;
 
