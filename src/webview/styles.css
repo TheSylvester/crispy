@@ -4220,3 +4220,29 @@ h2 {
 .crispy-blocks-panel-header__name {
   font-weight: 500;
 }
+
+/* --- Chrome MCP Tool Views --- */
+
+.crispy-blocks-chrome-action {
+  flex-shrink: 0;
+  font-size: 0.8em;
+  font-style: italic;
+  color: var(--vscode-descriptionForeground, #999);
+}
+
+.crispy-blocks-chrome-emoji {
+  flex-shrink: 0;
+  font-size: 0.85em;
+}
+
+.crispy-blocks-chrome-images {
+  margin: 4px 0;
+}
+
+.crispy-blocks-chrome-screenshot {
+  max-width: 100%;
+  max-height: 500px;
+  border-radius: var(--radius-md);
+  object-fit: contain;
+  display: block;
+}

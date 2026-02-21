@@ -26,6 +26,7 @@ import { ExitPlanModeCompactView, ExitPlanModeExpandedView } from './views/exitp
 import { WebSearchCompactView, WebSearchExpandedView } from './views/websearch-views.js';
 import { WebFetchCompactView, WebFetchExpandedView } from './views/webfetch-views.js';
 import { EnterPlanModeCompactView } from './views/enterplanmode-views.js';
+import { ChromeCompactView, ChromeExpandedView } from './views/chrome-views.js';
 
 // ============================================================================
 // Register Default Views (fallback for unknown tools)
@@ -170,6 +171,37 @@ registerToolViews('WebFetch', {
   compact: WebFetchCompactView,
   expanded: WebFetchExpandedView,
 });
+
+// ============================================================================
+// Register Chrome MCP Tool Views
+// ============================================================================
+
+const CHROME_TOOL_NAMES = [
+  'mcp__claude-in-chrome__computer',
+  'mcp__claude-in-chrome__find',
+  'mcp__claude-in-chrome__navigate',
+  'mcp__claude-in-chrome__read_page',
+  'mcp__claude-in-chrome__javascript_tool',
+  'mcp__claude-in-chrome__tabs_context_mcp',
+  'mcp__claude-in-chrome__tabs_create_mcp',
+  'mcp__claude-in-chrome__form_input',
+  'mcp__claude-in-chrome__resize_window',
+  'mcp__claude-in-chrome__read_console_messages',
+  'mcp__claude-in-chrome__read_network_requests',
+  'mcp__claude-in-chrome__gif_creator',
+  'mcp__claude-in-chrome__get_page_text',
+  'mcp__claude-in-chrome__upload_image',
+  'mcp__claude-in-chrome__update_plan',
+  'mcp__claude-in-chrome__shortcuts_list',
+  'mcp__claude-in-chrome__shortcuts_execute',
+];
+
+for (const toolName of CHROME_TOOL_NAMES) {
+  registerToolViews(toolName, {
+    compact: ChromeCompactView,
+    expanded: ChromeExpandedView,
+  });
+}
 
 // ============================================================================
 // Register EnterPlanMode Views
