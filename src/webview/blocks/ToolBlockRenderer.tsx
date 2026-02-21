@@ -7,9 +7,10 @@
  * @module webview/blocks/ToolBlockRenderer
  */
 
-import { useCallback } from 'react';
+import { useCallback, memo } from 'react';
 import type { RichBlock, AnchorPoint, ToolViewProps } from './types.js';
 import type { BlocksToolRegistry } from './blocks-tool-registry.js';
+import type { ToolResultBlock } from '../../core/transcript.js';
 import { getToolDefinition, getToolData, extractSubject } from './tool-definitions.js';
 import { selectView } from './select-view.js';
 import { GenericExpandedView } from './views/default-views.js';
@@ -55,10 +56,6 @@ export function ToolBlockRenderer({
   // Get result from registry
   const result = registry.useResult(block.id);
 
-  // Get child entries for this tool (non-empty only for Task tools).
-  // Must be called unconditionally (React hook rules).
-  const childEntries = useBlocksChildEntries(block.id);
-
   // Debug: global tool view override from preferences (?debug=1 settings)
   const { toolViewOverride: globalOverride } = usePreferences();
 
@@ -91,42 +88,14 @@ export function ToolBlockRenderer({
   // Get tool definition
   const def = getToolDefinition(block.name);
 
-  // Extended tail: last N+1 children for main-thread running Task.
-  // The oldest gets CSS-collapsed to zero height so its unmount is invisible.
-  const deferredTail = tailSlicePlus(childEntries, TAIL_SIZE);
-
-  // Render child entries for Task tools (zero cost for non-Task tools).
-  // Main-thread: completed Tasks hide children, running Tasks show tail.
-  // Panel / nested: always show all children.
-  let visibleChildren = childEntries;
-  if (anchor.type === 'main-thread' && childEntries.length > 0) {
-    if (status === 'complete' || status === 'error') {
-      visibleChildren = [];
-    } else {
-      visibleChildren = deferredTail;
-    }
-  }
-
-  // True when showing a tail window with an extra entry to collapse
-  const isMainTail = anchor.type === 'main-thread' && visibleChildren.length > TAIL_SIZE;
-
-  const renderedChildren = visibleChildren.length > 0 ? (
-    <div className="crispy-blocks-task-children">
-      {isMainTail
-        ? visibleChildren.map((entry, i) => (
-            <div
-              key={entry.uuid}
-              className={i === 0 ? 'crispy-blocks-task-child--exiting' : 'crispy-blocks-task-child'}
-            >
-              <BlocksEntryWithRegistry entry={entry} />
-            </div>
-          ))
-        : visibleChildren.map((entry) => (
-            <BlocksEntryWithRegistry key={entry.uuid} entry={entry} />
-          ))
-      }
-    </div>
-  ) : undefined;
+  // Task children: rendered by a dedicated component that owns the
+  // useBlocksChildEntries subscription. This isolates child-list updates
+  // from the parent ToolBlockRenderer — when a new child arrives, only
+  // TaskChildrenRenderer re-renders, not the ToolCard/<details> container.
+  // For non-Task tools the component returns null (EMPTY_ARRAY from hook).
+  const renderedChildren = (
+    <TaskChildrenRenderer toolId={block.id} anchor={anchor} result={result} />
+  );
 
   // Build props for views
   const viewProps: ToolViewProps = {
@@ -175,6 +144,85 @@ export function ToolBlockRenderer({
     </div>
   );
 }
+
+// ============================================================================
+// Task Children Renderer — isolated subscription boundary
+// ============================================================================
+
+/**
+ * Renders Task tool children in its own React subtree.
+ *
+ * By owning the useBlocksChildEntries subscription here (instead of in
+ * ToolBlockRenderer), child-list updates only re-render this component —
+ * the parent ToolBlockRenderer and its ToolCard/<details> stay untouched.
+ * This prevents layout reflow flash when new children arrive.
+ *
+ * For non-Task tools, useBlocksChildEntries returns EMPTY_ARRAY and this
+ * renders null — zero cost.
+ */
+interface TaskChildrenRendererProps {
+  toolId: string;
+  anchor: AnchorPoint;
+  result: ToolResultBlock | undefined;
+}
+
+function TaskChildrenRenderer({ toolId, anchor, result }: TaskChildrenRendererProps): React.JSX.Element | null {
+  const childEntries = useBlocksChildEntries(toolId);
+
+  if (childEntries.length === 0) return null;
+
+  // Compute status from result presence
+  const status: ToolViewProps['status'] = !result
+    ? 'running'
+    : result.is_error
+      ? 'error'
+      : 'complete';
+
+  // Main-thread: completed Tasks hide children, running Tasks show tail.
+  // Panel / nested: always show all children.
+  let visibleChildren = childEntries;
+  if (anchor.type === 'main-thread') {
+    if (status === 'complete' || status === 'error') {
+      return null;
+    }
+    // Extended tail: last N+1 children so the oldest can be CSS-collapsed.
+    visibleChildren = tailSlicePlus(childEntries, TAIL_SIZE);
+  }
+
+  // True when showing a tail window with an extra entry to collapse
+  const isMainTail = anchor.type === 'main-thread' && visibleChildren.length > TAIL_SIZE;
+
+  return (
+    <div className="crispy-blocks-task-children">
+      {isMainTail
+        ? visibleChildren.map((entry, i) => (
+            <div
+              key={entry.uuid}
+              className={i === 0 ? 'crispy-blocks-task-child--exiting' : 'crispy-blocks-task-child'}
+            >
+              <MemoizedBlocksEntry entry={entry} />
+            </div>
+          ))
+        : visibleChildren.map((entry) => (
+            <MemoizedBlocksEntry key={entry.uuid} entry={entry} />
+          ))
+      }
+    </div>
+  );
+}
+
+/**
+ * Memoized wrapper for BlocksEntryWithRegistry used in Task children.
+ *
+ * Without this, every child re-renders when the parent TaskChildrenRenderer
+ * re-renders (e.g., when a new sibling arrives). The memo comparator checks
+ * entry reference identity — stable for existing entries since the provider
+ * reuses the same TranscriptEntry objects.
+ */
+const MemoizedBlocksEntry = memo(
+  BlocksEntryWithRegistry,
+  (prev, next) => prev.entry === next.entry,
+);
 
 // ============================================================================
 // Fallback View for Tools Without Definition
