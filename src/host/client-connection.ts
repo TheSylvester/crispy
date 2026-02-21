@@ -30,6 +30,7 @@ import {
   sendTurn,
   interruptSession,
   closeSession,
+  readSubagentEntries,
 } from "../core/session-manager.js";
 import {
   subscribeSessionList,
@@ -301,6 +302,14 @@ export function createClientConnection(
       case "pickFile":
         // VS Code-only QuickPick; no-op for dev server
         return { picked: null };
+
+      case "readSubagentEntries": {
+        const sessionId = params.sessionId as string;
+        const agentId = params.agentId as string;
+        const parentToolUseId = params.parentToolUseId as string;
+        const cursor = (params.cursor as string) ?? '';
+        return readSubagentEntries(sessionId, agentId, parentToolUseId, cursor);
+      }
 
       default:
         throw new Error(`Unknown method: ${method}`);

@@ -19,7 +19,7 @@
  * @module session-manager
  */
 
-import type { AgentAdapter, VendorDiscovery, SessionInfo, SendOptions, SessionOpenSpec, ChannelMessage, TurnIntent, TurnReceipt, TurnSettings } from './agent-adapter.js';
+import type { AgentAdapter, VendorDiscovery, SessionInfo, SendOptions, SessionOpenSpec, ChannelMessage, TurnIntent, TurnReceipt, TurnSettings, SubagentEntriesResult } from './agent-adapter.js';
 import type { TranscriptEntry, Vendor, MessageContent } from './transcript.js';
 import type { ChannelCatchupMessage, HistoryMessage } from './channel-events.js';
 import type { SessionChannel, Subscriber } from './session-channel.js';
@@ -174,6 +174,30 @@ export async function loadSession(
     if (cutIdx !== -1) return entries.slice(0, cutIdx + 1);
   }
   return entries;
+}
+
+/**
+ * Read sub-agent transcript entries incrementally.
+ *
+ * Routes through the vendor's discovery.readSubagentEntries() if available.
+ * Returns { entries: [], cursor, done: true } for unknown sessions or vendors
+ * that don't support sub-agent reading.
+ */
+export function readSubagentEntries(
+  sessionId: string,
+  agentId: string,
+  parentToolUseId: string,
+  cursor: string,
+): SubagentEntriesResult {
+  const info = findSession(sessionId);
+  if (!info) return { entries: [], cursor, done: true };
+
+  const reg = adapters.get(info.vendor);
+  if (!reg?.discovery.readSubagentEntries) {
+    return { entries: [], cursor, done: true };
+  }
+
+  return reg.discovery.readSubagentEntries(sessionId, agentId, parentToolUseId, cursor);
 }
 
 /**

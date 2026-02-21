@@ -66,11 +66,32 @@ export interface SessionInfo {
  * session metadata from disk without needing a live SDK connection.
  * One VendorDiscovery per vendor, shared across all consumers.
  */
+/** Result from incremental sub-agent entry reading. */
+export interface SubagentEntriesResult {
+  entries: TranscriptEntry[];
+  cursor: string;   // opaque resumption token — vendor-specific format
+  done: boolean;
+}
+
 export interface VendorDiscovery {
   readonly vendor: Vendor;
   findSession(sessionId: string): SessionInfo | undefined;
   listSessions(): SessionInfo[];
   loadHistory(sessionId: string): Promise<TranscriptEntry[]>;
+
+  /**
+   * Read sub-agent transcript entries incrementally.
+   *
+   * Optional — vendors that don't support background sub-agents omit this.
+   * The cursor is an opaque string returned by the previous call (empty = start).
+   * The caller passes it back without interpreting it.
+   */
+  readSubagentEntries?(
+    sessionId: string,
+    agentId: string,
+    parentToolUseId: string,
+    cursor: string,
+  ): SubagentEntriesResult;
 }
 
 // ============================================================================

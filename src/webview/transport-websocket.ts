@@ -160,6 +160,12 @@ export function createWebSocketTransport(url: string): SessionService {
     openFile: (path, line, col) => request<{ opened: boolean }>('openFile', { path, line, col }),
     pickFile: (candidates) => request<{ picked: string | null }>('pickFile', { candidates }),
 
+    readSubagentEntries: (sessionId, agentId, parentToolUseId, cursor) =>
+      request<{ entries: TranscriptEntry[]; cursor: string; done: boolean }>(
+        'readSubagentEntries',
+        { sessionId, agentId, parentToolUseId, cursor },
+      ),
+
     onEvent(handler) {
       eventHandlers.push(handler);
       return () => {

@@ -34,6 +34,9 @@ export class BlocksToolRegistry {
   /** Results that arrived before their tool_use was registered */
   private orphans = new Map<string, ToolResultBlock>();
 
+  /** Background Task agent mappings: toolUseId → agentId */
+  private asyncAgents = new Map<string, string>();
+
   /** Per-tool subscribers for useSyncExternalStore */
   private subscribers = new Map<string, Set<() => void>>();
 
@@ -147,6 +150,21 @@ export class BlocksToolRegistry {
   }
 
   /**
+   * Register a background Task mapping: toolUseId → agentId.
+   * Called when a Task tool_result indicates `isAsync: true`.
+   */
+  registerAsyncAgent(toolUseId: string, agentId: string): void {
+    this.asyncAgents.set(toolUseId, agentId);
+  }
+
+  /**
+   * Get the background agent ID for a tool_use, if it's an async Task.
+   */
+  getAsyncAgentId(toolUseId: string): string | undefined {
+    return this.asyncAgents.get(toolUseId);
+  }
+
+  /**
    * React hook that subscribes to a specific tool's block data.
    *
    * Re-renders only when this specific tool's block is stored.
@@ -251,6 +269,7 @@ export class BlocksToolRegistry {
     this.blocks.clear();
     this.pending.clear();
     this.orphans.clear();
+    this.asyncAgents.clear();
     this.dirtyIds.clear();
     this.silentMode = false;
     // Don't clear subscribers — React components keep references

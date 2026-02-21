@@ -50,6 +50,13 @@ import './register-views.js';
 const BlocksToolRegistryCtx = createContext<BlocksToolRegistry | null>(null);
 const ChildEntriesCtx = createContext<Map<string, TranscriptEntry[]>>(new Map());
 
+/** Ref-wrapped injection callback for background agent tunnel entries. */
+type InjectFn = (parentId: string, entries: TranscriptEntry[]) => void;
+const NOOP_INJECT: InjectFn = () => {};
+const InjectChildEntriesCtx = createContext<React.RefObject<InjectFn>>(
+  { current: NOOP_INJECT } as React.RefObject<InjectFn>,
+);
+
 const EMPTY_ARRAY: TranscriptEntry[] = [];
 
 // ============================================================================
@@ -161,6 +168,33 @@ export function BlocksToolRegistryProvider({
   }
 
   // ---------------------------------------------------------------------------
+  // Injection API — background agent tunnel writes through this
+  // ---------------------------------------------------------------------------
+
+  const injectChildEntriesRef = useRef<InjectFn>(NOOP_INJECT);
+
+  injectChildEntriesRef.current = (parentId: string, newEntries: TranscriptEntry[]) => {
+    // Deduplicate by uuid — subagent-loader may have already loaded these
+    const siblings = workingMap.get(parentId);
+    const existingUuids = siblings
+      ? new Set(siblings.map(e => e.uuid).filter(Boolean))
+      : new Set<string>();
+    const fresh = newEntries.filter(e => !e.uuid || !existingUuids.has(e.uuid));
+    if (fresh.length === 0) return;
+
+    // Single write path: processEntryForBlocksRegistry handles BOTH
+    // parentToolUseID grouping AND tool pairing. No manual push.
+    registry.silent(() => {
+      for (const entry of fresh) {
+        processEntryForBlocksRegistry(entry, registry, workingMap);
+      }
+    });
+    generationRef.current++;
+    setChildEntriesMap(new Map(workingMap));
+    registry.flushDirty();
+  };
+
+  // ---------------------------------------------------------------------------
   // Post-render flush
   // ---------------------------------------------------------------------------
   useEffect(() => {
@@ -170,7 +204,9 @@ export function BlocksToolRegistryProvider({
   return (
     <BlocksToolRegistryCtx.Provider value={registry}>
       <ChildEntriesCtx.Provider value={childEntriesMap}>
-        {children}
+        <InjectChildEntriesCtx.Provider value={injectChildEntriesRef}>
+          {children}
+        </InjectChildEntriesCtx.Provider>
       </ChildEntriesCtx.Provider>
     </BlocksToolRegistryCtx.Provider>
   );
@@ -220,6 +256,21 @@ function processEntryForBlocksRegistry(
       registry.register(block.id, block.name, richBlock);
     } else if (block.type === 'tool_result') {
       registry.resolve(block.tool_use_id, block);
+
+      // Detect background Task: tool_result with isAsync flag from SDK
+      if (
+        entry.toolUseResult &&
+        typeof entry.toolUseResult === 'object' &&
+        'isAsync' in (entry.toolUseResult as Record<string, unknown>) &&
+        (entry.toolUseResult as Record<string, unknown>).isAsync === true &&
+        'agentId' in (entry.toolUseResult as Record<string, unknown>)
+      ) {
+        registry.registerAsyncAgent(
+          block.tool_use_id,
+          (entry.toolUseResult as Record<string, unknown>).agentId as string,
+        );
+      }
+
       // Recurse into nested content (Task results contain sub-agent blocks)
       if (Array.isArray(block.content)) {
         walkNestedForRegistry(block.content, registry);
@@ -273,4 +324,15 @@ export function useBlocksToolRegistry(): BlocksToolRegistry {
 export function useBlocksChildEntries(parentToolUseId: string): TranscriptEntry[] {
   const map = useContext(ChildEntriesCtx);
   return map.get(parentToolUseId) ?? EMPTY_ARRAY;
+}
+
+/**
+ * Inject child entries from a background agent tunnel poll.
+ *
+ * Returns a stable callback ref that writes through the provider's
+ * processEntryForBlocksRegistry path (grouping + tool pairing + dedup).
+ */
+export function useInjectChildEntries(): InjectFn {
+  const ref = useContext(InjectChildEntriesCtx);
+  return ref.current;
 }

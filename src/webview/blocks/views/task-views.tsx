@@ -14,6 +14,7 @@
 import type { ReactNode } from 'react';
 import type { ToolViewProps } from '../types.js';
 import { getToolData } from '../tool-definitions.js';
+import { useBlocksToolRegistry } from '../BlocksToolRegistryContext.js';
 import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
@@ -36,6 +37,8 @@ export function TaskCompactView({ block, result, status, children }: ToolViewPro
   const input = block.input as TaskInput;
   const agentType = input.subagent_type ?? 'agent';
   const description = input.description ?? '';
+  const registry = useBlocksToolRegistry();
+  const isAsync = !!registry.getAsyncAgentId(block.id);
 
   const resultText = extractResultText(result?.content);
   const resultSummary = result
@@ -49,6 +52,7 @@ export function TaskCompactView({ block, result, status, children }: ToolViewPro
       <div className="crispy-blocks-compact-row">
         <span className="crispy-blocks-compact-icon">{meta.icon}</span>
         <ToolBadge color={meta.color} label={agentType} />
+        {isAsync && <ToolBadge color="#666" label="background" />}
         <span className="crispy-blocks-compact-description">{description}</span>
         <StatusIndicator status={status} summary={resultSummary} />
       </div>
@@ -72,6 +76,8 @@ export function TaskExpandedView({ block, result, status, anchor, children }: To
   const input = block.input as TaskInput;
   const agentType = input.subagent_type ?? 'agent';
   const description = input.description ?? '';
+  const registry = useBlocksToolRegistry();
+  const isAsync = !!registry.getAsyncAgentId(block.id);
 
   const resultText = extractResultText(result?.content);
   const resultSummary = result
@@ -93,6 +99,7 @@ export function TaskExpandedView({ block, result, status, anchor, children }: To
       <span className="crispy-blocks-tool-header">
         <span className="crispy-blocks-tool-icon">{meta.icon}</span>
         <ToolBadge color={meta.color} label={agentType} />
+        {isAsync && <ToolBadge color="#666" label="background" />}
         <span className="crispy-blocks-tool-description">{description}</span>
       </span>
       <StatusIndicator status={status} summary={resultSummary} />

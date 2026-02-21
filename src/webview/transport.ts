@@ -56,6 +56,13 @@ export interface SessionService {
   readImage(path: string): Promise<{ data: string; mimeType: string; fileName: string }>;
   openFile(path: string, line?: number, col?: number): Promise<{ opened: boolean }>;
   pickFile(candidates: string[]): Promise<{ picked: string | null }>;
+  readSubagentEntries(
+    sessionId: string,
+    agentId: string,
+    parentToolUseId: string,
+    cursor: string,
+  ): Promise<{ entries: TranscriptEntry[]; cursor: string; done: boolean }>;
+
   dispose(): void;
 }
 

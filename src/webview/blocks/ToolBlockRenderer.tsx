@@ -10,7 +10,7 @@
 import { useCallback, memo } from 'react';
 import type { RichBlock, AnchorPoint, ToolViewProps } from './types.js';
 import type { BlocksToolRegistry } from './blocks-tool-registry.js';
-import type { ToolResultBlock } from '../../core/transcript.js';
+import type { TranscriptEntry, ToolResultBlock } from '../../core/transcript.js';
 import { getToolDefinition, getToolData, extractSubject } from './tool-definitions.js';
 import { selectView } from './select-view.js';
 import { GenericExpandedView } from './views/default-views.js';
@@ -18,11 +18,13 @@ import { ToolCard } from './views/ToolCard.js';
 import { ToolBadge } from '../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../renderers/tools/shared/StatusIndicator.js';
 import { extractResultText, formatCount } from '../renderers/tools/shared/tool-utils.js';
-import { useBlocksChildEntries } from './BlocksToolRegistryContext.js';
+import { useBlocksChildEntries, useBlocksToolRegistry, useInjectChildEntries } from './BlocksToolRegistryContext.js';
 import { BlocksEntryWithRegistry } from './BlocksEntryWithRegistry.js';
 import { usePreferences } from '../context/PreferencesContext.js';
 import { usePanelDispatch, usePanelState } from './PanelStateContext.js';
 import { isToolExpanded } from './panel-reducer.js';
+import { useSession } from '../context/SessionContext.js';
+import { useBackgroundAgentTunnel } from '../hooks/useBackgroundAgentTunnel.js';
 
 /** Max children visible in the transcript content tail preview. */
 const TAIL_SIZE = 3;
@@ -57,7 +59,7 @@ export function ToolBlockRenderer({
   const result = registry.useResult(block.id);
 
   // Debug: global tool view override from preferences (?debug=1 settings)
-  const { toolViewOverride: globalOverride } = usePreferences();
+  const { toolViewOverride: globalOverride, toolPanelOpen, setToolPanelOpen } = usePreferences();
 
   // Panel state: used for expansion override in tool-panel anchors
   const panelState = usePanelState();
@@ -76,7 +78,11 @@ export function ToolBlockRenderer({
       }
     }
     panelDispatch({ type: 'USER_CLICKED', toolId: block.id });
-  }, [panelDispatch, block.id, anchor.type]);
+    // Auto-open the tools panel when clicking a compact tool in the transcript
+    if (!toolPanelOpen && anchor.type === 'main-thread') {
+      setToolPanelOpen(true);
+    }
+  }, [panelDispatch, block.id, anchor.type, toolPanelOpen, setToolPanelOpen]);
 
   // Compute status
   const status: ToolViewProps['status'] = !result
@@ -168,6 +174,26 @@ interface TaskChildrenRendererProps {
 
 function TaskChildrenRenderer({ toolId, anchor, result }: TaskChildrenRendererProps): React.JSX.Element | null {
   const childEntries = useBlocksChildEntries(toolId);
+
+  // Background agent tunnel — activate polling when expanded in panel
+  const registry = useBlocksToolRegistry();
+  const asyncAgentId = registry.getAsyncAgentId(toolId);
+  const { selectedSessionId } = useSession();
+  const injectChildEntries = useInjectChildEntries();
+  const handlePolledEntries = useCallback(
+    (entries: TranscriptEntry[]) => injectChildEntries(toolId, entries),
+    [injectChildEntries, toolId],
+  );
+
+  // Only poll when this is a background Task AND it's in a panel anchor (expanded)
+  const isInPanel = anchor.type === 'tool-panel' || anchor.type === 'task-in-panel';
+  useBackgroundAgentTunnel(
+    toolId,
+    asyncAgentId,  // undefined for non-background tasks → hook is no-op
+    selectedSessionId,
+    isInPanel,
+    handlePolledEntries,
+  );
 
   if (childEntries.length === 0) return null;
 

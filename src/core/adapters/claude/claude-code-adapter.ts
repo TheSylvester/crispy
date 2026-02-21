@@ -43,8 +43,8 @@ import type { ContentBlockParam } from '@anthropic-ai/sdk/resources';
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { AsyncIterableQueue } from '../../async-iterable-queue.js';
-import { adaptClaudeEntry } from './claude-entry-adapter.js';
-import { parseJsonlFile, extractMetadataFast } from './jsonl-reader.js';
+import { adaptClaudeEntry, adaptClaudeEntries } from './claude-entry-adapter.js';
+import { parseJsonlFile, extractMetadataFast, readLinesFromOffset } from './jsonl-reader.js';
 import { loadSubagentEntries } from './subagent-loader.js';
 
 import type { TranscriptEntry, ContextUsage, MessageContent } from '../../transcript.js';
@@ -1550,5 +1550,27 @@ export const claudeDiscovery: VendorDiscovery = {
     const info = findSession(sessionId);
     if (!info) return [];
     return loadHistory(info.path);
+  },
+
+  readSubagentEntries(sessionId, agentId, parentToolUseId, cursor) {
+    const info = findSession(sessionId);
+    if (!info) return { entries: [], cursor, done: true };
+
+    const sessionDir = info.path.replace(/\.jsonl$/, '');
+    const subagentPath = join(sessionDir, 'subagents', `agent-${agentId}.jsonl`);
+
+    const fromOffset = cursor ? parseInt(cursor, 10) : 0;
+    const { entries: rawEntries, newOffset } = readLinesFromOffset(subagentPath, fromOffset);
+    if (rawEntries.length === 0) {
+      return { entries: [], cursor: String(fromOffset), done: false };
+    }
+
+    const adapted = adaptClaudeEntries(rawEntries as unknown as Record<string, unknown>[]);
+    for (const entry of adapted) {
+      entry.parentToolUseID = parentToolUseId;
+    }
+
+    const done = adapted.some((e: TranscriptEntry) => e.type === 'result');
+    return { entries: adapted, cursor: String(newOffset), done };
   },
 };
