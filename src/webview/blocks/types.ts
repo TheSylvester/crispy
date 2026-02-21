@@ -119,23 +119,19 @@ export interface ToolDefinition {
  * Actions that can affect panel state.
  */
 export type PanelAction =
-  | { type: 'TOOL_ARRIVED'; toolId: string }
+  | { type: 'AUTO_EXPAND'; toolId: string }
   | { type: 'TOOL_LEFT_VIEW'; toolId: string }
-  | { type: 'USER_CLICKED'; toolId: string }
-  | { type: 'STREAM_STARTED'; toolId: string };
+  | { type: 'USER_CLICKED'; toolId: string };
 
 /**
  * State for the tool detail panel.
  *
- * Tracks user pinning, recency, and streaming activity.
+ * Two-field model: system suggestions + user overrides.
+ * User overrides always win over auto-expansion.
  */
 export interface PanelState {
-  /** User-pinned tool ID (takes priority over auto-selection) */
-  userPinnedId: string | null;
-  /** Most recently arrived tool ID (for auto-follow) */
-  latestArrivedId: string | null;
-  /** Set of tool IDs currently streaming */
-  activeToolIds: Set<string>;
-  /** Tool IDs the user explicitly collapsed (overrides active/latest expansion) */
-  userCollapsedIds: Set<string>;
+  /** System-suggested expansions (tools still streaming) */
+  autoExpandedIds: Set<string>;
+  /** User overrides: true = expanded, false = collapsed, absent = follow auto */
+  userOverrides: Map<string, boolean>;
 }

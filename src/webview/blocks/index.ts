@@ -77,7 +77,6 @@ export {
   panelReducer,
   initialPanelState,
   isToolExpanded,
-  getFocusedToolId,
 } from './panel-reducer.js';
 export {
   PanelStateProvider,

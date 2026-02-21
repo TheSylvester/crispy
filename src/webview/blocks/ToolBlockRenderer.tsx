@@ -29,9 +29,6 @@ import { useBackgroundAgentTunnel } from '../hooks/useBackgroundAgentTunnel.js';
 /** Max children visible in the transcript content tail preview. */
 const TAIL_SIZE = 3;
 
-/** Tools that should never auto-expand in the tool panel (read-only / low-signal). */
-const COMPACT_ONLY_TOOLS = new Set(['Read', 'Grep', 'WebFetch', 'WebSearch']);
-
 /**
  * Extended tail: returns the last `tailSize + 1` items so the oldest
  * can be CSS-collapsed, preventing layout shift on unmount.
@@ -118,13 +115,9 @@ export function ToolBlockRenderer({
     let viewMode = globalOverride ?? selectView(def, anchor, block, siblingCount, registry);
 
     // Panel expansion override: tools in tool-panel default to compact unless
-    // isToolExpanded says otherwise (active/streaming, pinned, or latest).
-    // Compact-only tools (Read, Grep, Web*) never auto-expand — only explicit
-    // user pin can expand them (ignores active, latest-arrived, etc.)
+    // isToolExpanded says otherwise (auto-expanded while streaming, or user override).
     if (viewMode === 'expanded' && anchor.type === 'tool-panel') {
-      if (COMPACT_ONLY_TOOLS.has(block.name)) {
-        viewMode = panelState.userPinnedId === block.id ? 'expanded' : 'compact';
-      } else if (!isToolExpanded(block.id, panelState, !!result)) {
+      if (!isToolExpanded(block.id, panelState, !!result)) {
         viewMode = 'compact';
       }
     }

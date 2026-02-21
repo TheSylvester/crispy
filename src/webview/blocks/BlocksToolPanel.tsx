@@ -39,13 +39,12 @@ export function BlocksToolPanel(): React.JSX.Element {
     const currentSet = new Set(visibleToolIds);
     const prevSet = prevVisibleRef.current;
 
-    // Dispatch TOOL_ARRIVED for newly visible tools
+    // Auto-expand newly visible tools that are still streaming (no result yet).
+    // On session load, completed tools already have results → stay compact.
     for (const id of visibleToolIds) {
       if (!prevSet.has(id)) {
-        dispatch({ type: 'TOOL_ARRIVED', toolId: id });
-        // Mark tools without results as actively streaming
         if (!registry.getResult(id)) {
-          dispatch({ type: 'STREAM_STARTED', toolId: id });
+          dispatch({ type: 'AUTO_EXPAND', toolId: id });
         }
       }
     }

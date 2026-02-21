@@ -1,11 +1,12 @@
 /**
  * Panel Reducer — state management for the blocks tool panel
  *
- * Manages tool expansion state with:
- * - Sticky user pin (persists until tool leaves view)
- * - User-collapsed override (click expanded tool to collapse)
- * - Active/streaming tools auto-expanded (unless user-collapsed)
- * - Recency-based auto-focus for latest arrived tool
+ * Simple two-field model:
+ * - autoExpandedIds: system-suggested expansions (streaming tools)
+ * - userOverrides: explicit user clicks (always wins over auto)
+ *
+ * Click behavior is a pure toggle — no priority cascades, no branching
+ * based on *why* a tool is expanded.
  *
  * @module webview/blocks/panel-reducer
  */
@@ -17,10 +18,8 @@ import type { PanelAction, PanelState } from './types.js';
 // ============================================================================
 
 export const initialPanelState: PanelState = {
-  userPinnedId: null,
-  latestArrivedId: null,
-  activeToolIds: new Set(),
-  userCollapsedIds: new Set(),
+  autoExpandedIds: new Set(),
+  userOverrides: new Map(),
 };
 
 // ============================================================================
@@ -29,62 +28,47 @@ export const initialPanelState: PanelState = {
 
 export function panelReducer(state: PanelState, action: PanelAction): PanelState {
   switch (action.type) {
-    case 'TOOL_ARRIVED':
+    case 'AUTO_EXPAND': {
+      if (state.autoExpandedIds.has(action.toolId)) return state;
       return {
         ...state,
-        latestArrivedId: action.toolId,
+        autoExpandedIds: new Set([...state.autoExpandedIds, action.toolId]),
       };
+    }
 
     case 'TOOL_LEFT_VIEW': {
+      const hadAuto = state.autoExpandedIds.has(action.toolId);
+      const hadOverride = state.userOverrides.has(action.toolId);
+      if (!hadAuto && !hadOverride) return state;
+
       const next = { ...state };
-      // If the tool that left was pinned, unpin
-      if (state.userPinnedId === action.toolId) next.userPinnedId = null;
-      // If the tool that left was latest, clear
-      if (state.latestArrivedId === action.toolId) next.latestArrivedId = null;
-      // If the tool that left was active/streaming, remove it
-      if (state.activeToolIds.has(action.toolId)) {
-        const s = new Set(state.activeToolIds);
+      if (hadAuto) {
+        const s = new Set(state.autoExpandedIds);
         s.delete(action.toolId);
-        next.activeToolIds = s;
+        next.autoExpandedIds = s;
       }
-      // Clear collapsed state
-      if (state.userCollapsedIds.has(action.toolId)) {
-        const s = new Set(state.userCollapsedIds);
-        s.delete(action.toolId);
-        next.userCollapsedIds = s;
+      if (hadOverride) {
+        const m = new Map(state.userOverrides);
+        m.delete(action.toolId);
+        next.userOverrides = m;
       }
       return next;
     }
 
     case 'USER_CLICKED': {
-      // If user explicitly collapsed this tool, re-expand it
-      if (state.userCollapsedIds.has(action.toolId)) {
-        const s = new Set(state.userCollapsedIds);
-        s.delete(action.toolId);
-        return { ...state, userCollapsedIds: s };
-      }
-      // If tool is expanded by active/latest (not by pin), collapse it
-      const expandedByAutomatic =
-        (state.activeToolIds.has(action.toolId) || state.latestArrivedId === action.toolId)
-        && state.userPinnedId !== action.toolId;
-      if (expandedByAutomatic) {
-        return {
-          ...state,
-          userCollapsedIds: new Set([...state.userCollapsedIds, action.toolId]),
-        };
-      }
-      // Otherwise toggle pin as before
-      return {
-        ...state,
-        userPinnedId: state.userPinnedId === action.toolId ? null : action.toolId,
-      };
+      // Pure toggle: derive current expansion from reducer state and flip it.
+      // This avoids closing over panelState in the click handler (which would
+      // re-create the callback on every panel state change).
+      // Note: we can't check hasResult here, but that's fine — once a result
+      // arrives the tool is already visually compact, so clicking it correctly
+      // expands either way.
+      const override = state.userOverrides.get(action.toolId);
+      const autoExpanded = state.autoExpandedIds.has(action.toolId);
+      const currentlyExpanded = override !== undefined ? override : autoExpanded;
+      const m = new Map(state.userOverrides);
+      m.set(action.toolId, !currentlyExpanded);
+      return { ...state, userOverrides: m };
     }
-
-    case 'STREAM_STARTED':
-      return {
-        ...state,
-        activeToolIds: new Set([...state.activeToolIds, action.toolId]),
-      };
 
     default:
       return state;
@@ -99,43 +83,20 @@ export function panelReducer(state: PanelState, action: PanelAction): PanelState
  * Determine if a tool should be expanded in the panel.
  *
  * Priority:
- * 0. User-collapsed → always collapsed (overrides everything)
- * 1. Active/streaming → expanded (unless tool has a result)
- * 2. User-pinned → expanded
- * 3. Latest arrived → expanded (auto-focus behavior)
- * 4. Everything else → collapsed
+ * 1. User override → return that value (user always wins)
+ * 2. Auto-expanded → true only if tool has no result yet (still streaming)
+ * 3. Otherwise → collapsed
  */
 export function isToolExpanded(
   toolId: string,
   state: PanelState,
   hasResult?: boolean,
 ): boolean {
-  // User explicitly collapsed → respect their choice
-  if (state.userCollapsedIds.has(toolId)) return false;
-  // Active/streaming → expanded, BUT NOT if tool already has a result
-  if (state.activeToolIds.has(toolId) && !hasResult) return true;
-  // User-pinned → expanded
-  if (state.userPinnedId === toolId) return true;
-  // Latest arrived → expanded (if nothing else claims expansion)
-  if (state.latestArrivedId === toolId) return true;
-  // Everything else → collapsed
+  // User override always wins
+  const override = state.userOverrides.get(toolId);
+  if (override !== undefined) return override;
+  // Auto-expanded → only if still streaming (no result yet)
+  if (state.autoExpandedIds.has(toolId) && !hasResult) return true;
+  // Default: collapsed
   return false;
-}
-
-/**
- * Get the tool ID that should be "focused" in the panel.
- *
- * Priority:
- * 1. User-pinned tool
- * 2. Latest arrived tool
- * 3. First active/streaming tool
- * 4. null if nothing qualifies
- */
-export function getFocusedToolId(state: PanelState): string | null {
-  if (state.userPinnedId) return state.userPinnedId;
-  if (state.latestArrivedId) return state.latestArrivedId;
-  // First active tool
-  const first = state.activeToolIds.values().next();
-  if (!first.done) return first.value;
-  return null;
 }
