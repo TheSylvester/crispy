@@ -90,7 +90,7 @@ export function BashExpandedView({ block, result, status, anchor }: ToolViewProp
     </>}>
       {result && (
         <div className="crispy-blocks-tool-body">
-          <pre className={`crispy-tool-result__text ${result.is_error ? 'crispy-tool-result__text--error' : ''}`}>
+          <pre className={`crispy-blocks-bash-output ${result.is_error ? 'crispy-tool-result__text--error' : ''}`}>
             {useAnsiRender ? renderAnsi(rawText!) : (resultText ?? JSON.stringify(result.content, null, 2))}
           </pre>
         </div>

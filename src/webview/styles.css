@@ -3940,6 +3940,22 @@ h2 {
   overflow: hidden;
 }
 
+/* Bash result output — terminal-style dark block matching the command pill */
+.crispy-blocks-bash-output {
+  margin: 4px 0 0;
+  padding: 8px;
+  background: var(--bg-code);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--vscode-editor-foreground, #d4d4d4);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
 /* --- Blocks Compact Row — single-line tool display --- */
 
 .crispy-blocks-compact-row {
