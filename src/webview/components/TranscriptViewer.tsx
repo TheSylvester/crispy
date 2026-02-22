@@ -9,7 +9,7 @@
  * then we filter the visible slice for rendering.
  *
  * Renders the ControlPanel as a fixed-position sibling outside the
- * ToolRegistryProvider (it doesn't need registry data). PlaybackControls
+ * BlocksToolRegistryProvider (it doesn't need registry data). PlaybackControls
  * are gated behind the debugMode preference (toggleable in Settings).
  *
  * @module TranscriptViewer
@@ -21,17 +21,11 @@ import { usePreferences } from "../context/PreferencesContext.js";
 import { useTranscript } from "../hooks/useTranscript.js";
 import { usePlayback } from "../hooks/usePlayback.js";
 import { useAutoScroll } from "../hooks/useAutoScroll.js";
-import { shouldRenderEntry, shouldRenderEntryForBlocks } from "../utils/entry-filters.js";
+import { shouldRenderEntry } from "../utils/entry-filters.js";
 import { EntryRenderer } from "../renderers/EntryRenderer.js";
-import { ActivityGroup } from "../renderers/ActivityGroup.js";
-import { coalesceEntries } from "../utils/coalesce-entries.js";
-import type { DisplayEntry } from "../utils/coalesce-entries.js";
 import { PlaybackControls } from "./PlaybackControls.js";
-import { ToolRegistryProvider, useToolRegistry, useStatusVersion } from "../context/ToolRegistryContext.js";
 import { ForkProvider } from "../context/ForkContext.js";
 import { ControlPanel } from "./control-panel/index.js";
-import { ToolActivityPanel } from "./ToolActivityPanel.js";
-import { VisibilityProvider } from "../context/VisibilityContext.js";
 import { RenderLocationProvider } from "../context/RenderLocationContext.js";
 import { mapPermissionModeToAgency } from './control-panel/types.js';
 import type { AgencyMode } from './control-panel/types.js';
@@ -44,7 +38,6 @@ import { useTransport } from "../context/TransportContext.js";
 import { useSessionStatus } from "../hooks/useSessionStatus.js";
 import type { ApprovalExtra } from "./approval/types.js";
 import type { TranscriptEntry } from "../../core/transcript.js";
-import type { RenderMode } from "../types.js";
 import { WelcomePage } from "./WelcomePage.js";
 import { isPerfMode, PerfProfiler } from "../perf/index.js";
 import { PerfStore } from "../perf/profiler.js";
@@ -55,73 +48,11 @@ import { PanelStateProvider } from "../blocks/PanelStateContext.js";
 
 // Debug mode now lives in PreferencesContext (default: on during development).
 
-// ============================================================================
-// TranscriptEntryList — inner component for rendering entries with coalescing
-// ============================================================================
-// Lives inside ToolRegistryProvider, so it can call useToolRegistry().
-// TranscriptViewer creates the provider, so it can't call the hook directly.
-
-interface TranscriptEntryListProps {
-  filteredEntries: TranscriptEntry[];
-  renderMode: RenderMode;
-  forkTargets: Map<string, string>;
-  toolCoalescing: boolean;
-}
-
-function TranscriptEntryList({
-  filteredEntries,
-  renderMode,
-  forkTargets,
-  toolCoalescing,
-}: TranscriptEntryListProps): React.JSX.Element {
-  const registry = useToolRegistry();
-  const statusVersion = useStatusVersion();
-
-  const displayEntries = useMemo<DisplayEntry[]>(
-    () => (toolCoalescing && renderMode === 'rich')
-      ? coalesceEntries(filteredEntries, registry)
-      : filteredEntries.map(entry => ({ kind: 'entry' as const, entry })),
-    // statusVersion triggers re-coalescing when tool statuses change
-    // (e.g. running → complete), not just when new entries arrive.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [filteredEntries, registry, toolCoalescing, renderMode, statusVersion]
-  );
-
-  return (
-    <PerfProfiler id="TranscriptList">
-      {displayEntries.map((de, i) => {
-        switch (de.kind) {
-          case 'entry':
-            return (
-              <EntryRenderer
-                key={de.entry.uuid ?? `entry-${i}`}
-                entry={de.entry}
-                mode={renderMode}
-                forkTargetId={de.entry.uuid ? forkTargets.get(de.entry.uuid) : undefined}
-              />
-            );
-          case 'activity-group':
-            return (
-              <ActivityGroup
-                key={`activity-${de.toolIds[0]}`}
-                toolIds={de.toolIds}
-                verbs={de.verbs}
-                entries={de.entries}
-                hasRunning={de.hasRunning}
-                textSnippets={de.textSnippets}
-              />
-            );
-        }
-      })}
-    </PerfProfiler>
-  );
-}
-
 export function TranscriptViewer(): React.JSX.Element {
   const { selectedSessionId, setSelectedSessionId } = useSession();
   const transport = useTransport();
   const { entries, isLoading, error, addOptimisticEntry, setForkHistory } = useTranscript(selectedSessionId);
-  const { renderMode, toolPanelOpen, toolCoalescing, debugMode } = usePreferences();
+  const { renderMode, toolPanelOpen, debugMode } = usePreferences();
   const { approvalRequest, resolve: resolveApproval } = useApprovalRequest(selectedSessionId);
   const [bypassEnabled, setBypassEnabled] = useState(false);
   const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean } | null>(null);
@@ -169,7 +100,7 @@ export function TranscriptViewer(): React.JSX.Element {
     () => entries.slice(0, visibleCount),
     [entries, visibleCount]
   );
-  const filterFn = renderMode === 'blocks' ? shouldRenderEntryForBlocks : shouldRenderEntry;
+  const filterFn = shouldRenderEntry;
   const filteredEntries = useMemo(
     () => visibleEntries.filter(filterFn),
     [visibleEntries, filterFn]
@@ -397,8 +328,6 @@ export function TranscriptViewer(): React.JSX.Element {
   } else if (error) {
     mainContent = <div className="crispy-error">{error}</div>;
   } else {
-    const isBlocks = renderMode === 'blocks';
-
     const transcriptArea = (
       <RenderLocationProvider location="transcript">
       <ForkProvider
@@ -413,12 +342,16 @@ export function TranscriptViewer(): React.JSX.Element {
             {isLoading ? (
               <div className="crispy-loading">Loading transcript...</div>
             ) : (
-              <TranscriptEntryList
-                filteredEntries={filteredEntries}
-                renderMode={renderMode}
-                forkTargets={forkTargets}
-                toolCoalescing={toolCoalescing}
-              />
+              <PerfProfiler id="TranscriptList">
+                {filteredEntries.map((entry, i) => (
+                  <EntryRenderer
+                    key={entry.uuid ?? `entry-${i}`}
+                    entry={entry}
+                    mode={renderMode}
+                    forkTargetId={entry.uuid ? forkTargets.get(entry.uuid) : undefined}
+                  />
+                ))}
+              </PerfProfiler>
             )}
             <ThinkingIndicator />
             {/* Spacer: reserves space for the fixed control panel + stop button + gap.
@@ -449,24 +382,15 @@ export function TranscriptViewer(): React.JSX.Element {
       </RenderLocationProvider>
     );
 
-    mainContent = isBlocks ? (
-      <ToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
-        <BlocksToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
-          <PanelStateProvider>
-            <BlocksVisibilityProvider scrollRef={transcriptRef}>
-              {transcriptArea}
-              {toolPanelOpen && <BlocksToolPanel />}
-            </BlocksVisibilityProvider>
-          </PanelStateProvider>
-        </BlocksToolRegistryProvider>
-      </ToolRegistryProvider>
-    ) : (
-      <ToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
-        <VisibilityProvider scrollRef={transcriptRef}>
-          {transcriptArea}
-          {toolPanelOpen && <ToolActivityPanel />}
-        </VisibilityProvider>
-      </ToolRegistryProvider>
+    mainContent = (
+      <BlocksToolRegistryProvider entries={visibleEntries} sessionId={selectedSessionId}>
+        <PanelStateProvider>
+          <BlocksVisibilityProvider scrollRef={transcriptRef}>
+            {transcriptArea}
+            {toolPanelOpen && <BlocksToolPanel />}
+          </BlocksVisibilityProvider>
+        </PanelStateProvider>
+      </BlocksToolRegistryProvider>
     );
   }
 

@@ -1,7 +1,7 @@
 /**
  * Entry Renderer — pure mode-dispatch router
  *
- * Dispatches to YAML, Compact, or Rich renderer based on the active
+ * Dispatches to YAML, Compact, or Blocks renderer based on the active
  * render mode. Contains no rendering logic of its own.
  *
  * Ported from Leto's `webview-next/renderer/entry.ts` render dispatch.
@@ -14,7 +14,6 @@ import type { TranscriptEntry } from "../../core/transcript.js";
 import type { RenderMode } from "../types.js";
 import { YamlEntry } from "./YamlEntry.js";
 import { CompactEntry } from "./CompactEntry.js";
-import { RichEntry } from "./RichEntry.js";
 import { BlocksEntryWithRegistry } from "../blocks/BlocksEntryWithRegistry.js";
 
 // ============================================================================
@@ -47,8 +46,6 @@ export const EntryRenderer = memo(
         return <YamlEntry entry={entry} />;
       case "compact":
         return <CompactEntry entry={entry} />;
-      case "rich":
-        return <RichEntry entry={entry} forkTargetId={forkTargetId} />;
       case "blocks":
         return <BlocksEntryWithRegistry entry={entry} forkTargetId={forkTargetId} />;
     }

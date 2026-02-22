@@ -25,7 +25,6 @@ interface SettingsPopupProps {
 }
 
 const RENDER_MODES: { value: RenderMode; label: string }[] = [
-  { value: 'rich', label: 'Rich' },
   { value: 'blocks', label: 'Blocks' },
   { value: 'yaml', label: 'YAML' },
   { value: 'compact', label: 'Compact' },

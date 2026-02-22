@@ -165,6 +165,20 @@ export class BlocksToolRegistry {
   }
 
   /**
+   * Get total number of registered tools (pending + resolved).
+   */
+  getToolCount(): number {
+    return this.pending.size + this.results.size;
+  }
+
+  /**
+   * Get number of orphaned results (results that arrived before registration).
+   */
+  getOrphanCount(): number {
+    return this.orphans.size;
+  }
+
+  /**
    * React hook that subscribes to a specific tool's block data.
    *
    * Re-renders only when this specific tool's block is stored.

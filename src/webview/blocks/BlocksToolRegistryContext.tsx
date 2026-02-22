@@ -38,6 +38,8 @@ import {
 import type { TranscriptEntry, ContentBlock, ToolResultBlock } from '../../core/transcript.js';
 import type { RichBlock } from './types.js';
 import { BlocksToolRegistry } from './blocks-tool-registry.js';
+import { isPerfMode } from '../perf/index.js';
+import { PerfStore } from '../perf/profiler.js';
 
 // Side-effect import: registers all tool views with the definition registry.
 // Without this, all tools fall through to FallbackToolView (crispy-blocks-tool--unknown).
@@ -77,6 +79,14 @@ export function BlocksToolRegistryProvider({
   const registryRef = useRef<BlocksToolRegistry | null>(null);
   if (registryRef.current === null) {
     registryRef.current = new BlocksToolRegistry();
+    // Wire tool-count getters into PerfStore (perf mode only)
+    if (isPerfMode) {
+      const reg = registryRef.current;
+      PerfStore.setToolGetters({
+        getToolCount: () => reg.getToolCount(),
+        getOrphanCount: () => reg.getOrphanCount(),
+      });
+    }
   }
   const registry = registryRef.current;
 

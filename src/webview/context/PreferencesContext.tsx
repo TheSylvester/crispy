@@ -11,8 +11,6 @@ interface Preferences {
   toolPanelOpen: boolean;
   /** User-dragged panel width override (px). null = use auto-computed width. */
   toolPanelWidthPx: number | null;
-  /** Coalesce consecutive Read/safe-tool entries into collapsed groups. */
-  toolCoalescing: boolean;
   /** Debug: force all tools to render in a specific view mode. null = auto. */
   toolViewOverride: ToolViewOverride;
   /** Show debug UI (playback controls, tool view override). On by default during development. */
@@ -25,7 +23,6 @@ interface PreferencesContextValue extends Preferences {
   setSidebarCollapsed: (collapsed: boolean) => void;
   setToolPanelOpen: (open: boolean) => void;
   setToolPanelWidthPx: (px: number | null) => void;
-  setToolCoalescing: (enabled: boolean) => void;
   setToolViewOverride: (override: ToolViewOverride) => void;
   setDebugMode: (enabled: boolean) => void;
 }
@@ -33,12 +30,12 @@ interface PreferencesContextValue extends Preferences {
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
 
 /**
- * Read initial render mode from URL (e.g., ?mode=rich), default to 'blocks'.
+ * Read initial render mode from URL (e.g., ?mode=blocks), default to 'blocks'.
  */
 function getInitialRenderMode(): RenderMode {
   const params = new URLSearchParams(window.location.search);
   const mode = params.get('mode');
-  if (mode === 'yaml' || mode === 'compact' || mode === 'rich' || mode === 'blocks') {
+  if (mode === 'yaml' || mode === 'compact' || mode === 'blocks') {
     return mode;
   }
   return 'blocks';
@@ -50,7 +47,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [toolPanelOpen, setToolPanelOpen] = useState(false);
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
-  const [toolCoalescing, setToolCoalescing] = useState(true);
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
   const [debugMode, setDebugMode] = useState(true);
 
@@ -60,7 +56,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     sidebarCollapsed,
     toolPanelOpen,
     toolPanelWidthPx,
-    toolCoalescing,
     toolViewOverride,
     debugMode,
     setRenderMode,
@@ -68,7 +63,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setSidebarCollapsed,
     setToolPanelOpen,
     setToolPanelWidthPx,
-    setToolCoalescing,
     setToolViewOverride,
     setDebugMode,
   };

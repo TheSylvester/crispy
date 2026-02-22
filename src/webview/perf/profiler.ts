@@ -155,7 +155,7 @@ class PerfStoreImpl {
   // =========================================================================
 
   /**
-   * Inject tool-count getters (called from ToolRegistryContext once the
+   * Inject tool-count getters (called from BlocksToolRegistryContext once the
    * registry is available — decoupled from init() lifecycle).
    */
   setToolGetters(fns: {
