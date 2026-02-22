@@ -1,8 +1,7 @@
 /**
  * Tool Badge — colored pill showing tool name (text only, no icon)
  *
- * The icon is rendered BESIDE the badge inside ToolCardShell's
- * header-content container: icon + badge + header content.
+ * The icon is rendered beside the badge inside the tool card summary row.
  *
  * @module webview/renderers/tools/shared/ToolBadge
  */

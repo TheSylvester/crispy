@@ -62,20 +62,22 @@ React 19, esbuild, vanilla CSS with `var(--vscode-*)` theme variables.
 
 - **Provider cascade** — `App.tsx` nests: Transport → Environment → Session →
   FileIndex → Preferences → SessionStatus. Inside `TranscriptViewer`:
-  ToolRegistry → Fork (per-session, reset on session switch).
+  BlocksToolRegistry → Fork (per-session, reset on session switch).
 
-- **Rendering pipeline:** Three modes (YAML / Compact / Rich). Rich mode:
-  Entry → `normalizeToBlocks()` → `BlockRenderer` dispatches to per-type
-  renderers. Extend via `block-registry.ts` + a new renderer component —
-  don't add switch statements to RichEntry or BlockRenderer.
+- **Rendering pipeline:** Three modes (YAML / Compact / Blocks). Blocks mode:
+  Entry → `normalizeToRichBlocks()` → `BlocksBlockRenderer` dispatches to
+  per-type views. Extend via `tool-definitions.ts` + `register-views.ts` +
+  a new view component — don't add switch statements to BlocksEntry or
+  BlocksBlockRenderer.
   **Blocks rendering rules** (view selection, Task children, panel expansion,
   auto-scroll) are documented in `.ai-reference/blocks-rendering-rules.md`.
   Read that file before modifying any rendering logic in `src/webview/blocks/`.
 
-- **ToolRegistry** (`tool-registry.ts`): Standalone mutable store (pure TS).
-  Tracks tool_use → tool_result lifecycle, parent-child nesting, orphan
-  queuing. Subscribed via `useSyncExternalStore` for per-tool re-renders.
-  Tool results return null from BlockRenderer and render on their ToolCard.
+- **BlocksToolRegistry** (`blocks-tool-registry.ts`): Slim pairing-only
+  registry (pure TS). Tracks tool_use → tool_result lifecycle via
+  pending/results/orphans maps. Subscribed via `useSyncExternalStore`.
+  PerfStore wiring in `BlocksToolRegistryContext.tsx`. Tool results render
+  inside their ToolBlockRenderer card via the blocks pipeline.
 
 - **SessionService** (`transport.ts`): The interface is `SessionService`;
   `Transport` is a deprecated alias. Fully wired RPC with dual

@@ -1,8 +1,7 @@
 /**
  * Tool Definitions — single source of truth for tool rendering behavior
  *
- * Consolidates 4 previously independent registrations:
- * - TOOL_META (icon, color, activity)
+ * Consolidates tool rendering registrations:
  * - toolRendererMap
  * - toolPanelRendererMap
  * - TOOL_KEY_MAP
@@ -50,7 +49,7 @@ interface ToolDefinitionData {
  * Static metadata for all known tools.
  * Views are registered separately via registerToolViews().
  *
- * Icons match TOOL_META values from tool-metadata.ts.
+ * Icons defined per tool below.
  */
 const TOOL_DATA: Record<string, ToolDefinitionData> = {
   // Core file operations

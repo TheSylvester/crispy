@@ -5,7 +5,7 @@
  * fork execution, and fork preview hover handlers to child components.
  *
  * useFork() returns null (not throw) when outside the provider, allowing
- * RichEntry to gracefully skip fork buttons in YAML/Compact modes.
+ * BlocksEntry to gracefully skip fork buttons in YAML/Compact modes.
  *
  * @module ForkContext
  */

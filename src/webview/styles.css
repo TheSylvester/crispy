@@ -608,7 +608,7 @@ h2 {
   margin: 4px 0;
 }
 
-.message details:not(.crispy-tool-card):not(.crispy-blocks-tool-card) summary {
+.message details:not(.crispy-blocks-tool-card) summary {
   cursor: pointer;
   font-size: var(--font-sm);
   opacity: 0.6;
@@ -616,7 +616,7 @@ h2 {
   user-select: none;
 }
 
-.message details:not(.crispy-tool-card):not(.crispy-blocks-tool-card) summary:hover {
+.message details:not(.crispy-blocks-tool-card) summary:hover {
   opacity: 0.8;
 }
 
@@ -1148,65 +1148,6 @@ h2 {
   margin: 4px 0;
 }
 
-/* ============================================================================
- * Tool Card — Minimalist Design (Leto-compatible)
- *
- * No borders, transparent background, compact summary rows.
- * ============================================================================ */
-
-.crispy-tool-card {
-  margin: 2px 0 2px 8px;
-  padding-left: 8px;
-  background: transparent;
-}
-
-/* Status state classes — reserved for future per-state styling.
-   No opacity dimming — completed tools should look fully solid. */
-
-/* --- Summary row (the clickable header) --- */
-
-.crispy-tool-card__summary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 4px;
-  cursor: pointer;
-  user-select: none;
-  font-size: var(--font-sm);
-  border-radius: var(--radius-xs);
-  list-style: none;
-}
-
-.crispy-tool-card__summary:hover {
-  background: var(--vscode-list-hoverBackground, #2a2d2e);
-}
-
-.crispy-tool-card__summary::-webkit-details-marker {
-  display: none;
-}
-
-.crispy-tool-card__summary::marker {
-  display: none;
-  content: "";
-}
-
-/* --- Icon (emoji before badge) --- */
-
-.crispy-tool-icon {
-  flex-shrink: 0;
-}
-
-/* --- Header content (badge + tool-specific content) --- */
-
-.crispy-tool-header-content {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  flex: 1 1 0;
-  flex-wrap: wrap;
-}
-
 /* --- Status indicator --- */
 
 .crispy-tool-status {
@@ -1238,14 +1179,6 @@ h2 {
   border-radius: var(--radius-full);
   animation: crispy-spin 0.8s linear infinite;
   vertical-align: middle;
-}
-
-/* --- Body (expanded content) --- */
-
-.crispy-tool-card__body {
-  padding-left: 20px;
-  min-width: 0;
-  overflow: hidden;
 }
 
 /* --- Result content --- */
@@ -1283,31 +1216,6 @@ h2 {
   color: var(--vscode-errorForeground, #f48771);
 }
 
-/* --- Generic tool input details --- */
-
-.crispy-tool-input-details {
-  padding: 4px 8px 4px 20px;
-}
-
-.crispy-tool-input-details summary {
-  cursor: pointer;
-  font-size: var(--font-xs);
-  opacity: 0.6;
-  user-select: none;
-}
-
-.crispy-tool-input-details summary:hover {
-  opacity: 0.8;
-}
-
-.crispy-tool-input-details .yaml-dump {
-  margin: 0;
-  padding: 4px 0;
-  font-size: var(--font-xs);
-  max-height: 300px;
-  overflow-y: auto;
-}
-
 /* ============================================================================
  * Tool-specific styles — badges, nesting, file paths, diffs, code
  * ============================================================================ */
@@ -1322,14 +1230,6 @@ h2 {
   font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;
-}
-
-/* --- Nesting container (Task tool children) --- */
-
-.crispy-tool-card__children {
-  margin-left: 8px;
-  padding-left: 8px;
-  border-left: 2px solid rgba(255, 255, 255, 0.08);
 }
 
 /* --- File path (monospace, dark pill like grep params) --- */
@@ -1615,7 +1515,7 @@ h2 {
    The tool card itself owns its visual spacing. This avoids relying on
    the `+` adjacent-sibling combinator which breaks if the host (VS Code)
    injects elements between messages. */
-.message.assistant:has(.crispy-tool-card):not(:has(.prose)) {
+.message.assistant:has(.crispy-blocks-tool-card):not(:has(.prose)) {
   margin: 0;
   padding: 0;
 }
@@ -3459,35 +3359,6 @@ h2 {
   opacity: 0.7;
 }
 
-.crispy-tool-panel__filters {
-  display: flex;
-  gap: 2px;
-  margin-left: auto;
-}
-
-.crispy-tool-panel__filter-btn {
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--vscode-descriptionForeground, #858585);
-  font-size: var(--font-2xs);
-  font-weight: 500;
-  padding: 2px 6px;
-  cursor: pointer;
-  transition: all 0.1s;
-}
-
-.crispy-tool-panel__filter-btn:hover {
-  color: var(--vscode-editor-foreground, #d4d4d4);
-  background: var(--vscode-list-hoverBackground, #2a2d2e);
-}
-
-.crispy-tool-panel__filter-btn--active {
-  color: var(--vscode-editor-foreground, #d4d4d4);
-  background: var(--vscode-list-activeSelectionBackground, #094771);
-  border-color: var(--vscode-focusBorder, #007acc);
-}
-
 .crispy-tool-panel__scroll {
   flex: 1;
   display: flex;
@@ -3568,7 +3439,6 @@ h2 {
    -------------------------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .crispy-tool-card,
   .crispy-cp-bypass__icon,
   .crispy-cp-chrome__icon,
   .crispy-cp-fork__icon,
