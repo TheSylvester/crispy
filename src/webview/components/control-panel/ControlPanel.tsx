@@ -13,7 +13,7 @@
  * @module control-panel/ControlPanel
  */
 
-import { useReducer, useEffect, useCallback, useRef, forwardRef, useState } from 'react';
+import { useReducer, useEffect, useCallback, useRef, forwardRef, useState, useMemo } from 'react';
 import {
   type ControlPanelState,
   type Action,
@@ -21,8 +21,10 @@ import {
   type ModelOption,
   type AttachedImage,
   DEFAULT_CONTROL_PANEL_STATE,
+  type VendorModelGroup,
   mapAgencyToPermissionMode,
   mapPermissionModeToAgency,
+  parseModelOption,
 } from './types.js';
 import { ChatInput } from './ChatInput.js';
 import { AttachmentsRow } from './AttachmentsRow.js';
@@ -43,6 +45,7 @@ import { useSessionStatus } from '../../hooks/useSessionStatus.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent } from '../../../core/agent-adapter.js';
+import type { WireProviderConfig, ProviderConfig } from '../../../core/provider-config.js';
 
 interface ControlPanelProps {
   onForkHoverChange?: (hovering: boolean) => void;
@@ -78,9 +81,6 @@ const CYCLABLE_AGENCY_MODES: AgencyMode[] = [
   'edit-automatically',
   'ask-before-edits',
 ];
-
-/** Model options for keyboard cycling. */
-const CYCLABLE_MODELS: ModelOption[] = ['', 'opus', 'sonnet', 'haiku'];
 
 function controlPanelReducer(state: ControlPanelState, action: Action): ControlPanelState {
   switch (action.type) {
@@ -159,6 +159,37 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const { selectedSessionId, selectedCwd, setSelectedSessionId } = useSession();
     const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
     const togglesDisabled = channelState === 'streaming' || channelState === 'awaiting_approval';
+
+    // --- Dynamic model groups from provider-config ---
+    const [modelGroups, setModelGroups] = useState<VendorModelGroup[]>([]);
+
+    useEffect(() => {
+      transport.getModelGroups().then(setModelGroups).catch(console.error);
+    }, [transport]);
+
+    // Listen for push updates when providers.json changes
+    useEffect(() => {
+      const off = transport.onEvent((sessionId, event) => {
+        if (sessionId === '__providers__' && event.type === 'providers_changed') {
+          setModelGroups(event.groups);
+          transport.listProviders().then(setProviders).catch(console.error);
+        }
+      });
+      return off;
+    }, [transport]);
+
+    /** Model options for keyboard cycling — dynamic from provider groups. */
+    const allCyclable = useMemo<ModelOption[]>(() => [
+      '',
+      ...modelGroups.flatMap(g => g.models.map(m => m.value)),
+    ], [modelGroups]);
+
+    // --- Provider management state ---
+    const [providers, setProviders] = useState<Record<string, WireProviderConfig>>({});
+
+    useEffect(() => {
+      transport.listProviders().then(setProviders).catch(console.error);
+    }, [transport]);
 
     // Clear forkMode when switching sessions
     useEffect(() => {
@@ -273,11 +304,11 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           return;
         }
 
-        // Alt+M: Cycle models
+        // Alt+M: Cycle models (Default → dynamic model groups → back)
         if (e.key === 'm' && e.altKey && !e.ctrlKey && !e.shiftKey) {
           e.preventDefault();
-          const idx = CYCLABLE_MODELS.indexOf(state.model);
-          const next = CYCLABLE_MODELS[(idx + 1) % CYCLABLE_MODELS.length];
+          const idx = allCyclable.indexOf(state.model);
+          const next = allCyclable[(idx + 1) % allCyclable.length];
           dispatch({ type: 'SET_MODEL', model: next });
           return;
         }
@@ -285,7 +316,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
       document.addEventListener('keydown', handleKeyDown);
       return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [state.bypassEnabled, state.agencyMode, state.model, togglesDisabled]);
+    }, [state.bypassEnabled, state.agencyMode, state.model, togglesDisabled, allCyclable]);
 
     // --- Server → UI: settings sync notifications ---
     // Server-initiated setting changes update the local state. Handles both
@@ -305,8 +336,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
         if (event.event.kind === 'settings_changed') {
           const { settings } = event.event;
-          // Sync model
-          const modelValue = (settings.model ?? '') as ModelOption;
+          // Sync model — vendor is now part of AdapterSettings
+          const rawModel = settings.model ?? '';
+          const modelValue: ModelOption = rawModel ? `${settings.vendor}:${rawModel}` : '';
           dispatch({ type: 'SET_MODEL', model: modelValue });
           // Sync permission mode → agency mode
           if (settings.permissionMode) {
@@ -350,12 +382,15 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         content = text;
       }
 
+      // Derive vendor and model from the combined "vendor:model" selection
+      const { vendor, model } = parseModelOption(state.model);
+
       // Build TurnIntent with unified routing target
       const intent: TurnIntent = {
         content,
         clientMessageId: crypto.randomUUID(),
         settings: {
-          model: state.model || undefined,
+          model: model || undefined,
           permissionMode: mapAgencyToPermissionMode(state.agencyMode),
           allowDangerouslySkipPermissions: state.bypassEnabled || undefined,
           extraArgs: state.chromeEnabled ? { chrome: null } : undefined,
@@ -363,12 +398,12 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         target: state.forkMode
           ? {
               kind: 'fork',
-              vendor: 'claude',
+              vendor,
               fromSessionId: state.forkMode.fromSessionId,
               atMessageId: state.forkMode.atMessageId,
             }
           : !selectedSessionId
-            ? { kind: 'new', vendor: 'claude', cwd: slugToPath(selectedCwd!) }
+            ? { kind: 'new', vendor, cwd: slugToPath(selectedCwd!) }
             : { kind: 'existing', sessionId: selectedSessionId },
       };
 
@@ -772,6 +807,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           <ModelSelect
             value={state.model}
             onChange={(model) => dispatch({ type: 'SET_MODEL', model })}
+            groups={modelGroups}
           />
           <FileContextToggle
             checked={state.fileContextEnabled}
@@ -794,6 +830,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onToolViewOverrideChange={setToolViewOverride}
               debugMode={debugMode}
               onDebugModeChange={setDebugMode}
+              providers={providers}
+              onSaveProvider={(slug, config) => transport.saveProvider(slug, config).catch(console.error)}
+              onDeleteProvider={(slug) => transport.deleteProvider(slug).catch(console.error)}
             />
             <ForkButton
               disabled={!selectedSessionId || selectedSessionId.startsWith('pending:')}

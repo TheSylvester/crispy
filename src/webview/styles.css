@@ -2033,6 +2033,14 @@ h2 {
   color: var(--vscode-dropdown-foreground, #cccccc);
 }
 
+.crispy-cp-controls select optgroup {
+  background: var(--vscode-dropdown-background, #252526);
+  color: var(--vscode-descriptionForeground, #888);
+  font-style: normal;
+  font-weight: 600;
+  font-size: var(--font-sm);
+}
+
 /* Model select — inherits from .crispy-cp-controls select */
 .crispy-cp-model {
   /* styling inherited from .crispy-cp-controls select */
@@ -2506,6 +2514,89 @@ h2 {
   border-radius: var(--radius-xl);
   font-size: var(--font-sm);
   cursor: pointer;
+}
+
+.crispy-cp-settings__section-header {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground, #888);
+  margin: 12px 0 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.crispy-cp-settings__provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.crispy-cp-settings__provider-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+}
+
+.crispy-cp-settings__provider-btn {
+  padding: 2px 8px;
+  background: transparent;
+  color: var(--vscode-foreground, #d4d4d4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.crispy-cp-settings__provider-btn:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-cp-settings__provider-btn--danger {
+  color: #f48771;
+}
+
+.crispy-cp-settings__provider-btn--danger:hover {
+  background: rgba(244, 135, 113, 0.1);
+}
+
+.crispy-cp-settings__provider-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.crispy-cp-settings__provider-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-sm);
+  margin-top: 6px;
+}
+
+.crispy-cp-settings__provider-form input[type="text"],
+.crispy-cp-settings__provider-form input[type="password"],
+.crispy-cp-settings__provider-form input[type="number"] {
+  padding: 4px 8px;
+  background: var(--bg-editor);
+  color: var(--vscode-foreground, #d4d4d4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  width: 100%;
+}
+
+.crispy-cp-settings__provider-form label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--font-sm);
+  color: var(--vscode-descriptionForeground, #888);
 }
 
 /* --------------------------------------------------------------------------

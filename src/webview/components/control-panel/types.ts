@@ -7,7 +7,7 @@
  * @module control-panel/types
  */
 
-import type { ContextUsage } from '../../../core/transcript.js';
+import type { ContextUsage, Vendor } from '../../../core/transcript.js';
 
 /** Agency mode determines how Claude handles edits and permissions. */
 export type AgencyMode =
@@ -16,8 +16,21 @@ export type AgencyMode =
   | 'ask-before-edits'
   | 'bypass-permissions';
 
-/** Model selection for Claude. Empty string means "Default". */
-export type ModelOption = '' | 'sonnet' | 'opus' | 'haiku';
+/**
+ * Model selection. Empty string = Default (Claude Sonnet).
+ * Format: "vendor:model" for explicit selections (e.g. "claude:opus").
+ */
+export type ModelOption = string;
+
+export type { VendorModelGroup } from '../../../core/provider-events.js';
+
+/** Parse "vendor:model" → { vendor, model }. Empty string → claude + empty model. */
+export function parseModelOption(opt: ModelOption): { vendor: Vendor; model: string } {
+  if (!opt) return { vendor: 'claude', model: '' };
+  const idx = opt.indexOf(':');
+  if (idx === -1) return { vendor: 'claude', model: opt }; // legacy compat
+  return { vendor: opt.slice(0, idx) as Vendor, model: opt.slice(idx + 1) };
+}
 
 /** Represents an image attached to a message. */
 export interface AttachedImage {

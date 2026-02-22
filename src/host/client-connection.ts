@@ -21,6 +21,8 @@ import type {
   SessionChannel,
 } from "../core/session-channel.js";
 import type { SessionListEvent } from "../core/session-list-events.js";
+import type { ProviderEvent } from '../core/provider-events.js';
+import { PROVIDERS_CHANNEL_ID } from '../core/provider-events.js';
 import { resolveApproval, unsubscribe, getChannel } from "../core/session-channel.js";
 import {
   listAllSessions,
@@ -39,6 +41,11 @@ import {
 } from "../core/session-list-manager.js";
 import { SESSION_LIST_CHANNEL_ID } from "../core/session-list-events.js";
 import { getGitFiles, fileExists, readImage } from "../core/file-service.js";
+import {
+  getProviders, saveProvider, deleteProvider, getModelGroups,
+  onProvidersChanged, getProviderBase,
+} from '../core/provider-config.js';
+import type { ProviderConfig } from '../core/provider-config.js';
 
 // ============================================================================
 // Wire Protocol Types
@@ -53,7 +60,7 @@ export type ClientMessage = {
 };
 
 /** Union of all events that can be pushed over the wire. */
-export type HostEvent = ChannelMessage | HistoryMessage | ChannelCatchupMessage | SessionListEvent;
+export type HostEvent = ChannelMessage | HistoryMessage | ChannelCatchupMessage | SessionListEvent | ProviderEvent;
 
 /** Host → Client response or push event. */
 export type HostMessage =
@@ -93,6 +100,15 @@ export function createClientConnection(
 
   /** Global session-list subscription for this client. */
   let sessionListSub: SessionListSubscriber | null = null;
+
+  /** Push model group updates when providers.json changes. */
+  const providerUnsub = onProvidersChanged(() => {
+    sendFn({
+      kind: 'event',
+      sessionId: PROVIDERS_CHANNEL_ID,
+      event: { type: 'providers_changed', groups: getModelGroups() },
+    });
+  });
 
   async function handleMessage(raw: unknown): Promise<void> {
     // Parse the message
@@ -311,12 +327,32 @@ export function createClientConnection(
         return readSubagentEntries(sessionId, agentId, parentToolUseId, cursor);
       }
 
+      case 'listProviders':
+        return getProviders();
+
+      case 'saveProvider': {
+        const slug = params.slug as string;
+        const config = params.config as ProviderConfig;
+        await saveProvider(slug, config, getProviderBase());
+        return { saved: true };
+      }
+
+      case 'deleteProvider': {
+        const slug = params.slug as string;
+        await deleteProvider(slug, getProviderBase());
+        return { deleted: true };
+      }
+
+      case 'getModelGroups':
+        return getModelGroups();
+
       default:
         throw new Error(`Unknown method: ${method}`);
     }
   }
 
   function dispose(): void {
+    providerUnsub();
     if (sessionListSub) {
       unsubscribeSessionList(sessionListSub);
       sessionListSub = null;

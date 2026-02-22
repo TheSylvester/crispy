@@ -8,6 +8,7 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { registerAdapter, unregisterAdapter } from './core/session-manager.js';
 import { ClaudeAgentAdapter, claudeDiscovery } from './core/adapters/claude/claude-code-adapter.js';
+import { syncProviders, startWatching, stopWatching } from './core/provider-config.js';
 import { openCrispyPanel, getOrCreatePanelForPrefill } from './host/webview-host.js';
 import { startRescan, stopRescan } from './core/session-list-manager.js';
 
@@ -68,9 +69,14 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  // Register dynamic Anthropic-compatible providers from ~/.config/crispy/providers.json
+  syncProviders(base).catch((err) => console.error('[crispy] Failed to load providers:', err));
+  startWatching(base);
+
   startRescan();
   context.subscriptions.push({ dispose: () => stopRescan() });
   context.subscriptions.push({ dispose: () => unregisterAdapter('claude') });
+  context.subscriptions.push({ dispose: () => stopWatching() });
 }
 
 export function deactivate(): void {}

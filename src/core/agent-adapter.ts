@@ -168,6 +168,7 @@ export interface TurnReceipt {
 
 /** Vendor-agnostic session settings, readable from the adapter. */
 export interface AdapterSettings {
+  vendor: Vendor;
   model: string | undefined;
   permissionMode: string | undefined;
   allowDangerouslySkipPermissions: boolean;

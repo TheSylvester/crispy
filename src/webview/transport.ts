@@ -12,6 +12,8 @@ import type { SessionInfo, TurnIntent, TurnReceipt } from '../core/agent-adapter
 import type { TranscriptEntry } from '../core/transcript.js';
 import type { HostEvent } from '../host/client-connection.js';
 import type { ApprovalExtra } from './components/approval/types.js';
+import type { WireProviderConfig, ProviderConfig } from '../core/provider-config.js';
+import type { VendorModelGroup } from './components/control-panel/types.js';
 
 /** Client-side session info — modifiedAt is a string after JSON serialization. */
 export interface WireSessionInfo extends Omit<SessionInfo, 'modifiedAt'> {
@@ -62,6 +64,12 @@ export interface SessionService {
     parentToolUseId: string,
     cursor: string,
   ): Promise<{ entries: TranscriptEntry[]; cursor: string; done: boolean }>;
+
+  /** Provider management */
+  listProviders(): Promise<Record<string, WireProviderConfig>>;
+  saveProvider(slug: string, config: ProviderConfig): Promise<{ saved: boolean }>;
+  deleteProvider(slug: string): Promise<{ deleted: boolean }>;
+  getModelGroups(): Promise<VendorModelGroup[]>;
 
   dispose(): void;
 }

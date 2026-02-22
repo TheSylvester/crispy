@@ -47,7 +47,7 @@ import { adaptClaudeEntry, adaptClaudeEntries } from './claude-entry-adapter.js'
 import { parseJsonlFile, extractMetadataFast, readLinesFromOffset } from './jsonl-reader.js';
 import { loadSubagentEntries } from './subagent-loader.js';
 
-import type { TranscriptEntry, ContextUsage, MessageContent } from '../../transcript.js';
+import type { TranscriptEntry, ContextUsage, MessageContent, Vendor } from '../../transcript.js';
 
 import { existsSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
@@ -131,6 +131,11 @@ export interface HookCallbackMatcher {
  * via `permissionMode`.
  */
 export interface ClaudeSessionOptions {
+  // --- Vendor ---
+
+  /** Vendor identity — defaults to 'claude'. */
+  vendor?: Vendor;
+
   // --- Session identity ---
 
   /** Working directory for the session (required) */
@@ -372,7 +377,7 @@ interface PendingApproval {
 // ============================================================================
 
 export class ClaudeAgentAdapter implements AgentAdapter {
-  readonly vendor = 'claude';
+  readonly vendor: Vendor = 'claude';
 
   private _sessionId: string | undefined;
   private _status: ChannelStatus = 'idle';
@@ -399,6 +404,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
 
   constructor(options: ClaudeSessionOptions) {
     this.options = options;
+    this.vendor = options.vendor ?? 'claude';
     this._sessionId = options.resume;
   }
 
@@ -427,6 +433,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   /** Current session settings (model, permission mode, bypass, extra args). */
   get settings(): AdapterSettings {
     return {
+      vendor: this.vendor,
       model: this.options.model,
       permissionMode: this.options.permissionMode,
       allowDangerouslySkipPermissions: this.options.allowDangerouslySkipPermissions ?? false,
@@ -1574,3 +1581,4 @@ export const claudeDiscovery: VendorDiscovery = {
     return { entries: adapted, cursor: String(newOffset), done };
   },
 };
+

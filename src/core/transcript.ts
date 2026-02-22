@@ -62,7 +62,19 @@ import type {
 // Vendor
 // ============================================================================
 
-export type Vendor = 'claude' | 'codex' | 'gemini';
+/** Native vendors with compile-time exhaustive checks. */
+export type NativeVendor = 'claude' | 'codex' | 'gemini';
+
+/** Vendor identifier. Native vendors are literals; dynamic providers are arbitrary slugs. */
+export type Vendor = NativeVendor | (string & {});
+
+/** Runtime set of native vendor slugs. */
+export const NATIVE_VENDORS = new Set<string>(['claude', 'codex', 'gemini']);
+
+/** Type guard for native vendors. */
+export function isNativeVendor(v: string): v is NativeVendor {
+  return NATIVE_VENDORS.has(v);
+}
 
 // ============================================================================
 // Entry Types
