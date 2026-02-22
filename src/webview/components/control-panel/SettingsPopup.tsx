@@ -25,7 +25,7 @@ interface SettingsPopupProps {
   debugMode: boolean;
   onDebugModeChange: (enabled: boolean) => void;
   providers?: Record<string, WireProviderConfig>;
-  onSaveProvider?: (slug: string, config: ProviderConfig) => void;
+  onSaveProvider?: (slug: string, config: ProviderConfig) => Promise<void>;
   onDeleteProvider?: (slug: string) => void;
 }
 
@@ -109,6 +109,8 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const handleClickOutside = useCallback(
     (e: MouseEvent) => {
@@ -130,11 +132,19 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
     onToggle();
   };
 
-  const handleSaveForm = () => {
+  const handleSaveForm = async () => {
     if (!editForm || !onSaveProvider) return;
     if (!editForm.slug || !editForm.label || !editForm.baseUrl || !editForm.modelDefault) return;
-    onSaveProvider(editForm.slug, formToConfig(editForm));
-    setEditForm(null);
+    setSaveError(null);
+    setSaving(true);
+    try {
+      await onSaveProvider(editForm.slug, formToConfig(editForm));
+      setEditForm(null);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const containerClass = [
@@ -221,7 +231,7 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
                     <span style={{ display: 'flex', gap: '4px' }}>
                       <button
                         className="crispy-cp-settings__provider-btn"
-                        onClick={() => setEditForm(formFromProvider(slug, config))}
+                        onClick={() => { setSaveError(null); setEditForm(formFromProvider(slug, config)); }}
                         title="Edit provider"
                       >
                         Edit
@@ -240,7 +250,7 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               {!editForm && (
                 <button
                   className="crispy-cp-settings__provider-btn"
-                  onClick={() => setEditForm({ ...EMPTY_FORM })}
+                  onClick={() => { setSaveError(null); setEditForm({ ...EMPTY_FORM }); }}
                   style={{ marginTop: '4px' }}
                 >
                   + Add Provider
@@ -338,19 +348,25 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
                       onChange={(e) => setEditForm({ ...editForm, enabled: e.target.checked })}
                     />
                   </label>
+                  {saveError && (
+                    <div style={{ color: 'var(--vscode-errorForeground, #f44)', fontSize: '12px', padding: '4px 0' }}>
+                      {saveError}
+                    </div>
+                  )}
                   <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                     <button
                       className="crispy-cp-settings__provider-btn"
-                      onClick={() => setEditForm(null)}
+                      onClick={() => { setSaveError(null); setEditForm(null); }}
+                      disabled={saving}
                     >
                       Cancel
                     </button>
                     <button
                       className="crispy-cp-settings__provider-btn"
                       onClick={handleSaveForm}
-                      disabled={!editForm.slug || !editForm.label || !editForm.baseUrl || !editForm.modelDefault}
+                      disabled={saving || !editForm.slug || !editForm.label || !editForm.baseUrl || !editForm.modelDefault}
                     >
-                      Save
+                      {saving ? 'Saving…' : 'Save'}
                     </button>
                   </div>
                 </div>

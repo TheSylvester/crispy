@@ -45,7 +45,7 @@ import { useSessionStatus } from '../../hooks/useSessionStatus.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent } from '../../../core/agent-adapter.js';
-import type { WireProviderConfig, ProviderConfig } from '../../../core/provider-config.js';
+import type { WireProviderConfig } from '../../../core/provider-config.js';
 
 interface ControlPanelProps {
   onForkHoverChange?: (hovering: boolean) => void;
@@ -831,7 +831,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               debugMode={debugMode}
               onDebugModeChange={setDebugMode}
               providers={providers}
-              onSaveProvider={(slug, config) => transport.saveProvider(slug, config).catch(console.error)}
+              onSaveProvider={async (slug, config) => { await transport.saveProvider(slug, config); }}
               onDeleteProvider={(slug) => transport.deleteProvider(slug).catch(console.error)}
             />
             <ForkButton
