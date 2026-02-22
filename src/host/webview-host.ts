@@ -44,11 +44,12 @@ function getMostRecentPanel(): vscode.WebviewPanel | undefined {
  */
 export function getOrCreatePanelForPrefill(
   context: vscode.ExtensionContext,
+  options?: { workspaceCwd?: string },
 ): vscode.WebviewPanel {
   const column = getMostRecentPanel()
     ? vscode.ViewColumn.Beside
     : vscode.ViewColumn.One;
-  return createCrispyPanel(context, column);
+  return createCrispyPanel(context, column, options);
 }
 
 /**
@@ -58,8 +59,12 @@ export function getOrCreatePanelForPrefill(
  * - Panel is focused → create new panel beside it
  *
  * @param context  VS Code extension context (for webview resource URIs)
+ * @param options  Optional init hints (e.g. workspaceCwd for default project)
  */
-export function openCrispyPanel(context: vscode.ExtensionContext): void {
+export function openCrispyPanel(
+  context: vscode.ExtensionContext,
+  options?: { workspaceCwd?: string },
+): void {
   const column = vscode.window.activeTextEditor?.viewColumn;
 
   // If panel(s) exist but none is focused → reveal the most recent one
@@ -75,6 +80,7 @@ export function openCrispyPanel(context: vscode.ExtensionContext): void {
   createCrispyPanel(
     context,
     isAnyPanelActive() ? vscode.ViewColumn.Beside : (column || vscode.ViewColumn.One),
+    options,
   );
 }
 
@@ -83,10 +89,12 @@ export function openCrispyPanel(context: vscode.ExtensionContext): void {
  *
  * @param context     VS Code extension context (for webview resource URIs)
  * @param viewColumn  Column to open the panel in (default: Beside for backward compat)
+ * @param options     Optional init hints sent to the webview after creation
  */
 export function createCrispyPanel(
   context: vscode.ExtensionContext,
   viewColumn: vscode.ViewColumn = vscode.ViewColumn.Beside,
+  options?: { workspaceCwd?: string },
 ): vscode.WebviewPanel {
   const panel = vscode.window.createWebviewPanel(
     'crispy',
@@ -229,6 +237,16 @@ export function createCrispyPanel(
   panel.webview.html = getWebviewHtml(panel.webview, scriptUri, cssUri, stylesUri, nonce);
 
   panels.set(panelId, panel);
+
+  // Send workspace CWD hint so the webview defaults to the VS Code workspace
+  // project instead of MRU. Retry pattern matches forkConfig delivery above.
+  if (options?.workspaceCwd) {
+    const msg = { kind: 'workspaceCwd', cwd: options.workspaceCwd };
+    const delays = [100, 500, 1500];
+    for (const delay of delays) {
+      setTimeout(() => { if (!disposed) panel.webview.postMessage(msg); }, delay);
+    }
+  }
 
   // Auto-focus chat input whenever the panel becomes active (user clicks tab,
   // switches back from editor, etc.). This complements the mount-time autofocus

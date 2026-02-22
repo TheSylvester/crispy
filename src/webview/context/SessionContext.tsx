@@ -15,6 +15,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 import type { WireSessionInfo } from '../transport.js';
 import { useTransport } from './TransportContext.js';
 import { SESSION_LIST_CHANNEL_ID } from '../../core/session-list-events.js';
+import { pathToSlug } from '../hooks/useSessionCwd.js';
 
 interface SessionState {
   sessions: WireSessionInfo[];
@@ -117,14 +118,38 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     }
   }, [selectedSessionId, sessions]);
 
-  // Default CWD: on initial session load, default to the most-recently-used project slug
+  // Listen for workspace CWD hint from VS Code host (sent via postMessage).
+  // If it arrives before sessions load, apply it immediately as the default.
+  const workspaceCwdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    function onMessage(ev: MessageEvent) {
+      if (ev.data?.kind === 'workspaceCwd' && ev.data.cwd) {
+        workspaceCwdRef.current = pathToSlug(ev.data.cwd);
+        // If CWD hasn't been initialized yet via sessions, apply immediately
+        if (!cwdInitialized.current) {
+          setSelectedCwd(workspaceCwdRef.current);
+        }
+      }
+    }
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
+
+  // Default CWD: prefer workspace hint, fall back to MRU session slug.
+  // Handles both orderings — workspace message first or sessions first.
   useEffect(() => {
     if (cwdInitialized.current || sessions.length === 0) return;
     cwdInitialized.current = true;
-    // Sessions are sorted by modifiedAt desc — first session has the most recent project
-    const firstSlug = sessions[0]?.projectSlug;
-    if (firstSlug && !selectedCwd) {
-      setSelectedCwd(firstSlug);
+
+    if (workspaceCwdRef.current) {
+      setSelectedCwd(workspaceCwdRef.current);
+    } else {
+      // Sessions are sorted by modifiedAt desc — first session has the most recent project
+      const firstSlug = sessions[0]?.projectSlug;
+      if (firstSlug && !selectedCwd) {
+        setSelectedCwd(firstSlug);
+      }
     }
   }, [sessions, selectedCwd]);
 

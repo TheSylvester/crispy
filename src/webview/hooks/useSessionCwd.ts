@@ -36,6 +36,17 @@ export function slugToPath(slug: string): string {
   return '/' + stripped.replace(/-/g, '/');
 }
 
+/**
+ * Convert an absolute path to Claude's slug format: '/' → '-'.
+ * e.g. `/home/silver/dev/crispy` → `-home-silver-dev-crispy`
+ *
+ * Inverse of slugToPath() — used to convert a workspace folder path into
+ * the slug format used by selectedCwd / projectSlug.
+ */
+export function pathToSlug(absPath: string): string {
+  return absPath.replace(/\//g, '-');
+}
+
 export function formatCwd(fullPath: string): string {
   const segments = fullPath.split('/').filter(Boolean);
   return segments.slice(-2).join('/');

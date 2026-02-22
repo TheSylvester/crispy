@@ -50,15 +50,17 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   );
 
+  const workspaceOpts = { workspaceCwd: cwd };
+
   context.subscriptions.push(
-    vscode.commands.registerCommand('crispy.editor.open', () => openCrispyPanel(context)),
+    vscode.commands.registerCommand('crispy.editor.open', () => openCrispyPanel(context, workspaceOpts)),
     vscode.commands.registerCommand('crispy.executeFile', async (uri: vscode.Uri) => {
       if (!uri) return;
       const doc = await vscode.workspace.openTextDocument(uri);
       const content = doc.getText();
       if (!content.trim()) return;
 
-      const panel = getOrCreatePanelForPrefill(context);
+      const panel = getOrCreatePanelForPrefill(context, workspaceOpts);
       // Small delay for newly created panels to initialize their webview JS
       setTimeout(() => {
         panel.webview.postMessage({ kind: 'executeInCrispy', content: `Execute the following:\n\n${content}` });

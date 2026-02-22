@@ -295,12 +295,13 @@ export function TranscriptViewer(): React.JSX.Element {
 
   // Listen for "Execute in Crispy" postMessage from the extension host.
   // Clears the current session so handleSend takes the new-session branch,
-  // then prefills + auto-sends the file content.
+  // then prefills the input without auto-sending, giving the user a chance
+  // to configure settings (bypass, agency, model) before pressing Enter.
   useEffect(() => {
     const handler = (ev: MessageEvent) => {
       if (ev.data?.kind === 'executeInCrispy' && ev.data.content) {
         setSelectedSessionId(null);
-        setPrefillInput({ text: ev.data.content, autoSend: true });
+        setPrefillInput({ text: ev.data.content });
       }
     };
     window.addEventListener('message', handler);
