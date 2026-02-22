@@ -1,5 +1,5 @@
 /**
- * File Service — backend file operations for linkification
+ * File Service — backend file operations for linkification and file reading
  *
  * Pure Node.js functions (no VS Code dependency) that work in both
  * dev-server and extension environments.
@@ -120,5 +120,48 @@ export async function readImage(filePath: string): Promise<{ data: string; mimeT
     data: buffer.toString('base64'),
     mimeType: MIME_TYPES[ext] ?? 'application/octet-stream',
     fileName: basename(filePath),
+  };
+}
+
+// ============================================================================
+// Text File Reading
+// ============================================================================
+
+const MAX_TEXT_SIZE = 5 * 1024 * 1024; // 5MB
+
+/** Known binary extensions that should not be read as text */
+const BINARY_EXTENSIONS = new Set([
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.bmp',
+  '.pdf', '.zip', '.tar', '.gz', '.woff', '.woff2', '.ttf', '.otf',
+  '.mp3', '.mp4', '.wav', '.mov', '.avi', '.wasm', '.so', '.dylib',
+]);
+
+/**
+ * Read a text file and return its content, name, and size.
+ *
+ * Refuses binary files (by extension) and files over MAX_TEXT_SIZE.
+ * Caller is responsible for path containment validation.
+ *
+ * @param filePath - Absolute path to the text file
+ * @returns Content string, basename, and byte size
+ * @throws If binary extension, not a file, too large, or unreadable
+ */
+export async function readTextFile(
+  filePath: string,
+): Promise<{ content: string; fileName: string; size: number }> {
+  const ext = extname(filePath).toLowerCase();
+  if (BINARY_EXTENSIONS.has(ext)) {
+    throw new Error(`Binary file type: ${ext}`);
+  }
+
+  const s = await stat(filePath);
+  if (!s.isFile()) throw new Error(`Not a file: ${filePath}`);
+  if (s.size > MAX_TEXT_SIZE) throw new Error(`File too large: ${s.size} bytes (max ${MAX_TEXT_SIZE})`);
+
+  const buffer = await readFile(filePath, 'utf-8');
+  return {
+    content: buffer,
+    fileName: basename(filePath),
+    size: s.size,
   };
 }

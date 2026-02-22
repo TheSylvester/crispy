@@ -56,6 +56,7 @@ export interface SessionService {
   getGitFiles(cwd: string): Promise<string[]>;
   fileExists(path: string): Promise<boolean>;
   readImage(path: string): Promise<{ data: string; mimeType: string; fileName: string }>;
+  readFile(path: string): Promise<{ content: string; fileName: string; size: number }>;
   openFile(path: string, line?: number, col?: number): Promise<{ opened: boolean }>;
   pickFile(candidates: string[]): Promise<{ picked: string | null }>;
   readSubagentEntries(

@@ -40,7 +40,7 @@ import {
   type SessionListSubscriber,
 } from "../core/session-list-manager.js";
 import { SESSION_LIST_CHANNEL_ID } from "../core/session-list-events.js";
-import { getGitFiles, fileExists, readImage } from "../core/file-service.js";
+import { getGitFiles, fileExists, readImage, readTextFile } from "../core/file-service.js";
 import {
   getProviders, saveProvider, deleteProvider, getModelGroups,
   onProvidersChanged, getProviderBase,
@@ -305,6 +305,11 @@ export function createClientConnection(
       case "readImage": {
         const filePath = params.path as string;
         return readImage(filePath);
+      }
+
+      case "readFile": {
+        const filePath = params.path as string;
+        return readTextFile(filePath);
       }
 
       case "forkToNewPanel":

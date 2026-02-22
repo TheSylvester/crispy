@@ -43,9 +43,11 @@ import { isPerfMode, PerfProfiler } from "../perf/index.js";
 import { PerfStore } from "../perf/profiler.js";
 import { BlocksToolRegistryProvider } from "../blocks/BlocksToolRegistryContext.js";
 import { BlocksVisibilityProvider } from "../blocks/BlocksVisibilityContext.js";
-import { BlocksToolPanel } from "../blocks/BlocksToolPanel.js";
 import { ConnectorLines } from "../blocks/ConnectorLines.js";
 import { PanelStateProvider } from "../blocks/PanelStateContext.js";
+import { BlocksToolPanel } from "../blocks/BlocksToolPanel.js";
+import { useFilePanel } from "../context/FilePanelContext.js";
+import { FileViewerModal } from "./file-panel/FileViewerModal.js";
 
 // Debug mode now lives in PreferencesContext (default: on during development).
 
@@ -55,6 +57,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const { entries, isLoading, error, addOptimisticEntry, setForkHistory } = useTranscript(selectedSessionId);
   const { renderMode, toolPanelOpen, debugMode } = usePreferences();
   const { approvalRequest, resolve: resolveApproval } = useApprovalRequest(selectedSessionId);
+  const { registerInsertHandler } = useFilePanel();
   const [bypassEnabled, setBypassEnabled] = useState(false);
   const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean } | null>(null);
   const [pendingAgencyMode, setPendingAgencyMode] = useState<{ agencyMode: AgencyMode; bypassEnabled: boolean } | null>(null);
@@ -314,6 +317,13 @@ export function TranscriptViewer(): React.JSX.Element {
     setPrefillInput(null);
   }, []);
 
+  // Register insert handler for FilePanelContext (used by context menu "Insert in Chat")
+  useEffect(() => {
+    registerInsertHandler((text: string) => {
+      setPrefillInput({ text });
+    });
+  }, [registerInsertHandler]);
+
   // Callback to clear pendingAgencyMode after ControlPanel consumes it
   const handlePendingAgencyModeConsumed = useCallback(() => setPendingAgencyMode(null), []);
 
@@ -391,6 +401,7 @@ export function TranscriptViewer(): React.JSX.Element {
             {transcriptArea}
             {toolPanelOpen && <BlocksToolPanel />}
             {toolPanelOpen && <ConnectorLines />}
+            <FileViewerModal />
           </BlocksVisibilityProvider>
         </PanelStateProvider>
       </BlocksToolRegistryProvider>

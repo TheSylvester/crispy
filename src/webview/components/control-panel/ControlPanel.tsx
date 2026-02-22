@@ -502,6 +502,14 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         e.stopPropagation();
         panelEl.classList.remove('drag-over');
 
+        // 1. Check for Crispy file panel drag FIRST (before extractFilePathsFromDragEvent)
+        //    to prevent double-processing (the drag also sets text/plain).
+        const crispyFile = e.dataTransfer?.getData('application/x-crispy-file');
+        if (crispyFile) {
+          insertAtCursor(crispyFile);
+          return;
+        }
+
         // Collect both data sources synchronously (getData() returns empty
         // strings if called after the event is released).
         const paths = extractFilePathsFromDragEvent(e);

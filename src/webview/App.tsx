@@ -19,6 +19,8 @@ import { PreferencesProvider, usePreferences } from './context/PreferencesContex
 import { SessionSelector } from './components/SessionSelector.js';
 import { TranscriptViewer } from './components/TranscriptViewer.js';
 import { TitleBar } from './components/TitleBar.js';
+import { FilePanel } from './components/file-panel/FilePanel.js';
+import { FilePanelProvider } from './context/FilePanelContext.js';
 import { SessionStatusProvider, useSessionStatus } from './hooks/useSessionStatus.js';
 import { isPerfMode, PerfOverlay, PerfProfiler } from './perf/index.js';
 
@@ -48,17 +50,38 @@ export function App({ transport, transportKind }: AppProps): React.JSX.Element {
   );
 }
 
-/** Min panel width in px — below this the panel content is unusable */
+// ============================================================================
+// Tool panel sizing constants
+// ============================================================================
+
+/** Min tool panel width in px — below this the panel content is unusable */
 const MIN_PANEL_PX = 350;
-/** Max panel width in px — 60rem */
+/** Max tool panel width in px — 60rem */
 const MAX_PANEL_PX = 60 * 16; // 960px
-/** Panel claims this fraction of the container */
+/** Tool panel claims this fraction of the container */
 const PANEL_RATIO = 0.38;
-/** Below this container width the panel switches to overlay mode */
+/** Below this container width panels switch to overlay mode */
 const OVERLAY_BREAKPOINT_PX = 800;
 
+// ============================================================================
+// File panel sizing constants
+// ============================================================================
+
+/** Min file panel width in px */
+const FILE_MIN_PX = 220;
+/** Max file panel width in px */
+const FILE_MAX_PX = 450;
+/** File panel claims this fraction of the container */
+const FILE_RATIO = 0.22;
+/** Minimum main column width — enforced when both panels are open */
+const MIN_MAIN_PX = 480;
+
 function AppLayout(): React.JSX.Element {
-  const { sidebarCollapsed, setSidebarCollapsed, toolPanelOpen, toolPanelWidthPx } = usePreferences();
+  const {
+    sidebarCollapsed, setSidebarCollapsed,
+    toolPanelOpen, toolPanelWidthPx,
+    filePanelOpen, filePanelWidthPx,
+  } = usePreferences();
   const { selectedSessionId } = useSession();
   const { channelState } = useSessionStatus(selectedSessionId);
   const isStreaming = channelState === 'streaming';
@@ -83,17 +106,29 @@ function AppLayout(): React.JSX.Element {
     return () => observer.disconnect();
   }, []);
 
-  // Tool panel takes a proportional share of the container, clamped between
-  // MIN and MAX. User drag override (toolPanelWidthPx) wins when set.
-  // Below the overlay breakpoint the panel floats over content instead of
-  // pushing the main column narrower.
+  // ---- Tool panel width ----
   const autoPx = Math.min(Math.max(Math.round(containerWidth * PANEL_RATIO), MIN_PANEL_PX), MAX_PANEL_PX);
   const panelPx = toolPanelWidthPx != null
     ? Math.min(Math.max(toolPanelWidthPx, MIN_PANEL_PX), MAX_PANEL_PX)
     : autoPx;
   const isOverlay = toolPanelOpen && containerWidth < OVERLAY_BREAKPOINT_PX;
-  // In overlay mode the panel floats over content — main column keeps full width.
   const toolPanelWidth = toolPanelOpen && !isOverlay ? panelPx : 0;
+
+  // ---- File panel width ----
+  const fileAutoPx = Math.min(Math.max(Math.round(containerWidth * FILE_RATIO), FILE_MIN_PX), FILE_MAX_PX);
+  const filePanelPx = filePanelWidthPx != null
+    ? Math.min(Math.max(filePanelWidthPx, FILE_MIN_PX), FILE_MAX_PX)
+    : fileAutoPx;
+
+  // Dual-panel constraint: if both panels open and main column would be too
+  // narrow, the file panel auto-switches to overlay mode (tool panel stays
+  // docked because it shows streaming tool output — primary workflow).
+  const bothOpen = filePanelOpen && toolPanelOpen;
+  const isFilePanelOverlay = filePanelOpen && (
+    containerWidth < OVERLAY_BREAKPOINT_PX ||
+    (bothOpen && filePanelPx + panelPx + MIN_MAIN_PX > containerWidth)
+  );
+  const filePanelWidth = filePanelOpen && !isFilePanelOverlay ? filePanelPx : 0;
 
   return (
     <div
@@ -101,31 +136,40 @@ function AppLayout(): React.JSX.Element {
       className="crispy-layout"
       data-sidebar={sidebarCollapsed ? 'collapsed' : 'open'}
       data-tool-panel={toolPanelOpen ? (isOverlay ? 'overlay' : 'open') : 'collapsed'}
+      data-file-panel={filePanelOpen ? (isFilePanelOverlay ? 'overlay' : 'open') : 'collapsed'}
       style={{
         '--tool-panel-width': `${toolPanelWidth}px`,
         '--tool-panel-actual-width': `${toolPanelOpen ? panelPx : 0}px`,
+        '--file-panel-width': `${filePanelWidth}px`,
+        '--file-panel-actual-width': `${filePanelOpen ? filePanelPx : 0}px`,
+        '--right-panels-width': `${toolPanelWidth + filePanelWidth}px`,
         '--container-width': `${containerWidth}px`,
       } as React.CSSProperties}
     >
       <TitleBar />
 
-      <aside className="crispy-sidebar">
-        <div className="crispy-sidebar__header">Sessions</div>
-        <SessionSelector />
-      </aside>
+      <FilePanelProvider>
+        {/* File panel — right-side, stacks left of tool panel */}
+        {filePanelOpen && <FilePanel />}
 
-      {/* Backdrop — click-outside to close sidebar (only when open) */}
-      {!sidebarCollapsed && (
-        <div
-          className="crispy-sidebar-backdrop"
-          onClick={closeSidebar}
-          aria-hidden="true"
-        />
-      )}
+        <aside className="crispy-sidebar">
+          <div className="crispy-sidebar__header">Sessions</div>
+          <SessionSelector />
+        </aside>
 
-      <main className="crispy-main" data-streaming={isStreaming || undefined}>
-        <TranscriptViewer />
-      </main>
+        {/* Backdrop — click-outside to close sidebar (only when open) */}
+        {!sidebarCollapsed && (
+          <div
+            className="crispy-sidebar-backdrop"
+            onClick={closeSidebar}
+            aria-hidden="true"
+          />
+        )}
+
+        <main className="crispy-main" data-streaming={isStreaming || undefined}>
+          <TranscriptViewer />
+        </main>
+      </FilePanelProvider>
     </div>
   );
 }

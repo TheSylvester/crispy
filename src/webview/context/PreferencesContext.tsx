@@ -20,6 +20,10 @@ interface Preferences {
   toolViewOverride: ToolViewOverride;
   /** Show debug UI (playback controls, tool view override). On by default during development. */
   debugMode: boolean;
+  /** Whether the file panel sidebar is open. */
+  filePanelOpen: boolean;
+  /** User-dragged file panel width override (px). null = use auto-computed width. */
+  filePanelWidthPx: number | null;
 }
 
 interface PreferencesContextValue extends Preferences {
@@ -31,6 +35,8 @@ interface PreferencesContextValue extends Preferences {
   setToolPanelMode: (mode: ToolPanelMode) => void;
   setToolViewOverride: (override: ToolViewOverride) => void;
   setDebugMode: (enabled: boolean) => void;
+  setFilePanelOpen: (open: boolean) => void;
+  setFilePanelWidthPx: (px: number | null) => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
@@ -56,6 +62,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [toolPanelMode, setToolPanelMode] = useState<ToolPanelMode>('inspector');
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
   const [debugMode, setDebugMode] = useState(true);
+  const [filePanelOpen, setFilePanelOpen] = useState(false);
+  const [filePanelWidthPx, setFilePanelWidthPx] = useState<number | null>(null);
 
   const value: PreferencesContextValue = {
     renderMode,
@@ -74,6 +82,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setToolPanelMode,
     setToolViewOverride,
     setDebugMode,
+    filePanelOpen,
+    filePanelWidthPx,
+    setFilePanelOpen,
+    setFilePanelWidthPx,
   };
 
   return (
