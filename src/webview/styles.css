@@ -3510,6 +3510,11 @@ h2 {
   box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.12);
 }
 
+/* Hide connector lines during panel resize drag (avoids jitter) */
+[data-resizing] .crispy-connector-lines {
+  display: none;
+}
+
 /* Panel tools: header row is clickable to toggle expand/collapse */
 .crispy-tool-panel .crispy-blocks-tool {
   cursor: pointer;
