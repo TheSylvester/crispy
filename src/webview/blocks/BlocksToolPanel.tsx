@@ -11,12 +11,12 @@
  * @module webview/blocks/BlocksToolPanel
  */
 
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useBlocksToolRegistry } from './BlocksToolRegistryContext.js';
-import { useBlocksVisibleToolIds } from './BlocksVisibilityContext.js';
+import { useBlocksVisibleToolIds, useBlocksLastArrivedToolId } from './BlocksVisibilityContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
 import { RenderLocationProvider } from '../context/RenderLocationContext.js';
-import { usePanelDispatch } from './PanelStateContext.js';
+import { usePanelState, usePanelDispatch, useSetPanelDisplayIds } from './PanelStateContext.js';
 import { ToolBlockRenderer } from './ToolBlockRenderer.js';
 import type { RichBlock } from './types.js';
 
@@ -25,12 +25,56 @@ const AUTO_SCROLL_THRESHOLD = 80;
 
 export function BlocksToolPanel(): React.JSX.Element {
   const dispatch = usePanelDispatch();
+  const panelState = usePanelState();
   const visibleToolIds = useBlocksVisibleToolIds();
   const registry = useBlocksToolRegistry();
-  const { setToolPanelWidthPx } = usePreferences();
+  const { toolPanelMode, setToolPanelMode, setToolPanelWidthPx } = usePreferences();
+  const lastArrivedId = useBlocksLastArrivedToolId();
+  const _pendingGen = registry.usePendingCount(); // triggers re-render on pending changes
   const scrollRef = useRef<HTMLDivElement>(null);
   const wasNearBottomRef = useRef(true);
   const prevVisibleRef = useRef<Set<string>>(new Set());
+
+  // ---------------------------------------------------------------------------
+  // Inspector mode: compute filtered display list
+  // ---------------------------------------------------------------------------
+  const displayToolIds = useMemo(() => {
+    if (toolPanelMode === 'viewport') return visibleToolIds;
+
+    const ids: string[] = [];
+    const seen = new Set<string>();
+
+    // 1. Active tools (visible AND pending — no result yet)
+    for (const id of visibleToolIds) {
+      if (!registry.getResult(id)) {
+        ids.push(id);
+        seen.add(id);
+      }
+    }
+
+    // 2. User-focused tools (userOverrides where value=true and block exists)
+    for (const [id, expanded] of panelState.userOverrides) {
+      if (expanded && !seen.has(id) && registry.getBlock(id)) {
+        ids.push(id);
+        seen.add(id);
+      }
+    }
+
+    // 3. Last scrolled into view (spatial awareness)
+    if (lastArrivedId && !seen.has(lastArrivedId)) {
+      ids.push(lastArrivedId);
+      seen.add(lastArrivedId);
+    }
+
+    return ids;
+  }, [toolPanelMode, visibleToolIds, panelState.userOverrides, lastArrivedId, _pendingGen]);
+
+  // Publish display set so transcript-side ToolBlockRenderer can highlight
+  const setPanelDisplayIds = useSetPanelDisplayIds();
+  useEffect(() => {
+    setPanelDisplayIds(new Set(displayToolIds));
+    return () => setPanelDisplayIds(new Set());
+  }, [displayToolIds, setPanelDisplayIds]);
 
   // ---------------------------------------------------------------------------
   // Sync visibility changes into reducer
@@ -52,12 +96,16 @@ export function BlocksToolPanel(): React.JSX.Element {
     // Dispatch TOOL_LEFT_VIEW for tools that left
     for (const id of prevSet) {
       if (!currentSet.has(id)) {
+        // In inspector mode, preserve user overrides so pinned tools persist
+        if (toolPanelMode === 'inspector' && panelState.userOverrides.has(id)) {
+          continue;
+        }
         dispatch({ type: 'TOOL_LEFT_VIEW', toolId: id });
       }
     }
 
     prevVisibleRef.current = currentSet;
-  }, [visibleToolIds, dispatch, registry]);
+  }, [visibleToolIds, dispatch, registry, toolPanelMode, panelState.userOverrides]);
 
   // ---------------------------------------------------------------------------
   // Auto-scroll
@@ -144,8 +192,21 @@ export function BlocksToolPanel(): React.JSX.Element {
       <div className="crispy-tool-panel__header">
         <span className="crispy-tool-panel__title">TOOLS</span>
         <span className="crispy-tool-panel__count">
-          {visibleToolIds.length} visible
+          {toolPanelMode === 'inspector'
+            ? (displayToolIds.length === 0 ? 'idle' : `${displayToolIds.length} active`)
+            : `${visibleToolIds.length} visible`}
         </span>
+        <button
+          className={`crispy-tool-panel__mode-toggle${
+            toolPanelMode === 'viewport' ? ' crispy-tool-panel__mode-toggle--viewport' : ''
+          }`}
+          onClick={() => setToolPanelMode(toolPanelMode === 'inspector' ? 'viewport' : 'inspector')}
+          title={toolPanelMode === 'inspector'
+            ? 'Switch to viewport mode (show all visible tools)'
+            : 'Switch to inspector mode (show active tools only)'}
+        >
+          {toolPanelMode === 'inspector' ? <InspectorIcon /> : <ViewportIcon />}
+        </button>
       </div>
       <div
         className="crispy-tool-panel__scroll"
@@ -153,17 +214,46 @@ export function BlocksToolPanel(): React.JSX.Element {
         ref={scrollRef}
         onScroll={handleScroll}
       >
-        {visibleToolIds.length === 0 ? (
-          <div className="crispy-tool-panel__empty">No tools in view</div>
+        {displayToolIds.length === 0 ? (
+          <div className="crispy-tool-panel__empty">
+            {toolPanelMode === 'inspector' ? 'No active tools' : 'No tools in view'}
+          </div>
         ) : (
           <RenderLocationProvider location="panel">
-            {visibleToolIds.map(id => (
+            {displayToolIds.map(id => (
               <PanelTool key={id} toolId={id} />
             ))}
           </RenderLocationProvider>
         )}
       </div>
     </div>
+  );
+}
+
+// ============================================================================
+// Icons
+// ============================================================================
+
+/** Crosshair/target icon — inspector mode (focused inspection) */
+function InspectorIcon(): React.JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="8" cy="8" r="5" />
+      <line x1="8" y1="1" x2="8" y2="4" />
+      <line x1="8" y1="12" x2="8" y2="15" />
+      <line x1="1" y1="8" x2="4" y2="8" />
+      <line x1="12" y1="8" x2="15" y2="8" />
+    </svg>
+  );
+}
+
+/** Eye icon — viewport mode (see everything) */
+function ViewportIcon(): React.JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <path d="M1 8s3-5 7-5 7 5 7 5-3 5-7 5-7-5-7-5z" />
+      <circle cx="8" cy="8" r="2" />
+    </svg>
   );
 }
 

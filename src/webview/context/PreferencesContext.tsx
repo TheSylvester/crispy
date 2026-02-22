@@ -4,6 +4,9 @@ import type { RenderMode } from '../types.js';
 /** Debug override for tool view mode. null = automatic (normal selectView logic). */
 export type ToolViewOverride = 'compact' | 'expanded' | null;
 
+/** Tool panel mode: inspector shows active/focused tools, viewport mirrors scroll position. */
+export type ToolPanelMode = 'inspector' | 'viewport';
+
 interface Preferences {
   renderMode: RenderMode;
   settingsPinned: boolean;
@@ -11,6 +14,8 @@ interface Preferences {
   toolPanelOpen: boolean;
   /** User-dragged panel width override (px). null = use auto-computed width. */
   toolPanelWidthPx: number | null;
+  /** Tool panel filtering mode. Inspector = active/focused only; viewport = all visible. */
+  toolPanelMode: ToolPanelMode;
   /** Debug: force all tools to render in a specific view mode. null = auto. */
   toolViewOverride: ToolViewOverride;
   /** Show debug UI (playback controls, tool view override). On by default during development. */
@@ -23,6 +28,7 @@ interface PreferencesContextValue extends Preferences {
   setSidebarCollapsed: (collapsed: boolean) => void;
   setToolPanelOpen: (open: boolean) => void;
   setToolPanelWidthPx: (px: number | null) => void;
+  setToolPanelMode: (mode: ToolPanelMode) => void;
   setToolViewOverride: (override: ToolViewOverride) => void;
   setDebugMode: (enabled: boolean) => void;
 }
@@ -47,6 +53,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [toolPanelOpen, setToolPanelOpen] = useState(false);
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
+  const [toolPanelMode, setToolPanelMode] = useState<ToolPanelMode>('inspector');
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
   const [debugMode, setDebugMode] = useState(true);
 
@@ -56,6 +63,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     sidebarCollapsed,
     toolPanelOpen,
     toolPanelWidthPx,
+    toolPanelMode,
     toolViewOverride,
     debugMode,
     setRenderMode,
@@ -63,6 +71,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setSidebarCollapsed,
     setToolPanelOpen,
     setToolPanelWidthPx,
+    setToolPanelMode,
     setToolViewOverride,
     setDebugMode,
   };

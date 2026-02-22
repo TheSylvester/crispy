@@ -43,6 +43,9 @@ class BlocksVisibilityStore {
   private _pendingAdds = new Set<string>();
   private _pendingRemoves = new Set<string>();
 
+  /** Most recently arrived tool ID (last tool that entered the viewport) */
+  private _lastArrivedId: string | null = null;
+
   /** Reference to the scroll root for DOM ordering */
   private _scrollRoot: HTMLElement | null = null;
 
@@ -102,6 +105,9 @@ class BlocksVisibilityStore {
       }
     }
 
+    // Snapshot adds before clearing — needed for lastArrivedId tracking
+    const addSnapshot = this._pendingAdds.size > 0 ? new Set(this._pendingAdds) : null;
+
     this._pendingAdds.clear();
     this._pendingRemoves.clear();
 
@@ -109,6 +115,16 @@ class BlocksVisibilityStore {
 
     // Rebuild ordered list from DOM order
     this._visibleIds = this.sortByDomOrder([...this._visibleSet]);
+
+    // Track the last tool that scrolled into view (bottom-most new addition)
+    if (addSnapshot) {
+      for (let i = this._visibleIds.length - 1; i >= 0; i--) {
+        if (addSnapshot.has(this._visibleIds[i])) {
+          this._lastArrivedId = this._visibleIds[i];
+          break;
+        }
+      }
+    }
 
     // Notify subscribers
     for (const cb of this._listeners) cb();
@@ -147,6 +163,9 @@ class BlocksVisibilityStore {
     return this._visibleIds;
   };
 
+  /** Get the most recently arrived tool ID (last tool that entered the viewport) */
+  get lastArrivedId(): string | null { return this._lastArrivedId; }
+
   /** Check if a tool is currently visible */
   isVisible(toolId: string): boolean {
     return this._visibleSet.has(toolId);
@@ -162,6 +181,7 @@ class BlocksVisibilityStore {
     this._pendingRemoves.clear();
     this._visibleSet.clear();
     this._visibleIds = [];
+    this._lastArrivedId = null;
     for (const cb of this._listeners) cb();
   }
 
@@ -283,6 +303,29 @@ export function useBlocksVisibleToolIds(): string[] {
 export function useBlocksToolVisible(toolId: string): boolean {
   const visibleIds = useBlocksVisibleToolIds();
   return visibleIds.includes(toolId);
+}
+
+/**
+ * Subscribe to the most recently arrived tool ID (last tool that entered the
+ * viewport). Returns null if no tools have arrived yet.
+ *
+ * Used by inspector mode for spatial awareness — the last arrived tool acts
+ * as an anchor even after other tools scroll out.
+ */
+export function useBlocksLastArrivedToolId(): string | null {
+  const store = useContext(BlocksVisibilityCtx);
+
+  const subscribe = useCallback(
+    (cb: () => void) => store ? store.subscribe(cb) : () => {},
+    [store],
+  );
+
+  const getSnapshot = useCallback(
+    () => store ? store.lastArrivedId : null,
+    [store],
+  );
+
+  return useSyncExternalStore(subscribe, getSnapshot);
 }
 
 const EMPTY: string[] = [];

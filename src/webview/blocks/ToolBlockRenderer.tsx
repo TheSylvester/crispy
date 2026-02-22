@@ -21,7 +21,7 @@ import { extractResultText, formatCount } from '../renderers/tools/shared/tool-u
 import { useBlocksChildEntries, useBlocksToolRegistry, useInjectChildEntries } from './BlocksToolRegistryContext.js';
 import { BlocksEntryWithRegistry } from './BlocksEntryWithRegistry.js';
 import { usePreferences } from '../context/PreferencesContext.js';
-import { usePanelDispatch, usePanelState } from './PanelStateContext.js';
+import { usePanelDispatch, usePanelState, usePanelDisplayIds } from './PanelStateContext.js';
 import { isToolExpanded } from './panel-reducer.js';
 import { useSession } from '../context/SessionContext.js';
 import { useBackgroundAgentTunnel } from '../hooks/useBackgroundAgentTunnel.js';
@@ -56,7 +56,7 @@ export function ToolBlockRenderer({
   const result = registry.useResult(block.id);
 
   // Debug: global tool view override from preferences (?debug=1 settings)
-  const { toolViewOverride: globalOverride, toolPanelOpen, setToolPanelOpen } = usePreferences();
+  const { toolViewOverride: globalOverride, toolPanelMode, toolPanelOpen, setToolPanelOpen } = usePreferences();
 
   // Panel state: used for expansion override in tool-panel anchors
   const panelState = usePanelState();
@@ -109,14 +109,31 @@ export function ToolBlockRenderer({
     children: renderedChildren,
   };
 
+  // Panel-active highlight: true when this tool is currently displayed in the
+  // tool panel. Uses the display set published by BlocksToolPanel — the single
+  // source of truth for what's shown in the panel.
+  const panelDisplayIds = usePanelDisplayIds();
+  const isPanelActive = panelDisplayIds.has(block.id);
+
   // Render with definition if available
   if (def) {
     // Select view: global debug override > auto selection
     let viewMode = globalOverride ?? selectView(def, anchor, block, siblingCount, registry);
 
-    // Panel expansion override: tools in tool-panel default to compact unless
-    // isToolExpanded says otherwise (auto-expanded while streaming, or user override).
-    if (viewMode === 'expanded' && anchor.type === 'tool-panel') {
+    // Panel expansion override: in inspector mode, use the tool's declared
+    // default unless the user has clicked or the tool is still streaming.
+    if (viewMode === 'expanded' && anchor.type === 'tool-panel'
+        && toolPanelMode === 'inspector') {
+      const userOverride = panelState.userOverrides.get(block.id);
+      if (userOverride !== undefined) {
+        viewMode = userOverride ? 'expanded' : 'compact';
+      } else if (!result) {
+        viewMode = 'expanded';  // streaming → always show output
+      } else {
+        viewMode = def.inspectorDefault;  // completed → tool's declared default
+      }
+    } else if (viewMode === 'expanded' && anchor.type === 'tool-panel') {
+      // Viewport mode: collapse completed tools, expand streaming
       if (!isToolExpanded(block.id, panelState, !!result)) {
         viewMode = 'compact';
       }
@@ -127,7 +144,7 @@ export function ToolBlockRenderer({
 
     if (viewFn) {
       return (
-        <div className="crispy-blocks-tool" data-tool-id={block.id} data-tool-name={block.name} onClick={clickable ? handleClick : undefined}>
+        <div className="crispy-blocks-tool" data-tool-id={block.id} data-tool-name={block.name} data-panel-active={isPanelActive || undefined} onClick={clickable ? handleClick : undefined}>
           {viewFn(viewProps)}
         </div>
       );
@@ -138,7 +155,7 @@ export function ToolBlockRenderer({
   const data = getToolData(block.name);
 
   return (
-    <div className="crispy-blocks-tool crispy-blocks-tool--unknown" data-tool-id={block.id} data-tool-name={block.name} onClick={clickable ? handleClick : undefined}>
+    <div className="crispy-blocks-tool crispy-blocks-tool--unknown" data-tool-id={block.id} data-tool-name={block.name} data-panel-active={isPanelActive || undefined} onClick={clickable ? handleClick : undefined}>
       <FallbackToolView block={block} result={result} status={status} anchor={anchor} data={data} />
     </div>
   );

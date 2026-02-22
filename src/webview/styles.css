@@ -3359,6 +3359,38 @@ h2 {
   opacity: 0.7;
 }
 
+.crispy-tool-panel__count {
+  font-size: var(--font-xs);
+  opacity: 0.5;
+}
+
+.crispy-tool-panel__mode-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--vscode-descriptionForeground, #858585);
+  cursor: pointer;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.crispy-tool-panel__mode-toggle:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+
+.crispy-tool-panel__mode-toggle--viewport {
+  opacity: 0.8;
+  color: var(--vscode-focusBorder, #007acc);
+}
+
 .crispy-tool-panel__scroll {
   flex: 1;
   display: flex;
@@ -3468,6 +3500,14 @@ h2 {
 .crispy-blocks-tool:hover {
   background: var(--vscode-list-hoverBackground, #2a2d2e);
   border-radius: 4px;
+}
+
+/* Panel-active highlight: fuzzy glow on tools currently shown in the tool panel.
+   Must override contain: layout style — containment clips box-shadow overflow. */
+.crispy-blocks-tool[data-panel-active] {
+  contain: none;
+  border-radius: 4px;
+  box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.12);
 }
 
 /* Panel tools: header row is clickable to toggle expand/collapse */

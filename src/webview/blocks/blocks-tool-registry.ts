@@ -46,6 +46,12 @@ export class BlocksToolRegistry {
   /** When true, notifications are deferred to dirtyIds */
   private silentMode = false;
 
+  /** Global listeners — fire on any pending-set mutation (for inspector mode) */
+  private _globalListeners = new Set<() => void>();
+
+  /** Generation counter — increments on every pending-set mutation */
+  private _pendingGen = 0;
+
   // --------------------------------------------------------------------------
   // Registration
   // --------------------------------------------------------------------------
@@ -85,6 +91,7 @@ export class BlocksToolRegistry {
       this.notify(toolUseId);
     } else {
       this.pending.add(toolUseId);
+      this._pendingGen++;
     }
   }
 
@@ -107,6 +114,7 @@ export class BlocksToolRegistry {
     if (this.pending.has(toolUseId)) {
       // Normal path — tool_use was registered, now we have the result
       this.pending.delete(toolUseId);
+      this._pendingGen++;
       this.results.set(toolUseId, result);
       this.notify(toolUseId);
     } else {
@@ -229,6 +237,33 @@ export class BlocksToolRegistry {
     };
   }
 
+  /**
+   * Subscribe to global pending-set mutations (any register/resolve).
+   *
+   * Used by inspector mode to recompute the display list when tools
+   * start or finish.
+   */
+  subscribeGlobal(callback: () => void): () => void {
+    this._globalListeners.add(callback);
+    return () => { this._globalListeners.delete(callback); };
+  }
+
+  /**
+   * React hook that triggers a re-render on any pending-set mutation.
+   *
+   * Returns a generation number (not the actual pending count). The value
+   * itself is irrelevant — useSyncExternalStore uses reference equality,
+   * so incrementing the generation triggers re-renders. Consumers read
+   * registry.getResult(id) / registry.isPending(id) imperatively.
+   */
+  usePendingCount(): number {
+    return useSyncExternalStore(
+      (cb) => this.subscribeGlobal(cb),
+      () => this._pendingGen,
+      () => this._pendingGen,
+    );
+  }
+
   // --------------------------------------------------------------------------
   // Silent mode — suppress notifications during render
   // --------------------------------------------------------------------------
@@ -267,6 +302,10 @@ export class BlocksToolRegistry {
       }
     }
     this.dirtyIds.clear();
+
+    // Notify global listeners (inspector mode)
+    for (const cb of this._globalListeners) cb();
+
     return true;
   }
 
@@ -286,7 +325,9 @@ export class BlocksToolRegistry {
     this.asyncAgents.clear();
     this.dirtyIds.clear();
     this.silentMode = false;
+    this._pendingGen = 0;
     // Don't clear subscribers — React components keep references
+    // (same for _globalListeners)
   }
 
   // --------------------------------------------------------------------------
@@ -303,5 +344,8 @@ export class BlocksToolRegistry {
     if (listeners) {
       for (const cb of listeners) cb();
     }
+
+    // Notify global listeners (inspector mode)
+    for (const cb of this._globalListeners) cb();
   }
 }

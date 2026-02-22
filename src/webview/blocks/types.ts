@@ -104,6 +104,8 @@ export interface ToolDefinition {
   color: string;
   /** Activity verbs for status display */
   activity: { verb: string; pastVerb: string };
+  /** Whether inspector mode shows this tool expanded or compact by default */
+  inspectorDefault: 'expanded' | 'compact';
   /** View components for different display states */
   views: {
     compact: (props: ToolViewProps) => ReactNode;

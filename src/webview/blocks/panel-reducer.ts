@@ -5,8 +5,8 @@
  * - autoExpandedIds: system-suggested expansions (streaming tools)
  * - userOverrides: explicit user clicks (always wins over auto)
  *
- * Click behavior is a pure toggle — no priority cascades, no branching
- * based on *why* a tool is expanded.
+ * Click behavior is exclusive selection — expanding a tool clears all
+ * other expanded overrides so only one tool is user-pinned at a time.
  *
  * @module webview/blocks/panel-reducer
  */
@@ -56,17 +56,27 @@ export function panelReducer(state: PanelState, action: PanelAction): PanelState
     }
 
     case 'USER_CLICKED': {
-      // Pure toggle: derive current expansion from reducer state and flip it.
-      // This avoids closing over panelState in the click handler (which would
-      // re-create the callback on every panel state change).
-      // Note: we can't check hasResult here, but that's fine — once a result
-      // arrives the tool is already visually compact, so clicking it correctly
-      // expands either way.
+      // Toggle with exclusive selection: expanding a tool clears all other
+      // expanded overrides so only one tool is user-expanded at a time.
+      // Collapsing just toggles the clicked tool off.
       const override = state.userOverrides.get(action.toolId);
       const autoExpanded = state.autoExpandedIds.has(action.toolId);
       const currentlyExpanded = override !== undefined ? override : autoExpanded;
-      const m = new Map(state.userOverrides);
-      m.set(action.toolId, !currentlyExpanded);
+      const expanding = !currentlyExpanded;
+      const m = new Map<string, boolean>();
+      if (expanding) {
+        // Keep only false (user-collapsed) overrides; clear all true (expanded) ones
+        for (const [id, val] of state.userOverrides) {
+          if (!val) m.set(id, val);
+        }
+        m.set(action.toolId, true);
+      } else {
+        // Collapsing: copy existing overrides, toggle this one off
+        for (const [id, val] of state.userOverrides) {
+          m.set(id, val);
+        }
+        m.set(action.toolId, false);
+      }
       return { ...state, userOverrides: m };
     }
 

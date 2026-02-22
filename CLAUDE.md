@@ -69,10 +69,6 @@ React 19, esbuild, vanilla CSS with `var(--vscode-*)` theme variables.
   per-type views. Extend via `tool-definitions.ts` + `register-views.ts` +
   a new view component — don't add switch statements to BlocksEntry or
   BlocksBlockRenderer.
-  **Blocks rendering rules** (view selection, Task children, panel expansion,
-  auto-scroll) are documented in `.ai-reference/blocks-rendering-rules.md`.
-  Read that file before modifying any rendering logic in `src/webview/blocks/`.
-
 - **BlocksToolRegistry** (`blocks-tool-registry.ts`): Slim pairing-only
   registry (pure TS). Tracks tool_use → tool_result lifecycle via
   pending/results/orphans maps. Subscribed via `useSyncExternalStore`.
