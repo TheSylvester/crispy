@@ -51,7 +51,7 @@ const MIME_TYPES: Record<string, string> = {
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
-  let filePath = url.pathname === '/' ? '/index.html' : url.pathname;
+  let filePath = url.pathname === '/' ? '/flex.html' : url.pathname;
 
   // Prevent directory traversal
   if (filePath.includes('..')) {

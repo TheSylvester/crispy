@@ -1,0 +1,183 @@
+/**
+ * FlexLayout CSS overrides — maps flexlayout-react variables to VS Code theme
+ * tokens and neutralizes position:fixed on panels rendered inside FlexLayout
+ * border containers.
+ *
+ * @module flexlayout-overrides
+ */
+
+/* ============================================================================
+   FlexLayout theme variable mapping
+   ============================================================================ */
+
+.flexlayout__layout {
+  --color-text: var(--vscode-foreground, #cccccc);
+  --color-background: var(--vscode-editor-background, #1e1e1e);
+  --color-base: var(--vscode-editor-background, #1e1e1e);
+  --color-tabset-background: var(--vscode-sideBar-background, #252526);
+  --color-border-background: var(--vscode-sideBar-background, #252526);
+  --color-splitter: var(--vscode-panel-border, #2b2b2b);
+  --color-splitter-hover: var(--vscode-focusBorder, #007acc);
+  --color-tab-selected: var(--vscode-list-activeSelectionBackground, #094771);
+  --font-family: var(--vscode-font-family);
+  --font-size: var(--vscode-font-size, 13px);
+}
+
+/* ============================================================================
+   Neutralize position:fixed for panels inside FlexLayout borders
+   ============================================================================ */
+
+.crispy-layout--flex .crispy-tool-panel {
+  position: static;
+  width: 100%;
+  height: 100%;
+  border-left: none;
+}
+
+.crispy-layout--flex .crispy-file-panel {
+  position: static;
+  width: 100%;
+  height: 100%;
+  border-left: none;
+}
+
+/* Hide resize handles — FlexLayout splitters handle resizing */
+.crispy-layout--flex .crispy-tool-panel__resize-handle,
+.crispy-layout--flex .crispy-file-panel__resize-handle {
+  display: none;
+}
+
+/* Hide tab close buttons on border tabs (Inspector/Files are permanent) */
+.flexlayout__border_tab_button_trailing {
+  display: none;
+}
+
+/* Hide the tab strip on the main tabset (single transcript tab) */
+.flexlayout__tabset_tabbar_outer {
+  display: none;
+}
+
+/* ============================================================================
+   Streaming glow fix — tool panel is no longer a DOM child of .crispy-main
+   in FlexLayout. Re-root glow selectors to .crispy-layout--flex.
+   ============================================================================ */
+
+/* 1. Set --frame-highlight on .crispy-layout--flex per agency mode */
+.crispy-layout--flex[data-streaming]:has(
+    .crispy-cp[data-agency="ask-before-edits"]
+  ) {
+  --frame-highlight: var(--agency-white);
+}
+.crispy-layout--flex[data-streaming]:has(
+    .crispy-cp[data-agency="edit-automatically"]
+  ) {
+  --frame-highlight: var(--agency-blue);
+}
+.crispy-layout--flex[data-streaming]:has(.crispy-cp[data-agency="plan-mode"]) {
+  --frame-highlight: var(--agency-teal);
+}
+.crispy-layout--flex[data-streaming]:has(
+    .crispy-cp[data-agency="bypass-permissions"]
+  ) {
+  --frame-highlight: var(--agency-red);
+}
+
+/* 2. Tool panel glow — now scoped to .crispy-layout--flex */
+.crispy-layout--flex[data-streaming] .crispy-tool-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  border-radius: inherit;
+  animation: crispy-tool-glow 2s ease-in-out infinite;
+}
+
+/* 3. Main area glow — the .crispy-flex-area gets the primary glow */
+.crispy-flex-area::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  border-radius: inherit;
+}
+
+.crispy-layout--flex[data-streaming] .crispy-flex-area::after {
+  animation: crispy-cp-glow 2s ease-in-out infinite;
+}
+
+/* 4. Control panel streaming state — inherit from layout root */
+.crispy-layout--flex[data-streaming] .crispy-cp {
+  border-color: var(--frame-highlight);
+}
+
+/* ============================================================================
+   Flex area sizing — the FlexLayout container fills available space
+   ============================================================================ */
+
+/* Establish flex column on the layout root so .crispy-flex-area's flex: 1 works */
+.crispy-layout--flex {
+  display: flex;
+  flex-direction: column;
+}
+
+.crispy-flex-area {
+  position: relative;
+  flex: 1;
+  min-height: 0; /* allow flex shrink below content size */
+  margin-top: var(--titlebar-height);
+}
+
+.crispy-flex-area .flexlayout__layout {
+  position: absolute;
+  inset: 0;
+}
+
+/* ============================================================================
+   ThinkingIndicator fix — re-root :has() selectors for FlexLayout
+   The ThinkingIndicator uses :has(.crispy-cp[data-agency]) on .crispy-main
+   to show the correct label. In FlexLayout, .crispy-main doesn't exist;
+   the layout root is .crispy-layout--flex.
+   ============================================================================ */
+
+.crispy-layout--flex[data-streaming]:has(
+    .crispy-cp[data-agency="plan-mode"]
+  ) .crispy-thinking-label--planning {
+  display: inline;
+}
+.crispy-layout--flex[data-streaming]:has(
+    .crispy-cp[data-agency="plan-mode"]
+  ) .crispy-thinking-label--thinking {
+  display: none;
+}
+.crispy-layout--flex[data-streaming]:has(
+    .crispy-cp[data-agency="plan-mode"]
+  ) .crispy-thinking-label--working {
+  display: none;
+}
+
+.crispy-layout--flex[data-streaming]:has(
+    .crispy-cp[data-agency="bypass-permissions"]
+  ) .crispy-thinking-label--working,
+.crispy-layout--flex[data-streaming]:has(
+    .crispy-cp[data-agency="edit-automatically"]
+  ) .crispy-thinking-label--working {
+  display: inline;
+}
+.crispy-layout--flex[data-streaming]:has(
+    .crispy-cp[data-agency="bypass-permissions"]
+  ) .crispy-thinking-label--thinking,
+.crispy-layout--flex[data-streaming]:has(
+    .crispy-cp[data-agency="edit-automatically"]
+  ) .crispy-thinking-label--thinking {
+  display: none;
+}
+
+/* ============================================================================
+   Transcript inside FlexLayout — fill the tab node completely
+   ============================================================================ */
+
+.crispy-layout--flex .crispy-transcript {
+  height: 100%;
+}
