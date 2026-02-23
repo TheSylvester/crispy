@@ -12,8 +12,10 @@
  *     and border tabs share context
  *   - ConnectorLines removed (hover/click linking deferred)
  *
- * SessionSelector, ControlPanel, TitleBar, StopButton, and PlaybackControls
- * remain OUTSIDE FlexLayout as fixed overlays, same as before.
+ * SessionSelector, ControlPanel, TitleBar (CWD only), StopButton, and
+ * PlaybackControls remain OUTSIDE FlexLayout as fixed overlays.
+ * Session dropdown + New button live inside the transcript tab header
+ * (TranscriptHeader component).
  *
  * @module FlexAppLayout
  */
@@ -138,6 +140,85 @@ interface FlexTranscriptContentProps {
   onForkPreviewHover: (targetMessageId: string, hovering: boolean) => void;
 }
 
+/** SVG chevron — points down, rotates 180° when sidebar is open */
+function Chevron({ open }: { open: boolean }): React.JSX.Element {
+  return (
+    <svg
+      className={`crispy-transcript-header__chevron${open ? ' crispy-transcript-header__chevron--open' : ''}`}
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="3,4.5 6,7.5 9,4.5" />
+    </svg>
+  );
+}
+
+/** Plus icon for the New button */
+function PlusIcon(): React.JSX.Element {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+    >
+      <path d="M6 2V10M2 6H10" />
+    </svg>
+  );
+}
+
+/**
+ * TranscriptHeader — session dropdown toggle + new-session button.
+ * Lives inside the transcript tab, above the scroll area.
+ */
+function TranscriptHeader(): React.JSX.Element {
+  const { sessions, selectedSessionId, setSelectedSessionId } = useSession();
+  const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
+
+  const sessionLabel =
+    sessions.find((s) => s.sessionId === selectedSessionId)?.label ?? 'No session';
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed(!sidebarCollapsed);
+  }, [sidebarCollapsed, setSidebarCollapsed]);
+
+  const handleNew = useCallback(() => {
+    setSelectedSessionId(null);
+    console.log('[TranscriptHeader] New session requested — transport.createSession() not wired yet');
+  }, [setSelectedSessionId]);
+
+  return (
+    <div className="crispy-transcript-header">
+      <button
+        className="crispy-transcript-header__btn crispy-transcript-header__session-btn"
+        onClick={toggleSidebar}
+        aria-label={sidebarCollapsed ? 'Open sessions' : 'Close sessions'}
+        title="Toggle session list"
+      >
+        <span className="crispy-transcript-header__label">{sessionLabel}</span>
+        <Chevron open={!sidebarCollapsed} />
+      </button>
+      <button
+        className="crispy-transcript-header__btn crispy-transcript-header__new-btn"
+        onClick={handleNew}
+        title="New session"
+      >
+        <PlusIcon />
+        <span>New</span>
+      </button>
+    </div>
+  );
+}
+
 function FlexTranscriptContent({
   filteredEntries,
   forkTargets,
@@ -158,11 +239,21 @@ function FlexTranscriptContent({
 }: FlexTranscriptContentProps): React.JSX.Element {
   // No session and no fork history → welcome page
   if (!selectedSessionId && !hasForkHistory) {
-    return <WelcomePage loading={isLoading} />;
+    return (
+      <div className="crispy-transcript-tab">
+        <TranscriptHeader />
+        <WelcomePage loading={isLoading} />
+      </div>
+    );
   }
 
   if (error) {
-    return <div className="crispy-error">{error}</div>;
+    return (
+      <div className="crispy-transcript-tab">
+        <TranscriptHeader />
+        <div className="crispy-error">{error}</div>
+      </div>
+    );
   }
 
   return (
@@ -174,64 +265,67 @@ function FlexTranscriptContent({
         isStreaming={channelState === 'streaming'}
         forkTargets={forkTargets}
       >
-        <div
-          className="crispy-transcript"
-          ref={scrollRef}
-          data-render-mode={renderMode}
-        >
-          <div className="crispy-transcript-content">
-            {isLoading ? (
-              <div className="crispy-loading">Loading transcript...</div>
-            ) : (
-              <PerfProfiler id="TranscriptList">
-                {filteredEntries.map((entry, i) => (
-                  <EntryRenderer
-                    key={entry.uuid ?? `entry-${i}`}
-                    entry={entry}
-                    mode={renderMode}
-                    forkTargetId={
-                      entry.uuid ? forkTargets.get(entry.uuid) : undefined
-                    }
-                  />
-                ))}
-              </PerfProfiler>
-            )}
-            <ThinkingIndicator />
-            <div className="crispy-transcript-spacer" />
+        <div className="crispy-transcript-tab">
+          <TranscriptHeader />
+          <div
+            className="crispy-transcript"
+            ref={scrollRef}
+            data-render-mode={renderMode}
+          >
+            <div className="crispy-transcript-content">
+              {isLoading ? (
+                <div className="crispy-loading">Loading transcript...</div>
+              ) : (
+                <PerfProfiler id="TranscriptList">
+                  {filteredEntries.map((entry, i) => (
+                    <EntryRenderer
+                      key={entry.uuid ?? `entry-${i}`}
+                      entry={entry}
+                      mode={renderMode}
+                      forkTargetId={
+                        entry.uuid ? forkTargets.get(entry.uuid) : undefined
+                      }
+                    />
+                  ))}
+                </PerfProfiler>
+              )}
+              <ThinkingIndicator />
+              <div className="crispy-transcript-spacer" />
+            </div>
           </div>
+          <button
+            className={`crispy-scroll-nav crispy-scroll-to-top ${isAtTop ? 'crispy-scroll-to-top--hidden' : ''}`}
+            onClick={scrollToTop}
+            aria-label="Scroll to top"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+            >
+              <polyline points="18 15 12 9 6 15" />
+            </svg>
+          </button>
+          <button
+            className={`crispy-scroll-nav crispy-scroll-to-bottom ${parked ? 'crispy-scroll-to-bottom--hidden' : ''}`}
+            onClick={scrollToBottom}
+            aria-label="Scroll to bottom"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
         </div>
-        <button
-          className={`crispy-scroll-nav crispy-scroll-to-top ${isAtTop ? 'crispy-scroll-to-top--hidden' : ''}`}
-          onClick={scrollToTop}
-          aria-label="Scroll to top"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3"
-          >
-            <polyline points="18 15 12 9 6 15" />
-          </svg>
-        </button>
-        <button
-          className={`crispy-scroll-nav crispy-scroll-to-bottom ${parked ? 'crispy-scroll-to-bottom--hidden' : ''}`}
-          onClick={scrollToBottom}
-          aria-label="Scroll to bottom"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3"
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </button>
       </ForkProvider>
     </RenderLocationProvider>
   );

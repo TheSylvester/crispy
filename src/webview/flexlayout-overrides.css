@@ -175,10 +175,54 @@
 }
 
 /* ============================================================================
-   Transcript inside FlexLayout — fill the tab node completely
+   Transcript tab wrapper — fills the tab node, provides positioning context
+   for absolutely-positioned scroll buttons, and flex column so
+   .crispy-transcript fills remaining space below the header.
    ============================================================================ */
 
-.crispy-layout--flex .crispy-transcript {
+.crispy-transcript-tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
   height: 100%;
-  box-sizing: border-box; /* include padding in height so it doesn't overflow tab_moveable */
+  overflow: hidden; /* clip scroll buttons at tab boundary */
+}
+
+.crispy-layout--flex .crispy-transcript {
+  flex: 1;
+  min-height: 0; /* allow flex shrink */
+  box-sizing: border-box;
+}
+
+/* ============================================================================
+   Scroll buttons — scoped to .crispy-transcript-tab
+   Each transcript tab instance owns its own pair of absolutely-positioned
+   scroll-to-top / scroll-to-bottom FABs.
+   ============================================================================ */
+
+.crispy-transcript-tab .crispy-scroll-nav {
+  position: absolute;
+  right: 1.5rem;
+  z-index: 10; /* above transcript content, below overlays */
+}
+
+.crispy-transcript-tab .crispy-scroll-to-bottom {
+  bottom: 1rem;
+  animation: crispy-scroll-fab-in-bottom 0.15s ease-out both;
+}
+
+.crispy-transcript-tab .crispy-scroll-to-top {
+  top: 2.5rem; /* below TranscriptHeader */
+  animation: crispy-scroll-fab-in-top 0.15s ease-out both;
+}
+
+@keyframes crispy-scroll-fab-in-bottom {
+  from { opacity: 0; transform: translateY(12px) scale(0.8); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes crispy-scroll-fab-in-top {
+  from { opacity: 0; transform: translateY(-12px) scale(0.8); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }

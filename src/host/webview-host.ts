@@ -123,6 +123,12 @@ export function createCrispyPanel(
   const stylesUri = panel.webview.asWebviewUri(
     vscode.Uri.joinPath(webviewDir, 'styles.css'),
   );
+  const flexlayoutCssUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(webviewDir, 'flexlayout-dark.css'),
+  );
+  const flexlayoutOverridesUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(webviewDir, 'flexlayout-overrides.css'),
+  );
 
   // Nonce for CSP
   const nonce = getNonce();
@@ -234,7 +240,7 @@ export function createCrispyPanel(
   );
 
   // Set HTML AFTER listener is wired — this triggers webview JS to load
-  panel.webview.html = getWebviewHtml(panel.webview, scriptUri, cssUri, stylesUri, nonce);
+  panel.webview.html = getWebviewHtml(panel.webview, scriptUri, cssUri, stylesUri, flexlayoutCssUri, flexlayoutOverridesUri, nonce);
 
   panels.set(panelId, panel);
 
@@ -280,6 +286,8 @@ function getWebviewHtml(
   scriptUri: vscode.Uri,
   cssUri: vscode.Uri,
   stylesUri: vscode.Uri,
+  flexlayoutCss: vscode.Uri,
+  flexlayoutOverrides: vscode.Uri,
   nonce: string,
 ): string {
   return `<!DOCTYPE html>
@@ -294,6 +302,8 @@ function getWebviewHtml(
   <title>Crispy</title>
   <link rel="stylesheet" href="${cssUri}">
   <link rel="stylesheet" href="${stylesUri}">
+  <link rel="stylesheet" href="${flexlayoutCss}">
+  <link rel="stylesheet" href="${flexlayoutOverrides}">
 </head>
 <body>
   <div id="root"></div>
