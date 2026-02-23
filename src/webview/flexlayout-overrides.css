@@ -180,4 +180,5 @@
 
 .crispy-layout--flex .crispy-transcript {
   height: 100%;
+  box-sizing: border-box; /* include padding in height so it doesn't overflow tab_moveable */
 }
