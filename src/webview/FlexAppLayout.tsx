@@ -308,12 +308,15 @@ export function FlexAppLayout(): React.JSX.Element {
   const controlPanelRef = useRef<HTMLDivElement>(null);
   const stopButtonRef = useRef<HTMLDivElement>(null);
 
-  // scrollRef with mount-key pattern for BlocksVisibilityProvider
+  // scrollRef for BlocksVisibilityProvider — stable callback ref.
+  // Unlike the old AppLayout, we do NOT use a mount-key pattern here
+  // because the key would remount <Layout> (FlexLayout), which triggers
+  // an infinite componentDidMount → updateRect → setState → remount loop.
+  // BlocksVisibilityProvider resets its IntersectionObserver internally
+  // when the scrollRef changes.
   const transcriptScrollRef = useRef<HTMLDivElement | null>(null);
-  const [scrollMountKey, setScrollMountKey] = useState(0);
   const setTranscriptRef = useCallback((el: HTMLDivElement | null) => {
     transcriptScrollRef.current = el;
-    if (el) setScrollMountKey((prev) => prev + 1);
   }, []);
 
   // --- Fork history ---
@@ -682,7 +685,6 @@ export function FlexAppLayout(): React.JSX.Element {
         >
           <PanelStateProvider>
             <BlocksVisibilityProvider
-              key={scrollMountKey}
               scrollRef={transcriptScrollRef}
             >
               <main
