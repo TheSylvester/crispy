@@ -1,10 +1,14 @@
 /**
- * Control Panel — floating bottom-center bar with chat input and controls
+ * Control Panel — per-tab bar with chat input and controls
  *
  * Parent shell that composes all control sub-components. Uses useReducer
  * for coupled cross-field state (bypass ↔ agency mode). Send is wired to
  * transport — submitting the chat input calls transport.send() with the
  * active session. Other controls remain local/visual-only.
+ *
+ * Lives inside each transcript tab (not fixed/global). Global keyboard
+ * shortcuts and paste handler are gated by the `isActiveTab` prop so
+ * only the focused tab's instance responds.
  *
  * Two rows:
  * - Row 1: Auto-resizing textarea + send button + image attachment chips
@@ -48,6 +52,15 @@ import type { TurnIntent } from '../../../core/agent-adapter.js';
 import type { WireProviderConfig } from '../../../core/provider-config.js';
 
 interface ControlPanelProps {
+  /** Per-tab session ID. Used for all session-dependent operations (send, fork,
+   *  channel state, approval, etc.). Falls back to global context if omitted. */
+  sessionId?: string | null;
+  /** Update the owning tab's session ID (e.g. after creating a new session).
+   *  Falls back to global context's setSelectedSessionId if omitted. */
+  onSessionIdChange?: (id: string | null) => void;
+  /** Whether this tab is the currently active/focused tab. Gates global
+   *  keyboard shortcuts and paste handler so only one instance responds. */
+  isActiveTab?: boolean;
   onForkHoverChange?: (hovering: boolean) => void;
   /** Instantly pin transcript scroll to bottom (called on send). */
   onScrollToBottom?: () => void;
@@ -139,7 +152,7 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed, onForkHistoryLoaded, onRegisterForkHandler, onRegisterRewindHandler, pendingAgencyMode, onPendingAgencyModeConsumed, onOptimisticEntry }, ref) {
+  function ControlPanel({ sessionId: sessionIdProp, onSessionIdChange: onSessionIdChangeProp, isActiveTab = true, onForkHoverChange, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed, onForkHistoryLoaded, onRegisterForkHandler, onRegisterRewindHandler, pendingAgencyMode, onPendingAgencyModeConsumed, onOptimisticEntry }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     // Track the DOM element for native drag/drop listeners. A callback ref
     // ensures the useEffect re-runs when the element mounts, unlike a
@@ -156,7 +169,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     }, [ref]);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned, toolViewOverride, setToolViewOverride, debugMode, setDebugMode } = usePreferences();
     const transport = useTransport();
-    const { selectedSessionId, selectedCwd, setSelectedSessionId } = useSession();
+    const { selectedSessionId: globalSessionId, selectedCwd, setSelectedSessionId: globalSetSelectedSessionId } = useSession();
+    // Use per-tab session ID from props when provided, otherwise fall back to global context.
+    const selectedSessionId = sessionIdProp !== undefined ? sessionIdProp : globalSessionId;
+    const setSelectedSessionId = onSessionIdChangeProp ?? globalSetSelectedSessionId;
     const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
     const togglesDisabled = channelState === 'streaming' || channelState === 'awaiting_approval';
 
@@ -281,8 +297,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       }
     }, [contextUsage]);
 
-    // --- Keyboard shortcuts ---
+    // --- Keyboard shortcuts (gated by isActiveTab) ---
     useEffect(() => {
+      if (!isActiveTab) return;
+
       const handleKeyDown = (e: KeyboardEvent) => {
         // Alt+`: Toggle bypass
         if (e.key === '`' && e.altKey && !e.ctrlKey && !e.shiftKey) {
@@ -316,7 +334,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
       document.addEventListener('keydown', handleKeyDown);
       return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [state.bypassEnabled, state.agencyMode, state.model, togglesDisabled, allCyclable]);
+    }, [isActiveTab, state.bypassEnabled, state.agencyMode, state.model, togglesDisabled, allCyclable]);
 
     // --- Server → UI: settings sync notifications ---
     // Server-initiated setting changes update the local state. Handles both
@@ -611,8 +629,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       };
     }, [panelEl, children, transport, attachImageFile, insertAtCursor]);
 
-    // --- Paste handler for images ---
+    // --- Paste handler for images (gated by isActiveTab) ---
     useEffect(() => {
+      if (!isActiveTab) return;
+
       const handlePaste = (e: ClipboardEvent) => {
         const items = e.clipboardData?.items;
         if (!items) return;
@@ -660,7 +680,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
       document.addEventListener('paste', handlePaste);
       return () => document.removeEventListener('paste', handlePaste);
-    }, [state.pastedImageCounter, insertAtCursor]);
+    }, [isActiveTab, state.pastedImageCounter, insertAtCursor]);
 
     // --- forkConfig message listener (new panel created via fork) ---
     // Host retries delivery so the listener must be idempotent.

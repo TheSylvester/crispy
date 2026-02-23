@@ -52,11 +52,6 @@
   display: none;
 }
 
-/* Hide the tab strip on the main tabset (single transcript tab) */
-.flexlayout__tabset_tabbar_outer {
-  display: none;
-}
-
 /* ============================================================================
    Streaming glow fix — tool panel is no longer a DOM child of .crispy-main
    in FlexLayout. Re-root glow selectors to .crispy-layout--flex.
@@ -135,44 +130,11 @@
 }
 
 /* ============================================================================
-   ThinkingIndicator fix — re-root :has() selectors for FlexLayout
-   The ThinkingIndicator uses :has(.crispy-cp[data-agency]) on .crispy-main
-   to show the correct label. In FlexLayout, .crispy-main doesn't exist;
-   the layout root is .crispy-layout--flex.
+   ThinkingIndicator fix — ControlPanel now lives inside .crispy-transcript-tab
+   so :has() selectors are scoped to the tab. The styles.css base rules use
+   .crispy-transcript-tab:has(.crispy-cp[data-agency="..."]) directly.
+   These layout-level overrides are kept for the streaming glow inheritance.
    ============================================================================ */
-
-.crispy-layout--flex[data-streaming]:has(
-    .crispy-cp[data-agency="plan-mode"]
-  ) .crispy-thinking-label--planning {
-  display: inline;
-}
-.crispy-layout--flex[data-streaming]:has(
-    .crispy-cp[data-agency="plan-mode"]
-  ) .crispy-thinking-label--thinking {
-  display: none;
-}
-.crispy-layout--flex[data-streaming]:has(
-    .crispy-cp[data-agency="plan-mode"]
-  ) .crispy-thinking-label--working {
-  display: none;
-}
-
-.crispy-layout--flex[data-streaming]:has(
-    .crispy-cp[data-agency="bypass-permissions"]
-  ) .crispy-thinking-label--working,
-.crispy-layout--flex[data-streaming]:has(
-    .crispy-cp[data-agency="edit-automatically"]
-  ) .crispy-thinking-label--working {
-  display: inline;
-}
-.crispy-layout--flex[data-streaming]:has(
-    .crispy-cp[data-agency="bypass-permissions"]
-  ) .crispy-thinking-label--thinking,
-.crispy-layout--flex[data-streaming]:has(
-    .crispy-cp[data-agency="edit-automatically"]
-  ) .crispy-thinking-label--thinking {
-  display: none;
-}
 
 /* ============================================================================
    Transcript tab wrapper — fills the tab node, provides positioning context
@@ -208,7 +170,7 @@
 }
 
 .crispy-transcript-tab .crispy-scroll-to-bottom {
-  bottom: 1rem;
+  bottom: 6rem; /* above ControlPanel which is now in the flex column */
   animation: crispy-scroll-fab-in-bottom 0.15s ease-out both;
 }
 
@@ -225,4 +187,44 @@
 @keyframes crispy-scroll-fab-in-top {
   from { opacity: 0; transform: translateY(-12px) scale(0.8); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ============================================================================
+   Tab strip — theme overrides for the main tabset tab bar
+   ============================================================================ */
+
+.flexlayout__tabset_tabbar_outer {
+  background: var(--vscode-sideBar-background, #252526);
+  border-bottom: 1px solid var(--vscode-panel-border, #2b2b2b);
+}
+
+.flexlayout__tab_button {
+  font-family: var(--vscode-font-family);
+  font-size: var(--font-xs, 11px);
+  color: var(--vscode-foreground, #ccc);
+  padding: 4px 12px;
+}
+
+.flexlayout__tab_button--selected {
+  background: var(--vscode-editor-background, #1e1e1e);
+}
+
+/* "+" button for new transcript tabs — rendered via onRenderTabSet */
+.crispy-tab-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--vscode-descriptionForeground, #888);
+  cursor: pointer;
+  border-radius: var(--radius-sm, 3px);
+  margin-left: 2px;
+}
+
+.crispy-tab-add-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--vscode-foreground, #ccc);
 }

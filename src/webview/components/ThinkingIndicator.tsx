@@ -17,12 +17,15 @@
  * @module ThinkingIndicator
  */
 
-import { useSession } from '../context/SessionContext.js';
 import { useSessionStatus } from '../hooks/useSessionStatus.js';
 
-export function ThinkingIndicator(): React.JSX.Element | null {
-  const { selectedSessionId } = useSession();
-  const { channelState } = useSessionStatus(selectedSessionId);
+interface ThinkingIndicatorProps {
+  /** Per-tab session ID. Used to check channel state for this specific session. */
+  sessionId?: string | null;
+}
+
+export function ThinkingIndicator({ sessionId = null }: ThinkingIndicatorProps): React.JSX.Element | null {
+  const { channelState } = useSessionStatus(sessionId);
 
   const visible =
     channelState === 'streaming' || channelState === 'awaiting_approval';

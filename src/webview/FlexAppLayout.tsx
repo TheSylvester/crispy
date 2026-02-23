@@ -1,27 +1,35 @@
 /**
- * FlexAppLayout — FlexLayout-based layout replacing AppLayout
+ * FlexAppLayout — FlexLayout-based layout with per-tab session state
  *
- * Wraps flexlayout-react's Layout component with the same provider cascade
- * and hook wiring that TranscriptViewer provided. Key changes from AppLayout:
+ * Each transcript tab is a self-contained unit with its own session,
+ * ControlPanel, StopButton, and approval UI. The tab strip is visible
+ * so users can create multiple independent transcript tabs.
  *
- *   - Inspector (BlocksToolPanel) and Files (FilePanel) live as FlexLayout
- *     border tabs (dockable left/right), not position:fixed panels
- *   - Transcript content is a FlexLayout tab node in the main area
- *   - Providers (BlocksToolRegistryProvider, PanelStateProvider,
- *     BlocksVisibilityProvider) are lifted above <Layout> so both transcript
- *     and border tabs share context
- *   - ConnectorLines removed (hover/click linking deferred)
+ * Architecture:
+ *   .crispy-transcript-tab (flex column, fills tab node)
+ *     TranscriptHeader      (session dropdown + new-session btn)
+ *     .crispy-transcript    (flex: 1, overflow-y: auto — scroll area)
+ *     StopButton            (absolute, above ControlPanel)
+ *     ControlPanel          (flex: 0 auto — natural height, not fixed)
  *
- * SessionSelector, ControlPanel, TitleBar (CWD only), StopButton, and
- * PlaybackControls remain OUTSIDE FlexLayout as fixed overlays.
- * Session dropdown + New button live inside the transcript tab header
- * (TranscriptHeader component).
+ * No spacer div needed — flex layout handles the split naturally.
  *
  * @module FlexAppLayout
  */
 
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { Layout, Model, type TabNode, type IJsonModel } from 'flexlayout-react';
+import {
+  Layout,
+  Model,
+  Actions,
+  DockLocation,
+  type TabNode,
+  type TabSetNode,
+  type BorderNode,
+  type IJsonModel,
+  type Action as FlexAction,
+  type ITabSetRenderValues,
+} from 'flexlayout-react';
 import { useSession } from './context/SessionContext.js';
 import { usePreferences } from './context/PreferencesContext.js';
 import { useTranscript } from './hooks/useTranscript.js';
@@ -44,7 +52,6 @@ import { useTransport } from './context/TransportContext.js';
 import { useSessionStatus } from './hooks/useSessionStatus.js';
 import type { ApprovalExtra } from './components/approval/types.js';
 import type { TranscriptEntry } from '../core/transcript.js';
-import type { RenderMode } from './types.js';
 import { WelcomePage } from './components/WelcomePage.js';
 import { isPerfMode, PerfProfiler } from './perf/index.js';
 import { PerfStore } from './perf/profiler.js';
@@ -60,6 +67,12 @@ import { useFilePanel } from './context/FilePanelContext.js';
 import { FileViewerModal } from './components/file-panel/FileViewerModal.js';
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+const INITIAL_TAB_ID = 'transcript';
+
+// ============================================================================
 // FlexLayout model definition
 // ============================================================================
 
@@ -70,7 +83,7 @@ const FLEX_MODEL: IJsonModel = {
     splitterSize: 4,
     borderSize: 380,
     borderEnableDrop: true,
-    tabSetEnableTabStrip: false,
+    tabSetEnableTabStrip: true,
     tabEnableRename: false,
   },
   borders: [
@@ -106,7 +119,7 @@ const FLEX_MODEL: IJsonModel = {
         children: [
           {
             type: 'tab',
-            id: 'transcript',
+            id: INITIAL_TAB_ID,
             name: 'Transcript',
             component: 'transcript',
             enableClose: false,
@@ -118,26 +131,19 @@ const FLEX_MODEL: IJsonModel = {
 };
 
 // ============================================================================
-// FlexTranscriptContent — inline component for the transcript tab node
+// FlexTranscriptContent — self-contained transcript tab with embedded
+// ControlPanel, StopButton, and approval UI
 // ============================================================================
 
 interface FlexTranscriptContentProps {
-  filteredEntries: TranscriptEntry[];
-  forkTargets: Map<string, string>;
-  renderMode: RenderMode;
-  isLoading: boolean;
-  channelState: string | null;
-  hasForkHistory: boolean;
-  error: string | null;
-  selectedSessionId: string | null;
-  scrollRef: (el: HTMLDivElement | null) => void;
-  parked: boolean;
-  isAtTop: boolean;
-  scrollToBottom: () => void;
-  scrollToTop: () => void;
-  onPerMessageFork: (atMessageId: string) => void;
-  onPerMessageRewind: (atMessageId: string) => void;
-  onForkPreviewHover: (targetMessageId: string, hovering: boolean) => void;
+  tabId: string;
+  isActiveTab: boolean;
+  /** Per-tab session ID (null = no session / welcome). */
+  sessionId: string | null;
+  /** Update this tab's session ID in the parent tabSessions map. */
+  onSessionIdChange: (id: string | null) => void;
+  /** Ensure this tab becomes the active tab (syncs global session state). */
+  onActivateTab: () => void;
 }
 
 /** SVG chevron — points down, rotates 180° when sidebar is open */
@@ -179,28 +185,33 @@ function PlusIcon(): React.JSX.Element {
 /**
  * TranscriptHeader — session dropdown toggle + new-session button.
  * Lives inside the transcript tab, above the scroll area.
+ * "New" clears session in the current tab (not global).
+ *
+ * The sidebar toggle is provided by the parent (FlexTranscriptContent)
+ * so it can activate the owning tab before opening the shared sidebar.
  */
-function TranscriptHeader(): React.JSX.Element {
-  const { sessions, selectedSessionId, setSelectedSessionId } = useSession();
-  const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
+function TranscriptHeader({
+  onNewSession,
+  onToggleSidebar,
+  sessionId: headerSessionId,
+}: {
+  onNewSession: () => void;
+  /** Toggle sidebar, ensuring this tab is activated first. */
+  onToggleSidebar: () => void;
+  /** Per-tab session ID for label lookup. */
+  sessionId: string | null;
+}): React.JSX.Element {
+  const { sessions } = useSession();
+  const { sidebarCollapsed } = usePreferences();
 
   const sessionLabel =
-    sessions.find((s) => s.sessionId === selectedSessionId)?.label ?? 'No session';
-
-  const toggleSidebar = useCallback(() => {
-    setSidebarCollapsed(!sidebarCollapsed);
-  }, [sidebarCollapsed, setSidebarCollapsed]);
-
-  const handleNew = useCallback(() => {
-    setSelectedSessionId(null);
-    console.log('[TranscriptHeader] New session requested — transport.createSession() not wired yet');
-  }, [setSelectedSessionId]);
+    sessions.find((s) => s.sessionId === headerSessionId)?.label ?? 'No session';
 
   return (
     <div className="crispy-transcript-header">
       <button
         className="crispy-transcript-header__btn crispy-transcript-header__session-btn"
-        onClick={toggleSidebar}
+        onClick={onToggleSidebar}
         aria-label={sidebarCollapsed ? 'Open sessions' : 'Close sessions'}
         title="Toggle session list"
       >
@@ -209,7 +220,7 @@ function TranscriptHeader(): React.JSX.Element {
       </button>
       <button
         className="crispy-transcript-header__btn crispy-transcript-header__new-btn"
-        onClick={handleNew}
+        onClick={onNewSession}
         title="New session"
       >
         <PlusIcon />
@@ -220,145 +231,15 @@ function TranscriptHeader(): React.JSX.Element {
 }
 
 function FlexTranscriptContent({
-  filteredEntries,
-  forkTargets,
-  renderMode,
-  isLoading,
-  channelState,
-  hasForkHistory,
-  error,
-  selectedSessionId,
-  scrollRef,
-  parked,
-  isAtTop,
-  scrollToBottom,
-  scrollToTop,
-  onPerMessageFork,
-  onPerMessageRewind,
-  onForkPreviewHover,
+  tabId,
+  isActiveTab,
+  sessionId: tabSessionId,
+  onSessionIdChange,
+  onActivateTab,
 }: FlexTranscriptContentProps): React.JSX.Element {
-  // No session and no fork history → welcome page
-  if (!selectedSessionId && !hasForkHistory) {
-    return (
-      <div className="crispy-transcript-tab">
-        <TranscriptHeader />
-        <WelcomePage loading={isLoading} />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="crispy-transcript-tab">
-        <TranscriptHeader />
-        <div className="crispy-error">{error}</div>
-      </div>
-    );
-  }
-
-  return (
-    <RenderLocationProvider location="transcript">
-      <ForkProvider
-        onFork={onPerMessageFork}
-        onRewind={onPerMessageRewind}
-        onForkPreviewHover={onForkPreviewHover}
-        isStreaming={channelState === 'streaming'}
-        forkTargets={forkTargets}
-      >
-        <div className="crispy-transcript-tab">
-          <TranscriptHeader />
-          <div
-            className="crispy-transcript"
-            ref={scrollRef}
-            data-render-mode={renderMode}
-          >
-            <div className="crispy-transcript-content">
-              {isLoading ? (
-                <div className="crispy-loading">Loading transcript...</div>
-              ) : (
-                <PerfProfiler id="TranscriptList">
-                  {filteredEntries.map((entry, i) => (
-                    <EntryRenderer
-                      key={entry.uuid ?? `entry-${i}`}
-                      entry={entry}
-                      mode={renderMode}
-                      forkTargetId={
-                        entry.uuid ? forkTargets.get(entry.uuid) : undefined
-                      }
-                    />
-                  ))}
-                </PerfProfiler>
-              )}
-              <ThinkingIndicator />
-              <div className="crispy-transcript-spacer" />
-            </div>
-          </div>
-          <button
-            className={`crispy-scroll-nav crispy-scroll-to-top ${isAtTop ? 'crispy-scroll-to-top--hidden' : ''}`}
-            onClick={scrollToTop}
-            aria-label="Scroll to top"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-            >
-              <polyline points="18 15 12 9 6 15" />
-            </svg>
-          </button>
-          <button
-            className={`crispy-scroll-nav crispy-scroll-to-bottom ${parked ? 'crispy-scroll-to-bottom--hidden' : ''}`}
-            onClick={scrollToBottom}
-            aria-label="Scroll to bottom"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-            >
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </button>
-        </div>
-      </ForkProvider>
-    </RenderLocationProvider>
-  );
-}
-
-// ============================================================================
-// FlexInsertHandlerBridge — registers FilePanelContext insert handler
-// Must live inside <FilePanelProvider>. Bridges the insert callback to
-// FlexAppLayout's setPrefillInput without requiring useFilePanel at the
-// top level (which would be outside the provider).
-// ============================================================================
-
-function FlexInsertHandlerBridge({
-  setPrefillInput,
-}: {
-  setPrefillInput: (v: { text: string }) => void;
-}): null {
-  const { registerInsertHandler } = useFilePanel();
-  useEffect(() => {
-    registerInsertHandler((text: string) => {
-      setPrefillInput({ text });
-    });
-  }, [registerInsertHandler, setPrefillInput]);
-  return null;
-}
-
-// ============================================================================
-// FlexAppLayout — main export
-// ============================================================================
-
-export function FlexAppLayout(): React.JSX.Element {
-  // --- Session & transport ---
-  const { selectedSessionId, setSelectedSessionId } = useSession();
+  // --- Session & transport (per-tab) ---
+  // Use per-tab session ID from props, NOT the global selectedSessionId.
+  // This ensures each FlexLayout tab can independently load a different session.
   const transport = useTransport();
   const {
     entries,
@@ -366,13 +247,12 @@ export function FlexAppLayout(): React.JSX.Element {
     error,
     addOptimisticEntry,
     setForkHistory,
-  } = useTranscript(selectedSessionId);
-  const { renderMode, sidebarCollapsed, setSidebarCollapsed, debugMode } =
-    usePreferences();
+  } = useTranscript(tabSessionId);
+  const { renderMode, sidebarCollapsed, setSidebarCollapsed } = usePreferences();
   const {
     approvalRequest,
     resolve: resolveApproval,
-  } = useApprovalRequest(selectedSessionId);
+  } = useApprovalRequest(tabSessionId);
   const [bypassEnabled, setBypassEnabled] = useState(false);
   const [prefillInput, setPrefillInput] = useState<{
     text: string;
@@ -386,28 +266,9 @@ export function FlexAppLayout(): React.JSX.Element {
   // --- Playback ---
   const {
     visibleCount,
-    isPlaying,
-    speed,
-    play,
-    pause,
-    stepForward,
-    stepForward10,
-    stepBack,
-    reset,
-    jumpToEnd,
-    setSpeed,
   } = usePlayback(entries.length);
 
-  // --- Refs ---
-  const controlPanelRef = useRef<HTMLDivElement>(null);
-  const stopButtonRef = useRef<HTMLDivElement>(null);
-
-  // scrollRef for BlocksVisibilityProvider — stable callback ref.
-  // Unlike the old AppLayout, we do NOT use a mount-key pattern here
-  // because the key would remount <Layout> (FlexLayout), which triggers
-  // an infinite componentDidMount → updateRect → setState → remount loop.
-  // BlocksVisibilityProvider resets its IntersectionObserver internally
-  // when the scrollRef changes.
+  // --- scrollRef ---
   const transcriptScrollRef = useRef<HTMLDivElement | null>(null);
   const setTranscriptRef = useCallback((el: HTMLDivElement | null) => {
     transcriptScrollRef.current = el;
@@ -425,10 +286,10 @@ export function FlexAppLayout(): React.JSX.Element {
   );
 
   useEffect(() => {
-    if (selectedSessionId) {
+    if (tabSessionId) {
       setHasForkHistory(false);
     }
-  }, [selectedSessionId]);
+  }, [tabSessionId]);
 
   // --- Entry filtering ---
   const visibleEntries = useMemo(
@@ -484,33 +345,15 @@ export function FlexAppLayout(): React.JSX.Element {
   }, [filteredEntries]);
 
   // --- Channel state ---
-  const { channelState } = useSessionStatus(selectedSessionId);
-  const isStreaming = channelState === 'streaming';
+  const { channelState } = useSessionStatus(tabSessionId);
 
   // --- Auto-scroll ---
   const { parked, isAtTop, scrollToBottom, scrollToTop, pinToBottom } =
     useAutoScroll({
-      sessionId: selectedSessionId,
+      sessionId: tabSessionId,
       scrollRef: transcriptScrollRef,
       remount: hasForkHistory,
     });
-
-  // --- Control panel height tracking ---
-  useEffect(() => {
-    const cpEl = controlPanelRef.current;
-    if (!cpEl) return;
-
-    const observer = new ResizeObserver(() => {
-      const cpHeight = Math.round(cpEl.getBoundingClientRect().height);
-      document.documentElement.style.setProperty(
-        '--cp-height',
-        String(cpHeight),
-      );
-    });
-
-    observer.observe(cpEl);
-    return () => observer.disconnect();
-  }, []);
 
   // --- Fork preview glow ---
   const handleForkHoverChange = useCallback((hovering: boolean) => {
@@ -600,7 +443,7 @@ export function FlexAppLayout(): React.JSX.Element {
 
       if (!atMessageId) {
         const text = extractUserText();
-        setSelectedSessionId(null);
+        onSessionIdChange(null);
         if (text) setPrefillInput({ text });
         return;
       }
@@ -609,7 +452,7 @@ export function FlexAppLayout(): React.JSX.Element {
       const text = extractUserText();
       if (text) setPrefillInput({ text });
     },
-    [setPrefillInput, setSelectedSessionId],
+    [setPrefillInput, onSessionIdChange],
   );
 
   // --- Approval resolve with ExitPlanMode orchestration ---
@@ -620,10 +463,10 @@ export function FlexAppLayout(): React.JSX.Element {
     ) => {
       const { clearContext, planContent, ...transportExtra } = extra ?? {};
 
-      if (clearContext && selectedSessionId) {
+      if (clearContext && tabSessionId) {
         const handoffPrompt = constructExitPlanHandoffPrompt(
           planContent,
-          selectedSessionId,
+          tabSessionId,
         );
 
         await resolveApproval(
@@ -632,12 +475,12 @@ export function FlexAppLayout(): React.JSX.Element {
         );
 
         try {
-          await transport.close(selectedSessionId);
+          await transport.close(tabSessionId);
         } catch (err) {
-          console.warn('[FlexAppLayout] close session failed:', err);
+          console.warn('[FlexTranscriptContent] close session failed:', err);
         }
 
-        setSelectedSessionId(null);
+        onSessionIdChange(null);
 
         const targetMode = (
           transportExtra.updatedPermissions?.[0] as { mode?: string }
@@ -661,20 +504,25 @@ export function FlexAppLayout(): React.JSX.Element {
         Object.keys(transportExtra).length ? transportExtra : undefined,
       );
     },
-    [resolveApproval, selectedSessionId, transport, setSelectedSessionId],
+    [resolveApproval, tabSessionId, transport, onSessionIdChange],
   );
 
-  // --- "Execute in Crispy" postMessage listener ---
+  // --- postMessage listeners (active tab only) ---
+  // Handles "Execute in Crispy" and file panel insert messages
   useEffect(() => {
+    if (!isActiveTab) return;
     const handler = (ev: MessageEvent) => {
       if (ev.data?.kind === 'executeInCrispy' && ev.data.content) {
-        setSelectedSessionId(null);
+        onSessionIdChange(null);
+        setPrefillInput({ text: ev.data.content });
+      }
+      if (ev.data?.kind === 'filePanelInsert' && ev.data.content) {
         setPrefillInput({ text: ev.data.content });
       }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [setSelectedSessionId]);
+  }, [onSessionIdChange, isActiveTab]);
 
   // --- Prefill / agency consumed callbacks ---
   const handlePrefillConsumed = useCallback(() => {
@@ -686,6 +534,254 @@ export function FlexAppLayout(): React.JSX.Element {
     [],
   );
 
+  // --- "New session" in current tab ---
+  const handleNewSession = useCallback(() => {
+    onSessionIdChange(null);
+  }, [onSessionIdChange]);
+
+  // --- Toggle sidebar, activating this tab first ---
+  // The sidebar is a single shared overlay. Activating the tab ensures the
+  // global selectedSessionId syncs to *this* tab's session before the sidebar
+  // opens, so session selection lands in the correct tab.
+  const handleToggleSidebar = useCallback(() => {
+    onActivateTab();
+    setSidebarCollapsed(!sidebarCollapsed);
+  }, [onActivateTab, sidebarCollapsed, setSidebarCollapsed]);
+
+  // No session and no fork history → welcome page (with ControlPanel still)
+  if (!tabSessionId && !hasForkHistory) {
+    return (
+      <div className="crispy-transcript-tab" data-tab-id={tabId}>
+        <TranscriptHeader onNewSession={handleNewSession} onToggleSidebar={handleToggleSidebar} sessionId={tabSessionId} />
+        <WelcomePage loading={isLoading} />
+        <StopButton sessionId={tabSessionId} />
+        <ControlPanel
+          sessionId={tabSessionId}
+          onSessionIdChange={onSessionIdChange}
+          isActiveTab={isActiveTab}
+          onForkHoverChange={handleForkHoverChange}
+          onRegisterForkHandler={handleRegisterForkHandler}
+          onRegisterRewindHandler={handleRegisterRewindHandler}
+          onScrollToBottom={pinToBottom}
+          entries={entries}
+          onBypassChange={setBypassEnabled}
+          prefillInput={prefillInput}
+          onPrefillConsumed={handlePrefillConsumed}
+          onForkHistoryLoaded={handleForkHistoryLoaded}
+          pendingAgencyMode={pendingAgencyMode}
+          onPendingAgencyModeConsumed={handlePendingAgencyModeConsumed}
+          onOptimisticEntry={addOptimisticEntry}
+        >
+          {approvalRequest && (
+            <ApprovalContent
+              request={approvalRequest}
+              onResolve={handleApprovalResolve}
+              bypassEnabled={bypassEnabled}
+            />
+          )}
+        </ControlPanel>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="crispy-transcript-tab" data-tab-id={tabId}>
+        <TranscriptHeader onNewSession={handleNewSession} onToggleSidebar={handleToggleSidebar} sessionId={tabSessionId} />
+        <div className="crispy-error">{error}</div>
+      </div>
+    );
+  }
+
+  return (
+    <RenderLocationProvider location="transcript">
+      <ForkProvider
+        onFork={handlePerMessageFork}
+        onRewind={handlePerMessageRewind}
+        onForkPreviewHover={handleForkPreviewHover}
+        isStreaming={channelState === 'streaming'}
+        forkTargets={forkTargets}
+      >
+        <div className="crispy-transcript-tab" data-tab-id={tabId}>
+          <TranscriptHeader onNewSession={handleNewSession} onToggleSidebar={handleToggleSidebar} sessionId={tabSessionId} />
+          <div
+            className="crispy-transcript"
+            ref={setTranscriptRef}
+            data-render-mode={renderMode}
+          >
+            <div className="crispy-transcript-content">
+              {isLoading ? (
+                <div className="crispy-loading">Loading transcript...</div>
+              ) : (
+                <PerfProfiler id="TranscriptList">
+                  {filteredEntries.map((entry, i) => (
+                    <EntryRenderer
+                      key={entry.uuid ?? `entry-${i}`}
+                      entry={entry}
+                      mode={renderMode}
+                      forkTargetId={
+                        entry.uuid ? forkTargets.get(entry.uuid) : undefined
+                      }
+                    />
+                  ))}
+                </PerfProfiler>
+              )}
+              <ThinkingIndicator sessionId={tabSessionId} />
+            </div>
+          </div>
+          <button
+            className={`crispy-scroll-nav crispy-scroll-to-top ${isAtTop ? 'crispy-scroll-to-top--hidden' : ''}`}
+            onClick={scrollToTop}
+            aria-label="Scroll to top"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+            >
+              <polyline points="18 15 12 9 6 15" />
+            </svg>
+          </button>
+          <button
+            className={`crispy-scroll-nav crispy-scroll-to-bottom ${parked ? 'crispy-scroll-to-bottom--hidden' : ''}`}
+            onClick={scrollToBottom}
+            aria-label="Scroll to bottom"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+          <StopButton sessionId={tabSessionId} />
+          <ControlPanel
+            sessionId={tabSessionId}
+            onSessionIdChange={onSessionIdChange}
+            isActiveTab={isActiveTab}
+            onForkHoverChange={handleForkHoverChange}
+            onRegisterForkHandler={handleRegisterForkHandler}
+            onRegisterRewindHandler={handleRegisterRewindHandler}
+            onScrollToBottom={pinToBottom}
+            entries={entries}
+            onBypassChange={setBypassEnabled}
+            prefillInput={prefillInput}
+            onPrefillConsumed={handlePrefillConsumed}
+            onForkHistoryLoaded={handleForkHistoryLoaded}
+            pendingAgencyMode={pendingAgencyMode}
+            onPendingAgencyModeConsumed={handlePendingAgencyModeConsumed}
+            onOptimisticEntry={addOptimisticEntry}
+          >
+            {approvalRequest && (
+              <ApprovalContent
+                request={approvalRequest}
+                onResolve={handleApprovalResolve}
+                bypassEnabled={bypassEnabled}
+              />
+            )}
+          </ControlPanel>
+        </div>
+      </ForkProvider>
+    </RenderLocationProvider>
+  );
+}
+
+// ============================================================================
+// FlexInsertHandlerBridge — registers FilePanelContext insert handler
+// Must live inside <FilePanelProvider>. Dispatches a window postMessage
+// that the active tab's FlexTranscriptContent picks up.
+// ============================================================================
+
+function FlexInsertHandlerBridge(): null {
+  const { registerInsertHandler } = useFilePanel();
+  useEffect(() => {
+    registerInsertHandler((text: string) => {
+      window.postMessage({ kind: 'filePanelInsert', content: text }, '*');
+    });
+  }, [registerInsertHandler]);
+  return null;
+}
+
+// ============================================================================
+// FlexAppLayout — main export
+// ============================================================================
+
+export function FlexAppLayout(): React.JSX.Element {
+  // --- Session ---
+  const { selectedSessionId, setSelectedSessionId } = useSession();
+  const {
+    entries,
+  } = useTranscript(selectedSessionId);
+  const { sidebarCollapsed, setSidebarCollapsed, debugMode } =
+    usePreferences();
+
+  // --- Playback (kept at top level for PlaybackControls overlay) ---
+  const {
+    visibleCount,
+    isPlaying,
+    speed,
+    play,
+    pause,
+    stepForward,
+    stepForward10,
+    stepBack,
+    reset,
+    jumpToEnd,
+    setSpeed,
+  } = usePlayback(entries.length);
+
+  // --- Entry filtering (for BlocksToolRegistryProvider) ---
+  const visibleEntries = useMemo(
+    () => entries.slice(0, visibleCount),
+    [entries, visibleCount],
+  );
+
+  // --- Channel state (for data-streaming attribute on layout root) ---
+  const { channelState } = useSessionStatus(selectedSessionId);
+  const isStreaming = channelState === 'streaming';
+
+  // --- Per-tab session state ---
+  // Maps tab node IDs → selected session IDs (null = no session / welcome)
+  const [tabSessions, setTabSessions] = useState<Map<string, string | null>>(
+    () => new Map([[INITIAL_TAB_ID, selectedSessionId]]),
+  );
+
+  // Track which tab is currently active
+  const [activeTabId, setActiveTabId] = useState<string>(INITIAL_TAB_ID);
+
+  // Sync global selectedSessionId to the active tab's session
+  // When sidebar selection changes the global session, update active tab
+  const prevGlobalSessionRef = useRef(selectedSessionId);
+  useEffect(() => {
+    if (selectedSessionId !== prevGlobalSessionRef.current) {
+      prevGlobalSessionRef.current = selectedSessionId;
+      setTabSessions((prev) => {
+        const next = new Map(prev);
+        next.set(activeTabId, selectedSessionId);
+        return next;
+      });
+    }
+  }, [selectedSessionId, activeTabId]);
+
+  // When active tab changes, sync global session to that tab's session
+  useEffect(() => {
+    const tabSession = tabSessions.get(activeTabId);
+    if (tabSession !== undefined && tabSession !== selectedSessionId) {
+      prevGlobalSessionRef.current = tabSession;
+      setSelectedSessionId(tabSession);
+    }
+  }, [activeTabId, tabSessions, selectedSessionId, setSelectedSessionId]);
+
+  // --- scrollRef for BlocksVisibilityProvider ---
+  const transcriptScrollRef = useRef<HTMLDivElement | null>(null);
+
   // --- Sidebar ---
   const closeSidebar = useCallback(() => {
     setSidebarCollapsed(true);
@@ -694,32 +790,161 @@ export function FlexAppLayout(): React.JSX.Element {
   // --- FlexLayout model ---
   const [model] = useState(() => Model.fromJson(FLEX_MODEL));
 
+  // Tab counter for unique IDs
+  const tabCounterRef = useRef(1);
+
+  // --- onAction handler: track active tab, handle tab close ---
+  const handleAction = useCallback(
+    (action: FlexAction): FlexAction | undefined => {
+      if (action.type === Actions.SELECT_TAB) {
+        const tabId = action.data?.tabNode as string | undefined;
+        if (tabId && tabId !== 'inspector' && tabId !== 'files') {
+          setActiveTabId(tabId);
+        }
+      }
+      // When user clicks inside a different tabset's content area (after
+      // splitting), FlexLayout fires SET_ACTIVE_TABSET instead of SELECT_TAB.
+      // Derive the selected tab from the tabset so activeTabId stays current.
+      if (action.type === Actions.SET_ACTIVE_TABSET) {
+        const tabsetId = action.data?.tabsetNode as string | undefined;
+        if (tabsetId) {
+          const tabsetNode = model.getNodeById(tabsetId);
+          if (tabsetNode && 'getSelectedNode' in tabsetNode) {
+            const selectedNode = (tabsetNode as TabSetNode).getSelectedNode();
+            const selectedId = selectedNode?.getId();
+            if (selectedId && selectedId !== 'inspector' && selectedId !== 'files') {
+              setActiveTabId(selectedId);
+            }
+          }
+        }
+      }
+      if (action.type === Actions.DELETE_TAB) {
+        const tabId = action.data?.node as string | undefined;
+        if (tabId) {
+          setTabSessions((prev) => {
+            const next = new Map(prev);
+            next.delete(tabId);
+            return next;
+          });
+        }
+      }
+      return action;
+    },
+    [model],
+  );
+
+  // --- onRenderTabSet: add "+" button for new transcript tabs ---
+  const handleRenderTabSet = useCallback(
+    (node: TabSetNode | BorderNode, renderValues: ITabSetRenderValues) => {
+      // Only add "+" button to main tabsets, not border nodes
+      if ('getLocation' in node && typeof (node as BorderNode).getLocation === 'function') {
+        // BorderNode — skip
+        return;
+      }
+
+      renderValues.stickyButtons.push(
+        <button
+          key="add-tab"
+          className="crispy-tab-add-btn"
+          onClick={() => {
+            const newTabId = `transcript-${Date.now()}-${tabCounterRef.current++}`;
+            // Initialize new tab's session to null (WelcomePage)
+            setTabSessions((prev) => {
+              const next = new Map(prev);
+              next.set(newTabId, null);
+              return next;
+            });
+            model.doAction(
+              Actions.addNode(
+                {
+                  type: 'tab',
+                  id: newTabId,
+                  name: 'New',
+                  component: 'transcript',
+                  enableClose: true,
+                },
+                node.getId(),
+                DockLocation.CENTER,
+                -1,
+                true,
+              ),
+            );
+            // model.doAction() bypasses onAction, so activeTabId won't
+            // be updated by handleAction. Sync it manually.
+            setActiveTabId(newTabId);
+          }}
+          title="New tab"
+          aria-label="New transcript tab"
+        >
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
+            <path d="M6 2V10M2 6H10" />
+          </svg>
+        </button>,
+      );
+    },
+    [model],
+  );
+
+  // --- Per-tab session change handler ---
+  // Stable ref to activeTabId so the callback doesn't depend on it directly
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
+
+  const handleTabSessionChange = useCallback(
+    (tabId: string, newSessionId: string | null) => {
+      setTabSessions((prev) => {
+        const next = new Map(prev);
+        next.set(tabId, newSessionId);
+        return next;
+      });
+      // If this is the active tab, also sync the global selectedSessionId
+      if (tabId === activeTabIdRef.current) {
+        prevGlobalSessionRef.current = newSessionId;
+        setSelectedSessionId(newSessionId);
+      }
+    },
+    [setSelectedSessionId],
+  );
+
+  // --- Activate a tab (make it the active tab, sync global session) ---
+  const handleActivateTab = useCallback(
+    (tabId: string) => {
+      setActiveTabId(tabId);
+      // Eagerly sync global session so the sidebar shows the right session
+      // selected before the effect fires on the next render.
+      const tabSession = tabSessions.get(tabId) ?? null;
+      if (tabSession !== selectedSessionId) {
+        prevGlobalSessionRef.current = tabSession;
+        setSelectedSessionId(tabSession);
+      }
+    },
+    [tabSessions, selectedSessionId, setSelectedSessionId],
+  );
+
   // --- Factory ---
   const factory = useCallback(
     (node: TabNode) => {
       switch (node.getComponent()) {
-        case 'transcript':
+        case 'transcript': {
+          const nodeId = node.getId();
           return (
             <FlexTranscriptContent
-              filteredEntries={filteredEntries}
-              forkTargets={forkTargets}
-              renderMode={renderMode}
-              isLoading={isLoading}
-              channelState={channelState}
-              hasForkHistory={hasForkHistory}
-              error={error}
-              selectedSessionId={selectedSessionId}
-              scrollRef={setTranscriptRef}
-
-              parked={parked}
-              isAtTop={isAtTop}
-              scrollToBottom={scrollToBottom}
-              scrollToTop={scrollToTop}
-              onPerMessageFork={handlePerMessageFork}
-              onPerMessageRewind={handlePerMessageRewind}
-              onForkPreviewHover={handleForkPreviewHover}
+              tabId={nodeId}
+              isActiveTab={nodeId === activeTabId}
+              sessionId={tabSessions.get(nodeId) ?? null}
+              onSessionIdChange={(id) => handleTabSessionChange(nodeId, id)}
+              onActivateTab={() => handleActivateTab(nodeId)}
             />
           );
+        }
         case 'inspector':
           return <BlocksToolPanel />;
         case 'files':
@@ -730,24 +955,7 @@ export function FlexAppLayout(): React.JSX.Element {
           );
       }
     },
-    [
-      filteredEntries,
-      forkTargets,
-      renderMode,
-      isLoading,
-      channelState,
-      hasForkHistory,
-      error,
-      selectedSessionId,
-      setTranscriptRef,
-      parked,
-      isAtTop,
-      scrollToBottom,
-      scrollToTop,
-      handlePerMessageFork,
-      handlePerMessageRewind,
-      handleForkPreviewHover,
-    ],
+    [activeTabId, tabSessions, handleTabSessionChange, handleActivateTab],
   );
 
   // --- Render ---
@@ -759,7 +967,7 @@ export function FlexAppLayout(): React.JSX.Element {
     >
       <TitleBar />
       <FilePanelProvider>
-        <FlexInsertHandlerBridge setPrefillInput={setPrefillInput} />
+        <FlexInsertHandlerBridge />
         <aside className="crispy-sidebar">
           <div className="crispy-sidebar__header">Sessions</div>
           <SessionSelector />
@@ -785,14 +993,18 @@ export function FlexAppLayout(): React.JSX.Element {
                 className="crispy-flex-area"
                 data-streaming={isStreaming || undefined}
               >
-                <Layout model={model} factory={factory} />
+                <Layout
+                  model={model}
+                  factory={factory}
+                  onAction={handleAction}
+                  onRenderTabSet={handleRenderTabSet}
+                />
               </main>
               <FileViewerModal />
             </BlocksVisibilityProvider>
           </PanelStateProvider>
         </BlocksToolRegistryProvider>
 
-        {selectedSessionId && !error && <StopButton ref={stopButtonRef} />}
         {debugMode && (
           <PlaybackControls
             visibleCount={visibleCount}
@@ -809,29 +1021,6 @@ export function FlexAppLayout(): React.JSX.Element {
             onSpeedChange={setSpeed}
           />
         )}
-        <ControlPanel
-          ref={controlPanelRef}
-          onForkHoverChange={handleForkHoverChange}
-          onRegisterForkHandler={handleRegisterForkHandler}
-          onRegisterRewindHandler={handleRegisterRewindHandler}
-          onScrollToBottom={pinToBottom}
-          entries={entries}
-          onBypassChange={setBypassEnabled}
-          prefillInput={prefillInput}
-          onPrefillConsumed={handlePrefillConsumed}
-          onForkHistoryLoaded={handleForkHistoryLoaded}
-          pendingAgencyMode={pendingAgencyMode}
-          onPendingAgencyModeConsumed={handlePendingAgencyModeConsumed}
-          onOptimisticEntry={addOptimisticEntry}
-        >
-          {approvalRequest && (
-            <ApprovalContent
-              request={approvalRequest}
-              onResolve={handleApprovalResolve}
-              bypassEnabled={bypassEnabled}
-            />
-          )}
-        </ControlPanel>
       </FilePanelProvider>
     </div>
   );
