@@ -29,6 +29,8 @@ import {
   type IJsonModel,
   type Action as FlexAction,
   type ITabSetRenderValues,
+  type ITabRenderValues,
+  type Node as FlexNode,
 } from 'flexlayout-react';
 import { useSession } from './context/SessionContext.js';
 import { usePreferences } from './context/PreferencesContext.js';
@@ -122,7 +124,7 @@ const FLEX_MODEL: IJsonModel = {
             id: INITIAL_TAB_ID,
             name: 'Transcript',
             component: 'transcript',
-            enableClose: false,
+            enableClose: true,
           },
         ],
       },
@@ -737,7 +739,7 @@ function FlexInsertHandlerBridge(): null {
 
 export function FlexAppLayout(): React.JSX.Element {
   // --- Session ---
-  const { selectedSessionId, setSelectedSessionId } = useSession();
+  const { selectedSessionId, setSelectedSessionId, sessions } = useSession();
   const {
     entries,
   } = useTranscript(selectedSessionId);
@@ -846,6 +848,44 @@ export function FlexAppLayout(): React.JSX.Element {
           setTabSessions((prev) => {
             const next = new Map(prev);
             next.delete(tabId);
+
+            // If this was the last transcript tab, auto-create a fresh one
+            // (browser-style: always keep at least one tab open).
+            if (next.size === 0) {
+              const freshId = `transcript-${Date.now()}-${tabCounterRef.current++}`;
+              next.set(freshId, null);
+
+              // Schedule the FlexLayout addNode after the current action completes,
+              // since we can't mutate the model mid-action.
+              queueMicrotask(() => {
+                // Find the first tabset to host the new tab
+                let targetTabset: string | undefined;
+                model.visitNodes((node: FlexNode) => {
+                  if (!targetTabset && node.getType() === 'tabset') {
+                    targetTabset = node.getId();
+                  }
+                });
+                if (targetTabset) {
+                  model.doAction(
+                    Actions.addNode(
+                      {
+                        type: 'tab',
+                        id: freshId,
+                        name: 'New',
+                        component: 'transcript',
+                        enableClose: true,
+                      },
+                      targetTabset,
+                      DockLocation.CENTER,
+                      -1,
+                      true,
+                    ),
+                  );
+                }
+                setActiveTabId(freshId);
+              });
+            }
+
             return next;
           });
         }
@@ -913,6 +953,33 @@ export function FlexAppLayout(): React.JSX.Element {
       );
     },
     [model],
+  );
+
+  // --- onRenderTab: dynamic tab names from session labels ---
+  const MAX_TAB_LABEL = 28;
+  const handleRenderTab = useCallback(
+    (node: TabNode, renderValues: ITabRenderValues) => {
+      // Only customise transcript tabs, leave border tabs (Inspector, Files) alone
+      if (node.getComponent() !== 'transcript') return;
+
+      const tabId = node.getId();
+      const sessionId = tabSessions.get(tabId);
+      if (!sessionId) {
+        // No session loaded → show "New"
+        renderValues.content = 'New';
+        return;
+      }
+      const session = sessions.find((s) => s.sessionId === sessionId);
+      if (!session?.label) {
+        renderValues.content = 'New';
+        return;
+      }
+      const label = session.label.length > MAX_TAB_LABEL
+        ? session.label.slice(0, MAX_TAB_LABEL) + '…'
+        : session.label;
+      renderValues.content = label;
+    },
+    [tabSessions, sessions],
   );
 
   // --- Per-tab session change handler ---
@@ -1020,6 +1087,7 @@ export function FlexAppLayout(): React.JSX.Element {
                   factory={factory}
                   onAction={handleAction}
                   onRenderTabSet={handleRenderTabSet}
+                  onRenderTab={handleRenderTab}
                 />
               </main>
               <FileViewerModal />
