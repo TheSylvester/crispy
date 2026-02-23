@@ -44,7 +44,7 @@ import { useTransport } from '../../context/TransportContext.js';
 import { useSession } from '../../context/SessionContext.js';
 import { slugToPath } from '../../hooks/useSessionCwd.js';
 import { useContextUsage } from '../../hooks/useContextUsage.js';
-import { useSessionStatus } from '../../hooks/useSessionStatus.js';
+import { useChannelState } from '../../hooks/useSessionStatus.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent } from '../../../core/agent-adapter.js';
@@ -170,7 +170,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // Use per-tab session ID from props when provided, otherwise fall back to global context.
     const selectedSessionId = sessionIdProp !== undefined ? sessionIdProp : globalSessionId;
     const setSelectedSessionId = onSessionIdChangeProp ?? globalSetSelectedSessionId;
-    const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
+    const { channelState, setOptimistic: setOptimisticStatus } = useChannelState(selectedSessionId);
     const togglesDisabled = channelState === 'streaming' || channelState === 'awaiting_approval';
 
     // --- Dynamic model groups from provider-config ---

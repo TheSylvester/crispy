@@ -52,7 +52,7 @@ import { ApprovalContent } from './components/approval/index.js';
 import { useApprovalRequest } from './hooks/useApprovalRequest.js';
 import { constructExitPlanHandoffPrompt } from './components/approval/approval-utils.js';
 import { useTransport } from './context/TransportContext.js';
-import { useSessionStatus } from './hooks/useSessionStatus.js';
+import { useChannelState } from './hooks/useSessionStatus.js';
 import type { ApprovalExtra } from './components/approval/types.js';
 import type { TranscriptEntry } from '../core/transcript.js';
 import { WelcomePage } from './components/WelcomePage.js';
@@ -186,11 +186,70 @@ function PlusIcon(): React.JSX.Element {
 }
 
 /**
- * TranscriptHeader — per-tab session dropdown + new-session button.
+ * ConnectionDot — per-tab streaming/idle/approval indicator.
+ *
+ * 8px colored dot with state-driven color + glow animation.
+ * Click-to-copy session ID (Leto pattern: flash "copied" feedback).
+ * Rendered inside each TranscriptHeader so every tab shows its own state.
+ */
+function ConnectionDot({
+  channelState,
+  sessionId,
+}: {
+  channelState: string | null;
+  sessionId: string | null;
+}): React.JSX.Element | null {
+  const [copied, setCopied] = useState(false);
+
+  const dotModifier =
+    channelState === 'streaming'
+      ? 'crispy-titlebar__dot--streaming'
+      : channelState === 'idle'
+        ? 'crispy-titlebar__dot--idle'
+        : channelState === 'awaiting_approval'
+          ? 'crispy-titlebar__dot--approval'
+          : null;
+
+  if (!dotModifier) return null;
+
+  const dotClass = `crispy-titlebar__dot ${dotModifier}${copied ? ' crispy-titlebar__dot--copied' : ''}`;
+
+  const handleCopy = async () => {
+    if (!sessionId) return;
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      console.error('[ConnectionDot] Failed to copy session ID');
+    }
+  };
+
+  const title = copied
+    ? 'Copied!'
+    : sessionId
+      ? `${channelState} · click to copy session ID`
+      : `Status: ${channelState}`;
+
+  return (
+    <span
+      className={dotClass}
+      title={title}
+      onClick={handleCopy}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCopy(); }}
+    />
+  );
+}
+
+/**
+ * TranscriptHeader — per-tab session dropdown, connection dot, + new-session button.
  * Lives inside the transcript tab, above the scroll area.
  *
  * The dropdown is local to this tab — each tab manages its own open/close
  * state and renders the SessionSelector via a portal anchored to the button.
+ * The ConnectionDot shows this tab's session channel state independently.
  */
 function TranscriptHeader({
   onNewSession,
@@ -200,10 +259,11 @@ function TranscriptHeader({
   onNewSession: () => void;
   /** Called when a session is picked from the dropdown. */
   onSelectSession: (sessionId: string) => void;
-  /** Per-tab session ID for label lookup. */
+  /** Per-tab session ID for label lookup + connection dot state. */
   sessionId: string | null;
 }): React.JSX.Element {
   const { sessions } = useSession();
+  const { channelState } = useChannelState(headerSessionId);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -292,6 +352,8 @@ function TranscriptHeader({
           </>,
           document.body,
         )}
+
+      <ConnectionDot channelState={channelState} sessionId={headerSessionId} />
 
       <button
         className="crispy-transcript-header__btn crispy-transcript-header__new-btn"
@@ -439,7 +501,7 @@ function FlexTranscriptContent({
   }, [filteredEntries]);
 
   // --- Channel state ---
-  const { channelState } = useSessionStatus(tabSessionId);
+  const { channelState } = useChannelState(tabSessionId);
 
   // --- Auto-scroll ---
   const { parked, isAtTop, scrollToBottom, scrollToTop, pinToBottom } =
@@ -838,7 +900,8 @@ export function FlexAppLayout(): React.JSX.Element {
   );
 
   // --- Channel state (for data-streaming attribute on layout root) ---
-  const { channelState } = useSessionStatus(selectedSessionId);
+  // Tracks the active tab's session for the global streaming glow effect.
+  const { channelState } = useChannelState(selectedSessionId);
   const isStreaming = channelState === 'streaming';
 
   // --- Per-tab session state ---

@@ -9,7 +9,7 @@
  */
 
 import { useTransport } from '../../context/TransportContext.js';
-import { useSessionStatus } from '../../hooks/useSessionStatus.js';
+import { useChannelState } from '../../hooks/useSessionStatus.js';
 
 interface StopButtonProps {
   /** Per-tab session ID. When provided, uses this instead of the global context. */
@@ -18,7 +18,7 @@ interface StopButtonProps {
 
 export function StopButton({ sessionId = null }: StopButtonProps): React.JSX.Element {
   const transport = useTransport();
-  const { channelState } = useSessionStatus(sessionId);
+  const { channelState } = useChannelState(sessionId);
 
   const visible =
     channelState === 'streaming' || channelState === 'awaiting_approval';

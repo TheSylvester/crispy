@@ -17,7 +17,7 @@
  * @module ThinkingIndicator
  */
 
-import { useSessionStatus } from '../hooks/useSessionStatus.js';
+import { useChannelState } from '../hooks/useSessionStatus.js';
 
 interface ThinkingIndicatorProps {
   /** Per-tab session ID. Used to check channel state for this specific session. */
@@ -25,7 +25,7 @@ interface ThinkingIndicatorProps {
 }
 
 export function ThinkingIndicator({ sessionId = null }: ThinkingIndicatorProps): React.JSX.Element | null {
-  const { channelState } = useSessionStatus(sessionId);
+  const { channelState } = useChannelState(sessionId);
 
   const visible =
     channelState === 'streaming' || channelState === 'awaiting_approval';

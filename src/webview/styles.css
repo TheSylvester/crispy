@@ -1577,6 +1577,7 @@ h2 {
 /* --- Main container --- */
 
 .crispy-cp {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -1998,6 +1999,38 @@ h2 {
   align-items: center;
   gap: 0.5rem;
   margin-left: auto;
+}
+
+/* --- Responsive: narrow control panel --- */
+
+@container (max-width: 480px) {
+  /* Let agency + model selects shrink instead of overflowing */
+  .crispy-cp-agency,
+  .crispy-cp-model {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+
+  /* Right cluster flows naturally after wrapped selects */
+  .crispy-cp-right {
+    flex: 1 0 100%;
+    justify-content: flex-end;
+  }
+}
+
+@container (max-width: 360px) {
+  .crispy-cp {
+    padding: 0.375rem;
+    gap: 0.375rem;
+  }
+
+  .crispy-cp-controls {
+    gap: 0.375rem;
+  }
+
+  .crispy-cp-right {
+    gap: 0.375rem;
+  }
 }
 
 /* --------------------------------------------------------------------------
