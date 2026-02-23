@@ -92,7 +92,7 @@ const FLEX_MODEL: IJsonModel = {
       type: 'border',
       location: 'right',
       size: 380,
-      selected: 0,
+      selected: -1,
       children: [
         {
           type: 'tab',
@@ -272,6 +272,26 @@ function FlexTranscriptContent({
   const transcriptScrollRef = useRef<HTMLDivElement | null>(null);
   const setTranscriptRef = useCallback((el: HTMLDivElement | null) => {
     transcriptScrollRef.current = el;
+  }, []);
+
+  // --- ControlPanel height → CSS custom property for scroll padding ---
+  // Ref callback: attaches a ResizeObserver each time the CP element mounts,
+  // and disconnects when it unmounts or swaps (welcome → main view).
+  const cpObserverRef = useRef<ResizeObserver | null>(null);
+  const cpElRef = useCallback((el: HTMLDivElement | null) => {
+    // Tear down previous observer
+    if (cpObserverRef.current) {
+      cpObserverRef.current.disconnect();
+      cpObserverRef.current = null;
+    }
+    if (!el) return;
+    const tab = el.closest('.crispy-transcript-tab') as HTMLElement | null;
+    if (!tab) return;
+    const observer = new ResizeObserver(([entry]) => {
+      tab.style.setProperty('--cp-height', `${entry.borderBoxSize[0].blockSize}px`);
+    });
+    observer.observe(el);
+    cpObserverRef.current = observer;
   }, []);
 
   // --- Fork history ---
@@ -556,6 +576,7 @@ function FlexTranscriptContent({
         <WelcomePage loading={isLoading} />
         <StopButton sessionId={tabSessionId} />
         <ControlPanel
+          ref={cpElRef}
           sessionId={tabSessionId}
           onSessionIdChange={onSessionIdChange}
           isActiveTab={isActiveTab}
@@ -663,6 +684,7 @@ function FlexTranscriptContent({
           </button>
           <StopButton sessionId={tabSessionId} />
           <ControlPanel
+            ref={cpElRef}
             sessionId={tabSessionId}
             onSessionIdChange={onSessionIdChange}
             isActiveTab={isActiveTab}
@@ -864,7 +886,7 @@ export function FlexAppLayout(): React.JSX.Element {
                   enableClose: true,
                 },
                 node.getId(),
-                DockLocation.CENTER,
+                DockLocation.RIGHT,
                 -1,
                 true,
               ),

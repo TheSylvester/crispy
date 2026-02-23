@@ -61,7 +61,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
   const [toolPanelMode, setToolPanelMode] = useState<ToolPanelMode>('inspector');
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
-  const [debugMode, setDebugMode] = useState(true);
+  const [debugMode, setDebugMode] = useState(false);
   const [filePanelOpen, setFilePanelOpen] = useState(false);
   const [filePanelWidthPx, setFilePanelWidthPx] = useState<number | null>(null);
 

@@ -1582,14 +1582,15 @@ h2 {
   backdrop-filter: blur(40px) saturate(170%);
   border: 1px solid rgba(255, 255, 255, 0.05);
   max-width: 800px;
-  width: auto;
-  margin: 0 0.5rem 0.5rem;
-  align-self: center;
+  width: calc(100% - 0.25rem);
   border-radius: var(--radius-2xl);
   box-shadow:
     0 4px 24px rgba(0, 0, 0, 0.4),
     0 1px 4px rgba(0, 0, 0, 0.2);
-  flex: 0 0 auto;
+  position: absolute;
+  bottom: 0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 10;
   transition:
     padding 0.15s ease,
@@ -1615,7 +1616,7 @@ h2 {
 
 .crispy-stop {
   position: absolute;
-  bottom: 5rem;
+  bottom: calc(var(--cp-height, 80px) + 1.5rem);
   left: 50%;
   transform: translateX(-50%) translateY(8px);
   z-index: 20;

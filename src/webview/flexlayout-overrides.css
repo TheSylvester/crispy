@@ -155,6 +155,7 @@
   flex: 1;
   min-height: 0; /* allow flex shrink */
   box-sizing: border-box;
+  padding-bottom: calc(var(--cp-height, 80px) + 1rem); /* dynamic: set by ResizeObserver on ControlPanel */
 }
 
 /* ============================================================================
@@ -170,7 +171,7 @@
 }
 
 .crispy-transcript-tab .crispy-scroll-to-bottom {
-  bottom: 6rem; /* above ControlPanel which is now in the flex column */
+  bottom: calc(var(--cp-height, 80px) + 1rem); /* above ControlPanel */
   animation: crispy-scroll-fab-in-bottom 0.15s ease-out both;
 }
 
