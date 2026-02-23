@@ -1047,11 +1047,82 @@ export function FlexAppLayout(): React.JSX.Element {
     [tabSessions, sessions],
   );
 
-  // --- Per-tab session change handler ---
-  // Stable ref to activeTabId so the callback doesn't depend on it directly
+  // Stable ref to activeTabId — used by forkToNewTab and handleTabSessionChange
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
 
+  // --- forkToNewTab: intercept browser fork and open in a FlexLayout tab ---
+  // The WebSocket transport dispatches a 'forkToNewTab' postMessage instead of
+  // window.open(). We create a new tab in the active tabset and deliver the
+  // fork config to its ControlPanel via the existing forkConfig message flow.
+  useEffect(() => {
+    function onMessage(ev: MessageEvent) {
+      if (ev.data?.kind !== 'forkToNewTab') return;
+      const { fromSessionId, atMessageId, initialPrompt, model: forkModel, agencyMode, bypassEnabled, chromeEnabled } = ev.data;
+
+      // 1. Create a new FlexLayout tab (same pattern as the "+" button)
+      const newTabId = `transcript-${Date.now()}-${tabCounterRef.current++}`;
+      setTabSessions((prev) => {
+        const next = new Map(prev);
+        next.set(newTabId, null); // starts with no session (fork mode)
+        return next;
+      });
+
+      // Find the active tab's parent tabset so the fork opens beside it
+      const activeNode = model.getNodeById(activeTabIdRef.current);
+      const parentTabset = activeNode?.getParent()?.getId();
+      // Fallback: find any tabset
+      let targetTabset = parentTabset;
+      if (!targetTabset) {
+        model.visitNodes((node: FlexNode) => {
+          if (!targetTabset && node.getType() === 'tabset') {
+            targetTabset = node.getId();
+          }
+        });
+      }
+      if (targetTabset) {
+        model.doAction(
+          Actions.addNode(
+            {
+              type: 'tab',
+              id: newTabId,
+              name: 'Fork',
+              component: 'transcript',
+              enableClose: true,
+            },
+            targetTabset,
+            DockLocation.RIGHT,
+            -1,
+            true, // select the new tab
+          ),
+        );
+      }
+      setActiveTabId(newTabId);
+
+      // 2. Deliver forkConfig to the new tab's ControlPanel via postMessage.
+      //    Retry to handle React mount timing (listener is idempotent).
+      const forkConfig = {
+        kind: 'forkConfig',
+        targetTabId: newTabId,
+        fromSessionId,
+        atMessageId,
+        initialPrompt,
+        model: forkModel,
+        agencyMode,
+        bypassEnabled,
+        chromeEnabled,
+      };
+      const delays = [100, 400, 1200];
+      for (const delay of delays) {
+        setTimeout(() => window.postMessage(forkConfig, '*'), delay);
+      }
+    }
+
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [model]); // model is stable (useState initializer)
+
+  // --- Per-tab session change handler ---
   const handleTabSessionChange = useCallback(
     (tabId: string, newSessionId: string | null) => {
       setTabSessions((prev) => {

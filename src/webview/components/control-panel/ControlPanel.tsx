@@ -679,12 +679,19 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       return () => document.removeEventListener('paste', handlePaste);
     }, [isActiveTab, state.pastedImageCounter, insertAtCursor]);
 
-    // --- forkConfig message listener (new panel created via fork) ---
+    // --- forkConfig message listener (new panel/tab created via fork) ---
     // Host retries delivery so the listener must be idempotent.
     // Settings dispatches are naturally idempotent; input prefill is idempotent.
+    // When targetTabId is present (in-app fork), only the matching tab responds.
     useEffect(() => {
       function onMessage(ev: MessageEvent) {
         if (ev.data?.kind === 'forkConfig') {
+          // In-app fork: only the target tab should handle this message.
+          const { targetTabId } = ev.data;
+          if (targetTabId) {
+            const owningTabId = panelEl?.closest('[data-tab-id]')?.getAttribute('data-tab-id');
+            if (owningTabId !== targetTabId) return;
+          }
           const { fromSessionId, atMessageId, initialPrompt, model, agencyMode, bypassEnabled, chromeEnabled } = ev.data;
 
           // Set fork mode — this changes the send button (idempotent)
@@ -714,7 +721,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       }
       window.addEventListener('message', onMessage);
       return () => window.removeEventListener('message', onMessage);
-    }, [transport, onForkHistoryLoaded]); // transport is module-level stable, onForkHistoryLoaded is a stable useCallback
+    }, [transport, onForkHistoryLoaded, panelEl]); // transport is module-level stable, onForkHistoryLoaded is a stable useCallback
 
     // --- Fork execution (shared between control panel button and per-message buttons) ---
     const executeFork = useCallback((atMessageId: string) => {

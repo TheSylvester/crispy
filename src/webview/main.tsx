@@ -49,28 +49,4 @@ if (container) {
   }
 }
 
-// ============================================================================
-// Browser Fork: read fork params from URL and simulate forkConfig message
-// ============================================================================
-
-const params = new URLSearchParams(window.location.search);
-const forkFrom = params.get('forkFrom');
-if (forkFrom) {
-  // Simulate the forkConfig message that VS Code host would send.
-  // Retry a few times to handle slow React mount — the listener
-  // is idempotent (SET_FORK_MODE with same value is a no-op).
-  const forkConfig = {
-    kind: 'forkConfig',
-    fromSessionId: forkFrom,
-    atMessageId: params.get('forkAt') || undefined,
-    initialPrompt: params.get('prompt') || undefined,
-    model: params.get('model') || undefined,
-    agencyMode: params.get('agency') || undefined,
-    bypassEnabled: params.get('bypass') === '1',
-    chromeEnabled: params.get('chrome') === '1',
-  };
-  const delays = [200, 600, 1500];
-  for (const delay of delays) {
-    setTimeout(() => window.postMessage(forkConfig, '*'), delay);
-  }
-}
+// Browser fork is handled in-app by FlexAppLayout — no URL-based fork needed.

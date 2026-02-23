@@ -313,7 +313,7 @@ export function createClientConnection(
       }
 
       case "forkToNewPanel":
-        // VS Code intercepts in webview-host; browser handles via window.open()
+        // VS Code intercepts in webview-host; browser handles client-side via FlexLayout
         return { ok: false };
 
       case "openFile":

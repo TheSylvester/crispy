@@ -125,16 +125,19 @@ export function createWebSocketTransport(url: string): SessionService {
       request<TurnReceipt>('sendTurn', { intent }),
 
     forkToNewPanel: async (params) => {
-      // Browser dev-server: open fork in a new tab via window.open()
-      const url = new URL(window.location.pathname, window.location.origin);
-      url.searchParams.set('forkFrom', params.fromSessionId);
-      if (params.atMessageId) url.searchParams.set('forkAt', params.atMessageId);
-      if (params.initialPrompt) url.searchParams.set('prompt', params.initialPrompt);
-      if (params.model) url.searchParams.set('model', params.model);
-      if (params.agencyMode) url.searchParams.set('agency', params.agencyMode);
-      if (params.bypassEnabled) url.searchParams.set('bypass', '1');
-      if (params.chromeEnabled) url.searchParams.set('chrome', '1');
-      window.open(url.toString(), '_blank');
+      // Browser dev-server: create a new FlexLayout tab with fork config.
+      // FlexAppLayout listens for this message and handles tab creation +
+      // forkConfig delivery internally — no browser tab needed.
+      window.postMessage({
+        kind: 'forkToNewTab',
+        fromSessionId: params.fromSessionId,
+        atMessageId: params.atMessageId,
+        initialPrompt: params.initialPrompt,
+        model: params.model,
+        agencyMode: params.agencyMode,
+        bypassEnabled: params.bypassEnabled,
+        chromeEnabled: params.chromeEnabled,
+      }, '*');
       return { ok: true };
     },
 
