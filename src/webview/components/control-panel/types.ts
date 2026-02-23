@@ -53,8 +53,6 @@ export interface ControlPanelState {
   bypassEnabled: boolean;
   agencyMode: AgencyMode;
   model: ModelOption;
-  fileContextEnabled: boolean;
-  fileContextLabel: string;
   contextPercent: number;
   contextUsage: ContextUsage | null;
   chromeEnabled: boolean;
@@ -77,7 +75,6 @@ export type Action =
   | { type: 'REMOVE_IMAGE'; id: string }
   | { type: 'CLEAR_IMAGES' }
   | { type: 'INCREMENT_PASTE_COUNTER' }
-  | { type: 'SET_FILE_CONTEXT'; enabled: boolean }
   | { type: 'SET_CONTEXT'; contextUsage: ContextUsage }
   | { type: 'RESET_CONTEXT' }
   | { type: 'SET_FORK_MODE'; forkMode: { fromSessionId: string; atMessageId?: string } | null };
@@ -87,8 +84,6 @@ export const DEFAULT_CONTROL_PANEL_STATE: ControlPanelState = {
   bypassEnabled: false,
   agencyMode: 'ask-before-edits',
   model: '',
-  fileContextEnabled: false,
-  fileContextLabel: 'No file open',
   contextPercent: 0,
   contextUsage: null,
   chromeEnabled: false,

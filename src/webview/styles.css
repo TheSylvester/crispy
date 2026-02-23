@@ -2202,50 +2202,6 @@ h2 {
 }
 
 /* --------------------------------------------------------------------------
-   File Context Toggle
-   -------------------------------------------------------------------------- */
-
-.crispy-cp-file-context {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 4px 12px;
-  font-size: var(--font-sm);
-  color: var(--vscode-descriptionForeground, #888);
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: var(--radius-xl);
-  cursor: pointer;
-  transition:
-    background 0.15s,
-    border-color 0.15s,
-    color 0.15s;
-}
-
-.crispy-cp-file-context:hover {
-  background: var(--vscode-list-hoverBackground, #2a2d2e);
-  border-color: var(--frame-highlight);
-  color: var(--vscode-foreground, #d4d4d4);
-}
-
-.crispy-cp-file-context input[type="checkbox"] {
-  width: 13px;
-  height: 13px;
-  margin: 0;
-  cursor: pointer;
-  accent-color: var(--frame-highlight, #e88040);
-}
-
-.crispy-cp-file-context__label {
-  user-select: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* --------------------------------------------------------------------------
    Context Widget
    -------------------------------------------------------------------------- */
 

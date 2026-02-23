@@ -12,7 +12,7 @@
  *
  * Two rows:
  * - Row 1: Auto-resizing textarea + send button + image attachment chips
- * - Row 2: Bypass | Agency | Model | File Context | Context | Chrome | Settings | Fork
+ * - Row 2: Bypass | Agency | Model | Context | Chrome | Settings | Fork
  *
  * @module control-panel/ControlPanel
  */
@@ -35,7 +35,6 @@ import { AttachmentsRow } from './AttachmentsRow.js';
 import { BypassToggle } from './BypassToggle.js';
 import { AgencyModeSelect } from './AgencyModeSelect.js';
 import { ModelSelect } from './ModelSelect.js';
-import { FileContextToggle } from './FileContextToggle.js';
 import { ContextWidget } from './ContextWidget.js';
 import { ChromeToggle } from './ChromeToggle.js';
 import { SettingsPopup } from './SettingsPopup.js';
@@ -138,8 +137,6 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
       return { ...state, attachedImages: [], pastedImageCounter: 0 };
     case 'INCREMENT_PASTE_COUNTER':
       return { ...state, pastedImageCounter: state.pastedImageCounter + 1 };
-    case 'SET_FILE_CONTEXT':
-      return { ...state, fileContextEnabled: action.enabled };
     case 'SET_CONTEXT':
       return { ...state, contextPercent: action.contextUsage.percent, contextUsage: action.contextUsage };
     case 'RESET_CONTEXT':
@@ -836,11 +833,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             value={state.model}
             onChange={(model) => dispatch({ type: 'SET_MODEL', model })}
             groups={modelGroups}
-          />
-          <FileContextToggle
-            checked={state.fileContextEnabled}
-            label={state.fileContextLabel}
-            onChange={(enabled) => dispatch({ type: 'SET_FILE_CONTEXT', enabled })}
           />
           <span className="crispy-cp-right">
             <ContextWidget percent={state.contextPercent} contextUsage={state.contextUsage} />
