@@ -1,0 +1,28 @@
+# Source & config
+src/**
+test/**
+scripts/**
+.ai-reference/**
+.claude/**
+.cursor/**
+.agent/**
+.git/**
+
+# Dev files
+tsconfig.json
+.gitignore
+CLAUDE.md
+
+# Build artifacts not needed for extension
+dist/dev-server.js
+dist/dev-server.js.map
+dist/extension.js.map
+dist/leto-icon.svg
+
+# Dependencies (esbuild bundles everything)
+node_modules/**
+
+# Misc
+*.vsix
+**/*.map
+vitest.config.ts
