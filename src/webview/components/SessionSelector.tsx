@@ -1,5 +1,5 @@
 /**
- * Session Selector — sidebar session list with search and CWD filtering
+ * Session Selector — dropdown session list with search and CWD filtering
  *
  * Two-line layout per session: label (first message) on top,
  * last message preview below, with relative time on the right.
@@ -7,12 +7,14 @@
  * Search filters by label + lastMessage with useDeferredValue for
  * responsive input. CWD filtering chains before search (Leto pattern).
  *
+ * Renders as a headless list — positioning and portal mounting are the
+ * caller's responsibility (see TranscriptHeader in FlexAppLayout).
+ *
  * @module SessionSelector
  */
 
 import { useState, useMemo, useDeferredValue } from 'react';
 import { useSession } from '../context/SessionContext.js';
-import { usePreferences } from '../context/PreferencesContext.js';
 
 /** Number of sessions to render initially before "Show more" */
 const INITIAL_RENDER_CAP = 30;
@@ -68,10 +70,17 @@ function highlightMatch(text: string, query: string): React.ReactNode {
   );
 }
 
-export function SessionSelector(): React.JSX.Element {
-  const { sessions, selectedSessionId, setSelectedSessionId, selectedCwd, isLoading, error } =
+export function SessionSelector({
+  onSelect,
+  onClose,
+}: {
+  /** Called when the user picks a session. */
+  onSelect: (sessionId: string) => void;
+  /** Called after selection (or Escape) so the parent can close the dropdown. */
+  onClose: () => void;
+}): React.JSX.Element {
+  const { sessions, selectedSessionId, selectedCwd, isLoading, error } =
     useSession();
-  const { setSidebarCollapsed } = usePreferences();
 
   // All hooks unconditionally (fixes prior rules-of-hooks violation)
   const [showAll, setShowAll] = useState(false);
@@ -133,7 +142,10 @@ export function SessionSelector(): React.JSX.Element {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') setSearchQuery('');
+            if (e.key === 'Escape') {
+              if (searchQuery) setSearchQuery('');
+              else onClose();
+            }
           }}
         />
       </li>
@@ -148,9 +160,9 @@ export function SessionSelector(): React.JSX.Element {
             key={session.sessionId}
             className={className}
             onClick={() => {
-              setSelectedSessionId(session.sessionId);
-              // Auto-collapse after selection (slight delay for visual feedback)
-              setTimeout(() => setSidebarCollapsed(true), 200);
+              onSelect(session.sessionId);
+              // Auto-close after selection (slight delay for visual feedback)
+              setTimeout(onClose, 200);
             }}
           >
             <div className="crispy-session-item__header">

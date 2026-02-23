@@ -17,7 +17,8 @@
  * @module FlexAppLayout
  */
 
-import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useState, useEffect, useCallback, useMemo, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Layout,
   Model,
@@ -185,41 +186,113 @@ function PlusIcon(): React.JSX.Element {
 }
 
 /**
- * TranscriptHeader — session dropdown toggle + new-session button.
+ * TranscriptHeader — per-tab session dropdown + new-session button.
  * Lives inside the transcript tab, above the scroll area.
- * "New" clears session in the current tab (not global).
  *
- * The sidebar toggle is provided by the parent (FlexTranscriptContent)
- * so it can activate the owning tab before opening the shared sidebar.
+ * The dropdown is local to this tab — each tab manages its own open/close
+ * state and renders the SessionSelector via a portal anchored to the button.
  */
 function TranscriptHeader({
   onNewSession,
-  onToggleSidebar,
+  onSelectSession,
   sessionId: headerSessionId,
 }: {
   onNewSession: () => void;
-  /** Toggle sidebar, ensuring this tab is activated first. */
-  onToggleSidebar: () => void;
+  /** Called when a session is picked from the dropdown. */
+  onSelectSession: (sessionId: string) => void;
   /** Per-tab session ID for label lookup. */
   sessionId: string | null;
 }): React.JSX.Element {
   const { sessions } = useSession();
-  const { sidebarCollapsed } = usePreferences();
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const sessionLabel =
     sessions.find((s) => s.sessionId === headerSessionId)?.label ?? 'No session';
 
+  // --- Position the dropdown below the button ---
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!dropdownOpen || !buttonRef.current) {
+      setPos(null);
+      return;
+    }
+    const rect = buttonRef.current.getBoundingClientRect();
+    setPos({ top: rect.bottom + 4, left: rect.left });
+  }, [dropdownOpen]);
+
+  // --- Click-outside to close ---
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        buttonRef.current?.contains(target) ||
+        dropdownRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handler, true);
+    return () => document.removeEventListener('mousedown', handler, true);
+  }, [dropdownOpen]);
+
+  // --- Escape to close ---
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDropdownOpen(false);
+    };
+    document.addEventListener('keydown', handler, true);
+    return () => document.removeEventListener('keydown', handler, true);
+  }, [dropdownOpen]);
+
+  const handleClose = useCallback(() => setDropdownOpen(false), []);
+  const handleSelect = useCallback(
+    (sessionId: string) => {
+      onSelectSession(sessionId);
+    },
+    [onSelectSession],
+  );
+
   return (
     <div className="crispy-transcript-header">
       <button
-        className="crispy-transcript-header__btn crispy-transcript-header__session-btn"
-        onClick={onToggleSidebar}
-        aria-label={sidebarCollapsed ? 'Open sessions' : 'Close sessions'}
+        ref={buttonRef}
+        className={`crispy-transcript-header__btn crispy-transcript-header__session-btn${dropdownOpen ? ' crispy-transcript-header__session-btn--open' : ''}`}
+        onClick={() => setDropdownOpen((prev) => !prev)}
+        aria-label={dropdownOpen ? 'Close sessions' : 'Open sessions'}
+        aria-expanded={dropdownOpen}
         title="Toggle session list"
       >
         <span className="crispy-transcript-header__label">{sessionLabel}</span>
-        <Chevron open={!sidebarCollapsed} />
+        <Chevron open={dropdownOpen} />
       </button>
+
+      {dropdownOpen &&
+        pos &&
+        createPortal(
+          <>
+            <div
+              className="crispy-session-dropdown-backdrop"
+              onClick={handleClose}
+              aria-hidden="true"
+            />
+            <div
+              ref={dropdownRef}
+              className="crispy-session-dropdown"
+              style={{ top: pos.top, left: pos.left }}
+            >
+              <div className="crispy-session-dropdown__header">Sessions</div>
+              <SessionSelector onSelect={handleSelect} onClose={handleClose} />
+            </div>
+          </>,
+          document.body,
+        )}
+
       <button
         className="crispy-transcript-header__btn crispy-transcript-header__new-btn"
         onClick={onNewSession}
@@ -237,7 +310,6 @@ function FlexTranscriptContent({
   isActiveTab,
   sessionId: tabSessionId,
   onSessionIdChange,
-  onActivateTab,
 }: FlexTranscriptContentProps): React.JSX.Element {
   // --- Session & transport (per-tab) ---
   // Use per-tab session ID from props, NOT the global selectedSessionId.
@@ -250,7 +322,7 @@ function FlexTranscriptContent({
     addOptimisticEntry,
     setForkHistory,
   } = useTranscript(tabSessionId);
-  const { renderMode, sidebarCollapsed, setSidebarCollapsed } = usePreferences();
+  const { renderMode } = usePreferences();
   const {
     approvalRequest,
     resolve: resolveApproval,
@@ -561,20 +633,19 @@ function FlexTranscriptContent({
     onSessionIdChange(null);
   }, [onSessionIdChange]);
 
-  // --- Toggle sidebar, activating this tab first ---
-  // The sidebar is a single shared overlay. Activating the tab ensures the
-  // global selectedSessionId syncs to *this* tab's session before the sidebar
-  // opens, so session selection lands in the correct tab.
-  const handleToggleSidebar = useCallback(() => {
-    onActivateTab();
-    setSidebarCollapsed(!sidebarCollapsed);
-  }, [onActivateTab, sidebarCollapsed, setSidebarCollapsed]);
+  // --- Session selected from dropdown ---
+  const handleSelectSession = useCallback(
+    (sessionId: string) => {
+      onSessionIdChange(sessionId);
+    },
+    [onSessionIdChange],
+  );
 
   // No session and no fork history → welcome page (with ControlPanel still)
   if (!tabSessionId && !hasForkHistory) {
     return (
       <div className="crispy-transcript-tab" data-tab-id={tabId}>
-        <TranscriptHeader onNewSession={handleNewSession} onToggleSidebar={handleToggleSidebar} sessionId={tabSessionId} />
+        <TranscriptHeader onNewSession={handleNewSession} onSelectSession={handleSelectSession} sessionId={tabSessionId} />
         <WelcomePage loading={isLoading} />
         <StopButton sessionId={tabSessionId} />
         <ControlPanel
@@ -610,7 +681,7 @@ function FlexTranscriptContent({
   if (error) {
     return (
       <div className="crispy-transcript-tab" data-tab-id={tabId}>
-        <TranscriptHeader onNewSession={handleNewSession} onToggleSidebar={handleToggleSidebar} sessionId={tabSessionId} />
+        <TranscriptHeader onNewSession={handleNewSession} onSelectSession={handleSelectSession} sessionId={tabSessionId} />
         <div className="crispy-error">{error}</div>
       </div>
     );
@@ -626,7 +697,7 @@ function FlexTranscriptContent({
         forkTargets={forkTargets}
       >
         <div className="crispy-transcript-tab" data-tab-id={tabId}>
-          <TranscriptHeader onNewSession={handleNewSession} onToggleSidebar={handleToggleSidebar} sessionId={tabSessionId} />
+          <TranscriptHeader onNewSession={handleNewSession} onSelectSession={handleSelectSession} sessionId={tabSessionId} />
           <div
             className="crispy-transcript"
             ref={setTranscriptRef}
@@ -743,8 +814,7 @@ export function FlexAppLayout(): React.JSX.Element {
   const {
     entries,
   } = useTranscript(selectedSessionId);
-  const { sidebarCollapsed, setSidebarCollapsed, debugMode } =
-    usePreferences();
+  const { debugMode } = usePreferences();
 
   // --- Playback (kept at top level for PlaybackControls overlay) ---
   const {
@@ -805,11 +875,6 @@ export function FlexAppLayout(): React.JSX.Element {
 
   // --- scrollRef for BlocksVisibilityProvider ---
   const transcriptScrollRef = useRef<HTMLDivElement | null>(null);
-
-  // --- Sidebar ---
-  const closeSidebar = useCallback(() => {
-    setSidebarCollapsed(true);
-  }, [setSidebarCollapsed]);
 
   // --- FlexLayout model ---
   const [model] = useState(() => Model.fromJson(FLEX_MODEL));
@@ -1051,24 +1116,11 @@ export function FlexAppLayout(): React.JSX.Element {
   return (
     <div
       className="crispy-layout crispy-layout--flex"
-      data-sidebar={sidebarCollapsed ? 'collapsed' : 'open'}
       data-streaming={isStreaming || undefined}
     >
       <TitleBar />
       <FilePanelProvider>
         <FlexInsertHandlerBridge />
-        <aside className="crispy-sidebar">
-          <div className="crispy-sidebar__header">Sessions</div>
-          <SessionSelector />
-        </aside>
-
-        {!sidebarCollapsed && (
-          <div
-            className="crispy-sidebar-backdrop"
-            onClick={closeSidebar}
-            aria-hidden="true"
-          />
-        )}
 
         <BlocksToolRegistryProvider
           entries={visibleEntries}
