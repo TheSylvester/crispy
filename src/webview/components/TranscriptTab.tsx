@@ -74,7 +74,6 @@ export function TranscriptTab({
     setForkHistory,
   } = useSessionData(tabSessionId);
   const { renderMode } = usePreferences();
-  const isBlocksMode = renderMode === 'blocks';
   const EntryComponent = useMemo(() => {
     switch (renderMode) {
       case 'yaml':    return YamlEntry;
@@ -199,31 +198,6 @@ export function TranscriptTab({
 
   // --- Channel state ---
   const { channelState } = useChannelState(tabSessionId);
-
-  // --- Turn completion map (blocks mode only) ---
-  // For each assistant entry, determines whether the turn is complete
-  // (not actively streaming). Used by BlocksEntry to collapse ephemeral tools.
-  const turnCompleteMap = useMemo(() => {
-    if (!isBlocksMode) return null;
-    const map = new Map<string, boolean>();
-    const isStreaming = channelState === 'streaming';
-    for (let i = 0; i < filteredEntries.length; i++) {
-      const entry = filteredEntries[i];
-      if (entry.type !== 'assistant') continue;
-      const uuid = entry.uuid;
-      if (!uuid) continue;
-      // Turn is complete when:
-      // 1. Next entry is a user entry (turn boundary), OR
-      // 2. It's the last entry AND the channel is NOT streaming
-      const nextEntry = filteredEntries[i + 1];
-      const isLast = i === filteredEntries.length - 1;
-      const turnComplete = nextEntry
-        ? nextEntry.type === 'user'
-        : !isStreaming;
-      map.set(uuid, turnComplete);
-    }
-    return map;
-  }, [isBlocksMode, filteredEntries, channelState]);
 
   // --- Auto-scroll ---
   const { parked, isAtTop, scrollToBottom, scrollToTop, pinToBottom } =
@@ -533,10 +507,6 @@ export function TranscriptTab({
                   <EntryComponent
                     key={entry.uuid ?? `entry-${i}`}
                     entry={entry}
-                    {...(turnCompleteMap && entry.uuid
-                      ? { isTurnComplete: turnCompleteMap.get(entry.uuid) }
-                      : undefined
-                    )}
                   />
                 ))}
               </PerfProfiler>

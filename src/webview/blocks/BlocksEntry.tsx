@@ -4,11 +4,6 @@
  * Takes a TranscriptEntry, normalizes to RichBlocks, and renders
  * blocks directly through the blocks pipeline.
  *
- * For completed assistant turns on the main thread, ephemeral/read-only
- * tools (Read, Grep, Glob, etc.) are collapsed into a summary row via
- * CollapsedTurnSummary. Outcome tools (Bash, Edit, Write) always render
- * as individual compact rows. During streaming, all tools render normally.
- *
  * Gets the registry from BlocksToolRegistryContext and fork targets
  * from ForkContext -- no explicit registry or forkTargetId props needed.
  *
@@ -24,17 +19,13 @@ import { ToolBlockRenderer } from './ToolBlockRenderer.js';
 import { ToolResultRenderer } from './ToolResultRenderer.js';
 import { BlocksBlockRenderer } from './BlocksBlockRenderer.js';
 import { MessageActions } from '../components/MessageActions.js';
-import { CollapsedTurnSummary, isEphemeralTool } from './CollapsedTurnSummary.js';
 
 export interface BlocksEntryProps {
   entry: TranscriptEntry;
-  /** True when this assistant turn is complete (not actively streaming). */
-  isTurnComplete?: boolean;
 }
 
 export function BlocksEntry({
   entry,
-  isTurnComplete,
 }: BlocksEntryProps): React.JSX.Element | null {
   const registry = useBlocksToolRegistry();
 
@@ -82,122 +73,7 @@ export function BlocksEntry({
   // Fork/rewind only on root-level user messages (no parentToolUseId)
   const showActions = !parentToolUseId && role === 'user';
 
-  // --- Collapsed turn summary for completed assistant turns ---
-  // On the main thread, completed assistant entries with ephemeral tools
-  // collapse those tools into a summary row. Outcome tools always show
-  // as individual compact rows.
-  const shouldCollapse =
-    isTurnComplete &&
-    role === 'assistant' &&
-    anchor.type === 'main-thread' &&
-    siblingCount > 0;
-
-  // Separate tool_use blocks into ephemeral and outcome groups
-  const { ephemeralBlocks, outcomeBlocks } = useMemo(() => {
-    if (!shouldCollapse) {
-      return { ephemeralBlocks: [], outcomeBlocks: [] };
-    }
-    const eph: (RichBlock & { type: 'tool_use' })[] = [];
-    const out: (RichBlock & { type: 'tool_use' })[] = [];
-    for (const block of blocks) {
-      if (block.type !== 'tool_use') continue;
-      if (isEphemeralTool(block.name)) {
-        eph.push(block as RichBlock & { type: 'tool_use' });
-      } else {
-        out.push(block as RichBlock & { type: 'tool_use' });
-      }
-    }
-    return { ephemeralBlocks: eph, outcomeBlocks: out };
-  }, [shouldCollapse, blocks]);
-
-  // When collapsing, we render blocks in a specific order:
-  // 1. Non-tool blocks before the first tool_use (assistant text preamble)
-  // 2. Collapsed ephemeral summary row
-  // 3. Outcome tools as individual compact rows
-  // 4. Non-tool blocks after tools (trailing assistant text)
-  // 5. tool_result blocks (invisible, for registry pairing)
-  if (shouldCollapse && ephemeralBlocks.length > 0) {
-    // Split non-tool blocks into before-tools and after-tools
-    const beforeToolBlocks: { block: RichBlock; index: number }[] = [];
-    const afterToolBlocks: { block: RichBlock; index: number }[] = [];
-    let firstToolIndex = -1;
-    let lastToolIndex = -1;
-
-    for (let i = 0; i < blocks.length; i++) {
-      if (blocks[i].type === 'tool_use') {
-        if (firstToolIndex === -1) firstToolIndex = i;
-        lastToolIndex = i;
-      }
-    }
-
-    for (let i = 0; i < blocks.length; i++) {
-      const block = blocks[i];
-      if (block.type === 'tool_use' || block.type === 'tool_result') continue;
-      if (firstToolIndex === -1 || i < firstToolIndex) {
-        beforeToolBlocks.push({ block, index: i });
-      } else if (i > lastToolIndex) {
-        afterToolBlocks.push({ block, index: i });
-      }
-    }
-
-    return (
-      <div
-        className={`message ${role}`}
-        data-uuid={entry.uuid}
-      >
-        {/* Pre-tool text blocks (assistant preamble) */}
-        {beforeToolBlocks.map(({ block, index }) => (
-          <BlocksBlockRenderer
-            key={`block-${block.context.entryUuid}-${index}`}
-            block={block}
-          />
-        ))}
-
-        {/* Collapsed ephemeral tools summary */}
-        <CollapsedTurnSummary
-          blocks={ephemeralBlocks}
-          registry={registry}
-          siblingCount={siblingCount}
-          anchor={anchor}
-        />
-
-        {/* Outcome tools as individual compact rows */}
-        {outcomeBlocks.map((block) => (
-          <div key={`tool-${block.id}`} data-run-id={block.id}>
-            <ToolBlockRenderer
-              block={block}
-              anchor={anchor}
-              registry={registry}
-              siblingCount={siblingCount}
-            />
-          </div>
-        ))}
-
-        {/* Post-tool text blocks (trailing assistant text) */}
-        {afterToolBlocks.map(({ block, index }) => (
-          <BlocksBlockRenderer
-            key={`block-${block.context.entryUuid}-${index}`}
-            block={block}
-          />
-        ))}
-
-        {/* tool_result blocks — invisible, for registry pairing */}
-        {blocks
-          .filter((b): b is RichBlock & { type: 'tool_result'; tool_use_id: string } =>
-            b.type === 'tool_result')
-          .map((block) => (
-            <ToolResultRenderer
-              key={`result-${block.tool_use_id}`}
-              block={block}
-            />
-          ))}
-
-        {showActions && <MessageActions entryUuid={entry.uuid ?? ''} />}
-      </div>
-    );
-  }
-
-  // --- Default rendering (no collapse) ---
+  // --- Render blocks ---
   return (
     <div
       className={`message ${role}`}
