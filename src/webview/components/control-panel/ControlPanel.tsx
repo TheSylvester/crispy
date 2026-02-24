@@ -60,6 +60,9 @@ interface ControlPanelProps {
   /** Whether this tab is the currently active/focused tab. Gates global
    *  keyboard shortcuts and paste handler so only one instance responds. */
   isActiveTab?: boolean;
+  /** FlexLayout tab node ID. Used to scope forkConfig messages to the correct
+   *  tab without fragile DOM traversal. */
+  tabId?: string;
   onForkHoverChange?: (hovering: boolean) => void;
   /** Instantly pin transcript scroll to bottom (called on send). */
   onScrollToBottom?: () => void;
@@ -149,7 +152,7 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ sessionId: sessionIdProp, onSessionIdChange: onSessionIdChangeProp, isActiveTab = true, onForkHoverChange, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed, onForkHistoryLoaded, onRegisterForkHandler, onRegisterRewindHandler, pendingAgencyMode, onPendingAgencyModeConsumed, onOptimisticEntry }, ref) {
+  function ControlPanel({ sessionId: sessionIdProp, onSessionIdChange: onSessionIdChangeProp, isActiveTab = true, tabId, onForkHoverChange, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed, onForkHistoryLoaded, onRegisterForkHandler, onRegisterRewindHandler, pendingAgencyMode, onPendingAgencyModeConsumed, onOptimisticEntry }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     // Track the DOM element for native drag/drop listeners. A callback ref
     // ensures the useEffect re-runs when the element mounts, unlike a
@@ -197,6 +200,12 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       ...modelGroups.flatMap(g => g.models.map(m => m.value)),
     ], [modelGroups]);
 
+    // Ref to hold the latest allCyclable value so the keyboard shortcut
+    // effect doesn't need it in its dependency array (avoids re-registering
+    // the listener every time modelGroups changes).
+    const allCyclableRef = useRef(allCyclable);
+    allCyclableRef.current = allCyclable;
+
     // --- Provider management state ---
     const [providers, setProviders] = useState<Record<string, WireProviderConfig>>({});
 
@@ -214,11 +223,11 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     /** Read current input from the textarea DOM — avoids closing over stale state. */
     const getTextareaState = useCallback(() => {
-      const textarea = document.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
+      const textarea = panelEl?.querySelector<HTMLTextAreaElement>('.crispy-cp-input') ?? null;
       return textarea
         ? { textarea, value: textarea.value, start: textarea.selectionStart, end: textarea.selectionEnd }
         : null;
-    }, []);
+    }, [panelEl]);
 
     /** Insert text at cursor position (or append), dispatch SET_INPUT, restore cursor. */
     const insertAtCursor = useCallback((text: string) => {
@@ -322,8 +331,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         // Alt+M: Cycle models (Default → dynamic model groups → back)
         if (e.key === 'm' && e.altKey && !e.ctrlKey && !e.shiftKey) {
           e.preventDefault();
-          const idx = allCyclable.indexOf(state.model);
-          const next = allCyclable[(idx + 1) % allCyclable.length];
+          if (togglesDisabled) return;
+          const cyclable = allCyclableRef.current;
+          const idx = cyclable.indexOf(state.model);
+          const next = cyclable[(idx + 1) % cyclable.length];
           dispatch({ type: 'SET_MODEL', model: next });
           return;
         }
@@ -331,7 +342,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
       document.addEventListener('keydown', handleKeyDown);
       return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [isActiveTab, state.bypassEnabled, state.agencyMode, state.model, togglesDisabled, allCyclable]);
+    }, [isActiveTab, state.bypassEnabled, state.agencyMode, state.model, togglesDisabled]);
 
     // --- Server → UI: settings sync notifications ---
     // Server-initiated setting changes update the local state. Handles both
@@ -611,7 +622,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         }
 
         // Focus textarea after drop so user can immediately type
-        const textarea = document.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
+        const textarea = panelEl?.querySelector<HTMLTextAreaElement>('.crispy-cp-input') ?? null;
         textarea?.focus();
       };
 
@@ -687,11 +698,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       function onMessage(ev: MessageEvent) {
         if (ev.data?.kind === 'forkConfig') {
           // In-app fork: only the target tab should handle this message.
+          // Uses the tabId prop directly instead of fragile DOM traversal.
           const { targetTabId } = ev.data;
-          if (targetTabId) {
-            const owningTabId = panelEl?.closest('[data-tab-id]')?.getAttribute('data-tab-id');
-            if (owningTabId !== targetTabId) return;
-          }
+          if (tabId && targetTabId && tabId !== targetTabId) return;
           const { fromSessionId, atMessageId, initialPrompt, model, agencyMode, bypassEnabled, chromeEnabled } = ev.data;
 
           // Set fork mode — this changes the send button (idempotent)
@@ -721,7 +730,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       }
       window.addEventListener('message', onMessage);
       return () => window.removeEventListener('message', onMessage);
-    }, [transport, onForkHistoryLoaded, panelEl]); // transport is module-level stable, onForkHistoryLoaded is a stable useCallback
+    }, [transport, onForkHistoryLoaded, tabId]); // transport is module-level stable, onForkHistoryLoaded is a stable useCallback
 
     // --- Fork execution (shared between control panel button and per-message buttons) ---
     const executeFork = useCallback((atMessageId: string) => {
@@ -822,6 +831,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onSend={handleSend}
               forkMode={!!state.forkMode}
               onFork={handleFork}
+              isActiveTab={isActiveTab}
             />
           </>
         )}

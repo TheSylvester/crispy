@@ -26,7 +26,7 @@ import {
 // Store — pure TypeScript, no React dependency
 // ============================================================================
 
-class BlocksVisibilityStore {
+export class BlocksVisibilityStore {
   /** Currently visible tool IDs — maintained in DOM order */
   private _visibleIds: string[] = [];
 
@@ -276,22 +276,31 @@ export function BlocksVisibilityProvider({
 // Hooks
 // ============================================================================
 
+// Import bridge context for fallback
+import { ActiveTabBlocksCtx } from './ActiveTabBlocksContext.js';
+
+const EMPTY: string[] = [];
+
 /**
  * Subscribe to the list of currently visible tool IDs (in DOM order).
- * Returns an empty array if no tools are visible or if used outside
- * the provider.
+ *
+ * Falls back to bridge context when outside a BlocksVisibilityProvider
+ * (e.g., BlocksToolPanel in the inspector border tab). Returns an empty
+ * array if no store is available.
  */
 export function useBlocksVisibleToolIds(): string[] {
   const store = useContext(BlocksVisibilityCtx);
+  const bridge = useContext(ActiveTabBlocksCtx);
+  const effectiveStore = store ?? bridge?.visibilityStore ?? null;
 
   const subscribe = useCallback(
-    (cb: () => void) => store ? store.subscribe(cb) : () => {},
-    [store],
+    (cb: () => void) => effectiveStore ? effectiveStore.subscribe(cb) : () => {},
+    [effectiveStore],
   );
 
   const getSnapshot = useCallback(
-    () => store ? store.getSnapshot() : EMPTY,
-    [store],
+    () => effectiveStore ? effectiveStore.getSnapshot() : EMPTY,
+    [effectiveStore],
   );
 
   return useSyncExternalStore(subscribe, getSnapshot);
@@ -311,21 +320,32 @@ export function useBlocksToolVisible(toolId: string): boolean {
  *
  * Used by inspector mode for spatial awareness — the last arrived tool acts
  * as an anchor even after other tools scroll out.
+ *
+ * Falls back to bridge context when outside a BlocksVisibilityProvider.
  */
 export function useBlocksLastArrivedToolId(): string | null {
   const store = useContext(BlocksVisibilityCtx);
+  const bridge = useContext(ActiveTabBlocksCtx);
+  const effectiveStore = store ?? bridge?.visibilityStore ?? null;
 
   const subscribe = useCallback(
-    (cb: () => void) => store ? store.subscribe(cb) : () => {},
-    [store],
+    (cb: () => void) => effectiveStore ? effectiveStore.subscribe(cb) : () => {},
+    [effectiveStore],
   );
 
   const getSnapshot = useCallback(
-    () => store ? store.lastArrivedId : null,
-    [store],
+    () => effectiveStore ? effectiveStore.lastArrivedId : null,
+    [effectiveStore],
   );
 
   return useSyncExternalStore(subscribe, getSnapshot);
 }
 
-const EMPTY: string[] = [];
+/**
+ * Get the raw BlocksVisibilityStore instance.
+ * Used by ActiveTabBlocksBridge to forward to the bridge context.
+ * Returns null if used outside the provider.
+ */
+export function useBlocksVisibilityStore(): BlocksVisibilityStore | null {
+  return useContext(BlocksVisibilityCtx);
+}

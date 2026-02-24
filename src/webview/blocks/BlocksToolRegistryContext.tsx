@@ -314,15 +314,28 @@ function walkNestedForRegistry(
 // ============================================================================
 
 /**
+ * Stable empty registry sentinel.
+ *
+ * MUST be module-level to preserve useSyncExternalStore subscription stability.
+ * Creating `new BlocksToolRegistry()` inline would break external-store semantics
+ * (new instance per render = subscription thrashing).
+ */
+const EMPTY_REGISTRY = new BlocksToolRegistry();
+
+// Import bridge context for fallback
+import { ActiveTabBlocksCtx } from './ActiveTabBlocksContext.js';
+
+/**
  * Access the BlocksToolRegistry instance.
- * Throws if used outside BlocksToolRegistryProvider.
+ *
+ * Falls back to bridge context when outside a BlocksToolRegistryProvider
+ * (e.g., BlocksToolPanel in the inspector border tab). Returns an empty
+ * registry as final fallback to avoid null checks in consumers.
  */
 export function useBlocksToolRegistry(): BlocksToolRegistry {
   const ctx = useContext(BlocksToolRegistryCtx);
-  if (!ctx) {
-    throw new Error('useBlocksToolRegistry must be used within a BlocksToolRegistryProvider');
-  }
-  return ctx;
+  const bridge = useContext(ActiveTabBlocksCtx);
+  return ctx ?? bridge?.registry ?? EMPTY_REGISTRY;
 }
 
 /**

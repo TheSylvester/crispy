@@ -102,9 +102,14 @@
   animation: crispy-cp-glow 2s ease-in-out infinite;
 }
 
-/* 4. Control panel streaming state — inherit from layout root */
+/* 4. Control panel streaming state — inherit from layout root
+   Adds agency-colored border and glow shadow (mirrors .crispy-main rule). */
 .crispy-layout--flex[data-streaming] .crispy-cp {
   border-color: var(--frame-highlight);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    0 1px 4px rgba(0, 0, 0, 0.2),
+    var(--agency-glow-shadow, 0 0 12px rgba(255, 255, 255, 0.3));
 }
 
 /* ============================================================================
@@ -135,6 +140,24 @@
    .crispy-transcript-tab:has(.crispy-cp[data-agency="..."]) directly.
    These layout-level overrides are kept for the streaming glow inheritance.
    ============================================================================ */
+
+/* ============================================================================
+   Per-tab approval dimming — scoped to .crispy-transcript-tab
+
+   In flex mode, the .crispy-main rule in styles.css is inert (no .crispy-main
+   exists). This rule dims only the tab that has an approval pending, not all
+   tabs. FlexLayout keeps inactive tabs mounted (display: none), so without
+   per-tab scoping, all transcripts would dim when any tab has an approval.
+   ============================================================================ */
+
+.crispy-transcript-tab:has(.crispy-approval-header) .crispy-transcript::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+  z-index: 1;
+}
 
 /* ============================================================================
    Transcript tab wrapper — fills the tab node, provides positioning context

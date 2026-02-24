@@ -16,7 +16,6 @@ import { EnvironmentProvider } from './context/EnvironmentContext.js';
 import { SessionProvider } from './context/SessionContext.js';
 import { FileIndexProvider } from './context/FileIndexContext.js';
 import { PreferencesProvider } from './context/PreferencesContext.js';
-import { SessionStatusProvider } from './hooks/useSessionStatus.js';
 import { isPerfMode, PerfOverlay, PerfProfiler } from './perf/index.js';
 import { FlexAppLayout } from './FlexAppLayout.js';
 
@@ -32,12 +31,10 @@ export function App({ transport, transportKind }: AppProps): React.JSX.Element {
         <SessionProvider>
           <FileIndexProvider>
             <PreferencesProvider>
-              <SessionStatusProvider>
                 <PerfProfiler id="App">
                   <FlexAppLayout />
                 </PerfProfiler>
                 {isPerfMode && <PerfOverlay />}
-              </SessionStatusProvider>
             </PreferencesProvider>
           </FileIndexProvider>
         </SessionProvider>

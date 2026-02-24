@@ -1,24 +1,17 @@
 /**
- * useSessionStatus / useChannelState — per-session channel state tracking
+ * useChannelState — per-session channel state tracking
  *
- * Two hooks:
- *
- * 1. `useChannelState(sessionId)` — standalone per-session hook. Each call
- *    independently subscribes to transport events for the given session ID,
- *    returning that session's `SessionChannelState`. No context provider needed.
- *    Exposes `setOptimistic()` for ControlPanel to set 'streaming' on send.
- *
- * 2. `useSessionStatus(sessionId)` — **deprecated** context-based wrapper.
- *    Kept for backward compatibility but delegates to the global selected
- *    session. Prefer `useChannelState` for per-tab state.
+ * Standalone per-session hook. Each call independently subscribes to transport
+ * events for the given session ID, returning that session's
+ * `SessionChannelState`. No context provider needed. Exposes `setOptimistic()`
+ * for ControlPanel to set 'streaming' on send.
  *
  * @module useSessionStatus
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { SessionChannelState } from '../../core/session-channel.js';
 import { useTransport } from '../context/TransportContext.js';
-import { useSession } from '../context/SessionContext.js';
 
 // ============================================================================
 // Shared helpers
@@ -99,42 +92,4 @@ export function useChannelState(sessionId: string | null): ChannelStateValue {
   }, []);
 
   return { channelState, setOptimistic };
-}
-
-// ============================================================================
-// SessionStatusProvider / useSessionStatus — deprecated, kept for compat
-// ============================================================================
-
-interface SessionStatusValue {
-  channelState: SessionChannelState | null;
-  /** Optimistically override the channel state (e.g. set 'streaming' on send). */
-  setOptimistic: (state: SessionChannelState) => void;
-}
-
-const SessionStatusContext = createContext<SessionStatusValue | null>(null);
-
-/** @deprecated Use `useChannelState(sessionId)` instead. */
-export function SessionStatusProvider({ children }: { children: ReactNode }): React.JSX.Element {
-  const { selectedSessionId } = useSession();
-  const value = useChannelState(selectedSessionId);
-
-  return (
-    <SessionStatusContext.Provider value={value}>
-      {children}
-    </SessionStatusContext.Provider>
-  );
-}
-
-/**
- * @deprecated Use `useChannelState(sessionId)` instead.
- * Access shared session status. The sessionId parameter is accepted for
- * backward compatibility but ignored — the provider tracks the selected
- * session automatically.
- */
-export function useSessionStatus(_sessionId?: string | null): SessionStatusValue {
-  const ctx = useContext(SessionStatusContext);
-  if (!ctx) {
-    throw new Error('useSessionStatus must be used within a SessionStatusProvider');
-  }
-  return ctx;
 }

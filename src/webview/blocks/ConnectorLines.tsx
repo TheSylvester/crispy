@@ -12,11 +12,15 @@
  * Does NOT modify or extend any frozen layers. Reads panelDisplayIds from
  * PanelStateContext (read-only).
  *
+ * Uses bridge context for scrollRef to find the active tab's transcript scroll
+ * container (since there may be multiple tabs with .crispy-transcript elements).
+ *
  * @module webview/blocks/ConnectorLines
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useContext } from 'react';
 import { usePanelDisplayIds } from './PanelStateContext.js';
+import { ActiveTabBlocksCtx } from './ActiveTabBlocksContext.js';
 
 // ============================================================================
 // Types
@@ -33,11 +37,14 @@ interface ConnectorPath {
 
 function useConnectorPaths(): ConnectorPath[] {
   const panelDisplayIds = usePanelDisplayIds();
+  const bridge = useContext(ActiveTabBlocksCtx);
   const [paths, setPaths] = useState<ConnectorPath[]>([]);
   const rafRef = useRef<number>(0);
 
   const computePaths = useCallback(() => {
-    const transcriptScroll = document.querySelector('.crispy-transcript');
+    // Use bridge scrollRef for the active tab's transcript container
+    // (global document.querySelector would find the first tab, not necessarily active)
+    const transcriptScroll = bridge?.scrollRef?.current ?? null;
     const panelScroll = document.querySelector('.crispy-tool-panel__scroll');
     if (!transcriptScroll || !panelScroll) {
       setPaths([]);
@@ -91,7 +98,7 @@ function useConnectorPaths(): ConnectorPath[] {
     }
 
     setPaths(result);
-  }, [panelDisplayIds]);
+  }, [panelDisplayIds, bridge?.scrollRef]);
 
   // Schedule a rAF-guarded recompute
   const scheduleUpdate = useCallback(() => {
@@ -103,7 +110,8 @@ function useConnectorPaths(): ConnectorPath[] {
   }, [computePaths]);
 
   useEffect(() => {
-    const transcriptScroll = document.querySelector('.crispy-transcript');
+    // Use bridge scrollRef for the active tab's transcript container
+    const transcriptScroll = bridge?.scrollRef?.current ?? null;
     const panelScroll = document.querySelector('.crispy-tool-panel__scroll');
     const layout = document.querySelector('.crispy-layout');
 
@@ -135,7 +143,7 @@ function useConnectorPaths(): ConnectorPath[] {
         rafRef.current = 0;
       }
     };
-  }, [computePaths, scheduleUpdate]);
+  }, [computePaths, scheduleUpdate, bridge?.scrollRef]);
 
   // Re-compute when panelDisplayIds changes
   useEffect(() => {

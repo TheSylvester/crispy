@@ -10,7 +10,9 @@
  *
  * Asymmetric hysteresis (100px to unpark, 10px to re-park) prevents flapping.
  * Direction gating (only unpark on upward scroll) prevents smooth-scroll
- * animations from accidentally unparking.
+ * animations from accidentally unparking. A `scrollLockRef` flag suppresses
+ * unpark entirely during programmatic smooth scrolls (intro animation,
+ * scrollToBottom); it's cleared via `scrollend` with a 1s timeout fallback.
  *
  * Auto-scroll: single ResizeObserver on .crispy-transcript-content. When parked
  * and content grew, instant-scroll to bottom. The spacer div inside the content
@@ -68,6 +70,9 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
   const lastScrollTopRef = useRef(0);
   // Track scrollHeight for the ResizeObserver grow-detection.
   const lastScrollHeightRef = useRef(0);
+  // Suppresses unpark while a programmatic smooth scroll is in progress
+  // (intro animation, scrollToBottom click). Cleared via scrollend or timeout.
+  const scrollLockRef = useRef(false);
 
   // ── Session / fork reset → always park ────────────────────────────
   useEffect(() => {
@@ -75,6 +80,7 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
     setIsAtTop(true);
     lastScrollTopRef.current = 0;
     lastScrollHeightRef.current = 0;
+    scrollLockRef.current = false;
   }, [sessionId, remount]);
 
   // ── Scroll listener: unpark / re-park / isAtTop ───────────────────
@@ -94,10 +100,9 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
         const delta = scrollTop - lastScrollTopRef.current;
         lastScrollTopRef.current = scrollTop;
 
-        // Only unpark on UPWARD scroll (delta < 0) past threshold.
-        // Smooth scroll animations move downward (delta > 0), so they
-        // never trigger unpark regardless of distance from bottom.
-        if (delta < 0 && distFromBottom > UNPARK_THRESHOLD) {
+        // Only unpark on UPWARD scroll (delta < 0) past threshold, and
+        // only when no programmatic smooth scroll is in progress.
+        if (delta < 0 && distFromBottom > UNPARK_THRESHOLD && !scrollLockRef.current) {
           setParked(false);
         }
         // Re-park: user manually scrolled all the way back to bottom.
@@ -150,7 +155,17 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
     const el = scrollRef.current;
     if (!el) return;
     setParked(true);
+    scrollLockRef.current = true;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    const unlock = () => {
+      scrollLockRef.current = false;
+      lastScrollTopRef.current = el.scrollTop;
+    };
+    const fallback = setTimeout(unlock, 1000);
+    el.addEventListener('scrollend', () => {
+      clearTimeout(fallback);
+      unlock();
+    }, { once: true });
   }, [scrollRef]);
 
   const scrollToTop = useCallback(() => {
@@ -205,10 +220,26 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
         if (scrollHeight <= clientHeight) return;
 
         // Jump one viewport above the bottom, then smooth-scroll down.
+        // Lock out unpark while the animation is in-flight so intermediate
+        // frames don't accidentally trigger it.
         const jumpTo = Math.max(0, scrollHeight - clientHeight * 2);
         el.scrollTop = jumpTo;
         lastScrollTopRef.current = jumpTo;
+        scrollLockRef.current = true;
         el.scrollTo({ top: scrollHeight, behavior: "smooth" });
+
+        // Release the lock and sync lastScrollTopRef after the smooth scroll
+        // finishes. Use scrollend with a timeout fallback (scrollend may not
+        // fire if the page or element is detached, or in older browsers).
+        const unlock = () => {
+          scrollLockRef.current = false;
+          lastScrollTopRef.current = el.scrollTop;
+        };
+        const fallback = setTimeout(unlock, 1000);
+        el.addEventListener('scrollend', () => {
+          clearTimeout(fallback);
+          unlock();
+        }, { once: true });
       }, INTRO_SETTLE_MS);
     });
 

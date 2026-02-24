@@ -1,7 +1,7 @@
 /**
  * Chat Input — auto-resizing textarea with send button
  *
- * Textarea auto-grows up to 300px. Ctrl+Enter triggers send.
+ * Textarea auto-grows up to 300px. Ctrl+Enter triggers send, Escape blurs.
  * Send button uses hover jiggle animation.
  * Supports @-mention autocomplete for file paths.
  *
@@ -22,9 +22,11 @@ interface ChatInputProps {
   placeholder?: string;
   forkMode?: boolean;
   onFork?: () => void;
+  /** Whether this tab is active — gates focusInput listener registration. */
+  isActiveTab?: boolean;
 }
 
-export function ChatInput({ value, attachedImages, onInput, onSend, placeholder, forkMode, onFork }: ChatInputProps): React.JSX.Element {
+export function ChatInput({ value, attachedImages, onInput, onSend, placeholder, forkMode, onFork, isActiveTab }: ChatInputProps): React.JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mention = useMention(textareaRef, value, onInput);
 
@@ -34,7 +36,9 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
   }, []);
 
   // Focus textarea when host sends focusInput message (e.g. keybinding, panel activation)
+  // Only register when active (matches ControlPanel's keyboard/paste pattern)
   useEffect(() => {
+    if (isActiveTab === false) return;
     function onMessage(ev: MessageEvent): void {
       if (ev.data?.kind === 'focusInput') {
         textareaRef.current?.focus();
@@ -42,7 +46,7 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
     }
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, []);
+  }, [isActiveTab]);
 
   // Auto-resize textarea when value changes
   useLayoutEffect(() => {
@@ -74,6 +78,12 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
       // Let mention hook consume keys first
       if (mention.handleKeyDown(e)) return;
 
+      // Escape: blur the input
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        (e.target as HTMLTextAreaElement).blur();
+        return;
+      }
       // Ctrl+Shift+Enter: fork
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
         e.preventDefault();
