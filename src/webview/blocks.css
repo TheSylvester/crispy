@@ -1,0 +1,1116 @@
+/* --- Status indicator --- */
+
+.crispy-tool-status {
+  margin-left: 1rem;
+  font-size: var(--font-xs);
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+.crispy-status-pending {
+  color: var(--vscode-charts-yellow, #dcdcaa);
+}
+
+.crispy-status-success {
+  color: var(--vscode-gitDecoration-addedResourceForeground, #89d185);
+}
+
+.crispy-status-error {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.crispy-status-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--vscode-charts-yellow, #dcdcaa);
+  border-top-color: transparent;
+  border-radius: var(--radius-full);
+  animation: crispy-spin 0.8s linear infinite;
+  vertical-align: middle;
+}
+
+/* --- Result content --- */
+
+.crispy-tool-result {
+  padding: 4px 8px 4px 20px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.crispy-task-prompt {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Task result wrapper — semantic hook for Task/WebFetch/Skill tool output */
+.crispy-task-result {
+  /* styling comes from .prose and .assistant-text */
+}
+
+.crispy-task-result--error {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.crispy-tool-result__text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+}
+
+.crispy-tool-result__text--error {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+/* ============================================================================
+ * Tool-specific styles — badges, nesting, file paths, diffs, code
+ * ============================================================================ */
+
+/* --- Badge pill (text only, no icon inside) --- */
+
+.crispy-tool-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8em;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* --- File path (monospace, dark pill like grep params) --- */
+
+.crispy-tool-filepath {
+  color: var(--color-link);
+  white-space: nowrap;
+}
+
+/* --- Clickable file link (linkification) --- */
+
+.crispy-file-link {
+  color: var(--color-link);
+  text-decoration: none;
+  cursor: pointer;
+  border-bottom: 1px dotted rgba(96, 165, 250, 0.4);
+}
+
+.crispy-file-link:hover {
+  text-decoration: underline;
+  border-bottom-color: transparent;
+}
+
+.crispy-file-link .crispy-tool-filepath {
+  cursor: pointer;
+}
+
+.crispy-file-link:hover .crispy-tool-filepath {
+  text-decoration: underline;
+}
+
+/* --- Line info (muted, smaller) --- */
+
+.crispy-tool-line-info {
+  color: var(--vscode-descriptionForeground, #888);
+  font-size: 0.85em;
+}
+
+/* --- Secondary text (monospace pill for patterns/commands) --- */
+
+.crispy-tool-secondary {
+  color: var(--vscode-textPreformat-foreground, #9cdcfe);
+}
+
+/* --- Description text (gray secondary) --- */
+
+.crispy-tool-description {
+  color: var(--vscode-descriptionForeground, #999);
+  font-size: 0.9em;
+}
+
+/* --- Bash command inline (dark pill, max 5 lines with scroll, never truncated) --- */
+
+.crispy-tool-bash-inline {
+  color: var(--vscode-editor-foreground, #d4d4d4);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: calc(1.4em * 5);
+  overflow: hidden;
+  display: block;
+  line-height: 1.4;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.crispy-tool-bash-inline--compact {
+  max-height: calc(1.4em * 3);
+  display: block;
+  max-width: 100%;
+}
+
+.crispy-blocks-bash-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* --- Diff stats --- */
+
+.crispy-diff-stats {
+  display: inline-flex;
+  gap: 6px;
+  font-size: 0.85em;
+  font-family: var(--font-mono);
+}
+
+.crispy-diff-stats-added {
+  color: var(--color-diff-added);
+}
+
+.crispy-diff-stats-removed {
+  color: var(--color-diff-removed);
+}
+
+/* --- Diff view --- */
+
+.crispy-diff {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  margin: 2px 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-editor);
+  border: 1px solid var(--border-panel);
+}
+
+.crispy-diff-added {
+  background: rgba(76, 175, 80, 0.2);
+}
+
+.crispy-diff-removed {
+  background: rgba(244, 67, 54, 0.2);
+}
+
+.crispy-diff-context {
+  background: var(--bg-editor);
+}
+
+/* --- Diff view internals --- */
+
+.crispy-diff-pre {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: var(--font-sm);
+  line-height: 1.5;
+  background: transparent;
+}
+
+/* Unified (stacked) mode only: grid stretches all line rows to the
+   widest row's width so backgrounds fill the full scrollable area.
+   Split mode already handles this via grid on each pane. */
+.crispy-diff-pre:not(:has(.crispy-diff-split)) {
+  display: grid;
+}
+
+.crispy-diff-scroll {
+  overflow: auto;
+}
+
+/* Scrollbar styling — unified mode only.
+   Split panes style their own scrollbars; styling the shared
+   .crispy-diff-scroll parent switches Chrome out of overlay mode
+   and breaks the split-pane scrollbar visibility. */
+.crispy-diff-scroll:not(:has(.crispy-diff-split))::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.crispy-diff-scroll:not(:has(.crispy-diff-split))::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background, #79797966);
+  border-radius: var(--radius-md);
+}
+
+.crispy-diff-scroll:not(
+    :has(.crispy-diff-split)
+  )::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground, #646464b3);
+}
+
+/* Dual line-number gutters */
+.crispy-diff-gutter {
+  display: inline-block;
+  width: 3.5em;
+  text-align: right;
+  padding-right: 0.75em;
+  color: rgba(255, 255, 255, 0.25);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* +/- prefix column */
+.crispy-diff-prefix {
+  display: inline-block;
+  width: 1.5em;
+  color: rgba(255, 255, 255, 0.35);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* Code content — fills remaining space */
+.crispy-diff-code {
+  flex: 1;
+  min-width: 0;
+  white-space: pre;
+  word-break: normal;
+}
+
+/* --- Split (side-by-side) diff --- */
+
+.crispy-diff-split {
+  display: flex;
+  background: var(--bg-editor);
+}
+
+.crispy-diff-split-pane {
+  flex: 1;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  /* Grid makes all rows stretch to the widest row's width,
+     so backgrounds fill the entire scrollable area. */
+  display: grid;
+}
+
+.crispy-diff-split-pane::-webkit-scrollbar {
+  height: 8px;
+}
+
+.crispy-diff-split-pane::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background, #79797966);
+  border-radius: var(--radius-md);
+}
+
+.crispy-diff-split-pane::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground, #646464b3);
+}
+
+.crispy-diff-split-left {
+  border-right: 1px solid var(--border-panel);
+}
+
+.crispy-diff-split-row {
+  display: flex;
+  min-height: 1.5em;
+  min-width: fit-content;
+}
+
+.crispy-diff-split-empty {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* --- Code preview --- */
+
+.crispy-code-preview {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  margin: 2px 0;
+  border-radius: var(--radius-md);
+  overflow: auto;
+  background: var(--bg-editor);
+  border: 1px solid var(--border-panel);
+}
+
+/* --- TodoWrite checklist --- */
+
+.crispy-todo-list {
+  list-style: none;
+  padding: 0 0 0 8px;
+  margin: 2px 0;
+}
+
+.crispy-todo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.crispy-todo-icon {
+  font-size: 1em;
+  width: 1.2em;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.crispy-todo-content {
+  flex: 1;
+}
+
+.crispy-todo--completed .crispy-todo-content {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.crispy-todo--in-progress .crispy-todo-content {
+  color: var(--vscode-charts-yellow, #cca700);
+}
+
+/* ============================================================================
+ * Perf Overlay — Floating metrics panel (?perf=1)
+ *
+ * Fixed-position panel with draggable title bar, two-column stats layout.
+ * Follows the .crispy-scroll-nav floating pattern for z-index + styling.
+ * ============================================================================ */
+
+.crispy-perf-overlay {
+  background: rgba(30, 30, 30, 0.95);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  color: var(--vscode-foreground, #d4d4d4);
+  min-width: 420px;
+  max-width: 560px;
+  user-select: none;
+  pointer-events: auto;
+}
+
+.crispy-perf-overlay--collapsed {
+  min-width: unset;
+  max-width: unset;
+}
+
+/* --- Title bar (draggable) --- */
+
+.crispy-perf-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: rgba(60, 60, 60, 0.6);
+  border-radius: 6px 6px 0 0;
+  cursor: grab;
+}
+
+.crispy-perf-titlebar:active {
+  cursor: grabbing;
+}
+
+.crispy-perf-overlay--collapsed .crispy-perf-titlebar {
+  border-radius: var(--radius-lg);
+}
+
+.crispy-perf-title {
+  font-weight: 600;
+  font-size: var(--font-xs);
+  cursor: pointer;
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-perf-title:hover {
+  text-decoration: underline;
+}
+
+.crispy-perf-summary {
+  flex: 1;
+  color: var(--vscode-descriptionForeground, #888);
+  font-size: var(--font-2xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crispy-perf-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.crispy-perf-btn {
+  background: transparent;
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  color: var(--vscode-descriptionForeground, #888);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  font-size: var(--font-2xs);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.crispy-perf-btn:hover {
+  color: var(--vscode-foreground, #d4d4d4);
+  border-color: var(--vscode-foreground, #d4d4d4);
+}
+
+/* --- Body (two columns) --- */
+
+.crispy-perf-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.crispy-perf-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.crispy-perf-section-title {
+  font-size: var(--font-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vscode-descriptionForeground, #888);
+  margin-bottom: 2px;
+}
+
+/* --- Metric rows --- */
+
+.crispy-perf-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 1px 0;
+}
+
+.crispy-perf-label {
+  color: var(--vscode-descriptionForeground, #999);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.crispy-perf-value {
+  color: var(--vscode-foreground, #d4d4d4);
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.crispy-perf-component-row .crispy-perf-value {
+  font-size: var(--font-2xs);
+}
+
+.crispy-perf-dim {
+  color: var(--vscode-descriptionForeground, #666);
+  font-style: italic;
+  font-size: var(--font-2xs);
+}
+
+/* ============================================================================
+ * AskUserQuestion Tool — transcript view of questions + options
+ * ============================================================================ */
+
+.crispy-askuser-questions {
+  padding: 4px 8px 4px 20px;
+}
+
+.crispy-askuser-question {
+  margin-bottom: 8px;
+}
+
+.crispy-askuser-question:last-child {
+  margin-bottom: 0;
+}
+
+.crispy-askuser-question__text {
+  display: block;
+  font-size: 0.9em;
+  margin-bottom: 4px;
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-askuser-options {
+  list-style: none;
+  padding: 0;
+  margin: 2px 0 0 8px;
+}
+
+.crispy-askuser-option {
+  padding: 2px 0;
+  font-size: 0.9em;
+}
+
+.crispy-askuser-option__label {
+  color: var(--vscode-foreground, #d4d4d4);
+  font-weight: 500;
+}
+
+.crispy-askuser-option__desc {
+  color: var(--vscode-descriptionForeground, #999);
+}
+
+/* ============================================================================
+ * ExitPlanMode Tool — collapsed plan details + permissions list
+ * ============================================================================ */
+
+.crispy-plan-details {
+  padding: 4px 8px 4px 20px;
+}
+
+.crispy-plan-summary {
+  cursor: pointer;
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--vscode-descriptionForeground, #858585);
+  user-select: none;
+  padding: 2px 0;
+}
+
+.crispy-plan-summary:hover {
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-plan-permissions {
+  padding: 4px 8px 4px 20px;
+  font-size: 0.9em;
+}
+
+.crispy-plan-permissions__title {
+  color: var(--vscode-descriptionForeground, #999);
+  font-size: var(--font-xs);
+  margin-bottom: 4px;
+}
+
+.crispy-plan-permissions-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.crispy-plan-permissions-list li {
+  padding: 2px 0;
+}
+
+.crispy-plan-permission__tool {
+  color: var(--vscode-textPreformat-foreground, #9cdcfe);
+  padding: 1px 4px;
+  font-size: 0.9em;
+}
+
+.crispy-plan-permission__prompt {
+  color: var(--vscode-descriptionForeground, #999);
+}
+
+/* ============================================================================
+ * Blocks Mode Styles — experimental rendering pipeline
+ *
+ * CSS for the blocks rendering mode (src/webview/blocks/).
+ * Uses crispy-blocks-* prefix to avoid conflicts with rich mode.
+ * ============================================================================ */
+
+/* --- Blocks Tool Card — shared card container for all tool views --- */
+
+.crispy-blocks-tool {
+  margin: 2px 0 2px 8px;
+  cursor: pointer;
+  contain: layout style;
+}
+
+.crispy-blocks-tool:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  border-radius: 4px;
+}
+
+/* Panel-active highlight: fuzzy glow on tools currently shown in the tool panel.
+   Must override contain: layout style — containment clips box-shadow overflow. */
+.crispy-blocks-tool[data-panel-active] {
+  contain: none;
+  border-radius: 4px;
+  box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.12);
+}
+
+/* Hide connector lines during panel resize drag (avoids jitter) */
+[data-resizing] .crispy-connector-lines {
+  display: none;
+}
+
+/* Panel tools: header row is clickable to toggle expand/collapse */
+.crispy-tool-panel .crispy-blocks-tool {
+  cursor: pointer;
+  margin-left: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 48px;
+}
+.crispy-tool-panel .crispy-blocks-tool:hover {
+  background: transparent;
+}
+/* Expanded tool bodies in panel: no pointer (only header toggles) */
+.crispy-tool-panel .crispy-blocks-tool-body,
+.crispy-tool-panel .crispy-blocks-task-children {
+  cursor: default;
+}
+
+.crispy-blocks-tool--unknown {
+}
+
+.crispy-blocks-tool-card {
+  margin: 2px 0;
+  background: transparent;
+  border: none;
+}
+
+.crispy-blocks-tool-card[open] {
+  /* no special styling for open state */
+}
+
+.crispy-blocks-tool-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--font-sm);
+  border-radius: var(--radius-xs);
+  list-style: none;
+}
+
+.crispy-blocks-tool-summary:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-blocks-tool-summary::-webkit-details-marker {
+  display: none;
+}
+
+.crispy-blocks-tool-summary::marker {
+  display: none;
+  content: "";
+}
+
+.crispy-blocks-tool-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 0;
+  flex-wrap: wrap;
+}
+
+.crispy-blocks-tool-icon {
+  flex-shrink: 0;
+}
+
+.crispy-blocks-tool-description {
+  color: var(--vscode-descriptionForeground, #999);
+  font-size: 0.9em;
+}
+
+.crispy-blocks-tool-body {
+  padding-left: 20px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Bash result output — terminal-style dark block matching the command pill */
+.crispy-blocks-bash-output {
+  margin: 4px 0 0;
+  padding: 8px;
+  background: var(--bg-code);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--vscode-editor-foreground, #d4d4d4);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* --- Blocks Compact Row — single-line tool display --- */
+
+.crispy-blocks-compact-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 4px;
+  font-size: var(--font-sm);
+  border-radius: var(--radius-xs);
+}
+
+.crispy-blocks-compact-icon {
+  flex-shrink: 0;
+}
+
+.crispy-blocks-compact-subject {
+  color: var(--color-link);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.crispy-blocks-compact-description {
+  color: var(--vscode-descriptionForeground, #999);
+  font-size: 0.9em;
+}
+
+/* --- Collapsed Turn Summary — aggregated ephemeral tool row --- */
+
+.crispy-collapsed-turn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  margin: 2px 0 2px 8px;
+  font-size: var(--font-sm);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  user-select: none;
+  color: var(--vscode-descriptionForeground, #999);
+  transition: background 100ms ease;
+}
+
+.crispy-collapsed-turn:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-collapsed-turn--expanded {
+  cursor: default;
+  padding: 0;
+  margin: 2px 0;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.crispy-collapsed-turn--expanded:hover {
+  background: transparent;
+}
+
+.crispy-collapsed-turn__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--vscode-descriptionForeground, #888);
+  cursor: pointer;
+  flex-shrink: 0;
+  border-radius: 2px;
+  opacity: 0.7;
+}
+
+.crispy-collapsed-turn__toggle:hover {
+  opacity: 1;
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-collapsed-turn--expanded > .crispy-collapsed-turn__toggle {
+  align-self: flex-start;
+  margin: 2px 0 2px 8px;
+}
+
+.crispy-collapsed-turn__summary {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.crispy-collapsed-turn__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.crispy-collapsed-turn__separator {
+  margin: 0 4px;
+  opacity: 0.5;
+}
+
+.crispy-collapsed-turn__icon {
+  flex-shrink: 0;
+  font-size: 0.9em;
+}
+
+.crispy-collapsed-turn__label {
+  font-size: 0.9em;
+}
+
+.crispy-collapsed-turn__count {
+  font-size: 0.8em;
+  opacity: 0.7;
+  font-family: var(--font-mono);
+}
+
+.crispy-collapsed-turn__tools {
+  width: 100%;
+}
+
+/* --- Blocks Thinking View --- */
+
+.crispy-blocks-thinking {
+  margin: 4px 0;
+}
+
+.crispy-blocks-thinking-summary {
+  cursor: pointer;
+  font-size: var(--font-sm);
+  opacity: 0.6;
+  padding: 4px 0;
+  user-select: none;
+}
+
+.crispy-blocks-thinking-summary:hover {
+  opacity: 0.8;
+}
+
+.crispy-blocks-thinking-content {
+  margin: 4px 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* --- Blocks Unknown Block --- */
+
+.crispy-blocks-unknown {
+  margin: 4px 0;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--vscode-descriptionForeground, #858585);
+}
+
+.crispy-blocks-unknown-content {
+  margin: 0;
+  padding: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* --- Blocks Generic Tool View (YAML fallback) --- */
+
+.crispy-blocks-generic-tool {
+  margin: 4px 0;
+}
+
+.crispy-blocks-generic-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-xs);
+  user-select: none;
+}
+
+.crispy-blocks-generic-summary:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-blocks-generic-name {
+  font-weight: 500;
+}
+
+.crispy-blocks-generic-body {
+  padding: 8px;
+  margin-top: 4px;
+}
+
+.crispy-blocks-generic-input {
+  margin: 0 0 8px 0;
+  padding: 8px;
+  background: var(--bg-code);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.crispy-blocks-generic-result {
+  margin: 0;
+  padding: 8px;
+  background: var(--bg-code);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.crispy-blocks-generic-result--error {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+/* --- Blocks Task Card --- */
+
+.crispy-blocks-task-children {
+  margin-left: 4px;
+  padding-left: 6px;
+  border-left: 2px solid rgba(255, 255, 255, 0.08);
+  contain: layout style;
+  overflow-anchor: none;
+}
+
+/* Task tail child wrappers — only present when isMainTail is active */
+.crispy-blocks-task-child {
+  /* Inert wrapper for non-exiting tail entries. No visual effect. */
+}
+
+/* Exiting child: grid collapse to zero height.
+   grid-template-rows 0fr collapses any content height to zero so
+   the entry's unmount on the next update causes no layout shift. */
+.crispy-blocks-task-child--exiting {
+  display: grid;
+  grid-template-rows: 0fr;
+  overflow: hidden;
+  opacity: 0;
+  transition: grid-template-rows 120ms ease-out, opacity 80ms ease-out;
+}
+.crispy-blocks-task-child--exiting > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.crispy-blocks-task-compact > .crispy-blocks-task-children {
+  margin-left: 4px;
+  padding-left: 6px;
+  border-left: 2px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Task children user prompt in main-thread compact — clamp height */
+.crispy-blocks-task-compact > .crispy-blocks-task-children > .message.user:first-child .prose {
+  max-height: 4.2em;
+  overflow: hidden;
+}
+
+/* --- Blocks Bash Command --- */
+
+.crispy-blocks-bash-command {
+  color: var(--vscode-editor-foreground, #d4d4d4);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: calc(1.4em * 5);
+  overflow-y: auto;
+  display: block;
+  line-height: 1.4;
+  padding: 2px 6px;
+  background: var(--bg-code);
+  border-radius: var(--radius-sm);
+  font-size: 0.85em;
+}
+
+/* --- Blocks Panel Styles --- */
+
+.crispy-blocks-panel-tool__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  font-size: var(--font-sm);
+}
+
+.crispy-blocks-panel-tool__header:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-blocks-panel-tool__icon {
+  flex-shrink: 0;
+}
+
+.crispy-blocks-panel-tool__name {
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crispy-blocks-panel-tool__pin {
+  margin-left: auto;
+  opacity: 0.6;
+}
+
+.crispy-blocks-panel-tool__body {
+  padding: 4px 8px 4px 24px;
+}
+
+.crispy-blocks-panel-tool__result {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.crispy-blocks-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  font-size: var(--font-sm);
+  opacity: 0.7;
+}
+
+.crispy-blocks-panel-header:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  opacity: 1;
+}
+
+.crispy-blocks-panel-header__icon {
+  flex-shrink: 0;
+}
+
+.crispy-blocks-panel-header__name {
+  font-weight: 500;
+}
+
+/* --- Chrome MCP Tool Views --- */
+
+.crispy-blocks-chrome-action {
+  flex-shrink: 0;
+  font-size: 0.8em;
+  font-style: italic;
+  color: var(--vscode-descriptionForeground, #999);
+}
+
+.crispy-blocks-chrome-emoji {
+  flex-shrink: 0;
+  font-size: 0.85em;
+}
+
+.crispy-blocks-chrome-images {
+  margin: 4px 0;
+}
+
+.crispy-blocks-chrome-screenshot {
+  max-width: 100%;
+  max-height: 500px;
+  border-radius: var(--radius-md);
+  object-fit: contain;
+  display: block;
+}

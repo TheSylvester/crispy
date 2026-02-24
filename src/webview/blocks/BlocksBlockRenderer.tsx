@@ -1,14 +1,16 @@
 /**
  * Blocks Block Renderer — dispatches a single RichBlock to the appropriate renderer
  *
- * Handles all block types:
- * - tool_result → null (teleportation to tool_use card)
- * - tool_use → ToolBlockRenderer
+ * Handles non-tool block types:
  * - text + user role → UserTextRenderer
  * - text + assistant role → AssistantTextRenderer
- * - thinking → ThinkingView
+ * - thinking → ThinkingRenderer
  * - image → ImageRenderer
  * - default → YAML dump
+ *
+ * tool_use and tool_result blocks are handled by the parent entry component
+ * via ToolBlockRenderer and ToolResultRenderer respectively — they should
+ * not reach this component.
  *
  * @module webview/blocks/BlocksBlockRenderer
  */
@@ -23,25 +25,16 @@ export interface BlocksBlockRendererProps {
 }
 
 /**
- * Renders a non-tool block (text, thinking, image, tool_result, unknown).
+ * Renders a non-tool block (text, thinking, image, unknown).
  *
- * tool_use blocks are handled directly by the parent entry component via
- * ToolBlockRenderer — they should not reach this component.
+ * tool_use and tool_result blocks are handled directly by the parent entry
+ * component via ToolBlockRenderer and ToolResultRenderer — they should not
+ * reach this component.
  */
 export function BlocksBlockRenderer({
   block,
 }: BlocksBlockRendererProps): React.JSX.Element | null {
   switch (block.type) {
-    case 'tool_result':
-      // Tool results are rendered on their tool_use card via registry
-      // Return null here (teleportation pattern)
-      return null;
-
-    case 'tool_use':
-      // tool_use blocks are handled by the parent entry component
-      // via ToolBlockRenderer directly — should not reach here.
-      return null;
-
     case 'text':
       if (block.context.role === 'user') {
         return <UserTextRenderer block={block} />;
@@ -49,7 +42,7 @@ export function BlocksBlockRenderer({
       return <AssistantTextRenderer block={block} />;
 
     case 'thinking':
-      return <ThinkingView block={block} />;
+      return <ThinkingRenderer block={block} />;
 
     case 'image':
       return <ImageRenderer block={block} />;
@@ -61,10 +54,10 @@ export function BlocksBlockRenderer({
 }
 
 // ============================================================================
-// Thinking View — collapsible thinking display
+// Thinking Renderer — collapsible thinking display
 // ============================================================================
 
-function ThinkingView({ block }: { block: RichBlock }): React.JSX.Element {
+function ThinkingRenderer({ block }: { block: RichBlock }): React.JSX.Element {
   const thinkingBlock = block as RichBlock & { thinking: string; isSummary?: boolean };
   const content = thinkingBlock.thinking ?? '';
   const isSummary = thinkingBlock.isSummary ?? false;

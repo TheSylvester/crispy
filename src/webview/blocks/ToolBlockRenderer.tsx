@@ -7,7 +7,7 @@
  * @module webview/blocks/ToolBlockRenderer
  */
 
-import { useCallback, memo } from 'react';
+import { useCallback, useEffect, memo } from 'react';
 import type { RichBlock, AnchorPoint, ToolViewProps } from './types.js';
 import type { BlocksToolRegistry } from './blocks-tool-registry.js';
 import type { TranscriptEntry, ToolResultBlock } from '../../core/transcript.js';
@@ -18,12 +18,11 @@ import { ToolCard } from './views/ToolCard.js';
 import { ToolBadge } from '../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../renderers/tools/shared/StatusIndicator.js';
 import { extractResultText, formatCount } from '../renderers/tools/shared/tool-utils.js';
-import { useBlocksChildEntries, useBlocksToolRegistry, useInjectChildEntries } from './BlocksToolRegistryContext.js';
-import { BlocksEntryWithRegistry } from './BlocksEntryWithRegistry.js';
+import { useBlocksChildEntries, useBlocksToolRegistry, useInjectChildEntries, useTabSessionId } from './BlocksToolRegistryContext.js';
+import { BlocksEntry } from './BlocksEntry.js';
 import { usePreferences } from '../context/PreferencesContext.js';
 import { usePanelDispatch, usePanelState, usePanelDisplayIds } from './PanelStateContext.js';
 import { isToolExpanded } from './panel-reducer.js';
-import { useSession } from '../context/SessionContext.js';
 import { useBackgroundAgentTunnel } from '../hooks/useBackgroundAgentTunnel.js';
 
 /** Max children visible in the transcript content tail preview. */
@@ -52,6 +51,13 @@ export function ToolBlockRenderer({
   registry,
   siblingCount,
 }: ToolBlockRendererProps): React.JSX.Element {
+  // Self-register this tool_use with the registry on mount.
+  // The registry's orphan map handles ordering — if a result arrived before
+  // this tool_use mounts, register() will immediately pair them.
+  useEffect(() => {
+    registry.register(block.id, block.name, block);
+  }, [block.id, block.name, block, registry]);
+
   // Get result from registry
   const result = registry.useResult(block.id);
 
@@ -188,7 +194,7 @@ function TaskChildrenRenderer({ toolId, anchor, result }: TaskChildrenRendererPr
   // Background agent tunnel — activate polling when expanded in panel
   const registry = useBlocksToolRegistry();
   const asyncAgentId = registry.getAsyncAgentId(toolId);
-  const { selectedSessionId } = useSession();
+  const selectedSessionId = useTabSessionId();
   const injectChildEntries = useInjectChildEntries();
   const handlePolledEntries = useCallback(
     (entries: TranscriptEntry[]) => injectChildEntries(toolId, entries),
@@ -248,15 +254,15 @@ function TaskChildrenRenderer({ toolId, anchor, result }: TaskChildrenRendererPr
 }
 
 /**
- * Memoized wrapper for BlocksEntryWithRegistry used in Task children.
+ * Memoized wrapper for BlocksEntry used in Task children.
  *
  * Without this, every child re-renders when the parent TaskChildrenRenderer
  * re-renders (e.g., when a new sibling arrives). The memo comparator checks
- * entry reference identity — stable for existing entries since the provider
+ * entry reference identity -- stable for existing entries since the provider
  * reuses the same TranscriptEntry objects.
  */
 const MemoizedBlocksEntry = memo(
-  BlocksEntryWithRegistry,
+  BlocksEntry,
   (prev, next) => prev.entry === next.entry,
 );
 

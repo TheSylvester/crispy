@@ -36,7 +36,7 @@
   },
   "scripts": {
     "build:extension": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --sourcemap",
-    "build:webview": "esbuild src/webview/main.tsx --bundle --outfile=dist/webview/main.js --format=esm --platform=browser --sourcemap --jsx=automatic --loader:.svg=text && cp src/webview/index.html dist/webview/ && cp src/webview/theme-defaults.css dist/webview/ && cp src/webview/styles.css dist/webview/ && cp node_modules/flexlayout-react/style/dark.css dist/webview/flexlayout-dark.css && cp src/webview/flexlayout-overrides.css dist/webview/",
+    "build:webview": "esbuild src/webview/main.tsx --bundle --outfile=dist/webview/main.js --format=esm --platform=browser --sourcemap --jsx=automatic --loader:.svg=text && cp src/webview/index.html dist/webview/ && cp src/webview/theme-defaults.css dist/webview/ && cp src/webview/styles.css src/webview/base.css src/webview/layout.css src/webview/transcript.css src/webview/blocks.css src/webview/control-panel.css src/webview/approval.css src/webview/tool-panel.css src/webview/file-panel.css src/webview/session-selector.css src/webview/titlebar.css src/webview/animations.css src/webview/playback.css dist/webview/ && cp node_modules/flexlayout-react/style/dark.css dist/webview/flexlayout-dark.css && cp src/webview/flexlayout-overrides.css dist/webview/",
     "build:dev-server": "esbuild src/host/dev-server.ts --bundle --outfile=dist/dev-server.js --external:@anthropic-ai/* --external:ws --format=esm --platform=node --sourcemap",
     "build": "npm run build:extension && npm run build:webview && npm run build:dev-server",
     "watch": "npm run build:extension -- --watch",

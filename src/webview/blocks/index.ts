@@ -19,8 +19,7 @@
  * - registerToolViews: Register view implementations
  *
  * Components:
- * - BlocksEntry: Top-level entry renderer
- * - createBlocksToolRegistry: Factory for registry instances
+ * - BlocksEntry: Top-level entry renderer (gets registry from context)
  *
  * @module webview/blocks
  */
@@ -54,8 +53,7 @@ export {
 } from './tool-definitions.js';
 
 // Components
-export { BlocksEntry, createBlocksToolRegistry } from './BlocksEntry.js';
-export { BlocksEntryWithRegistry } from './BlocksEntryWithRegistry.js';
+export { BlocksEntry } from './BlocksEntry.js';
 export { BlocksBlockRenderer } from './BlocksBlockRenderer.js';
 export { ToolBlockRenderer } from './ToolBlockRenderer.js';
 

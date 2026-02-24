@@ -44,7 +44,7 @@ import { useTransport } from '../../context/TransportContext.js';
 import { useSession } from '../../context/SessionContext.js';
 import { slugToPath } from '../../hooks/useSessionCwd.js';
 import { useContextUsage } from '../../hooks/useContextUsage.js';
-import { useChannelState } from '../../hooks/useSessionStatus.js';
+import { useChannelState } from '../../hooks/useChannelStore.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent } from '../../../core/agent-adapter.js';
@@ -52,10 +52,9 @@ import type { WireProviderConfig } from '../../../core/provider-config.js';
 
 interface ControlPanelProps {
   /** Per-tab session ID. Used for all session-dependent operations (send, fork,
-   *  channel state, approval, etc.). Falls back to global context if omitted. */
+   *  channel state, approval, etc.). */
   sessionId?: string | null;
-  /** Update the owning tab's session ID (e.g. after creating a new session).
-   *  Falls back to global context's setSelectedSessionId if omitted. */
+  /** Update the owning tab's session ID (e.g. after creating a new session). */
   onSessionIdChange?: (id: string | null) => void;
   /** Whether this tab is the currently active/focused tab. Gates global
    *  keyboard shortcuts and paste handler so only one instance responds. */
@@ -169,10 +168,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     }, [ref]);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned, toolViewOverride, setToolViewOverride, debugMode, setDebugMode } = usePreferences();
     const transport = useTransport();
-    const { selectedSessionId: globalSessionId, selectedCwd, setSelectedSessionId: globalSetSelectedSessionId } = useSession();
-    // Use per-tab session ID from props when provided, otherwise fall back to global context.
-    const selectedSessionId = sessionIdProp !== undefined ? sessionIdProp : globalSessionId;
-    const setSelectedSessionId = onSessionIdChangeProp ?? globalSetSelectedSessionId;
+    const { selectedCwd } = useSession();
+    // Per-tab session ID from props — no global fallback.
+    const selectedSessionId = sessionIdProp ?? null;
+    const setSelectedSessionId = onSessionIdChangeProp ?? (() => {});
     const { channelState, setOptimistic: setOptimisticStatus } = useChannelState(selectedSessionId);
     const togglesDisabled = channelState === 'streaming' || channelState === 'awaiting_approval';
 
@@ -205,6 +204,13 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // the listener every time modelGroups changes).
     const allCyclableRef = useRef(allCyclable);
     allCyclableRef.current = allCyclable;
+
+    // Ref to track the latest reducer state so event-handler effects can
+    // compare incoming server values without capturing stale closures.
+    // (The settings_changed effect depends only on [selectedSessionId, transport],
+    // so reading `state` directly would be stale.)
+    const stateRef = useRef(state);
+    stateRef.current = state;
 
     // --- Provider management state ---
     const [providers, setProviders] = useState<Record<string, WireProviderConfig>>({});
@@ -348,6 +354,11 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // Server-initiated setting changes update the local state. Handles both
     // legacy permission_mode_changed (from adapter) and the new settings_changed
     // (broadcast after each sendTurn) for cross-panel sync.
+    //
+    // Guards: only dispatch when the server value differs from current local
+    // state to avoid redundant re-renders on echo. Reads from stateRef to
+    // avoid stale closures (this effect depends only on [selectedSessionId,
+    // transport]).
     useEffect(() => {
       const off = transport.onEvent((sessionId, event) => {
         if (sessionId !== selectedSessionId) return;
@@ -355,29 +366,37 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
         if (event.event.kind === 'permission_mode_changed') {
           const serverMode = mapPermissionModeToAgency(event.event.mode);
-          if (serverMode) {
+          if (serverMode && serverMode !== stateRef.current.agencyMode) {
             dispatch({ type: 'SET_AGENCY_MODE', mode: serverMode });
           }
         }
 
         if (event.event.kind === 'settings_changed') {
           const { settings } = event.event;
-          // Sync model — vendor is now part of AdapterSettings
+          const current = stateRef.current;
+
+          // Sync model — only when it differs from local state
           const rawModel = settings.model ?? '';
           const modelValue: ModelOption = rawModel ? `${settings.vendor}:${rawModel}` : '';
-          dispatch({ type: 'SET_MODEL', model: modelValue });
+          if (modelValue !== current.model) {
+            dispatch({ type: 'SET_MODEL', model: modelValue });
+          }
           // Sync permission mode → agency mode
           if (settings.permissionMode) {
             const agencyMode = mapPermissionModeToAgency(settings.permissionMode);
-            if (agencyMode) {
+            if (agencyMode && agencyMode !== current.agencyMode) {
               dispatch({ type: 'SET_AGENCY_MODE', mode: agencyMode });
             }
           }
           // Sync bypass
-          dispatch({ type: 'SET_BYPASS', enabled: settings.allowDangerouslySkipPermissions });
+          if (settings.allowDangerouslySkipPermissions !== current.bypassEnabled) {
+            dispatch({ type: 'SET_BYPASS', enabled: settings.allowDangerouslySkipPermissions });
+          }
           // Sync chrome (extraArgs with 'chrome' key means enabled)
           const chromeEnabled = settings.extraArgs != null && 'chrome' in settings.extraArgs;
-          dispatch({ type: 'SET_CHROME', enabled: chromeEnabled });
+          if (chromeEnabled !== current.chromeEnabled) {
+            dispatch({ type: 'SET_CHROME', enabled: chromeEnabled });
+          }
         }
       });
       return off;
@@ -449,8 +468,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
       // Inject optimistic user entry for immediate rendering.
       // For new/fork sessions, the server-broadcast entry arrives before
-      // useTranscript has subscribed to the pending session ID, so we
-      // must inject locally. The dedup logic in useTranscript replaces
+      // the channel store has subscribed to the pending session ID, so we
+      // must inject locally. The dedup logic in the store reducer replaces
       // the optimistic entry when the real echo arrives.
       if (onOptimisticEntry) {
         const optimisticEntry: TranscriptEntry = {

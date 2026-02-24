@@ -1,0 +1,883 @@
+/* ============================================================================
+ * Control Panel — floating bottom-center bar
+ *
+ * Agency mode frame highlight colors (set via data-agency on panel)
+ * ============================================================================ */
+
+/* Agency mode colors — set --frame-highlight and --agency-glow-shadow per mode */
+.crispy-cp[data-agency="ask-before-edits"] {
+  --frame-highlight: var(--agency-white);
+  --agency-glow-shadow: 0 0 12px rgba(255, 255, 255, 0.3);
+}
+.crispy-cp[data-agency="edit-automatically"] {
+  --frame-highlight: var(--agency-blue);
+  --agency-glow-shadow: 0 0 12px rgba(64, 168, 232, 0.3);
+}
+.crispy-cp[data-agency="plan-mode"] {
+  --frame-highlight: var(--agency-teal);
+  --agency-glow-shadow: 0 0 12px rgba(71, 152, 140, 0.3);
+}
+.crispy-cp[data-agency="bypass-permissions"] {
+  --frame-highlight: var(--agency-red);
+  --agency-glow-shadow: 0 0 12px rgba(232, 64, 64, 0.3);
+}
+
+/* --- Main container --- */
+
+.crispy-cp {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(30, 30, 30, 0.55);
+  -webkit-backdrop-filter: blur(40px) saturate(170%);
+  backdrop-filter: blur(40px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  max-width: 800px;
+  width: calc(100% - 3rem);
+  border-radius: var(--radius-2xl);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    0 1px 4px rgba(0, 0, 0, 0.2);
+  position: absolute;
+  bottom: 0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  transition:
+    padding 0.15s ease,
+    gap 0.15s ease,
+    box-shadow 0.3s ease;
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .crispy-cp {
+    background: var(--bg-editor);
+  }
+}
+
+/* Drag-over visual feedback */
+.crispy-cp.drag-over {
+  border: 2px dashed var(--vscode-focusBorder, #007acc);
+  background: rgba(42, 45, 46, 0.9);
+}
+
+/* --------------------------------------------------------------------------
+   Stop Button — absolutely positioned above control panel within tab
+   -------------------------------------------------------------------------- */
+
+.crispy-stop {
+  position: absolute;
+  bottom: calc(var(--cp-height, 80px) + 1.5rem);
+  left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  z-index: 20;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.15s ease-out,
+    transform 0.15s ease-out;
+}
+
+.crispy-stop--visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+
+.crispy-stop__btn {
+  padding: 4px 24px;
+  background: rgba(30, 30, 30, 0.55);
+  -webkit-backdrop-filter: blur(40px) saturate(170%);
+  backdrop-filter: blur(40px) saturate(170%);
+  color: var(--vscode-button-secondaryForeground, #d4d4d4);
+  border: 1px solid var(--agency-white);
+  border-radius: var(--radius-xl);
+  cursor: pointer;
+  font-size: var(--font-base);
+  font-family: inherit;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+/* Agency-mode border colors — :has() reads data-agency from sibling ControlPanel */
+.crispy-transcript-tab:has(.crispy-cp[data-agency="edit-automatically"])
+  .crispy-stop__btn {
+  border-color: var(--agency-blue);
+}
+.crispy-transcript-tab:has(.crispy-cp[data-agency="plan-mode"]) .crispy-stop__btn {
+  border-color: var(--agency-teal);
+}
+.crispy-transcript-tab:has(.crispy-cp[data-agency="bypass-permissions"])
+  .crispy-stop__btn {
+  border-color: var(--agency-red);
+}
+
+.crispy-stop__btn:hover {
+  background: rgba(50, 50, 50, 0.7);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .crispy-stop__btn {
+    background: var(--bg-editor);
+  }
+}
+
+.crispy-stop__btn:active {
+  transform: scale(0.98);
+}
+
+/* --------------------------------------------------------------------------
+   Input Row — textarea + send button
+   -------------------------------------------------------------------------- */
+
+.crispy-cp-input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+  position: relative;
+}
+
+.crispy-cp-input {
+  flex: 1;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--vscode-input-foreground, #d4d4d4);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-xl);
+  font-family: inherit;
+  font-size: inherit;
+  resize: none;
+  overflow-y: hidden;
+  max-height: 300px;
+  transition: height 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.crispy-cp-input:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow:
+    0 0 0 1px var(--frame-highlight),
+    0 0 8px color-mix(in srgb, var(--frame-highlight) 40%, transparent);
+}
+
+@supports not (color: color-mix(in srgb, red 50%, blue)) {
+  .crispy-cp-input:focus {
+    box-shadow:
+      0 0 0 1px var(--frame-highlight),
+      0 0 8px rgba(255, 255, 255, 0.15);
+  }
+}
+
+/* --- @Mention Autocomplete Dropdown --- */
+
+.crispy-cp-mention {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 500;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--vscode-editorWidget-background, #252526);
+  border: 1px solid var(--vscode-editorWidget-border, #454545);
+  border-radius: 10px;
+  padding: 4px 0;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.crispy-cp-mention__item {
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: var(--font-base);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--vscode-list-inactiveSelectionForeground, #d4d4d4);
+}
+
+.crispy-cp-mention__item:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-cp-mention__item--selected {
+  background: var(--vscode-list-activeSelectionBackground, #094771);
+  color: var(--vscode-list-activeSelectionForeground, #fff);
+}
+
+.crispy-cp-mention__empty {
+  padding: 8px 10px;
+  font-style: italic;
+  text-align: center;
+  color: var(--vscode-descriptionForeground, #858585);
+  font-size: var(--font-base);
+}
+
+.crispy-cp-mention__highlight {
+  background: var(
+    --vscode-editor-findMatchHighlightBackground,
+    rgba(234, 92, 0, 0.33)
+  );
+  color: inherit;
+  font-weight: 600;
+  border-radius: 1px;
+}
+
+/* --- Send Button --- */
+
+.crispy-cp-send {
+  width: 5em;
+  padding: 4px 10px;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  background: var(--color-accent);
+  color: var(--color-send-text);
+  border: none;
+  border-radius: var(--radius-xl);
+  cursor: pointer;
+  transition: background 0.15s;
+  appearance: none;
+  -webkit-appearance: none;
+  box-shadow: none;
+  outline: none;
+}
+
+.crispy-cp-send:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.crispy-cp-send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.crispy-cp-send__icon {
+  display: inline-block;
+}
+
+/* Hover jiggle — pure CSS, no React state needed */
+.crispy-cp-send:hover:not(:disabled) .crispy-cp-send__icon {
+  animation: crispy-cp-send-jiggle 0.3s ease;
+}
+
+/* Fork mode variant — different background for fork action */
+.crispy-cp-send--fork {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.crispy-cp-send--fork:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+/* --------------------------------------------------------------------------
+   Image Attachments Row
+   -------------------------------------------------------------------------- */
+
+.crispy-cp-attachments {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}
+
+.crispy-cp-image-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--vscode-badge-background, #4d4d4d);
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  cursor: default;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.crispy-cp-image-chip:hover {
+  border-color: var(--frame-highlight);
+}
+
+.crispy-cp-image-chip__thumb {
+  width: 24px;
+  height: 24px;
+  object-fit: cover;
+  border-radius: var(--radius-xs);
+}
+
+.crispy-cp-image-chip__name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-cp-image-chip__remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin-left: 2px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground, #888);
+  border: none;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  font-size: var(--font-md);
+  line-height: 1;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.crispy-cp-image-chip__remove:hover {
+  background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+/* --------------------------------------------------------------------------
+   Controls Row — second row of toggles, dropdowns, and buttons
+   -------------------------------------------------------------------------- */
+
+.crispy-cp-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* --- Shared select styles --- */
+
+.crispy-cp-controls select {
+  padding: 4px 12px;
+  background: var(--bg-editor);
+  color: var(--vscode-descriptionForeground, #888);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-xl);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+
+.crispy-cp-controls select:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  border-color: var(--frame-highlight);
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-cp-controls select:focus {
+  outline: none;
+  border-color: var(--frame-highlight);
+}
+
+/* --- Agency Mode dropdown — colored border/text for current mode --- */
+
+.crispy-cp-agency {
+  color: var(--frame-highlight) !important;
+  border-color: var(--frame-highlight) !important;
+  font-weight: 500;
+  box-shadow: 0 0 6px
+    color-mix(in srgb, var(--frame-highlight) 50%, transparent);
+}
+
+@supports not (color: color-mix(in srgb, red 50%, blue)) {
+  .crispy-cp-agency {
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.15);
+  }
+}
+
+.crispy-cp-agency:hover {
+  color: var(--frame-highlight) !important;
+  border-color: var(--frame-highlight) !important;
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+/* Style dropdown options (dark background to match theme) */
+.crispy-cp-controls select option {
+  background: var(--vscode-dropdown-background, #252526);
+  color: var(--vscode-dropdown-foreground, #cccccc);
+}
+
+.crispy-cp-controls select optgroup {
+  background: var(--vscode-dropdown-background, #252526);
+  color: var(--vscode-descriptionForeground, #888);
+  font-style: normal;
+  font-weight: 600;
+  font-size: var(--font-sm);
+}
+
+/* Model select — inherits from .crispy-cp-controls select */
+.crispy-cp-model {
+  /* styling inherited from .crispy-cp-controls select */
+}
+
+/* --- Right controls cluster --- */
+
+.crispy-cp-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+/* --- Responsive: narrow control panel --- */
+
+@container (max-width: 480px) {
+  /* Let agency + model selects shrink instead of overflowing */
+  .crispy-cp-agency,
+  .crispy-cp-model {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+
+  /* Right cluster flows naturally after wrapped selects */
+  .crispy-cp-right {
+    flex: 1 0 100%;
+    justify-content: flex-end;
+  }
+}
+
+@container (max-width: 360px) {
+  .crispy-cp {
+    padding: 0.375rem;
+    gap: 0.375rem;
+  }
+
+  .crispy-cp-controls {
+    gap: 0.375rem;
+  }
+
+  .crispy-cp-right {
+    gap: 0.375rem;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Icon Toggle — shared base for bypass/chrome toggles
+   -------------------------------------------------------------------------- */
+
+.crispy-cp-bypass,
+.crispy-cp-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xl);
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.crispy-cp-bypass:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  border-color: var(--frame-highlight);
+}
+
+.crispy-cp-chrome:hover {
+}
+
+.crispy-cp-bypass__input,
+.crispy-cp-chrome__input {
+  display: none;
+}
+
+.crispy-cp-bypass svg,
+.crispy-cp-chrome svg {
+  color: var(--vscode-descriptionForeground, #888);
+  transition: color 0.15s;
+}
+
+.crispy-cp-bypass:hover svg {
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+/* Click feedback */
+.crispy-cp-bypass:active .crispy-cp-bypass__icon {
+  transform: scale(0.85);
+}
+
+.crispy-cp-chrome:active .crispy-cp-chrome__icon {
+  transform: scale(0.9);
+}
+
+/* --------------------------------------------------------------------------
+   Bypass Toggle — shield icon with danger mode animations
+   -------------------------------------------------------------------------- */
+
+.crispy-cp-bypass {
+  position: relative;
+}
+
+.crispy-cp-bypass__icon {
+  transition:
+    transform 0.2s ease,
+    color 0.2s ease;
+}
+
+/* Safe state — muted shield */
+.crispy-cp-bypass:not(.crispy-cp-bypass--checked) svg {
+  color: #666;
+}
+
+/* Danger state — red */
+.crispy-cp-bypass--checked svg {
+  color: #e84040;
+}
+
+/* Activate animation when toggling on */
+.crispy-cp-bypass--checked .crispy-cp-bypass__icon.animate-in {
+  animation: crispy-cp-bypass-activate 0.4s ease forwards;
+}
+
+/* Danger pulse — 3 iterations then settles to static glow */
+.crispy-cp-bypass--checked .crispy-cp-bypass__icon:not(.animate-in) {
+  animation: crispy-cp-bypass-pulse 2s ease-in-out 3;
+  filter: drop-shadow(0 0 4px rgba(232, 64, 64, 0.4));
+}
+
+/* Hover wobble — pure CSS, no React state needed */
+.crispy-cp-bypass:not(.crispy-cp-bypass--checked):hover
+  .crispy-cp-bypass__icon {
+  animation: crispy-cp-bypass-wobble 0.5s ease;
+}
+
+.crispy-cp-bypass--checked:hover .crispy-cp-bypass__icon:not(.animate-in) {
+  animation: crispy-cp-bypass-wobble-danger 0.5s ease;
+}
+
+/* --------------------------------------------------------------------------
+   Chrome Toggle — icon toggle with pop and wobble
+   -------------------------------------------------------------------------- */
+
+.crispy-cp-chrome__icon {
+  transition: transform 0.2s ease;
+}
+
+/* Hover wobble — pure CSS, no React state needed */
+.crispy-cp-chrome:hover .crispy-cp-chrome__icon {
+  animation: crispy-cp-chrome-wobble 0.5s ease;
+}
+
+/* Pop animation on activation */
+.crispy-cp-chrome--checked .crispy-cp-chrome__icon.animate-in {
+  animation: crispy-cp-chrome-pop 0.3s ease forwards;
+}
+
+/* --------------------------------------------------------------------------
+   Context Widget
+   -------------------------------------------------------------------------- */
+
+.crispy-cp-context-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.crispy-cp-context {
+  font-size: var(--font-sm);
+  font-weight: 400;
+  padding: 4px 12px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  border-radius: var(--radius-xl);
+  transition: background 0.15s;
+}
+
+.crispy-cp-context:hover {
+  /* background-only hover; no colour highlight — animation speaks for itself */
+}
+
+.crispy-cp-context-container--pinned .crispy-cp-context {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+/* Context color classes */
+.crispy-cp-context--minimal {
+  color: var(--context-minimal);
+}
+.crispy-cp-context--low {
+  color: var(--context-low);
+}
+.crispy-cp-context--healthy {
+  color: var(--context-healthy);
+}
+.crispy-cp-context--moderate {
+  color: var(--context-moderate);
+}
+.crispy-cp-context--high {
+  color: var(--context-high);
+}
+.crispy-cp-context--critical {
+  color: var(--context-critical);
+  font-weight: 600;
+}
+
+/* Context tooltip */
+.crispy-cp-context-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  min-width: 240px;
+  max-width: 300px;
+  background: var(--vscode-editorWidget-background, #252526);
+  border: 1px solid var(--vscode-editorWidget-border, #454545);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  z-index: 500;
+  padding: 8px;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+}
+
+.crispy-cp-context-tooltip__empty {
+  color: var(--vscode-descriptionForeground, #858585);
+  text-align: center;
+  padding: 8px;
+  font-style: italic;
+}
+
+.crispy-cp-context-tooltip__row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-cp-context-tooltip__row--total {
+  font-weight: 600;
+}
+
+.crispy-cp-context-tooltip__divider {
+  border-top: 1px solid var(--border-panel);
+  margin: 4px 0;
+}
+
+/* --------------------------------------------------------------------------
+   Settings Popup
+   -------------------------------------------------------------------------- */
+
+.crispy-cp-settings {
+  position: relative;
+  display: inline-block;
+}
+
+.crispy-cp-settings__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 12px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xl);
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground, #888);
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.crispy-cp-settings__btn:active {
+  transform: scale(0.9);
+}
+
+/* Hover wobble — pure CSS, no React state needed */
+.crispy-cp-settings:not(.crispy-cp-settings--pinned):hover
+  .crispy-cp-settings__btn {
+  color: var(--vscode-foreground, #d4d4d4);
+  animation: crispy-cp-settings-wobble 0.5s ease;
+}
+
+/* Pinned state — rotated */
+.crispy-cp-settings--pinned .crispy-cp-settings__btn {
+  color: var(--vscode-foreground, #d4d4d4);
+  transform: rotate(45deg);
+}
+
+/* Pinned initial pop */
+.crispy-cp-settings--pinned .crispy-cp-settings__btn.animate-in {
+  animation: crispy-cp-settings-pop 0.3s ease forwards;
+}
+
+/* Pinned hover wobble */
+.crispy-cp-settings--pinned:hover .crispy-cp-settings__btn:not(.animate-in) {
+  animation: crispy-cp-settings-wobble-pinned 0.5s ease;
+}
+
+/* Settings popup panel */
+.crispy-cp-settings__popup {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: -8px;
+  min-width: 200px;
+  background: var(--bg-editor);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 500;
+  padding: 8px 12px;
+  font-size: var(--font-sm);
+}
+
+.crispy-cp-settings__popup-header {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground, #888);
+  margin-bottom: 8px;
+}
+
+.crispy-cp-settings__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.crispy-cp-settings__row select {
+  padding: 4px 8px;
+  background: var(--vscode-dropdown-background, #3c3c3c);
+  color: var(--vscode-dropdown-foreground, #d4d4d4);
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  border-radius: var(--radius-xl);
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.crispy-cp-settings__section-header {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground, #888);
+  margin: 12px 0 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.crispy-cp-settings__provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.crispy-cp-settings__provider-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+}
+
+.crispy-cp-settings__provider-btn {
+  padding: 2px 8px;
+  background: transparent;
+  color: var(--vscode-foreground, #d4d4d4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.crispy-cp-settings__provider-btn:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-cp-settings__provider-btn--danger {
+  color: #f48771;
+}
+
+.crispy-cp-settings__provider-btn--danger:hover {
+  background: rgba(244, 135, 113, 0.1);
+}
+
+.crispy-cp-settings__provider-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.crispy-cp-settings__provider-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-sm);
+  margin-top: 6px;
+}
+
+.crispy-cp-settings__provider-form input[type="text"],
+.crispy-cp-settings__provider-form input[type="password"],
+.crispy-cp-settings__provider-form input[type="number"] {
+  padding: 4px 8px;
+  background: var(--bg-editor);
+  color: var(--vscode-foreground, #d4d4d4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  width: 100%;
+}
+
+.crispy-cp-settings__provider-form label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--font-sm);
+  color: var(--vscode-descriptionForeground, #888);
+}
+
+/* --------------------------------------------------------------------------
+   Fork Button — original Leto webview style (text+icon)
+   -------------------------------------------------------------------------- */
+
+.crispy-cp-fork {
+  width: 5em;
+  padding: 4px 10px;
+  background: var(--vscode-descriptionForeground, #888);
+  color: #1e1e1e;
+  border: none;
+  border-radius: var(--radius-xl);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.crispy-cp-fork:hover:not(:disabled) {
+  background: var(--vscode-descriptionForeground, #999);
+}
+
+.crispy-cp-fork:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.crispy-cp-fork__icon {
+  display: inline-block;
+}
+
+/* Hover jiggle — pure CSS, no React state needed */
+.crispy-cp-fork:not(:disabled):hover .crispy-cp-fork__icon {
+  animation: crispy-cp-fork-jiggle 0.3s ease;
+}
+
+/* --- Streaming neon glow on container (uses --agency-glow-shadow) --- */
+
+.crispy-main[data-streaming] .crispy-cp {
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    0 1px 4px rgba(0, 0, 0, 0.2),
+    var(--agency-glow-shadow, 0 0 12px rgba(255, 255, 255, 0.3));
+}

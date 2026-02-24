@@ -27,9 +27,11 @@ const SKIP_ENTRY_TYPES = new Set([
  * - Nested entries (parentToolUseID — sub-agent children render inside
  *   their parent Task card, not as top-level messages)
  * - Entries with no message (and not a summary)
- * - Tool-result user entries (user entries carrying toolUseResult — these
- *   contain only tool_result blocks that render via registry pairing,
- *   not as standalone messages)
+ *
+ * Tool-result user entries (toolUseResult) are NOT filtered — they must
+ * render so ToolResultRenderer mounts and reports results to the registry.
+ * BlocksEntry returns null for entries containing only tool_result blocks,
+ * so they produce no visible DOM.
  *
  * Summary entries are allowed through if they have summary text,
  * even without a message field.
@@ -47,10 +49,6 @@ export function shouldRenderEntry(entry: TranscriptEntry): boolean {
   if (entry.type === 'summary' && entry.summary) return true;
 
   if (!entry.message) return false;
-
-  // Tool-result user entries render via ToolRegistry pairing, not as top-level messages.
-  // These carry toolUseResult and contain only tool_result content blocks.
-  if (entry.type === 'user' && entry.toolUseResult) return false;
 
   return true;
 }

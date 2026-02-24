@@ -1,0 +1,292 @@
+/* ============================================================================
+ * Animations — all @keyframes collected from component files
+ *
+ * Ordered by original appearance in styles.css.
+ * ============================================================================ */
+
+/* Session dropdown enter (session-selector) */
+@keyframes crispy-dropdown-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Thinking spinner (transcript) */
+@keyframes crispy-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Thinking label pulse (transcript) */
+@keyframes crispy-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Welcome loading shimmer (layout) */
+@keyframes crispy-shimmer-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Fork preview glow (transcript) */
+@keyframes crispy-fork-preview-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 8px 2px rgba(232, 128, 64, 0.4),
+      0 0 16px 4px rgba(232, 128, 64, 0.2);
+  }
+  50% {
+    box-shadow:
+      0 0 12px 4px rgba(232, 128, 64, 0.6),
+      0 0 24px 8px rgba(232, 128, 64, 0.3);
+  }
+}
+
+/* Send button jiggle (control-panel) */
+@keyframes crispy-cp-send-jiggle {
+  0% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-1px);
+  }
+  50% {
+    transform: translateX(1px);
+  }
+  75% {
+    transform: translateX(-0.5px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+/* Bypass activate (control-panel) */
+@keyframes crispy-cp-bypass-activate {
+  0% {
+    transform: scale(0.8) rotate(-180deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.3) rotate(10deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+/* Bypass danger pulse (control-panel) */
+@keyframes crispy-cp-bypass-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 4px rgba(232, 64, 64, 0.4));
+  }
+  50% {
+    filter: drop-shadow(0 0 10px rgba(232, 64, 64, 0.8));
+  }
+}
+
+/* Bypass hover wobble (control-panel) */
+@keyframes crispy-cp-bypass-wobble {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    transform: scale(1.1) rotate(-10deg);
+  }
+  50% {
+    transform: scale(0.95) rotate(10deg);
+  }
+  75% {
+    transform: scale(1.05) rotate(-5deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* Bypass danger hover wobble (control-panel) */
+@keyframes crispy-cp-bypass-wobble-danger {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    transform: scale(1.15) rotate(-15deg);
+  }
+  50% {
+    transform: scale(0.9) rotate(15deg);
+  }
+  75% {
+    transform: scale(1.1) rotate(-8deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* Chrome hover wobble (control-panel) */
+@keyframes crispy-cp-chrome-wobble {
+  0% {
+    transform: scale(1);
+  }
+  25% {
+    transform: scale(1.15);
+  }
+  50% {
+    transform: scale(0.95);
+  }
+  75% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Chrome pop on activation (control-panel) */
+@keyframes crispy-cp-chrome-pop {
+  0% {
+    transform: scale(0.8) rotate(-180deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2) rotate(10deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+/* Settings hover wobble (control-panel) */
+@keyframes crispy-cp-settings-wobble {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  100% {
+    transform: scale(1.1) rotate(90deg);
+  }
+}
+
+/* Settings pinned hover wobble (control-panel) */
+@keyframes crispy-cp-settings-wobble-pinned {
+  0% {
+    transform: scale(1) rotate(45deg);
+  }
+  100% {
+    transform: scale(1.1) rotate(135deg);
+  }
+}
+
+/* Settings pinned pop (control-panel) */
+@keyframes crispy-cp-settings-pop {
+  0% {
+    transform: scale(0.8) rotate(-180deg);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.2) rotate(60deg);
+  }
+  100% {
+    transform: scale(1) rotate(45deg);
+    opacity: 1;
+  }
+}
+
+/* Fork button jiggle (control-panel) */
+@keyframes crispy-cp-fork-jiggle {
+  0% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-2px);
+  }
+  50% {
+    transform: translateX(2px);
+  }
+  75% {
+    transform: translateX(-1px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+/* Main content area glow (layout) */
+@keyframes crispy-cp-glow {
+  0%,
+  100% {
+    box-shadow: inset 0 0 12px var(--frame-highlight);
+  }
+  50% {
+    box-shadow: inset 0 0 25px var(--frame-highlight);
+  }
+}
+
+/* Tool panel glow (layout) */
+@keyframes crispy-tool-glow {
+  0%,
+  100% {
+    box-shadow: inset 0 0 6px var(--frame-highlight);
+  }
+  50% {
+    box-shadow: inset 0 0 14px var(--frame-highlight);
+  }
+}
+
+/* Connection dot pulse green (titlebar) */
+@keyframes crispy-dot-pulse-green {
+  0%,
+  100% {
+    box-shadow: 0 0 4px rgba(115, 201, 145, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 8px rgba(115, 201, 145, 0.8);
+  }
+}
+
+/* Connection dot pulse amber (titlebar) */
+@keyframes crispy-dot-pulse-amber {
+  0%,
+  100% {
+    box-shadow: 0 0 4px rgba(220, 220, 170, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 8px rgba(220, 220, 170, 0.7);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Reduced motion — accessibility kill-switch for all animations
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .crispy-cp-bypass__icon,
+  .crispy-cp-chrome__icon,
+  .crispy-cp-fork__icon,
+  .crispy-cp-send__icon,
+  .crispy-cp-settings__btn,
+  .crispy-titlebar__dot {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,172 @@
+/* ============================================================================
+ * TitleBar — Fixed header bar (Leto-style)
+ *
+ * Matches Leto webview-next: darker sideBar background, 3D header buttons
+ * with box-shadow, connection dot with glow, three-column flex layout.
+ * ============================================================================ */
+
+.crispy-titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--titlebar-height);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  background: rgba(37, 37, 38, 0.55);
+  -webkit-backdrop-filter: blur(40px) saturate(170%);
+  backdrop-filter: blur(40px) saturate(170%);
+  color: var(--vscode-sideBar-foreground, #cccccc);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  z-index: 300;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+/* --- Center section (CWD + connection indicator) — now the only child --- */
+
+.crispy-titlebar__center {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+  font-size: var(--font-sm);
+}
+
+/* CWD dropdown — native select with link-blue text, dark background.
+   Keeps native appearance for consistent dropdown popup rendering. */
+.crispy-titlebar__cwd-select {
+  color: var(--vscode-textLink-foreground, #3794ff);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  background: var(--vscode-dropdown-background, #3c3c3c);
+  border: 1px solid var(--vscode-dropdown-border, transparent);
+  border-radius: var(--radius-xl);
+  padding: 2px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 240px;
+}
+
+.crispy-titlebar__cwd-select:hover {
+  border-color: var(--vscode-textLink-foreground, #3794ff);
+}
+
+.crispy-titlebar__cwd-select:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder, #007acc);
+}
+
+.crispy-titlebar__cwd-select option {
+  color: var(--vscode-dropdown-foreground, #cccccc);
+}
+
+/* --- Connection indicator dot (Leto-style with glow + click-to-copy) --- */
+
+.crispy-titlebar__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  cursor: pointer;
+  transition:
+    background 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+.crispy-titlebar__dot--streaming {
+  background: var(--vscode-testing-runAction, #73c991);
+  box-shadow: 0 0 4px rgba(115, 201, 145, 0.6);
+  animation: crispy-dot-pulse-green 2s ease-in-out infinite;
+}
+
+.crispy-titlebar__dot--idle {
+  background: var(--vscode-descriptionForeground, #858585);
+}
+
+.crispy-titlebar__dot--approval {
+  background: #dcdcaa;
+  box-shadow: 0 0 4px rgba(220, 220, 170, 0.5);
+  animation: crispy-dot-pulse-amber 2s ease-in-out infinite;
+}
+
+/* Copied flash — brief bright highlight on click-to-copy */
+.crispy-titlebar__dot--copied {
+  background: #fff !important;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.8) !important;
+  animation: none !important;
+}
+
+/* ============================================================================
+ * Transcript Header — session dropdown + new-session button inside the
+ * transcript tab, replacing what was previously in the titlebar.
+ * ========================================================================= */
+
+.crispy-transcript-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  flex-shrink: 0;
+  user-select: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.crispy-transcript-header__btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #d4d4d4);
+  border: none;
+  border-radius: var(--radius-xl);
+  cursor: pointer;
+  font-size: var(--font-sm);
+  font-family: inherit;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  transition: background 0.15s;
+}
+
+.crispy-transcript-header__btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+
+.crispy-transcript-header__btn:active {
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
+  transform: translateY(0.5px);
+}
+
+.crispy-transcript-header__session-btn {
+  max-width: calc(50vw - 0.5rem);
+  min-width: 0;
+}
+
+.crispy-transcript-header__session-btn--open {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder, #007acc);
+}
+
+.crispy-transcript-header__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.crispy-transcript-header__chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.crispy-transcript-header__chevron--open {
+  transform: rotate(180deg);
+}
+
+.crispy-transcript-header__new-btn {
+  margin-left: auto;
+}

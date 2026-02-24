@@ -17,7 +17,7 @@
  * @module ThinkingIndicator
  */
 
-import { useChannelState } from '../hooks/useSessionStatus.js';
+import { useChannelState } from '../hooks/useChannelStore.js';
 
 interface ThinkingIndicatorProps {
   /** Per-tab session ID. Used to check channel state for this specific session. */

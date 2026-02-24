@@ -1,27 +1,24 @@
 /**
  * Blocks Tool Registry Context — React integration for BlocksToolRegistry
  *
- * Follows the ToolRegistryContext pattern: named context → Provider function →
+ * Follows the ToolRegistryContext pattern: named context -> Provider function ->
  * useXxx hook with null guard + throw.
  *
- * The provider owns a BlocksToolRegistry singleton (via useRef) and processes
- * transcript entries **synchronously during render** — not in a useEffect.
- * This is critical: child components read from the registry via
- * useSyncExternalStore's getSnapshot(), which runs during render. If we
- * populated the registry in a post-render effect, the first paint would
- * show text blocks but null tool cards.
+ * The provider owns a BlocksToolRegistry singleton (via useRef). Top-level
+ * tool_use registration and tool_result resolution are handled by the
+ * renderers themselves (ToolBlockRenderer and ToolResultRenderer) via
+ * useEffect self-registration — not by a centralized preprocessing pass.
  *
- * Processing during render is safe because:
- * - The registry is a mutable ref (useRef), not React state
- * - We guard with processedCountRef to avoid reprocessing
- * - Notifications are suppressed (silent mode) during render to avoid
- *   triggering useSyncExternalStore re-render cascades mid-render
+ * The preprocessing pass that runs synchronously during render handles only
+ * concerns that lack their own React components:
+ * - Child entries grouping (parentToolUseID -> TranscriptEntry[] map)
+ * - Async agent detection (isAsync flag on tool_result entries)
+ * - Nested content walking (deeply nested blocks inside Task results)
  *
- * Post-render flush: silent mode collects dirty tool IDs during render.
- * A useEffect calls registry.flushDirty() after commit so already-mounted
- * components get notified and re-render.
+ * Silent mode + post-render flush remain for the preprocessing pass, which
+ * still writes to the registry (nested content, async agents).
  *
- * Child entries map: As entries are processed, we build a parentToolUseID →
+ * Child entries map: As entries are processed, we build a parentToolUseID ->
  * TranscriptEntry[] map so Task cards can render their children inside the
  * card body using the same blocks pipeline recursively.
  *
@@ -36,7 +33,6 @@ import {
   useState,
 } from 'react';
 import type { TranscriptEntry, ContentBlock, ToolResultBlock } from '../../core/transcript.js';
-import type { RichBlock } from './types.js';
 import { BlocksToolRegistry } from './blocks-tool-registry.js';
 import { isPerfMode } from '../perf/index.js';
 import { PerfStore } from '../perf/profiler.js';
@@ -50,6 +46,7 @@ import './register-views.js';
 // ============================================================================
 
 const BlocksToolRegistryCtx = createContext<BlocksToolRegistry | null>(null);
+const TabSessionIdCtx = createContext<string | null>(null);
 const ChildEntriesCtx = createContext<Map<string, TranscriptEntry[]>>(new Map());
 
 /** Ref-wrapped injection callback for background agent tunnel entries. */
@@ -213,11 +210,13 @@ export function BlocksToolRegistryProvider({
 
   return (
     <BlocksToolRegistryCtx.Provider value={registry}>
-      <ChildEntriesCtx.Provider value={childEntriesMap}>
-        <InjectChildEntriesCtx.Provider value={injectChildEntriesRef}>
-          {children}
-        </InjectChildEntriesCtx.Provider>
-      </ChildEntriesCtx.Provider>
+      <TabSessionIdCtx.Provider value={sessionId}>
+        <ChildEntriesCtx.Provider value={childEntriesMap}>
+          <InjectChildEntriesCtx.Provider value={injectChildEntriesRef}>
+            {children}
+          </InjectChildEntriesCtx.Provider>
+        </ChildEntriesCtx.Provider>
+      </TabSessionIdCtx.Provider>
     </BlocksToolRegistryCtx.Provider>
   );
 }
@@ -227,8 +226,17 @@ export function BlocksToolRegistryProvider({
 // ============================================================================
 
 /**
- * Process an entry: register tool_use blocks, resolve tool_result blocks,
- * and group nested entries by parentToolUseID.
+ * Process an entry: group nested entries by parentToolUseID, detect
+ * background async agents, and walk nested content blocks.
+ *
+ * Top-level tool_use registration and tool_result resolution are handled by
+ * the renderers themselves (ToolBlockRenderer and ToolResultRenderer) via
+ * useEffect self-registration. This function only handles concerns that
+ * don't have their own React component:
+ * - Child entries grouping (parentToolUseID mapping for Task children)
+ * - Async agent detection (isAsync flag on tool_result entries)
+ * - Nested content walking (deeply nested tool_use/tool_result inside Task
+ *   results that aren't rendered by React components)
  */
 function processEntryForBlocksRegistry(
   entry: TranscriptEntry,
@@ -250,23 +258,7 @@ function processEntryForBlocksRegistry(
   if (!Array.isArray(content)) return;
 
   for (const block of content) {
-    if (block.type === 'tool_use') {
-      // Build RichBlock with structural context for panel expanded views
-      const richBlock: RichBlock = {
-        ...block,
-        context: {
-          entryUuid: entry.uuid ?? '',
-          role: entry.message?.role ?? entry.type,
-          parentToolUseId: entry.parentToolUseID,
-          agentId: entry.agentId,
-          depth: 0,
-          isSidechain: entry.isSidechain,
-        },
-      };
-      registry.register(block.id, block.name, richBlock);
-    } else if (block.type === 'tool_result') {
-      registry.resolve(block.tool_use_id, block);
-
+    if (block.type === 'tool_result') {
       // Detect background Task: tool_result with isAsync flag from SDK
       if (
         entry.toolUseResult &&
@@ -310,17 +302,8 @@ function walkNestedForRegistry(
 }
 
 // ============================================================================
-// Hooks
+// Hooks — two-level lookup: per-tab context -> bridge context
 // ============================================================================
-
-/**
- * Stable empty registry sentinel.
- *
- * MUST be module-level to preserve useSyncExternalStore subscription stability.
- * Creating `new BlocksToolRegistry()` inline would break external-store semantics
- * (new instance per render = subscription thrashing).
- */
-const EMPTY_REGISTRY = new BlocksToolRegistry();
 
 // Import bridge context for fallback
 import { ActiveTabBlocksCtx } from './ActiveTabBlocksContext.js';
@@ -328,14 +311,29 @@ import { ActiveTabBlocksCtx } from './ActiveTabBlocksContext.js';
 /**
  * Access the BlocksToolRegistry instance.
  *
- * Falls back to bridge context when outside a BlocksToolRegistryProvider
- * (e.g., BlocksToolPanel in the inspector border tab). Returns an empty
- * registry as final fallback to avoid null checks in consumers.
+ * Per-tab context first, bridge fallback second.
+ * Throws if neither is available — every tool consumer must be inside
+ * a BlocksToolRegistryProvider or the ActiveTabBlocksBridge.
  */
 export function useBlocksToolRegistry(): BlocksToolRegistry {
   const ctx = useContext(BlocksToolRegistryCtx);
   const bridge = useContext(ActiveTabBlocksCtx);
-  return ctx ?? bridge?.registry ?? EMPTY_REGISTRY;
+  const registry = ctx ?? bridge?.registry;
+  if (!registry) {
+    throw new Error('useBlocksToolRegistry: no BlocksToolRegistryProvider or ActiveTabBlocksBridge ancestor');
+  }
+  return registry;
+}
+
+/**
+ * Access the per-tab session ID.
+ *
+ * Per-tab context first, bridge fallback second.
+ */
+export function useTabSessionId(): string | null {
+  const ctx = useContext(TabSessionIdCtx);
+  const bridge = useContext(ActiveTabBlocksCtx);
+  return ctx ?? bridge?.sessionId ?? null;
 }
 
 /**

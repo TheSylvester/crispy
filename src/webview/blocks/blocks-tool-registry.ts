@@ -92,6 +92,13 @@ export class BlocksToolRegistry {
     } else {
       this.pending.add(toolUseId);
       this._pendingGen++;
+      // Notify global listeners (inspector panel) about the new pending tool.
+      // Don't use notify() here — that fires per-tool subscribers which expect
+      // result data, not just pending status. Global listeners use _pendingGen
+      // as a generation counter via usePendingCount().
+      if (!this.silentMode) {
+        for (const cb of this._globalListeners) cb();
+      }
     }
   }
 
@@ -279,12 +286,16 @@ export class BlocksToolRegistry {
    */
   silent(fn: () => void): void {
     this.silentMode = true;
+    this._pendingGenAtSilentStart = this._pendingGen;
     try {
       fn();
     } finally {
       this.silentMode = false;
     }
   }
+
+  /** Pending generation at the start of the last silent() call */
+  private _pendingGenAtSilentStart = 0;
 
   /**
    * Flush notifications that were suppressed during silent mode.
@@ -293,7 +304,10 @@ export class BlocksToolRegistry {
    * Returns true if any notifications were flushed.
    */
   flushDirty(): boolean {
-    if (this.dirtyIds.size === 0) return false;
+    const hasDirtyTools = this.dirtyIds.size > 0;
+    const pendingGenChanged = this._pendingGen !== this._pendingGenAtSilentStart;
+
+    if (!hasDirtyTools && !pendingGenChanged) return false;
 
     for (const toolUseId of this.dirtyIds) {
       const listeners = this.subscribers.get(toolUseId);
@@ -303,8 +317,12 @@ export class BlocksToolRegistry {
     }
     this.dirtyIds.clear();
 
-    // Notify global listeners (inspector mode)
-    for (const cb of this._globalListeners) cb();
+    // Notify global listeners (inspector mode) — fires when any tool
+    // was resolved (dirtyIds) OR any pending-set mutation occurred
+    // (pendingGen changed, e.g. register() calls during silent mode).
+    if (hasDirtyTools || pendingGenChanged) {
+      for (const cb of this._globalListeners) cb();
+    }
 
     return true;
   }

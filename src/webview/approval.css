@@ -1,0 +1,242 @@
+/* ============================================================================
+ * Approval Content — rendered inside .crispy-cp via children slot
+ *
+ * When an approval is active, the ControlPanel's children prop replaces
+ * AttachmentsRow + ChatInput with approval UI. The shell positioning,
+ * shadow, border-radius, and --frame-highlight color are inherited.
+ *
+ * Styling ported from Leto webview-next — #inline-permission-panel.
+ * ============================================================================ */
+
+/* Override .crispy-cp background to input-background during approval
+   (Leto uses input-background for the panel, not editor-background) */
+.crispy-cp:has(.crispy-approval-header) {
+  background: var(--vscode-input-background, #3c3c3c);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border: 1px solid var(--frame-highlight, #e88040);
+}
+
+/* Standard approval layout (inside .crispy-cp) */
+.crispy-approval-standard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Approval header — colored with --frame-highlight (agency-aware) */
+.crispy-approval-header {
+  margin: 0 0 4px 0;
+  font-size: var(--font-base);
+  font-weight: 600;
+  color: var(--frame-highlight, #e88040);
+}
+
+.crispy-approval-header__subtitle {
+  font-weight: 400;
+  font-size: var(--font-sm);
+  color: var(--vscode-descriptionForeground, #858585);
+  margin-top: 2px;
+}
+
+/* YAML content block */
+.crispy-approval-content {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.crispy-approval-content pre {
+  margin: 0;
+  padding: 8px;
+  background: var(--bg-editor);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  max-height: 150px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Button row */
+.crispy-approval-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.crispy-approval-btn {
+  padding: 6px 12px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  font-size: var(--font-sm);
+  font-family: inherit;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.crispy-approval-btn--primary {
+  background: var(--color-accent);
+  color: #fff;
+  border: 1px solid var(--color-accent);
+}
+
+.crispy-approval-btn--primary:hover {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+.crispy-approval-btn--secondary {
+  background: var(--bg-editor);
+  color: var(--vscode-button-secondaryForeground, #d4d4d4);
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+}
+
+.crispy-approval-btn--secondary:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  border-color: var(--frame-highlight, #e88040);
+}
+
+.crispy-approval-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Dim transcript when approval is pending */
+.crispy-main:has(.crispy-approval-header) .crispy-transcript::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Tab bar (AskUserQuestion multi-question) */
+.crispy-approval-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-panel);
+  padding-bottom: 4px;
+  margin-bottom: 8px;
+}
+
+.crispy-approval-tab {
+  padding: 4px 10px;
+  font-size: var(--font-sm);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px 3px 0 0;
+  color: var(--vscode-descriptionForeground, #888);
+  cursor: pointer;
+}
+
+.crispy-approval-tab--active {
+  color: var(--vscode-foreground, #d4d4d4);
+  border-color: var(--border-panel);
+  border-bottom-color: var(--vscode-editor-background, #1e1e1e);
+  background: var(--bg-editor);
+}
+
+.crispy-approval-tab__check {
+  color: var(--frame-highlight, #e88040);
+  margin-left: 4px;
+}
+
+/* Options (radio/checkbox) — shared by AskUserQuestion + ExitPlanMode */
+.crispy-approval-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.crispy-approval-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.crispy-approval-option:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-approval-option--selected {
+  background: var(--vscode-list-activeSelectionBackground, #094771);
+}
+
+.crispy-approval-option input[type="radio"],
+.crispy-approval-option input[type="checkbox"] {
+  margin-top: 2px;
+  accent-color: var(--frame-highlight, #e88040);
+}
+
+.crispy-approval-option__label {
+  font-size: var(--font-sm);
+  font-weight: 500;
+}
+
+.crispy-approval-option__desc {
+  font-size: var(--font-xs);
+  color: var(--vscode-descriptionForeground, #888);
+}
+
+.crispy-approval-question {
+  font-size: var(--font-base);
+  margin-bottom: 8px;
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+/* Other input (ChatInput wrapper inside approval) */
+.crispy-approval-other-input {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+/* ExitPlanMode permissions list */
+.crispy-approval-permissions {
+  margin-bottom: 8px;
+}
+
+.crispy-approval-permissions-list {
+  margin: 4px 0 0 0;
+  padding-left: 16px;
+  font-size: var(--font-sm);
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-approval-permissions-list li {
+  margin-bottom: 2px;
+}
+
+/* ExitPlanMode plan content */
+.crispy-approval-plan {
+  margin-bottom: 8px;
+}
+
+.crispy-approval-plan__summary {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--vscode-descriptionForeground, #858585);
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 0;
+}
+
+.crispy-approval-plan__summary:hover {
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-approval-plan__content {
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 8px;
+  margin-top: 4px;
+  background: var(--bg-editor);
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+}

@@ -273,20 +273,20 @@ export function BlocksVisibilityProvider({
 }
 
 // ============================================================================
-// Hooks
+// Hooks — two-level lookup: per-tab context -> bridge context
 // ============================================================================
 
 // Import bridge context for fallback
 import { ActiveTabBlocksCtx } from './ActiveTabBlocksContext.js';
 
+/** Stable empty snapshot for useSyncExternalStore before any tab is active. */
 const EMPTY: string[] = [];
 
 /**
  * Subscribe to the list of currently visible tool IDs (in DOM order).
  *
- * Falls back to bridge context when outside a BlocksVisibilityProvider
- * (e.g., BlocksToolPanel in the inspector border tab). Returns an empty
- * array if no store is available.
+ * Per-tab context first, bridge fallback second. Returns an empty array
+ * during the brief initial render before any tab activates the bridge.
  */
 export function useBlocksVisibleToolIds(): string[] {
   const store = useContext(BlocksVisibilityCtx);
@@ -321,7 +321,7 @@ export function useBlocksToolVisible(toolId: string): boolean {
  * Used by inspector mode for spatial awareness — the last arrived tool acts
  * as an anchor even after other tools scroll out.
  *
- * Falls back to bridge context when outside a BlocksVisibilityProvider.
+ * Per-tab context first, bridge fallback second.
  */
 export function useBlocksLastArrivedToolId(): string | null {
   const store = useContext(BlocksVisibilityCtx);

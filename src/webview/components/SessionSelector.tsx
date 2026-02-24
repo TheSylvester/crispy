@@ -73,13 +73,16 @@ function highlightMatch(text: string, query: string): React.ReactNode {
 export function SessionSelector({
   onSelect,
   onClose,
+  selectedSessionId,
 }: {
   /** Called when the user picks a session. */
   onSelect: (sessionId: string) => void;
   /** Called after selection (or Escape) so the parent can close the dropdown. */
   onClose: () => void;
+  /** Per-tab session ID for highlighting the currently loaded session. */
+  selectedSessionId: string | null;
 }): React.JSX.Element {
-  const { sessions, selectedSessionId, selectedCwd, isLoading, error } =
+  const { sessions, selectedCwd, isLoading, error } =
     useSession();
 
   // All hooks unconditionally (fixes prior rules-of-hooks violation)

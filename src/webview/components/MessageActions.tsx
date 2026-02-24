@@ -1,13 +1,15 @@
 /**
- * Per-message action buttons — appear on hover over user messages.
+ * Per-message action buttons -- appear on hover over user messages.
  *
  * Renders bottom-right of the user message bubble:
- * - Rewind (↺): fork-in-same-panel with original user text pre-filled
- * - Fork (⑂): forks to a new panel at the preceding assistant message
+ * - Rewind: fork-in-same-panel with original user text pre-filled
+ * - Fork: forks to a new panel at the preceding assistant message
  *
- * When targetAssistantId is null (first user message — no preceding assistant),
- * only the rewind button renders. Rewind with null target starts a fresh
- * session with the original prompt pre-filled.
+ * Reads fork targets from ForkContext to resolve the preceding assistant
+ * message ID from the entry's UUID. When targetAssistantId is null (first
+ * user message -- no preceding assistant), only the rewind button renders.
+ * Rewind with null target starts a fresh session with the original prompt
+ * pre-filled.
  *
  * @module MessageActions
  */
@@ -16,14 +18,16 @@ import { useFork } from '../context/ForkContext.js';
 import { RewindIcon, ForkIcon } from './control-panel/icons.js';
 
 interface MessageActionsProps {
-  /** Preceding assistant message UUID, or null for first user message (rewind-only). */
-  targetAssistantId: string | null;
+  /** UUID of the user message entry, used to look up the fork target. */
+  entryUuid: string;
 }
 
-export function MessageActions({ targetAssistantId }: MessageActionsProps): React.JSX.Element | null {
+export function MessageActions({ entryUuid }: MessageActionsProps): React.JSX.Element | null {
   const fork = useFork();
   if (!fork) return null;
-  const { onFork, onRewind, onForkPreviewHover, isStreaming } = fork;
+  const { onFork, onRewind, onForkPreviewHover, isStreaming, forkTargets } = fork;
+
+  const targetAssistantId = forkTargets.get(entryUuid) ?? null;
 
   return (
     <div className="crispy-message-actions">

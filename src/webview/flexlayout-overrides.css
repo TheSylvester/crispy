@@ -53,32 +53,51 @@
 }
 
 /* ============================================================================
-   Streaming glow fix — tool panel is no longer a DOM child of .crispy-main
-   in FlexLayout. Re-root glow selectors to .crispy-layout--flex.
+   Streaming glow — scoped to individual transcript tabs.
+
+   Each .crispy-transcript-tab sets data-streaming when its own session is
+   streaming. Glow selectors target the tab, not the layout root, so only the
+   streaming tab glows — not the entire screen or tabset.
    ============================================================================ */
 
-/* 1. Set --frame-highlight on .crispy-layout--flex per agency mode */
-.crispy-layout--flex[data-streaming]:has(
+/* 1. Set --frame-highlight per agency mode on the streaming tab */
+.crispy-transcript-tab[data-streaming]:has(
     .crispy-cp[data-agency="ask-before-edits"]
   ) {
   --frame-highlight: var(--agency-white);
 }
-.crispy-layout--flex[data-streaming]:has(
+.crispy-transcript-tab[data-streaming]:has(
     .crispy-cp[data-agency="edit-automatically"]
   ) {
   --frame-highlight: var(--agency-blue);
 }
-.crispy-layout--flex[data-streaming]:has(.crispy-cp[data-agency="plan-mode"]) {
+.crispy-transcript-tab[data-streaming]:has(.crispy-cp[data-agency="plan-mode"]) {
   --frame-highlight: var(--agency-teal);
 }
-.crispy-layout--flex[data-streaming]:has(
+.crispy-transcript-tab[data-streaming]:has(
     .crispy-cp[data-agency="bypass-permissions"]
   ) {
   --frame-highlight: var(--agency-red);
 }
 
-/* 2. Tool panel glow — now scoped to .crispy-layout--flex */
-.crispy-layout--flex[data-streaming] .crispy-tool-panel::after {
+/* 2. Per-tab glow overlay — replaces the old .crispy-flex-area::after glow */
+.crispy-transcript-tab::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  border-radius: inherit;
+}
+
+.crispy-transcript-tab[data-streaming]::after {
+  animation: crispy-cp-glow 2s ease-in-out infinite;
+}
+
+/* 3. Tool panel glow — fires when any tab in the layout is streaming.
+   The tool panel lives in a FlexLayout border (outside .crispy-transcript-tab),
+   so use :has() on the layout root to detect any streaming tab. */
+.crispy-layout--flex:has(.crispy-transcript-tab[data-streaming]) .crispy-tool-panel::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -88,23 +107,32 @@
   animation: crispy-tool-glow 2s ease-in-out infinite;
 }
 
-/* 3. Main area glow — the .crispy-flex-area gets the primary glow */
-.crispy-flex-area::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 50;
-  border-radius: inherit;
+/* Inherit --frame-highlight on the layout root for tool panel glow color.
+   Picks up the agency color from whichever tab is streaming. */
+.crispy-layout--flex:has(
+    .crispy-transcript-tab[data-streaming] .crispy-cp[data-agency="ask-before-edits"]
+  ) {
+  --frame-highlight: var(--agency-white);
+}
+.crispy-layout--flex:has(
+    .crispy-transcript-tab[data-streaming] .crispy-cp[data-agency="edit-automatically"]
+  ) {
+  --frame-highlight: var(--agency-blue);
+}
+.crispy-layout--flex:has(
+    .crispy-transcript-tab[data-streaming] .crispy-cp[data-agency="plan-mode"]
+  ) {
+  --frame-highlight: var(--agency-teal);
+}
+.crispy-layout--flex:has(
+    .crispy-transcript-tab[data-streaming] .crispy-cp[data-agency="bypass-permissions"]
+  ) {
+  --frame-highlight: var(--agency-red);
 }
 
-.crispy-layout--flex[data-streaming] .crispy-flex-area::after {
-  animation: crispy-cp-glow 2s ease-in-out infinite;
-}
-
-/* 4. Control panel streaming state — inherit from layout root
+/* 4. Control panel streaming state — per-tab scoped.
    Adds agency-colored border and glow shadow (mirrors .crispy-main rule). */
-.crispy-layout--flex[data-streaming] .crispy-cp {
+.crispy-transcript-tab[data-streaming] .crispy-cp {
   border-color: var(--frame-highlight);
   box-shadow:
     0 4px 24px rgba(0, 0, 0, 0.4),
@@ -138,7 +166,7 @@
    ThinkingIndicator fix — ControlPanel now lives inside .crispy-transcript-tab
    so :has() selectors are scoped to the tab. The styles.css base rules use
    .crispy-transcript-tab:has(.crispy-cp[data-agency="..."]) directly.
-   These layout-level overrides are kept for the streaming glow inheritance.
+   Streaming glow is also per-tab (see section above).
    ============================================================================ */
 
 /* ============================================================================
@@ -211,6 +239,22 @@
 @keyframes crispy-scroll-fab-in-top {
   from { opacity: 0; transform: translateY(-12px) scale(0.8); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Hidden overrides — MUST appear after the animation rules above so they win
+   by cascade order at equal specificity. animation:none cancels the fill-mode
+   that would otherwise hold opacity:1 from the entrance keyframes. */
+.crispy-transcript-tab .crispy-scroll-to-bottom--hidden {
+  animation: none;
+  opacity: 0;
+  transform: translateY(12px) scale(0.8);
+  pointer-events: none;
+}
+.crispy-transcript-tab .crispy-scroll-to-top--hidden {
+  animation: none;
+  opacity: 0;
+  transform: translateY(-12px) scale(0.8);
+  pointer-events: none;
 }
 
 /* ============================================================================

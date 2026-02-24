@@ -1,12 +1,16 @@
 /**
- * Session Context — session list + selection + CWD state
+ * Session Context — session list + CWD state
  *
  * Loads sessions on mount via transport.listSessions() and exposes
- * the list, selection, and CWD to child components.
+ * the list and CWD to child components.
  *
  * CWD tracks the selected working directory as a projectSlug (canonical key).
- * Auto-syncs when a session is selected; independent manual changes don't
- * alter the selected session (supports "new conversation" prep flow).
+ * It is workspace-scoped, not per-tab. Tabs update CWD via setSelectedCwd
+ * when their session changes and they are the active tab.
+ *
+ * Session selection is fully per-tab — each FlexLayout transcript tab owns
+ * its session ID via internal component state. There is no global
+ * selectedSessionId.
  *
  * @module SessionContext
  */
@@ -19,14 +23,12 @@ import { pathToSlug } from '../hooks/useSessionCwd.js';
 
 interface SessionState {
   sessions: WireSessionInfo[];
-  selectedSessionId: string | null;
   selectedCwd: string | null;
   isLoading: boolean;
   error: string | null;
 }
 
 interface SessionContextValue extends SessionState {
-  setSelectedSessionId: (id: string | null) => void;
   setSelectedCwd: (slug: string | null) => void;
   refreshSessions: () => void;
 }
@@ -40,7 +42,6 @@ interface SessionProviderProps {
 export function SessionProvider({ children }: SessionProviderProps): React.JSX.Element {
   const transport = useTransport();
   const [sessions, setSessions] = useState<WireSessionInfo[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -109,15 +110,6 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     };
   }, [transport]);
 
-  // Auto-sync: when selectedSessionId changes, update CWD to that session's slug
-  useEffect(() => {
-    if (!selectedSessionId) return;
-    const session = sessions.find((s) => s.sessionId === selectedSessionId);
-    if (session?.projectSlug) {
-      setSelectedCwd(session.projectSlug);
-    }
-  }, [selectedSessionId, sessions]);
-
   // Listen for workspace CWD hint from VS Code host (sent via postMessage).
   // If it arrives before sessions load, apply it immediately as the default.
   const workspaceCwdRef = useRef<string | null>(null);
@@ -153,29 +145,11 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     }
   }, [sessions, selectedCwd]);
 
-  // When a pending session gets its real ID, update selection
-  useEffect(() => {
-    if (!selectedSessionId?.startsWith('pending:')) return;
-    const off = transport.onEvent((sessionId, event) => {
-      if (
-        sessionId === selectedSessionId &&
-        event.type === 'event' &&
-        event.event.type === 'notification' &&
-        event.event.kind === 'session_changed'
-      ) {
-        setSelectedSessionId(event.event.sessionId);
-      }
-    });
-    return off;
-  }, [selectedSessionId, transport]);
-
   const value: SessionContextValue = {
     sessions,
-    selectedSessionId,
     selectedCwd,
     isLoading,
     error,
-    setSelectedSessionId,
     setSelectedCwd,
     refreshSessions: loadSessions,
   };

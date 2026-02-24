@@ -9,7 +9,7 @@
  */
 
 import { useTransport } from '../../context/TransportContext.js';
-import { useChannelState } from '../../hooks/useSessionStatus.js';
+import { useChannelState } from '../../hooks/useChannelStore.js';
 
 interface StopButtonProps {
   /** Per-tab session ID. When provided, uses this instead of the global context. */

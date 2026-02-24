@@ -1,0 +1,134 @@
+/* --- Playback Controls (pill + popover) --- */
+
+.crispy-playback {
+  position: fixed;
+  bottom: 5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 199;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Collapsed pill — thin horizontal line with counter */
+.crispy-playback__pill {
+  background: rgba(30, 30, 30, 0.55);
+  -webkit-backdrop-filter: blur(40px) saturate(170%);
+  backdrop-filter: blur(40px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-xl);
+  padding: 2px 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.crispy-playback__pill:hover {
+  background: rgba(50, 50, 50, 0.7);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.crispy-playback__pill-counter {
+  font-size: var(--font-xs, 11px);
+  font-family: monospace;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+/* Expanded popover — appears above the pill */
+.crispy-playback__popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(30, 30, 30, 0.85);
+  -webkit-backdrop-filter: blur(40px) saturate(170%);
+  backdrop-filter: blur(40px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-xl);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+/* Transport row — ⏮ ◀ ▶ ▶▶ +10 ⏭ */
+.crispy-playback__transport {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.crispy-playback__btn {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--font-md);
+  min-width: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.crispy-playback__btn--skip {
+  font-size: var(--font-xs, 11px);
+  font-family: monospace;
+  font-weight: 600;
+  padding: 4px 6px;
+  min-width: unset;
+}
+
+.crispy-playback__btn:hover {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.crispy-playback__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Speed row — 1× 2× 5× */
+.crispy-playback__speed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.crispy-playback__speed-btn {
+  background: transparent;
+  color: var(--vscode-foreground, #ccc);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--font-xs, 11px);
+  font-family: monospace;
+  opacity: 0.5;
+  transition: opacity 0.1s, border-color 0.1s;
+}
+
+.crispy-playback__speed-btn:hover {
+  opacity: 0.8;
+}
+
+.crispy-playback__speed-btn--active {
+  opacity: 1;
+  border-color: var(--vscode-button-background);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .crispy-playback__pill,
+  .crispy-playback__popover {
+    background: var(--bg-editor);
+  }
+}

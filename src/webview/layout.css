@@ -1,0 +1,198 @@
+/* --- Layout --- */
+
+.crispy-layout {
+  position: relative;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* --- Main Content Area --- */
+
+.crispy-main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: calc(100vh - var(--titlebar-height));
+  margin-top: var(--titlebar-height);
+  margin-left: 0;
+  margin-right: var(--right-panels-width, 0px);
+  position: relative;
+  transition: margin-right var(--sidebar-transition);
+}
+
+/* Streaming glow — agency-colored inset glow on both the main content area
+   and the tool panel.  --frame-highlight is set on .crispy-main itself (not
+   just ::after) so descendants — including the tool panel's ::after — inherit
+   the current agency color.  Reads data-streaming from .crispy-main and
+   agency mode from the ControlPanel's data-agency via :has(). */
+
+/* 1. Set --frame-highlight on .crispy-main per agency mode */
+.crispy-main[data-streaming]:has(
+    .crispy-cp[data-agency="ask-before-edits"]
+  ) {
+  --frame-highlight: var(--agency-white);
+}
+.crispy-main[data-streaming]:has(
+    .crispy-cp[data-agency="edit-automatically"]
+  ) {
+  --frame-highlight: var(--agency-blue);
+}
+.crispy-main[data-streaming]:has(.crispy-cp[data-agency="plan-mode"]) {
+  --frame-highlight: var(--agency-teal);
+}
+.crispy-main[data-streaming]:has(
+    .crispy-cp[data-agency="bypass-permissions"]
+  ) {
+  --frame-highlight: var(--agency-red);
+}
+
+/* 2. Primary glow overlay — main content area */
+.crispy-main::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  border-radius: inherit;
+}
+
+.crispy-main[data-streaming]::after {
+  animation: crispy-cp-glow 2s ease-in-out infinite;
+}
+
+/* 3. Secondary glow overlay — tool panel (subtler, same rhythm) */
+.crispy-main[data-streaming] .crispy-tool-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  border-radius: inherit;
+  animation: crispy-tool-glow 2s ease-in-out infinite;
+}
+
+/* --- Scroll navigation FABs ---
+ * Positioning and layout lives in flexlayout-overrides.css under
+ * .crispy-transcript-tab. These are the visual base styles only. */
+
+.crispy-scroll-nav {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-xl);
+  background: linear-gradient(180deg, #3a3d41 0%, #2d2f33 100%);
+  color: #d4d4d4;
+  border: 1px solid #222;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
+  transition:
+    opacity 0.15s ease-out,
+    transform 0.15s ease-out,
+    background 0.15s ease-out,
+    box-shadow 0.15s ease-out;
+}
+
+.crispy-scroll-nav:hover {
+  background: linear-gradient(180deg, #454850 0%, #3a3d41 100%);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
+  transform: translateY(-1px);
+}
+
+.crispy-scroll-nav:active {
+  background: linear-gradient(180deg, #2d2f33 0%, #3a3d41 100%);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transform: translateY(1px);
+}
+
+/* Hidden state for scroll FABs is in flexlayout-overrides.css (must appear
+   after the animation rules in cascade order to override fill-mode). */
+
+/* --- Welcome Page --- */
+
+.crispy-welcome {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--vscode-sideBar-background, #252526);
+}
+
+.crispy-welcome__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 400px;
+}
+
+.crispy-welcome__icon {
+  margin-bottom: 16px;
+  flex-shrink: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.crispy-welcome__icon svg {
+  width: auto;
+  height: auto;
+  max-width: min(160px, 40vw);
+  max-height: min(160px, 25vh);
+  flex-shrink: 1;
+}
+
+.crispy-welcome__title {
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--vscode-foreground, #ccc);
+  margin: 8px 0 4px 0;
+  letter-spacing: 0.4em;
+  padding-left: 0.4em;
+  text-transform: uppercase;
+}
+
+.crispy-welcome__subtitle {
+  font-size: var(--font-2xs);
+  font-weight: 400;
+  color: var(--vscode-descriptionForeground, #888);
+  margin: 0;
+  letter-spacing: 0.25em;
+  padding-left: 0.25em;
+  text-transform: uppercase;
+}
+
+.crispy-welcome__loading {
+  animation: crispy-shimmer-pulse 1.5s ease-in-out infinite;
+}
+
+/* --- Placeholder / Loading / Error States --- */
+
+.crispy-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  opacity: 0.6;
+}
+
+.crispy-error {
+  padding: 16px;
+  color: var(--vscode-errorForeground);
+  background: rgba(244, 135, 113, 0.1);
+  border-radius: var(--radius-md);
+  margin: 16px;
+}
+
+/* --- Placeholder (generic empty state) --- */
+
+.crispy-placeholder {
+  color: var(--vscode-descriptionForeground, #888);
+  font-size: var(--font-xs);
+  padding: 12px 16px;
+  text-align: center;
+}

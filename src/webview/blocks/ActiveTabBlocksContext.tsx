@@ -1,16 +1,15 @@
 /**
  * Active Tab Blocks Context — bridge between per-tab providers and sibling panels
  *
- * When providers (BlocksToolRegistryProvider, PanelStateProvider,
- * BlocksVisibilityProvider) are moved inside each FlexTranscriptContent tab,
- * sibling components like BlocksToolPanel and ConnectorLines lose direct context
- * access. This bridge solves that:
+ * Per-tab providers (BlocksToolRegistryProvider, PanelStateProvider,
+ * BlocksVisibilityProvider) live inside each TranscriptTab. Sibling
+ * components like BlocksToolPanel sit outside the tab tree and need
+ * access to the active tab's context. This bridge solves that:
  *
  * 1. ActiveTabBlocksProvider wraps the FlexLayout at FlexAppLayout level
  * 2. Each tab's ActiveTabBlocksBridge (rendered inside per-tab providers)
  *    writes the active tab's context values into the bridge when isActiveTab=true
- * 3. Hooks in the context modules (useBlocksToolRegistry, usePanelState, etc.)
- *    fall back to the bridge context when their primary context is null
+ * 3. Consumer hooks use a two-level lookup: per-tab context -> bridge context
  *
  * This allows BlocksToolPanel to read from the active tab's registry without
  * needing to be nested inside every tab's provider tree.
@@ -41,6 +40,7 @@ const NOOP_SET_DISPLAY: (ids: ReadonlySet<string>) => void = () => {};
 
 export interface ActiveTabBlocksContextValue {
   registry: BlocksToolRegistry | null;
+  sessionId: string | null;
   panelState: PanelState;
   panelDispatch: Dispatch<PanelAction>;
   panelDisplayIds: ReadonlySet<string>;
@@ -51,6 +51,7 @@ export interface ActiveTabBlocksContextValue {
 
 interface ActiveTabBlocksSettersValue {
   setRegistry: (r: BlocksToolRegistry | null) => void;
+  setSessionId: (id: string | null) => void;
   setPanelState: (s: PanelState) => void;
   setPanelDispatch: (d: Dispatch<PanelAction>) => void;
   setPanelDisplayIds: (setter: (ids: ReadonlySet<string>) => void) => void;
@@ -88,6 +89,7 @@ export function ActiveTabBlocksProvider({
   children,
 }: ActiveTabBlocksProviderProps): React.JSX.Element {
   const [registry, setRegistry] = useState<BlocksToolRegistry | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [panelState, setPanelState] = useState<PanelState>(initialPanelState);
   const [panelDispatch, setPanelDispatch] = useState<Dispatch<PanelAction>>(() => NOOP_DISPATCH);
   const [bridgePanelDisplayIds, setBridgePanelDisplayIds] = useState<ReadonlySet<string>>(EMPTY_SET);
@@ -98,6 +100,7 @@ export function ActiveTabBlocksProvider({
   // Stable setters for the bridge child
   const setters: ActiveTabBlocksSettersValue = {
     setRegistry: useCallback((r) => setRegistry(r), []),
+    setSessionId: useCallback((id) => setSessionId(id), []),
     setPanelState: useCallback((s) => setPanelState(s), []),
     // Wrap dispatch in a function-returning-function to avoid React treating it as a reducer
     setPanelDispatch: useCallback((d) => setPanelDispatch(() => d), []),
@@ -109,6 +112,7 @@ export function ActiveTabBlocksProvider({
 
   const value: ActiveTabBlocksContextValue = {
     registry,
+    sessionId,
     panelState,
     panelDispatch,
     panelDisplayIds: bridgePanelDisplayIds,
