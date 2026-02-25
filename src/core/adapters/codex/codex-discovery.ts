@@ -1,15 +1,15 @@
 /**
  * codex-discovery.ts
  *
- * VendorDiscovery implementation for Codex using app-server RPC protocol.
+ * VendorDiscovery implementation for Codex using app-server RPC protocol,
+ * with JSONL-first session loading for complete tool call data.
  *
  * Responsibilities:
  * - Session listing via thread/list RPC (paginated)
- * - Session loading via thread/read RPC
+ * - Session loading: JSONL from disk first (complete), RPC fallback (lossy)
  * - Cache management with TTL for efficient repeated lookups
  *
  * Does NOT:
- * - Parse JSONL files directly (server handles disk I/O)
  * - Manage live sessions (that's the adapter's job)
  * - Implement readSubagentEntries (Codex doesn't need it)
  */
@@ -20,6 +20,8 @@ import type { Thread } from './protocol/v2/Thread.js';
 import type { ThreadListResponse } from './protocol/v2/ThreadListResponse.js';
 import type { ThreadReadResponse } from './protocol/v2/ThreadReadResponse.js';
 import { adaptCodexItem } from './codex-entry-adapter.js';
+import { findCodexSessionFile, parseCodexJsonlFile } from './codex-jsonl-reader.js';
+import { adaptCodexJsonlRecords } from './codex-jsonl-adapter.js';
 import { CodexRpcClient, type CodexRpcClientOptions } from './codex-rpc-client.js';
 
 // ============================================================================
@@ -81,9 +83,22 @@ export class CodexDiscovery implements VendorDiscovery {
   }
 
   /**
-   * Load full history for a session via thread/read RPC.
+   * Load full history for a session.
+   *
+   * Tries JSONL from disk first (complete data including tool calls),
+   * then falls back to thread/read RPC (lossy — strips tool execution items).
    */
   async loadHistory(sessionId: string): Promise<TranscriptEntry[]> {
+    // Try JSONL first (complete data including tool calls)
+    const jsonlPath = findCodexSessionFile(sessionId);
+    if (jsonlPath) {
+      const records = parseCodexJsonlFile(jsonlPath);
+      if (records.length > 0) {
+        return adaptCodexJsonlRecords(records, sessionId);
+      }
+    }
+
+    // Fallback: RPC (lossy — no tool calls, but better than nothing)
     const client = await this.ensureClient();
 
     const response = await client.request<ThreadReadResponse>('thread/read', {
