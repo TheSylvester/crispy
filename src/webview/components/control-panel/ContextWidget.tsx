@@ -13,6 +13,8 @@ import type { ContextUsage } from '../../../core/transcript.js';
 interface ContextWidgetProps {
   percent: number;
   contextUsage?: ContextUsage | null;
+  /** Hide emoji prefix in narrow layouts. */
+  compact?: boolean;
 }
 
 /** Returns CSS class for context percentage color. */
@@ -36,7 +38,7 @@ function formatCost(usd: number): string {
   return `$${usd.toFixed(2)}`;
 }
 
-export function ContextWidget({ percent, contextUsage }: ContextWidgetProps): React.JSX.Element {
+export function ContextWidget({ percent, contextUsage, compact }: ContextWidgetProps): React.JSX.Element {
   const [pinned, setPinned] = useState(false);
   const containerRef = useRef<HTMLSpanElement>(null);
 
@@ -68,7 +70,7 @@ export function ContextWidget({ percent, contextUsage }: ContextWidgetProps): Re
           setPinned(!pinned);
         }}
       >
-        💿 {percent}%
+        {!compact && '💿 '}{percent}%
       </span>
       {pinned && (
         <div className="crispy-cp-context-tooltip">

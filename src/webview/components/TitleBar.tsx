@@ -178,7 +178,6 @@ export function TitleBar(): React.JSX.Element {
 
   const handleNew = useCallback(() => {
     setSelectedSessionId(null);
-    console.log('[TitleBar] New session requested — transport.createSession() not wired yet');
   }, [setSelectedSessionId]);
 
   const handleCwdChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {

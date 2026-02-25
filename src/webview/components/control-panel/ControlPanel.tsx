@@ -31,7 +31,6 @@ import { AttachmentsRow } from './AttachmentsRow.js';
 import { BypassToggle } from './BypassToggle.js';
 import { AgencyModeSelect } from './AgencyModeSelect.js';
 import { ModelSelect } from './ModelSelect.js';
-import { FileContextToggle } from './FileContextToggle.js';
 import { ContextWidget } from './ContextWidget.js';
 import { ChromeToggle } from './ChromeToggle.js';
 import { SettingsPopup } from './SettingsPopup.js';
@@ -156,9 +155,22 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     }, [ref]);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned, toolViewOverride, setToolViewOverride, debugMode, setDebugMode } = usePreferences();
     const transport = useTransport();
-    const { selectedSessionId, selectedCwd, setSelectedSessionId } = useSession();
+    const { selectedSessionId, selectedCwd, setSelectedSessionId, sessions } = useSession();
     const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
     const togglesDisabled = channelState === 'streaming' || channelState === 'awaiting_approval';
+
+    // --- Compact mode detection via ResizeObserver ---
+    // Matches the @container (max-width: 480px) breakpoint in CSS.
+    const [compact, setCompact] = useState(false);
+
+    useEffect(() => {
+      if (!panelEl) return;
+      const ro = new ResizeObserver(([entry]) => {
+        setCompact(entry.contentRect.width <= 480);
+      });
+      ro.observe(panelEl);
+      return () => ro.disconnect();
+    }, [panelEl]);
 
     // --- Dynamic model groups from provider-config ---
     const [modelGroups, setModelGroups] = useState<VendorModelGroup[]>([]);
@@ -385,6 +397,21 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       // Derive vendor and model from the combined "vendor:model" selection
       const { vendor, model } = parseModelOption(state.model);
 
+      // Bail early if creating a new session without a CWD selected
+      if (!state.forkMode && !selectedSessionId && !selectedCwd) {
+        console.error('[ControlPanel] Cannot create session: no CWD selected');
+        return;
+      }
+
+      // Resolve real CWD path from sessions' projectPath (avoids lossy slugToPath)
+      const resolvedCwd = (() => {
+        if (state.forkMode || selectedSessionId || !selectedCwd) return '';
+        const realPath = sessions.find(
+          (s) => s.projectSlug === selectedCwd && s.projectPath,
+        )?.projectPath;
+        return realPath ?? slugToPath(selectedCwd);
+      })();
+
       // Build TurnIntent with unified routing target
       const intent: TurnIntent = {
         content,
@@ -403,15 +430,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               atMessageId: state.forkMode.atMessageId,
             }
           : !selectedSessionId
-            ? { kind: 'new', vendor, cwd: slugToPath(selectedCwd!) }
+            ? { kind: 'new', vendor, cwd: resolvedCwd }
             : { kind: 'existing', sessionId: selectedSessionId },
       };
-
-      // Early bail for new session without CWD
-      if (intent.target.kind === 'new' && !selectedCwd) {
-        console.error('[ControlPanel] Cannot create session: no CWD selected');
-        return;
-      }
 
       // Stash forkMode for error recovery before clearing
       const forkModeBackup = state.forkMode;
@@ -458,7 +479,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             dispatch({ type: 'SET_FORK_MODE', forkMode: forkModeBackup });
           }
         });
-    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, state.forkMode, selectedSessionId, selectedCwd, setSelectedSessionId, setOptimisticStatus, transport, onScrollToBottom, onOptimisticEntry]);
+    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, state.forkMode, selectedSessionId, selectedCwd, sessions, setSelectedSessionId, setOptimisticStatus, transport, onScrollToBottom, onOptimisticEntry]);
 
     // Keep ref in sync so forkConfig auto-send always calls the latest handleSend
     useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
@@ -811,19 +832,15 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             value={state.agencyMode}
             showBypassOption={state.bypassEnabled}
             onChange={(mode) => dispatch({ type: 'SET_AGENCY_MODE', mode })}
+            compact={compact}
           />
           <ModelSelect
             value={state.model}
             onChange={(model) => dispatch({ type: 'SET_MODEL', model })}
             groups={modelGroups}
           />
-          <FileContextToggle
-            checked={state.fileContextEnabled}
-            label={state.fileContextLabel}
-            onChange={(enabled) => dispatch({ type: 'SET_FILE_CONTEXT', enabled })}
-          />
           <span className="crispy-cp-right">
-            <ContextWidget percent={state.contextPercent} contextUsage={state.contextUsage} />
+            <ContextWidget percent={state.contextPercent} contextUsage={state.contextUsage} compact={compact} />
             <ChromeToggle
               checked={state.chromeEnabled}
               onChange={(enabled) => dispatch({ type: 'SET_CHROME', enabled })}

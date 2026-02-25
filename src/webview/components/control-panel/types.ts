@@ -107,6 +107,14 @@ export const AGENCY_MODE_LABELS: Record<AgencyMode, string> = {
   'bypass-permissions': '>> bypass permissions on',
 };
 
+/** Short agency mode labels for compact/narrow layouts. */
+export const AGENCY_MODE_LABELS_SHORT: Record<AgencyMode, string> = {
+  'plan-mode': '|| plan',
+  'edit-automatically': '>> accept',
+  'ask-before-edits': '? ask',
+  'bypass-permissions': '>> bypass',
+};
+
 /** Agency mode colors — matches CSS --frame-highlight values. */
 export const AGENCY_MODE_COLORS: Record<AgencyMode, string> = {
   'ask-before-edits': '#FFFFFF',

@@ -450,10 +450,7 @@ export function resolveToolCategory(
     return 'mcp';
   }
 
-  // Currently only Claude is supported, but structure allows for future vendors
-  const map = vendor === 'claude' ? CLAUDE_TOOL_CATEGORIES : CLAUDE_TOOL_CATEGORIES;
-
-  return map[toolName] ?? 'other';
+  return CLAUDE_TOOL_CATEGORIES[toolName] ?? 'other';
 }
 
 // ============================================================================

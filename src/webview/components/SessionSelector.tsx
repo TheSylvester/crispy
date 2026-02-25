@@ -78,16 +78,14 @@ export function SessionSelector(): React.JSX.Element {
   const [searchQuery, setSearchQuery] = useState('');
   const deferredQuery = useDeferredValue(searchQuery);
 
-  // Two-stage filter: CWD first, then search. Expose intermediate count
-  // so the "match in all text" button knows if there could be more matches.
-  const { filteredSessions, cwdFilteredCount } = useMemo(() => {
+  // Two-stage filter: CWD first, then search.
+  const filteredSessions = useMemo(() => {
     let result = sessions;
 
     // Stage 1: CWD filter (when a specific project is selected)
     if (selectedCwd) {
       result = result.filter((s) => s.projectSlug === selectedCwd);
     }
-    const cwdFilteredCount = result.length;
 
     // Stage 2: Search filter (case-insensitive on label + lastMessage)
     if (deferredQuery) {
@@ -99,7 +97,7 @@ export function SessionSelector(): React.JSX.Element {
       });
     }
 
-    return { filteredSessions: result, cwdFilteredCount };
+    return result;
   }, [sessions, selectedCwd, deferredQuery]);
 
   // Early returns AFTER all hooks
@@ -120,7 +118,6 @@ export function SessionSelector(): React.JSX.Element {
     isSearching || showAll ? filteredSessions : filteredSessions.slice(0, INITIAL_RENDER_CAP);
 
   const hasMore = !isSearching && filteredSessions.length > INITIAL_RENDER_CAP && !showAll;
-  const hasFullTextButton = isSearching && filteredSessions.length < cwdFilteredCount;
 
   return (
     <ul className="crispy-session-list">
@@ -189,21 +186,6 @@ export function SessionSelector(): React.JSX.Element {
           <span className="crispy-session-item__label">
             Show {filteredSessions.length - INITIAL_RENDER_CAP} more…
           </span>
-        </li>
-      )}
-
-      {/* Match in all text — placeholder for future transcript grep */}
-      {hasFullTextButton && (
-        <li
-          className="crispy-session-item crispy-session-item--full-text"
-          onClick={() => {
-            console.log(
-              '[SessionSelector] Match in all text requested for query:',
-              deferredQuery,
-            );
-          }}
-        >
-          <span className="crispy-session-item__label">Match in all text…</span>
         </li>
       )}
     </ul>

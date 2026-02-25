@@ -123,6 +123,8 @@ export interface ClaudeQuickMeta {
   isTrivial: boolean;
   parentSessionId?: string;
   lastMessage?: string;
+  /** Real absolute project path extracted from the `cwd` field of JSONL entries. */
+  projectPath?: string;
 }
 
 /** Structured metadata extracted from the tail (last 32KB) of a JSONL file. */
@@ -213,8 +215,9 @@ export function readLinesFromOffset(
           entries.push(entry);
           // Advance offset past this successfully parsed line
           lastCompleteLineOffset += Buffer.byteLength(line + "\n", "utf-8");
-        } catch {
+        } catch (err) {
           // JSON parse error - skip it and continue
+          console.warn(`[jsonl-reader] Skipping unparseable line: ${(err as Error).message}`);
           lastCompleteLineOffset += Buffer.byteLength(line + "\n", "utf-8");
           continue;
         }
@@ -362,8 +365,9 @@ export function parseJsonlFile(filepath: string): ClaudeTranscriptEntry[] {
       try {
         const entry = JSON.parse(trimmed) as ClaudeTranscriptEntry;
         entries.push(entry);
-      } catch {
-        // Skip invalid JSON lines silently
+      } catch (err) {
+        // Skip invalid JSON lines
+        console.warn(`[jsonl-reader] Skipping unparseable line: ${(err as Error).message}`);
         continue;
       }
     }
@@ -660,6 +664,10 @@ export function extractMetadataFast(
     const firstEntry = entries[0];
     const parentSessionId = firstEntry?.sessionId;
 
+    // Extract the real project path from the first entry with a `cwd` field.
+    // This avoids the lossy slugToPath() round-trip that breaks hyphenated paths.
+    const projectPath = entries.find((e) => e.cwd)?.cwd;
+
     // Extract tail metadata (read from end of file)
     const tail = extractTailMetadata(filepath);
 
@@ -679,6 +687,7 @@ export function extractMetadataFast(
       isTrivial,
       parentSessionId,
       lastMessage: tail.lastMessage,
+      projectPath,
     };
   } catch {
     // File read error

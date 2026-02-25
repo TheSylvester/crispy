@@ -351,6 +351,8 @@ export interface SessionInfo {
   sessionId: string;
   path: string;
   projectSlug: string;
+  /** Real absolute path to the project directory (e.g. "/home/user/my-project"). */
+  projectPath?: string;
   modifiedAt: Date;
   size: number;
   label?: string;
@@ -1462,6 +1464,7 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
         sessionId,
         path: filePath,
         projectSlug: slug,
+        projectPath: meta?.projectPath,
         modifiedAt: stat.mtime,
         size: stat.size,
         label: meta?.label,
@@ -1507,6 +1510,7 @@ export function findSession(sessionId: string): SessionInfo | undefined {
       sessionId,
       path: filePath,
       projectSlug: slug,
+      projectPath: meta?.projectPath,
       modifiedAt: stat.mtime,
       size: stat.size,
       label: meta?.label,

@@ -1,9 +1,10 @@
 /**
- * Fork Button — text+icon button (original Leto webview style)
+ * Fork Button — icon button with optional text label
  *
- * Fixed 5em width, gray background. Fork SVG icon inside a span
- * for hover jiggle animation. Disabled state: opacity 0.4, not-allowed cursor.
- * Reports hover state via callback for fork preview glow on messages.
+ * Gray background with fork SVG icon. Text label "Fork" is hidden in
+ * compact mode via CSS container query on .crispy-cp. Disabled state:
+ * opacity 0.4, not-allowed cursor. Reports hover state via callback
+ * for fork preview glow on messages.
  *
  * @module control-panel/ForkButton
  */
@@ -27,7 +28,8 @@ export function ForkButton({ disabled, onFork, onHoverChange }: ForkButtonProps)
       onMouseEnter={() => onHoverChange(true)}
       onMouseLeave={() => onHoverChange(false)}
     >
-      Fork{' '}
+      <span className="crispy-cp-fork__label">Fork</span>
+      {' '}
       <span className="crispy-cp-fork__icon">
         <ForkIcon />
       </span>

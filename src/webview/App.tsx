@@ -22,6 +22,7 @@ import { TitleBar } from './components/TitleBar.js';
 import { FilePanel } from './components/file-panel/FilePanel.js';
 import { FilePanelProvider } from './context/FilePanelContext.js';
 import { SessionStatusProvider, useSessionStatus } from './hooks/useSessionStatus.js';
+import { ContentErrorBoundary } from './components/ErrorBoundary.js';
 import { isPerfMode, PerfOverlay, PerfProfiler } from './perf/index.js';
 
 interface AppProps {
@@ -167,7 +168,9 @@ function AppLayout(): React.JSX.Element {
         )}
 
         <main className="crispy-main" data-streaming={isStreaming || undefined}>
-          <TranscriptViewer />
+          <ContentErrorBoundary>
+            <TranscriptViewer />
+          </ContentErrorBoundary>
         </main>
       </FilePanelProvider>
     </div>

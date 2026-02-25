@@ -1625,6 +1625,7 @@ h2 {
 /* --- Main container --- */
 
 .crispy-cp {
+  container-type: inline-size; /* Enable @container queries for compact mode */
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -1748,7 +1749,9 @@ h2 {
 }
 
 .crispy-cp-input {
-  flex: 1;
+  flex: 1 1 0%; /* Grow to fill, shrink allowed, zero basis for flex calc */
+  min-width: 0; /* Allow flex shrinking below content size */
+  min-height: 40px; /* Never collapse vertically */
   padding: 8px;
   background: rgba(255, 255, 255, 0.06);
   color: var(--vscode-input-foreground, #d4d4d4);
@@ -1836,6 +1839,7 @@ h2 {
 
 .crispy-cp-send {
   width: 5em;
+  flex-shrink: 0; /* Never squish the send button */
   padding: 4px 10px;
   font-size: var(--font-sm);
   font-weight: 600;
@@ -1970,7 +1974,11 @@ h2 {
 
 /* --------------------------------------------------------------------------
    Controls Row — second row of toggles, dropdowns, and buttons
-   -------------------------------------------------------------------------- */
+   --------------------------------------------------------------------------
+   Responsive fix: `flex-wrap: wrap` allows items to flow onto new lines
+   when the container is too narrow. Dropdowns have a min-width to prevent
+   text truncation ("? ask bef" → "? ask before edits"). The right cluster
+   also wraps independently. */
 
 .crispy-cp-controls {
   display: flex;
@@ -1982,6 +1990,7 @@ h2 {
 /* --- Shared select styles --- */
 
 .crispy-cp-controls select {
+  min-width: 140px; /* Prevent truncation at narrow widths — wrap instead */
   padding: 4px 12px;
   background: var(--bg-editor);
   color: var(--vscode-descriptionForeground, #888);
@@ -1989,6 +1998,7 @@ h2 {
   border-radius: var(--radius-xl);
   font-size: var(--font-sm);
   cursor: pointer;
+  flex-shrink: 0; /* Never squish — wrap instead */
   transition:
     background 0.15s,
     border-color 0.15s,
@@ -2052,6 +2062,7 @@ h2 {
 .crispy-cp-right {
   display: flex;
   align-items: center;
+  flex-wrap: wrap; /* Wrap icons/fork when space is tight */
   gap: 0.5rem;
   margin-left: auto;
 }
@@ -2069,6 +2080,7 @@ h2 {
   cursor: pointer;
   border: 1px solid transparent;
   border-radius: var(--radius-xl);
+  flex-shrink: 0; /* Icon toggles never squish */
   transition:
     background 0.15s,
     border-color 0.15s;
@@ -2266,7 +2278,8 @@ h2 {
    -------------------------------------------------------------------------- */
 
 .crispy-cp-file-context {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 120px; /* Wrap before the label becomes unreadable */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2601,11 +2614,14 @@ h2 {
 }
 
 /* --------------------------------------------------------------------------
-   Fork Button — original Leto webview style (text+icon)
+   Fork Button — icon button with optional "Fork" text label
    -------------------------------------------------------------------------- */
 
 .crispy-cp-fork {
-  width: 5em;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0; /* Never squish the fork button */
   padding: 4px 10px;
   background: var(--vscode-descriptionForeground, #888);
   color: #1e1e1e;
@@ -2613,7 +2629,7 @@ h2 {
   border-radius: var(--radius-xl);
   font-size: var(--font-sm);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, padding 0.15s;
 }
 
 .crispy-cp-fork:hover:not(:disabled) {
@@ -2623,6 +2639,10 @@ h2 {
 .crispy-cp-fork:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.crispy-cp-fork__label {
+  /* Hidden in compact mode via container query below */
 }
 
 .crispy-cp-fork__icon {
@@ -2649,6 +2669,59 @@ h2 {
   }
   100% {
     transform: translateX(0);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Compact Mode — container query for narrow panel widths
+   --------------------------------------------------------------------------
+   Triggers when .crispy-cp is narrower than 480px. Shrinks the send button
+   to a square icon, hides the fork label ("Fork" → icon-only), and tightens
+   padding throughout. Uses @container (not @media) so it responds to the
+   panel's actual width, not the viewport. */
+
+@container (max-width: 480px) {
+  /* Send button: compact square icon */
+  .crispy-cp-send {
+    width: auto;
+    min-width: 36px;
+    padding: 6px 10px;
+  }
+
+  /* Fork button: icon-only, hide text label */
+  .crispy-cp-fork__label {
+    display: none;
+  }
+
+  .crispy-cp-fork {
+    padding: 4px 8px;
+  }
+
+  /* Agency dropdown gets short labels via React (compact prop),
+     so it needs less min-width. Model select stays wider. */
+  .crispy-cp-agency {
+    min-width: 80px;
+  }
+
+  .crispy-cp-model {
+    min-width: 90px;
+  }
+
+  /* Context widget: tighten padding (emoji hidden via React compact prop) */
+  .crispy-cp-context {
+    padding: 4px 6px;
+  }
+}
+
+/* Extra-narrow: everything at minimum viable size */
+@container (max-width: 360px) {
+  .crispy-cp-controls select {
+    min-width: 70px;
+  }
+
+  .crispy-cp-send {
+    min-width: 32px;
+    padding: 6px 8px;
   }
 }
 

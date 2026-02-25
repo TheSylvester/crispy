@@ -13,6 +13,7 @@ import type { Transport } from './transport.js';
 import { createVSCodeTransport } from './transport-vscode.js';
 import { createWebSocketTransport } from './transport-websocket.js';
 import { App } from './App.js';
+import { AppErrorBoundary } from './components/ErrorBoundary.js';
 import { isPerfMode, PerfStore } from './perf/index.js';
 
 declare function acquireVsCodeApi(): {
@@ -42,7 +43,11 @@ const { transport, kind } = detectTransport();
 const container = document.getElementById('root');
 if (container) {
   const root = createRoot(container);
-  root.render(<App transport={transport} transportKind={kind} />);
+  root.render(
+    <AppErrorBoundary>
+      <App transport={transport} transportKind={kind} />
+    </AppErrorBoundary>,
+  );
 
   if (isPerfMode) {
     PerfStore.init();

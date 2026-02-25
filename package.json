@@ -1,10 +1,21 @@
 {
   "name": "crispy",
   "displayName": "Crispy",
-  "description": "Open-source Claude Code UI for VS Code and Cursor",
-  "version": "0.0.1",
+  "icon": "media/crispy-icon.png",
+  "description": "Open-source multi-vendor AI agent UI for VS Code and Cursor",
+  "version": "0.1.0-dev.1",
   "publisher": "TheSylvester",
   "license": "MIT",
+  "author": "Sylvester Wong",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TheSylvester/crispy.git"
+  },
+  "homepage": "https://github.com/TheSylvester/crispy",
+  "bugs": {
+    "url": "https://github.com/TheSylvester/crispy/issues"
+  },
+  "keywords": ["ai", "claude", "codex", "opencode", "agent", "coding-assistant", "vscode"],
   "engines": {
     "vscode": "^1.94.0"
   },
@@ -24,7 +35,7 @@
     "@types/node": "^20.0.0",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
-    "@types/vscode": "^1.80.0",
+    "@types/vscode": "^1.94.0",
     "@types/ws": "^8.18.1",
     "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.20.0",
@@ -50,7 +61,8 @@
     "Chat"
   ],
   "activationEvents": [
-    "onStartupFinished",
+    "onCommand:crispy.editor.open",
+    "onCommand:crispy.executeFile",
     "onWebviewPanel:crispy"
   ],
   "contributes": {
@@ -89,10 +101,6 @@
           "group": "navigation"
         }
       ]
-    },
-    "configuration": {
-      "title": "Crispy",
-      "properties": {}
     }
   },
   "capabilities": {

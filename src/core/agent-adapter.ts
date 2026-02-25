@@ -48,6 +48,8 @@ export interface SessionInfo {
   sessionId: string;
   path: string;
   projectSlug: string;
+  /** Real absolute path to the project directory (e.g. "/home/user/my-project"). */
+  projectPath?: string;
   modifiedAt: Date;
   size: number;
   label?: string;
