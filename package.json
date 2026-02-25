@@ -15,7 +15,15 @@
   "bugs": {
     "url": "https://github.com/TheSylvester/crispy/issues"
   },
-  "keywords": ["ai", "claude", "codex", "opencode", "agent", "coding-assistant", "vscode"],
+  "keywords": [
+    "ai",
+    "claude",
+    "codex",
+    "opencode",
+    "agent",
+    "coding-assistant",
+    "vscode"
+  ],
   "engines": {
     "vscode": "^1.94.0"
   },
@@ -61,8 +69,6 @@
     "Chat"
   ],
   "activationEvents": [
-    "onCommand:crispy.editor.open",
-    "onCommand:crispy.executeFile",
     "onWebviewPanel:crispy"
   ],
   "contributes": {
