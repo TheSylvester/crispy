@@ -11,9 +11,10 @@
  * @module SessionContext
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { WireSessionInfo } from '../transport.js';
 import { useTransport } from './TransportContext.js';
+import { useEnvironment } from './EnvironmentContext.js';
 import { SESSION_LIST_CHANNEL_ID } from '../../core/session-list-events.js';
 import { pathToSlug } from '../hooks/useSessionCwd.js';
 
@@ -29,6 +30,7 @@ interface SessionContextValue extends SessionState {
   setSelectedSessionId: (id: string | null) => void;
   setSelectedCwd: (slug: string | null) => void;
   refreshSessions: () => void;
+  availableVendors: string[];
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -39,14 +41,12 @@ interface SessionProviderProps {
 
 export function SessionProvider({ children }: SessionProviderProps): React.JSX.Element {
   const transport = useTransport();
+  const transportKind = useEnvironment();
   const [sessions, setSessions] = useState<WireSessionInfo[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Track whether initial CWD default has been applied
-  const cwdInitialized = useRef(false);
 
   // Manual refresh fallback — kept in context value for explicit "pull" scenarios
   const loadSessions = useCallback(async () => {
@@ -119,39 +119,25 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
   }, [selectedSessionId, sessions]);
 
   // Listen for workspace CWD hint from VS Code host (sent via postMessage).
-  // If it arrives before sessions load, apply it immediately as the default.
+  // In VS Code, auto-select the workspace project on initial load so the
+  // sidebar scopes to the open workspace. In dev-server mode, default to
+  // "All Projects" (selectedCwd = null).
   const workspaceCwdRef = useRef<string | null>(null);
 
   useEffect(() => {
     function onMessage(ev: MessageEvent) {
       if (ev.data?.kind === 'workspaceCwd' && ev.data.cwd) {
-        workspaceCwdRef.current = pathToSlug(ev.data.cwd);
-        // If CWD hasn't been initialized yet via sessions, apply immediately
-        if (!cwdInitialized.current) {
-          setSelectedCwd(workspaceCwdRef.current);
+        const slug = pathToSlug(ev.data.cwd);
+        workspaceCwdRef.current = slug;
+        // In VS Code, auto-scope to workspace project if nothing selected yet
+        if (transportKind === 'vscode') {
+          setSelectedCwd((prev) => prev ?? slug);
         }
       }
     }
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, []);
-
-  // Default CWD: prefer workspace hint, fall back to MRU session slug.
-  // Handles both orderings — workspace message first or sessions first.
-  useEffect(() => {
-    if (cwdInitialized.current || sessions.length === 0) return;
-    cwdInitialized.current = true;
-
-    if (workspaceCwdRef.current) {
-      setSelectedCwd(workspaceCwdRef.current);
-    } else {
-      // Sessions are sorted by modifiedAt desc — first session has the most recent project
-      const firstSlug = sessions[0]?.projectSlug;
-      if (firstSlug && !selectedCwd) {
-        setSelectedCwd(firstSlug);
-      }
-    }
-  }, [sessions, selectedCwd]);
+  }, [transportKind]);
 
   // When a pending session gets its real ID, update selection
   useEffect(() => {
@@ -169,6 +155,27 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     return off;
   }, [selectedSessionId, transport]);
 
+  // Derive available vendors from sessions — native vendors first in stable order,
+  // then dynamic vendors alphabetically.
+  const availableVendors = useMemo(() => {
+    const vendorSet = new Set<string>();
+    for (const s of sessions) {
+      if (s.vendor) vendorSet.add(s.vendor);
+    }
+    const native: string[] = [];
+    const dynamic: string[] = [];
+    for (const v of vendorSet) {
+      if (v === 'claude' || v === 'codex' || v === 'gemini') native.push(v);
+      else dynamic.push(v);
+    }
+    native.sort((a, b) => {
+      const order = ['claude', 'codex', 'gemini'];
+      return order.indexOf(a) - order.indexOf(b);
+    });
+    dynamic.sort();
+    return [...native, ...dynamic];
+  }, [sessions]);
+
   const value: SessionContextValue = {
     sessions,
     selectedSessionId,
@@ -178,6 +185,7 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     setSelectedSessionId,
     setSelectedCwd,
     refreshSessions: loadSessions,
+    availableVendors,
   };
 
   return (

@@ -12,12 +12,11 @@
  * @module TitleBar
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '../context/SessionContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
 import { useSessionStatus } from '../hooks/useSessionStatus.js';
-import { useCwd } from '../hooks/useSessionCwd.js';
-import { useAvailableCwds } from '../hooks/useAvailableCwds.js';
+import { SessionSelector } from './session-selector/index.js';
 
 /** SVG chevron — points down, rotates 180° when sidebar is open */
 function Chevron({ open }: { open: boolean }): React.JSX.Element {
@@ -130,28 +129,10 @@ function ConnectionDot({
 }
 
 export function TitleBar(): React.JSX.Element {
-  const { sessions, selectedSessionId, setSelectedSessionId, selectedCwd, setSelectedCwd } = useSession();
+  const { selectedSessionId, setSelectedSessionId } = useSession();
   const { sidebarCollapsed, setSidebarCollapsed, toolPanelOpen, setToolPanelOpen } = usePreferences();
   const { channelState } = useSessionStatus(selectedSessionId);
-  const { fullPath } = useCwd();
-  const allCwds = useAvailableCwds();
-
-  /** Cap visible CWDs to keep the native dropdown manageable.
-   *  Always includes the currently selected CWD even if it falls outside the cap. */
-  const MAX_CWDS = 15;
-  const availableCwds = useMemo(() => {
-    if (allCwds.length <= MAX_CWDS) return allCwds;
-    const top = allCwds.slice(0, MAX_CWDS);
-    // Ensure selected CWD is always present
-    if (selectedCwd && !top.some((c) => c.slug === selectedCwd)) {
-      const selected = allCwds.find((c) => c.slug === selectedCwd);
-      if (selected) top.push(selected);
-    }
-    return top;
-  }, [allCwds, selectedCwd]);
-
-  const sessionLabel =
-    sessions.find((s) => s.sessionId === selectedSessionId)?.label ?? 'No session';
+  const dropdownContainerRef = useRef<HTMLDivElement>(null);
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed(!sidebarCollapsed);
@@ -160,10 +141,6 @@ export function TitleBar(): React.JSX.Element {
   const handleNew = useCallback(() => {
     setSelectedSessionId(null);
   }, [setSelectedSessionId]);
-
-  const handleCwdChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedCwd(e.target.value || null);
-  }, [setSelectedCwd]);
 
   const toggleToolPanel = useCallback(() => {
     setToolPanelOpen(!toolPanelOpen);
@@ -183,36 +160,41 @@ export function TitleBar(): React.JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [setToolPanelOpen]);
 
+  // Click-outside to close dropdown
+  useEffect(() => {
+    if (sidebarCollapsed) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownContainerRef.current &&
+          !dropdownContainerRef.current.contains(e.target as Node)) {
+        setSidebarCollapsed(true);
+      }
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [sidebarCollapsed, setSidebarCollapsed]);
+
   return (
     <header className="crispy-titlebar">
-      {/* Left — session dropdown toggle */}
-      <button
-        className="crispy-titlebar__btn crispy-titlebar__session-btn"
-        onClick={toggleSidebar}
-        aria-label={sidebarCollapsed ? 'Open sessions' : 'Close sessions'}
-        title="Toggle session list"
-      >
-        <span className="crispy-titlebar__label">{sessionLabel}</span>
-        <Chevron open={!sidebarCollapsed} />
-      </button>
-
-      {/* Center — CWD dropdown + connection indicator */}
-      <div className="crispy-titlebar__center">
-        {availableCwds.length > 0 && (
-          <select
-            className="crispy-titlebar__cwd-select"
-            value={selectedCwd ?? ''}
-            onChange={handleCwdChange}
-            title={fullPath ?? 'All projects'}
-          >
-            <option value="">All Projects</option>
-            {availableCwds.map((cwd) => (
-              <option key={cwd.slug} value={cwd.slug} title={cwd.fullPath}>
-                {cwd.display}
-              </option>
-            ))}
-          </select>
+      {/* Left — session dropdown toggle + anchored dropdown */}
+      <div className="crispy-session-dropdown-container" ref={dropdownContainerRef}>
+        <button
+          className="crispy-titlebar__btn crispy-titlebar__session-btn"
+          onClick={toggleSidebar}
+          aria-label={sidebarCollapsed ? 'Open sessions' : 'Close sessions'}
+          title="Toggle session list"
+        >
+          <span className="crispy-titlebar__label">Conversations</span>
+          <Chevron open={!sidebarCollapsed} />
+        </button>
+        {!sidebarCollapsed && (
+          <div className="crispy-session-dropdown">
+            <SessionSelector />
+          </div>
         )}
+      </div>
+
+      {/* Center — connection indicator */}
+      <div className="crispy-titlebar__center">
         <ConnectionDot channelState={channelState} sessionId={selectedSessionId} />
       </div>
 

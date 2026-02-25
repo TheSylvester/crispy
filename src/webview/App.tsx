@@ -8,7 +8,7 @@
  * @module App
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Transport } from './transport.js';
 import type { TransportKind } from './main.js';
 import { TransportProvider } from './context/TransportContext.js';
@@ -16,7 +16,6 @@ import { EnvironmentProvider } from './context/EnvironmentContext.js';
 import { SessionProvider, useSession } from './context/SessionContext.js';
 import { FileIndexProvider } from './context/FileIndexContext.js';
 import { PreferencesProvider, usePreferences } from './context/PreferencesContext.js';
-import { SessionSelector } from './components/SessionSelector.js';
 import { TranscriptViewer } from './components/TranscriptViewer.js';
 import { TitleBar } from './components/TitleBar.js';
 import { SessionStatusProvider, useSessionStatus } from './hooks/useSessionStatus.js';
@@ -64,7 +63,6 @@ const OVERLAY_BREAKPOINT_PX = 800;
 
 function AppLayout(): React.JSX.Element {
   const {
-    sidebarCollapsed, setSidebarCollapsed,
     toolPanelOpen, toolPanelWidthPx,
   } = usePreferences();
   const { selectedSessionId } = useSession();
@@ -72,10 +70,6 @@ function AppLayout(): React.JSX.Element {
   const isStreaming = channelState === 'streaming';
   const layoutRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(window.innerWidth);
-
-  const closeSidebar = useCallback(() => {
-    setSidebarCollapsed(true);
-  }, [setSidebarCollapsed]);
 
   // Track actual container width via ResizeObserver — handles VS Code
   // editor splits, terminal resize, and any other layout changes.
@@ -103,7 +97,6 @@ function AppLayout(): React.JSX.Element {
     <div
       ref={layoutRef}
       className="crispy-layout"
-      data-sidebar={sidebarCollapsed ? 'collapsed' : 'open'}
       data-tool-panel={toolPanelOpen ? (isOverlay ? 'overlay' : 'open') : 'collapsed'}
       style={{
         '--tool-panel-width': `${toolPanelWidth}px`,
@@ -113,20 +106,6 @@ function AppLayout(): React.JSX.Element {
       } as React.CSSProperties}
     >
       <TitleBar />
-
-      <aside className="crispy-sidebar">
-        <div className="crispy-sidebar__header">Sessions</div>
-        <SessionSelector />
-      </aside>
-
-      {/* Backdrop — click-outside to close sidebar (only when open) */}
-      {!sidebarCollapsed && (
-        <div
-          className="crispy-sidebar-backdrop"
-          onClick={closeSidebar}
-          aria-hidden="true"
-        />
-      )}
 
       <main className="crispy-main" data-streaming={isStreaming || undefined}>
         <ContentErrorBoundary>
