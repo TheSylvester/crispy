@@ -2,6 +2,7 @@
 src/**
 test/**
 scripts/**
+spike/**
 .ai-reference/**
 .claude/**
 .cursor/**
