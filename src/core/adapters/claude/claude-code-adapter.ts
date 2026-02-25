@@ -358,6 +358,7 @@ export interface SessionInfo {
   label?: string;
   lastMessage?: string;
   vendor: 'claude';
+  isSidechain?: boolean;
 }
 
 // ============================================================================
@@ -1470,6 +1471,7 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
         label: meta?.label,
         lastMessage: meta?.lastMessage,
         vendor: 'claude',
+        isSidechain: meta?.isSidechain,
       });
     }
   }

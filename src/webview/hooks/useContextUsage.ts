@@ -83,11 +83,17 @@ export function useContextUsage(
     return off;
   }, [sessionId, transport]);
 
-  // Historical fallback — memoized to avoid recomputing on every render
-  const historicalUsage = useMemo(() => {
-    if (liveUsage || !entries || entries.length === 0) return null;
+  // Always compute from entries when available — not gated by liveUsage.
+  // Entries usage updates every time a new assistant message with message.usage
+  // arrives. Catchup (liveUsage) only fires once on subscribe. For Codex,
+  // catchup contextUsage may be null at subscribe time (adapter hasn't received
+  // tokenUsage yet). Entries-first ensures the gauge updates as soon as the
+  // first assistant message completes.
+  const entriesUsage = useMemo(() => {
+    if (!entries || entries.length === 0) return null;
     return computeContextFromEntries(entries);
-  }, [liveUsage, entries]);
+  }, [entries]);
 
-  return liveUsage ?? historicalUsage;
+  // Prefer entries-based (updates per assistant message) over catchup snapshot
+  return entriesUsage ?? liveUsage;
 }

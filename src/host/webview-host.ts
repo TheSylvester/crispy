@@ -124,6 +124,9 @@ export function createCrispyPanel(
   const stylesUri = panel.webview.asWebviewUri(
     vscode.Uri.joinPath(webviewDir, 'styles.css'),
   );
+  const mainCssUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(webviewDir, 'main.css'),
+  );
 
   // Nonce for CSP
   const nonce = getNonce();
@@ -235,7 +238,7 @@ export function createCrispyPanel(
   );
 
   // Set HTML AFTER listener is wired — this triggers webview JS to load
-  panel.webview.html = getWebviewHtml(panel.webview, scriptUri, cssUri, stylesUri, nonce);
+  panel.webview.html = getWebviewHtml(panel.webview, scriptUri, cssUri, stylesUri, mainCssUri, nonce);
 
   panels.set(panelId, panel);
 
@@ -276,6 +279,7 @@ function getWebviewHtml(
   scriptUri: vscode.Uri,
   cssUri: vscode.Uri,
   stylesUri: vscode.Uri,
+  mainCssUri: vscode.Uri,
   nonce: string,
 ): string {
   return `<!DOCTYPE html>
@@ -290,6 +294,7 @@ function getWebviewHtml(
   <title>Crispy</title>
   <link rel="stylesheet" href="${cssUri}">
   <link rel="stylesheet" href="${stylesUri}">
+  <link rel="stylesheet" href="${mainCssUri}">
 </head>
 <body>
   <div id="root"></div>

@@ -150,9 +150,13 @@ export class CodexAgentAdapter implements AgentAdapter {
 
     // Ensure started, then execute turn
     if (!this.client) {
-      this.startPromise = this.start().then(() => this.executeTurn(content));
+      this.startPromise = this.start()
+        .then(() => this.executeTurn(content))
+        .catch((err) => { this.startPromise = null; this.emitError(err); });
     } else if (this.startPromise) {
-      this.startPromise = this.startPromise.then(() => this.executeTurn(content));
+      this.startPromise = this.startPromise
+        .then(() => this.executeTurn(content))
+        .catch((err) => { this.startPromise = null; this.emitError(err); });
     } else {
       this.executeTurn(content).catch((err) => {
         this.emitError(err);
@@ -358,18 +362,8 @@ export class CodexAgentAdapter implements AgentAdapter {
     // Attach to discovery for shared RPC
     codexDiscovery.attachClient(this.client);
 
-    // Backfill history for resume/fork
-    if (this.spec.mode === 'resume' || this.spec.mode === 'continue' || this.spec.mode === 'fork') {
-      const turns = (thread?.turns ?? []) as Array<{ id: string; items: ThreadItem[] }>;
-      for (const turn of turns) {
-        for (const item of turn.items) {
-          const entries = adaptCodexItem(item, this.currentThreadId!, turn.id);
-          for (const entry of entries) {
-            this.outputQueue.enqueue({ type: 'entry', entry });
-          }
-        }
-      }
-    }
+    // History backfill is handled by session-manager via discovery.loadHistory().
+    // The adapter only emits *new* entries from live notifications.
   }
 
   private async executeTurn(content: MessageContent): Promise<void> {
@@ -453,6 +447,16 @@ export class CodexAgentAdapter implements AgentAdapter {
         try {
           const entries = adaptCodexItem(item, threadId, turnId);
           for (const entry of entries) {
+            // Inject context usage into assistant entries so the webview gauge
+            // can compute usage from entries (same pattern Claude SDK uses).
+            if (entry.type === 'assistant' && this._contextUsage && entry.message) {
+              entry.message.usage = {
+                input_tokens: this._contextUsage.tokens.input,
+                output_tokens: this._contextUsage.tokens.output,
+                cache_creation_input_tokens: this._contextUsage.tokens.cacheCreation,
+                cache_read_input_tokens: this._contextUsage.tokens.cacheRead,
+              };
+            }
             this.outputQueue.enqueue({ type: 'entry', entry });
           }
         } catch (err) {
@@ -537,6 +541,9 @@ export class CodexAgentAdapter implements AgentAdapter {
   ): void {
     if (!isApprovalRequest(method)) {
       console.warn('[codex-adapter] Unknown server request:', method);
+      try {
+        this.client?.sendResponse(id, { error: 'Unknown method' });
+      } catch { /* cleanup */ }
       return;
     }
 
@@ -545,6 +552,9 @@ export class CodexAgentAdapter implements AgentAdapter {
 
     if (!mapped) {
       console.warn('[codex-adapter] Failed to map approval request:', method);
+      try {
+        this.client?.sendResponse(id, { decision: 'deny' });
+      } catch { /* cleanup — don't throw */ }
       return;
     }
 

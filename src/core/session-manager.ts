@@ -209,7 +209,9 @@ export function listAllSessions(): SessionInfo[] {
   for (const { discovery } of adapters.values()) {
     all.push(...discovery.listSessions());
   }
-  return all.sort((a, b) => b.modifiedAt.getTime() - a.modifiedAt.getTime());
+  return all
+    .filter(s => !s.isSidechain)
+    .sort((a, b) => b.modifiedAt.getTime() - a.modifiedAt.getTime());
 }
 
 // ============================================================================

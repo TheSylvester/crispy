@@ -162,7 +162,11 @@ export class CodexRpcClient {
     };
 
     const line = JSON.stringify(response) + '\n';
-    this.process.stdin.write(line);
+    this.process.stdin.write(line, (err) => {
+      if (err) {
+        console.error(`[codex-rpc-client] Failed to write response: ${err.message}`);
+      }
+    });
   }
 
   /**

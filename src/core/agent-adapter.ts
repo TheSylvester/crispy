@@ -55,6 +55,7 @@ export interface SessionInfo {
   label?: string;
   lastMessage?: string;
   vendor: Vendor;
+  isSidechain?: boolean;
 }
 
 // ============================================================================

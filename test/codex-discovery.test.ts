@@ -158,7 +158,7 @@ describe('CodexDiscovery', () => {
       expect(sessions[0]).toMatchObject({
         sessionId: 'thread-abc',
         path: '/path/to/thread.jsonl',
-        projectSlug: 'home-user-my-project',
+        projectSlug: '-home-user-my-project',
         projectPath: '/home/user/my-project',
         size: 0,
         vendor: 'codex',
@@ -475,7 +475,7 @@ describe('CodexDiscovery', () => {
       await discovery.refresh();
 
       const sessions = discovery.listSessions();
-      expect(sessions[0].projectSlug).toBe('Users-developer-projects-my-app');
+      expect(sessions[0].projectSlug).toBe('-Users-developer-projects-my-app');
     });
   });
 });
