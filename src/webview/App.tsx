@@ -19,8 +19,6 @@ import { PreferencesProvider, usePreferences } from './context/PreferencesContex
 import { SessionSelector } from './components/SessionSelector.js';
 import { TranscriptViewer } from './components/TranscriptViewer.js';
 import { TitleBar } from './components/TitleBar.js';
-import { FilePanel } from './components/file-panel/FilePanel.js';
-import { FilePanelProvider } from './context/FilePanelContext.js';
 import { SessionStatusProvider, useSessionStatus } from './hooks/useSessionStatus.js';
 import { ContentErrorBoundary } from './components/ErrorBoundary.js';
 import { isPerfMode, PerfOverlay, PerfProfiler } from './perf/index.js';
@@ -64,24 +62,10 @@ const PANEL_RATIO = 0.38;
 /** Below this container width panels switch to overlay mode */
 const OVERLAY_BREAKPOINT_PX = 800;
 
-// ============================================================================
-// File panel sizing constants
-// ============================================================================
-
-/** Min file panel width in px */
-const FILE_MIN_PX = 220;
-/** Max file panel width in px */
-const FILE_MAX_PX = 450;
-/** File panel claims this fraction of the container */
-const FILE_RATIO = 0.22;
-/** Minimum main column width — enforced when both panels are open */
-const MIN_MAIN_PX = 480;
-
 function AppLayout(): React.JSX.Element {
   const {
     sidebarCollapsed, setSidebarCollapsed,
     toolPanelOpen, toolPanelWidthPx,
-    filePanelOpen, filePanelWidthPx,
   } = usePreferences();
   const { selectedSessionId } = useSession();
   const { channelState } = useSessionStatus(selectedSessionId);
@@ -115,64 +99,40 @@ function AppLayout(): React.JSX.Element {
   const isOverlay = toolPanelOpen && containerWidth < OVERLAY_BREAKPOINT_PX;
   const toolPanelWidth = toolPanelOpen && !isOverlay ? panelPx : 0;
 
-  // ---- File panel width ----
-  const fileAutoPx = Math.min(Math.max(Math.round(containerWidth * FILE_RATIO), FILE_MIN_PX), FILE_MAX_PX);
-  const filePanelPx = filePanelWidthPx != null
-    ? Math.min(Math.max(filePanelWidthPx, FILE_MIN_PX), FILE_MAX_PX)
-    : fileAutoPx;
-
-  // Dual-panel constraint: if both panels open and main column would be too
-  // narrow, the file panel auto-switches to overlay mode (tool panel stays
-  // docked because it shows streaming tool output — primary workflow).
-  const bothOpen = filePanelOpen && toolPanelOpen;
-  const isFilePanelOverlay = filePanelOpen && (
-    containerWidth < OVERLAY_BREAKPOINT_PX ||
-    (bothOpen && filePanelPx + panelPx + MIN_MAIN_PX > containerWidth)
-  );
-  const filePanelWidth = filePanelOpen && !isFilePanelOverlay ? filePanelPx : 0;
-
   return (
     <div
       ref={layoutRef}
       className="crispy-layout"
       data-sidebar={sidebarCollapsed ? 'collapsed' : 'open'}
       data-tool-panel={toolPanelOpen ? (isOverlay ? 'overlay' : 'open') : 'collapsed'}
-      data-file-panel={filePanelOpen ? (isFilePanelOverlay ? 'overlay' : 'open') : 'collapsed'}
       style={{
         '--tool-panel-width': `${toolPanelWidth}px`,
         '--tool-panel-actual-width': `${toolPanelOpen ? panelPx : 0}px`,
-        '--file-panel-width': `${filePanelWidth}px`,
-        '--file-panel-actual-width': `${filePanelOpen ? filePanelPx : 0}px`,
-        '--right-panels-width': `${toolPanelWidth + filePanelWidth}px`,
+        '--right-panels-width': `${toolPanelWidth}px`,
         '--container-width': `${containerWidth}px`,
       } as React.CSSProperties}
     >
       <TitleBar />
 
-      <FilePanelProvider>
-        {/* File panel — right-side, stacks left of tool panel */}
-        {filePanelOpen && <FilePanel />}
+      <aside className="crispy-sidebar">
+        <div className="crispy-sidebar__header">Sessions</div>
+        <SessionSelector />
+      </aside>
 
-        <aside className="crispy-sidebar">
-          <div className="crispy-sidebar__header">Sessions</div>
-          <SessionSelector />
-        </aside>
+      {/* Backdrop — click-outside to close sidebar (only when open) */}
+      {!sidebarCollapsed && (
+        <div
+          className="crispy-sidebar-backdrop"
+          onClick={closeSidebar}
+          aria-hidden="true"
+        />
+      )}
 
-        {/* Backdrop — click-outside to close sidebar (only when open) */}
-        {!sidebarCollapsed && (
-          <div
-            className="crispy-sidebar-backdrop"
-            onClick={closeSidebar}
-            aria-hidden="true"
-          />
-        )}
-
-        <main className="crispy-main" data-streaming={isStreaming || undefined}>
-          <ContentErrorBoundary>
-            <TranscriptViewer />
-          </ContentErrorBoundary>
-        </main>
-      </FilePanelProvider>
+      <main className="crispy-main" data-streaming={isStreaming || undefined}>
+        <ContentErrorBoundary>
+          <TranscriptViewer />
+        </ContentErrorBoundary>
+      </main>
     </div>
   );
 }

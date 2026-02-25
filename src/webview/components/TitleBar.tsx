@@ -55,25 +55,6 @@ function PlusIcon(): React.JSX.Element {
   );
 }
 
-/** File-tree icon for the File Panel toggle — three stacked indented lines */
-function FilePanelIcon(): React.JSX.Element {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-    >
-      <line x1="2" y1="3" x2="14" y2="3" />
-      <line x1="5" y1="8" x2="14" y2="8" />
-      <line x1="5" y1="13" x2="14" y2="13" />
-    </svg>
-  );
-}
-
 /** Wrench icon for the Tool Panel toggle */
 function ToolPanelIcon(): React.JSX.Element {
   return (
@@ -150,7 +131,7 @@ function ConnectionDot({
 
 export function TitleBar(): React.JSX.Element {
   const { sessions, selectedSessionId, setSelectedSessionId, selectedCwd, setSelectedCwd } = useSession();
-  const { sidebarCollapsed, setSidebarCollapsed, toolPanelOpen, setToolPanelOpen, filePanelOpen, setFilePanelOpen } = usePreferences();
+  const { sidebarCollapsed, setSidebarCollapsed, toolPanelOpen, setToolPanelOpen } = usePreferences();
   const { channelState } = useSessionStatus(selectedSessionId);
   const { fullPath } = useCwd();
   const allCwds = useAvailableCwds();
@@ -188,30 +169,19 @@ export function TitleBar(): React.JSX.Element {
     setToolPanelOpen(!toolPanelOpen);
   }, [toolPanelOpen, setToolPanelOpen]);
 
-  const toggleFilePanel = useCallback(() => {
-    if (!selectedCwd) return; // No-op when no CWD selected
-    setFilePanelOpen(!filePanelOpen);
-  }, [filePanelOpen, setFilePanelOpen, selectedCwd]);
-
   // Alt+T keyboard shortcut — toggle tool activity panel
-  // Alt+F keyboard shortcut — toggle file panel
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey) {
         if (e.key.toLowerCase() === 't') {
           e.preventDefault();
           setToolPanelOpen(!document.querySelector('[data-tool-panel="open"]'));
-        } else if (e.key.toLowerCase() === 'f') {
-          e.preventDefault();
-          if (selectedCwd) {
-            setFilePanelOpen(!document.querySelector('[data-file-panel="open"], [data-file-panel="overlay"]'));
-          }
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setToolPanelOpen, setFilePanelOpen, selectedCwd]);
+  }, [setToolPanelOpen]);
 
   return (
     <header className="crispy-titlebar">
@@ -246,18 +216,8 @@ export function TitleBar(): React.JSX.Element {
         <ConnectionDot channelState={channelState} sessionId={selectedSessionId} />
       </div>
 
-      {/* Right — File panel toggle + Tool panel toggle + New button */}
+      {/* Right — Tool panel toggle + New button */}
       <div className="crispy-titlebar__right">
-        <button
-          className={`crispy-titlebar__btn crispy-titlebar__file-panel-btn${filePanelOpen ? ' crispy-titlebar__file-panel-btn--active' : ''}`}
-          onClick={toggleFilePanel}
-          title="Toggle file panel (Alt+F)"
-          aria-label={filePanelOpen ? 'Close file panel' : 'Open file panel'}
-          disabled={!selectedCwd}
-        >
-          <FilePanelIcon />
-          <span>Files</span>
-        </button>
         <button
           className={`crispy-titlebar__btn crispy-titlebar__tool-panel-btn${toolPanelOpen ? ' crispy-titlebar__tool-panel-btn--active' : ''}`}
           onClick={toggleToolPanel}
@@ -265,7 +225,7 @@ export function TitleBar(): React.JSX.Element {
           aria-label={toolPanelOpen ? 'Close tool panel' : 'Open tool panel'}
         >
           <ToolPanelIcon />
-          <span>Tools</span>
+          <span className="crispy-titlebar__btn-label">Tools</span>
         </button>
         <button
           className="crispy-titlebar__btn crispy-titlebar__new-btn"
@@ -273,7 +233,7 @@ export function TitleBar(): React.JSX.Element {
           title="New session"
         >
           <PlusIcon />
-          <span>New</span>
+          <span className="crispy-titlebar__btn-label">New</span>
         </button>
       </div>
     </header>
