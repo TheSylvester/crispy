@@ -18,7 +18,7 @@ interface Preferences {
   toolPanelMode: ToolPanelMode;
   /** Debug: force all tools to render in a specific view mode. null = auto. */
   toolViewOverride: ToolViewOverride;
-  /** Show debug UI (playback controls, tool view override). On by default during development. */
+  /** Show debug UI (playback controls, tool view override). Off by default. */
   debugMode: boolean;
 }
 
@@ -55,7 +55,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
   const [toolPanelMode, setToolPanelMode] = useState<ToolPanelMode>('inspector');
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
-  const [debugMode, setDebugMode] = useState(true);
+  const [debugMode, setDebugMode] = useState(false);
 
   const value: PreferencesContextValue = {
     renderMode,
