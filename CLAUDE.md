@@ -5,10 +5,14 @@ cross-vendor AI coding agents (Claude Code, Codex, Gemini, OpenCode) behind a
 single UI. Goal: interactive chat, session history, vendor delegation,
 transcript-as-data.
 
-**Current status:** Fully interactive agent client — chat, approvals,
-fork/rewind, session management all wired. Only Claude adapter implemented.
+**Current mission:** Ship v0.1.0 to the OpenVSX Marketplace with Claude +
+Codex adapters working, proving out multi-vendoring. This is the final VS Code
+release — after shipping, this repo will be forked and the fork will drop VS
+Code dependency entirely.
 
-**Codex adapter work lives in the `codex-adapter` branch / `../crispy-codex-adapter` worktree.**
+**Current status:** Fully interactive agent client — chat, approvals,
+fork/rewind, session management all wired. Claude adapter implemented.
+Pre-release audit complete. Codex and OpenCode adapters are next.
 
 ## Architecture
 
@@ -144,12 +148,17 @@ React 19, esbuild, vanilla CSS with `var(--vscode-*)` theme variables.
 
 ### Frozen layer boundaries — do not modify without approval
 
-- **`agent-adapter.ts`** — Frozen. The adapter contract (`AgentAdapter`,
-  `ChannelMessage`, `SendOptions`, `SessionOpenSpec`).
+- **`agent-adapter.ts`** — Frozen. The entire adapter contract: `AgentAdapter`,
+  `VendorDiscovery`, `SessionInfo`, `ChannelMessage`, `SendOptions`,
+  `TurnIntent`, `TurnSettings`, `TurnTarget`, `TurnReceipt`,
+  `SessionOpenSpec`, `AdapterSettings`, `SubagentEntriesResult`. New adapters
+  implement these types — they do not extend them.
 - **`channel-events.ts`** — Frozen. The event types adapters emit.
 - **`session-channel.ts`** — Frozen. Dumb pub/sub broker. Forwards
   `ChannelMessage` as-is to all subscribers. No transformation, no
   interpretation, no new event types. Frontend derives state client-side.
+- **`transcript.ts`** — Frozen. Vendor-agnostic universal types. No
+  vendor-specific fields. Use the `metadata` bag for vendor extras.
 
 ## Commands
 
