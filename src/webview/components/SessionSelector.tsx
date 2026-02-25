@@ -157,6 +157,11 @@ export function SessionSelector(): React.JSX.Element {
                   deferredQuery,
                 )}
               </span>
+              {session.vendor && session.vendor !== 'claude' && (
+                <span className="crispy-session-item__vendor" data-vendor={session.vendor}>
+                  {session.vendor}
+                </span>
+              )}
               <span className="crispy-session-item__time">
                 {formatRelativeTime(session.modifiedAt)}
               </span>

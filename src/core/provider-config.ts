@@ -366,6 +366,15 @@ export function getModelGroups(): VendorModelGroup[] {
     ],
   });
 
+  // Codex — models are server-managed, user can override via model string
+  groups.push({
+    vendor: 'codex',
+    label: 'Codex',
+    models: [
+      { value: 'codex:', label: 'GPT (default)' },
+    ],
+  });
+
   // Dynamic providers
   for (const [slug, config] of Object.entries(currentProviders)) {
     if (!config.enabled) continue;

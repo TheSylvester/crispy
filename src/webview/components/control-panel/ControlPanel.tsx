@@ -348,9 +348,13 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
         if (event.event.kind === 'settings_changed') {
           const { settings } = event.event;
-          // Sync model — vendor is now part of AdapterSettings
+          // Sync model — vendor is now part of AdapterSettings.
+          // Preserve '' for Claude default (matches the "Default" option value in ModelSelect).
+          // Non-Claude vendors always need the prefix to avoid defaulting to Claude via parseModelOption.
           const rawModel = settings.model ?? '';
-          const modelValue: ModelOption = rawModel ? `${settings.vendor}:${rawModel}` : '';
+          const modelValue: ModelOption = settings.vendor === 'claude' && !rawModel
+            ? ''
+            : `${settings.vendor}:${rawModel}`;
           dispatch({ type: 'SET_MODEL', model: modelValue });
           // Sync permission mode → agency mode
           if (settings.permissionMode) {
@@ -841,11 +845,13 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           />
           <span className="crispy-cp-right">
             <ContextWidget percent={state.contextPercent} contextUsage={state.contextUsage} compact={compact} />
-            <ChromeToggle
-              checked={state.chromeEnabled}
-              onChange={(enabled) => dispatch({ type: 'SET_CHROME', enabled })}
-              disabled={togglesDisabled}
-            />
+            {parseModelOption(state.model).vendor === 'claude' && (
+              <ChromeToggle
+                checked={state.chromeEnabled}
+                onChange={(enabled) => dispatch({ type: 'SET_CHROME', enabled })}
+                disabled={togglesDisabled}
+              />
+            )}
             <SettingsPopup
               pinned={settingsPinned}
               onToggle={() => setSettingsPinned(!settingsPinned)}

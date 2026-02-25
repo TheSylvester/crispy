@@ -20,6 +20,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 
 import { registerAdapter } from '../core/session-manager.js';
 import { ClaudeAgentAdapter, claudeDiscovery } from '../core/adapters/claude/claude-code-adapter.js';
+import { CodexAgentAdapter, codexDiscovery } from '../core/adapters/codex/index.js';
 import { syncProviders, startWatching } from '../core/provider-config.js';
 import { createClientConnection } from './client-connection.js';
 import { startRescan } from '../core/session-list-manager.js';
@@ -139,6 +140,12 @@ registerAdapter(
   },
 );
 
+// Register Codex discovery + adapter factory
+registerAdapter(
+  codexDiscovery,
+  (spec) => new CodexAgentAdapter({ ...spec, cwd }),
+);
+
 // Register dynamic providers from ~/.config/crispy/providers.json
 const providerBase = { cwd };
 syncProviders(providerBase).then(() => startWatching(providerBase));
@@ -147,6 +154,6 @@ server.listen(PORT, () => {
   console.log(`[dev-server] Crispy dev server running at http://localhost:${PORT}`);
   console.log(`[dev-server] WebSocket endpoint: ws://localhost:${PORT}/ws`);
   console.log(`[dev-server] Serving static files from: ${STATIC_DIR}`);
-  console.log(`[dev-server] Claude adapter registered`);
+  console.log(`[dev-server] Claude + Codex adapters registered`);
   startRescan();
 });

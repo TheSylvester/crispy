@@ -7,6 +7,7 @@
 import * as vscode from 'vscode';
 import { registerAdapter, unregisterAdapter } from './core/session-manager.js';
 import { ClaudeAgentAdapter, claudeDiscovery } from './core/adapters/claude/claude-code-adapter.js';
+import { CodexAgentAdapter, codexDiscovery } from './core/adapters/codex/index.js';
 import { syncProviders, startWatching, stopWatching } from './core/provider-config.js';
 import { openCrispyPanel, getOrCreatePanelForPrefill } from './host/webview-host.js';
 import { startRescan, stopRescan } from './core/session-list-manager.js';
@@ -51,6 +52,12 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   );
 
+  // Register Codex adapter (doesn't need pathToClaudeCodeExecutable)
+  registerAdapter(
+    codexDiscovery,
+    (spec) => new CodexAgentAdapter({ ...spec, cwd }),
+  );
+
   const workspaceOpts = { workspaceCwd: cwd };
 
   context.subscriptions.push(
@@ -76,6 +83,7 @@ export function activate(context: vscode.ExtensionContext): void {
   startRescan();
   context.subscriptions.push({ dispose: () => stopRescan() });
   context.subscriptions.push({ dispose: () => unregisterAdapter('claude') });
+  context.subscriptions.push({ dispose: () => unregisterAdapter('codex') });
   context.subscriptions.push({ dispose: () => stopWatching() });
 }
 
