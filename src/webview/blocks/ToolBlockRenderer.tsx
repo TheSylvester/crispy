@@ -7,7 +7,7 @@
  * @module webview/blocks/ToolBlockRenderer
  */
 
-import { useCallback, memo } from 'react';
+import { useCallback, useRef, useEffect, memo } from 'react';
 import type { RichBlock, AnchorPoint, ToolViewProps } from './types.js';
 import type { BlocksToolRegistry } from './blocks-tool-registry.js';
 import type { TranscriptEntry, ToolResultBlock } from '../../core/transcript.js';
@@ -28,6 +28,9 @@ import { useBackgroundAgentTunnel } from '../hooks/useBackgroundAgentTunnel.js';
 
 /** Max children visible in the transcript content tail preview. */
 const TAIL_SIZE = 3;
+
+/** px from bottom — auto-scroll task children in panel when within this threshold */
+const CHILDREN_SCROLL_THRESHOLD = 80;
 
 /**
  * Extended tail: returns the last `tailSize + 1` items so the oldest
@@ -205,6 +208,31 @@ function TaskChildrenRenderer({ toolId, anchor, result }: TaskChildrenRendererPr
     handlePolledEntries,
   );
 
+  // ---------------------------------------------------------------------------
+  // Auto-scroll: keep panel task-children pinned to bottom as new entries arrive.
+  // The .crispy-blocks-task-children container becomes scrollable via CSS
+  // (overflow-y: auto; max-height: 40vh) when rendered inside the tool panel.
+  // ---------------------------------------------------------------------------
+  const childrenScrollRef = useRef<HTMLDivElement>(null);
+  const wasNearBottomRef = useRef(true);
+
+  const handleChildrenScroll = useCallback(() => {
+    const el = childrenScrollRef.current;
+    if (!el) return;
+    wasNearBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < CHILDREN_SCROLL_THRESHOLD;
+  }, []);
+
+  // Scroll to bottom when new children arrive (effect fires after DOM update)
+  useEffect(() => {
+    if (!isInPanel) return;
+    const el = childrenScrollRef.current;
+    if (!el) return;
+    if (wasNearBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [childEntries.length, isInPanel]);
+
   if (childEntries.length === 0) return null;
 
   // Compute status from result presence
@@ -229,7 +257,11 @@ function TaskChildrenRenderer({ toolId, anchor, result }: TaskChildrenRendererPr
   const isMainTail = anchor.type === 'main-thread' && visibleChildren.length > TAIL_SIZE;
 
   return (
-    <div className="crispy-blocks-task-children">
+    <div
+      className="crispy-blocks-task-children"
+      ref={isInPanel ? childrenScrollRef : undefined}
+      onScroll={isInPanel ? handleChildrenScroll : undefined}
+    >
       {isMainTail
         ? visibleChildren.map((entry, i) => (
             <div
