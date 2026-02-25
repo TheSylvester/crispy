@@ -16,6 +16,7 @@ import { FilePath } from '../../renderers/tools/shared/FilePath.js';
 import { DiffView } from '../../renderers/tools/shared/DiffView.js';
 import { inferLanguage } from '../../renderers/tools/shared/tool-utils.js';
 import { ToolCard } from './ToolCard.js';
+import { useBlocksToolRegistry } from '../BlocksToolRegistryContext.js';
 
 const meta = getToolData('Edit');
 
@@ -67,6 +68,11 @@ export function EditExpandedView({ block, result, status, anchor }: ToolViewProp
   const oldLines = oldString.split('\n').length;
   const newLines = newString.split('\n').length;
 
+  // Read the computed startLine from the registry (set when tool_result resolves)
+  const registry = useBlocksToolRegistry();
+  const toolMeta = registry.useToolMeta(block.id);
+  const startLine = (toolMeta?.startLine as number) ?? 1;
+
   const resultSummary = result
     ? result.is_error
       ? 'Failed'
@@ -92,6 +98,7 @@ export function EditExpandedView({ block, result, status, anchor }: ToolViewProp
             oldText={oldString}
             newText={newString}
             language={inferLanguage(filePath)}
+            startLine={startLine}
           />
         )}
         {result && result.is_error && (

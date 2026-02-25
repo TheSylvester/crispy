@@ -267,6 +267,25 @@ function processEntryForBlocksRegistry(
     } else if (block.type === 'tool_result') {
       registry.resolve(block.tool_use_id, block);
 
+      // Compute startLine for Edit tools from structured result
+      if (
+        entry.toolUseResult &&
+        typeof entry.toolUseResult === 'object' &&
+        (entry.toolUseResult as Record<string, unknown>).type === 'edit'
+      ) {
+        const editResult = entry.toolUseResult as {
+          originalFile?: string;
+          oldString?: string;
+        };
+        if (editResult.originalFile && editResult.oldString) {
+          const idx = editResult.originalFile.indexOf(editResult.oldString);
+          if (idx >= 0) {
+            const startLine = editResult.originalFile.substring(0, idx).split('\n').length;
+            registry.setToolMeta(block.tool_use_id, { startLine });
+          }
+        }
+      }
+
       // Detect background Task: tool_result with isAsync flag from SDK
       if (
         entry.toolUseResult &&

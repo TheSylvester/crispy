@@ -37,6 +37,9 @@ export class BlocksToolRegistry {
   /** Background Task agent mappings: toolUseId → agentId */
   private asyncAgents = new Map<string, string>();
 
+  /** Computed metadata keyed by tool_use_id (e.g., { startLine } for Edit) */
+  private toolMeta = new Map<string, Record<string, unknown>>();
+
   /** Per-tool subscribers for useSyncExternalStore */
   private subscribers = new Map<string, Set<() => void>>();
 
@@ -170,6 +173,33 @@ export class BlocksToolRegistry {
    */
   getAsyncAgentId(toolUseId: string): string | undefined {
     return this.asyncAgents.get(toolUseId);
+  }
+
+  /**
+   * Store computed metadata for a tool (e.g., { startLine } for Edit tools).
+   * Set at resolve time; subscribers are notified via the normal resolve path.
+   */
+  setToolMeta(toolUseId: string, meta: Record<string, unknown>): void {
+    this.toolMeta.set(toolUseId, meta);
+  }
+
+  /**
+   * Get computed metadata for a tool_use, if any.
+   */
+  getToolMeta(toolUseId: string): Record<string, unknown> | undefined {
+    return this.toolMeta.get(toolUseId);
+  }
+
+  /**
+   * React hook that subscribes to a specific tool's metadata.
+   * Re-renders when the tool's result (and thus metadata) arrives.
+   */
+  useToolMeta(toolUseId: string): Record<string, unknown> | undefined {
+    return useSyncExternalStore(
+      (callback) => this.subscribeTool(toolUseId, callback),
+      () => this.getToolMeta(toolUseId),
+      () => this.getToolMeta(toolUseId),
+    );
   }
 
   /**
@@ -323,6 +353,7 @@ export class BlocksToolRegistry {
     this.pending.clear();
     this.orphans.clear();
     this.asyncAgents.clear();
+    this.toolMeta.clear();
     this.dirtyIds.clear();
     this.silentMode = false;
     this._pendingGen = 0;

@@ -24,6 +24,8 @@ interface DiffViewProps {
   newText: string;
   language?: string;
   maxHeight?: number;
+  /** 1-based line number where the edit starts in the original file. Defaults to 1. */
+  startLine?: number;
 }
 
 interface DiffLine {
@@ -51,8 +53,10 @@ interface DiffPair {
 /**
  * Compute a unified diff with line numbers.
  * Prefix/suffix matching, then removed lines followed by added lines.
+ *
+ * @param startLine - 1-based line number offset for the edit location in the file
  */
-function computeUnifiedDiff(oldText: string, newText: string): NumberedDiffLine[] {
+function computeUnifiedDiff(oldText: string, newText: string, startLine = 1): NumberedDiffLine[] {
   const oldLines = oldText.split('\n');
   const newLines = newText.split('\n');
   const result: NumberedDiffLine[] = [];
@@ -73,8 +77,8 @@ function computeUnifiedDiff(oldText: string, newText: string): NumberedDiffLine[
     suffixLen++;
   }
 
-  let oldNo = 1;
-  let newNo = 1;
+  let oldNo = startLine;
+  let newNo = startLine;
 
   // Common prefix
   for (let i = 0; i < prefixLen; i++) {
@@ -102,8 +106,10 @@ function computeUnifiedDiff(oldText: string, newText: string): NumberedDiffLine[
 /**
  * Compute side-by-side diff pairs with interleaved removed/added rows.
  * Context lines appear on both sides. Removed[i] pairs with added[i].
+ *
+ * @param startLine - 1-based line number offset for the edit location in the file
  */
-function computeDiffPairs(oldText: string, newText: string): DiffPair[] {
+function computeDiffPairs(oldText: string, newText: string, startLine = 1): DiffPair[] {
   const oldLines = oldText.split('\n');
   const newLines = newText.split('\n');
   const pairs: DiffPair[] = [];
@@ -124,8 +130,8 @@ function computeDiffPairs(oldText: string, newText: string): DiffPair[] {
     suffixLen++;
   }
 
-  let oldNo = 1;
-  let newNo = 1;
+  let oldNo = startLine;
+  let newNo = startLine;
 
   // Common prefix
   for (let i = 0; i < prefixLen; i++) {
@@ -191,10 +197,11 @@ interface UnifiedDiffProps {
   newText: string;
   language: string;
   maxHeight: number;
+  startLine: number;
 }
 
-function UnifiedDiff({ oldText, newText, language, maxHeight }: UnifiedDiffProps) {
-  const diffLines = computeUnifiedDiff(oldText, newText);
+function UnifiedDiff({ oldText, newText, language, maxHeight, startLine }: UnifiedDiffProps) {
+  const diffLines = computeUnifiedDiff(oldText, newText, startLine);
   const fullText = diffLines.map((l) => l.text).join('\n');
 
   return (
@@ -249,10 +256,11 @@ interface SplitDiffProps {
   newText: string;
   language: string;
   maxHeight: number;
+  startLine: number;
 }
 
-function SplitDiff({ oldText, newText, language, maxHeight }: SplitDiffProps) {
-  const pairs = computeDiffPairs(oldText, newText);
+function SplitDiff({ oldText, newText, language, maxHeight, startLine }: SplitDiffProps) {
+  const pairs = computeDiffPairs(oldText, newText, startLine);
 
   // Build full source for each side so Prism tokenizes with correct multi-line state
   const leftLines = oldText.split('\n');
@@ -272,6 +280,7 @@ function SplitDiff({ oldText, newText, language, maxHeight }: SplitDiffProps) {
               getLeftTokenProps={getLeftTokenProps}
               getRightTokenProps={getRightTokenProps}
               maxHeight={maxHeight}
+              startLine={startLine}
             />
           )}
         </Highlight>
@@ -287,12 +296,13 @@ interface SplitDiffGridProps {
   getLeftTokenProps: (input: { token: Token; key: number }) => Record<string, unknown>;
   getRightTokenProps: (input: { token: Token; key: number }) => Record<string, unknown>;
   maxHeight: number;
+  startLine: number;
 }
 
 function SplitDiffGrid({
   pairs, leftTokens, rightTokens,
   getLeftTokenProps, getRightTokenProps,
-  maxHeight,
+  maxHeight, startLine,
 }: SplitDiffGridProps) {
   return (
     <div className="crispy-diff-scroll" style={{ maxHeight, overflowY: 'auto' }}>
@@ -301,7 +311,7 @@ function SplitDiffGrid({
           {/* Left pane — scrolls independently */}
           <div className="crispy-diff-split-pane crispy-diff-split-left">
             {pairs.map((pair, i) => {
-              const leftIdx = pair.left ? pair.left.lineNo - 1 : -1;
+              const leftIdx = pair.left ? pair.left.lineNo - startLine : -1;
               const leftToks = leftIdx >= 0 && leftIdx < leftTokens.length ? leftTokens[leftIdx] : null;
 
               return (
@@ -327,7 +337,7 @@ function SplitDiffGrid({
           {/* Right pane — scrolls independently */}
           <div className="crispy-diff-split-pane">
             {pairs.map((pair, i) => {
-              const rightIdx = pair.right ? pair.right.lineNo - 1 : -1;
+              const rightIdx = pair.right ? pair.right.lineNo - startLine : -1;
               const rightToks = rightIdx >= 0 && rightIdx < rightTokens.length ? rightTokens[rightIdx] : null;
 
               return (
@@ -360,7 +370,7 @@ function SplitDiffGrid({
 // DiffView — public component
 // ---------------------------------------------------------------------------
 
-export function DiffView({ oldText, newText, language = 'text', maxHeight = 400 }: DiffViewProps): React.JSX.Element {
+export function DiffView({ oldText, newText, language = 'text', maxHeight = 400, startLine = 1 }: DiffViewProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const [tooNarrow, setTooNarrow] = useState(false);
 
@@ -385,8 +395,8 @@ export function DiffView({ oldText, newText, language = 'text', maxHeight = 400 
   return (
     <div className="crispy-diff" ref={containerRef}>
       {tooNarrow
-        ? <UnifiedDiff oldText={oldText} newText={newText} language={language} maxHeight={maxHeight} />
-        : <SplitDiff oldText={oldText} newText={newText} language={language} maxHeight={maxHeight} />}
+        ? <UnifiedDiff oldText={oldText} newText={newText} language={language} maxHeight={maxHeight} startLine={startLine} />
+        : <SplitDiff oldText={oldText} newText={newText} language={language} maxHeight={maxHeight} startLine={startLine} />}
     </div>
   );
 }
