@@ -112,7 +112,7 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
       <textarea
         ref={textareaRef}
         className="crispy-cp-input"
-        placeholder={placeholder ?? "Ask Claude anything..."}
+        placeholder={placeholder ?? "What would you like to build?"}
         rows={1}
         value={value}
         onChange={handleChange}

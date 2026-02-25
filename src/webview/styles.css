@@ -1751,8 +1751,8 @@ h2 {
 .crispy-cp-input {
   flex: 1 1 0%; /* Grow to fill, shrink allowed, zero basis for flex calc */
   min-width: 0; /* Allow flex shrinking below content size */
-  min-height: 40px; /* Never collapse vertically */
-  padding: 8px;
+  min-height: 32px; /* Never collapse vertically */
+  padding: 6px 8px;
   background: rgba(255, 255, 255, 0.06);
   color: var(--vscode-input-foreground, #d4d4d4);
   border: 1px solid rgba(255, 255, 255, 0.06);
