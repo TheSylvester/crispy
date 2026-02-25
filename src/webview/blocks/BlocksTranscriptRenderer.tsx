@@ -29,6 +29,7 @@ export function BlocksTranscriptRenderer({
           key={entry.uuid ?? `entry-${i}`}
           entry={entry}
           forkTargetId={entry.uuid ? forkTargets.get(entry.uuid) : undefined}
+          isLastEntry={i === entries.length - 1}
         />
       ))}
     </>

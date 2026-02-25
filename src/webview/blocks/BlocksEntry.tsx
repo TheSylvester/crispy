@@ -25,6 +25,8 @@ interface BlocksEntryProps {
   forkTargetId?: string;
   /** Optional depth lookup for nested entries */
   depthLookup?: (parentToolUseId: string) => number;
+  /** True when this is the last entry in the transcript */
+  isLastEntry?: boolean;
 }
 
 export function BlocksEntry({
@@ -32,6 +34,7 @@ export function BlocksEntry({
   registry,
   forkTargetId,
   depthLookup,
+  isLastEntry = false,
 }: BlocksEntryProps): React.JSX.Element | null {
   // Normalize entry to rich blocks
   const blocks = useMemo(
@@ -76,8 +79,14 @@ export function BlocksEntry({
 
   return (
     <div className={`message ${role}`} data-uuid={entry.uuid}>
-      {blocks.map((block, i) =>
-        block.type === 'tool_use' ? (
+      {blocks.map((block, i) => {
+        // Auto-collapse thinking blocks when newer substantive content follows
+        const autoCollapse = block.type === 'thinking'
+          ? !isLastEntry || blocks.slice(i + 1).some(b =>
+              b.type === 'text' || b.type === 'tool_use' || b.type === 'image')
+          : undefined;
+
+        return block.type === 'tool_use' ? (
           <div key={`tool-${block.id}`} data-run-id={block.id}>
             <ToolBlockRenderer
               block={block}
@@ -90,9 +99,10 @@ export function BlocksEntry({
           <BlocksBlockRenderer
             key={`block-${block.context.entryUuid}-${i}`}
             block={block}
+            autoCollapse={autoCollapse}
           />
-        )
-      )}
+        );
+      })}
       {showActions && <MessageActions targetAssistantId={forkTargetId || null} />}
     </div>
   );

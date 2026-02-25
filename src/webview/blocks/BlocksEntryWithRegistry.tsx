@@ -22,11 +22,14 @@ interface BlocksEntryWithRegistryProps {
   entry: TranscriptEntry;
   /** Fork target assistant message ID (for fork/rewind buttons) */
   forkTargetId?: string;
+  /** True when this is the last entry in the transcript */
+  isLastEntry?: boolean;
 }
 
 export function BlocksEntryWithRegistry({
   entry,
   forkTargetId,
+  isLastEntry = false,
 }: BlocksEntryWithRegistryProps): React.JSX.Element | null {
   const registry = useBlocksToolRegistry();
 
@@ -62,8 +65,14 @@ export function BlocksEntryWithRegistry({
       className={`message ${role}`}
       data-uuid={entry.uuid}
     >
-      {blocks.map((block, i) =>
-        block.type === 'tool_use' ? (
+      {blocks.map((block, i) => {
+        // Auto-collapse thinking blocks when newer substantive content follows
+        const autoCollapse = block.type === 'thinking'
+          ? !isLastEntry || blocks.slice(i + 1).some(b =>
+              b.type === 'text' || b.type === 'tool_use' || b.type === 'image')
+          : undefined;
+
+        return block.type === 'tool_use' ? (
           <div key={`tool-${block.id}`} {...(!parentToolUseId ? { 'data-run-id': block.id } : undefined)}>
             <ToolBlockRenderer
               block={block}
@@ -76,9 +85,10 @@ export function BlocksEntryWithRegistry({
           <BlocksBlockRenderer
             key={`block-${block.context.entryUuid}-${i}`}
             block={block}
+            autoCollapse={autoCollapse}
           />
-        )
-      )}
+        );
+      })}
       {showActions && <MessageActions targetAssistantId={forkTargetId || null} />}
     </div>
   );

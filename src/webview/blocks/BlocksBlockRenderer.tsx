@@ -13,6 +13,7 @@
  * @module webview/blocks/BlocksBlockRenderer
  */
 
+import { useRef, useEffect } from 'react';
 import type { RichBlock } from './types.js';
 import { AssistantTextRenderer } from '../renderers/AssistantTextRenderer.js';
 import { UserTextRenderer } from '../renderers/UserTextRenderer.js';
@@ -20,6 +21,8 @@ import { ImageRenderer } from '../renderers/ImageRenderer.js';
 
 export interface BlocksBlockRendererProps {
   block: RichBlock;
+  /** When true, thinking blocks auto-collapse (one-shot, user can re-expand) */
+  autoCollapse?: boolean;
 }
 
 /**
@@ -30,6 +33,7 @@ export interface BlocksBlockRendererProps {
  */
 export function BlocksBlockRenderer({
   block,
+  autoCollapse,
 }: BlocksBlockRendererProps): React.JSX.Element | null {
   switch (block.type) {
     case 'tool_result':
@@ -49,7 +53,7 @@ export function BlocksBlockRenderer({
       return <AssistantTextRenderer block={block} />;
 
     case 'thinking':
-      return <ThinkingView block={block} />;
+      return <ThinkingView block={block} autoCollapse={autoCollapse} />;
 
     case 'image':
       return <ImageRenderer block={block} />;
@@ -64,13 +68,29 @@ export function BlocksBlockRenderer({
 // Thinking View — collapsible thinking display
 // ============================================================================
 
-function ThinkingView({ block }: { block: RichBlock }): React.JSX.Element {
+function ThinkingView({ block, autoCollapse }: { block: RichBlock; autoCollapse?: boolean }): React.JSX.Element {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const hasAutoCollapsed = useRef(false);
+
   const thinkingBlock = block as RichBlock & { thinking: string; isSummary?: boolean };
   const content = thinkingBlock.thinking ?? '';
   const isSummary = thinkingBlock.isSummary ?? false;
 
+  // Start collapsed if summary or auto-collapse is requested
+  const defaultOpen = !isSummary && !autoCollapse;
+
+  // One-shot collapse: when autoCollapse flips true after initial render,
+  // programmatically close via ref. After this, browser manages toggle state
+  // so user can re-expand freely.
+  useEffect(() => {
+    if (autoCollapse && !hasAutoCollapsed.current && detailsRef.current) {
+      detailsRef.current.open = false;
+      hasAutoCollapsed.current = true;
+    }
+  }, [autoCollapse]);
+
   return (
-    <details className="crispy-blocks-thinking" open={!isSummary}>
+    <details ref={detailsRef} className="crispy-blocks-thinking" open={defaultOpen}>
       <summary className="crispy-blocks-thinking-summary">
         {isSummary ? 'Thinking (summarized)' : 'Thinking'}
       </summary>
