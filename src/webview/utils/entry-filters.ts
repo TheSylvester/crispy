@@ -17,6 +17,7 @@ const SKIP_ENTRY_TYPES = new Set([
   'result',           // tool_result blocks reach UI via pairing, not entry rendering
   'stream_event',
   'progress',         // internal progress events, not user-facing
+  'system',           // system context (AGENTS.md, env context, review mode, compaction)
 ]);
 
 /**
@@ -36,6 +37,11 @@ const SKIP_ENTRY_TYPES = new Set([
  */
 export function shouldRenderEntry(entry: TranscriptEntry): boolean {
   if (SKIP_ENTRY_TYPES.has(entry.type)) return false;
+
+  // Meta entries are SDK-injected system context (AGENTS.md, CLAUDE.md,
+  // system-reminders, environment context). They carry conversation context
+  // for the model but should never appear as visible messages.
+  if (entry.isMeta) return false;
 
   // Sub-agent entries render inside their parent Task tool card via the
   // ToolRegistry's parent-child tree — not as top-level messages.

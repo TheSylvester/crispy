@@ -17,6 +17,57 @@ import type {
 } from '../../transcript.js';
 
 // ============================================================================
+// System-Context Detection
+// ============================================================================
+
+/**
+ * Content-based heuristic for detecting SDK-injected system context.
+ *
+ * Claude Code injects system context (AGENTS.md, CLAUDE.md, environment
+ * context, system-reminders) as `type: "user"` entries in the JSONL. Newer
+ * SDK versions flag these with `isMeta: true`, but older versions (≤ 2.1.58)
+ * do not. This function detects them by content patterns so downstream
+ * filters can hide them from the UI and exclude them from cross-vendor
+ * history serialization.
+ *
+ * Patterns detected:
+ * - `<system-reminder>` — SDK-injected reminders (skills, tools, context)
+ * - `<environment_context>` — cwd, shell, OS context
+ * - `<INSTRUCTIONS>` — AGENTS.md / skill instructions (Codex format)
+ * - `# AGENTS.md instructions for` — Codex AGENTS.md header
+ * - `<context>` at line start — Claude system context blocks
+ */
+function isSystemContextContent(message: TranscriptMessage | undefined): boolean {
+  if (!message || message.role !== 'user') return false;
+
+  const content = message.content;
+  let text: string | undefined;
+
+  if (typeof content === 'string') {
+    text = content;
+  } else if (Array.isArray(content)) {
+    // Check the first text block — system context is always the first (or only) block
+    const firstText = content.find(
+      (b) => typeof b === 'object' && b !== null && b.type === 'text',
+    );
+    if (firstText && 'text' in firstText) {
+      text = (firstText as { text: string }).text;
+    }
+  }
+
+  if (!text) return false;
+
+  // Fast prefix checks (most common patterns)
+  if (text.startsWith('<system-reminder>')) return true;
+  if (text.startsWith('<environment_context>')) return true;
+  if (text.startsWith('<INSTRUCTIONS>')) return true;
+  if (text.startsWith('# AGENTS.md instructions for')) return true;
+  if (text.startsWith('<context>')) return true;
+
+  return false;
+}
+
+// ============================================================================
 // Content Block Sanitization
 // ============================================================================
 
@@ -153,6 +204,14 @@ export function adaptClaudeEntry(raw: Record<string, unknown>): TranscriptEntry 
     ...overflow,
   };
 
+  const sanitizedMessage = sanitizeMessage(message as TranscriptMessage | undefined);
+
+  // Detect isMeta — prefer explicit JSONL field, fall back to content-pattern
+  // heuristic for older SDK versions that don't write the field (≤ 2.1.58).
+  const detectedMeta = (isMeta as boolean | undefined)
+    || (type === 'user' && isSystemContextContent(sanitizedMessage))
+    || undefined;
+
   return {
     type: type as EntryType,
     uuid: uuid as string | undefined,
@@ -163,7 +222,7 @@ export function adaptClaudeEntry(raw: Record<string, unknown>): TranscriptEntry 
     vendor: 'claude',
 
     // Message content (sanitized — coerces malformed blocks to safe defaults)
-    message: sanitizeMessage(message as TranscriptMessage | undefined),
+    message: sanitizedMessage,
 
     // Sub-agent
     isSidechain: isSidechain as boolean | undefined,
@@ -177,7 +236,7 @@ export function adaptClaudeEntry(raw: Record<string, unknown>): TranscriptEntry 
     toolUseResult: (toolUseResult ?? tool_use_result) as ToolResult | undefined,
 
     // Session display
-    isMeta: isMeta as boolean | undefined,
+    isMeta: detectedMeta,
     customTitle: customTitle as string | undefined,
 
     // Summary entries

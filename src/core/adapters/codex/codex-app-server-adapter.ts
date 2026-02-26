@@ -82,6 +82,13 @@ export class CodexAgentAdapter implements AgentAdapter {
   private startPromise: Promise<void> | null = null;
   /** Echo suppression: decremented when Codex echoes back a userMessage we sent. */
   private pendingSendCount = 0;
+  /**
+   * Startup phase flag — true until the first turn/started notification.
+   * During startup, Codex may emit system-context items (AGENTS.md,
+   * environment_context) via thread/resume or thread/start. These items
+   * are marked isMeta so the rendering filter and history serializer skip them.
+   */
+  private startupPhase = true;
   private readonly spec: SessionOpenSpec & { cwd?: string };
 
   constructor(spec: SessionOpenSpec & { cwd?: string }) {
@@ -432,6 +439,7 @@ export class CodexAgentAdapter implements AgentAdapter {
       case 'turn/started': {
         const turn = p.turn as Record<string, unknown> | undefined;
         this.currentTurnId = turn?.id as string | undefined;
+        this.startupPhase = false;
         this.emitStatus('active');
         break;
       }
@@ -450,11 +458,32 @@ export class CodexAgentAdapter implements AgentAdapter {
         const threadId = (p.threadId as string) ?? this.currentThreadId ?? '';
         const turnId = (p.turnId as string) ?? this.currentTurnId ?? '';
 
-        // Echo suppression: skip userMessage items that we sent — the channel
-        // already broadcast the optimistic user entry from sendTurn().
-        if (item.type === 'userMessage' && this.pendingSendCount > 0) {
-          this.pendingSendCount--;
-          break;
+        // --- userMessage handling: echo suppression + system-context detection ---
+        if (item.type === 'userMessage') {
+          // Echo suppression: skip userMessage items that we sent — the channel
+          // already broadcast the optimistic user entry from sendTurn().
+          if (this.pendingSendCount > 0) {
+            this.pendingSendCount--;
+            break;
+          }
+
+          // During startup (before first turn/started), Codex may inject
+          // system-context items (AGENTS.md, environment_context) as userMessages.
+          // Mark them isMeta so rendering and serialization skip them.
+          // Also catches history echoes during thread/resume — the session-manager
+          // already backfilled history, so these are duplicates.
+          if (this.startupPhase) {
+            try {
+              const entries = adaptCodexItem(item, threadId, turnId);
+              for (const entry of entries) {
+                entry.isMeta = true;
+                this.outputQueue.enqueue({ type: 'entry', entry });
+              }
+            } catch (err) {
+              console.warn('[codex-adapter] Failed to adapt startup item:', err);
+            }
+            break;
+          }
         }
 
         try {

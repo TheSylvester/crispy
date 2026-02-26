@@ -264,6 +264,11 @@ function buildToolResultIndex(entries: TranscriptEntry[]): Map<string, ToolResul
 }
 
 function shouldSkip(entry: TranscriptEntry): boolean {
+  // Meta entries are SDK-injected system context (AGENTS.md, CLAUDE.md,
+  // system-reminders, environment context). They must not be serialized into
+  // cross-vendor history — otherwise each vendor switch accumulates another copy.
+  if (entry.isMeta) return true;
+
   switch (entry.type) {
     case 'stream_event':
     case 'system':
