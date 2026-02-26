@@ -260,7 +260,7 @@ export function ChromeCompactView({ block, result, status }: ToolViewProps): Rea
   return (
     <div className="crispy-blocks-compact-row">
       <span className="crispy-blocks-compact-icon"><ChromeMonoIcon /></span>
-      <ToolBadge color={CHROME_COLOR} textColor="#1e1e1e" label="chrome" />
+      <ToolBadge color={CHROME_COLOR} label="chrome" />
       <span className="crispy-blocks-chrome-action">{label}</span>
       <span className="crispy-blocks-chrome-emoji">{emoji}</span>
       {subject && <span className="crispy-blocks-compact-subject">{subject}</span>}
@@ -291,7 +291,7 @@ export function ChromeExpandedView({ block, result, status, anchor }: ToolViewPr
     <ToolCard anchor={anchor} open={status === 'running'} summary={<>
       <span className="crispy-blocks-tool-header">
         <span className="crispy-blocks-tool-icon"><ChromeMonoIcon /></span>
-        <ToolBadge color={CHROME_COLOR} textColor="#1e1e1e" label="chrome" />
+        <ToolBadge color={CHROME_COLOR} label="chrome" />
         <span className="crispy-blocks-chrome-action">{label}</span>
         <span className="crispy-blocks-chrome-emoji">{emoji}</span>
         {subject && <span className="crispy-blocks-tool-description">{subject}</span>}

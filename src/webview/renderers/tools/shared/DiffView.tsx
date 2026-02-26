@@ -11,6 +11,7 @@
 
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { Highlight, themes, type Token } from 'prism-react-renderer';
+import { useThemeKind, isLightTheme } from '../../../hooks/useThemeKind.js';
 
 // Re-export for backwards compatibility
 export { inferLanguage } from './tool-utils.js';
@@ -177,8 +178,8 @@ function computeDiffPairs(oldText: string, newText: string, startLine = 1): Diff
 // ---------------------------------------------------------------------------
 
 const LINE_BG: Record<string, string> = {
-  added:   'rgba(46, 160, 67, 0.15)',
-  removed: 'rgba(248, 81, 73, 0.15)',
+  added:   'var(--vscode-diffEditor-insertedLineBackground, rgba(46, 160, 67, 0.15))',
+  removed: 'var(--vscode-diffEditor-removedLineBackground, rgba(248, 81, 73, 0.15))',
   context: 'transparent',
 };
 
@@ -201,11 +202,14 @@ interface UnifiedDiffProps {
 }
 
 function UnifiedDiff({ oldText, newText, language, maxHeight, startLine }: UnifiedDiffProps) {
+  const themeKind = useThemeKind();
+  const prismTheme = isLightTheme(themeKind) ? themes.vsLight : themes.vsDark;
+
   const diffLines = computeUnifiedDiff(oldText, newText, startLine);
   const fullText = diffLines.map((l) => l.text).join('\n');
 
   return (
-    <Highlight theme={themes.vsDark} code={fullText} language={language}>
+    <Highlight theme={prismTheme} code={fullText} language={language}>
       {({ tokens, getLineProps, getTokenProps }) => (
         <div className="crispy-diff-scroll" style={{ maxHeight, overflowY: 'auto' }}>
           <pre className="crispy-diff-pre">
@@ -260,6 +264,9 @@ interface SplitDiffProps {
 }
 
 function SplitDiff({ oldText, newText, language, maxHeight, startLine }: SplitDiffProps) {
+  const themeKind = useThemeKind();
+  const prismTheme = isLightTheme(themeKind) ? themes.vsLight : themes.vsDark;
+
   const pairs = computeDiffPairs(oldText, newText, startLine);
 
   // Build full source for each side so Prism tokenizes with correct multi-line state
@@ -269,9 +276,9 @@ function SplitDiff({ oldText, newText, language, maxHeight, startLine }: SplitDi
   const rightCode = rightLines.join('\n');
 
   return (
-    <Highlight theme={themes.vsDark} code={leftCode} language={language}>
+    <Highlight theme={prismTheme} code={leftCode} language={language}>
       {({ tokens: leftTokens, getTokenProps: getLeftTokenProps }) => (
-        <Highlight theme={themes.vsDark} code={rightCode} language={language}>
+        <Highlight theme={prismTheme} code={rightCode} language={language}>
           {({ tokens: rightTokens, getTokenProps: getRightTokenProps }) => (
             <SplitDiffGrid
               pairs={pairs}

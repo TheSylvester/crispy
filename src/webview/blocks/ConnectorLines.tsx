@@ -172,7 +172,7 @@ export function ConnectorLines(): React.JSX.Element | null {
           key={toolId}
           d={d}
           fill="none"
-          stroke="rgba(255,255,255,0.2)"
+          stroke="var(--tint-strong)"
           strokeWidth="1.25"
         />
       ))}

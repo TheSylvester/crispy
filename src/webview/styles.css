@@ -74,6 +74,36 @@ h2 {
   --bg-editor: var(--vscode-editor-background, #1e1e1e);
   --border-panel: var(--vscode-panel-border, #333);
   --font-mono: var(--vscode-editor-font-family, monospace);
+
+  /* --- Glassmorphism tokens --- */
+  --glass-bg: rgba(30, 30, 30, 0.55);
+  --glass-bg-hover: rgba(50, 50, 50, 0.7);
+  --glass-bg-opaque: rgba(30, 30, 30, 0.85);
+  --glass-bg-drag: rgba(42, 45, 46, 0.9);
+  --glass-bg-solid: rgba(30, 30, 30, 0.95);
+  --glass-bg-muted: rgba(60, 60, 60, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.05);
+  --glass-border-md: rgba(255, 255, 255, 0.08);
+  --glass-border-strong: rgba(255, 255, 255, 0.15);
+
+  /* --- Tint tokens (subtle foreground-based overlays) --- */
+  --tint-subtle: rgba(255, 255, 255, 0.02);
+  --tint-faint: rgba(255, 255, 255, 0.03);
+  --tint-soft: rgba(255, 255, 255, 0.05);
+  --tint-light: rgba(255, 255, 255, 0.06);
+  --tint-medium: rgba(255, 255, 255, 0.1);
+  --tint-strong: rgba(255, 255, 255, 0.25);
+  --tint-text: rgba(255, 255, 255, 0.35);
+
+  /* --- Scroll nav --- */
+  --scroll-nav-bg: linear-gradient(180deg, #3a3d41 0%, #2d2f33 100%);
+  --scroll-nav-bg-hover: linear-gradient(180deg, #454850 0%, #3a3d41 100%);
+  --scroll-nav-bg-active: linear-gradient(180deg, #2d2f33 0%, #3a3d41 100%);
+  --scroll-nav-text: #d4d4d4;
+  --scroll-nav-border: #222;
+
+  /* --- Titlebar --- */
+  --titlebar-bg: rgba(37, 37, 38, 0.55);
 }
 
 /* --- Utility classes --- */
@@ -303,9 +333,9 @@ h2 {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-xl);
-  background: linear-gradient(180deg, #3a3d41 0%, #2d2f33 100%);
-  color: #d4d4d4;
-  border: 1px solid #222;
+  background: var(--scroll-nav-bg);
+  color: var(--scroll-nav-text);
+  border: 1px solid var(--scroll-nav-border);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -322,13 +352,13 @@ h2 {
 }
 
 .crispy-scroll-nav:hover {
-  background: linear-gradient(180deg, #454850 0%, #3a3d41 100%);
+  background: var(--scroll-nav-bg-hover);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
   transform: translateY(-1px);
 }
 
 .crispy-scroll-nav:active {
-  background: linear-gradient(180deg, #2d2f33 0%, #3a3d41 100%);
+  background: var(--scroll-nav-bg-active);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
   transform: translateY(1px);
 }
@@ -440,7 +470,7 @@ h2 {
 
 .message.tool {
   border-left-color: var(--color-keyword);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--tint-subtle);
 }
 
 /* --- Thinking (Rich mode) --- */
@@ -539,10 +569,10 @@ h2 {
 
 /* Collapsed pill — thin horizontal line with counter */
 .crispy-playback__pill {
-  background: rgba(30, 30, 30, 0.55);
+  background: var(--glass-bg);
   -webkit-backdrop-filter: blur(40px) saturate(170%);
   backdrop-filter: blur(40px) saturate(170%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-border-md);
   border-radius: var(--radius-xl);
   padding: 2px 14px;
   cursor: pointer;
@@ -553,8 +583,8 @@ h2 {
 }
 
 .crispy-playback__pill:hover {
-  background: rgba(50, 50, 50, 0.7);
-  border-color: rgba(255, 255, 255, 0.15);
+  background: var(--glass-bg-hover);
+  border-color: var(--glass-border-strong);
 }
 
 .crispy-playback__pill-counter {
@@ -570,10 +600,10 @@ h2 {
   bottom: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(30, 30, 30, 0.85);
+  background: var(--glass-bg-opaque);
   -webkit-backdrop-filter: blur(40px) saturate(170%);
   backdrop-filter: blur(40px) saturate(170%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-border-md);
   border-radius: var(--radius-xl);
   padding: 8px 12px;
   display: flex;
@@ -632,7 +662,7 @@ h2 {
 .crispy-playback__speed-btn {
   background: transparent;
   color: var(--vscode-foreground, #ccc);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--tint-medium);
   padding: 1px 8px;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -649,7 +679,7 @@ h2 {
 .crispy-playback__speed-btn--active {
   opacity: 1;
   border-color: var(--vscode-button-background);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--tint-soft);
 }
 
 @supports not (backdrop-filter: blur(1px)) {
@@ -949,10 +979,10 @@ h2 {
   white-space: nowrap;
 }
 .prose tr:nth-child(even) td {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--tint-subtle);
 }
 .prose tr:hover td {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--tint-soft);
 }
 
 /* --- User Text — right-aligned bubble --- */
@@ -1236,7 +1266,7 @@ h2 {
   width: 3.5em;
   text-align: right;
   padding-right: 0.75em;
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--tint-strong);
   user-select: none;
   flex-shrink: 0;
 }
@@ -1245,7 +1275,7 @@ h2 {
 .crispy-diff-prefix {
   display: inline-block;
   width: 1.5em;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--tint-text);
   user-select: none;
   flex-shrink: 0;
 }
@@ -1298,7 +1328,7 @@ h2 {
 }
 
 .crispy-diff-split-empty {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--tint-subtle);
 }
 
 /* --- Code preview --- */
@@ -1447,19 +1477,34 @@ h2 {
 /* Agency mode colors — set --frame-highlight and --agency-glow-shadow per mode */
 .crispy-cp[data-agency="ask-before-edits"] {
   --frame-highlight: var(--agency-white);
-  --agency-glow-shadow: 0 0 12px rgba(255, 255, 255, 0.3);
+  --agency-glow-shadow: 0 0 12px color-mix(in srgb, var(--agency-white) 30%, transparent);
 }
 .crispy-cp[data-agency="edit-automatically"] {
   --frame-highlight: var(--agency-blue);
-  --agency-glow-shadow: 0 0 12px rgba(64, 168, 232, 0.3);
+  --agency-glow-shadow: 0 0 12px color-mix(in srgb, var(--agency-blue) 30%, transparent);
 }
 .crispy-cp[data-agency="plan-mode"] {
   --frame-highlight: var(--agency-teal);
-  --agency-glow-shadow: 0 0 12px rgba(71, 152, 140, 0.3);
+  --agency-glow-shadow: 0 0 12px color-mix(in srgb, var(--agency-teal) 30%, transparent);
 }
 .crispy-cp[data-agency="bypass-permissions"] {
   --frame-highlight: var(--agency-red);
-  --agency-glow-shadow: 0 0 12px rgba(232, 64, 64, 0.3);
+  --agency-glow-shadow: 0 0 12px color-mix(in srgb, var(--agency-red) 30%, transparent);
+}
+
+@supports not (color: color-mix(in srgb, red 50%, blue)) {
+  .crispy-cp[data-agency="ask-before-edits"] {
+    --agency-glow-shadow: 0 0 12px rgba(255, 255, 255, 0.3);
+  }
+  .crispy-cp[data-agency="edit-automatically"] {
+    --agency-glow-shadow: 0 0 12px rgba(64, 168, 232, 0.3);
+  }
+  .crispy-cp[data-agency="plan-mode"] {
+    --agency-glow-shadow: 0 0 12px rgba(71, 152, 140, 0.3);
+  }
+  .crispy-cp[data-agency="bypass-permissions"] {
+    --agency-glow-shadow: 0 0 12px rgba(232, 64, 64, 0.3);
+  }
 }
 
 /* --- Main container --- */
@@ -1470,10 +1515,10 @@ h2 {
   flex-direction: column;
   gap: 0.5rem;
   padding: 0.5rem;
-  background: rgba(30, 30, 30, 0.55);
+  background: var(--glass-bg);
   -webkit-backdrop-filter: blur(40px) saturate(170%);
   backdrop-filter: blur(40px) saturate(170%);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
   max-width: 800px;
   width: calc(
     var(--container-width, 100vw) - var(--right-panels-width, 0px) - 3rem
@@ -1506,7 +1551,7 @@ h2 {
 /* Drag-over visual feedback */
 .crispy-cp.drag-over {
   border: 2px dashed var(--vscode-focusBorder, #007acc);
-  background: rgba(42, 45, 46, 0.9);
+  background: var(--glass-bg-drag);
 }
 
 /* --- Error banners (sendTurn + channel errors) --- */
@@ -1583,7 +1628,7 @@ h2 {
 
 .crispy-stop__btn {
   padding: 4px 24px;
-  background: rgba(30, 30, 30, 0.55);
+  background: var(--glass-bg);
   -webkit-backdrop-filter: blur(40px) saturate(170%);
   backdrop-filter: blur(40px) saturate(170%);
   color: var(--vscode-button-secondaryForeground, #d4d4d4);
@@ -1611,7 +1656,7 @@ h2 {
 }
 
 .crispy-stop__btn:hover {
-  background: rgba(50, 50, 50, 0.7);
+  background: var(--glass-bg-hover);
 }
 
 @supports not (backdrop-filter: blur(1px)) {
@@ -1640,9 +1685,9 @@ h2 {
   min-width: 0; /* Allow flex shrinking below content size */
   min-height: 32px; /* Never collapse vertically */
   padding: 6px calc(4em + 18px) 6px 8px; /* Right padding reserves space for overlaid send button */
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--tint-light);
   color: var(--vscode-input-foreground, #d4d4d4);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--tint-light);
   border-radius: var(--radius-xl);
   font-family: inherit;
   font-size: inherit;
@@ -1893,7 +1938,7 @@ h2 {
   padding: 4px 12px;
   background: var(--bg-editor);
   color: var(--vscode-descriptionForeground, #888);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--tint-medium);
   border-radius: var(--radius-xl);
   font-size: var(--font-sm);
   cursor: pointer;
@@ -2033,12 +2078,12 @@ h2 {
 
 /* Safe state — muted shield */
 .crispy-cp-bypass:not(.crispy-cp-bypass--checked) svg {
-  color: #666;
+  color: var(--vscode-descriptionForeground);
 }
 
 /* Danger state — red */
 .crispy-cp-bypass--checked svg {
-  color: #e84040;
+  color: var(--agency-red);
 }
 
 /* Activate animation when toggling on */
@@ -2187,7 +2232,7 @@ h2 {
   font-size: var(--font-sm);
   color: var(--vscode-descriptionForeground, #888);
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--tint-medium);
   border-radius: var(--radius-xl);
   cursor: pointer;
   transition:
@@ -2435,7 +2480,7 @@ h2 {
   color: var(--vscode-descriptionForeground, #888);
   margin: 12px 0 6px;
   padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--tint-light);
 }
 
 .crispy-cp-settings__provider-list {
@@ -2450,7 +2495,7 @@ h2 {
   align-items: center;
   justify-content: space-between;
   padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--tint-faint);
   border-radius: var(--radius-sm);
   font-size: var(--font-sm);
 }
@@ -2459,7 +2504,7 @@ h2 {
   padding: 2px 8px;
   background: transparent;
   color: var(--vscode-foreground, #d4d4d4);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--tint-medium);
   border-radius: var(--radius-sm);
   font-size: var(--font-sm);
   cursor: pointer;
@@ -2470,7 +2515,7 @@ h2 {
 }
 
 .crispy-cp-settings__provider-btn--danger {
-  color: #f48771;
+  color: var(--vscode-errorForeground);
 }
 
 .crispy-cp-settings__provider-btn--danger:hover {
@@ -2487,7 +2532,7 @@ h2 {
   flex-direction: column;
   gap: 6px;
   padding: 8px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--tint-faint);
   border-radius: var(--radius-sm);
   margin-top: 6px;
 }
@@ -2498,7 +2543,7 @@ h2 {
   padding: 4px 8px;
   background: var(--bg-editor);
   color: var(--vscode-foreground, #d4d4d4);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--tint-medium);
   border-radius: var(--radius-sm);
   font-size: var(--font-sm);
   width: 100%;
@@ -2677,11 +2722,11 @@ h2 {
   align-items: center;
   gap: 12px;
   padding: 0 12px;
-  background: rgba(37, 37, 38, 0.55);
+  background: var(--titlebar-bg);
   -webkit-backdrop-filter: blur(40px) saturate(170%);
   backdrop-filter: blur(40px) saturate(170%);
   color: var(--vscode-sideBar-foreground, #cccccc);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--glass-border);
   z-index: 300;
   user-select: none;
   flex-shrink: 0;
@@ -2823,14 +2868,14 @@ h2 {
 }
 
 .crispy-titlebar__dot--approval {
-  background: #dcdcaa;
+  background: var(--context-moderate);
   box-shadow: 0 0 4px rgba(220, 220, 170, 0.5);
   animation: crispy-dot-pulse-amber 2s ease-in-out infinite;
 }
 
 /* Copied flash — brief bright highlight on click-to-copy */
 .crispy-titlebar__dot--copied {
-  background: #fff !important;
+  background: var(--vscode-foreground) !important;
   box-shadow: 0 0 6px rgba(255, 255, 255, 0.8) !important;
   animation: none !important;
 }
@@ -2942,7 +2987,7 @@ h2 {
 
 .crispy-approval-btn--primary {
   background: var(--color-accent);
-  color: #fff;
+  color: var(--vscode-button-foreground, #fff);
   border: 1px solid var(--color-accent);
 }
 
@@ -3113,7 +3158,7 @@ h2 {
  * ============================================================================ */
 
 .crispy-perf-overlay {
-  background: rgba(30, 30, 30, 0.95);
+  background: var(--glass-bg-solid);
   border: 1px solid var(--border-panel);
   border-radius: var(--radius-lg);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
@@ -3138,7 +3183,7 @@ h2 {
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
-  background: rgba(60, 60, 60, 0.6);
+  background: var(--glass-bg-muted);
   border-radius: 6px 6px 0 0;
   cursor: grab;
 }
@@ -3731,7 +3776,7 @@ h2 {
 .crispy-blocks-thinking {
   margin: 4px 0;
   margin-left: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--tint-light);
   box-shadow: 0 0 6px rgba(255, 255, 255, 0.03);
   border-radius: var(--radius-xl);
   padding: 0 10px;
@@ -3760,7 +3805,7 @@ h2 {
   font-size: 0;
   padding: 2px 0;
   opacity: 0.3;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--glass-border-md);
 }
 
 .crispy-blocks-thinking-summary:hover {
@@ -3787,7 +3832,7 @@ h2 {
 .crispy-blocks-unknown {
   margin: 4px 0;
   padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--tint-subtle);
   border-radius: var(--radius-sm);
   border-left: 2px solid var(--vscode-descriptionForeground, #858585);
 }
@@ -3867,7 +3912,7 @@ h2 {
 .crispy-blocks-task-children {
   margin-left: 4px;
   padding-left: 6px;
-  border-left: 2px solid rgba(255, 255, 255, 0.08);
+  border-left: 2px solid var(--glass-border-md);
   contain: layout style;
   overflow-anchor: none;
 }
@@ -3895,7 +3940,7 @@ h2 {
 .crispy-blocks-task-compact > .crispy-blocks-task-children {
   margin-left: 4px;
   padding-left: 6px;
-  border-left: 2px solid rgba(255, 255, 255, 0.08);
+  border-left: 2px solid var(--glass-border-md);
 }
 
 /* Task children user prompt in main-thread compact — clamp height */
@@ -4010,5 +4055,76 @@ h2 {
   border-radius: var(--radius-md);
   object-fit: contain;
   display: block;
+}
+
+/* ============================================================================
+ * Light Theme Overrides
+ *
+ * VS Code sets data-vscode-theme-kind on <body>. These overrides flip all
+ * hardcoded dark-mode tokens so glassmorphism, borders, tints, scroll nav,
+ * and brand colors work on light backgrounds.
+ * ============================================================================ */
+
+body[data-vscode-theme-kind="vscode-light"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] {
+  /* Color tokens */
+  --color-accent: #c96a2e;
+  --color-accent-hover: #b35a20;
+  --color-link: #0066cc;
+  --color-keyword: #0000ff;
+  --color-diff-added: #1a7f37;
+  --color-diff-removed: #cf222e;
+  --color-send-text: #ffffff;
+
+  /* Agency */
+  --agency-white: #333333;
+  --agency-blue: #0066cc;
+  --agency-teal: #1a7a6d;
+  --agency-red: #cf222e;
+
+  /* Context health */
+  --context-minimal: #999;
+  --context-low: #777;
+  --context-healthy: #1a7f37;
+  --context-moderate: #9a6700;
+  --context-high: #cf222e;
+  --context-critical: #a40e26;
+
+  /* Glassmorphism — flip tint direction */
+  --glass-bg: rgba(255, 255, 255, 0.65);
+  --glass-bg-hover: rgba(255, 255, 255, 0.8);
+  --glass-bg-opaque: rgba(255, 255, 255, 0.9);
+  --glass-bg-drag: rgba(240, 240, 240, 0.95);
+  --glass-bg-solid: rgba(255, 255, 255, 0.97);
+  --glass-bg-muted: rgba(230, 230, 230, 0.7);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-border-md: rgba(0, 0, 0, 0.12);
+  --glass-border-strong: rgba(0, 0, 0, 0.2);
+
+  /* Tints */
+  --tint-subtle: rgba(0, 0, 0, 0.02);
+  --tint-faint: rgba(0, 0, 0, 0.03);
+  --tint-soft: rgba(0, 0, 0, 0.04);
+  --tint-light: rgba(0, 0, 0, 0.05);
+  --tint-medium: rgba(0, 0, 0, 0.08);
+  --tint-strong: rgba(0, 0, 0, 0.2);
+  --tint-text: rgba(0, 0, 0, 0.4);
+
+  /* Scroll nav */
+  --scroll-nav-bg: linear-gradient(180deg, #f0f0f0 0%, #e4e4e4 100%);
+  --scroll-nav-bg-hover: linear-gradient(180deg, #e8e8e8 0%, #dcdcdc 100%);
+  --scroll-nav-bg-active: linear-gradient(180deg, #dcdcdc 0%, #d0d0d0 100%);
+  --scroll-nav-text: #333;
+  --scroll-nav-border: #ccc;
+
+  /* Re-declare shorthand tokens — var() inside custom properties may resolve
+     at the :root scope where --vscode-* is still dark. Explicit re-declaration
+     ensures these pick up the light-mode VS Code values. */
+  --bg-editor: var(--vscode-editor-background, #ffffff);
+  --bg-code: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.05));
+  --border-panel: var(--vscode-panel-border, #e0e0e0);
+
+  /* Titlebar */
+  --titlebar-bg: rgba(255, 255, 255, 0.65);
 }
 

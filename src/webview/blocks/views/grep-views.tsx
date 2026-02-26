@@ -43,7 +43,7 @@ export function GrepCompactView({ block, result, status }: ToolViewProps): React
   return (
     <div className="crispy-blocks-compact-row">
       <span className="crispy-blocks-compact-icon">{meta.icon}</span>
-      <ToolBadge color={meta.color} textColor="#1e1e1e" label="Grep" />
+      <ToolBadge color={meta.color} label="Grep" />
       <span className="u-mono-pill crispy-tool-secondary">{pattern}</span>
       {scope && <span className="crispy-blocks-compact-description">in {scope}</span>}
       <StatusIndicator status={status} summary={resultSummary} />
@@ -71,7 +71,7 @@ export function GrepExpandedView({ block, result, status, anchor }: ToolViewProp
     <ToolCard anchor={anchor} open={status === 'running'} summary={<>
       <span className="crispy-blocks-tool-header">
         <span className="crispy-blocks-tool-icon">{meta.icon}</span>
-        <ToolBadge color={meta.color} textColor="#1e1e1e" label="Grep" />
+        <ToolBadge color={meta.color} label="Grep" />
         <span className="u-mono-pill crispy-tool-secondary">{pattern}</span>
         {scope && <span className="crispy-blocks-tool-description">in {scope}</span>}
       </span>

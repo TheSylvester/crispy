@@ -52,7 +52,7 @@ export function TaskCompactView({ block, result, status }: ToolViewProps): React
       <div className="crispy-blocks-compact-row">
         <span className="crispy-blocks-compact-icon">{meta.icon}</span>
         <ToolBadge color={meta.color} label={agentType} />
-        {isAsync && <ToolBadge color="#666" label="background" />}
+        {isAsync && <ToolBadge color="var(--vscode-badge-background, #666)" label="background" />}
         <span className="crispy-blocks-compact-description">{description}</span>
         <StatusIndicator status={status} summary={resultSummary} />
       </div>
@@ -98,7 +98,7 @@ export function TaskExpandedView({ block, result, status, anchor, children }: To
       <span className="crispy-blocks-tool-header">
         <span className="crispy-blocks-tool-icon">{meta.icon}</span>
         <ToolBadge color={meta.color} label={agentType} />
-        {isAsync && <ToolBadge color="#666" label="background" />}
+        {isAsync && <ToolBadge color="var(--vscode-badge-background, #666)" label="background" />}
         <span className="crispy-blocks-tool-description">{description}</span>
       </span>
       <StatusIndicator status={status} summary={resultSummary} />

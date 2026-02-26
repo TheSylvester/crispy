@@ -14,6 +14,7 @@ import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { extractResultText, extractRawResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { renderAnsi, hasAnsi } from '../../renderers/tools/shared/ansi.js';
+import { useThemeKind, isLightTheme } from '../../hooks/useThemeKind.js';
 import { ToolCard } from './ToolCard.js';
 
 const meta = getToolData('Bash');
@@ -44,7 +45,7 @@ export function BashCompactView({ block, result, status }: ToolViewProps): React
     <div className="crispy-blocks-bash-compact">
       <div className="crispy-blocks-compact-row">
         <span className="crispy-blocks-compact-icon">{meta.icon}</span>
-        <ToolBadge color={meta.color} textColor="#1e1e1e" label="Bash" />
+        <ToolBadge color={meta.color} label="Bash" />
         {input.description && (
           <span className="crispy-blocks-compact-description">{input.description}</span>
         )}
@@ -76,11 +77,14 @@ export function BashExpandedView({ block, result, status, anchor }: ToolViewProp
   const rawText = extractRawResultText(result?.content);
   const useAnsiRender = rawText !== null && hasAnsi(rawText);
 
+  const themeKind = useThemeKind();
+  const light = isLightTheme(themeKind);
+
   return (
     <ToolCard anchor={anchor} open={status === 'running'} summary={<>
       <span className="crispy-blocks-tool-header">
         <span className="crispy-blocks-tool-icon">{meta.icon}</span>
-        <ToolBadge color={meta.color} textColor="#1e1e1e" label="Bash" />
+        <ToolBadge color={meta.color} label="Bash" />
         {input.description && (
           <span className="crispy-blocks-tool-description">{input.description}</span>
         )}
@@ -91,7 +95,7 @@ export function BashExpandedView({ block, result, status, anchor }: ToolViewProp
       {result && (
         <div className="crispy-blocks-tool-body">
           <pre className={`crispy-blocks-bash-output ${result.is_error ? 'crispy-tool-result__text--error' : ''}`}>
-            {useAnsiRender ? renderAnsi(rawText!) : (resultText ?? JSON.stringify(result.content, null, 2))}
+            {useAnsiRender ? renderAnsi(rawText!, light) : (resultText ?? JSON.stringify(result.content, null, 2))}
           </pre>
         </div>
       )}

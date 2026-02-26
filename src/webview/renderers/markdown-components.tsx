@@ -14,6 +14,7 @@
 
 import { Highlight, themes } from 'prism-react-renderer';
 import type { ComponentPropsWithoutRef } from 'react';
+import { useThemeKind, isLightTheme } from '../hooks/useThemeKind.js';
 
 /**
  * Extract language identifier from a react-markdown className.
@@ -50,9 +51,12 @@ export function CodeBlock(props: ComponentPropsWithoutRef<'code'>): React.JSX.El
   }
 
   // Fenced code block — syntax highlight with prism
+  const themeKind = useThemeKind();
+  const prismTheme = isLightTheme(themeKind) ? themes.vsLight : themes.vsDark;
+
   const code = String(children).replace(/\n$/, '');
   return (
-    <Highlight theme={themes.vsDark} code={code} language={language}>
+    <Highlight theme={prismTheme} code={code} language={language}>
       {({ tokens, getLineProps, getTokenProps, style }) => (
         <code
           className="md-code-highlight"

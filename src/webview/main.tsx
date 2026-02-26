@@ -55,6 +55,21 @@ if (container) {
 }
 
 // ============================================================================
+// Dev Server: theme detection from system preference or URL param
+// ============================================================================
+
+if (kind === 'websocket') {
+  const themeParam = new URLSearchParams(window.location.search).get('theme');
+  if (themeParam === 'light') {
+    document.body.dataset.vscodeThemeKind = 'vscode-light';
+  } else if (themeParam === 'dark') {
+    document.body.dataset.vscodeThemeKind = 'vscode-dark';
+  }
+  // Default: keep the HTML-set "vscode-dark". Use ?theme=light or the
+  // TitleBar toggle (ThemeToggle) to switch at runtime.
+}
+
+// ============================================================================
 // Browser Fork: read fork params from URL and simulate forkConfig message
 // ============================================================================
 

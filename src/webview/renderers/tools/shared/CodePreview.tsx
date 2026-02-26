@@ -8,6 +8,7 @@
  */
 
 import { Highlight, themes } from 'prism-react-renderer';
+import { useThemeKind, isLightTheme } from '../../../hooks/useThemeKind.js';
 
 interface CodePreviewProps {
   code: string;
@@ -16,16 +17,19 @@ interface CodePreviewProps {
 }
 
 export function CodePreview({ code, language = 'text', maxHeight = 400 }: CodePreviewProps): React.JSX.Element {
+  const themeKind = useThemeKind();
+  const prismTheme = isLightTheme(themeKind) ? themes.vsLight : themes.vsDark;
+
   return (
     <div className="crispy-code-preview" style={{ maxHeight }}>
-      <Highlight theme={themes.vsDark} code={code} language={language}>
+      <Highlight theme={prismTheme} code={code} language={language}>
         {({ tokens, getLineProps, getTokenProps, style }) => (
           <pre style={{ ...style, background: 'transparent', margin: 0, padding: '8px 10px', fontSize: '12px', lineHeight: 1.5 }}>
             {tokens.map((line, i) => {
               const lineProps = getLineProps({ line, key: i });
               return (
                 <span key={i} {...lineProps}>
-                  <span style={{ color: 'rgba(255,255,255,0.25)', display: 'inline-block', width: '3em', textAlign: 'right', marginRight: '1em', userSelect: 'none' }}>
+                  <span style={{ color: 'var(--tint-strong)', display: 'inline-block', width: '3em', textAlign: 'right', marginRight: '1em', userSelect: 'none' }}>
                     {i + 1}
                   </span>
                   {line.map((token, j) => (

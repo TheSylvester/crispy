@@ -72,4 +72,92 @@
 
   /* Description text */
   --vscode-descriptionForeground: #888888;
+
+  /* Code blocks */
+  --vscode-textCodeBlock-background: rgba(255, 255, 255, 0.05);
+
+  /* Diff editor */
+  --vscode-diffEditor-insertedLineBackground: rgba(155, 185, 85, 0.2);
+  --vscode-diffEditor-removedLineBackground: rgba(255, 0, 0, 0.2);
+}
+
+/**
+ * VS Code Light Theme Fallbacks
+ *
+ * Scoped to the body attribute — NOT @media (prefers-color-scheme) — so the
+ * theme is controlled by data-vscode-theme-kind, not the OS setting.
+ * Only affects the dev server; VS Code provides its own values.
+ */
+
+body[data-vscode-theme-kind="vscode-light"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] {
+  /* Editor */
+  --vscode-editor-background: #ffffff;
+  --vscode-editor-foreground: #333333;
+
+  /* General */
+  --vscode-foreground: #333333;
+
+  /* Lists */
+  --vscode-list-hoverBackground: #e8e8e8;
+  --vscode-list-activeSelectionBackground: #0060c0;
+  --vscode-list-activeSelectionForeground: #ffffff;
+  --vscode-list-inactiveSelectionBackground: #e4e6f1;
+
+  /* Buttons */
+  --vscode-button-background: #007acc;
+  --vscode-button-foreground: #ffffff;
+  --vscode-button-hoverBackground: #0062a3;
+  --vscode-button-secondaryBackground: #e0e0e0;
+  --vscode-button-secondaryForeground: #333333;
+
+  /* Input */
+  --vscode-input-background: #ffffff;
+  --vscode-input-foreground: #333333;
+  --vscode-input-border: #cecece;
+  --vscode-input-placeholderForeground: #767676;
+
+  /* Borders */
+  --vscode-panel-border: #e0e0e0;
+  --vscode-sideBar-background: #f3f3f3;
+  --vscode-sideBar-foreground: #333333;
+
+  /* Badge */
+  --vscode-badge-background: #c4c4c4;
+  --vscode-badge-foreground: #333333;
+
+  /* Scrollbar */
+  --vscode-scrollbarSlider-background: rgba(100, 100, 100, 0.4);
+  --vscode-scrollbarSlider-hoverBackground: rgba(100, 100, 100, 0.7);
+  --vscode-scrollbarSlider-activeBackground: rgba(0, 0, 0, 0.6);
+
+  /* Status colors */
+  --vscode-errorForeground: #e51400;
+  --vscode-notificationsInfoIcon-foreground: #1a85ff;
+  --vscode-notificationsWarningIcon-foreground: #bf8803;
+
+  /* Widget (popups, tooltips) */
+  --vscode-widget-border: #c8c8c8;
+  --vscode-editorWidget-background: #f3f3f3;
+  --vscode-editorWidget-border: #c8c8c8;
+
+  /* Dropdowns */
+  --vscode-dropdown-background: #ffffff;
+  --vscode-dropdown-foreground: #333333;
+
+  /* Focus */
+  --vscode-focusBorder: #0090f1;
+
+  /* Validation */
+  --vscode-inputValidation-errorBackground: #f2dede;
+
+  /* Description text */
+  --vscode-descriptionForeground: #717171;
+
+  /* Code blocks */
+  --vscode-textCodeBlock-background: rgba(0, 0, 0, 0.05);
+
+  /* Diff editor */
+  --vscode-diffEditor-insertedLineBackground: rgba(156, 236, 156, 0.31);
+  --vscode-diffEditor-removedLineBackground: rgba(255, 0, 0, 0.2);
 }

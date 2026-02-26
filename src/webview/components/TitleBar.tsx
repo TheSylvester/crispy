@@ -19,6 +19,7 @@ import { usePreferences } from '../context/PreferencesContext.js';
 import { useSessionStatus } from '../hooks/useSessionStatus.js';
 import { useTransport } from '../context/TransportContext.js';
 import { useEnvironment } from '../context/EnvironmentContext.js';
+import { useThemeKind, isLightTheme } from '../hooks/useThemeKind.js';
 import { SessionSelector } from './session-selector/index.js';
 
 /** SVG chevron — points down, rotates 180° when sidebar is open */
@@ -54,6 +55,35 @@ function PlusIcon(): React.JSX.Element {
     >
       <path d="M6 2V10M2 6H10" />
     </svg>
+  );
+}
+
+/** Sun/Moon toggle — dev server only. Flips data-vscode-theme-kind on <body>. */
+function ThemeToggle(): React.JSX.Element {
+  const kind = useThemeKind();
+  const light = isLightTheme(kind);
+
+  const toggle = useCallback(() => {
+    document.body.dataset.vscodeThemeKind = light ? 'vscode-dark' : 'vscode-light';
+  }, [light]);
+
+  return (
+    <button
+      className="crispy-titlebar__btn"
+      onClick={toggle}
+      title={`Switch to ${light ? 'dark' : 'light'} theme`}
+      aria-label={`Switch to ${light ? 'dark' : 'light'} theme`}
+    >
+      {light ? (
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-1 0v-1A.5.5 0 0 1 8 1zm0 11a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-1 0v-1A.5.5 0 0 1 8 12zm7-4a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1 0-1h1a.5.5 0 0 1 .5.5zM4 8a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1 0-1h1A.5.5 0 0 1 4 8zm9.1-3.7a.5.5 0 0 1 0 .7l-.7.7a.5.5 0 1 1-.7-.7l.7-.7a.5.5 0 0 1 .7 0zM4.3 12.3a.5.5 0 0 1 0 .7l-.7.7a.5.5 0 1 1-.7-.7l.7-.7a.5.5 0 0 1 .7 0zm9.4 0l-.7.7a.5.5 0 1 1-.7-.7l.7-.7a.5.5 0 0 1 .7.7zM4.3 3.7l-.7.7a.5.5 0 0 1-.7-.7l.7-.7a.5.5 0 0 1 .7.7zM8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/>
+        </svg>
+      ) : (
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M6 .278a.768.768 0 0 1 .08.858 7.2 7.2 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 0 1 .81.316.733.733 0 0 1-.031.893A8.35 8.35 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.752.752 0 0 1 6 .278z"/>
+        </svg>
+      )}
+    </button>
   );
 }
 
@@ -234,8 +264,9 @@ export function TitleBar(): React.JSX.Element {
       {/* Spacer pushes right section to the end */}
       <div className="crispy-titlebar__center" />
 
-      {/* Right — Tool panel toggle + New button */}
+      {/* Right — Theme toggle (dev server only) + Tool panel toggle + New button */}
       <div className="crispy-titlebar__right">
+        {envKind === 'websocket' && <ThemeToggle />}
         <button
           className={`crispy-titlebar__btn crispy-titlebar__tool-panel-btn${toolPanelOpen ? ' crispy-titlebar__tool-panel-btn--active' : ''}`}
           onClick={toggleToolPanel}

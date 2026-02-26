@@ -42,19 +42,34 @@ export function stripAnsi(text: string): string {
 // Render — ANSI SGR to React spans
 // ============================================================================
 
-/** Standard 16 ANSI colors (normal + bright). */
-const COLORS: Record<number, string> = {
+/** Standard 16 ANSI colors (normal + bright) — dark theme. */
+const DARK_COLORS: Record<number, string> = {
   30: '#1e1e1e', 31: '#cd3131', 32: '#0dbc79', 33: '#e5e510',
   34: '#2472c8', 35: '#bc3fbc', 36: '#11a8cd', 37: '#e5e5e5',
   90: '#666666', 91: '#f14c4c', 92: '#23d18b', 93: '#f5f543',
   94: '#3b8eea', 95: '#d670d6', 96: '#29b8db', 97: '#e5e5e5',
 };
 
-const BG_COLORS: Record<number, string> = {
+const DARK_BG_COLORS: Record<number, string> = {
   40: '#1e1e1e', 41: '#cd3131', 42: '#0dbc79', 43: '#e5e510',
   44: '#2472c8', 45: '#bc3fbc', 46: '#11a8cd', 47: '#e5e5e5',
   100: '#666666', 101: '#f14c4c', 102: '#23d18b', 103: '#f5f543',
   104: '#3b8eea', 105: '#d670d6', 106: '#29b8db', 107: '#e5e5e5',
+};
+
+/** Standard 16 ANSI colors — light theme (higher contrast on white bg). */
+const LIGHT_COLORS: Record<number, string> = {
+  30: '#1e1e1e', 31: '#cd3131', 32: '#116329', 33: '#7d5600',
+  34: '#0451a5', 35: '#8b3fbd', 36: '#0598bc', 37: '#3b3b3b',
+  90: '#666666', 91: '#cd3131', 92: '#116329', 93: '#7d5600',
+  94: '#0451a5', 95: '#8b3fbd', 96: '#0598bc', 97: '#3b3b3b',
+};
+
+const LIGHT_BG_COLORS: Record<number, string> = {
+  40: '#f5f5f5', 41: '#cd3131', 42: '#116329', 43: '#7d5600',
+  44: '#0451a5', 45: '#8b3fbc', 46: '#0598bc', 47: '#3b3b3b',
+  100: '#d4d4d4', 101: '#cd3131', 102: '#116329', 103: '#7d5600',
+  104: '#0451a5', 105: '#8b3fbd', 106: '#0598bc', 107: '#3b3b3b',
 };
 
 interface SgrState {
@@ -68,7 +83,7 @@ interface SgrState {
 }
 
 /** Apply a single SGR parameter code to the current style state. */
-function applySgrCode(code: number, state: SgrState): void {
+function applySgrCode(code: number, state: SgrState, colors: Record<number, string>, bgColors: Record<number, string>): void {
   if (code === 0) {
     // Reset all
     state.color = undefined;
@@ -101,10 +116,10 @@ function applySgrCode(code: number, state: SgrState): void {
     state.color = undefined;
   } else if (code === 49) {
     state.bgColor = undefined;
-  } else if (COLORS[code]) {
-    state.color = COLORS[code];
-  } else if (BG_COLORS[code]) {
-    state.bgColor = BG_COLORS[code];
+  } else if (colors[code]) {
+    state.color = colors[code];
+  } else if (bgColors[code]) {
+    state.bgColor = bgColors[code];
   }
   // 256-color (38;5;n) and truecolor (38;2;r;g;b) are silently ignored —
   // the semi-colon-separated params are split by the caller, so codes like
@@ -137,7 +152,9 @@ function sgrToStyle(state: SgrState): React.CSSProperties | undefined {
  * remain as plain strings. Returns the array directly (caller wraps in
  * a container element).
  */
-export function renderAnsi(text: string): ReactNode[] {
+export function renderAnsi(text: string, light = false): ReactNode[] {
+  const colors = light ? LIGHT_COLORS : DARK_COLORS;
+  const bgColors = light ? LIGHT_BG_COLORS : DARK_BG_COLORS;
   const parts: ReactNode[] = [];
   const state: SgrState = {};
   let lastIndex = 0;
@@ -167,7 +184,7 @@ export function renderAnsi(text: string): ReactNode[] {
     // Parse semicolon-separated params
     const params = match[1] ? match[1].split(';').map(Number) : [0];
     for (const code of params) {
-      applySgrCode(code, state);
+      applySgrCode(code, state, colors, bgColors);
     }
   }
 
