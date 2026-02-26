@@ -53,11 +53,11 @@ directly.
 ### Option 2: CLI
 
 ```bash
-code --install-extension TheSylvester.crispy
+code --install-extension the-sylvester.crispy
 ```
 
 Or download the `.vsix` file from the
-[OpenVSX Marketplace](https://open-vsx.org/extension/TheSylvester/crispy) and
+[OpenVSX Marketplace](https://open-vsx.org/extension/the-sylvester/crispy) and
 install manually via **Extensions > Install from VSIX**.
 
 ### Option 3: From Source

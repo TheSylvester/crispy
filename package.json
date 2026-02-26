@@ -4,7 +4,7 @@
   "icon": "media/crispy-icon.png",
   "description": "A zero-compromise UI for Claude Code, Codex, and more — with controls you can't get in a terminal",
   "version": "0.1.1",
-  "publisher": "TheSylvester",
+  "publisher": "the-sylvester",
   "private": true,
   "license": "MIT",
   "author": "Sylvester Wong",
