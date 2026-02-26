@@ -45,10 +45,11 @@ export function TodoWriteCompactView({ block, result, status }: ToolViewProps): 
   let description: ReactNode;
   if (displayItem) {
     const text = (inProgress ? displayItem.activeForm : null) ?? displayItem.content ?? '';
+    const itemIcon = displayItem.status === 'completed' ? '\u2713 ' : displayItem.status === 'in_progress' ? '\u25B6 ' : '';
     if (displayItem.status === 'completed') {
-      description = <s className="crispy-blocks-compact-description">{text}</s>;
+      description = <s className="crispy-blocks-compact-description">{itemIcon}{text}</s>;
     } else {
-      description = <span className="crispy-blocks-compact-description">{text}</span>;
+      description = <span className="crispy-blocks-compact-description">{itemIcon}{text}</span>;
     }
   } else {
     description = <span className="crispy-blocks-compact-description">{todos.length} items</span>;

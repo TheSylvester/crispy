@@ -147,7 +147,7 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
 
   // Utility tools
   TodoWrite: {
-    icon: '\u2611',
+    icon: '\u2611\uFE0F',
     color: '#8b5cf6',
     activity: { verb: 'Updating todos', pastVerb: 'Updated todos' },
     inspectorDefault: 'expanded',
