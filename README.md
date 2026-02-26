@@ -214,6 +214,18 @@ src/
 
 ---
 
+## Third-Party Notices
+
+**`@anthropic-ai/claude-agent-sdk`** — The Claude adapter depends on
+Anthropic's Agent SDK, which is proprietary ("All rights reserved") and
+governed by [Anthropic's Terms of Service](https://code.claude.com/docs/en/legal-and-compliance).
+This dependency is required for Claude Code integration. By using Crispy with
+Claude Code, you accept Anthropic's terms for that SDK.
+
+**Codex protocol types** — Files in `src/core/adapters/codex/protocol/` are
+generated from the [OpenAI Codex CLI](https://github.com/openai/codex)
+project, licensed under Apache-2.0. See `THIRD-PARTY-LICENSES` for details.
+
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE) for the full text.

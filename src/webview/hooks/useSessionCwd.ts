@@ -41,7 +41,7 @@ export function slugToPath(slug: string): string {
 
 /**
  * Convert an absolute path to Claude's slug format: '/' → '-'.
- * e.g. `/home/silver/dev/crispy` → `-home-silver-dev-crispy`
+ * e.g. `/home/user/projects/my-app` → `-home-user-projects-my-app`
  *
  * Inverse of slugToPath() — used to convert a workspace folder path into
  * the slug format used by selectedCwd / projectSlug.

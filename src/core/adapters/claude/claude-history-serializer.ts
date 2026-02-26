@@ -46,7 +46,7 @@ const DEFAULT_GIT_BRANCH = 'main';
  * Derive the Claude projects directory slug from a working directory path.
  *
  * Mirrors the path logic used by Claude Code itself:
- * `/home/silver/dev/crispy` → `-home-silver-dev-crispy`
+ * `/home/user/projects/my-app` → `-home-user-projects-my-app`
  */
 export function cwdToProjectSlug(cwd: string): string {
   return cwd.replace(/[\\/]/g, '-');

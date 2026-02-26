@@ -188,4 +188,4 @@ interact, and screenshot. Kill the server when done (`lsof -i :3456`).
 
 ### Reference Repos
 
-- `/home/silver/dev/leto/` — original Leto extension (includes the never-completed `webview-next`)
+- Original Leto extension (local reference at `../leto/`, not included in this repo) — includes the never-completed `webview-next`

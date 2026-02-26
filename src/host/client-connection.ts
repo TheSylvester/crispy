@@ -11,6 +11,8 @@
  * @module client-connection
  */
 
+import { resolve } from "node:path";
+import { homedir } from "node:os";
 import type { ChannelMessage, TurnIntent } from "../core/agent-adapter.js";
 import type {
   ChannelCatchupMessage,
@@ -48,6 +50,23 @@ import {
   onProvidersChanged, getProviderBase,
 } from '../core/provider-config.js';
 import type { ProviderConfig } from '../core/provider-config.js';
+
+// ============================================================================
+// Path Containment
+// ============================================================================
+
+/** ~/.claude/ is always allowed (config, project metadata, history). */
+const CLAUDE_CONFIG_DIR = resolve(homedir(), '.claude');
+
+/**
+ * Check that a resolved absolute path is contained within an allowed root.
+ * Uses a prefix check with a trailing separator to prevent partial matches
+ * (e.g. /home/user/project-evil matching /home/user/project).
+ */
+function isWithin(filePath: string, root: string): boolean {
+  const normalizedRoot = root.endsWith('/') ? root : root + '/';
+  return filePath === root || filePath.startsWith(normalizedRoot);
+}
 
 // ============================================================================
 // Wire Protocol Types
@@ -102,6 +121,33 @@ export function createClientConnection(
 
   /** Global session-list subscription for this client. */
   let sessionListSub: SessionListSubscriber | null = null;
+
+  /**
+   * Validate that `filePath` is inside an allowed directory before performing
+   * any file-system read. Allowed roots:
+   *   1. The projectPath (cwd) of any session this client is subscribed to.
+   *   2. ~/.claude/ — needed for config, project metadata, and history.
+   *
+   * Throws if the path escapes all allowed roots.
+   */
+  function assertPathAllowed(filePath: string): void {
+    const resolved = resolve(filePath);
+
+    // Always allow ~/.claude/
+    if (isWithin(resolved, CLAUDE_CONFIG_DIR)) return;
+
+    // Allow any subscribed session's project directory
+    for (const [sessionId] of subscriptions) {
+      const info = findSession(sessionId);
+      if (info?.projectPath && isWithin(resolved, resolve(info.projectPath))) {
+        return;
+      }
+    }
+
+    throw new Error(
+      `Path "${filePath}" is outside the workspace. File access is restricted to session working directories and ~/.claude/.`,
+    );
+  }
 
   /** Push model group updates when providers.json changes. */
   const providerUnsub = onProvidersChanged(() => {
@@ -301,16 +347,23 @@ export function createClientConnection(
 
       case "fileExists": {
         const filePath = params.path as string;
+        try {
+          assertPathAllowed(filePath);
+        } catch {
+          return false;
+        }
         return fileExists(filePath);
       }
 
       case "readImage": {
         const filePath = params.path as string;
+        assertPathAllowed(filePath);
         return readImage(filePath);
       }
 
       case "readFile": {
         const filePath = params.path as string;
+        assertPathAllowed(filePath);
         return readTextFile(filePath);
       }
 

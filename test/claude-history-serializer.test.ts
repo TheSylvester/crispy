@@ -67,8 +67,8 @@ const SESSION_ID = 'test-session-id';
 
 describe('cwdToProjectSlug', () => {
   it('replaces slashes with dashes', () => {
-    expect(cwdToProjectSlug('/home/silver/dev/crispy')).toBe(
-      '-home-silver-dev-crispy',
+    expect(cwdToProjectSlug('/home/user/projects/my-app')).toBe(
+      '-home-user-projects-my-app',
     );
   });
 
@@ -77,14 +77,14 @@ describe('cwdToProjectSlug', () => {
   });
 
   it('replaces Windows backslashes with dashes', () => {
-    expect(cwdToProjectSlug('C:\\Users\\silver\\dev\\crispy')).toBe(
-      'C:-Users-silver-dev-crispy',
+    expect(cwdToProjectSlug('C:\\Users\\user\\projects\\my-app')).toBe(
+      'C:-Users-user-projects-my-app',
     );
   });
 
   it('handles mixed separators (Windows + Unix)', () => {
-    expect(cwdToProjectSlug('C:\\Users\\silver/dev/crispy')).toBe(
-      'C:-Users-silver-dev-crispy',
+    expect(cwdToProjectSlug('C:\\Users\\user/projects/my-app')).toBe(
+      'C:-Users-user-projects-my-app',
     );
   });
 });

@@ -1,8 +1,3 @@
-# Track .claude/commands (overrides global gitignore)
-!.claude/
-!.claude/*
-!CLAUDE.md
-
 # Dependencies
 node_modules/
 
@@ -18,6 +13,9 @@ media/app.js.map
 # Local AI reference files (not committed)
 .ai-reference/
 
+# Claude Code config (developer-specific)
+.claude/
+
 # Editor/IDE
 .vscode/*
 !.vscode/extensions.json
@@ -32,5 +30,12 @@ Thumbs.db
 *.log
 npm-debug.log*
 
-.claude/settings.local.json
+# Environment files
+.env
+.env.*
 
+# Test coverage
+coverage/
+
+# npm pack artifacts
+*.tgz

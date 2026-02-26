@@ -180,16 +180,13 @@ const UNIVERSAL_FIELDS = [
 // Pipeline tests against real transcript
 // ============================================================================
 
-describe(`Claude JSONL pipeline (v${FIXTURE_VERSION})`, () => {
-  if (!FIXTURE_FILE || !fs.existsSync(FIXTURE_FILE)) {
-    throw new Error(
-      'No Claude transcript fixture found. Ensure ~/.claude/projects/ contains .jsonl files, ' +
-      'or set CLAUDE_FIXTURE_FILE and CLAUDE_FIXTURE_VERSION env vars.',
-    );
-  }
+const hasFixture = !!FIXTURE_FILE && fs.existsSync(FIXTURE_FILE);
 
-  const rawEntries = parseRawJsonl(FIXTURE_FILE);
-  const adapted = adaptClaudeEntries(rawEntries);
+describe.skipIf(!hasFixture)(`Claude JSONL pipeline (v${FIXTURE_VERSION ?? 'n/a'})`, () => {
+  // Guard: these tests only run when a local Claude transcript is available.
+  // Outside contributors without ~/.claude/projects/ will see this suite skipped.
+  const rawEntries = hasFixture ? parseRawJsonl(FIXTURE_FILE!) : [];
+  const adapted = hasFixture ? adaptClaudeEntries(rawEntries) : [];
 
   it('parses raw JSONL', () => {
     expect(rawEntries.length).toBeGreaterThan(0);
