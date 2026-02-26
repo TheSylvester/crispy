@@ -2,9 +2,10 @@
  * TitleBar — Fixed header with session dropdown, CWD/status, and new-session button
  *
  * Three-column layout matching Leto webview-next:
- *   Left:   Session dropdown button (label + animated chevron) — toggles sidebar
- *   Center: CWD display (last 2 path segments, clickable) + connection indicator dot
- *   Right:  New session button
+ *   Left:   Session dropdown button (label + animated chevron) — toggles sidebar,
+ *           followed by connection indicator dot
+ *   Center: Spacer
+ *   Right:  Tool panel toggle + New session button
  *
  * Connection dot shows streaming/idle/approval state with Leto-style glow.
  * Click-to-copy session ID on the dot (Leto pattern).
@@ -193,10 +194,11 @@ export function TitleBar(): React.JSX.Element {
         )}
       </div>
 
-      {/* Center — connection indicator */}
-      <div className="crispy-titlebar__center">
-        <ConnectionDot channelState={channelState} sessionId={selectedSessionId} />
-      </div>
+      {/* Connection indicator — right after Conversations button */}
+      <ConnectionDot channelState={channelState} sessionId={selectedSessionId} />
+
+      {/* Spacer pushes right section to the end */}
+      <div className="crispy-titlebar__center" />
 
       {/* Right — Tool panel toggle + New button */}
       <div className="crispy-titlebar__right">

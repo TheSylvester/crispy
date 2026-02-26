@@ -1592,7 +1592,7 @@ h2 {
   flex: 1 1 0%; /* Grow to fill, shrink allowed, zero basis for flex calc */
   min-width: 0; /* Allow flex shrinking below content size */
   min-height: 32px; /* Never collapse vertically */
-  padding: 6px 40px 6px 8px; /* Right padding reserves space for overlaid send button */
+  padding: 6px calc(4em + 18px) 6px 8px; /* Right padding reserves space for overlaid send button */
   background: rgba(255, 255, 255, 0.06);
   color: var(--vscode-input-foreground, #d4d4d4);
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -1679,17 +1679,16 @@ h2 {
 
 .crispy-cp-send {
   position: absolute;
-  right: 4px;
-  bottom: 4px;
-  width: 32px;
-  height: 28px;
+  right: 6px;
+  bottom: 7px;
+  width: 4em;
   flex-shrink: 0;
-  padding: 0;
+  padding: 4px 10px;
   font-size: var(--font-sm);
   font-weight: 600;
   background: var(--color-accent);
   color: var(--color-send-text);
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: calc(var(--radius-xl) - 2px);
   cursor: pointer;
   transition: background 0.15s;
@@ -1710,6 +1709,7 @@ h2 {
 
 .crispy-cp-send__icon {
   display: inline-block;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
 }
 
 /* Hover jiggle — pure CSS, no React state needed */
@@ -2467,17 +2467,20 @@ h2 {
   gap: 4px;
   flex-shrink: 0; /* Never squish the fork button */
   padding: 4px 10px;
-  background: var(--vscode-descriptionForeground, #888);
-  color: #1e1e1e;
-  border: none;
+  background: transparent;
+  color: var(--vscode-descriptionForeground, #888);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--radius-xl);
   font-size: var(--font-sm);
   cursor: pointer;
-  transition: background 0.15s, padding 0.15s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: color 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 
 .crispy-cp-fork:hover:not(:disabled) {
-  background: var(--vscode-descriptionForeground, #999);
+  color: var(--vscode-foreground, #d4d4d4);
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  border-color: var(--frame-highlight);
 }
 
 .crispy-cp-fork:disabled {
