@@ -477,5 +477,23 @@ describe('CodexDiscovery', () => {
       const sessions = discovery.listSessions();
       expect(sessions[0].projectSlug).toBe('-Users-developer-projects-my-app');
     });
+
+    it('derives projectSlug from Windows cwd with backslashes', async () => {
+      const thread = createMockThread({
+        cwd: 'C:\\Users\\developer\\projects\\my-app',
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      (async () => {
+        await handleInitialize(mockProcess);
+        const req = await mockProcess.getNextClientMessage();
+        mockProcess.pushResponse(req.id, { data: [thread], nextCursor: null });
+      })();
+
+      await discovery.refresh();
+
+      const sessions = discovery.listSessions();
+      expect(sessions[0].projectSlug).toBe('C:-Users-developer-projects-my-app');
+    });
   });
 });

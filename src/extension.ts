@@ -1,7 +1,7 @@
 /**
  * Crispy — VS Code Extension Entry Point
  *
- * Registers the Claude adapter and the "Open Crispy" command.
+ * Registers vendor adapters and the "Open Crispy" command.
  */
 
 import * as vscode from 'vscode';
@@ -12,6 +12,7 @@ import { syncProviders, startWatching, stopWatching } from './core/provider-conf
 import { openCrispyPanel, getOrCreatePanelForPrefill } from './host/webview-host.js';
 import { startRescan, stopRescan } from './core/session-list-manager.js';
 import { findClaudeBinary } from './core/find-claude-binary.js';
+import { findCodexBinary } from './core/find-codex-binary.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
@@ -22,49 +23,60 @@ export function activate(context: vscode.ExtensionContext): void {
   // spawning), find the native `claude` binary so the SDK runs it directly.
   const pathToClaudeCodeExecutable = findClaudeBinary();
   if (!pathToClaudeCodeExecutable) {
-    vscode.window.showErrorMessage(
-      'Crispy: Claude Code not found. Please install Claude Code (https://docs.anthropic.com/en/docs/claude-code) and ensure `claude` is on your PATH.',
+    vscode.window.showWarningMessage(
+      'Crispy: Claude Code not found. Claude sessions will be unavailable. Install Claude Code (https://docs.anthropic.com/en/docs/claude-code) and ensure `claude` is on your PATH.',
     );
-    return;
   }
-  const base = { cwd, pathToClaudeCodeExecutable };
-  registerAdapter(
-    claudeDiscovery,
-    (spec) => {
-      switch (spec.mode) {
-        case 'resume': {
-          const model = getResumeModel(spec.sessionId);
-          return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, ...(model && { model }) });
+
+  // Register Claude adapter (conditional on binary being found)
+  if (pathToClaudeCodeExecutable) {
+    const base = { cwd, pathToClaudeCodeExecutable };
+    registerAdapter(
+      claudeDiscovery,
+      (spec) => {
+        switch (spec.mode) {
+          case 'resume': {
+            const model = getResumeModel(spec.sessionId);
+            return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, ...(model && { model }) });
+          }
+          case 'fresh':
+            return new ClaudeAgentAdapter({
+              ...base, cwd: spec.cwd,
+              ...(spec.model && { model: spec.model }),
+              ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+              ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
+            });
+          case 'fork':
+            return new ClaudeAgentAdapter({
+              ...base, resume: spec.fromSessionId, forkSession: true,
+              ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
+            });
+          case 'continue':
+            return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, continue: true });
+          case 'hydrated':
+            return new ClaudeAgentAdapter({
+              ...base, cwd: spec.cwd,
+              hydratedHistory: spec.history,
+              ...(spec.model && { model: spec.model }),
+              ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+            });
         }
-        case 'fresh':
-          return new ClaudeAgentAdapter({
-            ...base, cwd: spec.cwd,
-            ...(spec.model && { model: spec.model }),
-            ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
-            ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
-          });
-        case 'fork':
-          return new ClaudeAgentAdapter({
-            ...base, resume: spec.fromSessionId, forkSession: true,
-            ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
-          });
-        case 'continue':
-          return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, continue: true });
-        case 'hydrated':
-          return new ClaudeAgentAdapter({
-            ...base, cwd: spec.cwd,
-            hydratedHistory: spec.history,
-            ...(spec.model && { model: spec.model }),
-            ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
-          });
-      }
-    },
-  );
+      },
+    );
+    context.subscriptions.push({ dispose: () => unregisterAdapter('claude') });
+  }
 
   // Register Codex adapter (doesn't need pathToClaudeCodeExecutable)
+  const pathToCodexExecutable = findCodexBinary();
+  if (pathToCodexExecutable) {
+    codexDiscovery.setCommand(pathToCodexExecutable);
+  }
   registerAdapter(
     codexDiscovery,
-    (spec) => new CodexAgentAdapter({ ...spec, cwd }),
+    (spec) => {
+      const effectiveCwd = ('cwd' in spec) ? spec.cwd : cwd;
+      return new CodexAgentAdapter({ ...spec, cwd: effectiveCwd, command: pathToCodexExecutable });
+    },
   );
 
   const workspaceOpts = { workspaceCwd: cwd };
@@ -86,12 +98,14 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   // Register dynamic Anthropic-compatible providers from ~/.config/crispy/providers.json
-  syncProviders(base).catch((err) => console.error('[crispy] Failed to load providers:', err));
-  startWatching(base);
+  const providerBase = pathToClaudeCodeExecutable
+    ? { cwd, pathToClaudeCodeExecutable }
+    : { cwd };
+  syncProviders(providerBase).catch((err) => console.error('[crispy] Failed to load providers:', err));
+  startWatching(providerBase);
 
   startRescan();
   context.subscriptions.push({ dispose: () => stopRescan() });
-  context.subscriptions.push({ dispose: () => unregisterAdapter('claude') });
   context.subscriptions.push({ dispose: () => unregisterAdapter('codex') });
   context.subscriptions.push({ dispose: () => stopWatching() });
 }

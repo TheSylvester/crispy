@@ -47,11 +47,11 @@ export function slugToPath(slug: string): string {
  * the slug format used by selectedCwd / projectSlug.
  */
 export function pathToSlug(absPath: string): string {
-  return absPath.replace(/\//g, '-');
+  return absPath.replace(/[\\/]/g, '-');
 }
 
 export function formatCwd(fullPath: string): string {
-  const segments = fullPath.split('/').filter(Boolean);
+  const segments = fullPath.split(/[\\/]/).filter(Boolean);
   return segments.slice(-2).join('/');
 }
 

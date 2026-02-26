@@ -120,8 +120,7 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
 
   // Listen for workspace CWD hint from VS Code host (sent via postMessage).
   // In VS Code, auto-select the workspace project on initial load so the
-  // sidebar scopes to the open workspace. In dev-server mode, default to
-  // "All Projects" (selectedCwd = null).
+  // sidebar scopes to the open workspace.
   const workspaceCwdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -138,6 +137,23 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
   }, [transportKind]);
+
+  // Dev-server MRU fallback: auto-select the most recent project's CWD when
+  // sessions arrive and no CWD is selected yet. Without this, the ControlPanel
+  // silently bails on send because it can't create a session without a CWD.
+  const cwdInitialized = useRef(false);
+
+  useEffect(() => {
+    if (cwdInitialized.current || sessions.length === 0) return;
+    if (transportKind === 'vscode') return; // VS Code uses workspaceCwd hint
+    if (selectedCwd) return; // Already set (e.g. from session selection)
+
+    const firstSlug = sessions[0]?.projectSlug;
+    if (firstSlug) {
+      cwdInitialized.current = true;
+      setSelectedCwd(firstSlug);
+    }
+  }, [sessions, selectedCwd, transportKind]);
 
   // When a pending session gets its real ID, update selection
   useEffect(() => {

@@ -24,6 +24,7 @@ import { CodexAgentAdapter, codexDiscovery } from '../core/adapters/codex/index.
 import { syncProviders, startWatching } from '../core/provider-config.js';
 import { createClientConnection } from './client-connection.js';
 import { startRescan } from '../core/session-list-manager.js';
+import { findCodexBinary } from '../core/find-codex-binary.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
 
@@ -150,9 +151,16 @@ registerAdapter(
 );
 
 // Register Codex discovery + adapter factory
+const pathToCodexExecutable = findCodexBinary();
+if (pathToCodexExecutable) {
+  codexDiscovery.setCommand(pathToCodexExecutable);
+}
 registerAdapter(
   codexDiscovery,
-  (spec) => new CodexAgentAdapter({ ...spec, cwd }),
+  (spec) => {
+    const effectiveCwd = ('cwd' in spec) ? spec.cwd : cwd;
+    return new CodexAgentAdapter({ ...spec, cwd: effectiveCwd, command: pathToCodexExecutable });
+  },
 );
 
 // Register dynamic providers from ~/.config/crispy/providers.json

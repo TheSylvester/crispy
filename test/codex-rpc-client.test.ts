@@ -365,6 +365,43 @@ describe('CodexRpcClient', () => {
       customClient.kill();
     });
 
+    it('passes shell: true on Windows', () => {
+      // Clear and reset mock
+      capturedSpawnCalls = [];
+      mockProcess = new MockCodexProcess();
+      (globalThis as any).__mockCodexProcess = mockProcess;
+
+      // Mock process.platform to 'win32'
+      const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+      Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+
+      try {
+        const winClient = new CodexRpcClient({
+          cwd: '/tmp',
+          onNotification: () => {},
+          onRequest: () => {},
+          onError: () => {},
+          onExit: () => {},
+        });
+
+        expect(capturedSpawnCalls).toHaveLength(1);
+        expect(capturedSpawnCalls[0].options.shell).toBe(true);
+
+        winClient.kill();
+      } finally {
+        // Restore original platform
+        if (originalPlatform) {
+          Object.defineProperty(process, 'platform', originalPlatform);
+        }
+      }
+    });
+
+    it('does not pass shell option on non-Windows', () => {
+      // capturedSpawnCalls[0] is from the beforeEach createClient() on Linux/macOS
+      expect(capturedSpawnCalls).toHaveLength(1);
+      expect(capturedSpawnCalls[0].options.shell).toBeUndefined();
+    });
+
     it('merges custom env with process.env', () => {
       // Clear and reset mock
       capturedSpawnCalls = [];

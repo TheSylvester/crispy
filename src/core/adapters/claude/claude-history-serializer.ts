@@ -49,7 +49,7 @@ const DEFAULT_GIT_BRANCH = 'main';
  * `/home/silver/dev/crispy` → `-home-silver-dev-crispy`
  */
 export function cwdToProjectSlug(cwd: string): string {
-  return cwd.replace(/\//g, '-');
+  return cwd.replace(/[\\/]/g, '-');
 }
 
 /**

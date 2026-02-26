@@ -75,6 +75,18 @@ describe('cwdToProjectSlug', () => {
   it('handles single-level path', () => {
     expect(cwdToProjectSlug('/tmp')).toBe('-tmp');
   });
+
+  it('replaces Windows backslashes with dashes', () => {
+    expect(cwdToProjectSlug('C:\\Users\\silver\\dev\\crispy')).toBe(
+      'C:-Users-silver-dev-crispy',
+    );
+  });
+
+  it('handles mixed separators (Windows + Unix)', () => {
+    expect(cwdToProjectSlug('C:\\Users\\silver/dev/crispy')).toBe(
+      'C:-Users-silver-dev-crispy',
+    );
+  });
 });
 
 describe('serializeToClaudeJsonl', () => {

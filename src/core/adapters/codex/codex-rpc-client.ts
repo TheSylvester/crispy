@@ -172,6 +172,10 @@ export class CodexRpcClient {
   /**
    * Kill the child process.
    * Sends SIGTERM first, then SIGKILL after 3 seconds if still alive.
+   *
+   * Note: On Windows, both SIGTERM and SIGKILL map to TerminateProcess(),
+   * which kills the process immediately. The escalation pattern is harmless
+   * but provides no graceful shutdown window on Windows.
    */
   kill(): void {
     if (!this.process || !this._alive) return;
@@ -209,10 +213,12 @@ export class CodexRpcClient {
     // Merge env with process.env
     const mergedEnv = env ? { ...process.env, ...env } : process.env;
 
+    const isWindows = process.platform === 'win32';
     this.process = spawn(command, args, {
       cwd,
       env: mergedEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
+      ...(isWindows && { shell: true }),
     });
 
     this._alive = true;

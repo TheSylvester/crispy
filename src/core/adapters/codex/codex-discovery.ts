@@ -33,11 +33,21 @@ export class CodexDiscovery implements VendorDiscovery {
 
   private client: CodexRpcClient | null = null;
   private ownedClient = false;
+  private _command: string | undefined;
   private sessionCache: SessionInfo[] = [];
   private cacheTimestamp = 0;
   private readonly cacheTtlMs = 30_000;
   private refreshing = false;
   private refreshPromise: Promise<void> | null = null;
+
+  /**
+   * Set the resolved codex binary path.
+   * When set, standalone discovery clients will use this command instead of
+   * the default 'codex'.
+   */
+  setCommand(command: string | undefined): void {
+    this._command = command;
+  }
 
   /**
    * Attach a shared RPC client (from the live adapter).
@@ -182,6 +192,7 @@ export class CodexDiscovery implements VendorDiscovery {
 
     // Spawn a temporary client for standalone discovery
     const options: CodexRpcClientOptions = {
+      ...(this._command && { command: this._command }),
       onNotification: () => {},
       onRequest: () => {},
       onError: (err) => {
@@ -222,8 +233,8 @@ export class CodexDiscovery implements VendorDiscovery {
   }
 
   private deriveProjectSlug(cwd: string): string {
-    // Match Claude's slug format: replace / with - (keep leading dash)
-    return cwd.replace(/\//g, '-');
+    // Match Claude's slug format: replace / or \ with - (keep leading dash)
+    return cwd.replace(/[\\/]/g, '-');
   }
 }
 

@@ -126,6 +126,32 @@ describe('CodexAgentAdapter', () => {
       adapter.close();
     });
 
+    it('passes custom command to spawn when provided', async () => {
+      const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test/project' };
+      const adapter = new CodexAgentAdapter({ ...spec, command: '/usr/local/bin/codex' });
+
+      // Send a turn (triggers startup)
+      adapter.sendTurn('Hello', {});
+
+      // Wait for spawn
+      await waitForTick();
+
+      // Verify spawn was called with the custom command
+      expect(capturedSpawnCalls.length).toBe(1);
+      expect(capturedSpawnCalls[0].command).toBe('/usr/local/bin/codex');
+      expect(capturedSpawnCalls[0].args).toEqual(['app-server']);
+
+      // Complete protocol handshake to avoid unhandled rejections
+      const initMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(initMsg.id, { userAgent: 'codex' });
+      const startMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(startMsg.id, { thread: { id: 't-1', turns: [] }, model: 'o3' });
+      const turnMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(turnMsg.id, { turn: { id: 'turn-1' } });
+
+      adapter.close();
+    });
+
     it('sends initialize then thread/start for fresh session', async () => {
       const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test/project', model: 'o3' };
       const adapter = new CodexAgentAdapter(spec);
