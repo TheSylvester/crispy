@@ -24,6 +24,8 @@ interface SettingsPopupProps {
   onToolViewOverrideChange?: (override: ToolViewOverride) => void;
   debugMode: boolean;
   onDebugModeChange: (enabled: boolean) => void;
+  toolPanelAutoOpen: boolean;
+  onToolPanelAutoOpenChange: (enabled: boolean) => void;
   providers?: Record<string, WireProviderConfig>;
   onSaveProvider?: (slug: string, config: ProviderConfig) => Promise<void>;
   onDeleteProvider?: (slug: string) => void;
@@ -105,7 +107,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -214,6 +216,14 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               type="checkbox"
               checked={debugMode}
               onChange={(e) => onDebugModeChange(e.target.checked)}
+            />
+          </label>
+          <label className="crispy-cp-settings__row">
+            <span>Auto-open Tools</span>
+            <input
+              type="checkbox"
+              checked={toolPanelAutoOpen}
+              onChange={(e) => onToolPanelAutoOpenChange(e.target.checked)}
             />
           </label>
 

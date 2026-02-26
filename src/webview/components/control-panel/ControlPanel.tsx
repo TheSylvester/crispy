@@ -153,7 +153,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         (ref as React.RefObject<HTMLDivElement | null>).current = node;
       }
     }, [ref]);
-    const { renderMode, setRenderMode, settingsPinned, setSettingsPinned, toolViewOverride, setToolViewOverride, debugMode, setDebugMode } = usePreferences();
+    const { renderMode, setRenderMode, settingsPinned, setSettingsPinned, toolViewOverride, setToolViewOverride, debugMode, setDebugMode, toolPanelAutoOpen, setToolPanelAutoOpen } = usePreferences();
     const transport = useTransport();
     const { selectedSessionId, selectedCwd, setSelectedSessionId, sessions } = useSession();
     const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
@@ -878,6 +878,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onToolViewOverrideChange={setToolViewOverride}
               debugMode={debugMode}
               onDebugModeChange={setDebugMode}
+              toolPanelAutoOpen={toolPanelAutoOpen}
+              onToolPanelAutoOpenChange={setToolPanelAutoOpen}
               providers={providers}
               onSaveProvider={async (slug, config) => { await transport.saveProvider(slug, config); }}
               onDeleteProvider={(slug) => transport.deleteProvider(slug).catch(console.error)}

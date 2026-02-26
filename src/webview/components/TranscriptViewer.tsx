@@ -21,6 +21,7 @@ import { usePreferences } from "../context/PreferencesContext.js";
 import { useTranscript } from "../hooks/useTranscript.js";
 import { usePlayback } from "../hooks/usePlayback.js";
 import { useAutoScroll } from "../hooks/useAutoScroll.js";
+import { useToolPanelAutoOpen } from "../hooks/useToolPanelAutoOpen.js";
 import { shouldRenderEntry } from "../utils/entry-filters.js";
 import { EntryRenderer } from "../renderers/EntryRenderer.js";
 import { PlaybackControls } from "./PlaybackControls.js";
@@ -54,6 +55,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const transport = useTransport();
   const { entries, isLoading, error, addOptimisticEntry, setForkHistory } = useTranscript(selectedSessionId);
   const { renderMode, toolPanelOpen, debugMode } = usePreferences();
+  useToolPanelAutoOpen(entries);
   const { approvalRequest, resolve: resolveApproval } = useApprovalRequest(selectedSessionId);
   const [bypassEnabled, setBypassEnabled] = useState(false);
   const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean } | null>(null);

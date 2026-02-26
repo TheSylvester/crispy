@@ -20,6 +20,8 @@ interface Preferences {
   toolViewOverride: ToolViewOverride;
   /** Show debug UI (playback controls, tool view override). Off by default. */
   debugMode: boolean;
+  /** Auto-open tool panel on first tool use in a session. On by default. */
+  toolPanelAutoOpen: boolean;
 }
 
 interface PreferencesContextValue extends Preferences {
@@ -31,6 +33,7 @@ interface PreferencesContextValue extends Preferences {
   setToolPanelMode: (mode: ToolPanelMode) => void;
   setToolViewOverride: (override: ToolViewOverride) => void;
   setDebugMode: (enabled: boolean) => void;
+  setToolPanelAutoOpen: (enabled: boolean) => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
@@ -56,6 +59,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [toolPanelMode, setToolPanelMode] = useState<ToolPanelMode>('inspector');
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
   const [debugMode, setDebugMode] = useState(false);
+  const [toolPanelAutoOpen, setToolPanelAutoOpen] = useState(true);
 
   const value: PreferencesContextValue = {
     renderMode,
@@ -66,6 +70,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     toolPanelMode,
     toolViewOverride,
     debugMode,
+    toolPanelAutoOpen,
     setRenderMode,
     setSettingsPinned,
     setSidebarCollapsed,
@@ -74,6 +79,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setToolPanelMode,
     setToolViewOverride,
     setDebugMode,
+    setToolPanelAutoOpen,
   };
 
   return (
