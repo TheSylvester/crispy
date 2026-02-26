@@ -31,6 +31,8 @@ interface SessionContextValue extends SessionState {
   setSelectedCwd: (slug: string | null) => void;
   refreshSessions: () => void;
   availableVendors: string[];
+  /** Original workspace CWD path from the host (VS Code only). */
+  workspaceCwdPath: string | null;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -121,13 +123,17 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
   // Listen for workspace CWD hint from VS Code host (sent via postMessage).
   // In VS Code, auto-select the workspace project on initial load so the
   // sidebar scopes to the open workspace.
+  // We store BOTH the slug (for selection/matching) and the original absolute
+  // path (for session creation — slugToPath is lossy for hyphenated paths).
   const workspaceCwdRef = useRef<string | null>(null);
+  const [workspaceCwdPath, setWorkspaceCwdPath] = useState<string | null>(null);
 
   useEffect(() => {
     function onMessage(ev: MessageEvent) {
       if (ev.data?.kind === 'workspaceCwd' && ev.data.cwd) {
         const slug = pathToSlug(ev.data.cwd);
         workspaceCwdRef.current = slug;
+        setWorkspaceCwdPath(ev.data.cwd);
         // In VS Code, auto-scope to workspace project if nothing selected yet
         if (transportKind === 'vscode') {
           setSelectedCwd((prev) => prev ?? slug);
@@ -202,6 +208,7 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     setSelectedCwd,
     refreshSessions: loadSessions,
     availableVendors,
+    workspaceCwdPath,
   };
 
   return (

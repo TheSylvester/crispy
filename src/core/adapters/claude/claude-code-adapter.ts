@@ -969,7 +969,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
           event: {
             type: 'notification',
             kind: 'error',
-            error: err instanceof Error ? err : String(err),
+            error: err instanceof Error ? err.message : String(err),
           },
         });
       }

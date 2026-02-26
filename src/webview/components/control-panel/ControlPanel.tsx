@@ -155,7 +155,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     }, [ref]);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned, toolViewOverride, setToolViewOverride, debugMode, setDebugMode, toolPanelAutoOpen, setToolPanelAutoOpen } = usePreferences();
     const transport = useTransport();
-    const { selectedSessionId, selectedCwd, setSelectedSessionId, sessions } = useSession();
+    const { selectedSessionId, selectedCwd, setSelectedSessionId, sessions, workspaceCwdPath } = useSession();
     const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
     const togglesDisabled = channelState === 'streaming' || channelState === 'awaiting_approval';
 
@@ -435,13 +435,16 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         return;
       }
 
-      // Resolve real CWD path from sessions' projectPath (avoids lossy slugToPath)
+      // Resolve real CWD path from sessions' projectPath (avoids lossy slugToPath).
+      // Fallback chain: session projectPath → workspace CWD from host → lossy slugToPath.
+      // The workspace CWD fallback is critical for brand-new projects with no prior
+      // sessions, where slugToPath would mangle hyphenated folder names.
       const resolvedCwd = (() => {
         if (state.forkMode || selectedSessionId || !selectedCwd) return '';
         const realPath = sessions.find(
           (s) => s.projectSlug === selectedCwd && s.projectPath,
         )?.projectPath;
-        return realPath ?? slugToPath(selectedCwd);
+        return realPath ?? workspaceCwdPath ?? slugToPath(selectedCwd);
       })();
 
       // Build target — detect cross-vendor switch for continueIn routing
@@ -532,7 +535,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             dispatch({ type: 'SET_FORK_MODE', forkMode: forkModeBackup });
           }
         });
-    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, state.forkMode, selectedSessionId, selectedCwd, sessions, setSelectedSessionId, setOptimisticStatus, transport, onScrollToBottom, onOptimisticEntry, showSendError, clearSendError]);
+    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, state.forkMode, selectedSessionId, selectedCwd, sessions, setSelectedSessionId, setOptimisticStatus, transport, onScrollToBottom, onOptimisticEntry, showSendError, clearSendError, workspaceCwdPath]);
 
     // Keep ref in sync so forkConfig auto-send always calls the latest handleSend
     useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
