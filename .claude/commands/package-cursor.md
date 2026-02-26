@@ -1,6 +1,7 @@
 ---
 description: "Build VSIX and install Crispy into Cursor (WSL)"
-allowed-tools: Bash, Read, Glob, Grep
+allowed-tools: Bash, Read, Glob, Grep, Edit
+args: "[version]"
 ---
 
 # Package Crispy for Cursor (WSL)
@@ -12,6 +13,22 @@ stale IPC sockets. This command bypasses the CLI by manually extracting the
 VSIX (which is just a zip) into the extensions directory.
 
 ## Steps
+
+### 0. (Optional) Bump version if argument provided
+
+If the user passed a `$ARGUMENTS` value (e.g. `0.1.0-rc2`), update the version
+**everywhere** before building:
+
+1. `package.json` — the `"version"` field
+2. `src/webview/components/WelcomePage.tsx` — the `<p>` subtitle
+3. `src/core/adapters/codex/codex-app-server-adapter.ts` — `clientInfo.version`
+4. `src/core/adapters/codex/codex-discovery.ts` — `clientInfo.version`
+
+Use the Edit tool for each file. Strip any leading `v` from the argument
+(e.g. `v0.1.0-rc2` → `0.1.0-rc2`) for the semver fields, but keep the `v`
+prefix in WelcomePage's display string.
+
+If no argument was provided, skip this step.
 
 ### 1. Read version from package.json
 
