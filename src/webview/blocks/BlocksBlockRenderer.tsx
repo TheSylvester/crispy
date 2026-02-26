@@ -89,12 +89,19 @@ function ThinkingView({ block, autoCollapse }: { block: RichBlock; autoCollapse?
     }
   }, [autoCollapse]);
 
+  const preview = content.length > 0
+    ? content.replace(/\s+/g, ' ').trim().slice(0, 120) + (content.length > 120 ? '…' : '')
+    : '';
+
   return (
     <details ref={detailsRef} className="crispy-blocks-thinking" open={defaultOpen}>
       <summary className="crispy-blocks-thinking-summary">
-        {isSummary ? 'Thinking (summarized)' : 'Thinking'}
+        {preview || 'Thinking'}
       </summary>
-      <pre className="crispy-blocks-thinking-content">{content}</pre>
+      <pre
+        className="crispy-blocks-thinking-content"
+        onClick={() => { if (detailsRef.current) detailsRef.current.open = false; }}
+      >{content || 'Thinking'}</pre>
     </details>
   );
 }

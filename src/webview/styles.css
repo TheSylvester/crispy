@@ -3654,14 +3654,36 @@ h2 {
 
 .crispy-blocks-thinking {
   margin: 4px 0;
+  margin-left: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-xl);
+  padding: 0 10px;
 }
 
+/* Hide native disclosure triangle */
 .crispy-blocks-thinking-summary {
   cursor: pointer;
   font-size: var(--font-sm);
+  font-style: italic;
   opacity: 0.6;
   padding: 4px 0;
   user-select: none;
+  list-style: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.crispy-blocks-thinking-summary::-webkit-details-marker {
+  display: none;
+}
+
+/* When expanded, collapse the summary to a thin clickable bar */
+.crispy-blocks-thinking[open] > .crispy-blocks-thinking-summary {
+  font-size: 0;
+  padding: 2px 0;
+  opacity: 0.3;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .crispy-blocks-thinking-summary:hover {
@@ -3669,15 +3691,18 @@ h2 {
 }
 
 .crispy-blocks-thinking-content {
-  margin: 4px 0;
-  padding: 8px;
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: var(--radius-md);
+  margin: 0;
+  padding: 4px 0;
+  font-family: inherit;
   font-size: var(--font-sm);
+  font-style: italic;
+  opacity: 0.6;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 200px;
   overflow-y: auto;
+  cursor: pointer;
 }
 
 /* --- Blocks Unknown Block --- */
