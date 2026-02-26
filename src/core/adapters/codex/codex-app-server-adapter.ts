@@ -32,6 +32,7 @@ import type {
 import { AsyncIterableQueue } from '../../async-iterable-queue.js';
 import { CodexRpcClient } from './codex-rpc-client.js';
 import { adaptCodexItem, adaptCodexDelta } from './codex-entry-adapter.js';
+import { serializeToCodexHistory } from './codex-history-serializer.js';
 import {
   codexApprovalToEvent,
   crispyResponseToCodexDecision,
@@ -283,7 +284,7 @@ export class CodexAgentAdapter implements AgentAdapter {
 
     // Create RPC client
     this.client = new CodexRpcClient({
-      cwd: this.spec.mode === 'fresh' ? this.spec.cwd : undefined,
+      cwd: (this.spec.mode === 'fresh' || this.spec.mode === 'hydrated') ? this.spec.cwd : undefined,
       onNotification: (method, params) => this.handleNotification(method, params),
       onRequest: (method, id, params) => this.handleServerRequest(method, id, params),
       onError: (err) => this.emitError(err),
@@ -329,6 +330,18 @@ export class CodexAgentAdapter implements AgentAdapter {
           forkParams.atItemId = this.spec.atMessageId;
         }
         response = await this.client.request('thread/fork', forkParams);
+        break;
+      }
+
+      case 'hydrated': {
+        const history = serializeToCodexHistory(this.spec.history);
+        response = await this.client.request('thread/resume', {
+          threadId: crypto.randomUUID(),
+          history,
+          cwd: this.spec.cwd,
+          ...(this.spec.model && { model: this.spec.model }),
+          ...(this.spec.permissionMode && { approvalPolicy: mapPermissionMode(this.spec.permissionMode) }),
+        });
         break;
       }
     }

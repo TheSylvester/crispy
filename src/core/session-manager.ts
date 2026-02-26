@@ -480,6 +480,80 @@ export function createForkSession(
   return { pendingId, channel };
 }
 
+/**
+ * Create a hydrated session that continues a conversation from one vendor in another.
+ *
+ * Loads the source session's history, serializes it, and opens a new session
+ * pre-loaded with that context. Same pending:<uuid> + rekey pattern as createSession().
+ */
+export async function continueInVendor(
+  sourceSessionId: string,
+  targetVendor: string,
+  subscriber: Subscriber,
+  options?: { model?: string; permissionMode?: SendOptions['permissionMode'] },
+  explicitPendingId?: string,
+): Promise<{ pendingId: string; channel: SessionChannel }> {
+  const vendor = targetVendor as Vendor;
+  const registration = adapters.get(vendor);
+  if (!registration) throw new Error(`No adapter registered for vendor "${vendor}".`);
+
+  const sourceInfo = findSession(sourceSessionId);
+  if (!sourceInfo) throw new Error(`Source session "${sourceSessionId}" not found.`);
+
+  const sourceReg = adapters.get(sourceInfo.vendor);
+  if (!sourceReg) throw new Error(`No adapter registered for source vendor "${sourceInfo.vendor}".`);
+
+  // Load source history first — adapter needs it during construction
+  const history = await sourceReg.discovery.loadHistory(sourceSessionId);
+
+  const pendingId = explicitPendingId ?? `pending:${crypto.randomUUID()}`;
+  const spec: SessionOpenSpec = {
+    mode: 'hydrated',
+    cwd: sourceInfo.projectPath ?? process.cwd(),
+    history,
+    sourceVendor: sourceInfo.vendor,
+    sourceSessionId,
+    ...(options?.model && { model: options.model }),
+    ...(options?.permissionMode && { permissionMode: options.permissionMode }),
+  };
+
+  const channel = openChannel(pendingId, vendor, spec);
+  sessions.set(pendingId, channel);
+  subscribe(channel, subscriber);
+
+  // One-shot session-list notifier (same pattern as createSession)
+  const listNotifySubscriber: Subscriber = {
+    id: `__list_notify__${pendingId}`,
+    send(msg) {
+      if (isSessionChangedEvent(msg)) {
+        refreshAndNotify(msg.event.sessionId);
+        unsubscribe(channel, listNotifySubscriber);
+      }
+    },
+  };
+  subscribe(channel, listNotifySubscriber);
+
+  // One-shot re-key subscriber (same pattern as createSession)
+  const rekeySubscriber: Subscriber = {
+    id: `__rekey__${pendingId}`,
+    send(msg) {
+      if (isSessionChangedEvent(msg)) {
+        const realId = msg.event.sessionId;
+        rekeyChannel(pendingId, realId);
+        sessions.delete(pendingId);
+        sessions.set(realId, channel);
+        unsubscribe(channel, rekeySubscriber);
+      }
+    },
+  };
+  subscribe(channel, rekeySubscriber);
+
+  // Backfill source history to all subscribers for UI rendering
+  backfillHistory(channel, history);
+
+  return { pendingId, channel };
+}
+
 // ============================================================================
 // Unified Send Surface
 // ============================================================================
@@ -514,7 +588,7 @@ function buildUserEntry(intent: TurnIntent): TranscriptEntry {
  *
  * Returns a TurnReceipt with the session ID (may be pending:<uuid> for new/fork).
  */
-export function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendingId?: string): TurnReceipt {
+export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendingId?: string): Promise<TurnReceipt> {
   let channel: SessionChannel;
   let sessionId: string;
 
@@ -547,6 +621,19 @@ export function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendingId?:
       );
       channel = forked.channel;
       sessionId = forked.pendingId;
+      break;
+    }
+
+    case 'continueIn': {
+      const continued = await continueInVendor(
+        intent.target.sourceSessionId,
+        intent.target.targetVendor as string,
+        subscriber,
+        intent.settings,
+        pendingId,
+      );
+      channel = continued.channel;
+      sessionId = continued.pendingId;
       break;
     }
   }

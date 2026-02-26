@@ -169,6 +169,9 @@ export function createWebSocketTransport(url: string): SessionService {
         { sessionId, agentId, parentToolUseId, cursor },
       ),
 
+    continueInVendor: (sourceSessionId, targetVendor, options) =>
+      request<{ sessionId: string }>('continueInVendor', { sourceSessionId, targetVendor, ...options }),
+
     listProviders: () => request<Record<string, WireProviderConfig>>('listProviders'),
     saveProvider: (slug, config) => request<{ saved: boolean }>('saveProvider', { slug, config }),
     deleteProvider: (slug) => request<{ deleted: boolean }>('deleteProvider', { slug }),

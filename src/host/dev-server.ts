@@ -136,6 +136,13 @@ registerAdapter(
         });
       case 'continue':
         return new ClaudeAgentAdapter({ cwd, resume: spec.sessionId, continue: true });
+      case 'hydrated':
+        return new ClaudeAgentAdapter({
+          cwd: spec.cwd,
+          hydratedHistory: spec.history,
+          ...(spec.model && { model: spec.model }),
+          ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+        });
     }
   },
 );

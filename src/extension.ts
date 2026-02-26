@@ -48,6 +48,13 @@ export function activate(context: vscode.ExtensionContext): void {
           });
         case 'continue':
           return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, continue: true });
+        case 'hydrated':
+          return new ClaudeAgentAdapter({
+            ...base, cwd: spec.cwd,
+            hydratedHistory: spec.history,
+            ...(spec.model && { model: spec.model }),
+            ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+          });
       }
     },
   );

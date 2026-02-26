@@ -166,6 +166,13 @@ function makeFactory(
         });
       case 'continue':
         return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, continue: true, vendor: slug, env });
+      case 'hydrated':
+        return new ClaudeAgentAdapter({
+          ...base, cwd: spec.cwd, vendor: slug, env,
+          hydratedHistory: spec.history,
+          ...(spec.model && { model: spec.model }),
+          ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+        });
     }
   };
 }

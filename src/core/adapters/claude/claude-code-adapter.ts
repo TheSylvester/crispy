@@ -42,14 +42,19 @@ import type {
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources';
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import { randomUUID } from 'crypto';
 import { AsyncIterableQueue } from '../../async-iterable-queue.js';
 import { adaptClaudeEntry, adaptClaudeEntries } from './claude-entry-adapter.js';
 import { parseJsonlFile, extractMetadataFast, readLinesFromOffset } from './jsonl-reader.js';
 import { loadSubagentEntries } from './subagent-loader.js';
+import {
+  serializeToClaudeJsonl,
+  writeSyntheticSession,
+} from './claude-history-serializer.js';
 
 import type { TranscriptEntry, ContextUsage, MessageContent, Vendor } from '../../transcript.js';
 
-import { existsSync, readdirSync, statSync } from 'fs';
+import { existsSync, readdirSync, statSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
@@ -150,6 +155,8 @@ export interface ClaudeSessionOptions {
   resumeSessionAt?: string;
   /** Continue the most recent conversation */
   continue?: boolean;
+  /** Pre-loaded cross-vendor history for hydrated sessions (consumed in Phase 2). */
+  hydratedHistory?: TranscriptEntry[];
   /** Save session to disk (default: true) */
   persistSession?: boolean;
 
@@ -402,6 +409,8 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   private queryGeneration = 0;
   /** Counter for sendTurn() echo suppression — decremented when SDK echoes back user messages. */
   private pendingSendCount = 0;
+  /** Path to synthetic JSONL file written for hydrated sessions (cleaned up on close). */
+  private syntheticSessionPath: string | undefined;
 
   private readonly options: ClaudeSessionOptions;
 
@@ -649,6 +658,13 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     this._closed = true;
 
     this.teardownQuery();
+
+    // Clean up synthetic JSONL file written for hydrated sessions
+    if (this.syntheticSessionPath) {
+      try { unlinkSync(this.syntheticSessionPath); } catch { /* best-effort */ }
+      this.syntheticSessionPath = undefined;
+    }
+
     this.emitStatus('idle');
     this.outputQueue.done();
   }
@@ -876,6 +892,20 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       includePartialMessages: true,
       canUseTool: (toolName, input, canUseOpts) => this.handleCanUseTool(toolName, input, canUseOpts),
     };
+
+    // Hydrated session: write a synthetic JSONL file and configure the SDK
+    // to resume from it (forked, so Claude creates its own session ID).
+    if (opts.hydratedHistory) {
+      const syntheticId = randomUUID();
+      const jsonl = serializeToClaudeJsonl(opts.hydratedHistory, syntheticId, opts.cwd);
+      this.syntheticSessionPath = writeSyntheticSession(syntheticId, opts.cwd, jsonl);
+
+      sdkOptions.resume = syntheticId;
+      sdkOptions.forkSession = true;
+
+      // Consumed — don't re-hydrate on subsequent query restarts
+      opts.hydratedHistory = undefined;
+    }
 
     this.activeQuery = query({
       prompt: this.inputQueue,

@@ -33,6 +33,7 @@ import {
   interruptSession,
   closeSession,
   readSubagentEntries,
+  continueInVendor,
 } from "../core/session-manager.js";
 import {
   subscribeSessionList,
@@ -192,7 +193,7 @@ export function createClientConnection(
               `Not subscribed to session "${sessionId}". Call subscribe first.`
             );
           }
-          return sendTurn(intent, sub.subscriber);
+          return await sendTurn(intent, sub.subscriber);
         }
 
         // Generate pending ID here so currentSessionId is set before
@@ -222,7 +223,7 @@ export function createClientConnection(
           },
         };
 
-        const receipt = sendTurn(intent, subscriber, pendingId);
+        const receipt = await sendTurn(intent, subscriber, pendingId);
 
         // For new/fork, sendTurn() internally calls createSession/createForkSession
         // which returns the channel. We need to track it for cleanup.
@@ -350,6 +351,49 @@ export function createClientConnection(
 
       case 'getModelGroups':
         return getModelGroups();
+
+      case "continueInVendor": {
+        const sourceSessionId = params.sourceSessionId as string;
+        const targetVendor = params.targetVendor as string;
+        const model = params.model as string | undefined;
+        const permissionMode = params.permissionMode as string | undefined;
+
+        const pendingId = `pending:${crypto.randomUUID()}`;
+        let currentSessionId = pendingId;
+
+        const subscriber: Subscriber = {
+          id: clientId,
+          send(event: ChannelMessage | HistoryMessage | ChannelCatchupMessage) {
+            sendFn({ kind: "event", sessionId: currentSessionId, event });
+            // Re-key on session_changed (same pattern as sendTurn new/fork)
+            if (
+              event.type === 'event' &&
+              event.event.type === 'notification' &&
+              event.event.kind === 'session_changed' &&
+              event.event.sessionId
+            ) {
+              const realId = event.event.sessionId;
+              const sub = subscriptions.get(currentSessionId);
+              if (sub) {
+                subscriptions.delete(currentSessionId);
+                currentSessionId = realId;
+                subscriptions.set(realId, sub);
+              }
+            }
+          },
+        };
+
+        const result = await continueInVendor(sourceSessionId, targetVendor, subscriber, {
+          ...(model && { model }),
+          ...(permissionMode && { permissionMode: permissionMode as any }),
+        }, pendingId);
+
+        const channel = getChannel(result.pendingId);
+        if (channel) {
+          subscriptions.set(result.pendingId, { channel, subscriber });
+        }
+        return { sessionId: result.pendingId };
+      }
 
       default:
         throw new Error(`Unknown method: ${method}`);

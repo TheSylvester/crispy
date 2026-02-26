@@ -15,3 +15,4 @@ export {
   extractCodexSessionMeta,
 } from './codex-jsonl-reader.js';
 export { CodexRpcClient } from './codex-rpc-client.js';
+export { serializeToCodexHistory } from './codex-history-serializer.js';

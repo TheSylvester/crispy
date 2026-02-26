@@ -43,7 +43,7 @@ import { useContextUsage } from '../../hooks/useContextUsage.js';
 import { useSessionStatus } from '../../hooks/useSessionStatus.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
-import type { TurnIntent } from '../../../core/agent-adapter.js';
+import type { TurnIntent, TurnTarget } from '../../../core/agent-adapter.js';
 import type { WireProviderConfig } from '../../../core/provider-config.js';
 
 interface ControlPanelProps {
@@ -416,6 +416,32 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         return realPath ?? slugToPath(selectedCwd);
       })();
 
+      // Build target — detect cross-vendor switch for continueIn routing
+      let target: TurnTarget;
+      if (state.forkMode) {
+        target = {
+          kind: 'fork',
+          vendor,
+          fromSessionId: state.forkMode.fromSessionId,
+          atMessageId: state.forkMode.atMessageId,
+        };
+      } else if (!selectedSessionId) {
+        target = { kind: 'new', vendor, cwd: resolvedCwd };
+      } else {
+        const currentSession = sessions.find(s => s.sessionId === selectedSessionId);
+        if (currentSession?.vendor && currentSession.vendor !== vendor) {
+          // Cross-vendor switch — continue conversation in new vendor
+          target = {
+            kind: 'continueIn',
+            targetVendor: vendor,
+            sourceSessionId: selectedSessionId,
+            cwd: currentSession.projectPath ?? resolvedCwd,
+          };
+        } else {
+          target = { kind: 'existing', sessionId: selectedSessionId };
+        }
+      }
+
       // Build TurnIntent with unified routing target
       const intent: TurnIntent = {
         content,
@@ -426,16 +452,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           allowDangerouslySkipPermissions: state.bypassEnabled || undefined,
           extraArgs: state.chromeEnabled ? { chrome: null } : undefined,
         },
-        target: state.forkMode
-          ? {
-              kind: 'fork',
-              vendor,
-              fromSessionId: state.forkMode.fromSessionId,
-              atMessageId: state.forkMode.atMessageId,
-            }
-          : !selectedSessionId
-            ? { kind: 'new', vendor, cwd: resolvedCwd }
-            : { kind: 'existing', sessionId: selectedSessionId },
+        target,
       };
 
       // Stash forkMode for error recovery before clearing

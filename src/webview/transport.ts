@@ -66,6 +66,11 @@ export interface SessionService {
     cursor: string,
   ): Promise<{ entries: TranscriptEntry[]; cursor: string; done: boolean }>;
 
+  /** Cross-vendor session continuation */
+  continueInVendor(sourceSessionId: string, targetVendor: string, options?: {
+    model?: string; permissionMode?: string;
+  }): Promise<{ sessionId: string }>;
+
   /** Provider management */
   listProviders(): Promise<Record<string, WireProviderConfig>>;
   saveProvider(slug: string, config: ProviderConfig): Promise<{ saved: boolean }>;

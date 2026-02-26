@@ -145,7 +145,8 @@ export interface TurnSettings {
 export type TurnTarget =
   | { kind: 'existing'; sessionId: string }
   | { kind: 'new'; vendor: Vendor; cwd: string }
-  | { kind: 'fork'; vendor: Vendor; fromSessionId: string; atMessageId?: string };
+  | { kind: 'fork'; vendor: Vendor; fromSessionId: string; atMessageId?: string }
+  | { kind: 'continueIn'; targetVendor: Vendor; sourceSessionId: string; cwd: string };
 
 /**
  * Intent to send a turn (user message + settings).
@@ -185,12 +186,14 @@ export interface AdapterSettings {
  * 'fresh'    — start a brand-new session (no resume ID)
  * 'fork'     — fork from an existing session (future)
  * 'continue' — continue the most recent session in a CWD (future)
+ * 'hydrated' — start a new session pre-loaded with cross-vendor history
  */
 export type SessionOpenSpec =
   | { mode: 'resume'; sessionId: string }
   | { mode: 'fresh'; cwd: string; model?: string; permissionMode?: SendOptions['permissionMode']; extraArgs?: Record<string, string | null> }
   | { mode: 'fork'; fromSessionId: string; atMessageId?: string }
-  | { mode: 'continue'; sessionId: string };
+  | { mode: 'continue'; sessionId: string }
+  | { mode: 'hydrated'; cwd: string; history: TranscriptEntry[]; sourceVendor: Vendor; sourceSessionId?: string; model?: string; permissionMode?: SendOptions['permissionMode'] };
 
 // ============================================================================
 // Agent Adapter Interface
