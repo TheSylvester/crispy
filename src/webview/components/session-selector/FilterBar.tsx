@@ -79,7 +79,7 @@ export function FilterBar({
         ref={searchInputRef}
         className="crispy-filter-bar__search"
         type="text"
-        placeholder="Search conversations\u2026"
+        placeholder="Search conversations…"
         value={searchQuery}
         onChange={e => onSearchChange(e.target.value)}
         onKeyDown={onSearchKeyDown}
