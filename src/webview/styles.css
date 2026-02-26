@@ -3456,6 +3456,27 @@ h2 {
   color: var(--vscode-focusBorder, #007acc);
 }
 
+.crispy-tool-panel__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--vscode-descriptionForeground, #858585);
+  cursor: pointer;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.crispy-tool-panel__close:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+
 .crispy-tool-panel__scroll {
   flex: 1;
   display: flex;

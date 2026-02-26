@@ -28,7 +28,7 @@ export function BlocksToolPanel(): React.JSX.Element {
   const panelState = usePanelState();
   const visibleToolIds = useBlocksVisibleToolIds();
   const registry = useBlocksToolRegistry();
-  const { toolPanelMode, setToolPanelMode, setToolPanelWidthPx } = usePreferences();
+  const { toolPanelMode, setToolPanelMode, setToolPanelWidthPx, setToolPanelOpen } = usePreferences();
   const lastArrivedId = useBlocksLastArrivedToolId();
   const _pendingGen = registry.usePendingCount(); // triggers re-render on pending changes
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -207,6 +207,13 @@ export function BlocksToolPanel(): React.JSX.Element {
         >
           {toolPanelMode === 'inspector' ? <InspectorIcon /> : <ViewportIcon />}
         </button>
+        <button
+          className="crispy-tool-panel__close"
+          onClick={() => setToolPanelOpen(false)}
+          title="Close tools panel (Alt+T)"
+        >
+          <CloseIcon />
+        </button>
       </div>
       <div
         className="crispy-tool-panel__scroll"
@@ -243,6 +250,16 @@ function InspectorIcon(): React.JSX.Element {
       <line x1="8" y1="12" x2="8" y2="15" />
       <line x1="1" y1="8" x2="4" y2="8" />
       <line x1="12" y1="8" x2="15" y2="8" />
+    </svg>
+  );
+}
+
+/** Close (✕) icon */
+function CloseIcon(): React.JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <line x1="4" y1="4" x2="12" y2="12" />
+      <line x1="12" y1="4" x2="4" y2="12" />
     </svg>
   );
 }
