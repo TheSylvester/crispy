@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { registerAdapter, unregisterAdapter } from './core/session-manager.js';
-import { ClaudeAgentAdapter, claudeDiscovery } from './core/adapters/claude/claude-code-adapter.js';
+import { ClaudeAgentAdapter, claudeDiscovery, getResumeModel } from './core/adapters/claude/claude-code-adapter.js';
 import { CodexAgentAdapter, codexDiscovery } from './core/adapters/codex/index.js';
 import { syncProviders, startWatching, stopWatching } from './core/provider-config.js';
 import { openCrispyPanel, getOrCreatePanelForPrefill } from './host/webview-host.js';
@@ -32,8 +32,10 @@ export function activate(context: vscode.ExtensionContext): void {
     claudeDiscovery,
     (spec) => {
       switch (spec.mode) {
-        case 'resume':
-          return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId });
+        case 'resume': {
+          const model = getResumeModel(spec.sessionId);
+          return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, ...(model && { model }) });
+        }
         case 'fresh':
           return new ClaudeAgentAdapter({
             ...base, cwd: spec.cwd,

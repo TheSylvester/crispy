@@ -19,7 +19,7 @@ import { join, extname } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 
 import { registerAdapter } from '../core/session-manager.js';
-import { ClaudeAgentAdapter, claudeDiscovery } from '../core/adapters/claude/claude-code-adapter.js';
+import { ClaudeAgentAdapter, claudeDiscovery, getResumeModel } from '../core/adapters/claude/claude-code-adapter.js';
 import { CodexAgentAdapter, codexDiscovery } from '../core/adapters/codex/index.js';
 import { syncProviders, startWatching } from '../core/provider-config.js';
 import { createClientConnection } from './client-connection.js';
@@ -120,8 +120,10 @@ registerAdapter(
   claudeDiscovery,
   (spec) => {
     switch (spec.mode) {
-      case 'resume':
-        return new ClaudeAgentAdapter({ cwd, resume: spec.sessionId });
+      case 'resume': {
+        const model = getResumeModel(spec.sessionId);
+        return new ClaudeAgentAdapter({ cwd, resume: spec.sessionId, ...(model && { model }) });
+      }
       case 'fresh':
         return new ClaudeAgentAdapter({
           cwd: spec.cwd,

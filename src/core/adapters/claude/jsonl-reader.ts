@@ -380,6 +380,70 @@ export function parseJsonlFile(filepath: string): ClaudeTranscriptEntry[] {
 }
 
 // ============================================================================
+// Init Model Extraction (for resume-time model population)
+// ============================================================================
+
+/**
+ * Extract the model string from the init entry in a Claude JSONL file.
+ *
+ * Reads only the first 8KB of the file to find the `type: "system"` +
+ * `subtype: "init"` entry, which contains the `model` field. This avoids
+ * parsing the entire transcript just to discover which model was used.
+ *
+ * @param filepath - Absolute path to the .jsonl file
+ * @returns The model string (e.g. "claude-sonnet-4-20250514"), or undefined
+ */
+export function extractInitModel(filepath: string): string | undefined {
+  let fd: number | null = null;
+
+  try {
+    fd = fs.openSync(filepath, 'r');
+    const stat = fs.fstatSync(fd);
+    const bytesToRead = Math.min(stat.size, 8 * 1024);
+
+    const buffer = Buffer.alloc(bytesToRead);
+    const bytesRead = fs.readSync(fd, buffer, 0, bytesToRead, 0);
+
+    if (bytesRead === 0) return undefined;
+
+    const content = buffer.toString('utf-8', 0, bytesRead);
+    const lines = content.split('\n');
+
+    // Drop last line if it might be truncated at the chunk boundary
+    if (bytesRead === bytesToRead && !content.endsWith('\n')) {
+      lines.pop();
+    }
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      try {
+        const entry = JSON.parse(trimmed) as ClaudeTranscriptEntry;
+        if (entry.type === 'system' && entry['subtype'] === 'init') {
+          const model = entry['model'];
+          return typeof model === 'string' ? model : undefined;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return undefined;
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // Ignore close errors
+      }
+    }
+  }
+}
+
+// ============================================================================
 // Entry Analysis Helpers
 // ============================================================================
 

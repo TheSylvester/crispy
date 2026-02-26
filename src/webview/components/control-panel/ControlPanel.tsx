@@ -337,17 +337,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     useEffect(() => {
       const off = transport.onEvent((sessionId, event) => {
         if (sessionId !== selectedSessionId) return;
-        if (event.type !== 'event' || event.event.type !== 'notification') return;
 
-        if (event.event.kind === 'permission_mode_changed') {
-          const serverMode = mapPermissionModeToAgency(event.event.mode);
-          if (serverMode) {
-            dispatch({ type: 'SET_AGENCY_MODE', mode: serverMode });
-          }
-        }
-
-        if (event.event.kind === 'settings_changed') {
-          const { settings } = event.event;
+        /** Apply AdapterSettings to local state (model, agency, bypass, chrome). */
+        const applySettings = (settings: { vendor: string; model?: string | undefined; permissionMode?: string | undefined; allowDangerouslySkipPermissions: boolean; extraArgs?: Record<string, string | null> | undefined }) => {
           // Sync model — vendor is now part of AdapterSettings.
           // Preserve '' for Claude default (matches the "Default" option value in ModelSelect).
           // Non-Claude vendors always need the prefix to avoid defaulting to Claude via parseModelOption.
@@ -368,6 +360,25 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           // Sync chrome (extraArgs with 'chrome' key means enabled)
           const chromeEnabled = settings.extraArgs != null && 'chrome' in settings.extraArgs;
           dispatch({ type: 'SET_CHROME', enabled: chromeEnabled });
+        };
+
+        // Catchup: initial state sync when subscribing to an existing session
+        if (event.type === 'catchup' && event.settings) {
+          applySettings(event.settings);
+          return;
+        }
+
+        if (event.type !== 'event' || event.event.type !== 'notification') return;
+
+        if (event.event.kind === 'permission_mode_changed') {
+          const serverMode = mapPermissionModeToAgency(event.event.mode);
+          if (serverMode) {
+            dispatch({ type: 'SET_AGENCY_MODE', mode: serverMode });
+          }
+        }
+
+        if (event.event.kind === 'settings_changed') {
+          applySettings(event.event.settings);
         }
       });
       return off;

@@ -45,7 +45,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { randomUUID } from 'crypto';
 import { AsyncIterableQueue } from '../../async-iterable-queue.js';
 import { adaptClaudeEntry, adaptClaudeEntries } from './claude-entry-adapter.js';
-import { parseJsonlFile, extractMetadataFast, readLinesFromOffset } from './jsonl-reader.js';
+import { parseJsonlFile, extractMetadataFast, readLinesFromOffset, extractInitModel } from './jsonl-reader.js';
 import { loadSubagentEntries } from './subagent-loader.js';
 import {
   serializeToClaudeJsonl,
@@ -1552,6 +1552,23 @@ export function findSession(sessionId: string): SessionInfo | undefined {
   }
 
   return undefined;
+}
+
+/**
+ * Extract the model string for a resumed session by reading its JSONL init entry.
+ *
+ * Convenience wrapper: finds the session file on disk, then reads the first 8KB
+ * to extract the model from the `{ type: "system", subtype: "init" }` entry.
+ * Used by adapter factories to populate model at construction time (before any
+ * SDK query), so the catchup message includes the correct model.
+ *
+ * @param sessionId - The session UUID to look up
+ * @returns The model string (e.g. "claude-sonnet-4-20250514"), or undefined
+ */
+export function getResumeModel(sessionId: string): string | undefined {
+  const info = findSession(sessionId);
+  if (!info) return undefined;
+  return extractInitModel(info.path);
 }
 
 /**

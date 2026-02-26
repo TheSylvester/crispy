@@ -22,7 +22,7 @@ import { watch, type FSWatcher } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-import { ClaudeAgentAdapter } from './adapters/claude/claude-code-adapter.js';
+import { ClaudeAgentAdapter, getResumeModel } from './adapters/claude/claude-code-adapter.js';
 import { registerAdapter, unregisterAdapter } from './session-manager.js';
 import { NATIVE_VENDORS } from './transcript.js';
 import type { VendorDiscovery, SessionOpenSpec } from './agent-adapter.js';
@@ -150,8 +150,10 @@ function makeFactory(
   const env = buildEnvDict(config);
   return (spec: SessionOpenSpec) => {
     switch (spec.mode) {
-      case 'resume':
-        return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, vendor: slug, env });
+      case 'resume': {
+        const model = getResumeModel(spec.sessionId);
+        return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, vendor: slug, env, ...(model && { model }) });
+      }
       case 'fresh':
         return new ClaudeAgentAdapter({
           ...base, cwd: spec.cwd, vendor: slug, env,
