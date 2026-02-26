@@ -143,8 +143,8 @@ export function TranscriptViewer(): React.JSX.Element {
     return targets;
   }, [filteredEntries]);
 
-  // Channel state for fork streaming check
-  const { channelState } = useSessionStatus(selectedSessionId);
+  // Channel state for fork streaming check + error surfacing
+  const { channelState, lastError, clearError } = useSessionStatus(selectedSessionId);
 
   const { parked, isAtTop, scrollToBottom, scrollToTop, pinToBottom } = useAutoScroll({
     sessionId: selectedSessionId,
@@ -343,6 +343,12 @@ export function TranscriptViewer(): React.JSX.Element {
       >
         <div className="crispy-transcript" ref={transcriptRef} data-render-mode={renderMode}>
           <div className="crispy-transcript-content">
+            {lastError && (
+              <div className="crispy-channel-error" role="alert">
+                <span>{lastError}</span>
+                <button className="crispy-channel-error-dismiss" onClick={clearError} aria-label="Dismiss error">×</button>
+              </div>
+            )}
             {isLoading ? (
               <div className="crispy-loading">Loading transcript...</div>
             ) : (

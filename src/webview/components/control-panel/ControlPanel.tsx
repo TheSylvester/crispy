@@ -159,6 +159,23 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
     const togglesDisabled = channelState === 'streaming' || channelState === 'awaiting_approval';
 
+    // --- sendTurn error banner ---
+    const [sendError, setSendError] = useState<string | null>(null);
+    const sendErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    /** Show a send error with auto-dismiss after 8s. */
+    const showSendError = useCallback((msg: string) => {
+      setSendError(msg);
+      if (sendErrorTimerRef.current) clearTimeout(sendErrorTimerRef.current);
+      sendErrorTimerRef.current = setTimeout(() => setSendError(null), 8000);
+    }, []);
+
+    /** Clear send error (on next successful send or manual dismiss). */
+    const clearSendError = useCallback(() => {
+      setSendError(null);
+      if (sendErrorTimerRef.current) { clearTimeout(sendErrorTimerRef.current); sendErrorTimerRef.current = null; }
+    }, []);
+
     // --- Compact mode detection via ResizeObserver ---
     // Matches the @container (max-width: 480px) breakpoint in CSS.
     const [compact, setCompact] = useState(false);
@@ -497,6 +514,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
       transport.sendTurn(intent)
         .then((receipt) => {
+          clearSendError();
           // For new/fork targets, update selected session to the returned ID
           if (intent.target.kind !== 'existing') {
             setSelectedSessionId(receipt.sessionId);
@@ -505,13 +523,16 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         .catch((err) => {
           setOptimisticStatus('idle');
           console.error('[ControlPanel] sendTurn failed:', err);
+          // Surface error to user
+          const msg = err instanceof Error ? err.message : String(err);
+          showSendError(msg);
           // Restore input on error
           dispatch({ type: 'SET_INPUT', value: typeof content === 'string' ? content : text });
           if (forkModeBackup) {
             dispatch({ type: 'SET_FORK_MODE', forkMode: forkModeBackup });
           }
         });
-    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, state.forkMode, selectedSessionId, selectedCwd, sessions, setSelectedSessionId, setOptimisticStatus, transport, onScrollToBottom, onOptimisticEntry]);
+    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, state.forkMode, selectedSessionId, selectedCwd, sessions, setSelectedSessionId, setOptimisticStatus, transport, onScrollToBottom, onOptimisticEntry, showSendError, clearSendError]);
 
     // Keep ref in sync so forkConfig auto-send always calls the latest handleSend
     useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
@@ -838,6 +859,12 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         className="crispy-cp"
         data-agency={state.agencyMode}
       >
+        {sendError && (
+          <div className="crispy-control-panel__error" role="alert">
+            <span>{sendError}</span>
+            <button className="crispy-control-panel__error-dismiss" onClick={clearSendError} aria-label="Dismiss error">×</button>
+          </div>
+        )}
         {children ?? (
           <>
             <AttachmentsRow

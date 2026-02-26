@@ -3,7 +3,7 @@
   "displayName": "Crispy",
   "icon": "media/crispy-icon.png",
   "description": "Open-source multi-vendor AI agent UI for VS Code and Cursor",
-  "version": "0.1.0",
+  "version": "0.1.0-rc1",
   "publisher": "TheSylvester",
   "license": "MIT",
   "author": "Sylvester Wong",

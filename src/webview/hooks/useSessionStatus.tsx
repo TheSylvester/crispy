@@ -11,7 +11,7 @@
  * @module useSessionStatus
  */
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import type { SessionChannelState } from '../../core/session-channel.js';
 import { useTransport } from '../context/TransportContext.js';
 import { useSession } from '../context/SessionContext.js';
@@ -20,6 +20,10 @@ interface SessionStatusValue {
   channelState: SessionChannelState | null;
   /** Optimistically override the channel state (e.g. set 'streaming' on send). */
   setOptimistic: (state: SessionChannelState) => void;
+  /** Last error notification from the channel (null if none or cleared). */
+  lastError: string | null;
+  /** Clear the last error (e.g. on manual dismiss). */
+  clearError: () => void;
 }
 
 const SessionStatusContext = createContext<SessionStatusValue | null>(null);
@@ -43,6 +47,13 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
   const transport = useTransport();
   const { selectedSessionId } = useSession();
   const [channelState, setChannelState] = useState<SessionChannelState | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
+  const clearError = useCallback(() => setLastError(null), []);
+
+  // Clear error on session switch
+  useEffect(() => {
+    setLastError(null);
+  }, [selectedSessionId]);
 
   useEffect(() => {
     if (!selectedSessionId) {
@@ -73,13 +84,19 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
             break;
         }
       }
+
+      // Surface channel error notifications
+      if (event.type === 'event' && event.event.type === 'notification' && event.event.kind === 'error') {
+        const errVal = event.event.error;
+        setLastError(typeof errVal === 'string' ? errVal : errVal instanceof Error ? errVal.message : 'An unknown error occurred');
+      }
     });
 
     return off;
   }, [selectedSessionId, transport]);
 
   return (
-    <SessionStatusContext.Provider value={{ channelState, setOptimistic: setChannelState }}>
+    <SessionStatusContext.Provider value={{ channelState, setOptimistic: setChannelState, lastError, clearError }}>
       {children}
     </SessionStatusContext.Provider>
   );

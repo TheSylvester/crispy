@@ -1509,6 +1509,53 @@ h2 {
   background: rgba(42, 45, 46, 0.9);
 }
 
+/* --- Error banners (sendTurn + channel errors) --- */
+
+.crispy-control-panel__error,
+.crispy-channel-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85em;
+  line-height: 1.3;
+  background: var(--vscode-inputValidation-errorBackground, rgba(244, 135, 113, 0.15));
+  border: 1px solid var(--vscode-inputValidation-errorBorder, rgba(244, 135, 113, 0.4));
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.crispy-control-panel__error span,
+.crispy-channel-error span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.crispy-control-panel__error-dismiss,
+.crispy-channel-error-dismiss {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1.1em;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0.7;
+  line-height: 1;
+}
+
+.crispy-control-panel__error-dismiss:hover,
+.crispy-channel-error-dismiss:hover {
+  opacity: 1;
+}
+
+/* Channel error sits above the transcript content */
+.crispy-channel-error {
+  margin: 8px 16px 0;
+}
+
 /* --------------------------------------------------------------------------
    Stop Button — floating interrupt button above control panel
    -------------------------------------------------------------------------- */

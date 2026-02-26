@@ -66,18 +66,23 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push({ dispose: () => unregisterAdapter('claude') });
   }
 
-  // Register Codex adapter (doesn't need pathToClaudeCodeExecutable)
+  // Register Codex adapter (conditional on binary being found)
   const pathToCodexExecutable = findCodexBinary();
   if (pathToCodexExecutable) {
     codexDiscovery.setCommand(pathToCodexExecutable);
+    registerAdapter(
+      codexDiscovery,
+      (spec) => {
+        const effectiveCwd = ('cwd' in spec) ? spec.cwd : cwd;
+        return new CodexAgentAdapter({ ...spec, cwd: effectiveCwd, command: pathToCodexExecutable });
+      },
+    );
+    context.subscriptions.push({ dispose: () => unregisterAdapter('codex') });
+  } else {
+    vscode.window.showWarningMessage(
+      'Crispy: Codex CLI not found. Codex sessions will be unavailable. Install Codex and ensure `codex` is on your PATH.',
+    );
   }
-  registerAdapter(
-    codexDiscovery,
-    (spec) => {
-      const effectiveCwd = ('cwd' in spec) ? spec.cwd : cwd;
-      return new CodexAgentAdapter({ ...spec, cwd: effectiveCwd, command: pathToCodexExecutable });
-    },
-  );
 
   const workspaceOpts = { workspaceCwd: cwd };
 
@@ -106,7 +111,6 @@ export function activate(context: vscode.ExtensionContext): void {
 
   startRescan();
   context.subscriptions.push({ dispose: () => stopRescan() });
-  context.subscriptions.push({ dispose: () => unregisterAdapter('codex') });
   context.subscriptions.push({ dispose: () => stopWatching() });
 }
 
