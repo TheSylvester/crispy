@@ -394,7 +394,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       let content: MessageContent;
       if (hasImages) {
         const blocks: MessageContentBlock[] = [];
-        // Images first — matches Claude Code's content order and Leto's visual layout
+        // Images first — matches Claude Code's content order
         for (const img of state.attachedImages) {
           blocks.push({
             type: 'image',
@@ -523,9 +523,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // at the root — the browser requires preventDefault() on the actual dragover
     // target synchronously for the element to be a valid drop zone. In VS Code
     // webviews (Electron iframes), React's indirection can cause the browser to
-    // reject the drop silently. Leto uses native addEventListener and it works.
+    // reject the drop silently. Native addEventListener works reliably here.
     //
-    // Also matches Leto's dragleave strategy: relatedTarget check instead of a
+    // Uses relatedTarget check instead of a
     // counter, and drag-over class set in dragover (continuously reapplied) so
     // visual feedback is robust.
 
@@ -543,7 +543,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         e.preventDefault();
         e.stopPropagation();
         // Only remove class if cursor left the panel entirely (not entering a child).
-        // Matches Leto's relatedTarget approach — simpler and more reliable than counters.
+        // Uses relatedTarget approach — simpler and more reliable than counters.
         const relatedTarget = e.relatedTarget as Node | null;
         if (!relatedTarget || !panelEl.contains(relatedTarget)) {
           panelEl.classList.remove('drag-over');
@@ -703,7 +703,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               };
               dispatch({ type: 'ADD_IMAGE', image });
 
-              // Insert text trail placeholder at cursor (like Leto)
+              // Insert text trail placeholder at cursor
               insertAtCursor(`[${fileName}]`);
             };
             reader.readAsDataURL(file);

@@ -2,8 +2,7 @@
  * WelcomePage — Branded splash screen shown when no session is selected.
  *
  * Displays the Crispy logo, title, and either a version subtitle or a
- * "Loading Conversation..." shimmer animation. Mirrors the Leto original
- * webview welcome page design.
+ * "Loading Conversation..." shimmer animation.
  *
  * @module WelcomePage
  */

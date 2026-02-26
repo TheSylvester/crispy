@@ -14,7 +14,7 @@
  * Key design decisions:
  * - Functional API (createChannel, setAdapter, etc.) — not a class
  * - Discriminated union events — single send() method per subscriber
- * - Approval flow is simpler than Leto: pendingApprovals is a Map<string,
+ * - pendingApprovals is a Map<string,
  *   PendingApprovalInfo> (keyed by toolUseId), not a Map with resolve/reject.
  *   The adapter handles resolution internally via respondToApproval().
  *   Full approval data is stored so late subscribers can receive pending

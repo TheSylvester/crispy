@@ -2,7 +2,6 @@
  * Control Panel Types
  *
  * Shared type definitions for the control panel component tree.
- * Matches Leto's webview-next type definitions exactly.
  *
  * @module control-panel/types
  */

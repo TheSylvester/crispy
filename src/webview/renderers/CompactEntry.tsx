@@ -2,8 +2,7 @@
  * Compact Entry Renderer — single-line summaries for quick scanning
  *
  * Shows [role] prefix + truncated text + [tools: ...] summary.
- * Ported from Leto's `webview-next/renderer/compact-renderer.ts`,
- * adapted from HTML string returns to React JSX.
+ * Single-line summaries for quick scanning.
  *
  * @module webview/renderers/CompactEntry
  */

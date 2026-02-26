@@ -71,8 +71,8 @@ function extractRawBlocks(entry: TranscriptEntry): ContentBlock[] {
 
   // Array of content blocks — float image blocks before text blocks.
   // Claude Code sometimes places text before images in the content array,
-  // but visually images should render above the accompanying message
-  // (matching Leto's layout). Stable sort preserves relative order within
+  // but visually images should render above the accompanying message.
+  // Stable sort preserves relative order within
   // each group (e.g. multiple images stay in their original sequence).
   if (content.some((b) => b.type === 'image')) {
     return [...content].sort((a, b) => {

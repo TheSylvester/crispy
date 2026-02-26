@@ -1,5 +1,5 @@
 // ============================================================================
-// Leto - JSONL Reader
+// JSONL Reader
 // Parses Claude Code transcript files for history display
 //
 // All types here are Claude-specific — they model Claude Code's JSONL format

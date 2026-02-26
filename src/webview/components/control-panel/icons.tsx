@@ -4,7 +4,7 @@
  * Inline JSX SVG icons for the control panel. Each icon accepts className
  * and onAnimationEnd props to support CSS animation integration.
  *
- * SVG paths are exact copies from Leto's webview-next icon helpers.
+ * Inline SVG icons for the control panel toggles and actions.
  *
  * @module control-panel/icons
  */
@@ -64,12 +64,12 @@ export function SettingsIcon({ className, ...props }: IconProps): React.JSX.Elem
   );
 }
 
-/** Rewind (↺) icon — Unicode glyph, matching Leto's message-actions style. */
+/** Rewind (↺) icon — Unicode glyph. */
 export function RewindIcon({ className, ...props }: IconProps): React.JSX.Element {
   return <span className={className} {...props}>↺</span>;
 }
 
-/** Fork (⑂) icon — Unicode glyph, matching Leto's message-actions style. */
+/** Fork (⑂) icon — Unicode glyph. */
 export function ForkIcon({ className, ...props }: IconProps): React.JSX.Element {
   return <span className={className} {...props}>⑂</span>;
 }

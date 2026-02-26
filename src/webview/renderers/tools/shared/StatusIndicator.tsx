@@ -1,7 +1,7 @@
 /**
  * Status Indicator — icon for tool completion status
  *
- * Matches Leto style: just an icon, positioned at the end of the summary.
+ * Just an icon, positioned at the end of the summary.
  * Shows result summary text when available.
  *
  * @module webview/renderers/tools/shared/StatusIndicator

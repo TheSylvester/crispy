@@ -2,8 +2,7 @@
  * Entry filtering — determines which transcript entries are rendered
  *
  * Single filter function used by all render modes. Pure function with
- * no side effects. Ported from Leto's `webview-next/renderer/entry.ts`
- * shouldRenderEntry().
+ * no side effects. Determines which transcript entries to render.
  *
  * @module webview/utils/entry-filters
  */

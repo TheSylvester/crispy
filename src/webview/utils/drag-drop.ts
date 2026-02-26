@@ -7,7 +7,7 @@
  * 3. resourceurls — WSL (vscode-remote:// URIs)
  * 4. text/plain — Fallback (line-separated paths)
  *
- * Ported from Leto's webview-next/components/image-attachments.ts.
+ * Extracts file paths from VS Code drag-and-drop events.
  *
  * @module utils/drag-drop
  */

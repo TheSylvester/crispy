@@ -4,8 +4,6 @@
  * Dispatches to YAML, Compact, or Blocks renderer based on the active
  * render mode. Contains no rendering logic of its own.
  *
- * Ported from Leto's `webview-next/renderer/entry.ts` render dispatch.
- *
  * @module EntryRenderer
  */
 

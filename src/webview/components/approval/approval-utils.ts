@@ -2,7 +2,7 @@
  * Approval Utilities — shared helpers for approval renderers
  *
  * yamlDump formats tool inputs as YAML-like display text.
- * Ported from Leto's webview-next/permissions/utils.ts.
+ * Shared helpers for approval renderers.
  *
  * @module approval/approval-utils
  */

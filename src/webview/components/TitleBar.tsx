@@ -1,14 +1,14 @@
 /**
  * TitleBar — Fixed header with session dropdown, CWD/status, and new-session button
  *
- * Three-column layout matching Leto webview-next:
+ * Three-column layout:
  *   Left:   Session dropdown button (label + animated chevron) — toggles sidebar,
  *           followed by connection indicator dot
  *   Center: Spacer
  *   Right:  Tool panel toggle + New session button
  *
- * Connection dot shows streaming/idle/approval state with Leto-style glow.
- * Click-to-copy session ID on the dot (Leto pattern).
+ * Connection dot shows streaming/idle/approval state with glow.
+ * Click-to-copy session ID on the dot.
  *
  * @module TitleBar
  */
@@ -40,7 +40,7 @@ function Chevron({ open }: { open: boolean }): React.JSX.Element {
   );
 }
 
-/** Plus icon for the New button — matches Leto webview-next sizing */
+/** Plus icon for the New button */
 function PlusIcon(): React.JSX.Element {
   return (
     <svg
@@ -77,7 +77,7 @@ function ToolPanelIcon(): React.JSX.Element {
 
 /**
  * Connection indicator — 8px dot with state-driven color + glow.
- * Click-to-copy session ID (Leto pattern: flash "copied" feedback).
+ * Click-to-copy session ID (flash "copied" feedback).
  */
 function ConnectionDot({
   channelState,

@@ -1,36 +1,40 @@
-# Leto
+# Crispy
 
 **Cross-vendor agent orchestration for AI coding tools**
 
-Leto is an open-source VS Code extension that unifies AI coding agents --
-Claude Code, Codex, Gemini CLI, OpenCode -- behind a single UI. Interactive
+Crispy is an open-source VS Code extension that unifies AI coding agents --
+Claude Code, Codex CLI, Gemini CLI, OpenCode -- behind a single UI. Interactive
 chat, session management, transcript rendering, approval flows, and
 fork/resume, all working today. One interface for every agent.
 
 ---
 
-## Why Leto?
+## Why Crispy?
 
 Every AI coding tool operates in isolation. Each session starts cold. Switching
 vendors means switching UIs. Your conversation history is scattered across
 vendor-specific formats in hidden directories.
 
-Leto fixes this. It normalizes vendor transcripts into a universal format, gives
-you a single UI to interact with any agent, and keeps your history browsable,
-searchable, and actionable.
+Crispy fixes this. It normalizes vendor transcripts into a universal format,
+gives you a single UI to interact with any agent, and keeps your history
+browsable, searchable, and actionable.
 
 ---
 
 ## Features
 
-**Session Browser** -- Browse sessions by project. Select, resume, or create
-new conversations from a sidebar.
+**Multi-Vendor Support** -- Claude Code and Codex CLI adapters are implemented
+and working. Vendor transcripts are normalized into a universal format so you
+get the same UI experience regardless of which agent you use.
 
-**Transcript Viewer** -- Three rendering modes: Rich (structured tool cards,
+**Session Browser** -- Browse sessions by project across vendors. Select,
+resume, or create new conversations from a sidebar.
+
+**Transcript Viewer** -- Three rendering modes: Blocks (structured tool cards,
 syntax highlighting, diffs), Compact (dense overview), and YAML (raw data).
 
 **Interactive Chat** -- Send messages, resume sessions, start new conversations,
-fork from any point. Fully wired to the Claude Code SDK, not a read-only viewer.
+fork from any point. Fully wired to agent SDKs, not a read-only viewer.
 
 **Fork & Resume** -- Branch any conversation from any message. Fork to a new
 panel. Resume where you left off.
@@ -44,9 +48,10 @@ permissions. Switch modes mid-conversation.
 
 **Model Selection** -- Switch between Opus, Sonnet, and Haiku mid-conversation.
 
-**Tool Visualization** -- Collapsible, syntax-highlighted cards for Bash, Grep,
-Glob, Read, Write, Edit, Task, Todo, WebFetch, WebSearch. Generic fallback for
-MCP and custom tools.
+**Tool Visualization** -- Collapsible, syntax-highlighted cards for Bash, Read,
+Write, Edit, MultiEdit, NotebookEdit, Glob, Grep, Task, TodoWrite, WebFetch,
+WebSearch, Chrome, Skill, EnterPlanMode, ExitPlanMode, AskUserQuestion.
+Generic fallback for MCP and custom tools.
 
 **Image Attachments** -- Drag and drop files or paste from clipboard.
 
@@ -60,8 +65,8 @@ dev server. Same features, no VS Code required.
 
 ## Coming Soon
 
-- Multi-vendor adapters (Codex, Gemini, OpenCode)
-- Session sidebar with cross-vendor history
+- Gemini CLI adapter
+- OpenCode adapter
 - Cross-vendor memory system
 - Agent delegation across vendors
 - Replay-based eval framework
@@ -71,7 +76,22 @@ dev server. Same features, no VS Code required.
 
 ## Installation
 
-Leto is not yet published to a marketplace. Install from source:
+### Option 1: OpenVSX Marketplace
+
+Search for **"Crispy"** in the VS Code extensions panel and install it
+directly.
+
+### Option 2: CLI
+
+```bash
+code --install-extension TheSylvester.crispy
+```
+
+Or download the `.vsix` file from the
+[OpenVSX Marketplace](https://open-vsx.org/extension/TheSylvester/crispy) and
+install manually via **Extensions > Install from VSIX**.
+
+### Option 3: From Source
 
 ```bash
 git clone https://github.com/TheSylvester/crispy.git
@@ -80,14 +100,13 @@ npm install
 npm run build
 ```
 
-Then in VS Code: **Extensions > Install from VSIX** or press `F5` to launch
-the extension development host.
+Then press `F5` in VS Code to launch the extension development host.
 
 ---
 
 ## Usage
 
-1. Open VS Code in a project that has Claude Code sessions
+1. Open VS Code in a project that has Claude Code or Codex sessions
 2. Run `Crispy: Open` from the command palette (`Ctrl+Shift+Alt+I`)
 3. Browse sessions in the sidebar, or start a new conversation
 4. Use the control panel at the bottom for chat input, model selection, and
@@ -104,21 +123,24 @@ npm run dev
 
 ## Architecture
 
-Two halves: **core** and **webview**.
+Three layers: **core**, **host**, and **webview**.
 
-**Core** (`src/core/`) -- Vendor-agnostic transcript types, per-vendor adapters
-that normalize raw formats into `TranscriptEntry`, session management, and the
-`AgentAdapter` interface. The adapter layer means adding a new vendor is
-isolated work -- implement the interface, register the adapter.
+**Core** (`src/core/`) -- Vendor-agnostic transcript types (`transcript.ts`),
+the `AgentAdapter` interface (`agent-adapter.ts`), session management
+(`session-manager.ts`, `session-channel.ts`, `session-list-manager.ts`), and
+per-vendor adapters under `adapters/`. Claude and Codex adapters are
+implemented. The adapter layer means adding a new vendor is isolated work --
+implement the interface, register the adapter.
+
+**Host** (`src/host/`) -- Two host implementations share the same
+`client-connection.ts` RPC protocol. `webview-host.ts` manages VS Code webview
+panels. `dev-server.ts` is a lightweight HTTP + WebSocket server that serves
+the webview bundle and provides the same RPC interface for browser mode.
 
 **Webview** (`src/webview/`) -- React 19 UI with esbuild bundling. Vanilla CSS
-using VS Code theme variables. Three rendering pipelines (Rich/Compact/YAML),
-a tool registry for tracking tool lifecycle, and a transport layer that
+using VS Code theme variables. Three rendering pipelines (Blocks/Compact/YAML),
+a blocks tool registry for tracking tool lifecycle, and a transport layer that
 abstracts communication (postMessage for VS Code, WebSocket for browser mode).
-
-**Dev Server** (`src/host/dev-server.ts`) -- Lightweight HTTP + WebSocket
-server. Serves the webview bundle and provides the same RPC interface as the
-VS Code extension host. Uses the same session manager and adapter registration.
 
 ---
 
@@ -128,7 +150,8 @@ VS Code extension host. Uses the same session manager and adapter registration.
 
 - Node.js 20+
 - npm
-- Claude Code CLI (for live session interaction)
+- Claude Code CLI (for Claude sessions)
+- Codex CLI (optional, for Codex sessions)
 
 ### Scripts
 
@@ -145,35 +168,40 @@ npm run test:unit      # Vitest unit tests
 ```
 src/
   core/
-    transcript.ts          # Universal transcript types
-    agent-adapter.ts       # AgentAdapter interface
-    session-manager.ts     # Session lifecycle
-    session-channel.ts     # Live session streaming
+    transcript.ts                   # Universal transcript types
+    agent-adapter.ts                # AgentAdapter interface
+    session-manager.ts              # Session lifecycle
+    session-channel.ts              # Live session streaming
+    session-list-manager.ts         # Background session list updates
     adapters/
-      claude/              # Claude Code adapter
+      claude/                       # Claude Code adapter
+      codex/                        # Codex CLI adapter
   webview/
-    App.tsx                # Root component
-    transport.ts           # SessionService interface
-    transport-vscode.ts    # VS Code postMessage transport
-    transport-websocket.ts # WebSocket transport
-    tool-registry.ts       # Tool use/result lifecycle tracking
+    App.tsx                         # Root component
+    transport.ts                    # SessionService interface
+    transport-vscode.ts             # VS Code postMessage transport
+    transport-websocket.ts          # WebSocket transport
+    blocks/
+      blocks-tool-registry.ts       # Tool use/result lifecycle tracking
+      BlocksBlockRenderer.tsx       # Block type dispatcher
+      ToolBlockRenderer.tsx         # Tool card renderer
+      tool-definitions.ts           # Tool metadata registry
+      views/                        # Per-tool view components
     components/
-      TranscriptViewer.tsx # Main transcript display
-      SessionSelector.tsx  # Session browser sidebar
-      control-panel/       # Chat input, toggles, settings
-      approval/            # Approval flow components
+      TranscriptViewer.tsx          # Main transcript display
+      session-selector/             # Session browser sidebar
+      control-panel/                # Chat input, toggles, settings
+      approval/                     # Approval flow components
     renderers/
-      RichEntry.tsx        # Rich mode entry renderer
-      CompactEntry.tsx     # Compact mode renderer
-      BlockRenderer.tsx    # Block type dispatcher
-      tools/               # Per-tool renderers
-    context/               # React context providers
-    hooks/                 # Custom hooks
+      CompactEntry.tsx              # Compact mode renderer
+      YamlEntry.tsx                 # YAML mode renderer
+    context/                        # React context providers
+    hooks/                          # Custom hooks
   host/
-    dev-server.ts          # Browser mode server
-    webview-host.ts        # VS Code webview panel host
-    client-connection.ts   # RPC handler (shared by both hosts)
-  extension.ts             # VS Code extension entry point
+    dev-server.ts                   # Browser mode server
+    webview-host.ts                 # VS Code webview panel host
+    client-connection.ts            # RPC handler (shared by both hosts)
+  extension.ts                      # VS Code extension entry point
 ```
 
 ---
@@ -182,6 +210,7 @@ src/
 
 - VS Code 1.94+ (or any compatible fork)
 - Claude Code CLI installed and authenticated
+- Codex CLI (optional, for Codex sessions)
 
 ---
 

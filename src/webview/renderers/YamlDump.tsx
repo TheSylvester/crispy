@@ -4,7 +4,7 @@
  * Extracted from YamlEntry.tsx for reuse by BlockRenderer (YAML-default
  * rendering) and any future component that needs structured data display.
  *
- * Preserves Leto's formatting rules:
+ * Formatting rules:
  * - null/undefined → "null"
  * - string (single-line, no special chars) → the string itself
  * - string (contains : # or starts with space/') → "quoted"

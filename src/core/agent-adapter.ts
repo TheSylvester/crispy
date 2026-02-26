@@ -104,7 +104,7 @@ export interface VendorDiscovery {
 /**
  * Options passed alongside the user's message at send time.
  *
- * Matches Leto's SendOptions — the control panel gathers UI state and
+ * The control panel gathers UI state and
  * bundles it into a single object so the adapter can apply everything
  * atomically before starting a new query.
  *
@@ -251,7 +251,7 @@ export interface AgentAdapter {
    * already running, the message is enqueued into the existing session.
    *
    * Options (model, permissionMode, etc.) are applied atomically before
-   * the query starts — they're bundled with the message like Leto does.
+   * the query starts — they're bundled with the message.
    * When a session is already running, options are applied mid-stream
    * (best-effort).
    *

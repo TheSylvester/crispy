@@ -2,7 +2,7 @@
  * useApprovalRequest — listens for awaiting_approval status events
  *
  * Provides the current pending approval and a resolve callback.
- * Single request, no queue — matches Leto behavior. If a second arrives
+ * Single request, no queue. If a second arrives
  * while one is showing, it replaces the current (shouldn't happen in
  * practice since the SDK waits for each approval before proceeding).
  *

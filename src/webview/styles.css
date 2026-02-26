@@ -2,7 +2,7 @@
  * Crispy Webview Styles
  *
  * BEM-ish naming with crispy- prefix for layout. Uses VS Code CSS variables
- * for theming. Entry-level classes use Leto-compatible names (message, yaml-*,
+ * for theming. Entry-level classes use standard names (message, yaml-*,
  * compact-*) for the rendering pipeline.
  * ============================================================================ */
 
@@ -754,7 +754,7 @@ h2 {
  * Applied to every react-markdown wrapper. Role-specific layout stays on
  * .user-text / .assistant-text below; prose handles content styling only.
  *
- * Vertical rhythm ported from Leto webview-next (.text-content).
+ * Vertical rhythm for markdown content.
  * ============================================================================ */
 
 .prose {
@@ -1391,7 +1391,7 @@ h2 {
 }
 
 /* --- Per-message action buttons (rewind + fork, appear on user hover) ---
-   Exact Leto .message-actions pattern: absolute-positioned inside
+   Message actions: absolute-positioned inside
    .message.user (position: relative), bottom-right of the user bubble. */
 
 /* Positioned inside .message.user (position: relative).
@@ -2606,9 +2606,9 @@ h2 {
 }
 
 /* ============================================================================
- * TitleBar — Fixed header bar (Leto-style)
+ * TitleBar — Fixed header bar
  *
- * Matches Leto webview-next: darker sideBar background, 3D header buttons
+ * Darker sideBar background, 3D header buttons
  * with box-shadow, connection dot with glow, three-column flex layout.
  * ============================================================================ */
 
@@ -2744,7 +2744,7 @@ h2 {
   }
 }
 
-/* --- Connection indicator dot (Leto-style with glow + click-to-copy) --- */
+/* --- Connection indicator dot (glow + click-to-copy) --- */
 
 .crispy-titlebar__dot {
   width: 8px;
@@ -2814,11 +2814,11 @@ h2 {
  * AttachmentsRow + ChatInput with approval UI. The shell positioning,
  * shadow, border-radius, and --frame-highlight color are inherited.
  *
- * Styling ported from Leto webview-next — #inline-permission-panel.
+ * Approval panel styling.
  * ============================================================================ */
 
 /* Override .crispy-cp background to input-background during approval
-   (Leto uses input-background for the panel, not editor-background) */
+   (Uses input-background for the panel, not editor-background) */
 .crispy-cp:has(.crispy-approval-header) {
   background: var(--vscode-input-background, #3c3c3c);
   -webkit-backdrop-filter: none;
