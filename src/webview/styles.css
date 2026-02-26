@@ -1592,7 +1592,7 @@ h2 {
   flex: 1 1 0%; /* Grow to fill, shrink allowed, zero basis for flex calc */
   min-width: 0; /* Allow flex shrinking below content size */
   min-height: 32px; /* Never collapse vertically */
-  padding: 6px 8px;
+  padding: 6px 40px 6px 8px; /* Right padding reserves space for overlaid send button */
   background: rgba(255, 255, 255, 0.06);
   color: var(--vscode-input-foreground, #d4d4d4);
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -1678,15 +1678,19 @@ h2 {
 /* --- Send Button --- */
 
 .crispy-cp-send {
-  width: 5em;
-  flex-shrink: 0; /* Never squish the send button */
-  padding: 4px 10px;
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 32px;
+  height: 28px;
+  flex-shrink: 0;
+  padding: 0;
   font-size: var(--font-sm);
   font-weight: 600;
   background: var(--color-accent);
   color: var(--color-send-text);
   border: none;
-  border-radius: var(--radius-xl);
+  border-radius: calc(var(--radius-xl) - 2px);
   cursor: pointer;
   transition: background 0.15s;
   appearance: none;
