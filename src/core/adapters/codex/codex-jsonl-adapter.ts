@@ -278,18 +278,22 @@ function emitFunctionCall(
 ): TranscriptEntry[] {
   const callId = payload.call_id as string;
   const name = payload.name as string;
-  const argsStr = payload.arguments as string;
+  const rawArgs = payload.arguments;
 
-  // Parse the JSON-encoded arguments string
+  // Parse arguments — may be a JSON string or an already-parsed object
   let args: Record<string, unknown> = {};
-  try {
-    args = JSON.parse(argsStr);
-  } catch {
-    args = { raw: argsStr };
+  if (typeof rawArgs === 'string') {
+    try {
+      args = JSON.parse(rawArgs);
+    } catch {
+      args = { raw: rawArgs };
+    }
+  } else if (typeof rawArgs === 'object' && rawArgs !== null) {
+    args = rawArgs as Record<string, unknown>;
   }
 
   // Map Codex function names to universal tool names + inputs
-  const { toolName, toolInput } = mapFunctionCall(name, args);
+  const { toolName, toolInput, metadata } = mapFunctionCall(name, args);
 
   const toolUse: ToolUseBlock = {
     type: 'tool_use',
@@ -306,6 +310,7 @@ function emitFunctionCall(
       role: 'assistant',
       content: [toolUse],
     },
+    metadata,
   };
 
   const entries: TranscriptEntry[] = [assistantEntry];
@@ -366,16 +371,17 @@ function emitCustomToolCall(
   const name = payload.name as string;
   const input = payload.input as string;
 
-  // Map custom tool names to universal equivalents
-  const toolName = name === 'apply_patch' ? 'Edit' : name;
-  const toolInput: Record<string, unknown> =
-    name === 'apply_patch' ? { patch: input } : { raw: input };
+  // For apply_patch, parse into per-file Edit/Write entries
+  if (name === 'apply_patch') {
+    return emitApplyPatch(callId, input, base, outputIndex);
+  }
 
+  // Other custom tools: pass through
   const toolUse: ToolUseBlock = {
     type: 'tool_use',
     id: callId,
-    name: toolName,
-    input: toolInput,
+    name,
+    input: { raw: input },
   };
 
   const assistantEntry: TranscriptEntry = {
@@ -393,49 +399,162 @@ function emitCustomToolCall(
   // Look up paired output
   const outputRecord = outputIndex.get(callId);
   if (outputRecord) {
-    const rawOutput = outputRecord.payload.output as string;
-
-    // custom_tool_call_output.output may be a JSON string or plain text
-    let content: string;
-    let isError = false;
-    try {
-      const parsed = JSON.parse(rawOutput) as Record<string, unknown>;
-      content = (parsed.output as string) ?? rawOutput;
-      if (parsed.success === false || parsed.error) {
-        isError = true;
-      }
-    } catch {
-      content = rawOutput;
-    }
-
-    const toolResult: ToolResultBlock = {
-      type: 'tool_result',
-      tool_use_id: callId,
-      content,
-      is_error: isError,
-    };
-
-    const resultEntry: TranscriptEntry = {
-      type: 'result',
-      uuid: `${callId}-result`,
-      parentUuid: callId,
-      sessionId: base.sessionId,
-      vendor: base.vendor,
-      timestamp: outputRecord.timestamp,
-      cwd: base.cwd,
-      message: {
-        role: 'tool',
-        content: [toolResult],
-      },
-    };
-
-    entries.push(resultEntry);
-
-    // Mark as consumed
+    entries.push(
+      buildCustomToolResult(callId, callId, outputRecord, base),
+    );
     outputIndex.delete(callId);
   }
 
   return entries;
+}
+
+/**
+ * Emit per-file Edit/Write entries from a parsed apply_patch call.
+ *
+ * For updates → Edit with { file_path, old_string, new_string }
+ * For adds    → Write with { file_path, content }
+ * For deletes → Edit with { file_path } + metadata { isDelete: true }
+ *
+ * Falls back to generic { patch: input } if the parser returns nothing.
+ */
+function emitApplyPatch(
+  callId: string,
+  input: string,
+  base: BaseFields,
+  outputIndex: Map<string, CodexJsonlEnvelope>,
+): TranscriptEntry[] {
+  const changes = parseCodexPatch(input);
+
+  // Fallback: malformed patch — preserve old behavior
+  if (changes.length === 0) {
+    const toolUse: ToolUseBlock = {
+      type: 'tool_use',
+      id: callId,
+      name: 'Edit',
+      input: { patch: input },
+    };
+
+    const entries: TranscriptEntry[] = [
+      {
+        type: 'assistant',
+        uuid: callId,
+        ...base,
+        message: { role: 'assistant', content: [toolUse] },
+      },
+    ];
+
+    const outputRecord = outputIndex.get(callId);
+    if (outputRecord) {
+      entries.push(buildCustomToolResult(callId, callId, outputRecord, base));
+      outputIndex.delete(callId);
+    }
+
+    return entries;
+  }
+
+  const entries: TranscriptEntry[] = [];
+
+  for (let i = 0; i < changes.length; i++) {
+    const change = changes[i];
+    const entryId = i === 0 ? callId : `${callId}-file-${i}`;
+
+    let toolName: string;
+    let toolInput: Record<string, unknown>;
+    let metadata: Record<string, unknown> | undefined;
+
+    switch (change.kind) {
+      case 'add':
+        toolName = 'Write';
+        toolInput = { file_path: change.path, content: change.newString };
+        break;
+      case 'delete':
+        toolName = 'Edit';
+        toolInput = { file_path: change.path };
+        metadata = { isDelete: true };
+        break;
+      case 'update':
+      default:
+        toolName = 'Edit';
+        toolInput = {
+          file_path: change.path,
+          old_string: change.oldString,
+          new_string: change.newString,
+        };
+        break;
+    }
+
+    const toolUse: ToolUseBlock = {
+      type: 'tool_use',
+      id: entryId,
+      name: toolName,
+      input: toolInput,
+    };
+
+    entries.push({
+      type: 'assistant',
+      uuid: entryId,
+      ...base,
+      message: { role: 'assistant', content: [toolUse] },
+      metadata,
+    });
+  }
+
+  // Attach the result to the last file entry (or first if single-file)
+  const outputRecord = outputIndex.get(callId);
+  if (outputRecord) {
+    const lastEntry = entries[entries.length - 1];
+    entries.push(
+      buildCustomToolResult(lastEntry.uuid ?? callId, callId, outputRecord, base),
+    );
+    outputIndex.delete(callId);
+  }
+
+  return entries;
+}
+
+/**
+ * Build a tool_result entry from a custom_tool_call_output record.
+ */
+function buildCustomToolResult(
+  parentUuid: string,
+  callId: string,
+  outputRecord: CodexJsonlEnvelope,
+  base: BaseFields,
+): TranscriptEntry {
+  const rawOutput = outputRecord.payload.output as string;
+
+  let content: string;
+  let isError = false;
+  try {
+    const parsed = JSON.parse(rawOutput) as Record<string, unknown>;
+    content = (parsed.output as string) ?? rawOutput;
+    if (parsed.success === false || parsed.error) {
+      isError = true;
+    }
+  } catch {
+    content = rawOutput;
+  }
+
+  const toolResult: ToolResultBlock = {
+    type: 'tool_result',
+    tool_use_id: callId,
+    content,
+    is_error: isError,
+  };
+
+  return {
+    type: 'result',
+    uuid: `${parentUuid}-result`,
+    parentUuid,
+    sessionId: base.sessionId,
+    vendor: base.vendor,
+    timestamp: outputRecord.timestamp,
+    cwd: base.cwd,
+    message: {
+      role: 'tool',
+      content: [toolResult],
+    },
+  };
 }
 
 // ============================================================================
@@ -449,6 +568,7 @@ function emitWebSearchCall(
 ): TranscriptEntry[] {
   const action = payload.action as Record<string, unknown> | undefined;
   const query = action?.query as string | undefined;
+  const status = payload.status as string | undefined;
   const id = generateId(base.sessionId, counter);
 
   const toolUse: ToolUseBlock = {
@@ -458,7 +578,7 @@ function emitWebSearchCall(
     input: { query: query ?? '' },
   };
 
-  return [
+  const entries: TranscriptEntry[] = [
     {
       type: 'assistant',
       uuid: id,
@@ -470,6 +590,29 @@ function emitWebSearchCall(
       metadata: { action },
     },
   ];
+
+  // Emit a synthetic result so the tool registry doesn't show perpetual "running"
+  if (status === 'completed') {
+    const toolResult: ToolResultBlock = {
+      type: 'tool_result',
+      tool_use_id: id,
+      content: '',
+      is_error: false,
+    };
+
+    entries.push({
+      type: 'result',
+      uuid: `${id}-result`,
+      parentUuid: id,
+      ...base,
+      message: {
+        role: 'tool',
+        content: [toolResult],
+      },
+    });
+  }
+
+  return entries;
 }
 
 // ============================================================================
@@ -576,13 +719,29 @@ function adaptContentItems(
 
       case 'input_image':
         if (item.image_url) {
-          blocks.push({
-            type: 'image',
-            source: {
-              type: 'base64',
-              data: item.image_url,
-            },
-          });
+          // Parse data URIs to extract media_type and raw base64 separately,
+          // avoiding double-wrapping when ImageRenderer prepends its own prefix
+          const dataUriMatch = item.image_url.match(
+            /^data:(image\/[^;]+);base64,(.+)$/s,
+          );
+          if (dataUriMatch) {
+            blocks.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: dataUriMatch[1],
+                data: dataUriMatch[2],
+              },
+            });
+          } else {
+            blocks.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                data: item.image_url,
+              },
+            });
+          }
         }
         break;
     }
@@ -595,17 +754,27 @@ function adaptContentItems(
 // Helpers — Function Call Mapping
 // ============================================================================
 
+/** Result of mapping a Codex function call to universal tool name/input. */
+interface MappedFunctionCall {
+  toolName: string;
+  toolInput: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
 /**
  * Map Codex function names to universal tool names and inputs.
  *
  * Handles both current (v0.92+) and legacy (v0.89) formats:
  * - exec_command: { cmd, workdir? } → Bash { command }
  * - shell_command: { command, workdir? } → Bash { command }
+ * - view_image: { path } → Read { file_path }
+ * - update_plan: { plan } → TodoWrite { todos }
+ * - write_stdin: { session_id, content } → Bash (informational)
  */
 function mapFunctionCall(
   name: string,
   args: Record<string, unknown>,
-): { toolName: string; toolInput: Record<string, unknown> } {
+): MappedFunctionCall {
   switch (name) {
     case 'exec_command':
       return {
@@ -617,6 +786,36 @@ function mapFunctionCall(
       return {
         toolName: 'Bash',
         toolInput: { command: (args.command as string) ?? '' },
+      };
+
+    case 'view_image':
+      return {
+        toolName: 'Read',
+        toolInput: { file_path: (args.path as string) ?? '' },
+        metadata: { isImageView: true },
+      };
+
+    case 'update_plan': {
+      const plan =
+        (args.plan as Array<{ step: string; status: string }>) ?? [];
+      return {
+        toolName: 'TodoWrite',
+        toolInput: {
+          todos: plan.map((item) => ({
+            content: item.step,
+            status: item.status,
+            activeForm: item.step,
+          })),
+        },
+      };
+    }
+
+    case 'write_stdin':
+      return {
+        toolName: 'Bash',
+        toolInput: {
+          command: `(write_stdin to session ${(args.session_id as string) ?? 'unknown'})`,
+        },
       };
 
     default:
@@ -678,6 +877,116 @@ function parseExecOutputHeader(output: string): {
 
   // Unrecognized format — return as-is with success exit code
   return { exitCode: 0, body: output };
+}
+
+// ============================================================================
+// Helpers — Codex Patch Parser
+// ============================================================================
+
+/** A single file operation extracted from a Codex apply_patch payload. */
+interface PatchFileChange {
+  path: string;
+  kind: 'update' | 'add' | 'delete';
+  oldString: string;
+  newString: string;
+}
+
+/**
+ * Parse a Codex apply_patch input string into per-file changes.
+ *
+ * Patch format:
+ *   *** Begin Patch
+ *   *** Update File: /path/to/file.ts
+ *   @@ .. @@
+ *   -old line
+ *   +new line
+ *    context line
+ *   *** Add File: /path/to/new-file.ts
+ *   +new file content
+ *   *** Delete File: /path/to/old.ts
+ *   *** End Patch
+ *
+ * For update blocks, hunk lines prefixed with '-' go into oldString,
+ * '+' into newString, and unprefixed context lines go into both.
+ */
+function parseCodexPatch(input: string): PatchFileChange[] {
+  if (!input) return [];
+
+  const lines = input.split('\n');
+  const changes: PatchFileChange[] = [];
+
+  let currentPath: string | undefined;
+  let currentKind: 'update' | 'add' | 'delete' | undefined;
+  let oldLines: string[] = [];
+  let newLines: string[] = [];
+
+  function flushCurrent() {
+    if (currentPath && currentKind) {
+      changes.push({
+        path: currentPath,
+        kind: currentKind,
+        oldString: oldLines.join('\n'),
+        newString: newLines.join('\n'),
+      });
+    }
+    currentPath = undefined;
+    currentKind = undefined;
+    oldLines = [];
+    newLines = [];
+  }
+
+  for (const line of lines) {
+    // File header lines
+    const updateMatch = line.match(/^\*\*\* Update File:\s*(.+)$/);
+    if (updateMatch) {
+      flushCurrent();
+      currentPath = updateMatch[1].trim();
+      currentKind = 'update';
+      continue;
+    }
+
+    const addMatch = line.match(/^\*\*\* Add File:\s*(.+)$/);
+    if (addMatch) {
+      flushCurrent();
+      currentPath = addMatch[1].trim();
+      currentKind = 'add';
+      continue;
+    }
+
+    const deleteMatch = line.match(/^\*\*\* Delete File:\s*(.+)$/);
+    if (deleteMatch) {
+      flushCurrent();
+      currentPath = deleteMatch[1].trim();
+      currentKind = 'delete';
+      continue;
+    }
+
+    // Skip patch boundary markers and hunk headers
+    if (line.startsWith('*** Begin Patch') || line.startsWith('*** End Patch')) {
+      continue;
+    }
+    if (line.startsWith('@@')) {
+      continue;
+    }
+
+    // Inside a file block — collect diff lines
+    if (!currentPath) continue;
+
+    if (line.startsWith('-')) {
+      oldLines.push(line.slice(1));
+    } else if (line.startsWith('+')) {
+      newLines.push(line.slice(1));
+    } else if (line.startsWith(' ')) {
+      // Context line — belongs to both sides
+      oldLines.push(line.slice(1));
+      newLines.push(line.slice(1));
+    }
+    // Lines not starting with -/+/space inside a block are ignored
+  }
+
+  flushCurrent();
+
+  return changes;
 }
 
 // ============================================================================
