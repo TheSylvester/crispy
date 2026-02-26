@@ -412,7 +412,7 @@ h2 {
 [data-render-mode="blocks"] .user-text,
 [data-render-mode="blocks"] .assistant-text,
 [data-render-mode="blocks"] .crispy-blocks-thinking {
-  margin-top: 0.5rem;
+  margin-top: 1rem;
   margin-bottom: 1rem;
 }
 
@@ -1730,7 +1730,7 @@ h2 {
   bottom: 7px;
   width: 4em;
   flex-shrink: 0;
-  padding: 4px 10px;
+  padding: 3px 10px;
   font-size: var(--font-sm);
   font-weight: 600;
   background: var(--color-accent);
@@ -1780,6 +1780,14 @@ h2 {
   100% {
     transform: translateX(0);
   }
+}
+
+/* Bypass mode — match send button to the agency-red frame color */
+.crispy-cp[data-agency="bypass-permissions"] .crispy-cp-send {
+  background: var(--agency-red);
+}
+.crispy-cp[data-agency="bypass-permissions"] .crispy-cp-send:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--agency-red) 80%, black);
 }
 
 /* Fork mode variant — different background for fork action */
@@ -3702,7 +3710,8 @@ h2 {
 .crispy-blocks-thinking {
   margin: 4px 0;
   margin-left: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.03);
   border-radius: var(--radius-xl);
   padding: 0 10px;
 }
@@ -3712,7 +3721,7 @@ h2 {
   cursor: pointer;
   font-size: var(--font-sm);
   font-style: italic;
-  opacity: 0.6;
+  opacity: 0.45;
   padding: 4px 0;
   user-select: none;
   list-style: none;
