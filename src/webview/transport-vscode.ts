@@ -155,5 +155,9 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
       pending.clear();
       eventHandlers.length = 0;
     },
+
+    postRaw(msg: unknown): void {
+      api.postMessage(msg);
+    },
   };
 }

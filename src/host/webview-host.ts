@@ -148,6 +148,12 @@ export function createCrispyPanel(
   // synchronously inside the 'connection' callback before any data arrives.
   panel.webview.onDidReceiveMessage(
     async (msg) => {
+      // Fire-and-forget: update tab title to reflect active session label
+      if (msg.kind === 'setTitle') {
+        panel.title = (msg.title as string) || 'Crispy';
+        return;
+      }
+
       // VS Code-specific: open file in editor (requires vscode API,
       // so handled here rather than in shared message-handler)
       if (msg.kind === 'request' && msg.method === 'openFile') {

@@ -78,6 +78,9 @@ export interface SessionService {
   getModelGroups(): Promise<VendorModelGroup[]>;
 
   dispose(): void;
+
+  /** Fire-and-forget message to the host. VS Code only; no-op elsewhere. */
+  postRaw?(msg: unknown): void;
 }
 
 /** @deprecated Use SessionService instead. */

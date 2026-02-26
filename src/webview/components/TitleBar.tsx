@@ -17,6 +17,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '../context/SessionContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
 import { useSessionStatus } from '../hooks/useSessionStatus.js';
+import { useTransport } from '../context/TransportContext.js';
+import { useEnvironment } from '../context/EnvironmentContext.js';
 import { SessionSelector } from './session-selector/index.js';
 
 /** SVG chevron — points down, rotates 180° when sidebar is open */
@@ -150,6 +152,22 @@ export function TitleBar(): React.JSX.Element {
   const buttonLabel = currentSession?.label
     ? truncateLabel(currentSession.label, BUTTON_LABEL_MAX)
     : 'Conversations';
+
+  // Push session label to host tab title
+  const transport = useTransport();
+  const envKind = useEnvironment();
+
+  const TAB_TITLE_MAX = 24;
+  const tabTitle = currentSession?.label
+    ? truncateLabel(currentSession.label, TAB_TITLE_MAX)
+    : 'Crispy';
+
+  useEffect(() => {
+    transport.postRaw?.({ kind: 'setTitle', title: tabTitle });
+    if (envKind === 'websocket') {
+      document.title = tabTitle;
+    }
+  }, [tabTitle, transport, envKind]);
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed(!sidebarCollapsed);
