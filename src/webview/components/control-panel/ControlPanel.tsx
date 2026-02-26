@@ -207,10 +207,12 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       return off;
     }, [transport]);
 
-    /** Model options for keyboard cycling — dynamic from provider groups. */
+    /** Model options for keyboard cycling — dynamic from provider groups (skip unavailable). */
     const allCyclable = useMemo<ModelOption[]>(() => [
       '',
-      ...modelGroups.flatMap(g => g.models.map(m => m.value)),
+      ...modelGroups
+        .filter(g => g.available !== false)
+        .flatMap(g => g.models.map(m => m.value)),
     ], [modelGroups]);
 
     // --- Provider management state ---

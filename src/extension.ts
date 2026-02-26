@@ -78,11 +78,8 @@ export function activate(context: vscode.ExtensionContext): void {
       },
     );
     context.subscriptions.push({ dispose: () => unregisterAdapter('codex') });
-  } else {
-    vscode.window.showWarningMessage(
-      'Crispy: Codex CLI not found. Codex sessions will be unavailable. Install Codex and ensure `codex` is on your PATH.',
-    );
   }
+  // No warning if Codex is missing — the dropdown shows it grayed out with "(not installed)".
 
   const workspaceOpts = { workspaceCwd: cwd };
 

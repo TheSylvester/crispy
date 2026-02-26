@@ -16,6 +16,8 @@ export interface VendorModelGroup {
   vendor: Vendor;
   label: string;
   models: { value: string; label: string }[];
+  /** Whether a backend adapter is registered for this vendor. Defaults to true. */
+  available?: boolean;
 }
 
 /** Events pushed on the global providers channel. */

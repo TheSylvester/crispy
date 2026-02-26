@@ -360,8 +360,15 @@ export function getProviderBase(): { cwd: string; pathToClaudeCodeExecutable?: s
 // Model Groups (for webview)
 // ============================================================================
 
-/** Generate VendorModelGroup[] for the webview model dropdown. */
-export function getModelGroups(): VendorModelGroup[] {
+/**
+ * Generate VendorModelGroup[] for the webview model dropdown.
+ *
+ * @param registeredVendors  Optional set of vendor slugs that have a registered
+ *   adapter. When provided, groups for unregistered vendors are marked
+ *   `available: false` so the UI can gray them out. When omitted (e.g. dev-server
+ *   where everything is registered), all groups default to available.
+ */
+export function getModelGroups(registeredVendors?: Set<string>): VendorModelGroup[] {
   const groups: VendorModelGroup[] = [];
 
   // Claude is always first (hardcoded — native vendor)
@@ -373,6 +380,7 @@ export function getModelGroups(): VendorModelGroup[] {
       { value: 'claude:sonnet', label: 'Sonnet' },
       { value: 'claude:haiku', label: 'Haiku' },
     ],
+    available: !registeredVendors || registeredVendors.has('claude'),
   });
 
   // Codex — models are server-managed, user can override via model string
@@ -382,6 +390,7 @@ export function getModelGroups(): VendorModelGroup[] {
     models: [
       { value: 'codex:', label: 'GPT (default)' },
     ],
+    available: !registeredVendors || registeredVendors.has('codex'),
   });
 
   // Dynamic providers
@@ -408,6 +417,7 @@ export function getModelGroups(): VendorModelGroup[] {
       vendor: slug,
       label: config.label,
       models,
+      available: !registeredVendors || registeredVendors.has(slug),
     });
   }
 

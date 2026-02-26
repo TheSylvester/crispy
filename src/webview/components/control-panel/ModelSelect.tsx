@@ -26,9 +26,14 @@ export function ModelSelect({ value, onChange, groups }: ModelSelectProps): Reac
     >
       <option value="">Default</option>
       {groups.map((group) => (
-        <optgroup key={group.vendor} label={group.label}>
+        <optgroup
+          key={group.vendor}
+          label={group.available === false ? `${group.label} (not installed)` : group.label}
+        >
           {group.models.map((m) => (
-            <option key={m.value} value={m.value}>{m.label}</option>
+            <option key={m.value} value={m.value} disabled={group.available === false}>
+              {m.label}
+            </option>
           ))}
         </optgroup>
       ))}

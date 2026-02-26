@@ -121,6 +121,11 @@ export function getDiscoveries(): VendorDiscovery[] {
   return [...adapters.values()].map((r) => r.discovery);
 }
 
+/** Get the set of vendor slugs that have a registered adapter. */
+export function getRegisteredVendors(): Set<string> {
+  return new Set(adapters.keys());
+}
+
 /**
  * Test helper — clears both registries.
  * Destroys all live channels before clearing.

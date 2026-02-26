@@ -42,7 +42,10 @@ import type {
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources';
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import type { SpawnOptions as SDKSpawnOptions } from '@anthropic-ai/claude-agent-sdk';
+import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
+import { platform } from 'os';
 import { AsyncIterableQueue } from '../../async-iterable-queue.js';
 import { adaptClaudeEntry, adaptClaudeEntries } from './claude-entry-adapter.js';
 import { parseJsonlFile, extractMetadataFast, readLinesFromOffset, extractInitModel } from './jsonl-reader.js';
@@ -884,6 +887,23 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       // Debug
       ...(opts.debug !== undefined && { debug: opts.debug }),
       ...(opts.debugFile && { debugFile: opts.debugFile }),
+
+      // Windows: use shell spawn to avoid stdin/stdout pipe deadlocks.
+      // Node.js on Windows can buffer stdin writes indefinitely without
+      // shell: true, preventing the SDK's control protocol from initializing.
+      ...(platform() === 'win32' && {
+        spawnClaudeCodeProcess: (spawnOpts: SDKSpawnOptions) => {
+          const child = spawn(spawnOpts.command, spawnOpts.args, {
+            cwd: spawnOpts.cwd,
+            env: spawnOpts.env,
+            signal: spawnOpts.signal,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            shell: true,
+            windowsHide: true,
+          });
+          return child;
+        },
+      }),
 
       // Adapter invariants — always applied last, cannot be overridden.
       // The adapter depends on partial messages for streaming and provides

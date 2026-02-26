@@ -34,6 +34,7 @@ import {
   closeSession,
   readSubagentEntries,
   continueInVendor,
+  getRegisteredVendors,
 } from "../core/session-manager.js";
 import {
   subscribeSessionList,
@@ -107,7 +108,7 @@ export function createClientConnection(
     sendFn({
       kind: 'event',
       sessionId: PROVIDERS_CHANNEL_ID,
-      event: { type: 'providers_changed', groups: getModelGroups() },
+      event: { type: 'providers_changed', groups: getModelGroups(getRegisteredVendors()) },
     });
   });
 
@@ -350,7 +351,7 @@ export function createClientConnection(
       }
 
       case 'getModelGroups':
-        return getModelGroups();
+        return getModelGroups(getRegisteredVendors());
 
       case "continueInVendor": {
         const sourceSessionId = params.sourceSessionId as string;
