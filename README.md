@@ -6,6 +6,8 @@ Rendered Markdown. Fork and rewind conversations. Multiple agent windows side by
 
 VS Code / Cursor extension today. Standalone browser app after v0.1.x.
 
+![Crispy — parallel sub-agents implementing light mode support](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/screenshot-hero.png)
+
 ---
 
 ## Why Crispy?
