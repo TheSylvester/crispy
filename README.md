@@ -1,76 +1,45 @@
 # Crispy
 
-**Cross-vendor agent orchestration for AI coding tools**
+**A zero-compromise UI for Claude Code, Codex, and more — with controls you can't get in a terminal.**
 
-Crispy is an open-source VS Code extension that unifies AI coding agents --
-Claude Code, Codex CLI, Gemini CLI, OpenCode -- behind a single UI. Interactive
-chat, session management, transcript rendering, approval flows, and
-fork/resume, all working today. One interface for every agent.
+Rendered Markdown. Fork and rewind conversations. Multiple agent windows side by side. Audit tool calls and sub-agent work in a dedicated panel. One-click bypass, Chrome, models, and permissions. Execute Markdown files directly as prompts.
+
+VS Code / Cursor extension today. Standalone browser app after v0.1.x.
 
 ---
 
 ## Why Crispy?
 
-Every AI coding tool operates in isolation. Each session starts cold. Switching
-vendors means switching UIs. Your conversation history is scattered across
-vendor-specific formats in hidden directories.
-
-Crispy fixes this. It normalizes vendor transcripts into a universal format,
-gives you a single UI to interact with any agent, and keeps your history
-browsable, searchable, and actionable.
+The official Claude Code VS Code extension is good. But it ships a subset of
+what the TUI can do, and it locks you into one vendor. Crispy fills the gaps.
 
 ---
 
 ## Features
 
-**Multi-Vendor Support** -- Claude Code and Codex CLI adapters are implemented
-and working. Vendor transcripts are normalized into a universal format so you
-get the same UI experience regardless of which agent you use.
-
-**Session Browser** -- Browse sessions by project across vendors. Select,
-resume, or create new conversations from a sidebar.
-
-**Transcript Viewer** -- Three rendering modes: Blocks (structured tool cards,
-syntax highlighting, diffs), Compact (dense overview), and YAML (raw data).
-
-**Interactive Chat** -- Send messages, resume sessions, start new conversations,
-fork from any point. Fully wired to agent SDKs, not a read-only viewer.
-
-**Fork & Resume** -- Branch any conversation from any message. Fork to a new
-panel. Resume where you left off.
-
-**Approval System** -- Handle tool approvals inline: standard permission
-prompts, AskUser questions, ExitPlanMode decisions. Three distinct approval
-flows with contextual UI.
-
-**Agency Modes** -- Plan mode, auto-accept, ask-before-edits, bypass
-permissions. Switch modes mid-conversation.
-
-**Model Selection** -- Switch between Opus, Sonnet, and Haiku mid-conversation.
-
-**Tool Visualization** -- Collapsible, syntax-highlighted cards for Bash, Read,
-Write, Edit, MultiEdit, NotebookEdit, Glob, Grep, Task, TodoWrite, WebFetch,
-WebSearch, Chrome, Skill, EnterPlanMode, ExitPlanMode, AskUserQuestion.
-Generic fallback for MCP and custom tools.
-
-**Image Attachments** -- Drag and drop files or paste from clipboard.
-
-**Theme Integration** -- Automatic VS Code light/dark theme support via CSS
-variables.
-
-**Browser Mode** -- Run the full UI in a browser at `localhost:3456` via the
-dev server. Same features, no VS Code required.
+- Fork and rewind conversations
+- Side-by-side agent windows — as many as your editor can tile
+- Dedicated tool panel for auditing tool calls and sub-agent work
+- One-click bypass mode and Chrome toggle
+- Execute Markdown files as prompts from the Explorer
+- Claude and Codex adapters today — Gemini CLI and OpenCode next
+- Custom model providers — route Claude through any compatible endpoint
+  (GLM-4.7, DeepSeek, local models)
+- Plan-to-execution handoff — clear context and start fresh
+- Three rendering modes — Blocks for daily use, Compact for skimming,
+  YAML for observability
+- Agency modes — plan, auto-accept, ask-before-edits, bypass
+- Session browser with search and vendor filtering
+- Image attachments, @mentions, linkified URLs
+- Light, dark, and high-contrast themes
+- **Experimental (insecure):** Browser mode at `localhost:3456`
 
 ---
 
 ## Coming Soon
 
-- Gemini CLI adapter
-- OpenCode adapter
 - Cross-vendor memory system
 - Agent delegation across vendors
-- Replay-based eval framework
-- Transcript blame and commit
 
 ---
 
@@ -111,98 +80,6 @@ Then press `F5` in VS Code to launch the extension development host.
 3. Browse sessions in the sidebar, or start a new conversation
 4. Use the control panel at the bottom for chat input, model selection, and
    agency mode toggles
-
-For browser mode:
-
-```bash
-npm run dev
-# Open http://localhost:3456
-```
-
----
-
-## Architecture
-
-Three layers: **core**, **host**, and **webview**.
-
-**Core** (`src/core/`) -- Vendor-agnostic transcript types (`transcript.ts`),
-the `AgentAdapter` interface (`agent-adapter.ts`), session management
-(`session-manager.ts`, `session-channel.ts`, `session-list-manager.ts`), and
-per-vendor adapters under `adapters/`. Claude and Codex adapters are
-implemented. The adapter layer means adding a new vendor is isolated work --
-implement the interface, register the adapter.
-
-**Host** (`src/host/`) -- Two host implementations share the same
-`client-connection.ts` RPC protocol. `webview-host.ts` manages VS Code webview
-panels. `dev-server.ts` is a lightweight HTTP + WebSocket server that serves
-the webview bundle and provides the same RPC interface for browser mode.
-
-**Webview** (`src/webview/`) -- React 19 UI with esbuild bundling. Vanilla CSS
-using VS Code theme variables. Three rendering pipelines (Blocks/Compact/YAML),
-a blocks tool registry for tracking tool lifecycle, and a transport layer that
-abstracts communication (postMessage for VS Code, WebSocket for browser mode).
-
----
-
-## Development
-
-### Prerequisites
-
-- Node.js 20+
-- npm
-- Claude Code CLI (for Claude sessions)
-- Codex CLI (optional, for Codex sessions)
-
-### Scripts
-
-```bash
-npm run build          # Build extension + webview + dev server
-npm run dev            # Build webview and start dev server at localhost:3456
-npm run typecheck      # Strict TypeScript check
-npm test               # E2E pipeline test
-npm run test:unit      # Vitest unit tests
-```
-
-### Project Structure
-
-```
-src/
-  core/
-    transcript.ts                   # Universal transcript types
-    agent-adapter.ts                # AgentAdapter interface
-    session-manager.ts              # Session lifecycle
-    session-channel.ts              # Live session streaming
-    session-list-manager.ts         # Background session list updates
-    adapters/
-      claude/                       # Claude Code adapter
-      codex/                        # Codex CLI adapter
-  webview/
-    App.tsx                         # Root component
-    transport.ts                    # SessionService interface
-    transport-vscode.ts             # VS Code postMessage transport
-    transport-websocket.ts          # WebSocket transport
-    blocks/
-      blocks-tool-registry.ts       # Tool use/result lifecycle tracking
-      BlocksBlockRenderer.tsx       # Block type dispatcher
-      ToolBlockRenderer.tsx         # Tool card renderer
-      tool-definitions.ts           # Tool metadata registry
-      views/                        # Per-tool view components
-    components/
-      TranscriptViewer.tsx          # Main transcript display
-      session-selector/             # Session browser sidebar
-      control-panel/                # Chat input, toggles, settings
-      approval/                     # Approval flow components
-    renderers/
-      CompactEntry.tsx              # Compact mode renderer
-      YamlEntry.tsx                 # YAML mode renderer
-    context/                        # React context providers
-    hooks/                          # Custom hooks
-  host/
-    dev-server.ts                   # Browser mode server
-    webview-host.ts                 # VS Code webview panel host
-    client-connection.ts            # RPC handler (shared by both hosts)
-  extension.ts                      # VS Code extension entry point
-```
 
 ---
 
