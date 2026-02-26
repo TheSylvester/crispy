@@ -129,11 +129,27 @@ function ConnectionDot({
   );
 }
 
+/** Max characters for the session label shown in the dropdown button */
+const BUTTON_LABEL_MAX = 32;
+
+function truncateLabel(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return text.slice(0, max).trimEnd() + '\u2026';
+}
+
 export function TitleBar(): React.JSX.Element {
-  const { selectedSessionId, setSelectedSessionId } = useSession();
+  const { sessions, selectedSessionId, setSelectedSessionId } = useSession();
   const { sidebarCollapsed, setSidebarCollapsed, toolPanelOpen, setToolPanelOpen } = usePreferences();
   const { channelState } = useSessionStatus(selectedSessionId);
   const dropdownContainerRef = useRef<HTMLDivElement>(null);
+
+  // Derive button label from current session — fall back to "Conversations"
+  const currentSession = selectedSessionId
+    ? sessions.find(s => s.sessionId === selectedSessionId)
+    : null;
+  const buttonLabel = currentSession?.label
+    ? truncateLabel(currentSession.label, BUTTON_LABEL_MAX)
+    : 'Conversations';
 
   const toggleSidebar = useCallback(() => {
     setSidebarCollapsed(!sidebarCollapsed);
@@ -184,7 +200,7 @@ export function TitleBar(): React.JSX.Element {
           aria-label={sidebarCollapsed ? 'Open sessions' : 'Close sessions'}
           title="Toggle session list"
         >
-          <span className="crispy-titlebar__label">Conversations</span>
+          <span className="crispy-titlebar__label">{buttonLabel}</span>
           <Chevron open={!sidebarCollapsed} />
         </button>
         {!sidebarCollapsed && (
