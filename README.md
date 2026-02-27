@@ -6,7 +6,7 @@ Rendered Markdown. Fork and rewind conversations. Multiple agent windows side by
 
 VS Code / Cursor extension today. Standalone browser app after v0.1.x.
 
-![Crispy — parallel sub-agents implementing light mode support](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/screenshot-hero.png)
+![Crispy — sub-agent running with real-time tool auditing, then forking to side-by-side panels](./media/hero.gif)
 
 ---
 
@@ -14,6 +14,56 @@ VS Code / Cursor extension today. Standalone browser app after v0.1.x.
 
 The official Claude Code VS Code extension is good. But it ships a subset of
 what the TUI can do, and it locks you into one vendor. Crispy fills the gaps.
+
+---
+
+## Feature Highlights
+
+### Fork and rewind conversations
+
+![Fork a conversation into a new side-by-side panel](./media/fork.gif)
+
+Fork at any point in a conversation. The new session opens in a second panel
+with full context — branch into parallel explorations or try a different
+approach.
+
+### Execute Markdown files as agent prompts
+
+![Right-click a Markdown file to execute it in Crispy](./media/execute.gif)
+
+Right-click any `.md` file in the Explorer and select **Execute in Crispy**.
+Your prompt loads into a new session, ready to send — the agent starts
+immediately.
+
+### Session browser with search and filtering
+
+![Session browser — vendor filtering, search, chronological grouping](./media/sessions.gif)
+
+Browse every session across vendors in one place. Filter by Claude or Codex,
+search by title, and jump between conversations grouped by day.
+
+### Three rendering modes
+
+![Switch between Blocks, YAML, and Compact views on the same conversation](./media/rendering-modes.gif)
+
+**Blocks** for daily use with rich tool cards, **Compact** for skimming dense
+transcripts, **YAML** for raw observability. Switch instantly on the same
+conversation.
+
+### Four agency modes
+
+![Cycle through agency modes — plan, ask, accept, bypass](./media/permission-modes.gif)
+
+One click to cycle between **plan**, **ask before edits**, **auto-accept**, and
+**bypass**. Each mode has a distinct border color and icon so you always know
+the agent's leash.
+
+### Models and custom providers
+
+![Model selector showing multiple vendors, and the provider configuration form](./media/models.gif)
+
+Switch between Claude, Codex, or any OpenAI-compatible endpoint. Add custom
+providers with their own base URLs, API keys, and model mappings.
 
 ---
 
