@@ -6,7 +6,7 @@
  *
  * - Serves static files from dist/webview/
  * - WebSocket upgrade on /ws
- * - Auto-registers ClaudeAgentAdapter on startup
+ * - Auto-registers all available vendor adapters on startup
  *
  * Usage: npm run dev
  *
@@ -18,13 +18,10 @@ import { readFile } from 'node:fs/promises';
 import { join, extname } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 
-import { registerAdapter } from '../core/session-manager.js';
-import { ClaudeAgentAdapter, claudeDiscovery, getResumeModel } from '../core/adapters/claude/claude-code-adapter.js';
-import { CodexAgentAdapter, codexDiscovery } from '../core/adapters/codex/index.js';
 import { syncProviders, startWatching } from '../core/provider-config.js';
 import { createClientConnection } from './client-connection.js';
 import { startRescan } from '../core/session-list-manager.js';
-import { findCodexBinary } from '../core/find-codex-binary.js';
+import { registerAllAdapters } from './adapter-registry.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
 
@@ -115,53 +112,9 @@ wss.on('connection', (ws: WebSocket) => {
 // Startup
 // ============================================================================
 
-// Register Claude discovery + adapter factory
+// Register all available adapters
 const cwd = process.cwd();
-registerAdapter(
-  claudeDiscovery,
-  (spec) => {
-    switch (spec.mode) {
-      case 'resume': {
-        const model = getResumeModel(spec.sessionId);
-        return new ClaudeAgentAdapter({ cwd, resume: spec.sessionId, ...(model && { model }) });
-      }
-      case 'fresh':
-        return new ClaudeAgentAdapter({
-          cwd: spec.cwd,
-          ...(spec.model && { model: spec.model }),
-          ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
-          ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
-        });
-      case 'fork':
-        return new ClaudeAgentAdapter({
-          cwd, resume: spec.fromSessionId, forkSession: true,
-          ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
-        });
-      case 'continue':
-        return new ClaudeAgentAdapter({ cwd, resume: spec.sessionId, continue: true });
-      case 'hydrated':
-        return new ClaudeAgentAdapter({
-          cwd: spec.cwd,
-          hydratedHistory: spec.history,
-          ...(spec.model && { model: spec.model }),
-          ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
-        });
-    }
-  },
-);
-
-// Register Codex discovery + adapter factory
-const pathToCodexExecutable = findCodexBinary();
-if (pathToCodexExecutable) {
-  codexDiscovery.setCommand(pathToCodexExecutable);
-}
-registerAdapter(
-  codexDiscovery,
-  (spec) => {
-    const effectiveCwd = ('cwd' in spec) ? spec.cwd : cwd;
-    return new CodexAgentAdapter({ ...spec, cwd: effectiveCwd, command: pathToCodexExecutable });
-  },
-);
+registerAllAdapters({ cwd });
 
 // Register dynamic providers from ~/.config/crispy/providers.json
 const providerBase = { cwd };
@@ -171,6 +124,6 @@ server.listen(PORT, () => {
   console.log(`[dev-server] Crispy dev server running at http://localhost:${PORT}`);
   console.log(`[dev-server] WebSocket endpoint: ws://localhost:${PORT}/ws`);
   console.log(`[dev-server] Serving static files from: ${STATIC_DIR}`);
-  console.log(`[dev-server] Claude + Codex adapters registered`);
+  console.log(`[dev-server] Adapters registered`);
   startRescan();
 });

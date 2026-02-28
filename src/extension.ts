@@ -5,14 +5,11 @@
  */
 
 import * as vscode from 'vscode';
-import { registerAdapter, unregisterAdapter } from './core/session-manager.js';
-import { ClaudeAgentAdapter, claudeDiscovery, getResumeModel } from './core/adapters/claude/claude-code-adapter.js';
-import { CodexAgentAdapter, codexDiscovery } from './core/adapters/codex/index.js';
 import { syncProviders, startWatching, stopWatching } from './core/provider-config.js';
 import { openCrispyPanel, getOrCreatePanelForPrefill } from './host/webview-host.js';
 import { startRescan, stopRescan } from './core/session-list-manager.js';
 import { findClaudeBinary } from './core/find-claude-binary.js';
-import { findCodexBinary } from './core/find-codex-binary.js';
+import { registerAllAdapters } from './host/adapter-registry.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
@@ -28,58 +25,13 @@ export function activate(context: vscode.ExtensionContext): void {
     );
   }
 
-  // Register Claude adapter (conditional on binary being found)
-  if (pathToClaudeCodeExecutable) {
-    const base = { cwd, pathToClaudeCodeExecutable };
-    registerAdapter(
-      claudeDiscovery,
-      (spec) => {
-        switch (spec.mode) {
-          case 'resume': {
-            const model = getResumeModel(spec.sessionId);
-            return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, ...(model && { model }) });
-          }
-          case 'fresh':
-            return new ClaudeAgentAdapter({
-              ...base, cwd: spec.cwd,
-              ...(spec.model && { model: spec.model }),
-              ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
-              ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
-            });
-          case 'fork':
-            return new ClaudeAgentAdapter({
-              ...base, resume: spec.fromSessionId, forkSession: true,
-              ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
-            });
-          case 'continue':
-            return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, continue: true });
-          case 'hydrated':
-            return new ClaudeAgentAdapter({
-              ...base, cwd: spec.cwd,
-              hydratedHistory: spec.history,
-              ...(spec.model && { model: spec.model }),
-              ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
-            });
-        }
-      },
-    );
-    context.subscriptions.push({ dispose: () => unregisterAdapter('claude') });
-  }
-
-  // Register Codex adapter (conditional on binary being found)
-  const pathToCodexExecutable = findCodexBinary();
-  if (pathToCodexExecutable) {
-    codexDiscovery.setCommand(pathToCodexExecutable);
-    registerAdapter(
-      codexDiscovery,
-      (spec) => {
-        const effectiveCwd = ('cwd' in spec) ? spec.cwd : cwd;
-        return new CodexAgentAdapter({ ...spec, cwd: effectiveCwd, command: pathToCodexExecutable });
-      },
-    );
-    context.subscriptions.push({ dispose: () => unregisterAdapter('codex') });
-  }
-  // No warning if Codex is missing — the dropdown shows it grayed out with "(not installed)".
+  // Register all available adapters (Claude skipped if binary not found,
+  // Codex skipped if binary not found — both handled by available() checks)
+  const disposeAdapters = registerAllAdapters({
+    cwd,
+    ...(pathToClaudeCodeExecutable && { pathToClaudeCodeExecutable }),
+  });
+  context.subscriptions.push({ dispose: disposeAdapters });
 
   const workspaceOpts = { workspaceCwd: cwd };
 
