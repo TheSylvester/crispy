@@ -97,6 +97,7 @@ export type SendFn = (message: HostMessage) => void;
 
 export interface ClientConnection {
   handleMessage(raw: unknown): Promise<void>;
+  call(method: string, params: Record<string, unknown>): Promise<unknown>;
   dispose(): void;
 }
 
@@ -158,6 +159,10 @@ export function createClientConnection(
     });
   });
 
+  async function call(method: string, params: Record<string, unknown>): Promise<unknown> {
+    return routeMethod(method, params);
+  }
+
   async function handleMessage(raw: unknown): Promise<void> {
     // Parse the message
     const msg = (
@@ -171,7 +176,7 @@ export function createClientConnection(
     const { id, method, params } = msg;
 
     try {
-      const result = await routeMethod(method, params ?? {});
+      const result = await call(method, params ?? {});
       sendFn({ kind: "response", id, result });
     } catch (err) {
       sendFn({
@@ -470,5 +475,5 @@ export function createClientConnection(
     subscriptions.clear();
   }
 
-  return { handleMessage, dispose };
+  return { handleMessage, call, dispose };
 }
