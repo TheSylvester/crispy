@@ -9,8 +9,6 @@
  * Hosts call registerAllAdapters(config) instead of manually importing
  * each adapter and duplicating per-vendor registration boilerplate.
  *
- * Does NOT handle MCP injection — that belongs in host-config / later sprints.
- *
  * @module host/adapter-registry
  */
 
@@ -31,7 +29,7 @@ import { codexRegistration } from '../core/adapters/codex/codex-registration.js'
  *
  * Contains everything a factory needs to construct adapters with the
  * correct host-level settings (cwd, binary paths). Pure construction
- * config — no MCP injection, no live getters.
+ * config.
  */
 export interface HostAdapterConfig {
   /** Default working directory for new sessions. */

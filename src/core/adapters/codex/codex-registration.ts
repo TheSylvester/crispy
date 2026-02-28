@@ -4,9 +4,6 @@
  * Exports everything the host's adapter-registry needs to register the
  * Codex adapter: discovery, factory builder, and availability check.
  *
- * Pure adapter construction — no MCP injection. MCP concerns are handled
- * by host-config and later sprints.
- *
  * @module adapters/codex/codex-registration
  */
 
