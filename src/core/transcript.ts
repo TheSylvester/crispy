@@ -16,6 +16,7 @@
 // Re-export SDK types for convenience
 // Consumers can import from here instead of the SDK directly
 export type {
+  // Input types
   AgentInput,
   BashInput,
   FileEditInput,
@@ -34,6 +35,21 @@ export type {
   ListMcpResourcesInput,
   ReadMcpResourceInput,
   ConfigInput,
+  EnterWorktreeInput,
+  // Output types (SDK 0.2.63+)
+  AgentOutput,
+  BashOutput,
+  ExitPlanModeOutput,
+  FileEditOutput,
+  FileReadOutput,
+  FileWriteOutput,
+  GlobOutput,
+  GrepOutput,
+  TaskStopOutput,
+  TodoWriteOutput,
+  WebFetchOutput,
+  WebSearchOutput,
+  AskUserQuestionOutput,
 } from '@anthropic-ai/claude-agent-sdk/sdk-tools.js';
 
 // Import for internal use
@@ -56,6 +72,7 @@ import type {
   ListMcpResourcesInput,
   ReadMcpResourceInput,
   ConfigInput,
+  EnterWorktreeInput,
 } from '@anthropic-ai/claude-agent-sdk/sdk-tools.js';
 
 // ============================================================================
@@ -239,6 +256,7 @@ export type ToolName =
   | 'TaskStop'
   // Agents
   | 'Task'
+  | 'Agent'
   // Web
   | 'WebFetch'
   | 'WebSearch'
@@ -248,6 +266,8 @@ export type ToolName =
   | 'EnterPlanMode'
   | 'ExitPlanMode'
   | 'Skill'
+  // Worktree
+  | 'EnterWorktree'
   // MCP
   | 'ListMcpResources'
   | 'ReadMcpResource';
@@ -272,6 +292,7 @@ export type ToolInput =
   | WebSearchInput
   | AskUserQuestionInput
   | ExitPlanModeInput
+  | EnterWorktreeInput
   | ListMcpResourcesInput
   | ReadMcpResourceInput
   | ConfigInput
@@ -420,6 +441,7 @@ export const CLAUDE_TOOL_CATEGORIES: Record<string, ToolCategory> = {
   Glob: 'search',
   LS: 'search',
   Task: 'agent',
+  Agent: 'agent',
   TaskOutput: 'agent',
   TaskStop: 'agent',
   WebFetch: 'browser',
@@ -430,6 +452,7 @@ export const CLAUDE_TOOL_CATEGORIES: Record<string, ToolCategory> = {
   ExitPlanMode: 'planning',
   AskUserQuestion: 'interaction',
   Skill: 'interaction',
+  EnterWorktree: 'other',
   ListMcpResources: 'mcp',
   ReadMcpResource: 'mcp',
 };

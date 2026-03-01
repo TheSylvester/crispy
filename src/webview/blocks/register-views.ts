@@ -78,6 +78,14 @@ registerToolViews('Task', {
   expanded: TaskExpandedView,
 });
 
+// Agent uses same views as Task (renamed in Claude Code 2.1.63+)
+const agentMeta = getToolData('Agent');
+registerToolViews('Agent', {
+  ...defaultToolViews(agentMeta),
+  compact: TaskCompactView,
+  expanded: TaskExpandedView,
+});
+
 // ============================================================================
 // Register Read Views
 // ============================================================================

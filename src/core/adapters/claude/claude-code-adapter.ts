@@ -35,6 +35,10 @@ import type {
   SDKPartialAssistantMessage,
   SDKStatusMessage,
   SDKCompactBoundaryMessage,
+  SDKTaskStartedMessage,
+  SDKTaskProgressMessage,
+  SDKLocalCommandOutputMessage,
+  SDKElicitationCompleteMessage,
   PermissionResult,
   PermissionMode,
   PermissionUpdate,
@@ -1061,6 +1065,16 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         // Auth status — could surface as a notification
         break;
 
+      case 'prompt_suggestion':
+        // Predicted next user prompt (SDK 0.2.63+) — pass through as entry
+        this.emitEntry(msg);
+        break;
+
+      case 'rate_limit_event':
+        // Rate limit info update (SDK 0.2.63+) — pass through as entry
+        this.emitEntry(msg);
+        break;
+
       default:
         // Unknown message types (tool_use_summary, etc.) — pass through
         this.emitEntry(msg);
@@ -1177,7 +1191,10 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   }
 
   private handleSystemMessage(msg: SDKMessage): void {
-    const systemMsg = msg as SDKSystemMessage | SDKStatusMessage | SDKCompactBoundaryMessage;
+    const systemMsg = msg as
+      | SDKSystemMessage | SDKStatusMessage | SDKCompactBoundaryMessage
+      | SDKTaskStartedMessage | SDKTaskProgressMessage
+      | SDKLocalCommandOutputMessage | SDKElicitationCompleteMessage;
 
     if (!('subtype' in systemMsg)) {
       // System message without subtype — pass through as entry
@@ -1268,8 +1285,16 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         this.emitEntry(msg);
         break;
 
+      // SDK 0.2.63+ system subtypes — pass through as entries
+      case 'task_started':        // Background agent started
+      case 'task_progress':       // Background agent progress with usage
+      case 'local_command_output': // Slash command output
+      case 'elicitation_complete': // MCP elicitation done
+        this.emitEntry(msg);
+        break;
+
       default:
-        // Hook messages, task notifications, etc. — pass through
+        // Hook messages, etc. — pass through
         this.emitEntry(msg);
         break;
     }

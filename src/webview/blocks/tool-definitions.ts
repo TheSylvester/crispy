@@ -132,6 +132,12 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     activity: { verb: 'Running agent', pastVerb: 'Agent completed' },
     inspectorDefault: 'expanded',
   },
+  Agent: {
+    icon: '\uD83E\uDD16',
+    color: '#64748b',
+    activity: { verb: 'Running agent', pastVerb: 'Agent completed' },
+    inspectorDefault: 'expanded',
+  },
   TaskOutput: {
     icon: '\uD83E\uDD16',
     color: '#64748b',
