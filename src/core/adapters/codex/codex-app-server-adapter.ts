@@ -89,9 +89,9 @@ export class CodexAgentAdapter implements AgentAdapter {
    * are marked isMeta so the rendering filter and history serializer skip them.
    */
   private startupPhase = true;
-  private readonly spec: SessionOpenSpec & { cwd?: string; command?: string };
+  private readonly spec: SessionOpenSpec & { cwd?: string; command?: string; args?: string[] };
 
-  constructor(spec: SessionOpenSpec & { cwd?: string; command?: string }) {
+  constructor(spec: SessionOpenSpec & { cwd?: string; command?: string; args?: string[] }) {
     this.spec = spec;
     this._settings = {
       vendor: 'codex',
@@ -292,6 +292,7 @@ export class CodexAgentAdapter implements AgentAdapter {
     // Create RPC client
     this.client = new CodexRpcClient({
       ...(this.spec.command && { command: this.spec.command }),
+      ...(this.spec.args && { args: this.spec.args }),
       cwd: (this.spec.mode === 'fresh' || this.spec.mode === 'hydrated') ? this.spec.cwd : undefined,
       onNotification: (method, params) => this.handleNotification(method, params),
       onRequest: (method, id, params) => this.handleServerRequest(method, id, params),

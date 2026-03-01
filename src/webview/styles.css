@@ -2557,6 +2557,13 @@ h2 {
   color: var(--vscode-descriptionForeground, #888);
 }
 
+.crispy-cp-settings__hint {
+  font-size: 11px;
+  opacity: 0.6;
+  padding: 0 4px 8px;
+  line-height: 1.4;
+}
+
 /* --------------------------------------------------------------------------
    Fork Button — icon button with optional "Fork" text label
    -------------------------------------------------------------------------- */
@@ -3787,7 +3794,7 @@ h2 {
   cursor: pointer;
   font-size: var(--font-sm);
   font-style: italic;
-  opacity: 0.45;
+  color: var(--vscode-descriptionForeground, #999);
   padding: 4px 0;
   user-select: none;
   list-style: none;
@@ -3804,12 +3811,12 @@ h2 {
 .crispy-blocks-thinking[open] > .crispy-blocks-thinking-summary {
   font-size: 0;
   padding: 2px 0;
-  opacity: 0.3;
+  color: var(--vscode-descriptionForeground, #666);
   border-bottom: 1px solid var(--glass-border-md);
 }
 
 .crispy-blocks-thinking-summary:hover {
-  opacity: 0.8;
+  color: var(--vscode-foreground, #ccc);
 }
 
 .crispy-blocks-thinking-content {
@@ -3818,7 +3825,7 @@ h2 {
   font-family: inherit;
   font-size: var(--font-sm);
   font-style: italic;
-  opacity: 0.6;
+  color: var(--vscode-descriptionForeground, #999);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;

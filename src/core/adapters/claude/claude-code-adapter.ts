@@ -38,6 +38,7 @@ import type {
   PermissionResult,
   PermissionMode,
   PermissionUpdate,
+  McpServerConfig,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources';
 
@@ -89,13 +90,8 @@ export interface AgentDefinition {
   maxTurns?: number;
 }
 
-/**
- * MCP server configuration — supports all SDK transport types.
- */
-export type McpServerConfig =
-  | { type?: 'stdio'; command: string; args?: string[]; env?: Record<string, string> }
-  | { type: 'sse'; url: string; headers?: Record<string, string> }
-  | { type: 'http'; url: string; headers?: Record<string, string> };
+// Re-export McpServerConfig for external consumers
+export type { McpServerConfig };
 
 /**
  * Hook event types for intercepting agent operations.

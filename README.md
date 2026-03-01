@@ -62,8 +62,8 @@ the agent's leash.
 
 ![Model selector showing multiple vendors, and the provider configuration form](./media/models.gif)
 
-Switch between Claude, Codex, or any OpenAI-compatible endpoint. Add custom
-providers with their own base URLs, API keys, and model mappings.
+Switch between Claude and Codex, or add custom Claude-compatible providers
+with their own base URLs, API keys, and model mappings.
 
 ---
 
@@ -75,7 +75,7 @@ providers with their own base URLs, API keys, and model mappings.
 - One-click bypass mode and Chrome toggle
 - Execute Markdown files as prompts from the Explorer
 - Claude and Codex adapters today — Gemini CLI and OpenCode next
-- Custom model providers — route Claude through any compatible endpoint
+- Custom model providers — route Claude through any Claude-compatible endpoint
   (GLM-4.7, DeepSeek, local models)
 - Plan-to-execution handoff — clear context and start fresh
 - Three rendering modes — Blocks for daily use, Compact for skimming,

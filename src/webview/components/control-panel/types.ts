@@ -62,6 +62,7 @@ export interface ControlPanelState {
   attachedImages: AttachedImage[];
   pastedImageCounter: number;
   forkMode: { fromSessionId: string; atMessageId?: string } | null;
+  currentVendor: string | null;
 }
 
 /** Reducer action types for the control panel. */
@@ -79,7 +80,8 @@ export type Action =
   | { type: 'SET_FILE_CONTEXT'; enabled: boolean }
   | { type: 'SET_CONTEXT'; contextUsage: ContextUsage }
   | { type: 'RESET_CONTEXT' }
-  | { type: 'SET_FORK_MODE'; forkMode: { fromSessionId: string; atMessageId?: string } | null };
+  | { type: 'SET_FORK_MODE'; forkMode: { fromSessionId: string; atMessageId?: string } | null }
+  | { type: 'SET_CURRENT_VENDOR'; vendor: string | null };
 
 /** Default initial state for the control panel. */
 export const DEFAULT_CONTROL_PANEL_STATE: ControlPanelState = {
@@ -96,6 +98,7 @@ export const DEFAULT_CONTROL_PANEL_STATE: ControlPanelState = {
   attachedImages: [],
   pastedImageCounter: 0,
   forkMode: null,
+  currentVendor: null,
 };
 
 /** Agency mode display labels for the dropdown. */

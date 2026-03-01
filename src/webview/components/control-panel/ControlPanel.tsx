@@ -132,6 +132,8 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
       return { ...state, contextPercent: 0, contextUsage: null };
     case 'SET_FORK_MODE':
       return { ...state, forkMode: action.forkMode };
+    case 'SET_CURRENT_VENDOR':
+      return { ...state, currentVendor: action.vendor };
     default:
       return state;
   }
@@ -354,6 +356,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // legacy permission_mode_changed (from adapter) and the new settings_changed
     // (broadcast after each sendTurn) for cross-panel sync.
     useEffect(() => {
+      if (!selectedSessionId) {
+        dispatch({ type: 'SET_CURRENT_VENDOR', vendor: null });
+      }
+
       const off = transport.onEvent((sessionId, event) => {
         if (sessionId !== selectedSessionId) return;
 
@@ -367,6 +373,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             ? ''
             : `${settings.vendor}:${rawModel}`;
           dispatch({ type: 'SET_MODEL', model: modelValue });
+          dispatch({ type: 'SET_CURRENT_VENDOR', vendor: settings.vendor });
           // Sync permission mode → agency mode
           if (settings.permissionMode) {
             const agencyMode = mapPermissionModeToAgency(settings.permissionMode);
@@ -461,17 +468,20 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       } else if (!selectedSessionId) {
         target = { kind: 'new', vendor, cwd: resolvedCwd };
       } else {
-        const currentSession = sessions.find(s => s.sessionId === selectedSessionId);
-        if (currentSession?.vendor && currentSession.vendor !== vendor) {
-          // Cross-vendor switch — continue conversation in new vendor
+        if (state.currentVendor && state.currentVendor !== vendor) {
+          // Cross-vendor switch — continue conversation in new vendor.
+          // Use adapter-reported vendor (state.currentVendor) instead of
+          // sessions.find() which may miss newly created sessions not yet
+          // in the session list cache.
+          const currentSession = sessions.find(s => s.sessionId === selectedSessionId);
           target = {
             kind: 'continueIn',
             targetVendor: vendor,
-            sourceSessionId: selectedSessionId,
-            cwd: currentSession.projectPath ?? resolvedCwd,
+            sourceSessionId: selectedSessionId!,
+            cwd: currentSession?.projectPath ?? workspaceCwdPath ?? slugToPath(selectedCwd ?? ''),
           };
         } else {
-          target = { kind: 'existing', sessionId: selectedSessionId };
+          target = { kind: 'existing', sessionId: selectedSessionId! };
         }
       }
 
@@ -537,7 +547,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             dispatch({ type: 'SET_FORK_MODE', forkMode: forkModeBackup });
           }
         });
-    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, state.forkMode, selectedSessionId, selectedCwd, sessions, setSelectedSessionId, setOptimisticStatus, transport, onScrollToBottom, onOptimisticEntry, showSendError, clearSendError, workspaceCwdPath]);
+    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, state.forkMode, state.currentVendor, selectedSessionId, selectedCwd, sessions, setSelectedSessionId, setOptimisticStatus, transport, onScrollToBottom, onOptimisticEntry, showSendError, clearSendError, workspaceCwdPath]);
 
     // Keep ref in sync so forkConfig auto-send always calls the latest handleSend
     useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
