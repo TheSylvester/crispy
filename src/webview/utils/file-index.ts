@@ -3,7 +3,7 @@
  *
  * Builds an in-memory index from git file paths, supporting exact,
  * suffix (at `/` boundaries), and basename matching with configurable
- * match limits.
+ * match limits. Multi-match results are sorted shortest-path-first.
  *
  * @module file-index
  */
@@ -84,6 +84,9 @@ export function buildMatchIndex(gitFiles: string[], cwd: string): FileIndex {
     }
   }
 
+  const byDepth = (a: FileMatch, b: FileMatch) =>
+    a.relativePath.split('/').length - b.relativePath.split('/').length;
+
   return {
     match(token: string): FileMatch[] {
       // 1. Exact match
@@ -92,13 +95,13 @@ export function buildMatchIndex(gitFiles: string[], cwd: string): FileIndex {
 
       // 2. Suffix match (also covers exact since suffix includes full paths at boundaries)
       const suffixHits = suffixMap.get(token);
-      if (suffixHits && suffixHits.length > 0) return suffixHits;
+      if (suffixHits && suffixHits.length > 0) return [...suffixHits].sort(byDepth);
 
       // 3. Basename match — only if token has a `.` extension, no `/`, and ≤ MAX matches
       if (!token.includes("/") && token.includes(".")) {
         const basenameHits = basenameMap.get(token);
         if (basenameHits && basenameHits.length > 0 && basenameHits.length <= MAX_BASENAME_MATCHES) {
-          return basenameHits;
+          return [...basenameHits].sort(byDepth);
         }
       }
 

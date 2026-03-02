@@ -2,16 +2,18 @@
  * File Index Context — provides the git file match index to the component tree
  *
  * Fetches the git file list via transport on CWD change, builds an in-memory
- * match index, and exposes it to consumers. Returns null gracefully if no CWD
- * or fetch fails.
+ * match index, and exposes it to consumers. Keeps the index fresh by
+ * re-fetching on agent idle transitions (debounced). Returns null gracefully
+ * if no CWD or fetch fails.
  *
  * @module FileIndexContext
  */
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTransport } from './TransportContext.js';
 import { useCwd } from '../hooks/useSessionCwd.js';
 import { buildMatchIndex, type FileIndex } from '../utils/file-index.js';
+import { useSession } from './SessionContext.js';
 
 const FileIndexContext = createContext<FileIndex | null>(null);
 
@@ -23,8 +25,10 @@ const RefreshGitFilesContext = createContext<(() => void) | null>(null);
 export function FileIndexProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
   const transport = useTransport();
   const { fullPath } = useCwd();
+  const { selectedSessionId } = useSession();
   const [gitFiles, setGitFiles] = useState<string[] | null>(null);
   const [refreshCounter, setRefreshCounter] = useState(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!fullPath) {
@@ -51,12 +55,35 @@ export function FileIndexProvider({ children }: { children: React.ReactNode }): 
     };
   }, [transport, fullPath, refreshCounter]);
 
+  const refresh = useCallback(() => setRefreshCounter(c => c + 1), []);
+
+  // Re-fetch file index when agent goes idle (end of turn)
+  useEffect(() => {
+    if (!selectedSessionId || !fullPath) return;
+
+    const off = transport.onEvent((sid, event) => {
+      if (sid !== selectedSessionId) return;
+
+      if (
+        event.type === 'event' &&
+        event.event.type === 'status' &&
+        event.event.status === 'idle'
+      ) {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(refresh, 300);
+      }
+    });
+
+    return () => {
+      off();
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [selectedSessionId, fullPath, transport, refresh]);
+
   const index = useMemo(() => {
     if (!gitFiles || !fullPath) return null;
     return buildMatchIndex(gitFiles, fullPath);
   }, [gitFiles, fullPath]);
-
-  const refresh = useCallback(() => setRefreshCounter(c => c + 1), []);
 
   return (
     <RefreshGitFilesContext.Provider value={refresh}>
