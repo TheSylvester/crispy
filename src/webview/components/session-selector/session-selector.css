@@ -379,9 +379,34 @@
 
 .crispy-activity-path__matrix {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow: auto;
+}
+
+/* --- Sticky header row (flat, above body — avoids nested sticky-top inside sticky-left) --- */
+
+.crispy-activity-path__header-row {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: flex;
+  flex-shrink: 0;
+  min-width: fit-content;
+  background: var(--vscode-editor-background, #1e1e1e);
+}
+
+.crispy-activity-path__header-lanes {
+  display: flex;
+  flex-shrink: 0;
+}
+
+/* --- Body (row-flex container wrapping the data columns) --- */
+
+.crispy-activity-path__body {
+  display: flex;
+  min-width: fit-content;
 }
 
 /* --- TIME column (sticky left:0) --- */
@@ -392,6 +417,7 @@
   z-index: 3;
   background: var(--vscode-editor-background, #1e1e1e);
   border-right: 1px solid var(--vscode-panel-border, #333);
+  box-sizing: border-box;
   width: 52px;
   min-width: 52px;
   flex-shrink: 0;
@@ -432,8 +458,8 @@
   z-index: 2;
   background: var(--vscode-editor-background, #1e1e1e);
   border-right: 1px solid var(--vscode-panel-border, #333);
-  min-width: 160px;
-  max-width: 240px;
+  box-sizing: border-box;
+  width: 240px;
   flex-shrink: 0;
 }
 
@@ -452,23 +478,41 @@
   display: flex;
   align-items: center;
   overflow: hidden;
-  /* Freeze header row — sticky top within the scrollable matrix */
-  position: sticky;
-  top: 0;
-  z-index: 1;
   background: var(--vscode-editor-background, #1e1e1e);
+  /* Note: sticky-top removed — the header-row handles vertical sticking.
+     Individual headers use sticky-left for horizontal freeze. */
 }
 
 .crispy-activity-path__header--time {
   justify-content: center;
+  /* Sticky left within header row for horizontal freeze */
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border-right: 1px solid var(--vscode-panel-border, #333);
+  width: 52px;
+  min-width: 52px;
+  flex-shrink: 0;
+}
+
+.crispy-activity-path__header--prompts {
+  /* Sticky left within header row for horizontal freeze */
+  position: sticky;
+  left: 52px;
+  z-index: 1;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border-right: 1px solid var(--vscode-panel-border, #333);
+  width: 240px;
+  flex-shrink: 0;
 }
 
 .crispy-activity-path__header--lane {
-  min-width: 160px;
-  max-width: 220px;
+  width: 220px;
   justify-content: flex-start;
   padding: 6px 8px;
   border-bottom: 2px solid var(--lane-color, var(--vscode-panel-border, #333));
+  border-right: 1px solid var(--vscode-panel-border, #222);
   background: color-mix(in srgb, var(--lane-color, transparent) 10%, var(--vscode-editor-background, #1e1e1e));
 }
 
@@ -520,8 +564,8 @@
 }
 
 .crispy-activity-path__lane {
-  min-width: 160px;
-  max-width: 220px;
+  box-sizing: border-box;
+  width: 220px;
   border-right: 1px solid var(--vscode-panel-border, #222);
 }
 
@@ -655,7 +699,7 @@
   background: color-mix(in srgb, var(--lane-color, transparent) 5%, var(--vscode-editor-background, #1e1e1e));
 }
 
-.crispy-activity-path__lane--focused .crispy-activity-path__header--lane {
+.crispy-activity-path__header--lane-focused {
   color: var(--vscode-foreground, #d4d4d4);
   background: color-mix(in srgb, var(--lane-color, transparent) 18%, transparent);
 }

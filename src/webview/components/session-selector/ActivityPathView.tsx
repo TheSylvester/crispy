@@ -226,8 +226,14 @@ export function ActivityPathView(): React.JSX.Element {
   useEffect(() => {
     if (!loading && paginatedEntries.length > 0 && !didScrollRef.current) {
       didScrollRef.current = true;
+      // Double-rAF: give the browser two full frames to finalize sticky layout
+      // calculations before the programmatic scroll forces a recalculation.
+      // In deeply nested layouts (absolute dropdown → overflow:hidden → overflow:auto),
+      // a single rAF isn't always enough.
       requestAnimationFrame(() => {
-        matrixRef.current?.scrollTo({ top: matrixRef.current.scrollHeight });
+        requestAnimationFrame(() => {
+          matrixRef.current?.scrollTo({ top: matrixRef.current.scrollHeight });
+        });
       });
     }
   }, [loading, paginatedEntries]);
@@ -282,6 +288,7 @@ export function ActivityPathView(): React.JSX.Element {
         'crispy-activity-path__row--sibling',
         'crispy-activity-path__cell--row-hover',
         'crispy-activity-path__lane--focused',
+        'crispy-activity-path__header--lane-focused',
       );
     }
     hoverRef.current = null;
@@ -344,6 +351,13 @@ export function ActivityPathView(): React.JSX.Element {
       }, 150);
     }
 
+    // Lane header highlight (header is in the sticky header row, not inside the lane div)
+    const laneHeader = matrix.querySelector(`[data-lane-header="${CSS.escape(file)}"]`);
+    if (laneHeader) {
+      laneHeader.classList.add('crispy-activity-path__header--lane-focused');
+      els.push(laneHeader);
+    }
+
     // Sibling highlight: other rows from the same session (same file, different row)
     const siblingSelector = `[data-file="${CSS.escape(file)}"]:not([data-row="${CSS.escape(row)}"])`;
     for (const el of Array.from(matrix.querySelectorAll(siblingSelector))) {
@@ -378,111 +392,126 @@ export function ActivityPathView(): React.JSX.Element {
         onMouseOver={handleMatrixPointer}
         onMouseLeave={clearHighlights}
       >
-        {/* TIME column (sticky left:0) */}
-        <div className="crispy-activity-path__time-col">
+        {/* Sticky header row — flat, outside column wrappers so sticky-top
+            isn't bounded by a sticky-left parent's containing block */}
+        <div className="crispy-activity-path__header-row">
           <div className="crispy-activity-path__header crispy-activity-path__header--time">
             Time
           </div>
-          {hasMore && (
-            <div className="crispy-activity-path__time-row crispy-activity-path__load-more-spacer" />
-          )}
-          {paginatedEntries.map((entry, i) => {
-            const entryLane = laneByFile.get(entry.file);
-            const isClickable = !!entryLane?.session;
-            return (
-              <div
-                key={`time-${entry.timestamp}-${entry.uuid ?? i}`}
-                className="crispy-activity-path__time-row"
-                data-row={i}
-                data-file={entry.file}
-                onClick={isClickable ? () => handleCellClick(entryLane) : undefined}
-                style={{ cursor: isClickable ? 'pointer' : undefined, '--lane-color': laneColorMap.get(entry.file) } as React.CSSProperties}
-              >
-                <span className="crispy-activity-path__date">{formatDate(entry.timestamp)}</span>
-                <span className="crispy-activity-path__clock">{formatTime(entry.timestamp)}</span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* PROMPT column (sticky left:52px) */}
-        <div className="crispy-activity-path__prompt-col">
           <div className="crispy-activity-path__header crispy-activity-path__header--prompts">
             Your Prompt
           </div>
-          {hasMore && (
-            <div className="crispy-activity-path__prompt-row crispy-activity-path__load-more-row">
-              <button
-                className="crispy-activity-path__load-more"
-                onClick={() => setPage(p => p + 1)}
-              >
-                Load more
-              </button>
-            </div>
-          )}
-          {paginatedEntries.map((entry, i) => {
-            const entryLane = laneByFile.get(entry.file);
-            const isClickable = !!entryLane?.session;
-            return (
+          <div className="crispy-activity-path__header-lanes">
+            {lanes.map(lane => (
               <div
-                key={`prompt-${entry.timestamp}-${entry.uuid ?? i}`}
-                className="crispy-activity-path__prompt-row"
-                data-row={i}
-                data-file={entry.file}
-                onClick={isClickable ? () => handleCellClick(entryLane) : undefined}
-                style={{ cursor: isClickable ? 'pointer' : undefined, '--lane-color': laneColorMap.get(entry.file), '--lane-indent': `${(laneIndexMap.get(entry.file) ?? 0) * 6}px` } as React.CSSProperties}
-              >
-                <TruncatedCell text={entry.preview} className="crispy-activity-path__prompt-text" />
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Session lanes (scrollable columns) */}
-        <div className="crispy-activity-path__lanes">
-          {lanes.map(lane => (
-            <div
-              key={lane.file}
-              className="crispy-activity-path__lane"
-              data-lane-file={lane.file}
-              style={{ '--lane-color': laneColorMap.get(lane.file) } as React.CSSProperties}
-            >
-              <div
+                key={lane.file}
                 className="crispy-activity-path__header crispy-activity-path__header--lane"
+                data-lane-header={lane.file}
                 title={lane.session?.label || lane.file}
+                style={{ '--lane-color': laneColorMap.get(lane.file) } as React.CSSProperties}
               >
                 <span className="crispy-activity-path__clamp crispy-activity-path__lane-label">
                   {lane.label}
                 </span>
               </div>
-              {hasMore && (
-                <div className="crispy-activity-path__cell crispy-activity-path__load-more-spacer" />
-              )}
-              {paginatedEntries.map((entry, i) => {
-                const isMatch = entry.file === lane.file;
-                const cellKey = `${entry.timestamp}-${entry.uuid ?? i}`;
-                const previewKey = `${entry.file}:${entry.offset}`;
-                const preview = responsePreviews.get(previewKey);
+            ))}
+          </div>
+        </div>
 
-                return (
-                  <div
-                    key={cellKey}
-                    className={`crispy-activity-path__cell${isMatch ? ' crispy-activity-path__cell--active' : ''}`}
-                    data-row={i}
-                    data-file={entry.file}
-                    onClick={isMatch ? () => handleCellClick(lane) : undefined}
-                  >
-                    {isMatch && preview && (
-                      <TruncatedCell text={preview} className="crispy-activity-path__response-text" />
-                    )}
-                    {isMatch && !preview && (
-                      <span className="crispy-activity-path__cell-placeholder">···</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
+        {/* Body — row-flex container wrapping the data columns */}
+        <div className="crispy-activity-path__body">
+          {/* TIME column (sticky left:0) */}
+          <div className="crispy-activity-path__time-col">
+            {hasMore && (
+              <div className="crispy-activity-path__time-row crispy-activity-path__load-more-spacer" />
+            )}
+            {paginatedEntries.map((entry, i) => {
+              const entryLane = laneByFile.get(entry.file);
+              const isClickable = !!entryLane?.session;
+              return (
+                <div
+                  key={`time-${entry.timestamp}-${entry.uuid ?? i}`}
+                  className="crispy-activity-path__time-row"
+                  data-row={i}
+                  data-file={entry.file}
+                  onClick={isClickable ? () => handleCellClick(entryLane) : undefined}
+                  style={{ cursor: isClickable ? 'pointer' : undefined, '--lane-color': laneColorMap.get(entry.file) } as React.CSSProperties}
+                >
+                  <span className="crispy-activity-path__date">{formatDate(entry.timestamp)}</span>
+                  <span className="crispy-activity-path__clock">{formatTime(entry.timestamp)}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* PROMPT column (sticky left:52px) */}
+          <div className="crispy-activity-path__prompt-col">
+            {hasMore && (
+              <div className="crispy-activity-path__prompt-row crispy-activity-path__load-more-row">
+                <button
+                  className="crispy-activity-path__load-more"
+                  onClick={() => setPage(p => p + 1)}
+                >
+                  Load more
+                </button>
+              </div>
+            )}
+            {paginatedEntries.map((entry, i) => {
+              const entryLane = laneByFile.get(entry.file);
+              const isClickable = !!entryLane?.session;
+              return (
+                <div
+                  key={`prompt-${entry.timestamp}-${entry.uuid ?? i}`}
+                  className="crispy-activity-path__prompt-row"
+                  data-row={i}
+                  data-file={entry.file}
+                  onClick={isClickable ? () => handleCellClick(entryLane) : undefined}
+                  style={{ cursor: isClickable ? 'pointer' : undefined, '--lane-color': laneColorMap.get(entry.file), '--lane-indent': `${(laneIndexMap.get(entry.file) ?? 0) * 6}px` } as React.CSSProperties}
+                >
+                  <TruncatedCell text={entry.preview} className="crispy-activity-path__prompt-text" />
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Session lanes (scrollable columns) */}
+          <div className="crispy-activity-path__lanes">
+            {lanes.map(lane => (
+              <div
+                key={lane.file}
+                className="crispy-activity-path__lane"
+                data-lane-file={lane.file}
+                style={{ '--lane-color': laneColorMap.get(lane.file) } as React.CSSProperties}
+              >
+                {hasMore && (
+                  <div className="crispy-activity-path__cell crispy-activity-path__load-more-spacer" />
+                )}
+                {paginatedEntries.map((entry, i) => {
+                  const isMatch = entry.file === lane.file;
+                  const cellKey = `${entry.timestamp}-${entry.uuid ?? i}`;
+                  const previewKey = `${entry.file}:${entry.offset}`;
+                  const preview = responsePreviews.get(previewKey);
+
+                  return (
+                    <div
+                      key={cellKey}
+                      className={`crispy-activity-path__cell${isMatch ? ' crispy-activity-path__cell--active' : ''}`}
+                      data-row={i}
+                      data-file={entry.file}
+                      onClick={isMatch ? () => handleCellClick(lane) : undefined}
+                    >
+                      {isMatch && preview && (
+                        <TruncatedCell text={preview} className="crispy-activity-path__response-text" />
+                      )}
+                      {isMatch && !preview && (
+                        <span className="crispy-activity-path__cell-placeholder">···</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
