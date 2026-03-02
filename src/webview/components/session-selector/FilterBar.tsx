@@ -63,38 +63,47 @@ export function FilterBar({
 
   return (
     <div className="crispy-filter-bar">
-      <div className="crispy-filter-bar__top-row">
-        {availableCwds.length > 0 && (
-          <select
-            className="crispy-filter-bar__cwd"
-            value={selectedCwd ?? ''}
-            onChange={handleCwdChange}
-            title="Filter by project"
+      {availableCwds.length > 0 && (
+        <select
+          className="crispy-filter-bar__cwd"
+          value={selectedCwd ?? ''}
+          onChange={handleCwdChange}
+          title="Filter by project"
+        >
+          <option value="">All Projects</option>
+          {availableCwds.map(cwd => (
+            <option key={cwd.slug} value={cwd.slug} title={cwd.fullPath}>
+              {cwd.display}
+            </option>
+          ))}
+        </select>
+      )}
+      <div className="crispy-filter-bar__tabs">
+        {onViewModeChange && (
+          <button
+            className={`crispy-filter-bar__tab${viewMode === 'activity' ? ' crispy-filter-bar__tab--active' : ''}`}
+            onClick={() => onViewModeChange('activity')}
+            title="Activity Path"
           >
-            <option value="">All Projects</option>
-            {availableCwds.map(cwd => (
-              <option key={cwd.slug} value={cwd.slug} title={cwd.fullPath}>
-                {cwd.display}
-              </option>
-            ))}
-          </select>
+            ⚡ Activity
+          </button>
         )}
         {onViewModeChange && (
           <button
-            className="crispy-filter-bar__view-toggle"
-            aria-pressed={viewMode === 'activity'}
-            onClick={() => onViewModeChange(viewMode === 'sessions' ? 'activity' : 'sessions')}
-            title={viewMode === 'sessions' ? 'Show Activity Path' : 'Show Sessions'}
+            className={`crispy-filter-bar__tab${viewMode === 'sessions' ? ' crispy-filter-bar__tab--active' : ''}`}
+            onClick={() => onViewModeChange('sessions')}
+            title="Sessions List"
           >
-            {viewMode === 'sessions' ? '⚡' : '☰'}
+            ☰ Sessions
           </button>
         )}
+        <div className="crispy-filter-bar__tab-spacer" />
+        <VendorChips
+          availableVendors={availableVendors}
+          activeVendors={activeVendors}
+          onToggle={onVendorToggle}
+        />
       </div>
-      <VendorChips
-        availableVendors={availableVendors}
-        activeVendors={activeVendors}
-        onToggle={onVendorToggle}
-      />
       {viewMode === 'sessions' && (
         <input
           ref={searchInputRef}
