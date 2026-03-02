@@ -463,7 +463,6 @@ export function ActivityPathView(): React.JSX.Element {
                     className={`crispy-activity-path__cell${isMatch ? ' crispy-activity-path__cell--active' : ''}`}
                     data-row={i}
                     data-file={entry.file}
-                    style={{ '--row-color': laneColorMap.get(entry.file) } as React.CSSProperties}
                     onClick={isMatch ? () => handleCellClick(lane) : undefined}
                   >
                     {isMatch && preview && (

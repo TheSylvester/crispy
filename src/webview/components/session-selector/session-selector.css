@@ -536,8 +536,8 @@
   align-items: center;
   padding: 4px 6px;
   position: relative;
-  /* Base tint: row's session color (--row-color set via inline style) */
-  background: color-mix(in srgb, var(--row-color, transparent) 5%, transparent);
+  /* Base tint: lane's color (--lane-color inherited from the lane column) */
+  background: color-mix(in srgb, var(--lane-color, transparent) 5%, transparent);
 }
 
 .crispy-activity-path__cell--active {
@@ -548,7 +548,7 @@
 }
 
 .crispy-activity-path__cell--active:hover {
-  background: color-mix(in srgb, var(--row-color, transparent) 12%, var(--vscode-editor-background, #1e1e1e));
+  background: color-mix(in srgb, var(--lane-color, transparent) 12%, var(--vscode-editor-background, #1e1e1e));
 }
 
 /* --- Horizontal row highlight (crosshair with vertical lane highlight) --- */
@@ -562,11 +562,11 @@
 }
 
 .crispy-activity-path__cell--row-hover {
-  background: color-mix(in srgb, var(--row-color, transparent) 15%, var(--vscode-list-hoverBackground, #2a2d2e));
+  background: color-mix(in srgb, var(--lane-color, transparent) 15%, var(--vscode-list-hoverBackground, #2a2d2e));
 }
 
 .crispy-activity-path__cell--active.crispy-activity-path__cell--row-hover {
-  background: color-mix(in srgb, var(--row-color, transparent) 15%, var(--vscode-editor-background, #1e1e1e));
+  background: color-mix(in srgb, var(--lane-color, transparent) 15%, var(--vscode-editor-background, #1e1e1e));
 }
 
 .crispy-activity-path__cell-placeholder {
