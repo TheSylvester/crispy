@@ -84,6 +84,14 @@
       {
         "command": "crispy.executeFile",
         "title": "Execute in Crispy"
+      },
+      {
+        "command": "crispy.focus",
+        "title": "Crispy: Focus Input"
+      },
+      {
+        "command": "crispy.blur",
+        "title": "Crispy: Focus Editor"
       }
     ],
     "keybindings": [
@@ -91,6 +99,18 @@
         "command": "crispy.editor.open",
         "key": "ctrl+shift+alt+i",
         "mac": "cmd+shift+alt+i"
+      },
+      {
+        "command": "crispy.focus",
+        "key": "ctrl+;",
+        "mac": "cmd+;",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "crispy.blur",
+        "key": "ctrl+;",
+        "mac": "cmd+;",
+        "when": "!editorTextFocus && activeWebviewPanelId == 'crispy'"
       }
     ],
     "menus": {

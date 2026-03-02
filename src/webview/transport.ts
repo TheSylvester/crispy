@@ -14,6 +14,7 @@ import type { HostEvent } from '../host/client-connection.js';
 import type { ApprovalExtra } from './components/approval/types.js';
 import type { WireProviderConfig, ProviderConfig } from '../core/provider-config.js';
 import type { VendorModelGroup } from './components/control-panel/types.js';
+import type { ActivityIndexEntry } from '../core/activity-index.js';
 
 /** Client-side session info — modifiedAt is a string after JSON serialization. */
 export interface WireSessionInfo extends Omit<SessionInfo, 'modifiedAt'> {
@@ -76,6 +77,10 @@ export interface SessionService {
   saveProvider(slug: string, config: ProviderConfig): Promise<{ saved: boolean }>;
   deleteProvider(slug: string): Promise<{ deleted: boolean }>;
   getModelGroups(): Promise<VendorModelGroup[]>;
+
+  /** Activity index — user prompt history across all sessions */
+  getActivityLog(timeRange?: { from?: string; to?: string }): Promise<ActivityIndexEntry[]>;
+  getResponsePreview(file: string, offset: number): Promise<string | null>;
 
   dispose(): void;
 

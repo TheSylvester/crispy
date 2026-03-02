@@ -252,6 +252,299 @@ export function readLinesFromOffset(
   }
 }
 
+// ============================================================================
+// Activity Scanning
+// ============================================================================
+
+import type { UserPromptInfo, UserActivityScanResult } from '../../agent-adapter.js';
+
+/**
+ * Scan user messages from a Claude JSONL file incrementally.
+ *
+ * Uses a fast-path string match before JSON.parse to skip non-user entries.
+ * Filters out meta entries (isMeta, toolUseResult) and warmup messages.
+ * Returns byte offsets for each prompt to enable lazy-load response preview.
+ *
+ * @param filepath - Path to the JSONL file
+ * @param startOffset - Byte offset to start reading from
+ * @returns UserActivityScanResult with prompts and new offset
+ */
+export function scanUserMessages(
+  filepath: string,
+  startOffset = 0,
+): UserActivityScanResult {
+  const prompts: UserPromptInfo[] = [];
+  let fd: number | null = null;
+
+  try {
+    fd = fs.openSync(filepath, 'r');
+    const stat = fs.fstatSync(fd);
+    const fileSize = stat.size;
+
+    if (startOffset >= fileSize) {
+      return { prompts, offset: startOffset };
+    }
+
+    const buffer = Buffer.alloc(READ_BUFFER_SIZE);
+    let currentOffset = startOffset;
+    let remainder = '';
+    let lastCompleteLineOffset = startOffset;
+    let lineStartOffset = startOffset;
+
+    while (currentOffset < fileSize) {
+      const chunkSize = Math.min(READ_BUFFER_SIZE, fileSize - currentOffset);
+      const bytesRead = fs.readSync(fd, buffer, 0, chunkSize, currentOffset);
+
+      if (bytesRead === 0) break;
+
+      const chunk = remainder + buffer.toString('utf-8', 0, bytesRead);
+      const lines = chunk.split('\n');
+
+      remainder = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        const lineBytes = Buffer.byteLength(line, 'utf-8') + 1; // +1 for \n
+
+        if (!trimmed) {
+          lineStartOffset += lineBytes;
+          lastCompleteLineOffset = lineStartOffset;
+          continue;
+        }
+
+        // Fast-path: skip lines that don't contain '"type":"user"'
+        if (!trimmed.includes('"type":"user"')) {
+          lineStartOffset += lineBytes;
+          lastCompleteLineOffset = lineStartOffset;
+          continue;
+        }
+
+        // Also skip meta entries and tool results
+        if (trimmed.includes('"isMeta":true') || trimmed.includes('"toolUseResult"')) {
+          lineStartOffset += lineBytes;
+          lastCompleteLineOffset = lineStartOffset;
+          continue;
+        }
+
+        try {
+          const entry = JSON.parse(trimmed) as ClaudeTranscriptEntry;
+
+          if (entry.type === 'user' && !entry.isMeta && !entry.toolUseResult) {
+            const text = extractMessageText(entry);
+
+            // Skip warmup messages
+            if (text === 'Warmup') {
+              lineStartOffset += lineBytes;
+              lastCompleteLineOffset = lineStartOffset;
+              continue;
+            }
+
+            // Skip empty messages
+            if (!text) {
+              lineStartOffset += lineBytes;
+              lastCompleteLineOffset = lineStartOffset;
+              continue;
+            }
+
+            prompts.push({
+              timestamp: entry.timestamp || '',
+              preview: text.length > 120 ? text.slice(0, 120) : text,
+              offset: lineStartOffset,
+              uuid: entry.uuid,
+            });
+          }
+
+          lineStartOffset += lineBytes;
+          lastCompleteLineOffset = lineStartOffset;
+        } catch {
+          // JSON parse error — skip the line
+          lineStartOffset += lineBytes;
+          lastCompleteLineOffset = lineStartOffset;
+        }
+      }
+
+      currentOffset += bytesRead;
+
+      // Note: remainder (incomplete line at chunk boundary) is not counted
+      // toward lastCompleteLineOffset — it will be re-parsed on the next call.
+    }
+
+    // Handle remainder (final line without trailing newline)
+    if (remainder.trim()) {
+      const trimmed = remainder.trim();
+
+      // Same fast-path checks
+      if (
+        trimmed.includes('"type":"user"') &&
+        !trimmed.includes('"isMeta":true') &&
+        !trimmed.includes('"toolUseResult"')
+      ) {
+        try {
+          const entry = JSON.parse(trimmed) as ClaudeTranscriptEntry;
+
+          if (entry.type === 'user' && !entry.isMeta && !entry.toolUseResult) {
+            const text = extractMessageText(entry);
+
+            if (text && text !== 'Warmup') {
+              prompts.push({
+                timestamp: entry.timestamp || '',
+                preview: text.length > 120 ? text.slice(0, 120) : text,
+                offset: lineStartOffset,
+                uuid: entry.uuid,
+              });
+            }
+          }
+
+          lastCompleteLineOffset += Buffer.byteLength(remainder, 'utf-8');
+        } catch {
+          // Incomplete JSON at EOF — don't advance offset past it
+        }
+      } else {
+        // Not a user message — advance offset
+        lastCompleteLineOffset += Buffer.byteLength(remainder, 'utf-8');
+      }
+    }
+
+    return { prompts, offset: lastCompleteLineOffset };
+  } catch {
+    // File read error — return empty with original offset
+    return { prompts: [], offset: startOffset };
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // Ignore close errors
+      }
+    }
+  }
+}
+
+/**
+ * Read the assistant response preview following a user prompt.
+ *
+ * Seeks to the given byte offset and reads forward to find the last
+ * assistant message before the next user message or EOF. Returns
+ * the text content truncated to ~200 chars, or null if no response found.
+ *
+ * @param filePath - Path to the JSONL file
+ * @param byteOffset - Byte offset of the user prompt to start after
+ * @returns Preview text of the assistant response, or null
+ */
+export function readResponsePreview(
+  filePath: string,
+  byteOffset: number,
+): string | null {
+  let fd: number | null = null;
+
+  try {
+    fd = fs.openSync(filePath, 'r');
+    const stat = fs.fstatSync(fd);
+    const fileSize = stat.size;
+
+    if (byteOffset >= fileSize) {
+      return null;
+    }
+
+    const buffer = Buffer.alloc(READ_BUFFER_SIZE);
+    let currentOffset = byteOffset;
+    let remainder = '';
+    let lastAssistantText: string | null = null;
+    let skippedFirstLine = false;
+
+    while (currentOffset < fileSize) {
+      const chunkSize = Math.min(READ_BUFFER_SIZE, fileSize - currentOffset);
+      const bytesRead = fs.readSync(fd, buffer, 0, chunkSize, currentOffset);
+
+      if (bytesRead === 0) break;
+
+      const chunk = remainder + buffer.toString('utf-8', 0, bytesRead);
+      const lines = chunk.split('\n');
+
+      remainder = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        // Skip the first line (the user prompt we started at)
+        if (!skippedFirstLine) {
+          skippedFirstLine = true;
+          continue;
+        }
+
+        // Stop at next real user message (not meta, not tool result)
+        if (
+          trimmed.includes('"type":"user"') &&
+          !trimmed.includes('"isMeta":true') &&
+          !trimmed.includes('"toolUseResult"')
+        ) {
+          // Found next user message — return what we have
+          return lastAssistantText;
+        }
+
+        // Check for assistant message
+        if (trimmed.includes('"type":"assistant"')) {
+          try {
+            const entry = JSON.parse(trimmed) as ClaudeTranscriptEntry;
+            if (entry.type === 'assistant') {
+              const text = extractMessageText(entry);
+              if (text) {
+                lastAssistantText = text.length > 200 ? text.slice(0, 200) : text;
+              }
+            }
+          } catch {
+            // Skip malformed lines
+          }
+        }
+      }
+
+      currentOffset += bytesRead;
+    }
+
+    // Handle remainder
+    if (remainder.trim()) {
+      const trimmed = remainder.trim();
+
+      // Check for user message (stop condition) — same logic as above
+      if (
+        trimmed.includes('"type":"user"') &&
+        !trimmed.includes('"isMeta":true') &&
+        !trimmed.includes('"toolUseResult"')
+      ) {
+        return lastAssistantText;
+      }
+
+      // Check for assistant message
+      if (trimmed.includes('"type":"assistant"')) {
+        try {
+          const entry = JSON.parse(trimmed) as ClaudeTranscriptEntry;
+          if (entry.type === 'assistant') {
+            const text = extractMessageText(entry);
+            if (text) {
+              lastAssistantText = text.length > 200 ? text.slice(0, 200) : text;
+            }
+          }
+        } catch {
+          // Incomplete JSON at EOF
+        }
+      }
+    }
+
+    return lastAssistantText;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // Ignore close errors
+      }
+    }
+  }
+}
+
 /**
  * Read JSONL file incrementally, only parsing new content since last read.
  *

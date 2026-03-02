@@ -20,7 +20,7 @@ import type { Thread } from './protocol/v2/Thread.js';
 import type { ThreadListResponse } from './protocol/v2/ThreadListResponse.js';
 import type { ThreadReadResponse } from './protocol/v2/ThreadReadResponse.js';
 import { adaptCodexItem } from './codex-entry-adapter.js';
-import { findCodexSessionFile, parseCodexJsonlFile } from './codex-jsonl-reader.js';
+import { findCodexSessionFile, parseCodexJsonlFile, scanCodexUserMessages } from './codex-jsonl-reader.js';
 import { adaptCodexJsonlRecords } from './codex-jsonl-adapter.js';
 import { CodexRpcClient, type CodexRpcClientOptions } from './codex-rpc-client.js';
 
@@ -90,6 +90,13 @@ export class CodexDiscovery implements VendorDiscovery {
   listSessions(): SessionInfo[] {
     this.maybeRefresh();
     return this.sessionCache;
+  }
+
+  /**
+   * Scan user activity (prompts) in a session file incrementally.
+   */
+  scanUserActivity(sessionPath: string, fromOffset = 0) {
+    return scanCodexUserMessages(sessionPath, fromOffset);
   }
 
   /**

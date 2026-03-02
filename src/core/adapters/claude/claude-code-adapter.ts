@@ -53,7 +53,7 @@ import { randomUUID } from 'crypto';
 import { platform } from 'os';
 import { AsyncIterableQueue } from '../../async-iterable-queue.js';
 import { adaptClaudeEntry, adaptClaudeEntries } from './claude-entry-adapter.js';
-import { parseJsonlFile, extractMetadataFast, readLinesFromOffset, extractInitModel } from './jsonl-reader.js';
+import { parseJsonlFile, extractMetadataFast, readLinesFromOffset, extractInitModel, scanUserMessages } from './jsonl-reader.js';
 import { loadSubagentEntries } from './subagent-loader.js';
 import {
   serializeToClaudeJsonl,
@@ -1673,6 +1673,10 @@ export const claudeDiscovery: VendorDiscovery = {
 
     const done = adapted.some((e: TranscriptEntry) => e.type === 'result');
     return { entries: adapted, cursor: String(newOffset), done };
+  },
+
+  scanUserActivity(sessionPath, fromOffset = 0) {
+    return scanUserMessages(sessionPath, fromOffset);
   },
 };
 

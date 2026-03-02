@@ -50,6 +50,9 @@ import {
   onProvidersChanged, getProviderBase,
 } from '../core/provider-config.js';
 import type { ProviderConfig } from '../core/provider-config.js';
+import { queryActivity } from '../core/activity-index.js';
+import { readResponsePreview } from '../core/adapters/claude/jsonl-reader.js';
+import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-reader.js';
 
 // ============================================================================
 // Path Containment
@@ -452,6 +455,22 @@ export function createClientConnection(
           subscriptions.set(result.pendingId, { channel, subscriber });
         }
         return { sessionId: result.pendingId };
+      }
+
+      case "getActivityLog": {
+        const from = params.from as string | undefined;
+        const to = params.to as string | undefined;
+        return queryActivity(from || to ? { from, to } : undefined);
+      }
+
+      case "getResponsePreview": {
+        const file = params.file as string;
+        const offset = params.offset as number;
+        // Route to correct vendor reader based on file path
+        if (file.includes('/.codex/') || file.includes('/codex/')) {
+          return readCodexResponsePreview(file, offset);
+        }
+        return readResponsePreview(file, offset);
       }
 
       default:

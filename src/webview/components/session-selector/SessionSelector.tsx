@@ -24,8 +24,10 @@ import { useSessionGrouping } from '../../hooks/useSessionGrouping.js';
 import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation.js';
 import type { WireSessionInfo } from '../../transport.js';
 import { FilterBar } from './FilterBar.js';
+import type { ViewMode } from './FilterBar.js';
 import { SessionGroupHeader } from './SessionGroupHeader.js';
 import { SessionItem } from './SessionItem.js';
+import { ActivityPathView } from './ActivityPathView.js';
 import './session-selector.css';
 
 /** Number of sessions to render initially before "Show more" */
@@ -44,6 +46,7 @@ export function SessionSelector(): React.JSX.Element {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeVendors, setActiveVendors] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('sessions');
   const deferredQuery = useDeferredValue(searchQuery);
   const listRef = useRef<HTMLUListElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -208,8 +211,14 @@ export function SessionSelector(): React.JSX.Element {
           onSearchChange={setSearchQuery}
           onSearchKeyDown={handleKeyDown}
           searchInputRef={searchInputRef}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
         />
-        <div className="crispy-session-empty">No conversations found</div>
+        {viewMode === 'activity' ? (
+          <ActivityPathView />
+        ) : (
+          <div className="crispy-session-empty">No conversations found</div>
+        )}
       </div>
     );
   }
@@ -230,54 +239,60 @@ export function SessionSelector(): React.JSX.Element {
         onSearchChange={setSearchQuery}
         onSearchKeyDown={handleKeyDown}
         searchInputRef={searchInputRef}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
       />
 
-      <ul className="crispy-session-list" ref={listRef}>
-        {visibleGroups.map(group => (
-          <li key={group.key} className="crispy-session-group">
-            <SessionGroupHeader label={group.label} />
-            <ul className="crispy-session-group__list">
-              {group.sessions.map(session => {
-                const idx = globalIndex++;
-                return (
-                  <SessionItem
-                    key={session.sessionId}
-                    session={session}
-                    isSelected={session.sessionId === selectedSessionId}
-                    isFocused={idx === focusIndex}
-                    isLive={isLiveSession(session.sessionId)}
-                    searchQuery={deferredQuery}
-                    onClick={() => handleSelect(session.sessionId)}
-                    index={idx}
-                  />
-                );
-              })}
-            </ul>
-          </li>
-        ))}
+      {viewMode === 'activity' ? (
+        <ActivityPathView />
+      ) : (
+        <ul className="crispy-session-list" ref={listRef}>
+          {visibleGroups.map(group => (
+            <li key={group.key} className="crispy-session-group">
+              <SessionGroupHeader label={group.label} />
+              <ul className="crispy-session-group__list">
+                {group.sessions.map(session => {
+                  const idx = globalIndex++;
+                  return (
+                    <SessionItem
+                      key={session.sessionId}
+                      session={session}
+                      isSelected={session.sessionId === selectedSessionId}
+                      isFocused={idx === focusIndex}
+                      isLive={isLiveSession(session.sessionId)}
+                      searchQuery={deferredQuery}
+                      onClick={() => handleSelect(session.sessionId)}
+                      index={idx}
+                    />
+                  );
+                })}
+              </ul>
+            </li>
+          ))}
 
-        {/* Empty state: filters active, no matches */}
-        {searchFiltered.length === 0 && (isSearching || activeVendors.size > 0) && (
-          <li className="crispy-session-empty">No matches</li>
-        )}
+          {/* Empty state: filters active, no matches */}
+          {searchFiltered.length === 0 && (isSearching || activeVendors.size > 0) && (
+            <li className="crispy-session-empty">No matches</li>
+          )}
 
-        {/* Empty state: no search, no filters, but CWD filter active */}
-        {searchFiltered.length === 0 && !isSearching && activeVendors.size === 0 && selectedCwd && (
-          <li className="crispy-session-empty">No conversations found</li>
-        )}
+          {/* Empty state: no search, no filters, but CWD filter active */}
+          {searchFiltered.length === 0 && !isSearching && activeVendors.size === 0 && selectedCwd && (
+            <li className="crispy-session-empty">No conversations found</li>
+          )}
 
-        {/* Show more button (only when NOT searching) */}
-        {hasMore && (
-          <li
-            className="crispy-session-item crispy-session-item--show-more"
-            onClick={() => setShowAll(true)}
-          >
-            <span className="crispy-session-item__label">
-              Show {totalFiltered - flatVisibleSessions.length} more\u2026
-            </span>
-          </li>
-        )}
-      </ul>
+          {/* Show more button (only when NOT searching) */}
+          {hasMore && (
+            <li
+              className="crispy-session-item crispy-session-item--show-more"
+              onClick={() => setShowAll(true)}
+            >
+              <span className="crispy-session-item__label">
+                Show {totalFiltered - flatVisibleSessions.length} more\u2026
+              </span>
+            </li>
+          )}
+        </ul>
+      )}
     </div>
   );
 }

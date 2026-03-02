@@ -150,7 +150,7 @@ h2 {
   top: 100%;
   left: 0;
   min-width: 320px;
-  width: max(320px, 40vw);
+  width: calc(100vw - 2rem);
   max-height: 70vh;
   background: var(--vscode-editor-background, #1e1e1e);
   border: 1px solid var(--vscode-panel-border, #333);

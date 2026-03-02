@@ -37,6 +37,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('crispy.editor.open', () => openCrispyPanel(context, workspaceOpts)),
+    vscode.commands.registerCommand('crispy.focus', () => openCrispyPanel(context, workspaceOpts)),
+    vscode.commands.registerCommand('crispy.blur', () => vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup')),
     vscode.commands.registerCommand('crispy.executeFile', async (uri: vscode.Uri) => {
       if (!uri) return;
       const doc = await vscode.workspace.openTextDocument(uri);

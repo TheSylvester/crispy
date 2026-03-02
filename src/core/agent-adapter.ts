@@ -76,6 +76,20 @@ export interface SubagentEntriesResult {
   done: boolean;
 }
 
+/** User prompt metadata extracted during activity scanning. */
+export interface UserPromptInfo {
+  timestamp: string;
+  preview: string;
+  offset: number;
+  uuid?: string;
+}
+
+/** Result from scanning user activity in a session file. */
+export interface UserActivityScanResult {
+  prompts: UserPromptInfo[];
+  offset: number;
+}
+
 export interface VendorDiscovery {
   readonly vendor: Vendor;
   findSession(sessionId: string): SessionInfo | undefined;
@@ -95,6 +109,18 @@ export interface VendorDiscovery {
     parentToolUseId: string,
     cursor: string,
   ): SubagentEntriesResult;
+
+  /**
+   * Scan user activity (prompts) in a session file incrementally.
+   *
+   * Optional — vendors that don't support activity scanning omit this.
+   * The offset is a byte offset into the JSONL file; pass the returned
+   * offset on the next call to continue scanning from where you left off.
+   *
+   * @param sessionPath - Absolute path to the session JSONL file
+   * @param fromOffset - Byte offset to start scanning from (default 0)
+   */
+  scanUserActivity?(sessionPath: string, fromOffset?: number): UserActivityScanResult;
 }
 
 // ============================================================================

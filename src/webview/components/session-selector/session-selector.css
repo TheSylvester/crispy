@@ -81,6 +81,48 @@
   color: var(--vscode-input-placeholderForeground, #717171);
 }
 
+/* --- Filter Bar Top Row (CWD + View Toggle) --- */
+
+.crispy-filter-bar__top-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.crispy-filter-bar__top-row .crispy-filter-bar__cwd {
+  flex: 1;
+  min-width: 0;
+}
+
+.crispy-filter-bar__view-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.15s, background 0.15s;
+  font-size: 14px;
+  flex-shrink: 0;
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-filter-bar__view-toggle:hover {
+  opacity: 0.85;
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-filter-bar__view-toggle[aria-pressed="true"] {
+  opacity: 1;
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+  border-color: var(--vscode-panel-border, #444);
+}
+
 /* --- Vendor Chips --- */
 
 .crispy-vendor-chips {
@@ -306,4 +348,292 @@
   font-size: var(--font-xs);
   padding: 12px 16px;
   text-align: center;
+}
+
+/* ============================================================================
+ * Activity Path View
+ *
+ * Matrix layout with three column groups:
+ *   1. TIME column — sticky at left:0, ~80px, date + time
+ *   2. PROMPT column — sticky at left:80px, wider, 3-line clamped user text
+ *   3. Session lanes — horizontally scrollable, 3-line clamped response text
+ * ============================================================================ */
+
+.crispy-activity-path {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.crispy-activity-path__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--vscode-panel-border, #333);
+  flex-shrink: 0;
+}
+
+.crispy-activity-path__count {
+  font-size: var(--font-xs);
+  color: var(--vscode-descriptionForeground, #858585);
+}
+
+.crispy-activity-path__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  color: var(--vscode-descriptionForeground, #858585);
+  font-size: 12px;
+}
+
+/* --- Matrix layout --- */
+
+.crispy-activity-path__matrix {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* --- TIME column (sticky left:0) --- */
+
+.crispy-activity-path__time-col {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border-right: 1px solid var(--vscode-panel-border, #333);
+  width: 80px;
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.crispy-activity-path__time-row {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  padding: 4px 6px 4px 3px;
+  height: 60px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--vscode-panel-border, #222);
+  border-left: 3px solid var(--lane-color, transparent);
+  background: color-mix(in srgb, var(--lane-color, transparent) 5%, var(--vscode-editor-background, #1e1e1e));
+  cursor: default;
+}
+
+.crispy-activity-path__date {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground, #858585);
+  white-space: nowrap;
+}
+
+.crispy-activity-path__clock {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground, #858585);
+  white-space: nowrap;
+  opacity: 0.7;
+}
+
+/* --- PROMPT column (sticky left:80px) --- */
+
+.crispy-activity-path__prompt-col {
+  position: sticky;
+  left: 80px;
+  z-index: 2;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border-right: 1px solid var(--vscode-panel-border, #333);
+  min-width: 200px;
+  max-width: 300px;
+  flex-shrink: 0;
+}
+
+/* --- Shared header --- */
+
+.crispy-activity-path__header {
+  padding: 6px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground, #858585);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--vscode-panel-border, #333);
+  height: 36px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  /* Freeze header row — sticky top within the scrollable matrix */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--vscode-editor-background, #1e1e1e);
+}
+
+.crispy-activity-path__header--time {
+  justify-content: center;
+}
+
+.crispy-activity-path__header--lane {
+  min-width: 160px;
+  max-width: 220px;
+  justify-content: flex-start;
+  padding: 6px 8px;
+  white-space: nowrap;
+  border-bottom: 2px solid var(--lane-color, var(--vscode-panel-border, #333));
+  background: color-mix(in srgb, var(--lane-color, transparent) 10%, var(--vscode-editor-background, #1e1e1e));
+}
+
+.crispy-activity-path__lane-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground, #858585);
+  text-transform: none;
+  letter-spacing: normal;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  -webkit-line-clamp: unset;
+  -webkit-box-orient: unset;
+}
+
+/* --- Prompt rows --- */
+
+.crispy-activity-path__prompt-row {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px 4px 5px;
+  height: 60px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--vscode-panel-border, #222);
+  border-left: 3px solid var(--lane-color, transparent);
+  background: color-mix(in srgb, var(--lane-color, transparent) 5%, var(--vscode-editor-background, #1e1e1e));
+  cursor: default;
+}
+
+/* --- Thread lanes (scrollable columns) --- */
+
+.crispy-activity-path__lanes {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.crispy-activity-path__lane {
+  min-width: 160px;
+  max-width: 220px;
+  border-right: 1px solid var(--vscode-panel-border, #222);
+}
+
+.crispy-activity-path__cell {
+  height: 60px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--vscode-panel-border, #222);
+  display: flex;
+  align-items: center;
+  padding: 4px 6px;
+  position: relative;
+  /* Base tint: row's session color (--row-color set via inline style) */
+  background: color-mix(in srgb, var(--row-color, transparent) 5%, transparent);
+}
+
+.crispy-activity-path__cell--active {
+  /* Same background as the row — no special color for responses */
+  cursor: pointer;
+  align-items: flex-end;
+  padding: 10px 6px 4px 6px;
+}
+
+.crispy-activity-path__cell--active:hover {
+  background: color-mix(in srgb, var(--row-color, transparent) 12%, var(--vscode-editor-background, #1e1e1e));
+}
+
+/* --- Horizontal row highlight (crosshair with vertical lane highlight) --- */
+
+.crispy-activity-path__row--highlighted {
+  background: color-mix(in srgb, var(--lane-color, transparent) 20%, var(--vscode-list-hoverBackground, #2a2d2e));
+}
+
+.crispy-activity-path__row--sibling {
+  background: color-mix(in srgb, var(--lane-color, transparent) 10%, var(--vscode-editor-background, #1e1e1e));
+}
+
+.crispy-activity-path__cell--row-hover {
+  background: color-mix(in srgb, var(--row-color, transparent) 15%, var(--vscode-list-hoverBackground, #2a2d2e));
+}
+
+.crispy-activity-path__cell--active.crispy-activity-path__cell--row-hover {
+  background: color-mix(in srgb, var(--row-color, transparent) 15%, var(--vscode-editor-background, #1e1e1e));
+}
+
+.crispy-activity-path__cell-placeholder {
+  color: var(--vscode-descriptionForeground, #858585);
+  font-size: 11px;
+  opacity: 0.4;
+}
+
+/* --- TruncatedCell: 3-line clamp (native title tooltip via HTML attr) --- */
+
+.crispy-activity-path__truncated {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.crispy-activity-path__clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-activity-path__response-text .crispy-activity-path__clamp {
+  color: var(--vscode-descriptionForeground, #a0a0a0);
+  text-align: right;
+}
+
+/* --- Lane hover highlight --- */
+
+.crispy-activity-path__lane--focused {
+  background: color-mix(in srgb, var(--lane-color, transparent) 5%, var(--vscode-editor-background, #1e1e1e));
+}
+
+.crispy-activity-path__lane--focused .crispy-activity-path__header--lane {
+  color: var(--vscode-foreground, #d4d4d4);
+  background: color-mix(in srgb, var(--lane-color, transparent) 18%, transparent);
+}
+
+/* --- Load More button --- */
+
+.crispy-activity-path__load-more-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.crispy-activity-path__load-more-spacer {
+  height: 60px;
+}
+
+.crispy-activity-path__load-more {
+  padding: 4px 12px;
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #d4d4d4);
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: var(--font-xs);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.crispy-activity-path__load-more:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #505357);
 }

@@ -14,6 +14,8 @@ import type { KeyboardEvent, ChangeEvent, RefObject } from 'react';
 import type { AvailableCwd } from '../../hooks/useAvailableCwds.js';
 import { VendorChips } from './VendorChips.js';
 
+export type ViewMode = 'sessions' | 'activity';
+
 interface FilterBarProps {
   /** Available project CWDs for the project selector. */
   availableCwds: AvailableCwd[];
@@ -35,6 +37,10 @@ interface FilterBarProps {
   onSearchKeyDown: (e: KeyboardEvent) => void;
   /** Ref forwarded to the search input for focus management. */
   searchInputRef: RefObject<HTMLInputElement | null>;
+  /** Current view mode — sessions list or activity path. */
+  viewMode?: ViewMode;
+  /** Callback when view mode is toggled. */
+  onViewModeChange?: (mode: ViewMode) => void;
 }
 
 export function FilterBar({
@@ -48,6 +54,8 @@ export function FilterBar({
   onSearchChange,
   onSearchKeyDown,
   searchInputRef,
+  viewMode = 'sessions',
+  onViewModeChange,
 }: FilterBarProps): React.JSX.Element {
   const handleCwdChange = (e: ChangeEvent<HTMLSelectElement>) => {
     onCwdChange(e.target.value || null);
@@ -55,35 +63,49 @@ export function FilterBar({
 
   return (
     <div className="crispy-filter-bar">
-      {availableCwds.length > 0 && (
-        <select
-          className="crispy-filter-bar__cwd"
-          value={selectedCwd ?? ''}
-          onChange={handleCwdChange}
-          title="Filter by project"
-        >
-          <option value="">All Projects</option>
-          {availableCwds.map(cwd => (
-            <option key={cwd.slug} value={cwd.slug} title={cwd.fullPath}>
-              {cwd.display}
-            </option>
-          ))}
-        </select>
-      )}
+      <div className="crispy-filter-bar__top-row">
+        {availableCwds.length > 0 && (
+          <select
+            className="crispy-filter-bar__cwd"
+            value={selectedCwd ?? ''}
+            onChange={handleCwdChange}
+            title="Filter by project"
+          >
+            <option value="">All Projects</option>
+            {availableCwds.map(cwd => (
+              <option key={cwd.slug} value={cwd.slug} title={cwd.fullPath}>
+                {cwd.display}
+              </option>
+            ))}
+          </select>
+        )}
+        {onViewModeChange && (
+          <button
+            className="crispy-filter-bar__view-toggle"
+            aria-pressed={viewMode === 'activity'}
+            onClick={() => onViewModeChange(viewMode === 'sessions' ? 'activity' : 'sessions')}
+            title={viewMode === 'sessions' ? 'Show Activity Path' : 'Show Sessions'}
+          >
+            {viewMode === 'sessions' ? '⚡' : '☰'}
+          </button>
+        )}
+      </div>
       <VendorChips
         availableVendors={availableVendors}
         activeVendors={activeVendors}
         onToggle={onVendorToggle}
       />
-      <input
-        ref={searchInputRef}
-        className="crispy-filter-bar__search"
-        type="text"
-        placeholder="Search conversations…"
-        value={searchQuery}
-        onChange={e => onSearchChange(e.target.value)}
-        onKeyDown={onSearchKeyDown}
-      />
+      {viewMode === 'sessions' && (
+        <input
+          ref={searchInputRef}
+          className="crispy-filter-bar__search"
+          type="text"
+          placeholder="Search conversations…"
+          value={searchQuery}
+          onChange={e => onSearchChange(e.target.value)}
+          onKeyDown={onSearchKeyDown}
+        />
+      )}
     </div>
   );
 }

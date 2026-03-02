@@ -138,6 +138,9 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     deleteProvider: (slug) => request<{ deleted: boolean }>('deleteProvider', { slug }),
     getModelGroups: () => request<VendorModelGroup[]>('getModelGroups'),
 
+    getActivityLog: (timeRange?) => request<import('../core/activity-index.js').ActivityIndexEntry[]>('getActivityLog', timeRange ?? {}),
+    getResponsePreview: (file, offset) => request<string | null>('getResponsePreview', { file, offset }),
+
     onEvent(handler) {
       eventHandlers.push(handler);
       return () => {

@@ -22,6 +22,7 @@ import { syncProviders, startWatching } from '../core/provider-config.js';
 import { createClientConnection } from './client-connection.js';
 import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
+import { runScan } from '../core/activity-scanner.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
 
@@ -126,4 +127,11 @@ server.listen(PORT, () => {
   console.log(`[dev-server] Serving static files from: ${STATIC_DIR}`);
   console.log(`[dev-server] Adapters registered`);
   startRescan();
+
+  // Activity scanning — deferred to avoid blocking server startup
+  const safeRunScan = () => {
+    try { runScan(); } catch (err) { console.error('[dev-server] Activity scan failed:', err); }
+  };
+  setImmediate(safeRunScan);
+  setInterval(safeRunScan, 30_000);
 });
