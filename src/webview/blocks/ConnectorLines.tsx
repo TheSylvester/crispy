@@ -35,6 +35,7 @@ function useConnectorPaths(): ConnectorPath[] {
   const panelDisplayIds = usePanelDisplayIds();
   const [paths, setPaths] = useState<ConnectorPath[]>([]);
   const rafRef = useRef<number>(0);
+  const settleRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const computePaths = useCallback(() => {
     const transcriptScroll = document.querySelector('.crispy-transcript');
@@ -52,14 +53,17 @@ function useConnectorPaths(): ConnectorPath[] {
       getComputedStyle(document.documentElement).getPropertyValue('--titlebar-height')
     ) || 36;
 
-    const result: ConnectorPath[] = [];
+    // First pass: collect visible line endpoints
+    const items: Array<{
+      toolId: string;
+      leftX: number; leftY: number;
+      rightX: number; rightY: number;
+    }> = [];
 
     for (const toolId of panelDisplayIds) {
-      // Find transcript-side element
       const transcriptEl = transcriptScroll.querySelector(
         `.crispy-blocks-tool[data-tool-id="${toolId}"]`
       );
-      // Find panel-side element
       const panelEl = panelScroll.querySelector(
         `[data-run-id="${toolId}"]`
       );
@@ -78,14 +82,26 @@ function useConnectorPaths(): ConnectorPath[] {
       const pVisibleBottom = Math.min(pRect.bottom, panelRect.bottom);
       if (pVisibleBottom <= pVisibleTop) continue; // scrolled out
 
-      const leftY = (tVisibleTop + tVisibleBottom) / 2 - titlebarHeight;
-      const rightY = (pVisibleTop + pVisibleBottom) / 2 - titlebarHeight;
+      items.push({
+        toolId,
+        leftX: tRect.right,
+        leftY: (tVisibleTop + tVisibleBottom) / 2 - titlebarHeight,
+        rightX: pRect.left,
+        rightY: (pVisibleTop + pVisibleBottom) / 2 - titlebarHeight,
+      });
+    }
 
-      const leftX = tRect.right;
-      const rightX = pRect.left;
-      const midX = (leftX + rightX) / 2;
+    // Second pass: sort by transcript Y so lines fan out top-to-bottom,
+    // then spread each line's vertical segment into its own lane across
+    // the gap. With N lines the lanes sit at 1/(N+1), 2/(N+1), … N/(N+1).
+    items.sort((a, b) => a.leftY - b.leftY);
+    const count = items.length;
 
-      // Three-segment stepped path: H → V → H
+    const result: ConnectorPath[] = [];
+    for (let i = 0; i < count; i++) {
+      const { toolId, leftX, leftY, rightX, rightY } = items[i];
+      const t = count === 1 ? 0.5 : (i + 1) / (count + 1);
+      const midX = leftX + (rightX - leftX) * t;
       const d = `M ${leftX},${leftY} H ${midX} V ${rightY} H ${rightX}`;
       result.push({ toolId, d });
     }
@@ -93,13 +109,22 @@ function useConnectorPaths(): ConnectorPath[] {
     setPaths(result);
   }, [panelDisplayIds]);
 
-  // Schedule a rAF-guarded recompute
+  // Schedule a rAF-guarded recompute — cancel-and-reschedule so the last
+  // layout event always wins (avoids freezing on intermediate coordinates).
+  // Also queues a delayed "settle" pass (~200ms) to catch post-animation
+  // positions — VS Code animates editor layout changes, so the first rAF
+  // often reads mid-transition coordinates.
   const scheduleUpdate = useCallback(() => {
-    if (rafRef.current) return;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = 0;
       computePaths();
     });
+    // Settle pass: recompute after CSS transitions finish
+    clearTimeout(settleRef.current);
+    settleRef.current = setTimeout(() => {
+      requestAnimationFrame(computePaths);
+    }, 200);
   }, [computePaths]);
 
   useEffect(() => {
@@ -125,11 +150,17 @@ function useConnectorPaths(): ConnectorPath[] {
       resizeObserver.observe(layout);
     }
 
+    // Window resize — catches viewport shifts from editor group rearrangement,
+    // sidebar/terminal toggle, or VS Code panel moves.
+    window.addEventListener('resize', scheduleUpdate);
+
     return () => {
       cancelled = true;
       transcriptScroll?.removeEventListener('scroll', scheduleUpdate);
       panelScroll?.removeEventListener('scroll', scheduleUpdate);
+      window.removeEventListener('resize', scheduleUpdate);
       resizeObserver?.disconnect();
+      clearTimeout(settleRef.current);
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = 0;
