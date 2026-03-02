@@ -55,7 +55,11 @@ interface SessionLane {
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  let h = d.getHours();
+  const suffix = h >= 12 ? 'pm' : 'am';
+  h = h % 12 || 12;
+  const m = d.getMinutes().toString().padStart(2, '0');
+  return `${h}:${m}${suffix}`;
 }
 
 function formatDate(iso: string): string {
@@ -74,9 +78,11 @@ function formatDate(iso: string): string {
 // ============================================================================
 
 function TruncatedCell({ text, className }: { text: string; className?: string }) {
+  // Append ellipsis when the preview appears truncated (no terminal punctuation)
+  const display = text && !/[.!?…)\]]$/.test(text.trimEnd()) ? text + '…' : text;
   return (
     <div className={`crispy-activity-path__truncated ${className ?? ''}`} title={text}>
-      <span className="crispy-activity-path__clamp">{text}</span>
+      <span className="crispy-activity-path__clamp">{display}</span>
     </div>
   );
 }
@@ -147,6 +153,13 @@ export function ActivityPathView(): React.JSX.Element {
   const laneColorMap = useMemo(() => {
     const map = new Map<string, string>();
     lanes.forEach((lane, i) => map.set(lane.file, LANE_COLORS[i % LANE_COLORS.length]));
+    return map;
+  }, [lanes]);
+
+  // Per-lane index for staircase indent (B1: border-left width varies per thread)
+  const laneIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    lanes.forEach((lane, i) => map.set(lane.file, i));
     return map;
   }, [lanes]);
 
@@ -318,7 +331,7 @@ export function ActivityPathView(): React.JSX.Element {
         // Visible horizontal band = scrollLeft + sticky columns → scrollLeft + clientWidth
         const timeCol = matrix.querySelector('.crispy-activity-path__time-col') as HTMLElement | null;
         const promptCol = matrix.querySelector('.crispy-activity-path__prompt-col') as HTMLElement | null;
-        const stickyW = (timeCol?.offsetWidth ?? 80) + (promptCol?.offsetWidth ?? 200);
+        const stickyW = (timeCol?.offsetWidth ?? 52) + (promptCol?.offsetWidth ?? 160);
 
         const viewLeft = matrix.scrollLeft + stickyW;
         const viewRight = matrix.scrollLeft + matrix.clientWidth;
@@ -359,12 +372,6 @@ export function ActivityPathView(): React.JSX.Element {
 
   return (
     <div className="crispy-activity-path">
-      <div className="crispy-activity-path__controls">
-        <span className="crispy-activity-path__count">
-          Showing {paginatedEntries.length} of {sortedEntries.length}
-        </span>
-      </div>
-
       <div
         className="crispy-activity-path__matrix"
         ref={matrixRef}
@@ -398,7 +405,7 @@ export function ActivityPathView(): React.JSX.Element {
           })}
         </div>
 
-        {/* PROMPT column (sticky left:80px) */}
+        {/* PROMPT column (sticky left:52px) */}
         <div className="crispy-activity-path__prompt-col">
           <div className="crispy-activity-path__header crispy-activity-path__header--prompts">
             Your Prompt
@@ -423,7 +430,7 @@ export function ActivityPathView(): React.JSX.Element {
                 data-row={i}
                 data-file={entry.file}
                 onClick={isClickable ? () => handleCellClick(entryLane) : undefined}
-                style={{ cursor: isClickable ? 'pointer' : undefined, '--lane-color': laneColorMap.get(entry.file) } as React.CSSProperties}
+                style={{ cursor: isClickable ? 'pointer' : undefined, '--lane-color': laneColorMap.get(entry.file), '--lane-indent': `${(laneIndexMap.get(entry.file) ?? 0) * 6}px` } as React.CSSProperties}
               >
                 <TruncatedCell text={entry.preview} className="crispy-activity-path__prompt-text" />
               </div>

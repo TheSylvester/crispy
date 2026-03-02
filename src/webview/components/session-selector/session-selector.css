@@ -353,8 +353,8 @@
  * Activity Path View
  *
  * Matrix layout with three column groups:
- *   1. TIME column — sticky at left:0, ~80px, date + time
- *   2. PROMPT column — sticky at left:80px, wider, 3-line clamped user text
+ *   1. TIME column — sticky at left:0, ~52px, date + compact AM/PM time
+ *   2. PROMPT column — sticky at left:52px, wider, 3-line clamped user text
  *   3. Session lanes — horizontally scrollable, 3-line clamped response text
  * ============================================================================ */
 
@@ -364,20 +364,6 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
-}
-
-.crispy-activity-path__controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--vscode-panel-border, #333);
-  flex-shrink: 0;
-}
-
-.crispy-activity-path__count {
-  font-size: var(--font-xs);
-  color: var(--vscode-descriptionForeground, #858585);
 }
 
 .crispy-activity-path__empty {
@@ -406,8 +392,8 @@
   z-index: 3;
   background: var(--vscode-editor-background, #1e1e1e);
   border-right: 1px solid var(--vscode-panel-border, #333);
-  width: 80px;
-  min-width: 80px;
+  width: 52px;
+  min-width: 52px;
   flex-shrink: 0;
 }
 
@@ -415,12 +401,12 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
   gap: 1px;
-  padding: 4px 6px 4px 3px;
-  height: 60px;
+  padding: 4px 4px;
+  height: 80px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--vscode-panel-border, #222);
-  border-left: 3px solid var(--lane-color, transparent);
   background: color-mix(in srgb, var(--lane-color, transparent) 5%, var(--vscode-editor-background, #1e1e1e));
   cursor: default;
 }
@@ -438,16 +424,16 @@
   opacity: 0.7;
 }
 
-/* --- PROMPT column (sticky left:80px) --- */
+/* --- PROMPT column (sticky left:52px) --- */
 
 .crispy-activity-path__prompt-col {
   position: sticky;
-  left: 80px;
+  left: 52px;
   z-index: 2;
   background: var(--vscode-editor-background, #1e1e1e);
   border-right: 1px solid var(--vscode-panel-border, #333);
-  min-width: 200px;
-  max-width: 300px;
+  min-width: 160px;
+  max-width: 240px;
   flex-shrink: 0;
 }
 
@@ -461,7 +447,7 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 1px solid var(--vscode-panel-border, #333);
-  height: 36px;
+  min-height: 60px;
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -482,7 +468,6 @@
   max-width: 220px;
   justify-content: flex-start;
   padding: 6px 8px;
-  white-space: nowrap;
   border-bottom: 2px solid var(--lane-color, var(--vscode-panel-border, #333));
   background: color-mix(in srgb, var(--lane-color, transparent) 10%, var(--vscode-editor-background, #1e1e1e));
 }
@@ -493,26 +478,38 @@
   color: var(--vscode-descriptionForeground, #858585);
   text-transform: none;
   letter-spacing: normal;
-  display: block;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  -webkit-line-clamp: unset;
-  -webkit-box-orient: unset;
+  line-height: 1.3;
 }
 
 /* --- Prompt rows --- */
 
 .crispy-activity-path__prompt-row {
   display: flex;
-  align-items: center;
-  padding: 4px 8px 4px 5px;
-  height: 60px;
+  align-items: flex-start;
+  padding: 4px 8px 2rem calc(var(--lane-indent, 0px) + 8px);
+  height: 80px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--vscode-panel-border, #222);
-  border-left: 3px solid var(--lane-color, transparent);
   background: color-mix(in srgb, var(--lane-color, transparent) 5%, var(--vscode-editor-background, #1e1e1e));
   cursor: default;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Staircase indent bar — positioned via --lane-indent custom property */
+.crispy-activity-path__prompt-row::before {
+  content: '';
+  position: absolute;
+  left: var(--lane-indent, 0px);
+  top: 4px;
+  bottom: 2rem;
+  width: 3px;
+  background: var(--lane-color, transparent);
+  border-radius: 1px;
 }
 
 /* --- Thread lanes (scrollable columns) --- */
@@ -529,7 +526,7 @@
 }
 
 .crispy-activity-path__cell {
-  height: 60px;
+  height: 80px;
   box-sizing: border-box;
   border-bottom: 1px solid var(--vscode-panel-border, #222);
   display: flex;
@@ -541,10 +538,10 @@
 }
 
 .crispy-activity-path__cell--active {
-  /* Same background as the row — no special color for responses */
+  /* Call-and-response: responses pushed to bottom of cell */
   cursor: pointer;
   align-items: flex-end;
-  padding: 10px 6px 4px 6px;
+  padding: calc(4px + 2rem) 6px 4px 6px;
 }
 
 .crispy-activity-path__cell--active:hover {
@@ -567,6 +564,23 @@
 
 .crispy-activity-path__cell--active.crispy-activity-path__cell--row-hover {
   background: color-mix(in srgb, var(--lane-color, transparent) 15%, var(--vscode-editor-background, #1e1e1e));
+}
+
+/* Dim inactive rows when any row is hovered — makes the active conversation pop */
+.crispy-activity-path__prompt-row .crispy-activity-path__clamp {
+  transition: opacity 0.15s;
+}
+
+.crispy-activity-path__matrix:has(.crispy-activity-path__row--highlighted)
+  .crispy-activity-path__prompt-row:not(.crispy-activity-path__row--highlighted):not(.crispy-activity-path__row--sibling)
+  .crispy-activity-path__clamp {
+  opacity: 0.3;
+}
+
+.crispy-activity-path__matrix:has(.crispy-activity-path__row--highlighted)
+  .crispy-activity-path__time-row:not(.crispy-activity-path__row--highlighted):not(.crispy-activity-path__row--sibling) {
+  opacity: 0.35;
+  transition: opacity 0.15s;
 }
 
 .crispy-activity-path__cell-placeholder {
@@ -594,8 +608,45 @@
 }
 
 .crispy-activity-path__response-text .crispy-activity-path__clamp {
-  color: var(--vscode-descriptionForeground, #a0a0a0);
+  color: var(--vscode-foreground, #d4d4d4);
   text-align: right;
+}
+
+/* --- Dots-until-hover: hide response text by default, show dot indicator --- */
+
+.crispy-activity-path__cell--active .crispy-activity-path__response-text {
+  visibility: hidden;
+}
+
+.crispy-activity-path__cell--active::after {
+  content: '·';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: var(--lane-color, var(--vscode-descriptionForeground, #858585));
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* On row hover: reveal full response text, hide dot */
+.crispy-activity-path__cell--row-hover.crispy-activity-path__cell--active .crispy-activity-path__response-text {
+  visibility: visible;
+}
+
+.crispy-activity-path__cell--row-hover.crispy-activity-path__cell--active::after {
+  display: none;
+}
+
+/* On lane focus: reveal ALL responses in the focused column, hide dots */
+.crispy-activity-path__lane--focused .crispy-activity-path__cell--active .crispy-activity-path__response-text {
+  visibility: visible;
+}
+
+.crispy-activity-path__lane--focused .crispy-activity-path__cell--active::after {
+  display: none;
 }
 
 /* --- Lane hover highlight --- */
@@ -618,7 +669,7 @@
 }
 
 .crispy-activity-path__load-more-spacer {
-  height: 60px;
+  height: 80px;
 }
 
 .crispy-activity-path__load-more {
