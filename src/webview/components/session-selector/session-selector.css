@@ -648,11 +648,11 @@
   overflow: hidden;
   font-size: 11px;
   line-height: 1.3;
-  color: var(--vscode-foreground, #d4d4d4);
+  color: var(--vscode-editor-foreground, #d4d4d4);
 }
 
 .crispy-activity-path__response-text .crispy-activity-path__clamp {
-  color: var(--vscode-foreground, #d4d4d4);
+  color: var(--vscode-editor-foreground, #d4d4d4);
   text-align: right;
 }
 
