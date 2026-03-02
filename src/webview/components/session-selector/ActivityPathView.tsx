@@ -245,6 +245,21 @@ export function ActivityPathView(): React.JSX.Element {
   const hoverRef = useRef<{ row: string; file: string; els: Element[] } | null>(null);
   const laneScrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
+  // Suppress lane auto-scroll while user is actively scrolling (wheel/trackpad)
+  const userScrollingRef = useRef(false);
+  const wheelCooldown = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    const el = matrixRef.current;
+    if (!el) return;
+    const onWheel = () => {
+      userScrollingRef.current = true;
+      clearTimeout(wheelCooldown.current);
+      wheelCooldown.current = setTimeout(() => { userScrollingRef.current = false; }, 300);
+    };
+    el.addEventListener('wheel', onWheel, { passive: true });
+    return () => { el.removeEventListener('wheel', onWheel); clearTimeout(wheelCooldown.current); };
+  }, [loading]);
+
   const clearHighlights = useCallback(() => {
     clearTimeout(laneScrollTimer.current);
     if (!hoverRef.current) return;
@@ -293,6 +308,7 @@ export function ActivityPathView(): React.JSX.Element {
       // scrolling isn't interrupted, and never touches scrollTop.
       clearTimeout(laneScrollTimer.current);
       laneScrollTimer.current = setTimeout(() => {
+        if (userScrollingRef.current) return;
         const laneEl = lane as HTMLElement;
         const lanesBox = laneEl.offsetParent as HTMLElement | null;
         if (!lanesBox) return;
