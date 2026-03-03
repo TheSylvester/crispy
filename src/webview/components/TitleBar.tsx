@@ -150,14 +150,21 @@ function ConnectionDot({
       : `Status: ${channelState}`;
 
   return (
-    <span
-      className={dotClass}
-      title={title}
-      onClick={handleCopy}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCopy(); }}
-    />
+    <span className="crispy-titlebar__dot-wrapper">
+      <span
+        className={dotClass}
+        title={title}
+        onClick={handleCopy}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCopy(); }}
+      />
+      {copied && sessionId && (
+        <span className="crispy-titlebar__dot-copied-label">
+          Copied <span className="crispy-titlebar__dot-copied-id">{sessionId.slice(0, 8)}</span>
+        </span>
+      )}
+    </span>
   );
 }
 

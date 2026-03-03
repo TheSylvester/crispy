@@ -2880,11 +2880,50 @@ h2 {
   animation: crispy-dot-pulse-amber 2s ease-in-out infinite;
 }
 
+/* Dot wrapper — positioning context for copied label */
+.crispy-titlebar__dot-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
 /* Copied flash — brief bright highlight on click-to-copy */
 .crispy-titlebar__dot--copied {
   background: var(--vscode-foreground) !important;
   box-shadow: 0 0 6px rgba(255, 255, 255, 0.8) !important;
   animation: none !important;
+}
+
+/* "Copied!" label — appears beside the dot */
+.crispy-titlebar__dot-copied-label {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--vscode-foreground, #d4d4d4);
+  background: var(--bg-panel, #1e1e1e);
+  border: 1px solid var(--border-panel, #333);
+  border-radius: var(--radius-sm, 4px);
+  padding: 2px 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: crispy-copied-fade 1.5s ease-out forwards;
+  z-index: 100;
+}
+
+.crispy-titlebar__dot-copied-id {
+  font-family: var(--font-mono);
+  opacity: 0.6;
+  margin-left: 3px;
+}
+
+@keyframes crispy-copied-fade {
+  0% { opacity: 0; transform: translateY(-50%) translateX(-4px); }
+  15% { opacity: 1; transform: translateY(-50%) translateX(0); }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 @keyframes crispy-dot-pulse-green {
@@ -3614,7 +3653,8 @@ h2 {
   .crispy-cp-fork__icon,
   .crispy-cp-send__icon,
   .crispy-cp-settings__btn,
-  .crispy-titlebar__dot {
+  .crispy-titlebar__dot,
+  .crispy-titlebar__dot-copied-label {
     animation: none !important;
     transition-duration: 0.01ms !important;
   }
