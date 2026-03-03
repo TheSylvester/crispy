@@ -14,16 +14,14 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AsyncIterableQueue } from '../src/core/async-iterable-queue.js';
-import type { AgentAdapter, AdapterSettings, SessionInfo, ChannelMessage, VendorDiscovery } from '../src/core/agent-adapter.js';
+import type { AgentAdapter, AdapterSettings, SessionInfo, ChannelMessage, VendorDiscovery, TurnSettings } from '../src/core/agent-adapter.js';
 import type { TranscriptEntry, MessageContent, Vendor } from '../src/core/transcript.js';
-import type { ChannelStatus, HistoryMessage, ChannelCatchupMessage } from '../src/core/channel-events.js';
-import type { Subscriber } from '../src/core/session-channel.js';
-
-/** Union of all messages a subscriber can receive. */
-type SubscriberMessage = ChannelMessage | HistoryMessage | ChannelCatchupMessage;
+import type { ChannelStatus } from '../src/core/channel-events.js';
+import type { Subscriber, SubscriberMessage } from '../src/core/session-channel.js';
 
 import {
   _resetRegistry as _resetChannelRegistry,
+  getChannel,
 } from '../src/core/session-channel.js';
 
 import {
@@ -35,8 +33,6 @@ import {
   loadSession,
   listAllSessions,
   subscribeSession,
-  sendToSession,
-  setSessionModel,
   interruptSession,
   closeSession,
   _resetRegistry,
@@ -105,13 +101,15 @@ function createMockAdapter(options?: MockAdapterOptions): MockAdapter {
   const sessionId = options?.sessionId;
   let status: ChannelStatus = 'idle';
 
+  const sendTurnMock = vi.fn((_content: MessageContent, _settings: TurnSettings) => {});
+
   return {
     vendor,
     get sessionId() { return sessionId; },
     get status() { return status; },
     get contextUsage() { return null; },
     get settings(): AdapterSettings {
-      return { model: undefined, permissionMode: undefined, allowDangerouslySkipPermissions: false, extraArgs: undefined };
+      return { vendor, model: undefined, permissionMode: undefined, allowDangerouslySkipPermissions: false, extraArgs: undefined };
     },
     outputQueue: queue,
 
@@ -119,7 +117,7 @@ function createMockAdapter(options?: MockAdapterOptions): MockAdapter {
       return queue;
     },
 
-    send: vi.fn((_content: MessageContent) => {}),
+    sendTurn: sendTurnMock as unknown as AgentAdapter['sendTurn'],
 
     respondToApproval: vi.fn((_toolUseId: string, _optionId: string) => {}),
 
@@ -154,7 +152,7 @@ function createMockAdapter(options?: MockAdapterOptions): MockAdapter {
 function createCapturingFactory(options?: { vendor?: Vendor }) {
   let last: MockAdapter | undefined;
   return {
-    factory: (_sessionId: string) => {
+    factory: (_spec: unknown) => {
       last = createMockAdapter(options);
       return last;
     },
@@ -388,8 +386,8 @@ describe('loadSession (read-only)', () => {
 
     await loadSession('sess-1');
 
-    // Sending to this session should throw because no channel was opened
-    expect(() => sendToSession('sess-1', 'hello')).toThrow('No open channel');
+    // No channel was opened — loadSession is read-only
+    expect(getChannel('sess-1')).toBeUndefined();
   });
 });
 
@@ -459,44 +457,6 @@ describe('subscribeSession', () => {
 
 // ========== 4. Session-Keyed Live Operations ==========
 
-describe('sendToSession', () => {
-  it('delegates to the channel adapter send()', async () => {
-    const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
-    const { factory, lastCreated } = createCapturingFactory({ vendor: 'claude' });
-    registerAdapter(discovery, factory);
-
-    const sub = createTestSubscriber('sub-1');
-    await subscribeSession('sess-1', sub);
-
-    sendToSession('sess-1', 'Hello world');
-    expect(lastCreated().send).toHaveBeenCalledWith('Hello world', undefined);
-  });
-
-  it('throws when no channel is open', () => {
-    expect(() => sendToSession('nonexistent', 'hello')).toThrow('No open channel');
-  });
-});
-
-describe('setSessionModel', () => {
-  it('delegates to adapter.setModel()', async () => {
-    const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
-    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
-    const { factory, lastCreated } = createCapturingFactory({ vendor: 'claude' });
-    registerAdapter(discovery, factory);
-
-    const sub = createTestSubscriber('sub-1');
-    await subscribeSession('sess-1', sub);
-
-    await setSessionModel('sess-1', 'opus');
-    expect(lastCreated().setModel).toHaveBeenCalledWith('opus');
-  });
-
-  it('throws when no channel is open', async () => {
-    await expect(setSessionModel('nonexistent', 'opus')).rejects.toThrow('No open channel');
-  });
-});
-
 describe('interruptSession', () => {
   it('delegates to adapter.interrupt()', async () => {
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
@@ -527,8 +487,8 @@ describe('closeSession', () => {
 
     closeSession('sess-1');
 
-    // Channel is gone — operations should throw
-    expect(() => sendToSession('sess-1', 'hello')).toThrow('No open channel');
+    // Channel is gone
+    expect(getChannel('sess-1')).toBeUndefined();
 
     // No broadcast on teardown — channel is torn down (state set internally)
     expect(channel.state).toBe('unattached');
@@ -552,7 +512,7 @@ describe('_resetRegistry', () => {
 
     expect(getDiscovery('claude')).toBeUndefined();
     expect(getDiscoveries()).toHaveLength(0);
-    expect(() => sendToSession('sess-1', 'hello')).toThrow('No open channel');
+    expect(getChannel('sess-1')).toBeUndefined();
   });
 });
 
@@ -601,7 +561,7 @@ describe('Regression: per-session adapters allow multiple live sessions', () => 
 
     // Second session still alive
     expect(channel2.state).not.toBe('unattached');
-    expect(() => sendToSession('sess-2', 'hi')).not.toThrow();
+    expect(channel2.adapter).not.toBeNull();
   });
 
   it('different vendors can have simultaneous live sessions', async () => {
@@ -706,13 +666,13 @@ describe('Regression: unregisterAdapter closes live sessions', () => {
     const channel = await subscribeSession('sess-1', sub);
 
     // Verify channel is live
-    expect(() => sendToSession('sess-1', 'hi')).not.toThrow();
+    expect(getChannel('sess-1')).toBeDefined();
 
     // Unregister the vendor
     unregisterAdapter('claude');
 
     // Channel should be torn down
-    expect(() => sendToSession('sess-1', 'hello')).toThrow('No open channel');
+    expect(getChannel('sess-1')).toBeUndefined();
 
     // Discovery should be gone
     expect(getDiscovery('claude')).toBeUndefined();
@@ -741,10 +701,10 @@ describe('Regression: unregisterAdapter closes live sessions', () => {
     unregisterAdapter('claude');
 
     // Claude session is gone
-    expect(() => sendToSession('sess-c1', 'hi')).toThrow('No open channel');
+    expect(getChannel('sess-c1')).toBeUndefined();
 
     // Codex session is still alive
-    expect(() => sendToSession('sess-x1', 'hi')).not.toThrow();
+    expect(getChannel('sess-x1')).not.toBeUndefined();
   });
 });
 
@@ -764,7 +724,7 @@ describe('Regression: concurrent subscribeSession coalescing', () => {
     );
 
     let factoryCallCount = 0;
-    const factory = (_sessionId: string) => {
+    const factory = (_spec: unknown) => {
       factoryCallCount++;
       return createMockAdapter({ vendor: 'claude' });
     };
@@ -790,8 +750,10 @@ describe('Regression: concurrent subscribeSession coalescing', () => {
     // Factory was called only once (coalesced)
     expect(factoryCallCount).toBe(1);
 
-    // loadHistory was called only once
-    expect(discovery.loadHistory).toHaveBeenCalledTimes(1);
+    // loadHistory is called twice: once during channel init, once for the second
+    // subscriber's catchup (via loadSession). This ensures both subscribers
+    // receive history entries in their catchup message.
+    expect(discovery.loadHistory).toHaveBeenCalledTimes(2);
   });
 
   it('concurrent calls share a single channel initialization', async () => {
@@ -817,13 +779,14 @@ describe('Regression: concurrent subscribeSession coalescing', () => {
     // Both got the same channel
     expect(ch1).toBe(ch2);
 
-    // loadHistory was called only once (coalesced)
-    expect(discovery.loadHistory).toHaveBeenCalledTimes(1);
+    // loadHistory is called twice: once during init, once for the second
+    // subscriber's catchup. Both subscribers receive history in their catchup.
+    expect(discovery.loadHistory).toHaveBeenCalledTimes(2);
 
-    // Note: the history broadcast happens during init before either subscriber
-    // is added (subscribe() runs after the init promise resolves), so neither
-    // subscriber receives the history event. What matters is that the channel's
-    // entryIndex reflects the loaded history.
+    // The channel's entryIndex reflects the loaded history (set by subscribe()
+    // when entries are passed). The second subscriber's subscribe() call may
+    // overwrite this, but since both loads return the same entries, the value
+    // stays consistent.
     expect(ch1.entryIndex).toBe(1);
 
     // Both subscribers are registered

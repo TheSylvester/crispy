@@ -187,7 +187,7 @@ describe('send() guards', () => {
   it('throws after close()', () => {
     const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
     ch.close();
-    expect(() => ch.send('hello')).toThrow('Channel is closed');
+    expect(() => ch.sendTurn('hello', {})).toThrow('Channel is closed');
   });
 
   it('throws when awaiting approval', async () => {
@@ -198,7 +198,7 @@ describe('send() guards', () => {
     });
 
     const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
-    ch.send('hi');
+    ch.sendTurn('hi', {});
     await tick();
 
     // Trigger canUseTool to move status → awaiting_approval
@@ -212,7 +212,7 @@ describe('send() guards', () => {
     await tick();
 
     expect(ch.status).toBe('awaiting_approval');
-    expect(() => ch.send('another')).toThrow('Cannot send while awaiting approval');
+    expect(() => ch.sendTurn('another', {})).toThrow('Cannot send while awaiting approval');
 
     // Cleanup
     ch.close();
@@ -223,11 +223,11 @@ describe('send() guards', () => {
     mockQueryFn.mockReturnValue(deferred.query);
 
     const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
-    ch.send('first');
+    ch.sendTurn('first', {});
     await tick();
     expect(mockQueryFn).toHaveBeenCalledTimes(1);
 
-    ch.send('second');
+    ch.sendTurn('second', {});
     await tick();
     expect(mockQueryFn).toHaveBeenCalledTimes(1); // still one query
 
@@ -248,7 +248,7 @@ describe('Message routing', () => {
       // assistant → active status + entry
       msg({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] }, parent_tool_use_id: null, uuid: 'u2', session_id: 's1' }),
       // user → entry
-      msg({ type: 'user', message: { role: 'user', content: 'test' }, parent_tool_use_id: null, session_id: 's1' }),
+      msg({ type: 'user', message: { role: 'user', content: 'test' }, parent_tool_use_id: null, uuid: 'u2b', session_id: 's1' }),
       // user with isReplay → skipped
       msg({ type: 'user', message: { role: 'user', content: 'old' }, parent_tool_use_id: null, isReplay: true, uuid: 'u3', session_id: 's1' }),
       // system/status compacting → compacting notification
@@ -275,7 +275,7 @@ describe('Message routing', () => {
     mockQueryFn.mockReturnValue(mockQ);
 
     const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
-    ch.send('go');
+    ch.sendTurn('go', {});
 
     // Collect until we see the idle status (query completed)
     const output = await collectUntil(ch, (msgs) =>
@@ -286,10 +286,11 @@ describe('Message routing', () => {
     const entries = output.filter((m) => m.type === 'entry');
     const events = output.filter((m) => m.type === 'event');
 
-    // Entries: init, assistant, user (not replay), compact_boundary,
-    //          system-no-subtype, tool_use_summary, result = 7
+    // Entries: init, assistant, compact_boundary,
+    //          system-no-subtype, tool_use_summary, result = 6
+    //          (user message is suppressed due to sendTurn() echo suppression)
     //          (stream_event intentionally not emitted — partial deltas have no content)
-    expect(entries.length).toBe(7);
+    expect(entries.length).toBe(6);
 
     // Events: session_changed (first session_id), active (from startQuery),
     //         compacting, permission_mode_changed, idle = 5
@@ -315,7 +316,7 @@ describe('Session tracking', () => {
     mockQueryFn.mockReturnValue(deferred.query);
 
     const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
-    ch.send('start');
+    ch.sendTurn('start', {});
     await tick();
 
     // First message with session_id → session_changed (no previousSessionId)
@@ -367,7 +368,7 @@ describe('Permission flow', () => {
       return deferred.query;
     });
     const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
-    ch.send('hi');
+    ch.sendTurn('hi', {});
     return { ch, deferred, getCanUseTool: () => capturedOptions!.canUseTool! };
   }
 
@@ -491,7 +492,7 @@ describe('Concurrent approvals', () => {
     });
 
     const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
-    ch.send('go');
+    ch.sendTurn('go', {});
     await tick();
 
     const canUseTool = capturedOptions!.canUseTool!;
@@ -527,7 +528,7 @@ describe('close() & lifecycle', () => {
     mockQueryFn.mockReturnValue(deferred.query);
 
     const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
-    ch.send('go');
+    ch.sendTurn('go', {});
     await tick();
 
     ch.close();
@@ -552,7 +553,7 @@ describe('close() & lifecycle', () => {
     });
 
     const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
-    ch.send('go');
+    ch.sendTurn('go', {});
     await tick();
 
     const canUseTool = capturedOptions!.canUseTool!;
@@ -574,7 +575,7 @@ describe('close() & lifecycle', () => {
     mockQueryFn.mockReturnValue(deferred.query);
 
     const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
-    ch.send('go');
+    ch.sendTurn('go', {});
     await tick();
 
     deferred.fail(new Error('SDK crash'));
@@ -606,7 +607,7 @@ describe('close() & lifecycle', () => {
     mockQueryFn.mockReturnValue(mockQ);
 
     const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
-    ch.send('go');
+    ch.sendTurn('go', {});
 
     const output = await collectUntil(
       ch,
@@ -643,7 +644,7 @@ describe('sdkOptions invariants', () => {
       abortController: fakeAbort,
     });
 
-    ch.send('test');
+    ch.sendTurn('test', {});
     await tick();
 
     // Invariants: adapter's own values, NOT the user's

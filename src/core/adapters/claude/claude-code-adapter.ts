@@ -17,7 +17,6 @@ import type {
   AdapterSettings,
   VendorDiscovery,
   ChannelMessage,
-  SendOptions,
   TurnSettings,
   SessionInfo as AgentSessionInfo,
 } from '../../agent-adapter.js';
@@ -465,46 +464,6 @@ export class ClaudeAgentAdapter implements AgentAdapter {
    */
   messages(): AsyncIterable<ChannelMessage> {
     return this.outputQueue;
-  }
-
-  send(content: MessageContent, options?: SendOptions): void {
-    if (this._closed) {
-      throw new Error('Channel is closed');
-    }
-    if (this._status === 'awaiting_approval') {
-      throw new Error('Cannot send while awaiting approval');
-    }
-
-    // Apply send options to session config before starting the query.
-    // When a query is already active these won't affect the current SDK
-    // options, but they'll be used for the next startQuery().
-    if (options) {
-      if (options.model !== undefined) {
-        this.options.model = options.model || undefined;
-      }
-      if (options.permissionMode !== undefined) {
-        this.options.permissionMode = options.permissionMode as Options['permissionMode'];
-      }
-      if (options.allowDangerouslySkipPermissions !== undefined) {
-        this.options.allowDangerouslySkipPermissions = options.allowDangerouslySkipPermissions;
-      }
-    }
-
-    const sdkMessage = this.toSDKUserMessage(content);
-
-    if (!this.activeQuery || !this.inputQueue) {
-      // No active session — spin up a new query().
-      // Options were applied above, so startQuery reads this.options
-      // with the caller's model/permissionMode already merged in.
-      this.startQuery(sdkMessage);
-    } else {
-      // Session is running — apply mid-stream option changes directly
-      // to the active Query before enqueuing the message.
-      if (options?.permissionMode) {
-        this.activeQuery.setPermissionMode(options.permissionMode as PermissionMode);
-      }
-      this.inputQueue.enqueue(sdkMessage);
-    }
   }
 
   sendTurn(content: MessageContent, settings: TurnSettings): void {

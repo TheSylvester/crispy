@@ -27,16 +27,22 @@
  * @module session-channel
  */
 
-import type { AgentAdapter, ChannelMessage, SendOptions } from './agent-adapter.js';
-import type { MessageContent, TranscriptEntry } from './transcript.js';
+import type { AgentAdapter, ChannelMessage } from './agent-adapter.js';
+import type { TranscriptEntry } from './transcript.js';
 import type {
   ChannelCatchupMessage,
-  HistoryMessage,
   PendingApprovalInfo,
 } from './channel-events.js';
 
 // Re-export for backwards compatibility
 export type { PendingApprovalInfo } from './channel-events.js';
+
+/**
+ * Union of all message types a subscriber can receive:
+ * - ChannelMessage: entry or event from the adapter
+ * - ChannelCatchupMessage: state sync for late subscribers (includes history entries)
+ */
+export type SubscriberMessage = ChannelMessage | ChannelCatchupMessage;
 
 // ============================================================================
 // Subscriber — anything that wants to receive channel events
@@ -47,8 +53,8 @@ export type { PendingApprovalInfo } from './channel-events.js';
  * Could be a VS Code webview panel, an SSE connection, a test harness, etc.
  *
  * The channel is a "dumb fan-out pipe" — it broadcasts raw ChannelMessage
- * from the adapter, plus HistoryMessage for backfill and ChannelCatchupMessage
- * for late subscriber sync.
+ * from the adapter, plus ChannelCatchupMessage for late subscriber sync
+ * (which includes history entries).
  *
  * The single-method interface makes it trivially adaptable:
  *   - Webview: `{ id, send: (e) => panel.webview.postMessage(e) }`
@@ -57,7 +63,7 @@ export type { PendingApprovalInfo } from './channel-events.js';
  */
 export interface Subscriber {
   readonly id: string;
-  send(event: ChannelMessage | HistoryMessage | ChannelCatchupMessage): void;
+  send(event: ChannelMessage | ChannelCatchupMessage): void;
 }
 
 // ============================================================================
@@ -150,7 +156,13 @@ export function createChannel(channelId: string): SessionChannel {
   return channel;
 }
 
-/** Get a channel by ID. */
+/**
+ * Get a channel by ID.
+ *
+ * @internal Test and diagnostic scripts only. Production code should use the
+ * channel returned by session-manager functions (subscribeSession, sendTurn,
+ * etc.) rather than looking it up by ID.
+ */
 export function getChannel(channelId: string): SessionChannel | undefined {
   return channels.get(channelId);
 }
@@ -194,11 +206,24 @@ export function _resetRegistry(): void {
  * subscriber with the same ID.
  *
  * Late subscribers immediately receive a catchup message with current
- * channel state (including pending approvals), so their UI matches the
- * session's actual state without waiting for the next event.
+ * channel state (including pending approvals and optional history entries),
+ * so their UI matches the session's actual state without waiting for the
+ * next event.
+ *
+ * @param entries Optional history entries to include in the catchup message.
+ *                When provided, the channel's entryIndex is set to entries.length.
  */
-export function subscribe(channel: SessionChannel, subscriber: Subscriber): void {
+export function subscribe(
+  channel: SessionChannel,
+  subscriber: Subscriber,
+  entries?: TranscriptEntry[],
+): void {
   channel.subscribers.set(subscriber.id, subscriber);
+
+  // Set entry index if history provided (only advance, never go backward)
+  if (entries?.length && entries.length > channel.entryIndex) {
+    channel.entryIndex = entries.length;
+  }
 
   // Emit catchup with current state (skip 'unattached' — no useful state)
   if (channel.state !== 'unattached') {
@@ -210,6 +235,7 @@ export function subscribe(channel: SessionChannel, subscriber: Subscriber): void
         settings: channel.adapter?.settings ?? null,
         contextUsage: channel.adapter?.contextUsage ?? null,
         pendingApprovals: Array.from(channel.pendingApprovals.values()),
+        entries: entries ?? [],
       };
       subscriber.send(catchup);
     } catch { /* swallow — consistent with broadcast() */ }
@@ -228,7 +254,7 @@ export function unsubscribe(channel: SessionChannel, subscriberOrId: Subscriber 
 // Broadcast — single entry point, try-catch per subscriber
 // ============================================================================
 
-function broadcast(channel: SessionChannel, event: ChannelMessage | HistoryMessage): void {
+function broadcast(channel: SessionChannel, event: ChannelMessage): void {
   for (const [, subscriber] of channel.subscribers) {
     try {
       subscriber.send(event);
@@ -353,22 +379,6 @@ function startConsumptionLoop(channel: SessionChannel): void {
 // ============================================================================
 
 /**
- * Send a user message into the channel.
- *
- * Guards: throws if no adapter. The adapter handles lazy query start,
- * closed checks, and awaiting_approval guards internally.
- *
- * Options (model, permissionMode, etc.) are threaded through to the
- * adapter so they can be applied atomically at query start time.
- */
-export function sendMessage(channel: SessionChannel, message: MessageContent, options?: SendOptions): void {
-  if (!channel.adapter) {
-    throw new Error('No adapter set. Call setAdapter() first.');
-  }
-  channel.adapter.send(message, options);
-}
-
-/**
  * Respond to a pending approval request.
  *
  * - Delegates to adapter.respondToApproval() — adapter validates optionId
@@ -395,24 +405,6 @@ export function resolveApproval(
   channel.adapter.respondToApproval(toolUseId, optionId, extra);
   channel.pendingApprovals.delete(toolUseId);
   // No broadcast — the adapter will emit status events when it resumes
-}
-
-/**
- * Backfill historical transcript entries and broadcast them as a batch.
- * Subscribers receive a single { type: "history" } event with all entries,
- * rather than N individual entry events — avoids render thrashing.
- *
- * Stateless — does not change channel state. Accepts pre-loaded entries
- * so the caller (session-manager) handles discovery/loading.
- */
-export function backfillHistory(
-  channel: SessionChannel,
-  entries: TranscriptEntry[],
-): void {
-  if (entries.length === 0) return;
-
-  broadcast(channel, { type: 'history', entries });
-  channel.entryIndex = entries.length;
 }
 
 /**

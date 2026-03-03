@@ -2,8 +2,8 @@
  * useTranscript — load + subscribe to a session's transcript
  *
  * When sessionId changes:
- * 1. Subscribe to live events via transport
- * 2. Load history via transport.loadSession()
+ * 1. Subscribe to live events via transport (which includes history in the catchup)
+ * 2. Extract history entries from the catchup event
  * 3. Append live entries as they arrive
  *
  * Optimistic user messages: addOptimisticEntry() injects a synthetic user
@@ -36,9 +36,9 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
 
   // Track previous sessionId to detect pending→real transitions.
   // When a pending session resolves to its real ID, we skip the full
-  // load cycle (subscribe + loadSession) because the event stream is
-  // already active and entries (including any optimistic ones) should
-  // be preserved rather than wiped.
+  // load cycle (subscribe) because the event stream is already active
+  // and entries (including any optimistic ones) should be preserved
+  // rather than wiped.
   const prevSessionIdRef = useRef<string | null>(null);
 
   const addOptimisticEntry = useCallback((entry: TranscriptEntry) => {
@@ -75,25 +75,34 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
 
       if (event.type === 'entry') {
         setEntries((prev) => {
-          // Dedup: if the incoming entry is a user message and the last entry is
-          // an optimistic placeholder, replace it with the real backend echo.
-          const last = prev[prev.length - 1];
-          if (
-            event.entry.type === 'user' &&
-            last?.uuid?.startsWith('optimistic-')
-          ) {
-            return [...prev.slice(0, -1), event.entry];
+          // Dedup: if the incoming entry is a user message, find and replace
+          // its optimistic placeholder (uuid = "optimistic-" + real uuid).
+          if (event.entry.type === 'user') {
+            const optimisticUuid = 'optimistic-' + event.entry.uuid;
+            const idx = prev.findIndex(e => e.uuid === optimisticUuid);
+            if (idx !== -1) {
+              const next = [...prev];
+              next[idx] = event.entry;
+              return next;
+            }
           }
           return [...prev, event.entry];
         });
-      } else if (event.type === 'history') {
-        // History backfill from subscription — handled by setForkHistory for forks,
-        // overwritten by loadSession response for normal sessions.
+      } else if (event.type === 'catchup' && 'entries' in event && event.entries.length > 0) {
+        // History is now included in the catchup message.
+        // Preserve any optimistic entries already in state.
+        setEntries((prev) => {
+          const optimistic = prev.filter(
+            (e) => e.uuid?.startsWith('optimistic-') && e.sessionId === sessionId
+          );
+          if (optimistic.length === 0) return event.entries;
+          return [...event.entries, ...optimistic];
+        });
       }
     });
 
     async function load() {
-      // Skip subscribe/loadSession for pending sessions — the subscription
+      // Skip subscribe for pending sessions — the subscription
       // is already set up by createSession on the host side. Live entries
       // will arrive via the event stream.
       if (sessionId!.startsWith('pending:')) {
@@ -113,25 +122,11 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
       setIsLoading(true);
       setError(null);
       try {
-        // Subscribe first so we don't miss events between load and subscribe
+        // Subscribe — the catchup message includes history entries, so we no
+        // longer need a separate loadSession() call. The onEvent handler above
+        // will receive the catchup and populate entries.
         await transport.subscribe(sessionId!);
         if (unmounted) return;
-
-        // Load full history — overwrites any early events from subscription backfill.
-        // Preserve optimistic entries that haven't been echoed yet.
-        const history = await transport.loadSession(sessionId!);
-        if (unmounted) return;
-
-        setEntries((prev) => {
-          // Only preserve optimistic entries that belong to *this* session.
-          // The early clear (above) already flushed cross-session leftovers,
-          // but guard here too: only keep entries added after the clear.
-          const optimistic = prev.filter(
-            (e) => e.uuid?.startsWith('optimistic-') && e.sessionId === sessionId
-          );
-          if (optimistic.length === 0) return history;
-          return [...history, ...optimistic];
-        });
       } catch (err) {
         if (unmounted) return;
         setError(err instanceof Error ? err.message : String(err));

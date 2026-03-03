@@ -127,10 +127,6 @@ export interface ChannelCatchupMessage {
   settings: import('./agent-adapter.js').AdapterSettings | null;
   contextUsage: import('./transcript.js').ContextUsage | null;
   pendingApprovals: PendingApprovalInfo[];
-}
-
-/** History backfill message sent as a batch to avoid render thrashing. */
-export interface HistoryMessage {
-  type: 'history';
+  /** Transcript entries loaded from history. Empty array for fresh sessions. */
   entries: import('./transcript.js').TranscriptEntry[];
 }

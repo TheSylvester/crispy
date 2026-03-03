@@ -21,7 +21,6 @@ import type {
   SessionOpenSpec,
   AdapterSettings,
   TurnSettings,
-  SendOptions,
 } from '../../agent-adapter.js';
 import type { ChannelStatus } from '../../channel-events.js';
 import type {
@@ -102,7 +101,7 @@ export class CodexAgentAdapter implements AgentAdapter {
     };
 
     // Set initial sessionId from spec if resuming/forking
-    if (spec.mode === 'resume' || spec.mode === 'continue') {
+    if (spec.mode === 'resume') {
       this._sessionId = spec.sessionId;
     } else if (spec.mode === 'fork') {
       this._sessionId = spec.fromSessionId;
@@ -130,16 +129,6 @@ export class CodexAgentAdapter implements AgentAdapter {
 
   messages(): AsyncIterable<ChannelMessage> {
     return this.outputQueue;
-  }
-
-  send(content: MessageContent, options?: SendOptions): void {
-    // Delegate to sendTurn for backwards compatibility
-    const settings: TurnSettings = {
-      model: options?.model,
-      permissionMode: options?.permissionMode,
-      allowDangerouslySkipPermissions: options?.allowDangerouslySkipPermissions,
-    };
-    this.sendTurn(content, settings);
   }
 
   sendTurn(content: MessageContent, settings: TurnSettings): void {
@@ -268,22 +257,6 @@ export class CodexAgentAdapter implements AgentAdapter {
     // Applied on next turn/start via overrides
   }
 
-  prepareQueryRestart(updates: {
-    allowDangerouslySkipPermissions?: boolean;
-    extraArgs?: Record<string, string | null>;
-  }): void {
-    if (updates.allowDangerouslySkipPermissions !== undefined) {
-      this._settings = {
-        ...this._settings,
-        allowDangerouslySkipPermissions: updates.allowDangerouslySkipPermissions,
-      };
-    }
-    if (updates.extraArgs !== undefined) {
-      this._settings = { ...this._settings, extraArgs: updates.extraArgs };
-    }
-    this.emitSettingsChanged();
-  }
-
   // --- Private: Startup ---
 
   private async start(): Promise<void> {
@@ -323,8 +296,7 @@ export class CodexAgentAdapter implements AgentAdapter {
         break;
       }
 
-      case 'resume':
-      case 'continue': {
+      case 'resume': {
         response = await this.client.request('thread/resume', {
           threadId: this.spec.sessionId,
         });

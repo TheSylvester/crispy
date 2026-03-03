@@ -146,19 +146,19 @@ React 19, esbuild, vanilla CSS with `var(--vscode-*)` theme variables.
   expand a module's responsibility, update the header first and flag it for
   review.
 
-### Frozen layer boundaries — do not modify without approval
+### Stable layer boundaries — modify with care
 
-- **`agent-adapter.ts`** — Frozen. The entire adapter contract: `AgentAdapter`,
-  `VendorDiscovery`, `SessionInfo`, `ChannelMessage`, `SendOptions`,
-  `TurnIntent`, `TurnSettings`, `TurnTarget`, `TurnReceipt`,
-  `SessionOpenSpec`, `AdapterSettings`, `SubagentEntriesResult`. New adapters
-  implement these types — they do not extend them.
-- **`channel-events.ts`** — Frozen. The event types adapters emit.
-- **`session-channel.ts`** — Frozen. Dumb pub/sub broker. Forwards
-  `ChannelMessage` as-is to all subscribers. No transformation, no
-  interpretation, no new event types. Frontend derives state client-side.
-- **`transcript.ts`** — Frozen. Vendor-agnostic universal types. No
-  vendor-specific fields. Use the `metadata` bag for vendor extras.
+- **`agent-adapter.ts`** — The adapter contract: `AgentAdapter`,
+  `VendorDiscovery`, `SessionInfo`, `ChannelMessage`, `TurnIntent`,
+  `TurnSettings`, `TurnTarget`, `SessionOpenSpec`, `AdapterSettings`,
+  `SubagentEntriesResult`. New adapters implement these types — they do not
+  extend them.
+- **`channel-events.ts`** — The event types adapters emit.
+- **`session-channel.ts`** — Dumb pub/sub broker. Forwards `ChannelMessage`
+  as-is to all subscribers. No transformation, no interpretation, no new
+  event types. Frontend derives state client-side.
+- **`transcript.ts`** — Vendor-agnostic universal types. No vendor-specific
+  fields. Use the `metadata` bag for vendor extras.
 
 ## Commands
 

@@ -3,7 +3,7 @@
  *
  * Parent shell that composes all control sub-components. Uses useReducer
  * for coupled cross-field state (bypass ↔ agency mode). Send is wired to
- * transport — submitting the chat input calls transport.send() with the
+ * transport — submitting the chat input calls transport.sendTurn() with the
  * active session. Other controls remain local/visual-only.
  *
  * Two rows:
@@ -132,8 +132,6 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
       return { ...state, contextPercent: 0, contextUsage: null };
     case 'SET_FORK_MODE':
       return { ...state, forkMode: action.forkMode };
-    case 'SET_CURRENT_VENDOR':
-      return { ...state, currentVendor: action.vendor };
     default:
       return state;
   }
@@ -356,10 +354,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // legacy permission_mode_changed (from adapter) and the new settings_changed
     // (broadcast after each sendTurn) for cross-panel sync.
     useEffect(() => {
-      if (!selectedSessionId) {
-        dispatch({ type: 'SET_CURRENT_VENDOR', vendor: null });
-      }
-
       const off = transport.onEvent((sessionId, event) => {
         if (sessionId !== selectedSessionId) return;
 
@@ -373,7 +367,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             ? ''
             : `${settings.vendor}:${rawModel}`;
           dispatch({ type: 'SET_MODEL', model: modelValue });
-          dispatch({ type: 'SET_CURRENT_VENDOR', vendor: settings.vendor });
           // Sync permission mode → agency mode
           if (settings.permissionMode) {
             const agencyMode = mapPermissionModeToAgency(settings.permissionMode);
@@ -456,7 +449,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         return realPath ?? workspaceCwdPath ?? slugToPath(selectedCwd);
       })();
 
-      // Build target — detect cross-vendor switch for continueIn routing
+      // Build target — session manager detects vendor switches internally
       let target: TurnTarget;
       if (state.forkMode) {
         target = {
@@ -468,21 +461,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       } else if (!selectedSessionId) {
         target = { kind: 'new', vendor, cwd: resolvedCwd };
       } else {
-        if (state.currentVendor && state.currentVendor !== vendor) {
-          // Cross-vendor switch — continue conversation in new vendor.
-          // Use adapter-reported vendor (state.currentVendor) instead of
-          // sessions.find() which may miss newly created sessions not yet
-          // in the session list cache.
-          const currentSession = sessions.find(s => s.sessionId === selectedSessionId);
-          target = {
-            kind: 'continueIn',
-            targetVendor: vendor,
-            sourceSessionId: selectedSessionId!,
-            cwd: currentSession?.projectPath ?? workspaceCwdPath ?? slugToPath(selectedCwd ?? ''),
-          };
-        } else {
-          target = { kind: 'existing', sessionId: selectedSessionId! };
-        }
+        // Pass model so session manager can detect vendor switches internally
+        target = { kind: 'existing', sessionId: selectedSessionId!, model: state.model };
       }
 
       // Build TurnIntent with unified routing target
@@ -530,8 +510,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       transport.sendTurn(intent)
         .then((receipt) => {
           clearSendError();
-          // For new/fork targets, update selected session to the returned ID
-          if (intent.target.kind !== 'existing') {
+          // Update selected session if it changed (new/fork/vendor-switch)
+          if (receipt.sessionId !== selectedSessionId) {
             setSelectedSessionId(receipt.sessionId);
           }
         })
@@ -547,7 +527,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             dispatch({ type: 'SET_FORK_MODE', forkMode: forkModeBackup });
           }
         });
-    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, state.forkMode, state.currentVendor, selectedSessionId, selectedCwd, sessions, setSelectedSessionId, setOptimisticStatus, transport, onScrollToBottom, onOptimisticEntry, showSendError, clearSendError, workspaceCwdPath]);
+    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, state.forkMode, selectedSessionId, selectedCwd, sessions, setSelectedSessionId, setOptimisticStatus, transport, onScrollToBottom, onOptimisticEntry, showSendError, clearSendError, workspaceCwdPath]);
 
     // Keep ref in sync so forkConfig auto-send always calls the latest handleSend
     useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);

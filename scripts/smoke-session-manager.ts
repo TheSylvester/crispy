@@ -20,7 +20,6 @@ import {
   listAllSessions,
   loadSession,
   subscribeSession,
-  sendToSession,
   closeSession,
   _resetRegistry,
 } from '../src/core/session-manager.js';
@@ -28,17 +27,12 @@ import {
 import { ClaudeAgentAdapter, claudeDiscovery } from '../src/core/adapters/claude/claude-code-adapter.js';
 import type { SessionOpenSpec } from '../src/core/agent-adapter.js';
 
-import type { Subscriber, SessionChannel } from '../src/core/session-channel.js';
-import type { ChannelMessage } from '../src/core/agent-adapter.js';
-import type { HistoryMessage, ChannelCatchupMessage } from '../src/core/channel-events.js';
+import type { Subscriber, SessionChannel, SubscriberMessage } from '../src/core/session-channel.js';
 
-/** Union of all messages a subscriber can receive. */
-type SubscriberMessage = ChannelMessage | HistoryMessage | ChannelCatchupMessage;
 import {
   createChannel,
   setAdapter,
   subscribe,
-  sendMessage,
   destroyChannel,
 } from '../src/core/session-channel.js';
 
@@ -249,15 +243,14 @@ async function main(): Promise<void> {
   }
 
   // --------------------------------------------------------------------------
-  // Step 7: Verify channel state and history backfill
+  // Step 7: Verify channel state and history in catchup
   // --------------------------------------------------------------------------
-  header('Step 7: Verify channel state and history backfill');
+  header('Step 7: Verify channel state and history in catchup');
 
   if (channel) {
-    // subscribeSession() calls loadHistory() -> broadcast() BEFORE adding
-    // the subscriber, so the subscriber won't see the history event directly.
-    // This is by design — the subscriber gets future live events only.
-    // We verify the pipeline worked by inspecting channel state.
+    // subscribeSession() includes history entries in the catchup message,
+    // so the subscriber receives a catchup event with entries[].
+    // We verify the pipeline worked by inspecting channel state and catchup.
 
     const checks = {
       channelState: channel.state === 'idle',
@@ -284,22 +277,31 @@ async function main(): Promise<void> {
     recordStep(
       `History backfilled (entryIndex > 0)`,
       checks.historyBackfilled,
-      `entryIndex: ${channel.entryIndex} (entries loaded before subscriber was added)`,
+      `entryIndex: ${channel.entryIndex}`,
     );
 
-    // If the subscriber did receive any events (e.g. state_changed from
-    // the consumption loop), report them too
+    // Subscriber should receive catchup with entries
+    const catchupEvents = collected.filter(e => e.type === 'catchup');
+    if (catchupEvents.length > 0) {
+      const catchup = catchupEvents[0];
+      const entryCount = 'entries' in catchup ? catchup.entries.length : 0;
+      recordStep(
+        `Catchup includes history entries`,
+        entryCount > 0,
+        `catchup.entries.length: ${entryCount}`,
+      );
+    }
+
+    // Report all received events
     if (collected.length > 0) {
       const eventCounts = new Map<string, number>();
       for (const evt of collected) {
         eventCounts.set(evt.type, (eventCounts.get(evt.type) ?? 0) + 1);
       }
-      console.log(`\n  ${DIM}Subscriber also received ${collected.length} live event(s):${RESET}`);
+      console.log(`\n  ${DIM}Subscriber received ${collected.length} event(s):${RESET}`);
       for (const [type, count] of [...eventCounts.entries()].sort()) {
         console.log(indent(`${type}: ${count}`));
       }
-    } else {
-      console.log(`\n  ${DIM}Subscriber received 0 events (expected — no live session, history was delivered before subscribe)${RESET}`);
     }
   } else {
     recordStep('Channel inspection', false, 'No channel available (subscribeSession failed)');
@@ -592,10 +594,10 @@ async function runPhaseA(): Promise<void> {
   console.log(`  ${DIM}Sending: "${prompt}"${RESET}`);
 
   try {
-    sendMessage(liveChannel, prompt);
-    recordStep('sendMessage() succeeded (query started)', true);
+    liveAdapter.send(prompt);
+    recordStep('adapter.send() succeeded (query started)', true);
   } catch (err) {
-    recordStep('sendMessage() succeeded', false, String(err));
+    recordStep('adapter.send() succeeded', false, String(err));
     destroyChannel(channelId);
     unregisterAdapter('claude');
     throw err;
@@ -844,10 +846,10 @@ async function runPhaseC(): Promise<void> {
   console.log(`  ${DIM}Sending: "${followUp}"${RESET}`);
 
   try {
-    sendToSession(sessionId, followUp);
-    recordStep('sendToSession() succeeded', true);
+    resumeChannel.adapter!.send(followUp);
+    recordStep('adapter.send() succeeded', true);
   } catch (err) {
-    recordStep('sendToSession() succeeded', false, String(err));
+    recordStep('adapter.send() succeeded', false, String(err));
     closeSession(sessionId);
     _resetRegistry();
     throw err;

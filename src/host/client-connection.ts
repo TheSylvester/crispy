@@ -13,19 +13,16 @@
 
 import { resolve } from "node:path";
 import { homedir } from "node:os";
-import type { ChannelMessage, TurnIntent } from "../core/agent-adapter.js";
-import type {
-  ChannelCatchupMessage,
-  HistoryMessage,
-} from "../core/channel-events.js";
+import type { TurnIntent } from "../core/agent-adapter.js";
 import type {
   Subscriber,
   SessionChannel,
+  SubscriberMessage,
 } from "../core/session-channel.js";
 import type { SessionListEvent } from "../core/session-list-events.js";
 import type { ProviderEvent } from '../core/provider-events.js';
 import { PROVIDERS_CHANNEL_ID } from '../core/provider-events.js';
-import { resolveApproval, unsubscribe, getChannel } from "../core/session-channel.js";
+import { resolveApproval, subscribe, unsubscribe } from "../core/session-channel.js";
 import {
   listAllSessions,
   findSession,
@@ -35,7 +32,6 @@ import {
   interruptSession,
   closeSession,
   readSubagentEntries,
-  continueInVendor,
   getRegisteredVendors,
 } from "../core/session-manager.js";
 import {
@@ -84,7 +80,7 @@ export type ClientMessage = {
 };
 
 /** Union of all events that can be pushed over the wire. */
-export type HostEvent = ChannelMessage | HistoryMessage | ChannelCatchupMessage | SessionListEvent | ProviderEvent;
+export type HostEvent = SubscriberMessage | SessionListEvent | ProviderEvent;
 
 /** Host → Client response or push event. */
 export type HostMessage =
@@ -125,6 +121,9 @@ export function createClientConnection(
 
   /** Global session-list subscription for this client. */
   let sessionListSub: SessionListSubscriber | null = null;
+
+  /** Flag set on dispose() to prevent re-keying after client disconnect. */
+  let disposed = false;
 
   /**
    * Validate that `filePath` is inside an allowed directory before performing
@@ -216,7 +215,7 @@ export function createClientConnection(
 
         const subscriber: Subscriber = {
           id: clientId,
-          send(event: ChannelMessage | HistoryMessage | ChannelCatchupMessage) {
+          send(event: SubscriberMessage) {
             sendFn({ kind: "event", sessionId, event });
           },
         };
@@ -239,55 +238,102 @@ export function createClientConnection(
       case "sendTurn": {
         const intent = params.intent as TurnIntent;
 
-        // For existing sessions, use the already-subscribed subscriber
+        /**
+         * Create a mutable subscriber that allows session ID re-keying.
+         * The rekey() method updates the session ID used in event routing.
+         */
+        function createMutableSubscriber(initialSessionId: string) {
+          let currentSessionId = initialSessionId;
+          const subscriber: Subscriber = {
+            id: clientId,
+            send(event: SubscriberMessage) {
+              if (disposed) return;
+              sendFn({ kind: "event", sessionId: currentSessionId, event });
+            },
+          };
+          return {
+            subscriber,
+            rekey(newId: string) { currentSessionId = newId; },
+          };
+        }
+
+        // For existing sessions — may trigger vendor switch internally
         if (intent.target.kind === 'existing') {
-          const sessionId = intent.target.sessionId;
-          const sub = subscriptions.get(sessionId);
+          const targetSessionId = intent.target.sessionId;
+          const sub = subscriptions.get(targetSessionId);
           if (!sub) {
             throw new Error(
-              `Not subscribed to session "${sessionId}". Call subscribe first.`
+              `Not subscribed to session "${targetSessionId}". Call subscribe first.`
             );
           }
-          return await sendTurn(intent, sub.subscriber);
+
+          // Swap to mutable subscriber BEFORE sendTurn to avoid event-loss window.
+          // The mutable subscriber is already installed on the channel when
+          // sendTurn() potentially triggers a vendor switch.
+          unsubscribe(sub.channel, sub.subscriber);
+          const mutable = createMutableSubscriber(targetSessionId);
+          subscribe(sub.channel, mutable.subscriber);
+          subscriptions.set(targetSessionId, {
+            channel: sub.channel, subscriber: mutable.subscriber,
+          });
+
+          const result = await sendTurn(intent, mutable.subscriber);
+
+          // If vendor switch happened, update subscription tracking
+          if (result.sessionId !== targetSessionId) {
+            subscriptions.delete(targetSessionId);
+            subscriptions.set(result.sessionId, {
+              channel: result.channel, subscriber: mutable.subscriber,
+            });
+            mutable.rekey(result.sessionId);
+          }
+
+          // Handle rekey from rekeyPromise (pending → real ID)
+          if (result.rekeyPromise) {
+            result.rekeyPromise
+              .then(realId => {
+                if (disposed) return;
+                mutable.rekey(realId);
+                const entry = subscriptions.get(result.sessionId);
+                if (entry) {
+                  subscriptions.delete(result.sessionId);
+                  subscriptions.set(realId, entry);
+                }
+              })
+              .catch(() => {
+                subscriptions.delete(result.sessionId);
+              });
+          }
+
+          return { sessionId: result.sessionId };
         }
 
-        // Generate pending ID here so currentSessionId is set before
-        // sendTurn broadcasts the user entry (which triggers subscriber.send).
+        // New-channel paths (new/fork)
         const pendingId = `pending:${crypto.randomUUID()}`;
-        let currentSessionId = pendingId;
+        const mutable = createMutableSubscriber(pendingId);
+        const result = await sendTurn(intent, mutable.subscriber, pendingId);
+        subscriptions.set(result.sessionId, {
+          channel: result.channel, subscriber: mutable.subscriber,
+        });
 
-        const subscriber: Subscriber = {
-          id: clientId,
-          send(event: ChannelMessage | HistoryMessage | ChannelCatchupMessage) {
-            sendFn({ kind: "event", sessionId: currentSessionId, event });
-            // Re-key subscription tracking on session_changed
-            if (
-              event.type === 'event' &&
-              event.event.type === 'notification' &&
-              event.event.kind === 'session_changed' &&
-              event.event.sessionId
-            ) {
-              const realId = event.event.sessionId;
-              const sub = subscriptions.get(currentSessionId);
-              if (sub) {
-                subscriptions.delete(currentSessionId);
-                currentSessionId = realId;
-                subscriptions.set(realId, sub);
+        // Handle rekey from rekeyPromise (pending → real ID)
+        if (result.rekeyPromise) {
+          result.rekeyPromise
+            .then(realId => {
+              if (disposed) return;
+              mutable.rekey(realId);
+              const entry = subscriptions.get(result.sessionId);
+              if (entry) {
+                subscriptions.delete(result.sessionId);
+                subscriptions.set(realId, entry);
               }
-            }
-          },
-        };
-
-        const receipt = await sendTurn(intent, subscriber, pendingId);
-
-        // For new/fork, sendTurn() internally calls createSession/createForkSession
-        // which returns the channel. We need to track it for cleanup.
-        const channel = getChannel(receipt.sessionId);
-        if (channel) {
-          subscriptions.set(receipt.sessionId, { channel, subscriber });
+            })
+            .catch(() => {
+              subscriptions.delete(result.sessionId);
+            });
         }
 
-        return receipt;
+        return { sessionId: result.sessionId };
       }
 
       case "resolveApproval": {
@@ -414,49 +460,6 @@ export function createClientConnection(
       case 'getModelGroups':
         return getModelGroups(getRegisteredVendors());
 
-      case "continueInVendor": {
-        const sourceSessionId = params.sourceSessionId as string;
-        const targetVendor = params.targetVendor as string;
-        const model = params.model as string | undefined;
-        const permissionMode = params.permissionMode as string | undefined;
-
-        const pendingId = `pending:${crypto.randomUUID()}`;
-        let currentSessionId = pendingId;
-
-        const subscriber: Subscriber = {
-          id: clientId,
-          send(event: ChannelMessage | HistoryMessage | ChannelCatchupMessage) {
-            sendFn({ kind: "event", sessionId: currentSessionId, event });
-            // Re-key on session_changed (same pattern as sendTurn new/fork)
-            if (
-              event.type === 'event' &&
-              event.event.type === 'notification' &&
-              event.event.kind === 'session_changed' &&
-              event.event.sessionId
-            ) {
-              const realId = event.event.sessionId;
-              const sub = subscriptions.get(currentSessionId);
-              if (sub) {
-                subscriptions.delete(currentSessionId);
-                currentSessionId = realId;
-                subscriptions.set(realId, sub);
-              }
-            }
-          },
-        };
-
-        const result = await continueInVendor(sourceSessionId, targetVendor, subscriber, {
-          ...(model && { model }),
-          ...(permissionMode && { permissionMode: permissionMode as any }),
-        }, pendingId);
-
-        const channel = getChannel(result.pendingId);
-        if (channel) {
-          subscriptions.set(result.pendingId, { channel, subscriber });
-        }
-        return { sessionId: result.pendingId };
-      }
-
       case "getActivityLog": {
         const from = params.from as string | undefined;
         const to = params.to as string | undefined;
@@ -479,6 +482,7 @@ export function createClientConnection(
   }
 
   function dispose(): void {
+    disposed = true;
     providerUnsub();
     if (sessionListSub) {
       unsubscribeSessionList(sessionListSub);

@@ -167,24 +167,6 @@ describe('claudeRegistration', () => {
       });
     });
 
-    it('continue mode uses config.cwd', async () => {
-      const { claudeRegistration } = await freshImport();
-      const config: HostAdapterConfig = {
-        cwd: '/workspace',
-        pathToClaudeCodeExecutable: '/usr/bin/claude',
-      };
-
-      const factory = claudeRegistration.createFactory(config);
-      factory({ mode: 'continue', sessionId: 'sess-456' });
-
-      expect(MockClaudeAgentAdapter).toHaveBeenCalledWith({
-        pathToClaudeCodeExecutable: '/usr/bin/claude',
-        cwd: '/workspace',
-        resume: 'sess-456',
-        continue: true,
-      });
-    });
-
     it('hydrated mode uses spec.cwd', async () => {
       const { claudeRegistration } = await freshImport();
       const config: HostAdapterConfig = {
@@ -225,7 +207,7 @@ describe('claudeRegistration', () => {
       claudeRegistration.available(config);
 
       const factory = claudeRegistration.createFactory(config);
-      factory({ mode: 'continue', sessionId: 'sess-789' });
+      factory({ mode: 'resume', sessionId: 'sess-789' });
 
       const constructorArgs = MockClaudeAgentAdapter.mock.calls[0][0];
       expect(constructorArgs).not.toHaveProperty('pathToClaudeCodeExecutable');

@@ -6,7 +6,7 @@
  * @module control-panel/types
  */
 
-import type { ContextUsage, Vendor } from '../../../core/transcript.js';
+import type { ContextUsage } from '../../../core/transcript.js';
 
 /** Agency mode determines how Claude handles edits and permissions. */
 export type AgencyMode =
@@ -23,13 +23,8 @@ export type ModelOption = string;
 
 export type { VendorModelGroup } from '../../../core/provider-events.js';
 
-/** Parse "vendor:model" → { vendor, model }. Empty string → claude + empty model. */
-export function parseModelOption(opt: ModelOption): { vendor: Vendor; model: string } {
-  if (!opt) return { vendor: 'claude', model: '' };
-  const idx = opt.indexOf(':');
-  if (idx === -1) return { vendor: 'claude', model: opt }; // legacy compat
-  return { vendor: opt.slice(0, idx) as Vendor, model: opt.slice(idx + 1) };
-}
+/** Re-export from core — one source of truth for the "vendor:model" parser. */
+export { parseModelOption } from '../../../core/model-utils.js';
 
 /** Represents an image attached to a message. */
 export interface AttachedImage {
@@ -62,7 +57,6 @@ export interface ControlPanelState {
   attachedImages: AttachedImage[];
   pastedImageCounter: number;
   forkMode: { fromSessionId: string; atMessageId?: string } | null;
-  currentVendor: string | null;
 }
 
 /** Reducer action types for the control panel. */
@@ -80,8 +74,7 @@ export type Action =
   | { type: 'SET_FILE_CONTEXT'; enabled: boolean }
   | { type: 'SET_CONTEXT'; contextUsage: ContextUsage }
   | { type: 'RESET_CONTEXT' }
-  | { type: 'SET_FORK_MODE'; forkMode: { fromSessionId: string; atMessageId?: string } | null }
-  | { type: 'SET_CURRENT_VENDOR'; vendor: string | null };
+  | { type: 'SET_FORK_MODE'; forkMode: { fromSessionId: string; atMessageId?: string } | null };
 
 /** Default initial state for the control panel. */
 export const DEFAULT_CONTROL_PANEL_STATE: ControlPanelState = {
@@ -98,7 +91,6 @@ export const DEFAULT_CONTROL_PANEL_STATE: ControlPanelState = {
   attachedImages: [],
   pastedImageCounter: 0,
   forkMode: null,
-  currentVendor: null,
 };
 
 /** Agency mode display labels for the dropdown. */

@@ -2,7 +2,7 @@
  * Agent Adapter Interface
  *
  * The single interface for vendor adapters. Combines live session streaming
- * (send, messages, approval handling, close) with session discovery and
+ * (sendTurn, messages, approval handling, close) with session discovery and
  * history loading. Each vendor adapter (Claude, Codex, Gemini) implements
  * this to provide a uniform shape for the Session Channel.
  *
@@ -124,26 +124,6 @@ export interface VendorDiscovery {
 }
 
 // ============================================================================
-// Send Options — bundled with each send() call
-// ============================================================================
-
-/**
- * Options passed alongside the user's message at send time.
- *
- * The control panel gathers UI state and
- * bundles it into a single object so the adapter can apply everything
- * atomically before starting a new query.
- *
- * @deprecated Use TurnSettings instead. SendOptions is retained for
- * backwards compatibility during the migration.
- */
-export interface SendOptions {
-  model?: string;
-  permissionMode?: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions';
-  allowDangerouslySkipPermissions?: boolean;
-}
-
-// ============================================================================
 // Turn Intent Types — unified send surface
 // ============================================================================
 
@@ -169,10 +149,9 @@ export interface TurnSettings {
  * 'fork': fork from an existing session, then send
  */
 export type TurnTarget =
-  | { kind: 'existing'; sessionId: string }
+  | { kind: 'existing'; sessionId: string; model?: string }
   | { kind: 'new'; vendor: Vendor; cwd: string }
-  | { kind: 'fork'; vendor: Vendor; fromSessionId: string; atMessageId?: string }
-  | { kind: 'continueIn'; targetVendor: Vendor; sourceSessionId: string; cwd: string };
+  | { kind: 'fork'; vendor: Vendor; fromSessionId: string; atMessageId?: string };
 
 /**
  * Intent to send a turn (user message + settings).
@@ -216,10 +195,9 @@ export interface AdapterSettings {
  */
 export type SessionOpenSpec =
   | { mode: 'resume'; sessionId: string }
-  | { mode: 'fresh'; cwd: string; model?: string; permissionMode?: SendOptions['permissionMode']; extraArgs?: Record<string, string | null> }
+  | { mode: 'fresh'; cwd: string; model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null> }
   | { mode: 'fork'; fromSessionId: string; atMessageId?: string }
-  | { mode: 'continue'; sessionId: string }
-  | { mode: 'hydrated'; cwd: string; history: TranscriptEntry[]; sourceVendor: Vendor; sourceSessionId?: string; model?: string; permissionMode?: SendOptions['permissionMode'] };
+  | { mode: 'hydrated'; cwd: string; history: TranscriptEntry[]; sourceVendor: Vendor; sourceSessionId?: string; model?: string; permissionMode?: TurnSettings['permissionMode'] };
 
 // ============================================================================
 // Agent Adapter Interface
@@ -269,26 +247,6 @@ export interface AgentAdapter {
    * If multiple consumers are needed, implement a fan-out on top.
    */
   messages(): AsyncIterable<ChannelMessage>;
-
-  /**
-   * Send a user message into the adapter.
-   *
-   * If no vendor session is active, one is created. If a session is
-   * already running, the message is enqueued into the existing session.
-   *
-   * Options (model, permissionMode, etc.) are applied atomically before
-   * the query starts — they're bundled with the message.
-   * When a session is already running, options are applied mid-stream
-   * (best-effort).
-   *
-   * Throws if the adapter is closed or awaiting approval.
-   * Errors from the underlying vendor session are delivered via the
-   * event stream, not thrown from this method.
-   *
-   * @deprecated Use sendTurn() instead. send() is retained for backwards
-   * compatibility during the migration.
-   */
-  send(content: MessageContent, options?: SendOptions): void;
 
   /**
    * Send a user turn with settings applied atomically.
@@ -349,15 +307,4 @@ export interface AgentAdapter {
    * Vendors that don't support this should throw with a descriptive message.
    */
   setPermissionMode(mode: string): Promise<void>;
-
-  /**
-   * Tear down the current query and update options that require a fresh
-   * query() call (e.g. allowDangerouslySkipPermissions, extraArgs).
-   * The next send() will create a new query with the updated options.
-   * Only callable when idle. Vendors that don't support this can omit it.
-   */
-  prepareQueryRestart?(updates: {
-    allowDangerouslySkipPermissions?: boolean;
-    extraArgs?: Record<string, string | null>;
-  }): void;
 }

@@ -166,8 +166,6 @@ function makeFactory(
           ...base, resume: spec.fromSessionId, forkSession: true, vendor: slug, env,
           ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
         });
-      case 'continue':
-        return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, continue: true, vendor: slug, env });
       case 'hydrated':
         return new ClaudeAgentAdapter({
           ...base, cwd: spec.cwd, vendor: slug, env,

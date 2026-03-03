@@ -8,13 +8,10 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AsyncIterableQueue } from '../src/core/async-iterable-queue.js';
-import type { AgentAdapter, AdapterSettings, ChannelMessage } from '../src/core/agent-adapter.js';
+import type { AgentAdapter, AdapterSettings, ChannelMessage, TurnSettings } from '../src/core/agent-adapter.js';
 import type { TranscriptEntry, MessageContent, Vendor } from '../src/core/transcript.js';
-import type { ChannelStatus, ApprovalOption, NotificationEvent, HistoryMessage, ChannelCatchupMessage } from '../src/core/channel-events.js';
-import type { Subscriber } from '../src/core/session-channel.js';
-
-/** Union of all messages a subscriber can receive. */
-type SubscriberMessage = ChannelMessage | HistoryMessage | ChannelCatchupMessage;
+import type { ChannelStatus, ApprovalOption, NotificationEvent } from '../src/core/channel-events.js';
+import type { Subscriber, SubscriberMessage } from '../src/core/session-channel.js';
 
 import {
   createChannel,
@@ -24,9 +21,7 @@ import {
   subscribe,
   unsubscribe,
   setAdapter,
-  sendMessage,
   resolveApproval,
-  backfillHistory,
 } from '../src/core/session-channel.js';
 
 // ============================================================================
@@ -53,13 +48,17 @@ function createMockAdapter(options?: {
   let sessionId = options?.sessionId;
   let status: ChannelStatus = 'idle';
 
+  const sendTurnMock = vi.fn((_content: MessageContent, _settings: TurnSettings) => {
+    // Simulate: adapter receives message
+  });
+
   return {
     vendor,
     get sessionId() { return sessionId; },
     get status() { return status; },
     get contextUsage() { return null; },
     get settings(): AdapterSettings {
-      return { model: undefined, permissionMode: undefined, allowDangerouslySkipPermissions: false, extraArgs: undefined };
+      return { vendor, model: undefined, permissionMode: undefined, allowDangerouslySkipPermissions: false, extraArgs: undefined };
     },
     outputQueue: queue,
 
@@ -67,9 +66,7 @@ function createMockAdapter(options?: {
       return queue;
     },
 
-    send: vi.fn((_content: MessageContent) => {
-      // Simulate: adapter receives message
-    }),
+    sendTurn: sendTurnMock as unknown as AgentAdapter['sendTurn'],
 
     respondToApproval: vi.fn((_toolUseId: string, _optionId: string) => {
       // Simulate: adapter resolves approval
@@ -730,47 +727,15 @@ describe('Approval flow', () => {
   });
 });
 
-// ========== 8. sendMessage ==========
+// ========== 8. Subscribe with entries (history in catchup) ==========
 
-describe('sendMessage', () => {
-  it('delegates to adapter.send', async () => {
+describe('Subscribe with entries', () => {
+  it('includes entries in catchup message and sets entryIndex', async () => {
     const ch = createChannel('ch-1');
     const adapter = createMockAdapter();
+
     setAdapter(ch, adapter);
     await tick();
-
-    sendMessage(ch, 'Hello world');
-    expect(adapter.send).toHaveBeenCalledWith('Hello world', undefined);
-  });
-
-  it('throws without adapter', () => {
-    const ch = createChannel('ch-1');
-    expect(() => sendMessage(ch, 'Hello')).toThrow('No adapter set');
-  });
-
-  it('works with multimodal content', async () => {
-    const ch = createChannel('ch-1');
-    const adapter = createMockAdapter();
-    setAdapter(ch, adapter);
-    await tick();
-
-    const content = [
-      { type: 'text' as const, text: 'What is this?' },
-      { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/png', data: 'abc123' } },
-    ];
-
-    sendMessage(ch, content);
-    expect(adapter.send).toHaveBeenCalledWith(content, undefined);
-  });
-});
-
-// ========== 9. backfillHistory ==========
-
-describe('backfillHistory', () => {
-  it('broadcasts history event and sets entryIndex', async () => {
-    const ch = createChannel('ch-1');
-    const adapter = createMockAdapter();
-    const sub = createTestSubscriber('sub-1');
 
     const entries: TranscriptEntry[] = [
       { type: 'user', message: { role: 'user', content: 'hello' } },
@@ -778,31 +743,44 @@ describe('backfillHistory', () => {
       { type: 'user', message: { role: 'user', content: 'how are you' } },
     ];
 
-    subscribe(ch, sub);
-    setAdapter(ch, adapter);
-    await tick();
+    const sub = createTestSubscriber('sub-1');
+    subscribe(ch, sub, entries);
 
-    backfillHistory(ch, entries);
-
-    const historyEvents = sub.eventsOfType('history');
-    expect(historyEvents.length).toBe(1);
-    expect(historyEvents[0].entries).toEqual(entries);
+    const catchupEvents = sub.eventsOfType('catchup');
+    expect(catchupEvents.length).toBe(1);
+    expect(catchupEvents[0].entries).toEqual(entries);
     expect(ch.entryIndex).toBe(3);
   });
 
-  it('empty history is a no-op (no broadcast)', async () => {
+  it('empty entries results in empty array in catchup', async () => {
     const ch = createChannel('ch-1');
     const adapter = createMockAdapter();
-    const sub = createTestSubscriber('sub-1');
 
-    subscribe(ch, sub);
     setAdapter(ch, adapter);
     await tick();
 
-    backfillHistory(ch, []);
+    const sub = createTestSubscriber('sub-1');
+    subscribe(ch, sub, []);
 
-    const historyEvents = sub.eventsOfType('history');
-    expect(historyEvents.length).toBe(0);
+    const catchupEvents = sub.eventsOfType('catchup');
+    expect(catchupEvents.length).toBe(1);
+    expect(catchupEvents[0].entries).toEqual([]);
+    expect(ch.entryIndex).toBe(0);
+  });
+
+  it('omitted entries results in empty array in catchup', async () => {
+    const ch = createChannel('ch-1');
+    const adapter = createMockAdapter();
+
+    setAdapter(ch, adapter);
+    await tick();
+
+    const sub = createTestSubscriber('sub-1');
+    subscribe(ch, sub);
+
+    const catchupEvents = sub.eventsOfType('catchup');
+    expect(catchupEvents.length).toBe(1);
+    expect(catchupEvents[0].entries).toEqual([]);
     expect(ch.entryIndex).toBe(0);
   });
 });
@@ -885,12 +863,12 @@ describe('Stream lifecycle', () => {
     expect(ch.pendingApprovals.size).toBe(0);
   });
 
-  it('sendMessage after stream error delegates to adapter (adapter guards)', async () => {
+  it('adapter.sendTurn() after stream error throws (adapter guards)', async () => {
     const ch = createChannel('ch-1');
     const adapter = createMockAdapter();
 
-    // After stream error, adapter.send() should throw (closed/broken state)
-    (adapter.send as ReturnType<typeof vi.fn>).mockImplementation(() => {
+    // After stream error, adapter.sendTurn() should throw (closed/broken state)
+    (adapter.sendTurn as ReturnType<typeof vi.fn>).mockImplementation(() => {
       throw new Error('Channel is closed');
     });
 
@@ -901,8 +879,8 @@ describe('Stream lifecycle', () => {
     await tick();
     expect(ch.state).toBe('unattached');
 
-    // sendMessage still delegates to adapter — the adapter's own guard throws
-    expect(() => sendMessage(ch, 'hello')).toThrow('Channel is closed');
+    // The adapter's own guard throws
+    expect(() => adapter.sendTurn('hello', {})).toThrow('Channel is closed');
   });
 
   it('tearing flag prevents loop from emitting after teardown', async () => {
@@ -1054,9 +1032,9 @@ describe('Integration: full conversation flow', () => {
     setAdapter(ch, adapter);
     await tick();
 
-    // 1. Send a message
-    sendMessage(ch, 'Write a hello world program');
-    expect(adapter.send).toHaveBeenCalledWith('Write a hello world program', undefined);
+    // 1. Send a message via the adapter directly
+    adapter.sendTurn('Write a hello world program', {});
+    expect(adapter.sendTurn).toHaveBeenCalledWith('Write a hello world program', {});
 
     // 2. Adapter emits active status
     adapter.pushMessage(statusMsg('active'));

@@ -50,10 +50,6 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           ...base, cwd: config.cwd, resume: spec.fromSessionId, forkSession: true,
           ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
         });
-      case 'continue':
-        return new ClaudeAgentAdapter({
-          ...base, cwd: config.cwd, resume: spec.sessionId, continue: true,
-        });
       case 'hydrated':
         return new ClaudeAgentAdapter({
           ...base, cwd: spec.cwd,

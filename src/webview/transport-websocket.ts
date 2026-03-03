@@ -11,7 +11,7 @@ import type { HostEvent } from '../host/client-connection.js';
 import type { SessionService, WireSessionInfo } from './transport.js';
 import type { TranscriptEntry } from '../core/transcript.js';
 import type { TurnReceipt } from '../core/agent-adapter.js';
-import type { WireProviderConfig, ProviderConfig } from '../core/provider-config.js';
+import type { WireProviderConfig } from '../core/provider-config.js';
 import type { VendorModelGroup } from './components/control-panel/types.js';
 
 /** Pending request awaiting a response. */
@@ -168,9 +168,6 @@ export function createWebSocketTransport(url: string): SessionService {
         'readSubagentEntries',
         { sessionId, agentId, parentToolUseId, cursor },
       ),
-
-    continueInVendor: (sourceSessionId, targetVendor, options) =>
-      request<{ sessionId: string }>('continueInVendor', { sourceSessionId, targetVendor, ...options }),
 
     listProviders: () => request<Record<string, WireProviderConfig>>('listProviders'),
     saveProvider: (slug, config) => request<{ saved: boolean }>('saveProvider', { slug, config }),

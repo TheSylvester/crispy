@@ -19,20 +19,17 @@
  * @module session-manager
  */
 
-import type { AgentAdapter, VendorDiscovery, SessionInfo, SendOptions, SessionOpenSpec, ChannelMessage, TurnIntent, TurnReceipt, TurnSettings, SubagentEntriesResult } from './agent-adapter.js';
-import type { TranscriptEntry, Vendor, MessageContent } from './transcript.js';
-import type { ChannelCatchupMessage, HistoryMessage } from './channel-events.js';
-import type { SessionChannel, Subscriber } from './session-channel.js';
+import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, ChannelMessage, TurnIntent, TurnSettings, SubagentEntriesResult } from './agent-adapter.js';
+import type { TranscriptEntry, Vendor } from './transcript.js';
+import type { SessionChannel, Subscriber, SubscriberMessage } from './session-channel.js';
+import { parseModelOption } from './model-utils.js';
 
 import {
   createChannel, setAdapter, subscribe, unsubscribe,
-  sendMessage, destroyChannel, backfillHistory, rekeyChannel,
+  destroyChannel, rekeyChannel,
   broadcastUserEntry as channelBroadcastUserEntry,
 } from './session-channel.js';
 import { refreshAndNotify } from './session-list-manager.js';
-
-/** Type for all messages a subscriber can receive. */
-type SubscriberMessage = ChannelMessage | HistoryMessage | ChannelCatchupMessage;
 
 /** Type guard for session_changed notification events. */
 function isSessionChangedEvent(msg: SubscriberMessage): msg is ChannelMessage & { type: 'event'; event: { type: 'notification'; kind: 'session_changed'; sessionId: string } } {
@@ -287,6 +284,82 @@ function openChannel(channelId: string, vendor: Vendor, spec: SessionOpenSpec): 
 }
 
 // ============================================================================
+// Pending Channel Factory
+// ============================================================================
+
+/** Result from creating a pending channel. */
+export interface PendingChannelResult {
+  pendingId: string;
+  channel: SessionChannel;
+  rekeyPromise: Promise<string>;
+}
+
+/**
+ * Create a pending channel with automatic re-keying on session_changed.
+ *
+ * This is the shared boilerplate for createSession(), createForkSession(),
+ * and vendor-switch in sendTurn(). It:
+ * 1. Generates a pending:<uuid> ID (or uses explicitPendingId)
+ * 2. Opens the channel with the spec
+ * 3. Registers in the sessions map
+ * 4. Subscribes the caller's subscriber
+ * 5. Sets up one-shot subscribers for list notify and re-keying
+ * 6. Optionally includes history entries in catchup (for vendor-switch)
+ *
+ * Returns the pendingId, channel, and a promise that resolves to the
+ * real session ID when session_changed fires.
+ */
+function createPendingChannel(
+  vendor: Vendor,
+  spec: SessionOpenSpec,
+  subscriber: Subscriber,
+  options?: {
+    explicitPendingId?: string;
+    entries?: TranscriptEntry[];
+  },
+): PendingChannelResult {
+  const pendingId = options?.explicitPendingId ?? `pending:${crypto.randomUUID()}`;
+  const channel = openChannel(pendingId, vendor, spec);
+  sessions.set(pendingId, channel);
+
+  // Subscribe with entries (history is included in catchup message)
+  subscribe(channel, subscriber, options?.entries);
+
+  // One-shot session-list notifier: pushes upsert when the real session ID resolves
+  const listNotifySubscriber: Subscriber = {
+    id: `__list_notify__${pendingId}`,
+    send(msg) {
+      if (isSessionChangedEvent(msg)) {
+        refreshAndNotify(msg.event.sessionId);
+        unsubscribe(channel, listNotifySubscriber);
+      }
+    },
+  };
+  subscribe(channel, listNotifySubscriber);
+
+  // One-shot re-key subscriber: swaps pending → real ID on session_changed
+  // Also resolves the rekeyPromise with the real session ID.
+  const rekeyPromise = new Promise<string>((resolve) => {
+    const rekeySubscriber: Subscriber = {
+      id: `__rekey__${pendingId}`,
+      send(msg) {
+        if (isSessionChangedEvent(msg)) {
+          const realId = msg.event.sessionId;
+          rekeyChannel(pendingId, realId);
+          sessions.delete(pendingId);
+          sessions.set(realId, channel);
+          unsubscribe(channel, rekeySubscriber);
+          resolve(realId);
+        }
+      },
+    };
+    subscribe(channel, rekeySubscriber);
+  });
+
+  return { pendingId, channel, rekeyPromise };
+}
+
+// ============================================================================
 // Session-Keyed Live Operations
 // ============================================================================
 
@@ -296,15 +369,19 @@ function openChannel(channelId: string, vendor: Vendor, spec: SessionOpenSpec): 
  * - Evicts dead (unattached) channels so stale entries don't block reopening.
  * - If no channel exists for this sessionId, one is created:
  *   findSession() identifies the vendor, openChannel() wires the adapter,
- *   loadHistory() backfills transcript entries for the subscriber.
- * - Adds the subscriber to the channel.
+ *   loadHistory() loads transcript entries which are included in the catchup.
+ * - Adds the subscriber to the channel with history entries in the catchup message.
  * - Returns the channel.
+ *
+ * @param until Optional truncation point (message UUID) for fork/rewind support.
+ *              When provided, history is truncated at this entry (inclusive).
  *
  * Throws if the session is not found across any registered vendor.
  */
 export async function subscribeSession(
   sessionId: string,
   subscriber: Subscriber,
+  until?: string,
 ): Promise<SessionChannel> {
   // Evict dead channels so we don't reuse terminal state
   evictIfDead(sessionId);
@@ -313,11 +390,14 @@ export async function subscribeSession(
   const inflight = pending.get(sessionId);
   if (inflight) {
     const channel = await inflight;
-    subscribe(channel, subscriber);
+    // Load history for this subscriber (may differ from init if using `until`)
+    const entries = await loadSession(sessionId, { until });
+    subscribe(channel, subscriber, entries);
     return channel;
   }
 
   let channel = sessions.get(sessionId);
+  let entries: TranscriptEntry[] = [];
 
   if (!channel) {
     // Create a promise for initialization so concurrent callers coalesce
@@ -332,13 +412,17 @@ export async function subscribeSession(
       const ch = openChannel(sessionId, info.vendor, { mode: 'resume', sessionId });
       sessions.set(sessionId, ch);
 
-      // Backfill transcript history for subscribers.
+      // Load transcript history for subscribers.
       // If this fails, clean up the partially-initialized channel
       // so the next caller gets a clean slate, not a poisoned entry.
       try {
         const reg = adapters.get(info.vendor)!;
-        const entries = await reg.discovery.loadHistory(sessionId);
-        backfillHistory(ch, entries);
+        entries = await reg.discovery.loadHistory(sessionId);
+        // Apply truncation if specified
+        if (until) {
+          const cutIdx = entries.findIndex(e => e.uuid === until);
+          if (cutIdx !== -1) entries = entries.slice(0, cutIdx + 1);
+        }
       } catch (err) {
         destroyChannel(sessionId);
         sessions.delete(sessionId);
@@ -354,18 +438,20 @@ export async function subscribeSession(
     } finally {
       pending.delete(sessionId);
     }
+  } else {
+    // Channel exists — load entries for this subscriber
+    entries = await loadSession(sessionId, { until });
   }
 
-  subscribe(channel, subscriber);
+  subscribe(channel, subscriber, entries);
   return channel;
 }
 
 /**
  * Create a brand-new session (no resume ID).
  *
- * Registers the channel under a temporary `pending:<uuid>` key. A one-shot
- * internal subscriber watches for `session_changed` and re-keys to the real
- * session ID in both the channel registry and the sessions map.
+ * Delegates to createPendingChannel() which handles pending:<uuid> generation,
+ * channel registration, and one-shot subscribers for list notify and re-keying.
  *
  * Returns the pendingId and channel so the caller can track the transition.
  */
@@ -373,13 +459,13 @@ export function createSession(
   vendor: Vendor,
   cwd: string,
   subscriber: Subscriber,
-  options?: { model?: string; permissionMode?: SendOptions['permissionMode']; extraArgs?: Record<string, string | null> },
+  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null> },
   explicitPendingId?: string,
-): { pendingId: string; channel: SessionChannel } {
-  const registration = adapters.get(vendor);
-  if (!registration) throw new Error(`No adapter registered for vendor "${vendor}".`);
+): PendingChannelResult {
+  if (!adapters.has(vendor)) {
+    throw new Error(`No adapter registered for vendor "${vendor}".`);
+  }
 
-  const pendingId = explicitPendingId ?? `pending:${crypto.randomUUID()}`;
   const spec: SessionOpenSpec = {
     mode: 'fresh',
     cwd,
@@ -388,46 +474,14 @@ export function createSession(
     ...(options?.extraArgs && { extraArgs: options.extraArgs }),
   };
 
-  const channel = openChannel(pendingId, vendor, spec);
-  sessions.set(pendingId, channel);
-  subscribe(channel, subscriber);
-
-  // One-shot session-list notifier: pushes upsert when the real session ID resolves
-  const listNotifySubscriber: Subscriber = {
-    id: `__list_notify__${pendingId}`,
-    send(msg) {
-      if (isSessionChangedEvent(msg)) {
-        refreshAndNotify(msg.event.sessionId);
-        unsubscribe(channel, listNotifySubscriber);
-      }
-    },
-  };
-  subscribe(channel, listNotifySubscriber);
-
-  // One-shot re-key subscriber: swaps pending → real ID on session_changed
-  const rekeySubscriber: Subscriber = {
-    id: `__rekey__${pendingId}`,
-    send(msg) {
-      if (isSessionChangedEvent(msg)) {
-        const realId = msg.event.sessionId;
-        rekeyChannel(pendingId, realId);
-        sessions.delete(pendingId);
-        sessions.set(realId, channel);
-        unsubscribe(channel, rekeySubscriber);
-      }
-    },
-  };
-  subscribe(channel, rekeySubscriber);
-
-  return { pendingId, channel };
+  return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
 }
 
 /**
  * Create a forked session from an existing session.
  *
- * Same `pending:<uuid>` + rekey pattern as createSession(), but opens
- * with mode 'fork' so the adapter resumes the source session and
- * truncates at the specified message ID.
+ * Delegates to createPendingChannel() with mode 'fork' so the adapter
+ * resumes the source session and truncates at the specified message ID.
  *
  * Returns the pendingId and channel so the caller can track the transition.
  */
@@ -440,128 +494,37 @@ export function createForkSession(
     settings?: TurnSettings;
   },
   explicitPendingId?: string,
-): { pendingId: string; channel: SessionChannel } {
-  const registration = adapters.get(vendor);
-  if (!registration) throw new Error(`No adapter registered for vendor "${vendor}".`);
+): PendingChannelResult {
+  if (!adapters.has(vendor)) {
+    throw new Error(`No adapter registered for vendor "${vendor}".`);
+  }
 
-  const pendingId = explicitPendingId ?? `pending:${crypto.randomUUID()}`;
   const spec: SessionOpenSpec = {
     mode: 'fork',
     fromSessionId,
     ...(options?.atMessageId && { atMessageId: options.atMessageId }),
   };
 
-  const channel = openChannel(pendingId, vendor, spec);
-  sessions.set(pendingId, channel);
-  subscribe(channel, subscriber);
-
-  // One-shot session-list notifier: pushes upsert when the real session ID resolves
-  const listNotifySubscriber: Subscriber = {
-    id: `__list_notify__${pendingId}`,
-    send(msg) {
-      if (isSessionChangedEvent(msg)) {
-        refreshAndNotify(msg.event.sessionId);
-        unsubscribe(channel, listNotifySubscriber);
-      }
-    },
-  };
-  subscribe(channel, listNotifySubscriber);
-
-  // One-shot re-key subscriber: swaps pending → real ID on session_changed
-  const rekeySubscriber: Subscriber = {
-    id: `__rekey__${pendingId}`,
-    send(msg) {
-      if (isSessionChangedEvent(msg)) {
-        const realId = msg.event.sessionId;
-        rekeyChannel(pendingId, realId);
-        sessions.delete(pendingId);
-        sessions.set(realId, channel);
-        unsubscribe(channel, rekeySubscriber);
-      }
-    },
-  };
-  subscribe(channel, rekeySubscriber);
-
-  return { pendingId, channel };
-}
-
-/**
- * Create a hydrated session that continues a conversation from one vendor in another.
- *
- * Loads the source session's history, serializes it, and opens a new session
- * pre-loaded with that context. Same pending:<uuid> + rekey pattern as createSession().
- */
-export async function continueInVendor(
-  sourceSessionId: string,
-  targetVendor: string,
-  subscriber: Subscriber,
-  options?: { model?: string; permissionMode?: SendOptions['permissionMode'] },
-  explicitPendingId?: string,
-): Promise<{ pendingId: string; channel: SessionChannel }> {
-  const vendor = targetVendor as Vendor;
-  const registration = adapters.get(vendor);
-  if (!registration) throw new Error(`No adapter registered for vendor "${vendor}".`);
-
-  const sourceInfo = findSession(sourceSessionId);
-  if (!sourceInfo) throw new Error(`Source session "${sourceSessionId}" not found.`);
-
-  const sourceReg = adapters.get(sourceInfo.vendor);
-  if (!sourceReg) throw new Error(`No adapter registered for source vendor "${sourceInfo.vendor}".`);
-
-  // Load source history first — adapter needs it during construction
-  const history = await sourceReg.discovery.loadHistory(sourceSessionId);
-
-  const pendingId = explicitPendingId ?? `pending:${crypto.randomUUID()}`;
-  const spec: SessionOpenSpec = {
-    mode: 'hydrated',
-    cwd: sourceInfo.projectPath ?? process.cwd(),
-    history,
-    sourceVendor: sourceInfo.vendor,
-    sourceSessionId,
-    ...(options?.model && { model: options.model }),
-    ...(options?.permissionMode && { permissionMode: options.permissionMode }),
-  };
-
-  const channel = openChannel(pendingId, vendor, spec);
-  sessions.set(pendingId, channel);
-  subscribe(channel, subscriber);
-
-  // One-shot session-list notifier (same pattern as createSession)
-  const listNotifySubscriber: Subscriber = {
-    id: `__list_notify__${pendingId}`,
-    send(msg) {
-      if (isSessionChangedEvent(msg)) {
-        refreshAndNotify(msg.event.sessionId);
-        unsubscribe(channel, listNotifySubscriber);
-      }
-    },
-  };
-  subscribe(channel, listNotifySubscriber);
-
-  // One-shot re-key subscriber (same pattern as createSession)
-  const rekeySubscriber: Subscriber = {
-    id: `__rekey__${pendingId}`,
-    send(msg) {
-      if (isSessionChangedEvent(msg)) {
-        const realId = msg.event.sessionId;
-        rekeyChannel(pendingId, realId);
-        sessions.delete(pendingId);
-        sessions.set(realId, channel);
-        unsubscribe(channel, rekeySubscriber);
-      }
-    },
-  };
-  subscribe(channel, rekeySubscriber);
-
-  // Backfill source history to all subscribers for UI rendering
-  backfillHistory(channel, history);
-
-  return { pendingId, channel };
+  return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
 }
 
 // ============================================================================
 // Unified Send Surface
 // ============================================================================
+
+/**
+ * Internal result from sendTurn() — includes the channel for client-connection.
+ *
+ * This is NOT part of the wire contract (TurnReceipt stays as { sessionId }).
+ * It allows client-connection to get the channel directly from sendTurn()
+ * instead of calling getChannel() — eliminating the leaked abstraction.
+ */
+export interface InternalTurnResult {
+  sessionId: string;
+  channel: SessionChannel;
+  /** Promise that resolves to the real session ID on session_changed. Undefined for existing sessions. */
+  rekeyPromise?: Promise<string>;
+}
 
 /**
  * Build a TranscriptEntry from a TurnIntent for optimistic user rendering.
@@ -587,21 +550,62 @@ function buildUserEntry(intent: TurnIntent): TranscriptEntry {
  * Send a user turn with unified routing.
  *
  * This is the primary entry point for sending user messages. It:
- * 1. Routes by target kind (existing/new/fork)
+ * 1. Routes by target kind (existing/new/fork/continueIn)
  * 2. Broadcasts the user entry to all subscribers before the adapter sees it
  * 3. Calls adapter.sendTurn() with full settings
  *
- * Returns a TurnReceipt with the session ID (may be pending:<uuid> for new/fork).
+ * Returns InternalTurnResult with sessionId, channel, and rekeyPromise.
+ * The channel is returned directly so client-connection doesn't need getChannel().
  */
-export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendingId?: string): Promise<TurnReceipt> {
+export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendingId?: string): Promise<InternalTurnResult> {
   let channel: SessionChannel;
   let sessionId: string;
+  let rekeyPromise: Promise<string> | undefined;
 
   switch (intent.target.kind) {
-    case 'existing':
+    case 'existing': {
       channel = requireChannel(intent.target.sessionId);
       sessionId = intent.target.sessionId;
+      const currentVendor = channel.adapter?.vendor;
+
+      // Check for vendor switch via the model field
+      if (intent.target.model && currentVendor) {
+        const { vendor: targetVendor, model } = parseModelOption(intent.target.model);
+        if (targetVendor !== currentVendor) {
+          // Vendor switch — load source history and create hydrated session
+          const sourceInfo = findSession(sessionId);
+          const sourceReg = adapters.get(currentVendor);
+          if (!sourceReg) throw new Error(`No adapter registered for source vendor "${currentVendor}".`);
+          if (!adapters.has(targetVendor)) throw new Error(`No adapter registered for target vendor "${targetVendor}".`);
+
+          const history = await sourceReg.discovery.loadHistory(sessionId);
+
+          const spec: SessionOpenSpec = {
+            mode: 'hydrated',
+            cwd: sourceInfo?.projectPath ?? process.cwd(),
+            history,
+            sourceVendor: currentVendor,
+            sourceSessionId: sessionId,
+            ...(model && { model }),
+            ...(intent.settings.permissionMode && { permissionMode: intent.settings.permissionMode }),
+          };
+
+          const result = createPendingChannel(targetVendor, spec, subscriber, {
+            explicitPendingId: pendingId,
+            entries: history,
+          });
+
+          // Unsubscribe from old channel — do NOT closeSession(), which
+          // would globally destroy the channel for all other subscribers.
+          unsubscribe(channel, subscriber);
+
+          channel = result.channel;
+          sessionId = result.pendingId;
+          rekeyPromise = result.rekeyPromise;
+        }
+      }
       break;
+    }
 
     case 'new': {
       const created = createSession(
@@ -613,6 +617,7 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
       );
       channel = created.channel;
       sessionId = created.pendingId;
+      rekeyPromise = created.rekeyPromise;
       break;
     }
 
@@ -626,19 +631,7 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
       );
       channel = forked.channel;
       sessionId = forked.pendingId;
-      break;
-    }
-
-    case 'continueIn': {
-      const continued = await continueInVendor(
-        intent.target.sourceSessionId,
-        intent.target.targetVendor as string,
-        subscriber,
-        intent.settings,
-        pendingId,
-      );
-      channel = continued.channel;
-      sessionId = continued.pendingId;
+      rekeyPromise = forked.rekeyPromise;
       break;
     }
   }
@@ -664,44 +657,7 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
     try { sub.send(settingsMsg); } catch { /* swallow */ }
   }
 
-  return { sessionId };
-}
-
-// ============================================================================
-// Deprecated Session Operations
-// ============================================================================
-
-/**
- * Send a message into a session's live channel.
- *
- * Options (model, permissionMode, etc.) are threaded through to the
- * adapter so they can be applied atomically at query start time.
- * Throws if no channel is open for this sessionId.
- *
- * @deprecated Use sendTurn() instead. This function is retained for
- * backwards compatibility during the migration.
- */
-export function sendToSession(sessionId: string, content: MessageContent, options?: SendOptions): void {
-  const channel = requireChannel(sessionId);
-  sendMessage(channel, content, options);
-}
-
-/**
- * Change the model for a session's adapter.
- * Throws if no channel is open for this sessionId.
- *
- * @deprecated Use sendTurn() with settings.model instead. This function is
- * retained for backwards compatibility during the migration.
- */
-export async function setSessionModel(
-  sessionId: string,
-  model?: string,
-): Promise<void> {
-  const channel = requireChannel(sessionId);
-  if (!channel.adapter) {
-    throw new Error(`Channel for session "${sessionId}" has no adapter.`);
-  }
-  await channel.adapter.setModel(model);
+  return { sessionId, channel, rekeyPromise };
 }
 
 /**
