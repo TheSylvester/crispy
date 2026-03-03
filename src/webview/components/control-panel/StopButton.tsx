@@ -16,15 +16,18 @@ export const StopButton = forwardRef<HTMLDivElement>(
   function StopButton(_props, ref) {
     const transport = useTransport();
     const { selectedSessionId } = useSession();
-    const { channelState } = useSessionStatus(selectedSessionId);
+    const { channelState, setOptimistic } = useSessionStatus(selectedSessionId);
 
     const visible =
       channelState === 'streaming' || channelState === 'awaiting_approval';
 
     const handleClick = () => {
       if (!selectedSessionId) return;
+      setOptimistic('idle');
       transport.interrupt(selectedSessionId).catch((err) => {
         console.error('[StopButton] interrupt failed:', err);
+        // Revert optimistic — let real channel state show through
+        setOptimistic('streaming');
       });
     };
 

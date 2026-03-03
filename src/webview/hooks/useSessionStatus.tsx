@@ -64,9 +64,19 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
     const off = transport.onEvent((sid, event) => {
       if (sid !== selectedSessionId) return;
 
-      // Handle catchup for initial state sync
+      // Handle catchup for initial state sync.
+      // Use functional updater so we see the latest state — the closure
+      // captures the value from effect setup, which may be stale.
       if (event.type === 'catchup') {
-        setChannelState(mapCatchupState(event.state));
+        setChannelState(prev => {
+          const mapped = mapCatchupState(event.state);
+          // Don't let a catchup downgrade an optimistic 'streaming' to 'idle'.
+          // The host re-subscribes on sendTurn (mutable subscriber swap), which
+          // fires a catchup with the channel's current state ('idle') before the
+          // adapter has started. Real status events still override normally.
+          if (prev === 'streaming' && mapped === 'idle') return prev;
+          return mapped;
+        });
         return;
       }
 
