@@ -1,133 +1,97 @@
 # Crispy
 
-Clean-room rewrite of [Leto](../leto/) — a VS Code extension that unifies
-cross-vendor AI coding agents (Claude Code, Codex, Gemini, OpenCode) behind a
-single UI. Goal: interactive chat, session history, vendor delegation,
-transcript-as-data.
+A zero-compromise UI for Claude Code, Codex, and more — with controls you
+can't get in a terminal. VS Code / Cursor extension today, standalone browser
+app after v0.1.x.
 
-**Current mission:** Ship v0.1.0 to the OpenVSX Marketplace with Claude +
-Codex adapters working, proving out multi-vendoring. This is the final VS Code
-release — after shipping, this repo will be forked and the fork will drop VS
-Code dependency entirely.
-
-**Current status:** Fully interactive agent client — chat, approvals,
-fork/rewind, session management all wired. Claude adapter implemented.
-Pre-release audit complete. Codex and OpenCode adapters are next.
+Claude and Codex adapters are shipping. Gemini CLI and OpenCode are next.
 
 ## Architecture
 
-Three layers: **core** (`src/core/`), **host** (`src/host/`), and **webview**
-(`src/webview/`).
+Three layers: **core** (`src/core/`), **host** (`src/host/`), **webview**
+(`src/webview/`). Core owns state and logic; host is a thin RPC router;
+webview derives state client-side from channel events.
 
-### Core
+**Full detail:** [`architecture.md`](./architecture.md)
 
-`transcript.ts` defines vendor-agnostic universal types. Per-vendor adapters
-under `adapters/<vendor>/` convert raw formats into `TranscriptEntry`.
-`agent-adapter.ts` defines the `AgentAdapter` interface; `VendorDiscovery`
-handles session listing/loading. Only Claude is wired up today.
+### Core (`src/core/`) — logic and state
 
-Functional API convention throughout core — free functions with module-level
-state, not classes.
+Vendor-agnostic contracts, session orchestration, persistence. Free functions
+with module-level state, not classes — no `this`.
 
-- **`session-channel.ts`** — Per-session state machine:
-  `unattached → idle → streaming ↔ awaiting_approval`. Manages subscriptions,
-  approval tracking, and history backfill. Broadcasts raw `ChannelMessage`
-  (entry/event) plus `HistoryMessage` and `ChannelCatchupMessage` for late
-  subscribers. Client-side hooks interpret events into UI state.
-- **`session-manager.ts`** — Adapter/channel orchestration. Registers vendor
-  adapters, creates/loads/forks sessions, handles pending → real session ID
-  re-keying on `session_changed`. `onIdle` hook triggers session list refresh
-  ~150ms after idle transition.
-- **`session-list-manager.ts`** — Background disk rescan (30s poll), pushes
-  `SessionListEvent` upserts. Three update triggers: session creation (instant),
-  end of turn (150ms grace), periodic rescan.
+- Universal types (`transcript.ts`) — vendor-agnostic; use `metadata` bag for vendor extras
+- Adapter contract (`agent-adapter.ts`) — new adapters implement, never extend
+- Event types (`channel-events.ts`) — idle/active/approval state transitions
+- Session multiplexer (`session-channel.ts`) — dumb pub/sub, no transformation; adapters emit, UI interprets
+- Session orchestration (`session-manager.ts`) — adapter registry, create/load/fork, pending→real ID re-keying
+- Session list (`session-list-manager.ts`) — background rescan, push notifications
+- Persistence (`activity-index.ts`) — owns all `~/.crispy/` I/O
+- File service (`file-service.ts`) — git-backed file listing, @-mention indexing
+- Provider config (`provider-config.ts`) — dynamic provider CRUD, hot-reload watch
+- Per-vendor adapters (`adapters/claude/`, `adapters/codex/`)
 
-### Host
+**State ownership:** session lifecycle, pending approvals, adapter registry,
+disk persistence. **When adding behavior, ask:** does this touch session
+state, transcript data, or vendor logic? → it belongs here.
 
-Two host implementations share the same `client-connection.ts` protocol
-multiplexer.
+### Host (`src/host/`) — transport and wiring
 
-- **`client-connection.ts`** — JSON-RPC wire protocol. Request/response
-  correlation, event push, per-client subscription tracking. Routes all
-  `SessionService` methods to core free functions.
-- **`webview-host.ts`** — VS Code panel management. 3-way open logic: no
-  panels → create; exists not focused → reveal; focused → create beside.
-  Handles VS Code–specific methods (openFile, pickFile, forkToNewPanel).
-- **`dev-server.ts`** — HTTP + WebSocket on port 3456. Mirrors webview-host
-  protocol over WebSocket; serves static bundle over HTTP. Auto-registers
-  `ClaudeAgentAdapter` on startup.
+Thin RPC router. Creates transport abstractions, routes client requests to
+core, wires adapters at startup. No business logic.
 
-### Webview
+- RPC protocol (`client-connection.ts`) — JSON-RPC wire protocol, request/response correlation
+- Adapter registration (`adapter-registry.ts`) — one-shot startup wiring
+- Internal dispatch (`agent-dispatch.ts`) — in-process loopback client
+- VS Code host (`webview-host.ts`) — panel management, VS Code–specific methods
+- Dev server (`dev-server.ts`) — HTTP + WebSocket on port 3456
 
-React 19, esbuild, vanilla CSS with `var(--vscode-*)` theme variables.
+**State ownership:** connection lifecycle, subscription tracking — nothing
+else. **When adding behavior, ask:** is this just routing a call or managing
+a transport? → it belongs here. Anything else → push down to core.
 
-- **Layout:** Two-column grid — 260px sidebar (`SessionSelector`) + main
-  (`TranscriptViewer`).
+### Webview (`src/webview/`) — UI rendering
 
-- **Provider cascade** — `App.tsx` nests: Transport → Environment → Session →
-  FileIndex → Preferences → SessionStatus. Inside `TranscriptViewer`:
-  BlocksToolRegistry → Fork (per-session, reset on session switch).
+React 19, esbuild, vanilla CSS. Derives all state client-side from channel
+events. No direct file I/O or process spawning. **State ownership:** UI-only
+(scroll position, panel expand/collapse, render mode, playback position).
 
-- **Rendering pipeline:** Three modes (YAML / Compact / Blocks). Blocks mode:
-  Entry → `normalizeToRichBlocks()` → `BlocksBlockRenderer` dispatches to
-  per-type views. Extend via `tool-definitions.ts` + `register-views.ts` +
-  a new view component — don't add switch statements to BlocksEntry or
-  BlocksBlockRenderer.
-- **BlocksToolRegistry** (`blocks-tool-registry.ts`): Slim pairing-only
-  registry (pure TS). Tracks tool_use → tool_result lifecycle via
-  pending/results/orphans maps. Subscribed via `useSyncExternalStore`.
-  PerfStore wiring in `BlocksToolRegistryContext.tsx`. Tool results render
-  inside their ToolBlockRenderer card via the blocks pipeline.
+- Provider cascade (`context/`) — Transport → Environment → Session → FileIndex → Preferences
+- Blocks rendering pipeline (`blocks/`) — normalize → dispatch → tool-specific views
+- Tool views (`blocks/views/`) — per-tool compact/expanded renderers
+- Components (`components/`) — TranscriptViewer, ControlPanel, approval flow, session browser
+- Hooks (`hooks/`) — reusable React logic (transcript, status, approvals, scroll)
+- Alternative renderers (`renderers/`) — Compact and YAML modes
 
-- **SessionService** (`transport.ts`): The interface is `SessionService`;
-  `Transport` is a deprecated alias. Fully wired RPC with dual
-  implementations — VS Code postMessage (`transport-vscode.ts`) and WebSocket
-  (`transport-websocket.ts`). Method groups:
-  - Session lifecycle: `listSessions`, `loadSession`, `createSession`,
-    `forkSession`, `forkToNewPanel`, `close`
-  - Agent control: `send`, `interrupt`, `setModel`, `setPermissions`,
-    `reconfigure`
-  - Approval: `resolveApproval`
-  - Subscriptions: `subscribe`, `unsubscribe`, `subscribeSessionList`, `onEvent`
-  - File ops: `getGitFiles`, `fileExists`, `readImage`, `openFile`, `pickFile`
+**Extending the UI:**
+- New tool → metadata in `tool-definitions.ts`, view in `blocks/views/`, register in `register-views.ts`
+- New approval type → variant in `ApprovalContent.tsx`, new component
+- New context → file in `context/`, add to cascade in `App.tsx`
 
-- **Control panel** (`components/control-panel/`): Floating bottom-center bar
-  with chat input, bypass/agency/model/chrome toggles, settings popup, fork
-  button. Fully wired to transport — drives `send`, `createSession`,
-  `forkSession`, `forkToNewPanel`, `setModel`, `setPermissions`, `reconfigure`,
-  `resolveApproval`.
-  - Keyboard shortcuts: Alt+\` (bypass), Alt+Q (agency cycle), Alt+M (model
-    cycle), Ctrl+Enter (send), Ctrl+Shift+Enter (fork)
-  - Image/file attachment: drag-drop + paste with base64 encoding,
-    AttachmentsRow
-  - Optimistic user entries: `buildOptimisticUserEntry()` with
-    `uuid: "optimistic-*"` prefix, backend dedup
-  - `useReducer` for coupled state (bypass ↔ agency)
-  - `PlaybackControls` gated behind `?debug=1`
+## Do not
 
-- **Approval system** (`components/approval/`): Three types routed by
-  `ApprovalContent`:
-  - `StandardApproval` — generic option buttons (Bash/Edit/Write tool use)
-  - `AskUserApproval` — multi-question radio/multiselect forms, sends
-    `updatedInput` with answers
-  - `ExitPlanApproval` — plan review with context-clear checkbox and
-    permission mode selection
-  - Flow: `approval_request` event → `useApprovalRequest()` hook → UI
-    renderer → `transport.resolveApproval(sessionId, toolUseId, optionId,
-    extra)`
-
-- **Fork/Rewind** — per-message fork/rewind buttons on user messages
-  (in `MessageActions`), disabled during streaming.
-  - Fork: creates new session branched at a prior assistant turn
-  - Fork-to-new-panel: `forkToNewPanel()` opens new VS Code panel with
-    pre-filled state
-  - Rewind (fork-in-same-panel): clears session, loads truncated history,
-    enters fork mode with original text pre-filled
-  - `ForkContext` provides fork targets + execution to `MessageActions`
-
-- **Tool renderers** under `renderers/tools/` — Bash, Grep, Glob, Read,
-  Write, Edit, Task (with nested children), TodoWrite. Shared components in
-  `tools/shared/`.
+- **Add business logic to host.** `client-connection.ts` routes RPCs — it
+  does not interpret session events, manage state transitions, or reach into
+  core internals. The core-plumbing refactor (beaf021) cleaned up exactly
+  this: duplicated re-keying, copy-pasted pending-channel boilerplate, and
+  `getChannel()` leaking core state to host. Don't recreate it.
+- **Add vendor-specific fields to `transcript.ts`.** Use the `metadata` bag.
+  Rule of thumb: all vendors need it → base type; one vendor needs it →
+  metadata; unsure → metadata first, promote later.
+- **Extend the adapter contract.** New adapters implement `AgentAdapter` —
+  they do not add fields to it.
+- **Add switch statements to `BlocksEntry` or `BlocksBlockRenderer`.** Extend
+  via `tool-definitions.ts` → `register-views.ts` → new view component.
+- **Replace `useRef` with `useMemo` in `BlocksToolRegistryContext.tsx`.**
+  useMemo's cache is discarded unpredictably — causes Task children to vanish.
+- **Modify generated Codex protocol files** (`adapters/codex/protocol/**/*.ts`).
+  They're auto-generated from ts-rs.
+- **Write to `~/.crispy/` outside `activity-index.ts`.** It owns all reads/writes.
+- **Use deprecated APIs:** `Transport` → `SessionService`,
+  `useSessionCwd()` → `useCwd()`, `extractBashOutput()` → `extractTailMetadata()`.
+- **Create duplicate data structures.** Before adding a map, registry, or
+  type union — search for an existing one. Canonical singles:
+  `BlocksToolRegistry` (tool pairing), `session-manager.ts` (adapter
+  orchestration), `activity-index.ts` (`~/.crispy/` I/O).
 
 ## Key rules
 
@@ -137,14 +101,11 @@ React 19, esbuild, vanilla CSS with `var(--vscode-*)` theme variables.
   `adaptClaudeEntry`) to avoid confusion with universal types.
 - **Schema versioning:** Claude Code's app version is the de facto schema
   version. Fixtures in `test/fixtures/claude/` are keyed by version.
-- **One source of truth per concept.** Before adding a new map, registry,
-  lookup table, or type union — check if an existing one should be extended.
-  If you're creating a second place that stores the same kind of information,
-  stop and consolidate.
-- **File headers are contracts.** Every module's top comment declares what it
-  does and what it does NOT do. Respect those boundaries. If you need to
-  expand a module's responsibility, update the header first and flag it for
-  review.
+- **One API surface per concept.** If there are three ways to do the same
+  thing, there should be one. Consolidate before shipping.
+- **File headers are contracts.** Every module header declares scope and
+  boundaries. Respect them. To expand scope, update the header first. If the
+  header feels contradictory, that usually means a split — not an expansion.
 
 ### Stable layer boundaries — modify with care
 
@@ -177,8 +138,13 @@ interact, and screenshot. Kill the server when done (`lsof -i :3456`).
 
 ## Reference files (`.ai-reference/`, not committed)
 
-- `reference/` — format specs: Claude JSONL, Codex JSONL, Gemini JSON, Agent SDK docs
-- `leto-source/` — predecessor adapter/channel/session patterns to reference
+- `reference/` — format specs (Claude JSONL, Codex JSONL, Gemini JSON),
+  adapter blueprints, Agent SDK docs. **Read before changing `transcript.ts`
+  or writing a new adapter.**
+- `behavioral-specs/` — 10 frozen regression contracts documenting current UI
+  behavior. **Read before modifying UI behavior.**
+- `plans/` — implementation plans and feature designs.
+- `prompts/` — orchestration chains for multi-phase implementations.
 
 ## Skills (`.claude/skills/`)
 
