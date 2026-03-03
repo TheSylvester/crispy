@@ -88,6 +88,9 @@ events. No direct file I/O or process spawning. **State ownership:** UI-only
 - **Write to `~/.crispy/` outside `activity-index.ts`.** It owns all reads/writes.
 - **Use deprecated APIs:** `Transport` → `SessionService`,
   `useSessionCwd()` → `useCwd()`, `extractBashOutput()` → `extractTailMetadata()`.
+- **Use vendor adapters or SDKs directly.** All LLM operations go through
+  `AgentDispatch`. Only adapter registration (`adapter-registry.ts`,
+  `provider-sync.ts`) imports vendor code.
 - **Create duplicate data structures.** Before adding a map, registry, or
   type union — search for an existing one. Canonical singles:
   `BlocksToolRegistry` (tool pairing), `session-manager.ts` (adapter
