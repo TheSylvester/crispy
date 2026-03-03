@@ -41,6 +41,16 @@ interface FilterBarProps {
   viewMode?: ViewMode;
   /** Callback when view mode is toggled. */
   onViewModeChange?: (mode: ViewMode) => void;
+  /** Controlled value for the "Open by ID" input. */
+  sessionIdQuery?: string;
+  /** Update handler for the ID input. */
+  onSessionIdChange?: (value: string) => void;
+  /** Submit handler (Enter or button click). */
+  onSessionIdSubmit?: () => void;
+  /** Inline error message (e.g. "Session not found"). */
+  sessionIdError?: string;
+  /** Disable input during lookup. */
+  sessionIdLoading?: boolean;
 }
 
 export function FilterBar({
@@ -56,9 +66,21 @@ export function FilterBar({
   searchInputRef,
   viewMode = 'sessions',
   onViewModeChange,
+  sessionIdQuery = '',
+  onSessionIdChange,
+  onSessionIdSubmit,
+  sessionIdError = '',
+  sessionIdLoading = false,
 }: FilterBarProps): React.JSX.Element {
   const handleCwdChange = (e: ChangeEvent<HTMLSelectElement>) => {
     onCwdChange(e.target.value || null);
+  };
+
+  const handleIdKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter' && onSessionIdSubmit) {
+      e.preventDefault();
+      onSessionIdSubmit();
+    }
   };
 
   return (
@@ -105,15 +127,41 @@ export function FilterBar({
         />
       </div>
       {viewMode === 'sessions' && (
-        <input
-          ref={searchInputRef}
-          className="crispy-filter-bar__search"
-          type="text"
-          placeholder="Search conversations…"
-          value={searchQuery}
-          onChange={e => onSearchChange(e.target.value)}
-          onKeyDown={onSearchKeyDown}
-        />
+        <div className="crispy-filter-bar__search-row">
+          <input
+            ref={searchInputRef}
+            className="crispy-filter-bar__search"
+            type="text"
+            placeholder="Search conversations…"
+            value={searchQuery}
+            onChange={e => onSearchChange(e.target.value)}
+            onKeyDown={onSearchKeyDown}
+          />
+          {onSessionIdChange && (
+            <>
+              <input
+                className="crispy-filter-bar__id-input"
+                type="text"
+                placeholder="Paste session ID…"
+                value={sessionIdQuery}
+                onChange={e => onSessionIdChange(e.target.value)}
+                onKeyDown={handleIdKeyDown}
+                disabled={sessionIdLoading}
+              />
+              <button
+                className="crispy-filter-bar__id-go"
+                onClick={onSessionIdSubmit}
+                disabled={sessionIdLoading || !sessionIdQuery.trim()}
+                title="Open session by ID"
+              >
+                Go
+              </button>
+            </>
+          )}
+          {sessionIdError && (
+            <span className="crispy-filter-bar__id-error">{sessionIdError}</span>
+          )}
+        </div>
       )}
     </div>
   );

@@ -30,6 +30,8 @@ interface SessionContextValue extends SessionState {
   setSelectedSessionId: (id: string | null) => void;
   setSelectedCwd: (slug: string | null) => void;
   refreshSessions: () => void;
+  /** Look up a session by ID and select it if found. */
+  findAndSelectSession: (id: string) => Promise<{ found: boolean }>;
   availableVendors: string[];
   /** Original workspace CWD path from the host (VS Code only). */
   workspaceCwdPath: string | null;
@@ -198,6 +200,17 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     return [...native, ...dynamic];
   }, [sessions]);
 
+  const findAndSelectSession = useCallback(async (id: string): Promise<{ found: boolean }> => {
+    const trimmed = id.trim();
+    if (!trimmed) return { found: false };
+    const session = await transport.findSession(trimmed);
+    if (session) {
+      setSelectedSessionId(session.sessionId);
+      return { found: true };
+    }
+    return { found: false };
+  }, [transport]);
+
   const value: SessionContextValue = {
     sessions,
     selectedSessionId,
@@ -207,6 +220,7 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     setSelectedSessionId,
     setSelectedCwd,
     refreshSessions: loadSessions,
+    findAndSelectSession,
     availableVendors,
     workspaceCwdPath,
   };

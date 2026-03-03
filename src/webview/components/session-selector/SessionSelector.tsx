@@ -37,6 +37,7 @@ export function SessionSelector(): React.JSX.Element {
   const {
     sessions, selectedSessionId, setSelectedSessionId,
     selectedCwd, setSelectedCwd, availableVendors, isLoading,
+    findAndSelectSession,
   } = useSession();
   const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
   const { channelState } = useSessionStatus(selectedSessionId);
@@ -47,6 +48,13 @@ export function SessionSelector(): React.JSX.Element {
   const [activeVendors, setActiveVendors] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('sessions');
+  const [sessionIdQuery, setSessionIdQuery] = useState('');
+  const [sessionIdError, setSessionIdError] = useState('');
+  const [sessionIdLoading, setSessionIdLoading] = useState(false);
+  const handleSessionIdChange = useCallback((value: string) => {
+    setSessionIdQuery(value);
+    if (sessionIdError) setSessionIdError('');
+  }, [sessionIdError]);
   const deferredQuery = useDeferredValue(searchQuery);
   const listRef = useRef<HTMLUListElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -137,6 +145,27 @@ export function SessionSelector(): React.JSX.Element {
     setTimeout(() => setSidebarCollapsed(true), 200);
   }, [setSelectedSessionId, setSidebarCollapsed]);
 
+  // ---- Open by ID handler ----
+  const handleSessionIdSubmit = useCallback(async () => {
+    const id = sessionIdQuery.trim();
+    if (!id) return;
+    setSessionIdError('');
+    setSessionIdLoading(true);
+    try {
+      const result = await findAndSelectSession(id);
+      if (result.found) {
+        setSessionIdQuery('');
+        setTimeout(() => setSidebarCollapsed(true), 200);
+      } else {
+        setSessionIdError('Session not found');
+      }
+    } catch {
+      setSessionIdError('Lookup failed');
+    } finally {
+      setSessionIdLoading(false);
+    }
+  }, [sessionIdQuery, findAndSelectSession, setSidebarCollapsed]);
+
   // ---- Keyboard navigation ----
   const onKeyboardSelect = useCallback((index: number) => {
     const session = flatVisibleSessions[index];
@@ -213,6 +242,11 @@ export function SessionSelector(): React.JSX.Element {
           searchInputRef={searchInputRef}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
+          sessionIdQuery={sessionIdQuery}
+          onSessionIdChange={handleSessionIdChange}
+          onSessionIdSubmit={handleSessionIdSubmit}
+          sessionIdError={sessionIdError}
+          sessionIdLoading={sessionIdLoading}
         />
         {viewMode === 'activity' ? (
           <ActivityPathView />
@@ -241,6 +275,11 @@ export function SessionSelector(): React.JSX.Element {
         searchInputRef={searchInputRef}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        sessionIdQuery={sessionIdQuery}
+        onSessionIdChange={handleSessionIdChange}
+        onSessionIdSubmit={handleSessionIdSubmit}
+        sessionIdError={sessionIdError}
+        sessionIdLoading={sessionIdLoading}
       />
 
       {viewMode === 'activity' ? (
