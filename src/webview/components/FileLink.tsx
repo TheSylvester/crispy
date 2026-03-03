@@ -34,6 +34,7 @@ export function FileLink({ token, matches, line, col, children }: FileLinkProps)
 
   const handleClick = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
 
     if (env === 'vscode') {
       let targetPath: string | null = null;

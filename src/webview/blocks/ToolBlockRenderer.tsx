@@ -69,10 +69,15 @@ export function ToolBlockRenderer({
   const panelDispatch = usePanelDispatch();
   const clickable = anchor.type === 'main-thread' || anchor.type === 'task-tool' || anchor.type === 'tool-panel';
   const handleClick = useCallback((e: React.MouseEvent) => {
+    // Bail out if clicking an interactive element (link, button, input) —
+    // let the element handle its own click instead of activating the card.
+    const target = e.target as HTMLElement;
+    if (target.closest('a[href]')) {
+      return;
+    }
     // In the panel, only toggle on header clicks — ignore clicks inside
     // the tool body (children, result text, code blocks, etc.)
     if (anchor.type === 'tool-panel') {
-      const target = e.target as HTMLElement;
       if (target.closest('.crispy-blocks-tool-body, .crispy-blocks-task-children')) {
         return;
       }
