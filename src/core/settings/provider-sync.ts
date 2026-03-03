@@ -1,0 +1,235 @@
+/**
+ * Provider Sync — Adapter registration logic for dynamic providers
+ *
+ * Extracted from provider-config.ts. Reconciles in-memory provider
+ * configurations with the adapter registry in session-manager.
+ *
+ * @module settings/provider-sync
+ */
+
+import { ClaudeAgentAdapter, getResumeModel } from '../adapters/claude/claude-code-adapter.js';
+import { registerAdapter, unregisterAdapter, getRegisteredVendors } from '../session-manager.js';
+import { NATIVE_VENDORS, type Vendor } from '../transcript.js';
+import type { VendorDiscovery, SessionOpenSpec } from '../agent-adapter.js';
+import type { ProviderConfig } from './types.js';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/** Model group for a vendor — used in the webview model dropdown. */
+export interface VendorModelGroup {
+  vendor: Vendor;
+  label: string;
+  models: { value: string; label: string }[];
+  /** Whether a backend adapter is registered for this vendor. Defaults to true. */
+  available?: boolean;
+}
+
+// ============================================================================
+// Module State
+// ============================================================================
+
+/** Set of vendor slugs currently registered as dynamic adapters. */
+const registeredDynamic = new Set<string>();
+
+/** Current providers snapshot — updated by syncProviderAdapters for getModelGroups(). */
+let currentProviders: Record<string, ProviderConfig> = {};
+
+// ============================================================================
+// Internal Helpers
+// ============================================================================
+
+/** Mask an API key for wire transport: first 3 + "..." + last 4. */
+export function maskApiKey(key: string): string {
+  if (key.length <= 8) return '***';
+  return `${key.slice(0, 3)}...${key.slice(-4)}`;
+}
+
+/** Build env dict from a ProviderConfig for ClaudeAgentAdapter. */
+export function buildEnvDict(config: ProviderConfig): Record<string, string> {
+  const env: Record<string, string> = {
+    ANTHROPIC_BASE_URL: config.baseUrl,
+    ANTHROPIC_AUTH_TOKEN: config.apiKey,
+  };
+
+  // Map model slots to env vars
+  const defaultModel = config.models.default;
+  const sonnetModel = config.models.sonnet ?? defaultModel;
+  const opusModel = config.models.opus ?? defaultModel;
+  const haikuModel = config.models.haiku ?? defaultModel;
+
+  // Primary model env vars (some providers require ANTHROPIC_MODEL)
+  env.ANTHROPIC_MODEL = defaultModel;
+  env.ANTHROPIC_SMALL_FAST_MODEL = haikuModel;
+  env.ANTHROPIC_DEFAULT_SONNET_MODEL = sonnetModel;
+  env.ANTHROPIC_DEFAULT_OPUS_MODEL = opusModel;
+  env.ANTHROPIC_DEFAULT_HAIKU_MODEL = haikuModel;
+
+  if (config.timeout) env.API_TIMEOUT_MS = String(config.timeout);
+
+  // Merge any extra env vars (e.g. CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC)
+  if (config.extraEnv) {
+    Object.assign(env, config.extraEnv);
+  }
+
+  return env;
+}
+
+/** Create an empty VendorDiscovery for a dynamic provider (sessions live in Claude's store). */
+export function makeDiscovery(slug: string): VendorDiscovery {
+  return {
+    vendor: slug,
+    findSession: () => undefined,
+    listSessions: () => [],
+    async loadHistory() { return []; },
+  };
+}
+
+/** Create an adapter factory for a dynamic provider. */
+export function makeFactory(
+  slug: string,
+  config: ProviderConfig,
+  base: { cwd: string; pathToClaudeCodeExecutable?: string },
+) {
+  const env = buildEnvDict(config);
+  return (spec: SessionOpenSpec) => {
+    switch (spec.mode) {
+      case 'resume': {
+        const model = getResumeModel(spec.sessionId);
+        return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, vendor: slug, env, ...(model && { model }) });
+      }
+      case 'fresh':
+        return new ClaudeAgentAdapter({
+          ...base, cwd: spec.cwd, vendor: slug, env,
+          ...(spec.model && { model: spec.model }),
+          ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+          ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
+        });
+      case 'fork':
+        return new ClaudeAgentAdapter({
+          ...base, resume: spec.fromSessionId, forkSession: true, vendor: slug, env,
+          ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
+        });
+      case 'hydrated':
+        return new ClaudeAgentAdapter({
+          ...base, cwd: spec.cwd, vendor: slug, env,
+          hydratedHistory: spec.history,
+          ...(spec.model && { model: spec.model }),
+          ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+        });
+    }
+  };
+}
+
+// ============================================================================
+// Sync
+// ============================================================================
+
+/**
+ * Reconcile in-memory providers with adapter registry.
+ * Called after every settings write that touches the providers section.
+ *
+ * @param providers The current providers record from settings
+ * @param base Base options for adapter creation (cwd + optional pathToClaudeCodeExecutable)
+ */
+export function syncProviderAdapters(
+  providers: Record<string, ProviderConfig>,
+  base: { cwd: string; pathToClaudeCodeExecutable?: string },
+): void {
+  // Update cached providers for getModelGroups()
+  currentProviders = providers;
+
+  // Unregister removed or disabled providers
+  for (const slug of registeredDynamic) {
+    if (!providers[slug] || !providers[slug].enabled) {
+      try { unregisterAdapter(slug); } catch { /* best effort */ }
+      registeredDynamic.delete(slug);
+    }
+  }
+
+  // Register new or re-register changed providers
+  for (const [slug, config] of Object.entries(providers)) {
+    if (NATIVE_VENDORS.has(slug)) continue; // Never override native vendors
+    if (!config.enabled) continue;
+
+    if (registeredDynamic.has(slug)) {
+      // Already registered — unregister and re-register with new config
+      try { unregisterAdapter(slug); } catch { /* best effort */ }
+      registeredDynamic.delete(slug);
+    }
+
+    registerAdapter(makeDiscovery(slug), makeFactory(slug, config, base));
+    registeredDynamic.add(slug);
+  }
+}
+
+// ============================================================================
+// Model Groups
+// ============================================================================
+
+/**
+ * Generate VendorModelGroup[] for the webview model dropdown.
+ *
+ * @param registeredVendors  Optional set of vendor slugs that have a registered
+ *   adapter. When provided, groups for unregistered vendors are marked
+ *   `available: false` so the UI can gray them out. When omitted (e.g. dev-server
+ *   where everything is registered), all groups default to available.
+ */
+export function getModelGroups(registeredVendors?: Set<string>): VendorModelGroup[] {
+  // Use provided set or get from session-manager
+  const vendors = registeredVendors ?? getRegisteredVendors();
+  const groups: VendorModelGroup[] = [];
+
+  // Claude is always first (hardcoded — native vendor)
+  groups.push({
+    vendor: 'claude',
+    label: 'Claude',
+    models: [
+      { value: 'claude:opus', label: 'Opus' },
+      { value: 'claude:sonnet', label: 'Sonnet' },
+      { value: 'claude:haiku', label: 'Haiku' },
+    ],
+    available: !vendors || vendors.has('claude'),
+  });
+
+  // Codex — models are server-managed, user can override via model string
+  groups.push({
+    vendor: 'codex',
+    label: 'Codex',
+    models: [
+      { value: 'codex:', label: 'GPT (default)' },
+    ],
+    available: !vendors || vendors.has('codex'),
+  });
+
+  // Dynamic providers
+  for (const [slug, config] of Object.entries(currentProviders)) {
+    if (!config.enabled) continue;
+
+    const models: { value: string; label: string }[] = [];
+
+    // Always include default model
+    models.push({ value: `${slug}:${config.models.default}`, label: config.models.default });
+
+    // Add opus/sonnet/haiku if they differ from default
+    if (config.models.opus && config.models.opus !== config.models.default) {
+      models.push({ value: `${slug}:${config.models.opus}`, label: config.models.opus });
+    }
+    if (config.models.sonnet && config.models.sonnet !== config.models.default) {
+      models.push({ value: `${slug}:${config.models.sonnet}`, label: config.models.sonnet });
+    }
+    if (config.models.haiku && config.models.haiku !== config.models.default) {
+      models.push({ value: `${slug}:${config.models.haiku}`, label: config.models.haiku });
+    }
+
+    groups.push({
+      vendor: slug,
+      label: config.label,
+      models,
+      available: !vendors || vendors.has(slug),
+    });
+  }
+
+  return groups;
+}

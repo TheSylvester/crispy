@@ -21,7 +21,7 @@ export type AgencyMode =
  */
 export type ModelOption = string;
 
-export type { VendorModelGroup } from '../../../core/provider-events.js';
+export type { VendorModelGroup } from '../../../core/settings/provider-sync.js';
 
 /** Re-export from core — one source of truth for the "vendor:model" parser. */
 export { parseModelOption } from '../../../core/model-utils.js';

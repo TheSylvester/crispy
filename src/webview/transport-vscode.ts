@@ -11,7 +11,7 @@ import type { HostEvent } from '../host/client-connection.js';
 import type { SessionService, WireSessionInfo } from './transport.js';
 import type { TranscriptEntry } from '../core/transcript.js';
 import type { TurnReceipt } from '../core/agent-adapter.js';
-import type { WireProviderConfig } from '../core/provider-config.js';
+import type { WireProviderConfig, WireSettingsSnapshot, SettingsPatch } from '../core/settings/types.js';
 import type { VendorModelGroup } from './components/control-panel/types.js';
 
 interface VSCodeAPI {
@@ -134,6 +134,9 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     saveProvider: (slug, config) => request<{ saved: boolean }>('saveProvider', { slug, config }),
     deleteProvider: (slug) => request<{ deleted: boolean }>('deleteProvider', { slug }),
     getModelGroups: () => request<VendorModelGroup[]>('getModelGroups'),
+
+    getSettings: () => request<WireSettingsSnapshot>('getSettings'),
+    updateSettings: (patch, opts) => request<WireSettingsSnapshot>('updateSettings', { patch, ...opts }),
 
     getActivityLog: (timeRange?) => request<import('../core/activity-index.js').ActivityIndexEntry[]>('getActivityLog', timeRange ?? {}),
     getResponsePreview: (file, offset) => request<string | null>('getResponsePreview', { file, offset }),

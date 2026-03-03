@@ -13,7 +13,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { SettingsIcon } from './icons.js';
 import type { RenderMode } from '../../types.js';
 import type { ToolViewOverride } from '../../context/PreferencesContext.js';
-import type { WireProviderConfig, ProviderConfig } from '../../../core/provider-config.js';
+import type { WireProviderConfig, ProviderConfig } from '../../../core/settings/types.js';
 
 interface SettingsPopupProps {
   pinned: boolean;

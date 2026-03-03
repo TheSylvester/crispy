@@ -18,7 +18,7 @@ import { readFile } from 'node:fs/promises';
 import { join, extname } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 
-import { syncProviders, startWatching } from '../core/provider-config.js';
+import { initSettings, startWatchingSettings } from '../core/settings/index.js';
 import { createClientConnection } from './client-connection.js';
 import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
@@ -117,9 +117,9 @@ wss.on('connection', (ws: WebSocket) => {
 const cwd = process.cwd();
 registerAllAdapters({ cwd });
 
-// Register dynamic providers from ~/.config/crispy/providers.json
+// Initialize settings from ~/.config/crispy/settings.json
 const providerBase = { cwd };
-syncProviders(providerBase).then(() => startWatching(providerBase));
+initSettings(providerBase).then(() => startWatchingSettings()).catch((err) => console.error('[dev-server] Failed to initialize settings:', err));
 
 server.listen(PORT, () => {
   console.log(`[dev-server] Crispy dev server running at http://localhost:${PORT}`);

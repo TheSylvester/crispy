@@ -1,5 +1,19 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+/**
+ * Preferences Context — persisted + ephemeral UI state
+ *
+ * Only toolPanelAutoOpen is persisted via the settings RPC.
+ * All other preferences (renderMode, debugMode, panel state) are per-window
+ * ephemeral state managed with plain useState.
+ *
+ * @module PreferencesContext
+ */
+
+import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import type { RenderMode } from '../types.js';
+import { useTransport } from './TransportContext.js';
+import { SETTINGS_CHANNEL_ID } from '../../core/settings/events.js';
+import type { SettingsChangedGlobalEvent } from '../../core/settings/events.js';
+import type { SettingsPreferences } from '../../core/settings/types.js';
 
 /** Debug override for tool view mode. null = automatic (normal selectView logic). */
 export type ToolViewOverride = 'compact' | 'expanded' | null;
@@ -50,16 +64,113 @@ function getInitialRenderMode(): RenderMode {
   return 'blocks';
 }
 
+/** Debounce delay for persisted writes (ms). */
+const PERSIST_DEBOUNCE_MS = 150;
+
 export function PreferencesProvider({ children }: { children: ReactNode }) {
+  const transport = useTransport();
+
+  // ============================================================================
+  // Ephemeral preferences — per-window transient UI state
+  // ============================================================================
+
   const [renderMode, setRenderMode] = useState<RenderMode>(getInitialRenderMode);
+  const [debugMode, setDebugMode] = useState(false);
   const [settingsPinned, setSettingsPinned] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [toolPanelOpen, setToolPanelOpen] = useState(false);
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
   const [toolPanelMode, setToolPanelMode] = useState<ToolPanelMode>('inspector');
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
-  const [debugMode, setDebugMode] = useState(false);
-  const [toolPanelAutoOpen, setToolPanelAutoOpen] = useState(true);
+
+  // ============================================================================
+  // Persisted preference — toolPanelAutoOpen only
+  // ============================================================================
+
+  const [toolPanelAutoOpen, setToolPanelAutoOpenLocal] = useState(true);
+
+  /** Latest known revision from settings RPC or incoming events. */
+  const revisionRef = useRef(0);
+  /** True while a debounced write is pending — blocks incoming event overwrites. */
+  const pendingWriteRef = useRef(false);
+  /** Timer for debounced persist calls. */
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // Seed toolPanelAutoOpen from settings on mount
+  useEffect(() => {
+    transport.getSettings().then((snapshot) => {
+      revisionRef.current = snapshot.revision;
+      setToolPanelAutoOpenLocal(snapshot.settings.preferences.toolPanelAutoOpen);
+    }).catch((err) => {
+      console.error('[PreferencesContext] Failed to load settings:', err);
+    });
+  }, [transport]);
+
+  // Listen for cross-panel settings changes (toolPanelAutoOpen only)
+  useEffect(() => {
+    return transport.onEvent((sessionId, event) => {
+      if (sessionId !== SETTINGS_CHANNEL_ID) return;
+      if (event.type !== 'settings_snapshot') return;
+
+      const settingsEvent = event as unknown as SettingsChangedGlobalEvent;
+      const { snapshot, changedSections } = settingsEvent;
+
+      if (snapshot.revision <= revisionRef.current) return;
+      if (pendingWriteRef.current) return;
+
+      revisionRef.current = snapshot.revision;
+
+      if (changedSections.includes('preferences')) {
+        setToolPanelAutoOpenLocal(snapshot.settings.preferences.toolPanelAutoOpen);
+      }
+    });
+  }, [transport]);
+
+  // Debounced write helper
+  const persistPreference = useCallback((patch: Partial<SettingsPreferences>) => {
+    pendingWriteRef.current = true;
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      transport.updateSettings(
+        { preferences: patch },
+        { expectedRevision: revisionRef.current },
+      ).then((snapshot) => {
+        revisionRef.current = snapshot.revision;
+        pendingWriteRef.current = false;
+      }).catch((err) => {
+        pendingWriteRef.current = false;
+
+        if (String(err).includes('SETTINGS_CONFLICT')) {
+          transport.getSettings().then((latestSnapshot) => {
+            revisionRef.current = latestSnapshot.revision;
+            return transport.updateSettings(
+              { preferences: patch },
+              { expectedRevision: latestSnapshot.revision },
+            );
+          }).then((retrySnapshot) => {
+            revisionRef.current = retrySnapshot.revision;
+          }).catch((retryErr) => {
+            console.error('[PreferencesContext] Retry failed:', retryErr);
+          });
+        } else {
+          console.error('[PreferencesContext] updateSettings failed:', err);
+        }
+      });
+    }, PERSIST_DEBOUNCE_MS);
+  }, [transport]);
+
+  const setToolPanelAutoOpen = useCallback((enabled: boolean) => {
+    setToolPanelAutoOpenLocal(enabled);
+    persistPreference({ toolPanelAutoOpen: enabled });
+  }, [persistPreference]);
+
+  // ============================================================================
+  // Context value
+  // ============================================================================
 
   const value: PreferencesContextValue = {
     renderMode,

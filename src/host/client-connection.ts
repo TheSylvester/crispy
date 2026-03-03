@@ -20,8 +20,13 @@ import type {
   SubscriberMessage,
 } from "../core/session-channel.js";
 import type { SessionListEvent } from "../core/session-list-events.js";
-import type { ProviderEvent } from '../core/provider-events.js';
-import { PROVIDERS_CHANNEL_ID } from '../core/provider-events.js';
+import {
+  getSettingsSnapshot, updateSettings, deleteProvider,
+  onSettingsChanged, getModelGroups,
+} from '../core/settings/index.js';
+import { SETTINGS_CHANNEL_ID } from '../core/settings/events.js';
+import type { SettingsChangedGlobalEvent } from '../core/settings/events.js';
+import type { SettingsPatch, ProviderConfig } from '../core/settings/types.js';
 import { resolveApproval, subscribe, unsubscribe } from "../core/session-channel.js";
 import {
   listAllSessions,
@@ -41,11 +46,6 @@ import {
 } from "../core/session-list-manager.js";
 import { SESSION_LIST_CHANNEL_ID } from "../core/session-list-events.js";
 import { getGitFiles, fileExists, readImage, readTextFile } from "../core/file-service.js";
-import {
-  getProviders, saveProvider, deleteProvider, getModelGroups,
-  onProvidersChanged, getProviderBase,
-} from '../core/provider-config.js';
-import type { ProviderConfig } from '../core/provider-config.js';
 import { queryActivity } from '../core/activity-index.js';
 import { readResponsePreview } from '../core/adapters/claude/jsonl-reader.js';
 import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-reader.js';
@@ -80,7 +80,7 @@ export type ClientMessage = {
 };
 
 /** Union of all events that can be pushed over the wire. */
-export type HostEvent = SubscriberMessage | SessionListEvent | ProviderEvent;
+export type HostEvent = SubscriberMessage | SessionListEvent | SettingsChangedGlobalEvent;
 
 /** Host → Client response or push event. */
 export type HostMessage =
@@ -152,12 +152,12 @@ export function createClientConnection(
     );
   }
 
-  /** Push model group updates when providers.json changes. */
-  const providerUnsub = onProvidersChanged(() => {
+  /** Push settings updates when settings.json changes. */
+  const settingsUnsub = onSettingsChanged(({ snapshot, changedSections }) => {
     sendFn({
       kind: 'event',
-      sessionId: PROVIDERS_CHANNEL_ID,
-      event: { type: 'providers_changed', groups: getModelGroups(getRegisteredVendors()) },
+      sessionId: SETTINGS_CHANNEL_ID,
+      event: { type: 'settings_snapshot', snapshot, changedSections },
     });
   });
 
@@ -441,19 +441,28 @@ export function createClientConnection(
         return readSubagentEntries(sessionId, agentId, parentToolUseId, cursor);
       }
 
+      case 'getSettings':
+        return getSettingsSnapshot();
+
+      case 'updateSettings': {
+        const patch = params.patch as SettingsPatch;
+        const expectedRevision = params.expectedRevision as number | undefined;
+        return updateSettings(patch, { expectedRevision });
+      }
+
       case 'listProviders':
-        return getProviders();
+        return getSettingsSnapshot().settings.providers;
 
       case 'saveProvider': {
         const slug = params.slug as string;
         const config = params.config as ProviderConfig;
-        await saveProvider(slug, config, getProviderBase());
+        await updateSettings({ providers: { [slug]: config } });
         return { saved: true };
       }
 
       case 'deleteProvider': {
         const slug = params.slug as string;
-        await deleteProvider(slug, getProviderBase());
+        await deleteProvider(slug);
         return { deleted: true };
       }
 
@@ -483,7 +492,7 @@ export function createClientConnection(
 
   function dispose(): void {
     disposed = true;
-    providerUnsub();
+    settingsUnsub();
     if (sessionListSub) {
       unsubscribeSessionList(sessionListSub);
       sessionListSub = null;

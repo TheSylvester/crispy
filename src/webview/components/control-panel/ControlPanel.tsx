@@ -44,7 +44,9 @@ import { useSessionStatus } from '../../hooks/useSessionStatus.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent, TurnTarget } from '../../../core/agent-adapter.js';
-import type { WireProviderConfig } from '../../../core/provider-config.js';
+import type { WireProviderConfig } from '../../../core/settings/types.js';
+import type { SettingsChangedGlobalEvent } from '../../../core/settings/events.js';
+import { SETTINGS_CHANNEL_ID } from '../../../core/settings/events.js';
 
 interface ControlPanelProps {
   onForkHoverChange?: (hovering: boolean) => void;
@@ -196,12 +198,13 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       transport.getModelGroups().then(setModelGroups).catch(console.error);
     }, [transport]);
 
-    // Listen for push updates when providers.json changes
+    // Listen for push updates when settings.json changes
     useEffect(() => {
       const off = transport.onEvent((sessionId, event) => {
-        if (sessionId === '__providers__' && event.type === 'providers_changed') {
-          setModelGroups(event.groups);
-          transport.listProviders().then(setProviders).catch(console.error);
+        if (sessionId === SETTINGS_CHANNEL_ID && event.type === 'settings_snapshot') {
+          const settingsEvent = event as SettingsChangedGlobalEvent;
+          setProviders(settingsEvent.snapshot.settings.providers);
+          transport.getModelGroups().then(setModelGroups).catch(console.error);
         }
       });
       return off;

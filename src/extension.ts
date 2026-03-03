@@ -5,7 +5,7 @@
  */
 
 import * as vscode from 'vscode';
-import { syncProviders, startWatching, stopWatching } from './core/provider-config.js';
+import { initSettings, startWatchingSettings, stopWatchingSettings } from './core/settings/index.js';
 import { openCrispyPanel, getOrCreatePanelForPrefill } from './host/webview-host.js';
 import { startRescan, stopRescan } from './core/session-list-manager.js';
 import { findClaudeBinary } from './core/find-claude-binary.js';
@@ -53,16 +53,16 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  // Register dynamic Anthropic-compatible providers from ~/.config/crispy/providers.json
+  // Initialize settings from ~/.config/crispy/settings.json
   const providerBase = pathToClaudeCodeExecutable
     ? { cwd, pathToClaudeCodeExecutable }
     : { cwd };
-  syncProviders(providerBase).catch((err) => console.error('[crispy] Failed to load providers:', err));
-  startWatching(providerBase);
+  initSettings(providerBase).catch((err) => console.error('[crispy] Failed to load settings:', err));
+  startWatchingSettings();
 
   startRescan();
   context.subscriptions.push({ dispose: () => stopRescan() });
-  context.subscriptions.push({ dispose: () => stopWatching() });
+  context.subscriptions.push({ dispose: () => stopWatchingSettings() });
 }
 
 export function deactivate(): void {}
