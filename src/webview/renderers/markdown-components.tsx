@@ -41,6 +41,10 @@ export function CodeBlock(props: ComponentPropsWithoutRef<'code'>): React.JSX.El
   const { children, className, ...rest } = props;
   const language = extractLanguage(className);
 
+  // Hook must be called unconditionally (before any early return) to satisfy
+  // React's rules-of-hooks — hook count must be stable across renders.
+  const themeKind = useThemeKind();
+
   // Inline code — no language class means it's not a fenced block
   if (!language) {
     return (
@@ -51,7 +55,6 @@ export function CodeBlock(props: ComponentPropsWithoutRef<'code'>): React.JSX.El
   }
 
   // Fenced code block — syntax highlight with prism
-  const themeKind = useThemeKind();
   const prismTheme = isLightTheme(themeKind) ? themes.vsLight : themes.vsDark;
 
   const code = String(children).replace(/\n$/, '');

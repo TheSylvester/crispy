@@ -7,6 +7,7 @@
  * @module webview/blocks/types
  */
 
+import type React from 'react';
 import type { ReactNode } from 'react';
 import type { ContentBlock, ToolResultBlock } from '../../core/transcript.js';
 
@@ -106,10 +107,12 @@ export interface ToolDefinition {
   activity: { verb: string; pastVerb: string };
   /** Whether inspector mode shows this tool expanded or compact by default */
   inspectorDefault: 'expanded' | 'compact';
-  /** View components for different display states */
+  /** View components for different display states.
+   *  MUST be rendered as JSX elements (<View .../>) — never as plain function
+   *  calls — so each view gets its own React fiber and hook scope. */
   views: {
-    compact: (props: ToolViewProps) => ReactNode;
-    expanded: (props: ToolViewProps) => ReactNode;
+    compact: React.ComponentType<ToolViewProps>;
+    expanded: React.ComponentType<ToolViewProps>;
   };
 }
 

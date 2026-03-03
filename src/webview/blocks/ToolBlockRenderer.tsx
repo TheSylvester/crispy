@@ -142,13 +142,17 @@ export function ToolBlockRenderer({
       }
     }
 
-    // Get the view renderer
-    const viewFn = def.views[viewMode];
+    // Get the view renderer — must be rendered as a React component (not a
+    // plain function call) so hooks inside the view belong to their own fiber,
+    // not to ToolBlockRenderer.  Compact and expanded views may call different
+    // hooks, so a plain `viewFn(viewProps)` would violate rules-of-hooks when
+    // the view mode flips.
+    const ViewComponent = def.views[viewMode];
 
-    if (viewFn) {
+    if (ViewComponent) {
       return (
         <div className="crispy-blocks-tool" data-tool-id={block.id} data-tool-name={block.name} data-panel-active={isPanelActive || undefined} onClick={clickable ? handleClick : undefined}>
-          {viewFn(viewProps)}
+          <ViewComponent {...viewProps} />
         </div>
       );
     }
