@@ -1,14 +1,12 @@
 /**
  * ActivityPathView — Chronological user activity across all sessions
  *
- * Displays a matrix: user prompts as rows (left columns, sticky),
- * session lanes as columns (horizontally scrollable). Each cell
- * at a prompt/session intersection shows a truncated assistant
- * response preview; hover reveals the full text via native title tooltip.
- *
- * Left side has two sticky columns: TIME (date+time) and YOUR PROMPT
- * (3-line clamped user message). Session lane cells show 3-line
- * clamped response text. Pagination via "Load more".
+ * Displays a 3-column layout: TIME | YOUR PROMPT | RESPONSE.
+ * The response column multiplexes all sessions into a single chameleon
+ * column — at rest each row shows a colored dot (per-session lane color),
+ * and on hover the response text is revealed while the header morphs to
+ * show the hovered session's identity. All hover effects are zero-React-
+ * render via direct DOM class toggles and ref updates.
  *
  * @module ActivityPathView
  */
@@ -39,17 +37,6 @@ const LANE_COLORS = [
 ];
 
 // ============================================================================
-// Types
-// ============================================================================
-
-interface SessionLane {
-  file: string;
-  session?: WireSessionInfo;
-  label: string;
-  lastActivity: string;
-}
-
-// ============================================================================
 // Helpers
 // ============================================================================
 
@@ -71,6 +58,15 @@ function formatDate(iso: string): string {
   if (diffDays === 0) return 'Today';
   if (diffDays === 1) return 'Yesterday';
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+/** Deterministic color index from file path (hash-based, not order-based) */
+function fileColorIndex(file: string): number {
+  let h = 0;
+  for (let i = 0; i < file.length; i++) {
+    h = ((h << 5) - h + file.charCodeAt(i)) | 0;
+  }
+  return ((h % LANE_COLORS.length) + LANE_COLORS.length) % LANE_COLORS.length;
 }
 
 // ============================================================================
@@ -110,7 +106,7 @@ export function ActivityPathView(): React.JSX.Element {
     }).catch(() => setLoading(false));
   }, [transport]);
 
-  // ---- Build session lanes (columns) ----
+  // ---- Build session map & derived lookups ----
   const sessionMap = useMemo(() => {
     const map = new Map<string, WireSessionInfo>();
     for (const s of sessions) {
@@ -119,8 +115,19 @@ export function ActivityPathView(): React.JSX.Element {
     return map;
   }, [sessions]);
 
-  const lanes: SessionLane[] = useMemo(() => {
-    // Group entries by file, find most recent activity per file
+  // Per-file color assignment (hash-based — deterministic regardless of sort order)
+  const laneColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of entries) {
+      if (!map.has(e.file)) {
+        map.set(e.file, LANE_COLORS[fileColorIndex(e.file)]);
+      }
+    }
+    return map;
+  }, [entries]);
+
+  // Per-file index for staircase indent (sorted by most recent activity)
+  const laneIndexMap = useMemo(() => {
     const fileActivity = new Map<string, string>();
     for (const e of entries) {
       const existing = fileActivity.get(e.file);
@@ -128,40 +135,25 @@ export function ActivityPathView(): React.JSX.Element {
         fileActivity.set(e.file, e.timestamp);
       }
     }
-
-    // Build lanes, sorted by most recent activity first
-    return [...fileActivity.entries()]
-      .sort((a, b) => b[1].localeCompare(a[1]))
-      .map(([file, lastActivity]) => {
-        const session = sessionMap.get(file);
-        const label = session?.label
-          || session?.lastMessage
-          || file.split('/').pop()?.replace('.jsonl', '')
-          || file;
-        return { file, session, label, lastActivity };
-      });
-  }, [entries, sessionMap]);
-
-  // Keyed lookup for O(1) lane-by-file access (used in time/prompt columns)
-  const laneByFile = useMemo(() => {
-    const map = new Map<string, SessionLane>();
-    for (const lane of lanes) map.set(lane.file, lane);
-    return map;
-  }, [lanes]);
-
-  // Per-lane color assignment (cycles through palette by lane order)
-  const laneColorMap = useMemo(() => {
-    const map = new Map<string, string>();
-    lanes.forEach((lane, i) => map.set(lane.file, LANE_COLORS[i % LANE_COLORS.length]));
-    return map;
-  }, [lanes]);
-
-  // Per-lane index for staircase indent (B1: border-left width varies per thread)
-  const laneIndexMap = useMemo(() => {
+    const sorted = [...fileActivity.entries()].sort((a, b) => b[1].localeCompare(a[1]));
     const map = new Map<string, number>();
-    lanes.forEach((lane, i) => map.set(lane.file, i));
+    sorted.forEach(([file], i) => map.set(file, i));
     return map;
-  }, [lanes]);
+  }, [entries]);
+
+  // Per-file human-readable label (for response header on hover)
+  const fileLabelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of entries) {
+      if (map.has(e.file)) continue;
+      const session = sessionMap.get(e.file);
+      map.set(e.file, session?.label
+        || session?.lastMessage
+        || e.file.split('/').pop()?.replace('.jsonl', '')
+        || e.file);
+    }
+    return map;
+  }, [entries, sessionMap]);
 
   // ---- Sort + paginate entries ----
   // sortedEntries: newest-first (used for slicing the N most recent)
@@ -211,12 +203,13 @@ export function ActivityPathView(): React.JSX.Element {
   }, [paginatedEntries, transport]);
 
   // ---- Click-to-navigate handler ----
-  const handleCellClick = useCallback((lane: SessionLane) => {
-    if (lane.session) {
-      setSelectedSessionId(lane.session.sessionId);
+  const handleEntryClick = useCallback((file: string) => {
+    const session = sessionMap.get(file);
+    if (session) {
+      setSelectedSessionId(session.sessionId);
       setTimeout(() => setSidebarCollapsed(true), 200);
     }
-  }, [setSelectedSessionId, setSidebarCollapsed]);
+  }, [sessionMap, setSelectedSessionId, setSidebarCollapsed]);
 
   // ---- Scroll management ----
   const matrixRef = useRef<HTMLDivElement>(null);
@@ -262,34 +255,23 @@ export function ActivityPathView(): React.JSX.Element {
 
   // ---- Hover crosshair (zero React re-renders — direct DOM class toggles) ----
   const hoverRef = useRef<{ row: string; file: string; els: Element[] } | null>(null);
-  const laneScrollTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-
-  // Suppress lane auto-scroll while user is actively scrolling (wheel/trackpad)
-  const userScrollingRef = useRef(false);
-  const wheelCooldown = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => {
-    const el = matrixRef.current;
-    if (!el) return;
-    const onWheel = () => {
-      userScrollingRef.current = true;
-      clearTimeout(wheelCooldown.current);
-      wheelCooldown.current = setTimeout(() => { userScrollingRef.current = false; }, 300);
-    };
-    el.addEventListener('wheel', onWheel, { passive: true });
-    return () => { el.removeEventListener('wheel', onWheel); clearTimeout(wheelCooldown.current); };
-  }, [loading]);
+  const responseHeaderRef = useRef<HTMLSpanElement>(null);
 
   const clearHighlights = useCallback(() => {
-    clearTimeout(laneScrollTimer.current);
     if (!hoverRef.current) return;
     for (const el of hoverRef.current.els) {
       el.classList.remove(
         'crispy-activity-path__row--highlighted',
         'crispy-activity-path__row--sibling',
-        'crispy-activity-path__cell--row-hover',
-        'crispy-activity-path__lane--focused',
-        'crispy-activity-path__header--lane-focused',
       );
+    }
+    // Reset response header to empty state
+    const headerEl = responseHeaderRef.current;
+    if (headerEl) {
+      headerEl.textContent = '';
+      // --lane-color lives on the outer div (flex item), not the inner span
+      const outer = headerEl.parentElement;
+      if (outer) outer.style.removeProperty('--lane-color');
     }
     hoverRef.current = null;
   }, []);
@@ -309,67 +291,34 @@ export function ActivityPathView(): React.JSX.Element {
     clearHighlights();
     const els: Element[] = [];
 
-    // Row highlight: all elements with matching data-row
+    // Row highlight: all elements with matching data-row get highlighted
     for (const el of Array.from(matrix.querySelectorAll(`[data-row="${CSS.escape(row)}"]`))) {
-      const cls = el.classList.contains('crispy-activity-path__cell')
-        ? 'crispy-activity-path__cell--row-hover'
-        : 'crispy-activity-path__row--highlighted';
-      el.classList.add(cls);
+      el.classList.add('crispy-activity-path__row--highlighted');
       els.push(el);
     }
 
-    // Column highlight: lane div with matching data-lane-file
-    const lane = matrix.querySelector(`[data-lane-file="${CSS.escape(file)}"]`);
-    if (lane) {
-      lane.classList.add('crispy-activity-path__lane--focused');
-      els.push(lane);
-
-      // Debounced horizontal-only scroll — waits for mouse to settle so vertical
-      // scrolling isn't interrupted, and never touches scrollTop.
-      clearTimeout(laneScrollTimer.current);
-      laneScrollTimer.current = setTimeout(() => {
-        if (userScrollingRef.current) return;
-        const laneEl = lane as HTMLElement;
-        const lanesBox = laneEl.offsetParent as HTMLElement | null;
-        if (!lanesBox) return;
-        const absLeft = lanesBox.offsetLeft + laneEl.offsetLeft;
-        const absRight = absLeft + laneEl.offsetWidth;
-
-        // Visible horizontal band = scrollLeft + sticky columns → scrollLeft + clientWidth
-        const timeCol = matrix.querySelector('.crispy-activity-path__time-col') as HTMLElement | null;
-        const promptCol = matrix.querySelector('.crispy-activity-path__prompt-col') as HTMLElement | null;
-        const stickyW = (timeCol?.offsetWidth ?? 52) + (promptCol?.offsetWidth ?? 160);
-
-        const viewLeft = matrix.scrollLeft + stickyW;
-        const viewRight = matrix.scrollLeft + matrix.clientWidth;
-
-        if (absLeft < viewLeft) {
-          matrix.scrollTo({ left: absLeft - stickyW, behavior: 'smooth' });
-        } else if (absRight > viewRight) {
-          matrix.scrollTo({ left: absRight - matrix.clientWidth + 8, behavior: 'smooth' });
-        }
-      }, 150);
-    }
-
-    // Lane header highlight (header is in the sticky header row, not inside the lane div)
-    const laneHeader = matrix.querySelector(`[data-lane-header="${CSS.escape(file)}"]`);
-    if (laneHeader) {
-      laneHeader.classList.add('crispy-activity-path__header--lane-focused');
-      els.push(laneHeader);
-    }
-
-    // Sibling highlight: other rows from the same session (same file, different row)
+    // Sibling highlight: same file, different row
     const siblingSelector = `[data-file="${CSS.escape(file)}"]:not([data-row="${CSS.escape(row)}"])`;
     for (const el of Array.from(matrix.querySelectorAll(siblingSelector))) {
-      // Only highlight time/prompt rows, not lane cells
-      if (!el.classList.contains('crispy-activity-path__cell')) {
+      if (el.classList.contains('crispy-activity-path__time-row') ||
+          el.classList.contains('crispy-activity-path__prompt-row') ||
+          el.classList.contains('crispy-activity-path__response-row')) {
         el.classList.add('crispy-activity-path__row--sibling');
         els.push(el);
       }
     }
 
+    // Update response header with hovered session's identity
+    const headerEl = responseHeaderRef.current;
+    if (headerEl) {
+      headerEl.textContent = fileLabelMap.get(file) ?? '';
+      // --lane-color drives border/background on the outer div, not the inner span
+      const outer = headerEl.parentElement;
+      if (outer) outer.style.setProperty('--lane-color', laneColorMap.get(file) ?? '');
+    }
+
     hoverRef.current = { row, file, els };
-  }, [clearHighlights]);
+  }, [clearHighlights, fileLabelMap, laneColorMap]);
 
   // ---- Render ----
   if (loading) {
@@ -401,20 +350,11 @@ export function ActivityPathView(): React.JSX.Element {
           <div className="crispy-activity-path__header crispy-activity-path__header--prompts">
             Your Prompt
           </div>
-          <div className="crispy-activity-path__header-lanes">
-            {lanes.map(lane => (
-              <div
-                key={lane.file}
-                className="crispy-activity-path__header crispy-activity-path__header--lane"
-                data-lane-header={lane.file}
-                title={lane.session?.label || lane.file}
-                style={{ '--lane-color': laneColorMap.get(lane.file) } as React.CSSProperties}
-              >
-                <span className="crispy-activity-path__clamp crispy-activity-path__lane-label">
-                  {lane.label}
-                </span>
-              </div>
-            ))}
+          <div className="crispy-activity-path__header crispy-activity-path__header--response">
+            <span
+              className="crispy-activity-path__header--response-text"
+              ref={responseHeaderRef}
+            />
           </div>
         </div>
 
@@ -426,15 +366,14 @@ export function ActivityPathView(): React.JSX.Element {
               <div className="crispy-activity-path__time-row crispy-activity-path__load-more-spacer" />
             )}
             {paginatedEntries.map((entry, i) => {
-              const entryLane = laneByFile.get(entry.file);
-              const isClickable = !!entryLane?.session;
+              const isClickable = !!sessionMap.get(entry.file);
               return (
                 <div
                   key={`time-${entry.timestamp}-${entry.uuid ?? i}`}
                   className="crispy-activity-path__time-row"
                   data-row={i}
                   data-file={entry.file}
-                  onClick={isClickable ? () => handleCellClick(entryLane) : undefined}
+                  onClick={isClickable ? () => handleEntryClick(entry.file) : undefined}
                   style={{ cursor: isClickable ? 'pointer' : undefined, '--lane-color': laneColorMap.get(entry.file) } as React.CSSProperties}
                 >
                   <span className="crispy-activity-path__date">{formatDate(entry.timestamp)}</span>
@@ -457,15 +396,14 @@ export function ActivityPathView(): React.JSX.Element {
               </div>
             )}
             {paginatedEntries.map((entry, i) => {
-              const entryLane = laneByFile.get(entry.file);
-              const isClickable = !!entryLane?.session;
+              const isClickable = !!sessionMap.get(entry.file);
               return (
                 <div
                   key={`prompt-${entry.timestamp}-${entry.uuid ?? i}`}
                   className="crispy-activity-path__prompt-row"
                   data-row={i}
                   data-file={entry.file}
-                  onClick={isClickable ? () => handleCellClick(entryLane) : undefined}
+                  onClick={isClickable ? () => handleEntryClick(entry.file) : undefined}
                   style={{ cursor: isClickable ? 'pointer' : undefined, '--lane-color': laneColorMap.get(entry.file), '--lane-indent': `${(laneIndexMap.get(entry.file) ?? 0) * 6}px` } as React.CSSProperties}
                 >
                   <TruncatedCell text={entry.preview} className="crispy-activity-path__prompt-text" />
@@ -474,43 +412,34 @@ export function ActivityPathView(): React.JSX.Element {
             })}
           </div>
 
-          {/* Session lanes (scrollable columns) */}
-          <div className="crispy-activity-path__lanes">
-            {lanes.map(lane => (
-              <div
-                key={lane.file}
-                className="crispy-activity-path__lane"
-                data-lane-file={lane.file}
-                style={{ '--lane-color': laneColorMap.get(lane.file) } as React.CSSProperties}
-              >
-                {hasMore && (
-                  <div className="crispy-activity-path__cell crispy-activity-path__load-more-spacer" />
-                )}
-                {paginatedEntries.map((entry, i) => {
-                  const isMatch = entry.file === lane.file;
-                  const cellKey = `${entry.timestamp}-${entry.uuid ?? i}`;
-                  const previewKey = `${entry.file}:${entry.offset}`;
-                  const preview = responsePreviews.get(previewKey);
+          {/* RESPONSE column (flex-fill) */}
+          <div className="crispy-activity-path__response-col">
+            {hasMore && (
+              <div className="crispy-activity-path__response-row crispy-activity-path__load-more-spacer" />
+            )}
+            {paginatedEntries.map((entry, i) => {
+              const previewKey = `${entry.file}:${entry.offset}`;
+              const preview = responsePreviews.get(previewKey);
+              const isClickable = !!sessionMap.get(entry.file);
 
-                  return (
-                    <div
-                      key={cellKey}
-                      className={`crispy-activity-path__cell${isMatch ? ' crispy-activity-path__cell--active' : ''}`}
-                      data-row={i}
-                      data-file={entry.file}
-                      onClick={isMatch ? () => handleCellClick(lane) : undefined}
-                    >
-                      {isMatch && preview && (
-                        <TruncatedCell text={preview} className="crispy-activity-path__response-text" />
-                      )}
-                      {isMatch && !preview && (
-                        <span className="crispy-activity-path__cell-placeholder">···</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+              return (
+                <div
+                  key={`resp-${entry.timestamp}-${entry.uuid ?? i}`}
+                  className="crispy-activity-path__response-row"
+                  data-row={i}
+                  data-file={entry.file}
+                  onClick={isClickable ? () => handleEntryClick(entry.file) : undefined}
+                  style={{ cursor: isClickable ? 'pointer' : undefined, '--lane-color': laneColorMap.get(entry.file) } as React.CSSProperties}
+                >
+                  {preview && (
+                    <TruncatedCell text={preview} className="crispy-activity-path__response-text" />
+                  )}
+                  {preview === undefined && (
+                    <span className="crispy-activity-path__cell-placeholder">···</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
