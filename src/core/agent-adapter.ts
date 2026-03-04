@@ -156,8 +156,8 @@ export interface TurnSettings {
  */
 export type TurnTarget =
   | { kind: 'existing'; sessionId: string; model?: string }
-  | { kind: 'new'; vendor: Vendor; cwd: string; skipPersistSession?: boolean; maxTurns?: number; settingSources?: string[]; disableTools?: boolean }
-  | { kind: 'fork'; vendor: Vendor; fromSessionId: string; atMessageId?: string; skipPersistSession?: boolean; maxTurns?: number; settingSources?: string[]; disableTools?: boolean };
+  | { kind: 'new'; vendor: Vendor; cwd: string; skipPersistSession?: boolean }
+  | { kind: 'fork'; vendor: Vendor; fromSessionId: string; atMessageId?: string; skipPersistSession?: boolean };
 
 /**
  * Intent to send a turn (user message + settings).
@@ -201,8 +201,8 @@ export interface AdapterSettings {
  */
 export type SessionOpenSpec =
   | { mode: 'resume'; sessionId: string }
-  | { mode: 'fresh'; cwd: string; model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; maxTurns?: number; settingSources?: string[]; disableTools?: boolean }
-  | { mode: 'fork'; fromSessionId: string; atMessageId?: string; model?: string; skipPersistSession?: boolean; outputFormat?: TurnSettings['outputFormat']; maxTurns?: number; settingSources?: string[]; disableTools?: boolean }
+  | { mode: 'fresh'; cwd: string; model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean }
+  | { mode: 'fork'; fromSessionId: string; atMessageId?: string; model?: string; skipPersistSession?: boolean; outputFormat?: TurnSettings['outputFormat'] }
   | { mode: 'hydrated'; cwd: string; history: TranscriptEntry[]; sourceVendor: Vendor; sourceSessionId?: string; model?: string; permissionMode?: TurnSettings['permissionMode']; skipPersistSession?: boolean };
 
 // ============================================================================

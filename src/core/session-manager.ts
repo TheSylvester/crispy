@@ -87,12 +87,6 @@ export interface ChildSessionOptions {
   autoClose?: boolean;
   /** Timeout in ms before giving up and returning null (default: 60000). */
   timeoutMs?: number;
-  /** Maximum conversation turns for the child session (e.g. 1 for single-response). */
-  maxTurns?: number;
-  /** Which filesystem settings to load (e.g. [] to skip all project/user/local config). */
-  settingSources?: string[];
-  /** Disable all tools in the child session (model can only produce text). */
-  disableTools?: boolean;
 }
 
 export interface ChildSessionResult {
@@ -512,7 +506,7 @@ export function createSession(
   vendor: Vendor,
   cwd: string,
   subscriber: Subscriber,
-  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; maxTurns?: number; settingSources?: string[]; disableTools?: boolean },
+  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean },
   explicitPendingId?: string,
 ): PendingChannelResult {
   if (!adapters.has(vendor)) {
@@ -526,9 +520,6 @@ export function createSession(
     ...(options?.permissionMode && { permissionMode: options.permissionMode }),
     ...(options?.extraArgs && { extraArgs: options.extraArgs }),
     ...(options?.skipPersistSession && { skipPersistSession: true }),
-    ...(options?.maxTurns !== undefined && { maxTurns: options.maxTurns }),
-    ...(options?.settingSources && { settingSources: options.settingSources }),
-    ...(options?.disableTools && { disableTools: options.disableTools }),
   };
 
   return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
@@ -550,9 +541,6 @@ export function createForkSession(
     atMessageId?: string;
     settings?: TurnSettings;
     skipPersistSession?: boolean;
-    maxTurns?: number;
-    settingSources?: string[];
-    disableTools?: boolean;
   },
   explicitPendingId?: string,
 ): PendingChannelResult {
@@ -567,9 +555,6 @@ export function createForkSession(
     ...(options?.settings?.model && { model: options.settings.model }),
     ...(options?.settings?.outputFormat && { outputFormat: options.settings.outputFormat }),
     ...(options?.skipPersistSession && { skipPersistSession: true }),
-    ...(options?.maxTurns !== undefined && { maxTurns: options.maxTurns }),
-    ...(options?.settingSources && { settingSources: options.settingSources }),
-    ...(options?.disableTools && { disableTools: options.disableTools }),
   };
 
   return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
@@ -682,9 +667,6 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
         {
           ...intent.settings,
           ...(intent.target.skipPersistSession && { skipPersistSession: true }),
-          ...(intent.target.maxTurns !== undefined && { maxTurns: intent.target.maxTurns }),
-          ...(intent.target.settingSources && { settingSources: intent.target.settingSources }),
-          ...(intent.target.disableTools && { disableTools: intent.target.disableTools }),
         },
         pendingId,
       );
@@ -703,9 +685,6 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
           atMessageId: intent.target.atMessageId,
           settings: intent.settings,
           ...(intent.target.skipPersistSession && { skipPersistSession: true }),
-          ...(intent.target.maxTurns !== undefined && { maxTurns: intent.target.maxTurns }),
-          ...(intent.target.settingSources && { settingSources: intent.target.settingSources }),
-          ...(intent.target.disableTools && { disableTools: intent.target.disableTools }),
         },
         pendingId,
       );
@@ -792,27 +771,16 @@ export async function dispatchChildSession(
     skipPersistSession = true,
     autoClose = true,
     timeoutMs = 60_000,
-    maxTurns,
-    settingSources,
-    disableTools,
   } = options;
 
   // Get parent's project path for cross-vendor cwd
   const parentInfo = findSession(parentSessionId);
   const cwd = parentInfo?.projectPath ?? process.cwd();
 
-  // Session-open overrides (maxTurns, settingSources, disableTools) — only
-  // spread when defined so we don't pollute the target with undefined keys.
-  const sessionOverrides = {
-    ...(maxTurns !== undefined && { maxTurns }),
-    ...(settingSources && { settingSources }),
-    ...(disableTools && { disableTools }),
-  };
-
   // Build target: fork if same vendor, new if cross-vendor
   const target: TurnTarget = vendor === parentVendor
-    ? { kind: 'fork', vendor: vendor as Vendor, fromSessionId: parentSessionId, skipPersistSession, ...sessionOverrides }
-    : { kind: 'new', vendor: vendor as Vendor, cwd, skipPersistSession, ...sessionOverrides };
+    ? { kind: 'fork', vendor: vendor as Vendor, fromSessionId: parentSessionId, skipPersistSession }
+    : { kind: 'new', vendor: vendor as Vendor, cwd, skipPersistSession };
 
   const intent: TurnIntent = {
     target,

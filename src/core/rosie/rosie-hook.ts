@@ -2,8 +2,8 @@
  * Rosie Hook — Auto-extracts quest + summary after each turn
  *
  * Registers as a responseComplete lifecycle handler. On each turn completion,
- * dispatches an ephemeral child session to query a model for structured JSON
- * output, then writes results to the activity index.
+ * dispatches an ephemeral child session to query a model for plain-text
+ * output, then parses the response and writes results to the activity index.
  *
  * Uses dispatch.dispatchChild() — the shared child session primitive in
  * session-manager — rather than hand-rolling session lifecycle management.
@@ -15,6 +15,8 @@ import { onResponseComplete } from '../lifecycle-hooks.js';
 import type { AgentDispatch } from '../../host/agent-dispatch.js';
 import { getSettingsSnapshotInternal } from '../settings/index.js';
 import { parseModelOption } from '../model-utils.js';
+import { appendActivityEntries } from '../activity-index.js';
+import { refreshAndNotify } from '../session-list-manager.js';
 
 // ============================================================================
 // Module State
@@ -67,38 +69,89 @@ export function shutdownRosie(): void {
 }
 
 // ============================================================================
+// Response Parsing
+// ============================================================================
+
+/**
+ * Parse Rosie's XML-tagged response into structured fields.
+ *
+ * Expects tags:
+ *   <goal>...</goal>
+ *   <title>...</title>
+ *   <summary>...</summary>
+ *
+ * Uses regex extraction — tags can appear anywhere in the response.
+ * Returns null if goal or summary is missing.
+ */
+function parseRosieResponse(text: string): { quest: string; title: string; summary: string } | null {
+  const quest = text.match(/<goal>([\s\S]*?)<\/goal>/)?.[1]?.trim() ?? '';
+  const title = text.match(/<title>([\s\S]*?)<\/title>/)?.[1]?.trim() ?? '';
+  const summary = text.match(/<summary>([\s\S]*?)<\/summary>/)?.[1]?.trim() ?? '';
+
+  if (quest && summary) return { quest, title, summary };
+  return null;
+}
+
+// ============================================================================
 // Analysis
 // ============================================================================
 
+const MAX_ATTEMPTS = 2;
+
 async function runRosieAnalysis(
   d: AgentDispatch,
-  sessionId: string, _sessionPath: string, parentVendor: string,
+  sessionId: string, sessionPath: string, parentVendor: string,
   modelOverride?: string,
 ): Promise<void> {
   const parsed = modelOverride ? parseModelOption(modelOverride) : undefined;
   const vendor = parsed?.vendor ?? parentVendor;
   const model = parsed?.model;
 
-  try {
-    const result = await d.dispatchChild({
-      parentSessionId: sessionId,
-      vendor,
-      parentVendor,
-      prompt: ROSIE_PROMPT,
-      settings: {
-        ...(model && { model }),
-      },
-      skipPersistSession: true,
-      autoClose: true,
-      timeoutMs: 30_000,
-      maxTurns: 1,
-      settingSources: [],
-      disableTools: true,
-    });
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const result = await d.dispatchChild({
+        parentSessionId: sessionId,
+        vendor,
+        parentVendor,
+        prompt: ROSIE_PROMPT,
+        settings: {
+          ...(model && { model }),
+        },
+        skipPersistSession: true,
+        autoClose: true,
+        timeoutMs: 30_000,
+      });
 
-    console.log(`[rosie] ✅ response:`, result ? result.text.slice(0, 500) : 'null');
-  } catch (err) {
-    console.warn(`[rosie] ❌ threw:`, err);
+      if (!result) {
+        console.warn(`[rosie] FAIL attempt ${attempt}/${MAX_ATTEMPTS}: dispatchChild returned null`);
+        continue;
+      }
+
+      console.log(`[rosie] OK response:`, result.text.slice(0, 500));
+
+      const fields = parseRosieResponse(result.text);
+      if (!fields) {
+        console.warn(`[rosie] FAIL parse: could not extract quest/summary from response: ${result.text.slice(0, 300)}`);
+        continue;
+      }
+
+      // Write to activity index
+      appendActivityEntries([{
+        timestamp: new Date().toISOString(),
+        kind: 'rosie-meta',
+        file: sessionPath,
+        preview: fields.quest,
+        offset: 0,
+        quest: fields.quest,
+        summary: fields.summary,
+      }]);
+
+      // Push updated metadata to all UI subscribers
+      refreshAndNotify(sessionId);
+      return;
+    } catch (err) {
+      console.warn(`[rosie] FAIL attempt ${attempt}/${MAX_ATTEMPTS} threw:`, err);
+    }
   }
 }
 
@@ -106,11 +159,12 @@ async function runRosieAnalysis(
 // Constants
 // ============================================================================
 
-const ROSIE_PROMPT = `What is the Main Quest of this conversation?
-Give this conversation a title, maximum 7 words in length.
-Would you summarize this last turn what has just happened in one sentence.
+const ROSIE_PROMPT = `Consider this entire conversation so far.
+What is the stated or apparent goal of this particular conversation?
+How would you label this conversation in a short sentence for a user to best remember what this session was for?
+Summarize the last turn: Describe the User Request and your Response; including any work completed
 
-Answer like this:
-Main Quest: <quest>
-Conversation Title: <title>
-Turn Summary: <summary>`;
+Provide your output in this format:
+<goal>The goal of this conversation</goal>
+<title>Label the conversation</title>
+<summary>Turn summary</summary>`;

@@ -45,9 +45,12 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
           ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
           ...(spec.skipPersistSession && { skipPersistSession: true }),
-          ...(spec.maxTurns !== undefined && { maxTurns: spec.maxTurns }),
-          ...(spec.settingSources && { settingSources: spec.settingSources as SettingSource[] }),
-          ...(spec.disableTools && { tools: [] }),
+          // Ephemeral sessions (Rosie): restrict to single-turn, no tools, no settings
+          ...(spec.skipPersistSession && {
+            maxTurns: 1,
+            settingSources: [] as SettingSource[],
+            tools: [],
+          }),
         });
       case 'fork':
         return new ClaudeAgentAdapter({
@@ -58,11 +61,12 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           ...(spec.model && { model: spec.model }),
           // Structured output forks should complete in a single model response.
           ...(spec.outputFormat && { maxTurns: 1 }),
-          // Explicit session-open overrides (e.g., Rosie child sessions) —
-          // applied last so they take precedence over outputFormat defaults.
-          ...(spec.maxTurns !== undefined && { maxTurns: spec.maxTurns }),
-          ...(spec.settingSources && { settingSources: spec.settingSources as SettingSource[] }),
-          ...(spec.disableTools && { tools: [] }),
+          // Ephemeral sessions (Rosie): restrict to single-turn, no tools, no settings
+          ...(spec.skipPersistSession && {
+            maxTurns: 1,
+            settingSources: [] as SettingSource[],
+            tools: [],
+          }),
         });
       case 'hydrated':
         return new ClaudeAgentAdapter({
