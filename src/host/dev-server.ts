@@ -20,9 +20,11 @@ import { WebSocketServer, type WebSocket } from 'ws';
 
 import { initSettings, startWatchingSettings } from '../core/settings/index.js';
 import { createClientConnection } from './client-connection.js';
+import { createAgentDispatch } from './agent-dispatch.js';
 import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
 import { runScan } from '../core/activity-scanner.js';
+import { initRosie, shutdownRosie } from '../core/rosie/index.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
 
@@ -117,6 +119,10 @@ wss.on('connection', (ws: WebSocket) => {
 const cwd = process.cwd();
 registerAllAdapters({ cwd });
 
+// Create dispatch for internal consumers (Rosie, future features)
+const dispatch = createAgentDispatch();
+initRosie(dispatch);
+
 // Initialize settings from ~/.config/crispy/settings.json
 const providerBase = { cwd };
 initSettings(providerBase).then(() => startWatchingSettings()).catch((err) => console.error('[dev-server] Failed to initialize settings:', err));
@@ -134,4 +140,16 @@ server.listen(PORT, () => {
   };
   setImmediate(safeRunScan);
   setInterval(safeRunScan, 30_000);
+});
+
+// Cleanup on shutdown
+process.on('SIGINT', () => {
+  shutdownRosie();
+  dispatch.dispose();
+  process.exit(0);
+});
+process.on('SIGTERM', () => {
+  shutdownRosie();
+  dispatch.dispose();
+  process.exit(0);
 });

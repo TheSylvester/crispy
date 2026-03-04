@@ -92,7 +92,9 @@ export function SessionSelector(): React.JSX.Element {
     return vendorFiltered.filter(s => {
       const labelMatch = s.label?.toLowerCase().includes(q) ?? false;
       const previewMatch = s.lastMessage?.toLowerCase().includes(q) ?? false;
-      return labelMatch || previewMatch;
+      const questMatch = s.quest?.toLowerCase().includes(q) ?? false;
+      const summaryMatch = s.botSummary?.toLowerCase().includes(q) ?? false;
+      return labelMatch || previewMatch || questMatch || summaryMatch;
     });
   }, [vendorFiltered, deferredQuery]);
 

@@ -38,7 +38,9 @@ import {
   closeSession,
   readSubagentEntries,
   getRegisteredVendors,
+  dispatchChildSession,
 } from "../core/session-manager.js";
+import type { ChildSessionOptions } from "../core/session-manager.js";
 import {
   subscribeSessionList,
   unsubscribeSessionList,
@@ -374,6 +376,11 @@ export function createClientConnection(
         return { closed: true };
       }
 
+      case "dispatchChild": {
+        const options = params as unknown as ChildSessionOptions;
+        return dispatchChildSession(options);
+      }
+
       case "subscribeSessionList": {
         if (sessionListSub) return { subscribed: true };
         sessionListSub = {
@@ -472,7 +479,11 @@ export function createClientConnection(
       case "getActivityLog": {
         const from = params.from as string | undefined;
         const to = params.to as string | undefined;
-        return queryActivity(from || to ? { from, to } : undefined);
+        const kind = (params.kind as string | undefined) ?? 'prompt';
+        return queryActivity(
+          from || to ? { from, to } : undefined,
+          kind as 'prompt' | 'rosie-meta',
+        );
       }
 
       case "getResponsePreview": {

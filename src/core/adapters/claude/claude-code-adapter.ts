@@ -64,6 +64,7 @@ import type { TranscriptEntry, ContextUsage, MessageContent, Vendor } from '../.
 import { existsSync, readdirSync, statSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { getLatestRosieMeta } from '../../activity-index.js';
 
 // ============================================================================
 // Configuration — Full SDK Options Surface
@@ -161,6 +162,8 @@ export interface ClaudeSessionOptions {
   hydratedHistory?: TranscriptEntry[];
   /** Save session to disk (default: true) */
   persistSession?: boolean;
+  /** Skip persisting session to disk (Rosie Bot side-sessions). Inverse of persistSession. */
+  skipPersistSession?: boolean;
 
   // --- Model & thinking ---
 
@@ -556,6 +559,9 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     if (settings.extraArgs !== undefined) {
       this.options.extraArgs = settings.extraArgs;
     }
+    if (settings.outputFormat !== undefined) {
+      this.options.outputFormat = settings.outputFormat;
+    }
   }
 
   respondToApproval(toolUseId: string, optionId: string, extra?: {
@@ -782,6 +788,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       ...(opts.resumeSessionAt && { resumeSessionAt: opts.resumeSessionAt }),
       ...(opts.continue !== undefined && { continue: opts.continue }),
       ...(opts.persistSession !== undefined && { persistSession: opts.persistSession }),
+      ...(opts.skipPersistSession && { persistSession: false }),
 
       // Model & thinking
       ...(opts.model && { model: opts.model }),
@@ -1491,6 +1498,8 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
         continue;
       }
 
+      const rosie = getLatestRosieMeta(filePath);
+
       sessions.push({
         sessionId,
         path: filePath,
@@ -1502,6 +1511,7 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
         lastMessage: meta?.lastMessage,
         vendor: 'claude',
         isSidechain: meta?.isSidechain,
+        ...(rosie && { quest: rosie.quest, botSummary: rosie.summary }),
       });
     }
   }
@@ -1537,6 +1547,7 @@ export function findSession(sessionId: string): SessionInfo | undefined {
     }
 
     const meta = extractMetadataFast(filePath);
+    const rosie = getLatestRosieMeta(filePath);
 
     return {
       sessionId,
@@ -1548,6 +1559,7 @@ export function findSession(sessionId: string): SessionInfo | undefined {
       label: meta?.label,
       lastMessage: meta?.lastMessage,
       vendor: 'claude',
+      ...(rosie && { quest: rosie.quest, botSummary: rosie.summary }),
     };
   }
 

@@ -11,6 +11,7 @@
 
 import type { SessionInfo, TurnIntent, TurnReceipt } from '../core/agent-adapter.js';
 import type { TranscriptEntry } from '../core/transcript.js';
+import type { ChildSessionOptions, ChildSessionResult } from '../core/session-manager.js';
 import type { HostEvent, HostMessage } from './client-connection.js';
 import { createClientConnection } from './client-connection.js';
 
@@ -31,6 +32,9 @@ export interface AgentDispatch {
   }): Promise<void>;
   interrupt(sessionId: string): Promise<void>;
   close(sessionId: string): Promise<void>;
+
+  /** Dispatch an ephemeral child session — fork or new — collect result, auto-close. */
+  dispatchChild(options: ChildSessionOptions): Promise<ChildSessionResult | null>;
 
   // Event delivery
   onEvent(handler: (sessionId: string, event: HostEvent) => void): () => void;
@@ -63,6 +67,7 @@ export function createAgentDispatch(): AgentDispatch {
       connection.call('resolveApproval', { sessionId, toolUseId, optionId, extra }).then(() => {}),
     interrupt: (id) => connection.call('interrupt', { sessionId: id }).then(() => {}),
     close: (id) => connection.call('close', { sessionId: id }).then(() => {}),
+    dispatchChild: (options) => connection.call('dispatchChild', options as unknown as Record<string, unknown>) as Promise<ChildSessionResult | null>,
 
     onEvent(handler) {
       eventHandlers.add(handler);

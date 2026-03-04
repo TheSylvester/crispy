@@ -118,6 +118,7 @@ function computeChangedSections(
     'envPresets',
     'cliProfiles',
     'turnDefaults',
+    'rosie',
   ];
 
   return sections.filter(
@@ -163,6 +164,10 @@ function applyPatch(current: CrispySettings, patch: SettingsPatch): CrispySettin
     result.turnDefaults = { ...current.turnDefaults, ...patch.turnDefaults };
   }
 
+  if (patch.rosie) {
+    result.rosie = { ...current.rosie, ...patch.rosie };
+  }
+
   return result;
 }
 
@@ -206,6 +211,17 @@ function sanitizeSettings(data: unknown): CrispySettings {
   // Turn Defaults
   if (settings.turnDefaults && typeof settings.turnDefaults === 'object') {
     result.turnDefaults = settings.turnDefaults as typeof result.turnDefaults;
+  }
+
+  // Rosie Bot
+  if (settings.rosie && typeof settings.rosie === 'object') {
+    const rosie = settings.rosie as Record<string, unknown>;
+    if (typeof rosie.enabled === 'boolean') {
+      result.rosie = { enabled: rosie.enabled };
+      if (typeof rosie.model === 'string' && rosie.model.trim()) {
+        result.rosie.model = rosie.model.trim();
+      }
+    }
   }
 
   return result;
@@ -349,6 +365,7 @@ export function getSettingsSnapshotInternal(): SettingsSnapshot {
       envPresets: currentSettings.envPresets,
       cliProfiles: currentSettings.cliProfiles,
       turnDefaults: currentSettings.turnDefaults,
+      rosie: currentSettings.rosie,
     },
     revision: currentSettings.revision,
     updatedAt: currentSettings.updatedAt,

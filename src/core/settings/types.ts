@@ -17,7 +17,8 @@ export type SettingsSection =
   | 'hooks'
   | 'envPresets'
   | 'cliProfiles'
-  | 'turnDefaults';
+  | 'turnDefaults'
+  | 'rosie';
 
 // ============================================================================
 // Preferences (globally persisted UI settings)
@@ -69,6 +70,16 @@ export interface HookConfig {
 export interface SettingsHooks {
   prePromptSend: HookConfig[];
   postTurnComplete: HookConfig[];
+}
+
+// ============================================================================
+// Rosie Bot
+// ============================================================================
+
+export interface RosieSettings {
+  enabled: boolean;
+  /** Model override — omit to use system default model. Format: "vendor:model" (e.g. "claude:haiku", "my-provider:glm-4.7"). */
+  model?: string;
 }
 
 // ============================================================================
@@ -127,6 +138,7 @@ export interface CrispySettings {
   envPresets: SettingsEnvPresets;
   cliProfiles: SettingsCliProfiles;
   turnDefaults: SettingsTurnDefaults;
+  rosie: RosieSettings;
 }
 
 export interface CrispySettingsFile extends CrispySettings {
@@ -157,6 +169,7 @@ export type SettingsPatch = Partial<{
   envPresets: Partial<SettingsEnvPresets>;
   cliProfiles: Partial<SettingsCliProfiles>;
   turnDefaults: Partial<SettingsTurnDefaults>;
+  rosie: Partial<RosieSettings>;
 }>;
 
 // ============================================================================
@@ -185,5 +198,8 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     permissionMode: null,
     allowDangerouslySkipPermissions: false,
     extraArgs: {},
+  },
+  rosie: {
+    enabled: false,
   },
 };

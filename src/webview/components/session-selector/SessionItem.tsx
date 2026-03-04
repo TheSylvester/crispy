@@ -90,7 +90,7 @@ export function SessionItem({
     isFocused && 'crispy-session-item--focused',
   ].filter(Boolean).join(' ');
 
-  const label = session.label || session.sessionId.slice(0, 8) + '\u2026';
+  const label = session.quest || session.label || session.sessionId.slice(0, 8) + '\u2026';
 
   return (
     <li
@@ -110,9 +110,9 @@ export function SessionItem({
           </span>
         </div>
       </div>
-      {session.lastMessage && (
+      {(session.botSummary || session.lastMessage) && (
         <div className="crispy-session-item__preview">
-          {highlightMatch(session.lastMessage, searchQuery)}
+          {highlightMatch(session.botSummary || session.lastMessage!, searchQuery)}
         </div>
       )}
     </li>

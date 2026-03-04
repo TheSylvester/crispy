@@ -9,7 +9,7 @@
 
 import type { SessionOpenSpec, AgentAdapter } from '../../agent-adapter.js';
 import type { AdapterRegistration, HostAdapterConfig } from '../../../host/adapter-registry.js';
-import { ClaudeAgentAdapter, claudeDiscovery, getResumeModel } from './claude-code-adapter.js';
+import { ClaudeAgentAdapter, claudeDiscovery, getResumeModel, type SettingSource } from './claude-code-adapter.js';
 import { findClaudeBinary } from '../../find-claude-binary.js';
 
 /** Cached binary path — resolved once at availability check time. */
@@ -44,11 +44,25 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           ...(spec.model && { model: spec.model }),
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
           ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
+          ...(spec.skipPersistSession && { skipPersistSession: true }),
+          ...(spec.maxTurns !== undefined && { maxTurns: spec.maxTurns }),
+          ...(spec.settingSources && { settingSources: spec.settingSources as SettingSource[] }),
+          ...(spec.disableTools && { tools: [] }),
         });
       case 'fork':
         return new ClaudeAgentAdapter({
           ...base, cwd: config.cwd, resume: spec.fromSessionId, forkSession: true,
           ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
+          ...(spec.skipPersistSession && { skipPersistSession: true }),
+          ...(spec.outputFormat && { outputFormat: spec.outputFormat }),
+          ...(spec.model && { model: spec.model }),
+          // Structured output forks should complete in a single model response.
+          ...(spec.outputFormat && { maxTurns: 1 }),
+          // Explicit session-open overrides (e.g., Rosie child sessions) —
+          // applied last so they take precedence over outputFormat defaults.
+          ...(spec.maxTurns !== undefined && { maxTurns: spec.maxTurns }),
+          ...(spec.settingSources && { settingSources: spec.settingSources as SettingSource[] }),
+          ...(spec.disableTools && { tools: [] }),
         });
       case 'hydrated':
         return new ClaudeAgentAdapter({
@@ -56,6 +70,7 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           hydratedHistory: spec.history,
           ...(spec.model && { model: spec.model }),
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+          ...(spec.skipPersistSession && { skipPersistSession: true }),
         });
     }
   };

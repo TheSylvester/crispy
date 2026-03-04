@@ -95,6 +95,10 @@ export function mapTurnSettings(settings: TurnSettings): Record<string, unknown>
     params.approvalPolicy = mapPermissionMode(settings.permissionMode);
   }
 
+  if (settings.outputFormat?.type === 'json_schema') {
+    params.outputSchema = settings.outputFormat.schema;
+  }
+
   return params;
 }
 

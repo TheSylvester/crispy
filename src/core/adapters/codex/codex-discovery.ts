@@ -23,6 +23,7 @@ import { adaptCodexItem } from './codex-entry-adapter.js';
 import { findCodexSessionFile, parseCodexJsonlFile, scanCodexUserMessages } from './codex-jsonl-reader.js';
 import { adaptCodexJsonlRecords } from './codex-jsonl-adapter.js';
 import { CodexRpcClient, type CodexRpcClientOptions } from './codex-rpc-client.js';
+import { getLatestRosieMeta } from '../../activity-index.js';
 
 // ============================================================================
 // CodexDiscovery
@@ -226,6 +227,7 @@ export class CodexDiscovery implements VendorDiscovery {
   }
 
   private threadToSessionInfo(thread: Thread): SessionInfo {
+    const rosie = getLatestRosieMeta(thread.path ?? '');
     return {
       sessionId: thread.id,
       path: thread.path ?? '',
@@ -236,6 +238,7 @@ export class CodexDiscovery implements VendorDiscovery {
       label: thread.preview?.slice(0, 80),
       lastMessage: thread.preview,
       vendor: 'codex',
+      ...(rosie && { quest: rosie.quest, botSummary: rosie.summary }),
     };
   }
 

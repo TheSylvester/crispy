@@ -56,6 +56,10 @@ export interface SessionInfo {
   lastMessage?: string;
   vendor: Vendor;
   isSidechain?: boolean;
+  /** Rosie Bot: main conversation goal. */
+  quest?: string;
+  /** Rosie Bot: most recent turn summary. */
+  botSummary?: string;
 }
 
 // ============================================================================
@@ -139,6 +143,8 @@ export interface TurnSettings {
   permissionMode?: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions';
   allowDangerouslySkipPermissions?: boolean;
   extraArgs?: Record<string, string | null>;
+  /** Structured output schema — constrains model response to JSON matching schema. */
+  outputFormat?: { type: 'json_schema'; schema: Record<string, unknown> };
 }
 
 /**
@@ -150,8 +156,8 @@ export interface TurnSettings {
  */
 export type TurnTarget =
   | { kind: 'existing'; sessionId: string; model?: string }
-  | { kind: 'new'; vendor: Vendor; cwd: string }
-  | { kind: 'fork'; vendor: Vendor; fromSessionId: string; atMessageId?: string };
+  | { kind: 'new'; vendor: Vendor; cwd: string; skipPersistSession?: boolean; maxTurns?: number; settingSources?: string[]; disableTools?: boolean }
+  | { kind: 'fork'; vendor: Vendor; fromSessionId: string; atMessageId?: string; skipPersistSession?: boolean; maxTurns?: number; settingSources?: string[]; disableTools?: boolean };
 
 /**
  * Intent to send a turn (user message + settings).
@@ -195,9 +201,9 @@ export interface AdapterSettings {
  */
 export type SessionOpenSpec =
   | { mode: 'resume'; sessionId: string }
-  | { mode: 'fresh'; cwd: string; model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null> }
-  | { mode: 'fork'; fromSessionId: string; atMessageId?: string }
-  | { mode: 'hydrated'; cwd: string; history: TranscriptEntry[]; sourceVendor: Vendor; sourceSessionId?: string; model?: string; permissionMode?: TurnSettings['permissionMode'] };
+  | { mode: 'fresh'; cwd: string; model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; maxTurns?: number; settingSources?: string[]; disableTools?: boolean }
+  | { mode: 'fork'; fromSessionId: string; atMessageId?: string; model?: string; skipPersistSession?: boolean; outputFormat?: TurnSettings['outputFormat']; maxTurns?: number; settingSources?: string[]; disableTools?: boolean }
+  | { mode: 'hydrated'; cwd: string; history: TranscriptEntry[]; sourceVendor: Vendor; sourceSessionId?: string; model?: string; permissionMode?: TurnSettings['permissionMode']; skipPersistSession?: boolean };
 
 // ============================================================================
 // Agent Adapter Interface

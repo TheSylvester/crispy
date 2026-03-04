@@ -3,8 +3,9 @@
  *
  * Owns ALL reads/writes to ~/.crispy/. No other module should touch these
  * files directly. Provides:
- * - CRUD for activity-index.jsonl (append-only index of user prompts)
+ * - CRUD for activity-index.jsonl (append-only index of user prompts and rosie-meta)
  * - Atomic read/write for scan-state.json (scan progress tracking)
+ * - Rosie Bot metadata queries (getLatestRosieMeta)
  *
  * The activity index is an acceleration structure, not a source of truth.
  * Duplicates from crash recovery are acceptable — downstream consumers
@@ -30,8 +31,8 @@ import { homedir } from 'node:os';
 export interface ActivityIndexEntry {
   /** ISO 8601 timestamp of the prompt. */
   timestamp: string;
-  /** Discriminator for future expansion (quest, state, etc.). */
-  kind: 'prompt';
+  /** Discriminator — 'prompt' for user prompts, 'rosie-meta' for Rosie Bot metadata. */
+  kind: 'prompt' | 'rosie-meta';
   /** Absolute path to the JSONL session file. */
   file: string;
   /** Preview text (~120 chars). */
@@ -40,6 +41,10 @@ export interface ActivityIndexEntry {
   offset: number;
   /** Entry UUID for jump-to navigation (optional). */
   uuid?: string;
+  /** Rosie Bot: main conversation goal (rosie-meta entries only). */
+  quest?: string;
+  /** Rosie Bot: most recent turn summary (rosie-meta entries only). */
+  summary?: string;
 }
 
 /**
@@ -85,10 +90,12 @@ export function _setTestDir(dir: string): () => void {
   crispyDir = dir;
   activityIndexPath = join(dir, 'activity-index.jsonl');
   scanStatePath = join(dir, 'scan-state.json');
+  rosieMetaCache = null; // Invalidate cache when paths change
   return () => {
     crispyDir = prev.crispyDir;
     activityIndexPath = prev.activityIndexPath;
     scanStatePath = prev.scanStatePath;
+    rosieMetaCache = null; // Invalidate cache on restore too
   };
 }
 
@@ -158,6 +165,41 @@ export function saveScanState(state: ScanState): void {
 }
 
 // ============================================================================
+// Rosie Metadata Cache
+// ============================================================================
+
+/**
+ * In-memory cache of the latest rosie-meta entry per session file path.
+ *
+ * Built lazily from a single queryActivity() call, then served from memory
+ * on subsequent getLatestRosieMeta() calls. Invalidated when new rosie-meta
+ * entries are appended via appendActivityEntries().
+ *
+ * This eliminates the N+1 readFileSync pattern during session listing —
+ * previously each session triggered a full file read + parse of the
+ * activity index.
+ */
+let rosieMetaCache: Map<string, ActivityIndexEntry> | null = null;
+
+/** Build the cache from a single full read of the activity index. */
+function buildRosieMetaCache(): Map<string, ActivityIndexEntry> {
+  const entries = queryActivity(undefined, 'rosie-meta');
+  const map = new Map<string, ActivityIndexEntry>();
+  // Iterate forward — last entry per file wins (latest by timestamp)
+  for (const e of entries) {
+    if (e.quest && e.summary) {
+      map.set(e.file, e);
+    }
+  }
+  return map;
+}
+
+/** Invalidate the rosie metadata cache, forcing a rebuild on next access. */
+export function invalidateRosieMetaCache(): void {
+  rosieMetaCache = null;
+}
+
+// ============================================================================
 // Activity Index CRUD
 // ============================================================================
 
@@ -168,6 +210,9 @@ export function saveScanState(state: ScanState): void {
  * Creates the file if it doesn't exist.
  *
  * No-op if entries array is empty (file not created/modified).
+ *
+ * Invalidates the rosie metadata cache when rosie-meta entries are written,
+ * so the next getLatestRosieMeta() call rebuilds from disk.
  */
 export function appendActivityEntries(entries: ActivityIndexEntry[]): void {
   if (entries.length === 0) return;
@@ -175,13 +220,18 @@ export function appendActivityEntries(entries: ActivityIndexEntry[]): void {
   ensureCrispyDir();
   const lines = entries.map((e) => JSON.stringify(e)).join('\n') + '\n';
   fs.appendFileSync(activityIndexPath, lines);
+
+  // Invalidate rosie cache when rosie-meta entries are appended
+  if (entries.some((e) => e.kind === 'rosie-meta')) {
+    rosieMetaCache = null;
+  }
 }
 
 /**
  * Query activity entries from the index.
  *
  * Returns entries sorted by timestamp ascending. Supports optional
- * time range filtering with ISO 8601 strings.
+ * time range filtering with ISO 8601 strings and kind filtering.
  *
  * - Returns empty array if file doesn't exist
  * - Skips malformed lines gracefully (no throw)
@@ -189,7 +239,7 @@ export function appendActivityEntries(entries: ActivityIndexEntry[]): void {
 export function queryActivity(timeRange?: {
   from?: string;
   to?: string;
-}): ActivityIndexEntry[] {
+}, kind?: ActivityIndexEntry['kind']): ActivityIndexEntry[] {
   let content: string;
   try {
     content = fs.readFileSync(activityIndexPath, 'utf-8');
@@ -215,8 +265,13 @@ export function queryActivity(timeRange?: {
     }
   }
 
-  // Apply time range filter
+  // Apply kind filter
   let filtered = entries;
+  if (kind) {
+    filtered = filtered.filter((e) => e.kind === kind);
+  }
+
+  // Apply time range filter
   if (timeRange?.from) {
     filtered = filtered.filter((e) => e.timestamp >= timeRange.from!);
   }
@@ -228,4 +283,32 @@ export function queryActivity(timeRange?: {
   filtered.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
   return filtered;
+}
+
+/**
+ * Get the most recent rosie-meta entry from the activity index.
+ *
+ * When `filePath` is provided, returns the latest entry for that specific
+ * session file. Otherwise returns the global latest.
+ *
+ * Uses an in-memory cache to avoid re-reading the full activity index on
+ * every call. The cache is invalidated when new rosie-meta entries are
+ * written via appendActivityEntries(). This reduces N per-session file
+ * reads to a single read per listing cycle.
+ */
+export function getLatestRosieMeta(filePath?: string): ActivityIndexEntry | undefined {
+  if (!rosieMetaCache) {
+    rosieMetaCache = buildRosieMetaCache();
+  }
+  if (filePath) {
+    return rosieMetaCache.get(filePath);
+  }
+  // No filePath = find the global latest (rare path)
+  let latest: ActivityIndexEntry | undefined;
+  for (const entry of rosieMetaCache.values()) {
+    if (!latest || entry.timestamp > latest.timestamp) {
+      latest = entry;
+    }
+  }
+  return latest;
 }

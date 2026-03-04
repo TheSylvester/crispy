@@ -24,6 +24,7 @@ export type {
   CliProfile,
   SettingsCliProfiles,
   SettingsTurnDefaults,
+  RosieSettings,
   CrispySettings,
   CrispySettingsFile,
   SettingsSnapshot,

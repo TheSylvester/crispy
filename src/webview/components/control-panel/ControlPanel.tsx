@@ -204,6 +204,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         if (sessionId === SETTINGS_CHANNEL_ID && event.type === 'settings_snapshot') {
           const settingsEvent = event as SettingsChangedGlobalEvent;
           setProviders(settingsEvent.snapshot.settings.providers);
+          setRosieEnabled(settingsEvent.snapshot.settings.rosie?.enabled ?? false);
+          setRosieModel(settingsEvent.snapshot.settings.rosie?.model);
           transport.getModelGroups().then(setModelGroups).catch(console.error);
         }
       });
@@ -223,6 +225,21 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     useEffect(() => {
       transport.listProviders().then(setProviders).catch(console.error);
+    }, [transport]);
+
+    // --- Rosie Bot settings state ---
+    const [rosieEnabled, setRosieEnabled] = useState(false);
+    const [rosieModel, setRosieModel] = useState<string | undefined>(undefined);
+
+    useEffect(() => {
+      transport.getSettings().then((snapshot) => {
+        setRosieEnabled(snapshot.settings.rosie?.enabled ?? false);
+        setRosieModel(snapshot.settings.rosie?.model);
+      }).catch(console.error);
+    }, [transport]);
+
+    const handleUpdateRosie = useCallback(async (patch: { enabled?: boolean; model?: string }) => {
+      await transport.updateSettings({ rosie: patch });
     }, [transport]);
 
     // Clear forkMode when switching sessions
@@ -916,6 +933,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onDebugModeChange={setDebugMode}
               toolPanelAutoOpen={toolPanelAutoOpen}
               onToolPanelAutoOpenChange={setToolPanelAutoOpen}
+              rosieEnabled={rosieEnabled}
+              rosieModel={rosieModel}
+              onUpdateRosie={handleUpdateRosie}
+              modelGroups={modelGroups}
               providers={providers}
               onSaveProvider={async (slug, config) => { await transport.saveProvider(slug, config); }}
               onDeleteProvider={(slug) => transport.deleteProvider(slug).catch(console.error)}

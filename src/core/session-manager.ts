@@ -19,17 +19,18 @@
  * @module session-manager
  */
 
-import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, ChannelMessage, TurnIntent, TurnSettings, SubagentEntriesResult } from './agent-adapter.js';
-import type { TranscriptEntry, Vendor } from './transcript.js';
+import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, ChannelMessage, TurnIntent, TurnTarget, TurnSettings, SubagentEntriesResult } from './agent-adapter.js';
+import type { TranscriptEntry, MessageContent, Vendor } from './transcript.js';
 import type { SessionChannel, Subscriber, SubscriberMessage } from './session-channel.js';
 import { parseModelOption } from './model-utils.js';
 
 import {
   createChannel, setAdapter, subscribe, unsubscribe,
-  destroyChannel, rekeyChannel,
+  destroyChannel, rekeyChannel, getChannel,
   broadcastUserEntry as channelBroadcastUserEntry,
 } from './session-channel.js';
 import { refreshAndNotify } from './session-list-manager.js';
+import { fireResponseComplete } from './lifecycle-hooks.js';
 
 /** Type guard for session_changed notification events. */
 function isSessionChangedEvent(msg: SubscriberMessage): msg is ChannelMessage & { type: 'event'; event: { type: 'notification'; kind: 'session_changed'; sessionId: string } } {
@@ -64,6 +65,53 @@ const sessions = new Map<string, SessionChannel>();
 
 /** In-flight channel initialization promises — guards concurrent subscribeSession(). */
 const pending = new Map<string, Promise<SessionChannel>>();
+
+// ============================================================================
+// Child Session Dispatch
+// ============================================================================
+
+export interface ChildSessionOptions {
+  /** Session that's spawning this child. */
+  parentSessionId: string;
+  /** Vendor for the child session. */
+  vendor: string;
+  /** Vendor of the parent session — fork if same, new session if different. */
+  parentVendor: string;
+  /** Message content to send as the child's first turn. */
+  prompt: MessageContent;
+  /** Turn settings (model, outputFormat, permissionMode, etc.). */
+  settings?: TurnSettings;
+  /** Don't persist the child session to disk (default: true). */
+  skipPersistSession?: boolean;
+  /** Auto-close the child channel when it goes idle (default: true). */
+  autoClose?: boolean;
+  /** Timeout in ms before giving up and returning null (default: 60000). */
+  timeoutMs?: number;
+  /** Maximum conversation turns for the child session (e.g. 1 for single-response). */
+  maxTurns?: number;
+  /** Which filesystem settings to load (e.g. [] to skip all project/user/local config). */
+  settingSources?: string[];
+  /** Disable all tools in the child session (model can only produce text). */
+  disableTools?: boolean;
+}
+
+export interface ChildSessionResult {
+  sessionId: string;
+  text: string;
+  structured?: unknown;
+}
+
+/** Parent->child relationship tracking. Used by dispatchChildSession for lifecycle management. */
+const childSessions = new Map<string, {
+  parentSessionId: string;
+  autoClose: boolean;
+}>();
+
+/** Check if a session was spawned by dispatchChildSession. Used by lifecycle-hooks
+ *  to prevent recursive hook chains (e.g. Rosie analyzing its own child sessions). */
+export function isChildSession(sessionId: string): boolean {
+  return childSessions.has(sessionId);
+}
 
 // ============================================================================
 // Adapter Registry
@@ -276,7 +324,12 @@ function openChannel(channelId: string, vendor: Vendor, spec: SessionOpenSpec): 
     // yields the result message, but the SDK may not have flushed the JSONL
     // file to disk yet. 150ms is enough for the OS write buffer to flush.
     // The 30s rescan is a fallback either way.
-    setTimeout(() => refreshAndNotify(sessionId), 150);
+    setTimeout(() => {
+      refreshAndNotify(sessionId);
+      // Fire lifecycle hooks (Rosie, future features). Fire-and-forget —
+      // handlers are error-isolated and run concurrently.
+      fireResponseComplete(sessionId);
+    }, 150);
   };
 
   setAdapter(channel, liveAdapter);
@@ -459,7 +512,7 @@ export function createSession(
   vendor: Vendor,
   cwd: string,
   subscriber: Subscriber,
-  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null> },
+  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; maxTurns?: number; settingSources?: string[]; disableTools?: boolean },
   explicitPendingId?: string,
 ): PendingChannelResult {
   if (!adapters.has(vendor)) {
@@ -472,6 +525,10 @@ export function createSession(
     ...(options?.model && { model: options.model }),
     ...(options?.permissionMode && { permissionMode: options.permissionMode }),
     ...(options?.extraArgs && { extraArgs: options.extraArgs }),
+    ...(options?.skipPersistSession && { skipPersistSession: true }),
+    ...(options?.maxTurns !== undefined && { maxTurns: options.maxTurns }),
+    ...(options?.settingSources && { settingSources: options.settingSources }),
+    ...(options?.disableTools && { disableTools: options.disableTools }),
   };
 
   return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
@@ -492,6 +549,10 @@ export function createForkSession(
   options?: {
     atMessageId?: string;
     settings?: TurnSettings;
+    skipPersistSession?: boolean;
+    maxTurns?: number;
+    settingSources?: string[];
+    disableTools?: boolean;
   },
   explicitPendingId?: string,
 ): PendingChannelResult {
@@ -503,6 +564,12 @@ export function createForkSession(
     mode: 'fork',
     fromSessionId,
     ...(options?.atMessageId && { atMessageId: options.atMessageId }),
+    ...(options?.settings?.model && { model: options.settings.model }),
+    ...(options?.settings?.outputFormat && { outputFormat: options.settings.outputFormat }),
+    ...(options?.skipPersistSession && { skipPersistSession: true }),
+    ...(options?.maxTurns !== undefined && { maxTurns: options.maxTurns }),
+    ...(options?.settingSources && { settingSources: options.settingSources }),
+    ...(options?.disableTools && { disableTools: options.disableTools }),
   };
 
   return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
@@ -612,7 +679,13 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
         intent.target.vendor as Vendor,
         intent.target.cwd,
         subscriber,
-        intent.settings,
+        {
+          ...intent.settings,
+          ...(intent.target.skipPersistSession && { skipPersistSession: true }),
+          ...(intent.target.maxTurns !== undefined && { maxTurns: intent.target.maxTurns }),
+          ...(intent.target.settingSources && { settingSources: intent.target.settingSources }),
+          ...(intent.target.disableTools && { disableTools: intent.target.disableTools }),
+        },
         pendingId,
       );
       channel = created.channel;
@@ -626,7 +699,14 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
         intent.target.vendor as Vendor,
         intent.target.fromSessionId,
         subscriber,
-        { atMessageId: intent.target.atMessageId, settings: intent.settings },
+        {
+          atMessageId: intent.target.atMessageId,
+          settings: intent.settings,
+          ...(intent.target.skipPersistSession && { skipPersistSession: true }),
+          ...(intent.target.maxTurns !== undefined && { maxTurns: intent.target.maxTurns }),
+          ...(intent.target.settingSources && { settingSources: intent.target.settingSources }),
+          ...(intent.target.disableTools && { disableTools: intent.target.disableTools }),
+        },
         pendingId,
       );
       channel = forked.channel;
@@ -683,4 +763,199 @@ export function closeSession(sessionId: string): void {
   if (!sessions.has(sessionId)) return;
   destroyChannel(sessionId);
   sessions.delete(sessionId);
+}
+
+// ============================================================================
+// Child Session Dispatch — Shared Primitive
+// ============================================================================
+
+/**
+ * Dispatch an ephemeral child session — fork or new — collect result, auto-close.
+ *
+ * This is the shared primitive for spawning child sessions. Rosie is the
+ * first consumer; CLI Dispatch will reuse it later.
+ *
+ * - Forks when child vendor matches parent, starts new session when different
+ * - Uses parent session's projectPath as cwd for cross-vendor new sessions
+ * - Creates an internal subscriber, collects assistant text, waits for idle
+ * - Returns { sessionId, text, structured } or null on timeout/error
+ */
+export async function dispatchChildSession(
+  options: ChildSessionOptions,
+): Promise<ChildSessionResult | null> {
+  const {
+    parentSessionId,
+    vendor,
+    parentVendor,
+    prompt,
+    settings = {},
+    skipPersistSession = true,
+    autoClose = true,
+    timeoutMs = 60_000,
+    maxTurns,
+    settingSources,
+    disableTools,
+  } = options;
+
+  // Get parent's project path for cross-vendor cwd
+  const parentInfo = findSession(parentSessionId);
+  const cwd = parentInfo?.projectPath ?? process.cwd();
+
+  // Session-open overrides (maxTurns, settingSources, disableTools) — only
+  // spread when defined so we don't pollute the target with undefined keys.
+  const sessionOverrides = {
+    ...(maxTurns !== undefined && { maxTurns }),
+    ...(settingSources && { settingSources }),
+    ...(disableTools && { disableTools }),
+  };
+
+  // Build target: fork if same vendor, new if cross-vendor
+  const target: TurnTarget = vendor === parentVendor
+    ? { kind: 'fork', vendor: vendor as Vendor, fromSessionId: parentSessionId, skipPersistSession, ...sessionOverrides }
+    : { kind: 'new', vendor: vendor as Vendor, cwd, skipPersistSession, ...sessionOverrides };
+
+  const intent: TurnIntent = {
+    target,
+    content: prompt,
+    clientMessageId: crypto.randomUUID(),
+    settings,
+  };
+
+  // Allocate a deterministic pending ID up front so cleanup always has a
+  // channel reference, even if sendTurn hasn't resolved yet.
+  const pendingId = `pending:child-${crypto.randomUUID()}`;
+
+  return new Promise<ChildSessionResult | null>((resolve) => {
+    let text = '';
+    let structured: unknown;
+    let settled = false;
+    // Track the current session ID — starts as the pending ID, may be rekeyed.
+    let currentId: string = pendingId;
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        console.warn(`[child-session] Timeout after ${timeoutMs}ms — no idle event received (parent: ${parentSessionId}, vendor: ${vendor})`);
+        settled = true;
+        cleanup();
+        resolve(null);
+      }
+    }, timeoutMs);
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      // Always try cleanup with currentId — it's set synchronously before sendTurn.
+      const ch = getChannel(currentId);
+      if (ch) {
+        unsubscribe(ch, internalSubscriber);
+        if (autoClose) {
+          closeSession(currentId);
+        }
+      }
+      childSessions.delete(currentId);
+    };
+
+    // Diagnostics: track what the child session produced so failures are
+    // immediately self-explanatory (no inference needed).
+    const entryTypes: string[] = [];
+    let lastError: string | undefined;
+    /** Per-entry content block types, e.g. "assistant:[tool_use,tool_use]" or "result:[text]" */
+    const contentSummaries: string[] = [];
+
+    const internalSubscriber: Subscriber = {
+      id: `child-${crypto.randomUUID()}`,
+      send(msg) {
+        if (settled) return;
+
+        // Skip catchup messages
+        if (msg.type === 'catchup') return;
+
+        // Track error notifications from the adapter (SDK failures, auth errors, etc.)
+        if (msg.type === 'event' && msg.event.type === 'notification' && msg.event.kind === 'error') {
+          lastError = (msg.event as { error?: string }).error ?? 'unknown error';
+        }
+
+        // Collect response text and structured output from entry messages.
+        // Check both 'assistant' and 'result' entries — with outputFormat the
+        // SDK may surface structured output on the result rather than (or in
+        // addition to) the assistant message.
+        if (msg.type === 'entry') {
+          const entry = msg.entry;
+          entryTypes.push(entry.type);
+          if ((entry.type === 'assistant' || entry.type === 'result') && entry.message) {
+            const content = entry.message.content;
+            // Track content block types for diagnostics (e.g. "assistant:[tool_use,text]")
+            if (Array.isArray(content)) {
+              const blockTypes = content.map((b: { type?: string }) => b.type ?? '?');
+              contentSummaries.push(`${entry.type}:[${blockTypes.join(',')}]`);
+              for (const block of content) {
+                if (block.type === 'text' && block.text) {
+                  text += block.text;
+                }
+              }
+            } else if (typeof content === 'string') {
+              contentSummaries.push(`${entry.type}:string(${content.length})`);
+              text += content;
+            } else {
+              contentSummaries.push(`${entry.type}:no-content`);
+            }
+          }
+          // Check structured_output on any entry type — the SDK may attach it
+          // to either the assistant or result entry depending on version/mode.
+          if (entry.metadata?.structured_output !== undefined) {
+            structured = entry.metadata.structured_output;
+          }
+        }
+
+        // Turn complete — resolve with collected result
+        if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'idle') {
+          settled = true;
+          cleanup();
+          // Resolve if we have text OR structured output (structured-only is valid
+          // when using outputFormat with json_schema).
+          if (text || structured !== undefined) {
+            resolve({ sessionId: currentId, text, structured });
+          } else {
+            const parts: string[] = [];
+            if (lastError) parts.push(`error: ${lastError}`);
+            parts.push(`entries: [${entryTypes.join(', ')}]`);
+            if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
+            console.warn(`[child-session] Turn completed with empty response (parent: ${parentSessionId}) — ${parts.join(' | ')}`);
+            resolve(null);
+          }
+        }
+      },
+    };
+
+    // Register the pending ID as a child session before sendTurn so cleanup
+    // always has something to work with.
+    childSessions.set(pendingId, { parentSessionId, autoClose });
+
+    // Fire the turn with the explicit pending ID
+    sendTurn(intent, internalSubscriber, pendingId)
+      .then((result) => {
+        if (settled) return;
+        currentId = result.sessionId;
+        // Migrate child tracking from pending to real ID
+        childSessions.delete(pendingId);
+        childSessions.set(currentId, { parentSessionId, autoClose });
+
+        // Handle pending->real ID re-keying
+        if (result.rekeyPromise) {
+          result.rekeyPromise.then((realId) => {
+            if (settled) return;
+            childSessions.delete(currentId);
+            childSessions.set(realId, { parentSessionId, autoClose });
+            currentId = realId;
+          }).catch(() => {});
+        }
+      })
+      .catch((err) => {
+        if (!settled) {
+          console.warn(`[child-session] sendTurn failed (parent: ${parentSessionId}, vendor: ${vendor}):`, err);
+          settled = true;
+          cleanup();
+          resolve(null);
+        }
+      });
+  });
 }

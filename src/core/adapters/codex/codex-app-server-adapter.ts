@@ -369,6 +369,7 @@ export class CodexAgentAdapter implements AgentAdapter {
     const overrides = mapTurnSettings({
       model: this._settings.model,
       permissionMode: this._settings.permissionMode as TurnSettings['permissionMode'],
+      outputFormat: this._outputFormat,
     });
 
     const response = await this.client.request<{ turn: { id: string } }>('turn/start', {
@@ -382,6 +383,9 @@ export class CodexAgentAdapter implements AgentAdapter {
   }
 
   // --- Private: Apply Settings ---
+
+  /** Stored outputFormat for passing to turn/start. */
+  private _outputFormat: TurnSettings['outputFormat'];
 
   private applySettings(settings: TurnSettings): void {
     if (settings.model !== undefined) {
@@ -398,6 +402,9 @@ export class CodexAgentAdapter implements AgentAdapter {
     }
     if (settings.extraArgs !== undefined) {
       this._settings = { ...this._settings, extraArgs: settings.extraArgs };
+    }
+    if (settings.outputFormat !== undefined) {
+      this._outputFormat = settings.outputFormat;
     }
   }
 

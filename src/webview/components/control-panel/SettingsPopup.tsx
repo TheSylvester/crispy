@@ -11,6 +11,8 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { SettingsIcon } from './icons.js';
+import { ModelSelect } from './ModelSelect.js';
+import type { VendorModelGroup } from './types.js';
 import type { RenderMode } from '../../types.js';
 import type { ToolViewOverride } from '../../context/PreferencesContext.js';
 import type { WireProviderConfig, ProviderConfig } from '../../../core/settings/types.js';
@@ -26,6 +28,10 @@ interface SettingsPopupProps {
   onDebugModeChange: (enabled: boolean) => void;
   toolPanelAutoOpen: boolean;
   onToolPanelAutoOpenChange: (enabled: boolean) => void;
+  rosieEnabled: boolean;
+  rosieModel?: string;
+  onUpdateRosie: (patch: { enabled?: boolean; model?: string }) => void;
+  modelGroups: VendorModelGroup[];
   providers?: Record<string, WireProviderConfig>;
   onSaveProvider?: (slug: string, config: ProviderConfig) => Promise<void>;
   onDeleteProvider?: (slug: string) => void;
@@ -107,7 +113,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, rosieEnabled, rosieModel, onUpdateRosie, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -224,6 +230,25 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               type="checkbox"
               checked={toolPanelAutoOpen}
               onChange={(e) => onToolPanelAutoOpenChange(e.target.checked)}
+            />
+          </label>
+
+          {/* --- Rosie Bot Section --- */}
+          <div className="crispy-cp-settings__section-header">Rosie Bot</div>
+          <label className="crispy-cp-settings__row">
+            <span>Enabled</span>
+            <input
+              type="checkbox"
+              checked={rosieEnabled}
+              onChange={(e) => onUpdateRosie({ enabled: e.target.checked })}
+            />
+          </label>
+          <label className="crispy-cp-settings__row">
+            <span>Model</span>
+            <ModelSelect
+              value={rosieModel ?? ''}
+              onChange={(value) => onUpdateRosie({ model: value || undefined })}
+              groups={modelGroups}
             />
           </label>
 
