@@ -6,6 +6,7 @@
  */
 
 import { stripAnsi } from './ansi.js';
+import type { ImageBlock } from '../../../../core/transcript.js';
 
 /**
  * Count lines in text and format as "{n} {noun}(s)".
@@ -64,6 +65,18 @@ export function extractRawResultText(content: unknown): string | null {
     return texts.length > 0 ? texts.join('\n') : null;
   }
   return null;
+}
+
+/**
+ * Extract image blocks from tool result content.
+ * Filters an array of content blocks for those with type === 'image'.
+ */
+export function extractImageBlocks(content: unknown): ImageBlock[] {
+  if (!Array.isArray(content)) return [];
+  return content.filter(
+    (b): b is ImageBlock =>
+      typeof b === 'object' && b !== null && 'type' in b && (b as { type: string }).type === 'image',
+  );
 }
 
 /**

@@ -26,6 +26,7 @@ import { ExitPlanModeCompactView, ExitPlanModeExpandedView } from './views/exitp
 import { WebSearchCompactView, WebSearchExpandedView } from './views/websearch-views.js';
 import { WebFetchCompactView, WebFetchExpandedView } from './views/webfetch-views.js';
 import { EnterPlanModeCompactView } from './views/enterplanmode-views.js';
+import { TaskOutputCompactView, TaskOutputExpandedView } from './views/taskoutput-views.js';
 import { ChromeCompactView, ChromeExpandedView } from './views/chrome-views.js';
 
 // ============================================================================
@@ -84,6 +85,17 @@ registerToolViews('Agent', {
   ...defaultToolViews(agentMeta),
   compact: TaskCompactView,
   expanded: TaskExpandedView,
+});
+
+// ============================================================================
+// Register TaskOutput Views
+// ============================================================================
+
+const taskOutputMeta = getToolData('TaskOutput');
+registerToolViews('TaskOutput', {
+  ...defaultToolViews(taskOutputMeta),
+  compact: TaskOutputCompactView,
+  expanded: TaskOutputExpandedView,
 });
 
 // ============================================================================
@@ -230,8 +242,9 @@ registerToolViews('EnterPlanMode', {
 const defaultOnlyTools = [
   'LS',
   'NotebookEdit',
-  'TaskOutput',
   'KillShell',
+  'TaskStop',
+  'EnterWorktree',
   'ReadMcpResource',
   'ListMcpResources',
 ];

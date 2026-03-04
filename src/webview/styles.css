@@ -4113,6 +4113,49 @@ h2 {
   font-size: 0.85em;
 }
 
+.crispy-blocks-taskoutput-metadata {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.crispy-blocks-taskoutput-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+
+.crispy-blocks-taskoutput-key {
+  color: var(--color-text-muted, #888);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+  min-width: 100px;
+}
+
+.crispy-blocks-taskoutput-key::after {
+  content: ':';
+}
+
+.crispy-blocks-taskoutput-value {
+  color: var(--color-text, #e0e0e0);
+  font-family: var(--font-mono);
+  word-break: break-word;
+}
+
+.crispy-blocks-tool-images {
+  margin: 4px 0;
+}
+
+.crispy-blocks-tool-image {
+  max-width: 100%;
+  max-height: 500px;
+  border-radius: var(--radius-md);
+  object-fit: contain;
+  display: block;
+}
+
 .crispy-blocks-chrome-images {
   margin: 4px 0;
 }

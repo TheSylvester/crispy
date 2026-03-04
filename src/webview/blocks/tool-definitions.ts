@@ -150,6 +150,12 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     activity: { verb: 'Killing shell', pastVerb: 'Killed shell' },
     inspectorDefault: 'expanded',
   },
+  TaskStop: {
+    icon: '\uD83D\uDED1',
+    color: '#ef4444',
+    activity: { verb: 'Stopping task', pastVerb: 'Stopped task' },
+    inspectorDefault: 'compact',
+  },
 
   // Utility tools
   TodoWrite: {
@@ -183,6 +189,12 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     color: '#3b82f6',
     activity: { verb: 'Entering plan mode', pastVerb: 'Entered plan mode' },
     inspectorDefault: 'expanded',
+  },
+  EnterWorktree: {
+    icon: '\uD83C\uDF33',
+    color: '#22c55e',
+    activity: { verb: 'Creating worktree', pastVerb: 'Created worktree' },
+    inspectorDefault: 'compact',
   },
 
   // MCP tools
@@ -309,6 +321,16 @@ export function extractSubject(block: RichBlock & { type: 'tool_use' }): string 
   // Skill: skill name
   if (typeof input.skill === 'string') {
     return input.skill;
+  }
+
+  // TaskOutput / TaskStop: task_id
+  if (typeof input.task_id === 'string') {
+    return input.task_id;
+  }
+
+  // EnterWorktree: name
+  if (typeof input.name === 'string') {
+    return input.name;
   }
 
   // Fallback: tool name

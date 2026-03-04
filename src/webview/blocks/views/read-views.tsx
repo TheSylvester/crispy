@@ -12,7 +12,7 @@ import { getToolData } from '../tool-definitions.js';
 import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { FilePath } from '../../renderers/tools/shared/FilePath.js';
-import { extractResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
+import { extractResultText, extractImageBlocks, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { ToolCard } from './ToolCard.js';
 
 const meta = getToolData('Read');
@@ -42,11 +42,14 @@ export function ReadCompactView({ block, result, status }: ToolViewProps): React
     }
   }
 
+  const images = extractImageBlocks(result?.content);
   const resultText = extractResultText(result?.content);
   const resultSummary = result
     ? result.is_error
       ? 'Not found'
-      : formatCount(resultText, 'line')
+      : images.length > 0
+        ? `${images.length} image${images.length !== 1 ? 's' : ''}`
+        : formatCount(resultText, 'line')
     : undefined;
 
   return (
@@ -78,11 +81,14 @@ export function ReadExpandedView({ block, result, status, anchor }: ToolViewProp
     }
   }
 
+  const images = extractImageBlocks(result?.content);
   const resultText = extractResultText(result?.content);
   const resultSummary = result
     ? result.is_error
       ? 'Not found'
-      : formatCount(resultText, 'line')
+      : images.length > 0
+        ? `${images.length} image${images.length !== 1 ? 's' : ''}`
+        : formatCount(resultText, 'line')
     : undefined;
 
   return (
@@ -96,9 +102,22 @@ export function ReadExpandedView({ block, result, status, anchor }: ToolViewProp
     </>}>
       {result && (
         <div className="crispy-blocks-tool-body">
-          <pre className={`crispy-tool-result__text ${result.is_error ? 'crispy-tool-result__text--error' : ''}`}>
-            {resultText ?? JSON.stringify(result.content, null, 2)}
-          </pre>
+          {images.length > 0 ? (
+            <div className="crispy-blocks-tool-images">
+              {images.map((img, i) => (
+                <img
+                  key={i}
+                  className="crispy-blocks-tool-image"
+                  src={`data:${img.source.media_type ?? 'image/jpeg'};base64,${img.source.data}`}
+                  alt={`Image ${i + 1}`}
+                />
+              ))}
+            </div>
+          ) : (
+            <pre className={`crispy-tool-result__text ${result.is_error ? 'crispy-tool-result__text--error' : ''}`}>
+              {resultText ?? JSON.stringify(result.content, null, 2)}
+            </pre>
+          )}
         </div>
       )}
     </ToolCard>

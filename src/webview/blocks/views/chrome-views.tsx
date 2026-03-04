@@ -11,10 +11,9 @@
 
 import type { ReactNode } from 'react';
 import type { ToolViewProps } from '../types.js';
-import type { ImageBlock } from '../../../core/transcript.js';
 import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
-import { extractResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
+import { extractResultText, extractImageBlocks, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { ChromeMonoIcon } from '../../components/control-panel/icons.js';
 import { ToolCard } from './ToolCard.js';
 
@@ -231,14 +230,6 @@ function getChromeResultSummary(
     case 'resize_window': return 'done';
     default: return formatCount(resultText, 'line');
   }
-}
-
-function extractImageBlocks(content: unknown): ImageBlock[] {
-  if (!Array.isArray(content)) return [];
-  return content.filter(
-    (b): b is ImageBlock =>
-      typeof b === 'object' && b !== null && 'type' in b && (b as { type: string }).type === 'image',
-  );
 }
 
 // ============================================================================
