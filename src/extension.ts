@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { initSettings, startWatchingSettings, stopWatchingSettings } from './core/settings/index.js';
 import { openCrispyPanel, getOrCreatePanelForPrefill } from './host/webview-host.js';
 import { startRescan, stopRescan } from './core/session-list-manager.js';
+import { runScan } from './core/activity-scanner.js';
 import { findClaudeBinary } from './core/find-claude-binary.js';
 import { registerAllAdapters } from './host/adapter-registry.js';
 import { createAgentDispatch } from './host/agent-dispatch.js';
@@ -74,6 +75,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
   startRescan();
   context.subscriptions.push({ dispose: () => stopRescan() });
+
+  // Activity scanning — index user prompts for the Activity Path view
+  const safeRunScan = () => {
+    try { runScan(); } catch (err) { console.error('[crispy] Activity scan failed:', err); }
+  };
+  setImmediate(safeRunScan);
+  const scanTimer = setInterval(safeRunScan, 30_000);
+  context.subscriptions.push({ dispose: () => clearInterval(scanTimer) });
   context.subscriptions.push({ dispose: () => stopWatchingSettings() });
 }
 

@@ -105,6 +105,14 @@ export function ActivityPathView(): React.JSX.Element {
       setEntries(result);
       setLoading(false);
     }).catch(() => setLoading(false));
+
+    // Poll every 30s for new entries (append-only, so length comparison is sufficient)
+    const poll = setInterval(() => {
+      transport.getActivityLog({}).then(result => {
+        setEntries(prev => result.length !== prev.length ? result : prev);
+      }).catch(() => {});
+    }, 30_000);
+    return () => clearInterval(poll);
   }, [transport]);
 
   // ---- Build session map & derived lookups ----
