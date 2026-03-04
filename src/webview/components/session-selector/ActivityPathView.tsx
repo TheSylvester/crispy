@@ -17,6 +17,7 @@ import { useSession } from '../../context/SessionContext.js';
 import { usePreferences } from '../../context/PreferencesContext.js';
 import type { ActivityIndexEntry } from '../../../core/activity-index.js';
 import type { WireSessionInfo } from '../../transport.js';
+import { getSessionDisplayName } from '../../utils/session-display.js';
 
 // ============================================================================
 // Constants
@@ -147,10 +148,9 @@ export function ActivityPathView(): React.JSX.Element {
     for (const e of entries) {
       if (map.has(e.file)) continue;
       const session = sessionMap.get(e.file);
-      map.set(e.file, session?.label
-        || session?.lastMessage
-        || e.file.split('/').pop()?.replace('.jsonl', '')
-        || e.file);
+      map.set(e.file, session
+        ? getSessionDisplayName(session)
+        : e.file.split('/').pop()?.replace('.jsonl', '') || e.file);
     }
     return map;
   }, [entries, sessionMap]);

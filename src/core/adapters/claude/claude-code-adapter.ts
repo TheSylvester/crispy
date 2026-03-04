@@ -1511,7 +1511,7 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
         lastMessage: meta?.lastMessage,
         vendor: 'claude',
         isSidechain: meta?.isSidechain,
-        ...(rosie && { quest: rosie.quest, botSummary: rosie.summary }),
+        ...(rosie && { quest: rosie.quest, botSummary: rosie.summary, title: rosie.title }),
       });
     }
   }
@@ -1559,7 +1559,7 @@ export function findSession(sessionId: string): SessionInfo | undefined {
       label: meta?.label,
       lastMessage: meta?.lastMessage,
       vendor: 'claude',
-      ...(rosie && { quest: rosie.quest, botSummary: rosie.summary }),
+      ...(rosie && { quest: rosie.quest, botSummary: rosie.summary, title: rosie.title }),
     };
   }
 

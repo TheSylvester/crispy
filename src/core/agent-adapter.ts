@@ -60,6 +60,8 @@ export interface SessionInfo {
   quest?: string;
   /** Rosie Bot: most recent turn summary. */
   botSummary?: string;
+  /** Rosie Bot: short conversation label. */
+  title?: string;
 }
 
 // ============================================================================

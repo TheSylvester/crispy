@@ -45,6 +45,8 @@ export interface ActivityIndexEntry {
   quest?: string;
   /** Rosie Bot: most recent turn summary (rosie-meta entries only). */
   summary?: string;
+  /** Rosie Bot: short conversation label (rosie-meta entries only). */
+  title?: string;
 }
 
 /**

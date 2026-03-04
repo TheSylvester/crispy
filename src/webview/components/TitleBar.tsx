@@ -21,6 +21,7 @@ import { useTransport } from '../context/TransportContext.js';
 import { useEnvironment } from '../context/EnvironmentContext.js';
 import { useThemeKind, isLightTheme } from '../hooks/useThemeKind.js';
 import { SessionSelector } from './session-selector/index.js';
+import { getSessionDisplayName } from '../utils/session-display.js';
 
 /** SVG chevron — points down, rotates 180° when sidebar is open */
 function Chevron({ open }: { open: boolean }): React.JSX.Element {
@@ -186,8 +187,8 @@ export function TitleBar(): React.JSX.Element {
   const currentSession = selectedSessionId
     ? sessions.find(s => s.sessionId === selectedSessionId)
     : null;
-  const buttonLabel = currentSession?.label
-    ? truncateLabel(currentSession.label, BUTTON_LABEL_MAX)
+  const buttonLabel = currentSession
+    ? truncateLabel(getSessionDisplayName(currentSession), BUTTON_LABEL_MAX)
     : 'Conversations';
 
   // Push session label to host tab title
@@ -195,8 +196,8 @@ export function TitleBar(): React.JSX.Element {
   const envKind = useEnvironment();
 
   const TAB_TITLE_MAX = 24;
-  const tabTitle = currentSession?.label
-    ? truncateLabel(currentSession.label, TAB_TITLE_MAX)
+  const tabTitle = currentSession
+    ? truncateLabel(getSessionDisplayName(currentSession), TAB_TITLE_MAX)
     : 'Crispy';
 
   useEffect(() => {
@@ -253,9 +254,16 @@ export function TitleBar(): React.JSX.Element {
           className="crispy-titlebar__btn crispy-titlebar__session-btn"
           onClick={toggleSidebar}
           aria-label={sidebarCollapsed ? 'Open sessions' : 'Close sessions'}
-          title="Toggle session list"
+          title={currentSession?.quest || 'Toggle session list'}
         >
-          <span className="crispy-titlebar__label">{buttonLabel}</span>
+          <span className="crispy-titlebar__label-group">
+            <span className="crispy-titlebar__label">{buttonLabel}</span>
+            {currentSession?.quest && currentSession.quest !== getSessionDisplayName(currentSession) && (
+              <span className="crispy-titlebar__subtitle">
+                {truncateLabel(currentSession.quest, BUTTON_LABEL_MAX)}
+              </span>
+            )}
+          </span>
           <Chevron open={!sidebarCollapsed} />
         </button>
         {!sidebarCollapsed && (

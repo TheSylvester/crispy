@@ -13,6 +13,7 @@
 
 import type { WireSessionInfo } from '../../transport.js';
 import { VendorIcon } from './VendorIcon.js';
+import { getSessionDisplayName } from '../../utils/session-display.js';
 
 interface SessionItemProps {
   session: WireSessionInfo;
@@ -90,13 +91,14 @@ export function SessionItem({
     isFocused && 'crispy-session-item--focused',
   ].filter(Boolean).join(' ');
 
-  const label = session.quest || session.label || session.sessionId.slice(0, 8) + '\u2026';
+  const label = getSessionDisplayName(session);
 
   return (
     <li
       className={classNames}
       onClick={onClick}
       data-session-index={index}
+      title={session.quest || label}
     >
       <div className="crispy-session-item__header">
         <span className="crispy-session-item__label">

@@ -144,6 +144,7 @@ async function runRosieAnalysis(
         offset: 0,
         quest: fields.quest,
         summary: fields.summary,
+        title: fields.title,
       }]);
 
       // Push updated metadata to all UI subscribers

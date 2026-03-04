@@ -2775,11 +2775,31 @@ h2 {
   flex-shrink: 1;
 }
 
+.crispy-titlebar__label-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  align-items: flex-start;
+}
+
 .crispy-titlebar__label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+  max-width: 100%;
+}
+
+.crispy-titlebar__subtitle {
+  display: block;
+  font-size: 0.7rem;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  line-height: 1.2;
 }
 
 /* --- Animated chevron --- */
