@@ -447,6 +447,21 @@ export function getLineage(sessionFile: string): {
 }
 
 /**
+ * Bulk-load all session files that have lineage records.
+ * Returns a Set for O(1) membership checks. Used by the scanner
+ * to avoid per-file DB queries on every 30s poll cycle.
+ */
+export function getAllLineageFiles(): Set<string> {
+  try {
+    const db = getDb(dbPath());
+    const rows = db.all('SELECT session_file FROM session_lineage');
+    return new Set(rows.map((r) => (r as Record<string, unknown>).session_file as string));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
  * Get all child session files for a given parent file.
  */
 export function getChildSessions(parentFile: string): string[] {
@@ -459,6 +474,31 @@ export function getChildSessions(parentFile: string): string[] {
     return rows.map((r) => (r as Record<string, unknown>).session_file as string);
   } catch {
     return [];
+  }
+}
+
+/**
+ * Delete duplicate activity entries from a child file that share UUIDs
+ * with a parent file. Used during retroactive lineage detection for
+ * files that were scanned before the lineage feature existed.
+ */
+export function deleteDuplicateEntries(
+  childFile: string,
+  parentFile: string,
+): void {
+  try {
+    const db = getDb(dbPath());
+    db.run(`
+      DELETE FROM activity_entries
+      WHERE file = ?
+        AND uuid IS NOT NULL
+        AND uuid IN (
+          SELECT uuid FROM activity_entries
+          WHERE file = ? AND uuid IS NOT NULL
+        )
+    `, [childFile, parentFile]);
+  } catch {
+    // Non-fatal
   }
 }
 

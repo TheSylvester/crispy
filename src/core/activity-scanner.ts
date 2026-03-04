@@ -23,6 +23,8 @@ import {
   findParentByUuids,
   getFileUuids,
   recordLineage,
+  getAllLineageFiles,
+  deleteDuplicateEntries,
   type ActivityIndexEntry,
 } from './activity-index.js';
 import {
@@ -52,6 +54,10 @@ export function runScan(): void {
   const newEntries: ActivityIndexEntry[] = [];
   let stateChanged = false;
 
+  // Bulk-load lineage records once — O(1) per-file checks instead of
+  // individual DB queries. Mutable so we can add new records inline.
+  const lineageFiles = getAllLineageFiles();
+
   for (const session of sessions) {
     // Skip sessions without a path (e.g., RPC-only Codex sessions)
     if (!session.path) continue;
@@ -62,15 +68,20 @@ export function runScan(): void {
       const mtime = stat.mtimeMs;
       const size = stat.size;
 
-      // Skip if unchanged (same mtime + size)
-      if (cached && cached.mtime === mtime && cached.size === size) {
+      // Skip if unchanged (same mtime + size) — but only if lineage is
+      // already recorded. Files scanned before the lineage feature need one
+      // pass through the lineage detection block below, even if unchanged.
+      if (cached && cached.mtime === mtime && cached.size === size && lineageFiles.has(session.path)) {
         continue;
       }
 
-      // Lineage detection: first encounter of this file (no scan state yet)
       let fromOffset = cached?.offset ?? 0;
 
-      if (!cached) {
+      // Lineage detection runs in two cases:
+      // 1. First encounter (!cached) — new file never scanned before
+      // 2. Cached but no lineage record — file was scanned before lineage
+      //    feature existed; retroactively detect and dedup
+      if (!cached || !lineageFiles.has(session.path)) {
         const headUuids = scanFirstUserUuids(session.path, 5);
         if (headUuids.length > 0) {
           const parent = findParentByUuids(
@@ -87,11 +98,23 @@ export function runScan(): void {
               divergence.lastSharedUuid,
               divergence.offset,
             );
-            fromOffset = divergence.offset; // skip shared prefix
+            lineageFiles.add(session.path);
+            if (!cached) {
+              fromOffset = divergence.offset; // skip shared prefix on first scan
+            } else {
+              // Retroactive: delete already-indexed duplicate entries
+              deleteDuplicateEntries(session.path, parent.parentFile);
+            }
           } else {
             // Fresh conversation — no parent
             recordLineage(session.path, null, null, 0);
+            lineageFiles.add(session.path);
           }
+        } else {
+          // No user UUIDs found (empty/trivial file) — record as fresh so
+          // we don't re-check on every scan cycle
+          recordLineage(session.path, null, null, 0);
+          lineageFiles.add(session.path);
         }
       }
 

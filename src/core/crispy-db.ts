@@ -252,7 +252,7 @@ const migrations: Migration[] = [
           AND a1.file < a2.file
           AND a1.uuid IS NOT NULL
         GROUP BY a1.file, a2.file
-        HAVING shared_count >= 2
+        HAVING shared_count >= 1
       `) as Array<Record<string, unknown>>;
 
       for (const pair of forkPairs) {
@@ -290,6 +290,71 @@ const migrations: Migration[] = [
 
         // Delete duplicate entries from the child file for the shared prefix.
         // Keep the parent's entries, remove the child's entries that share UUIDs.
+        db.run(`
+          DELETE FROM activity_entries
+          WHERE file = ?
+            AND uuid IS NOT NULL
+            AND uuid IN (
+              SELECT uuid FROM activity_entries
+              WHERE file = ? AND uuid IS NOT NULL
+            )
+        `, [childFile, parentFile]);
+      }
+    },
+  },
+  {
+    version: 4,
+    description: 'Backfill fork pairs missed by v3 (shared_count = 1)',
+    up: (db: Database): void => {
+      // v3 used HAVING shared_count >= 2, missing single-shared-UUID forks.
+      // Re-run the same logic with >= 1 for any remaining duplicates.
+      // INSERT OR IGNORE ensures already-recorded lineage from v3 is untouched.
+      const forkPairs = db.all(`
+        SELECT
+          a1.file AS file_a,
+          a2.file AS file_b,
+          MIN(a1.id) AS first_id_a,
+          MIN(a2.id) AS first_id_b,
+          COUNT(*) AS shared_count
+        FROM activity_entries a1
+        JOIN activity_entries a2
+          ON a1.uuid = a2.uuid
+          AND a1.file < a2.file
+          AND a1.uuid IS NOT NULL
+        GROUP BY a1.file, a2.file
+        HAVING shared_count >= 1
+      `) as Array<Record<string, unknown>>;
+
+      for (const pair of forkPairs) {
+        const fileA = pair.file_a as string;
+        const fileB = pair.file_b as string;
+        const firstIdA = pair.first_id_a as number;
+        const firstIdB = pair.first_id_b as number;
+
+        const parentFile = firstIdA <= firstIdB ? fileA : fileB;
+        const childFile = parentFile === fileA ? fileB : fileA;
+
+        const forkRow = db.get(`
+          SELECT a1.uuid, a1.byte_offset
+          FROM activity_entries a1
+          JOIN activity_entries a2
+            ON a1.uuid = a2.uuid
+            AND a1.uuid IS NOT NULL
+          WHERE a1.file = ? AND a2.file = ?
+          ORDER BY a1.byte_offset DESC
+          LIMIT 1
+        `, [childFile, parentFile]) as Record<string, unknown> | undefined;
+
+        const forkPointUuid = forkRow?.uuid as string | null ?? null;
+        const forkPointOffset = forkRow?.byte_offset as number ?? 0;
+
+        db.run(
+          `INSERT OR IGNORE INTO session_lineage
+           (session_file, parent_file, fork_point_uuid, fork_point_offset)
+           VALUES (?, ?, ?, ?)`,
+          [childFile, parentFile, forkPointUuid, forkPointOffset],
+        );
+
         db.run(`
           DELETE FROM activity_entries
           WHERE file = ?
