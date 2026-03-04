@@ -15,7 +15,7 @@ import { join } from 'node:path';
 
 import type { SessionInfo, VendorDiscovery, UserActivityScanResult } from '../src/core/agent-adapter.js';
 import type { Vendor } from '../src/core/transcript.js';
-import { _setTestDir, loadScanState, queryActivity } from '../src/core/activity-index.js';
+import { _setTestDir, loadScanState, saveScanState, queryActivity } from '../src/core/activity-index.js';
 
 // ============================================================================
 // Mocks
@@ -371,10 +371,9 @@ describe('runScan', () => {
   it('does not save state if nothing changed', () => {
     mockListAllSessions.mockReturnValue([]);
 
-    // Create a scan state file with known content
-    const initialState = { version: 1, files: { '/existing.jsonl': { mtime: 1, size: 1, offset: 1 } } };
-    fs.mkdirSync(testDir, { recursive: true });
-    fs.writeFileSync(join(testDir, 'scan-state.json'), JSON.stringify(initialState, null, 2));
+    // Seed scan state via the public API (backed by SQLite now)
+    const initialState = { version: 1 as const, files: { '/existing.jsonl': { mtime: 1, size: 1, offset: 1 } } };
+    saveScanState(initialState);
 
     runScan();
 

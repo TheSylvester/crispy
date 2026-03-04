@@ -2,14 +2,17 @@
  * Activity Index — Persistence Layer for User Activity Data
  *
  * Owns ALL reads/writes to ~/.crispy/. No other module should touch these
- * files directly. Provides:
- * - CRUD for activity-index.jsonl (append-only index of user prompts and rosie-meta)
- * - Atomic read/write for scan-state.json (scan progress tracking)
+ * files directly. The underlying storage is a SQLite database (crispy.db)
+ * managed by crispy-db.ts. Provides:
+ * - CRUD for activity entries (user prompts and rosie-meta)
+ * - Scan state persistence (scan progress tracking)
  * - Rosie Bot metadata queries (getLatestRosieMeta)
  *
  * The activity index is an acceleration structure, not a source of truth.
- * Duplicates from crash recovery are acceptable — downstream consumers
- * dedup by timestamp + file + uuid.
+ * Duplicates are prevented by a UNIQUE(timestamp, file, uuid) constraint
+ * with INSERT OR IGNORE. NULL uuids are treated as unique per SQLite
+ * semantics — this matches the old JSONL behavior where entries without
+ * UUIDs could be duplicated.
  *
  * @module activity-index
  */
@@ -17,6 +20,7 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { getDb, _resetDb } from './crispy-db.js';
 
 // ============================================================================
 // Types
@@ -25,8 +29,7 @@ import { homedir } from 'node:os';
 /**
  * A single entry in the activity index.
  *
- * Represents a user prompt extracted from a session file. The index is
- * append-only JSONL — one JSON object per line.
+ * Represents a user prompt extracted from a session file.
  */
 export interface ActivityIndexEntry {
   /** ISO 8601 timestamp of the prompt. */
@@ -65,9 +68,9 @@ export interface ScanFileState {
 }
 
 /**
- * Root scan state persisted to scan-state.json.
+ * Root scan state persisted to the scan_state table.
  *
- * Version field for future schema migrations. Files map is keyed by
+ * Version field for API compatibility. Files map is keyed by
  * absolute file path.
  */
 export interface ScanState {
@@ -80,24 +83,28 @@ export interface ScanState {
 // ============================================================================
 
 let crispyDir = join(homedir(), '.crispy');
-let activityIndexPath = join(crispyDir, 'activity-index.jsonl');
-let scanStatePath = join(crispyDir, 'scan-state.json');
+
+/** Get the path to the database file. */
+function dbPath(): string {
+  return join(crispyDir, 'crispy.db');
+}
 
 /**
  * Override the crispy directory for testing.
  * Returns a cleanup function that restores the original paths.
  */
 export function _setTestDir(dir: string): () => void {
-  const prev = { crispyDir, activityIndexPath, scanStatePath };
+  const prevDir = crispyDir;
+  _resetDb(); // Close existing DB connection
   crispyDir = dir;
-  activityIndexPath = join(dir, 'activity-index.jsonl');
-  scanStatePath = join(dir, 'scan-state.json');
-  rosieMetaCache = null; // Invalidate cache when paths change
+  rosieMetaCache = null;
+  // Create dir and init DB in test directory
+  fs.mkdirSync(dir, { recursive: true });
+  getDb(dbPath());
   return () => {
-    crispyDir = prev.crispyDir;
-    activityIndexPath = prev.activityIndexPath;
-    scanStatePath = prev.scanStatePath;
-    rosieMetaCache = null; // Invalidate cache on restore too
+    _resetDb(); // Close test DB
+    crispyDir = prevDir;
+    rosieMetaCache = null;
   };
 }
 
@@ -108,9 +115,11 @@ export function _setTestDir(dir: string): () => void {
 /**
  * Ensure ~/.crispy/ directory exists.
  * Creates with recursive: true so intermediate dirs are also created.
+ * Triggers lazy DB initialization.
  */
 export function ensureCrispyDir(): void {
   fs.mkdirSync(crispyDir, { recursive: true });
+  getDb(dbPath());
 }
 
 // ============================================================================
@@ -118,12 +127,12 @@ export function ensureCrispyDir(): void {
 // ============================================================================
 
 /**
- * Load scan state from disk.
+ * Load scan state from the database.
  *
  * Returns default { version: 1, files: {} } if:
- * - File doesn't exist
- * - File is malformed JSON
- * - File has wrong structure
+ * - Database doesn't exist yet
+ * - Table is empty
+ * - Any error occurs
  *
  * Never throws — always returns a valid ScanState.
  */
@@ -131,39 +140,50 @@ export function loadScanState(): ScanState {
   const defaultState: ScanState = { version: 1, files: {} };
 
   try {
-    const content = fs.readFileSync(scanStatePath, 'utf-8');
-    const parsed = JSON.parse(content);
-
-    // Validate structure
-    if (
-      typeof parsed !== 'object' ||
-      parsed === null ||
-      parsed.version !== 1 ||
-      typeof parsed.files !== 'object' ||
-      parsed.files === null
-    ) {
-      return defaultState;
+    const db = getDb(dbPath());
+    const rows = db.all('SELECT file_path, mtime, size, byte_offset FROM scan_state');
+    const files: Record<string, ScanFileState> = {};
+    for (const row of rows) {
+      const r = row as Record<string, unknown>;
+      files[r.file_path as string] = {
+        mtime: r.mtime as number,
+        size: r.size as number,
+        offset: r.byte_offset as number,
+      };
     }
-
-    return parsed as ScanState;
+    return { version: 1, files };
   } catch {
     return defaultState;
   }
 }
 
 /**
- * Save scan state to disk atomically.
+ * Save scan state to the database.
  *
- * Uses write-to-tmp + rename pattern to prevent corruption if the
- * process dies mid-write. The old state is preserved until the
- * rename completes.
+ * Replaces all existing scan state rows in a single transaction.
  */
 export function saveScanState(state: ScanState): void {
   ensureCrispyDir();
-  const statePath = scanStatePath;
-  const tmp = statePath + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
-  fs.renameSync(tmp, statePath);
+  const db = getDb(dbPath());
+
+  db.exec('BEGIN');
+  try {
+    db.exec('DELETE FROM scan_state');
+    const stmt = db.prepare(
+      'INSERT INTO scan_state (file_path, mtime, size, byte_offset) VALUES (?, ?, ?, ?)',
+    );
+    try {
+      for (const [path, s] of Object.entries(state.files)) {
+        stmt.run([path, s.mtime, s.size, s.offset]);
+      }
+    } finally {
+      stmt.finalize();
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
 }
 
 // ============================================================================
@@ -176,10 +196,6 @@ export function saveScanState(state: ScanState): void {
  * Built lazily from a single queryActivity() call, then served from memory
  * on subsequent getLatestRosieMeta() calls. Invalidated when new rosie-meta
  * entries are appended via appendActivityEntries().
- *
- * This eliminates the N+1 readFileSync pattern during session listing —
- * previously each session triggered a full file read + parse of the
- * activity index.
  */
 let rosieMetaCache: Map<string, ActivityIndexEntry> | null = null;
 
@@ -206,22 +222,48 @@ export function invalidateRosieMetaCache(): void {
 // ============================================================================
 
 /**
- * Append activity entries to the index.
+ * Append activity entries to the database.
  *
- * Each entry is serialized as a single JSON line (JSONL format).
- * Creates the file if it doesn't exist.
+ * Uses INSERT OR IGNORE to handle duplicates via the UNIQUE constraint.
+ * No-op if entries array is empty.
  *
- * No-op if entries array is empty (file not created/modified).
- *
- * Invalidates the rosie metadata cache when rosie-meta entries are written,
- * so the next getLatestRosieMeta() call rebuilds from disk.
+ * Invalidates the rosie metadata cache when rosie-meta entries are written.
  */
 export function appendActivityEntries(entries: ActivityIndexEntry[]): void {
   if (entries.length === 0) return;
 
   ensureCrispyDir();
-  const lines = entries.map((e) => JSON.stringify(e)).join('\n') + '\n';
-  fs.appendFileSync(activityIndexPath, lines);
+  const db = getDb(dbPath());
+
+  db.exec('BEGIN');
+  try {
+    const stmt = db.prepare(
+      `INSERT OR IGNORE INTO activity_entries
+       (timestamp, kind, file, preview, byte_offset, uuid, quest, summary, title)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    try {
+      for (const e of entries) {
+        stmt.run([
+          e.timestamp,
+          e.kind,
+          e.file,
+          e.preview,
+          e.offset,
+          e.uuid ?? null,
+          e.quest ?? null,
+          e.summary ?? null,
+          e.title ?? null,
+        ]);
+      }
+    } finally {
+      stmt.finalize();
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
 
   // Invalidate rosie cache when rosie-meta entries are appended
   if (entries.some((e) => e.kind === 'rosie-meta')) {
@@ -230,61 +272,44 @@ export function appendActivityEntries(entries: ActivityIndexEntry[]): void {
 }
 
 /**
- * Query activity entries from the index.
+ * Query activity entries from the database.
  *
  * Returns entries sorted by timestamp ascending. Supports optional
  * time range filtering with ISO 8601 strings and kind filtering.
  *
- * - Returns empty array if file doesn't exist
- * - Skips malformed lines gracefully (no throw)
+ * Returns empty array on any error (never throws).
  */
-export function queryActivity(timeRange?: {
-  from?: string;
-  to?: string;
-}, kind?: ActivityIndexEntry['kind']): ActivityIndexEntry[] {
-  let content: string;
+export function queryActivity(
+  timeRange?: { from?: string; to?: string },
+  kind?: ActivityIndexEntry['kind'],
+): ActivityIndexEntry[] {
   try {
-    content = fs.readFileSync(activityIndexPath, 'utf-8');
+    const db = getDb(dbPath());
+    const conditions: string[] = [];
+    const params: (string | number | null)[] = [];
+
+    if (kind) {
+      conditions.push('kind = ?');
+      params.push(kind);
+    }
+    if (timeRange?.from) {
+      conditions.push('timestamp >= ?');
+      params.push(timeRange.from);
+    }
+    if (timeRange?.to) {
+      conditions.push('timestamp <= ?');
+      params.push(timeRange.to);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const sql = `SELECT timestamp, kind, file, preview, byte_offset, uuid, quest, summary, title
+                 FROM activity_entries ${where} ORDER BY timestamp ASC`;
+
+    const rows = db.all(sql, params.length > 0 ? params : undefined);
+    return rows.map(rowToEntry);
   } catch {
     return [];
   }
-  const lines = content.split('\n').filter((line) => line.trim() !== '');
-  const entries: ActivityIndexEntry[] = [];
-
-  for (const line of lines) {
-    try {
-      const entry = JSON.parse(line) as ActivityIndexEntry;
-      // Basic validation — ensure required fields exist
-      if (
-        typeof entry.timestamp === 'string' &&
-        typeof entry.file === 'string' &&
-        typeof entry.preview === 'string'
-      ) {
-        entries.push(entry);
-      }
-    } catch {
-      // Skip malformed lines
-    }
-  }
-
-  // Apply kind filter
-  let filtered = entries;
-  if (kind) {
-    filtered = filtered.filter((e) => e.kind === kind);
-  }
-
-  // Apply time range filter
-  if (timeRange?.from) {
-    filtered = filtered.filter((e) => e.timestamp >= timeRange.from!);
-  }
-  if (timeRange?.to) {
-    filtered = filtered.filter((e) => e.timestamp <= timeRange.to!);
-  }
-
-  // Sort by timestamp ascending
-  filtered.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-
-  return filtered;
 }
 
 /**
@@ -293,10 +318,7 @@ export function queryActivity(timeRange?: {
  * When `filePath` is provided, returns the latest entry for that specific
  * session file. Otherwise returns the global latest.
  *
- * Uses an in-memory cache to avoid re-reading the full activity index on
- * every call. The cache is invalidated when new rosie-meta entries are
- * written via appendActivityEntries(). This reduces N per-session file
- * reads to a single read per listing cycle.
+ * Uses an in-memory cache to avoid re-querying the DB on every call.
  */
 export function getLatestRosieMeta(filePath?: string): ActivityIndexEntry | undefined {
   if (!rosieMetaCache) {
@@ -313,4 +335,24 @@ export function getLatestRosieMeta(filePath?: string): ActivityIndexEntry | unde
     }
   }
   return latest;
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function rowToEntry(row: Record<string, unknown>): ActivityIndexEntry {
+  const r = row as Record<string, unknown>;
+  const entry: ActivityIndexEntry = {
+    timestamp: r.timestamp as string,
+    kind: r.kind as 'prompt' | 'rosie-meta',
+    file: r.file as string,
+    preview: r.preview as string,
+    offset: r.byte_offset as number,
+  };
+  if (r.uuid != null) entry.uuid = r.uuid as string;
+  if (r.quest != null) entry.quest = r.quest as string;
+  if (r.summary != null) entry.summary = r.summary as string;
+  if (r.title != null) entry.title = r.title as string;
+  return entry;
 }

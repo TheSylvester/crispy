@@ -32,6 +32,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.63",
     "@anthropic-ai/sdk": "^0.74.0",
+    "node-sqlite3-wasm": "^0.8.53",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -53,7 +54,7 @@
     "ws": "^8.19.0"
   },
   "scripts": {
-    "build:extension": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --sourcemap",
+    "build:extension": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --sourcemap && cp node_modules/node-sqlite3-wasm/dist/node-sqlite3-wasm.wasm dist/",
     "build:webview": "esbuild src/webview/main.tsx --bundle --outfile=dist/webview/main.js --format=esm --platform=browser --sourcemap --jsx=automatic --loader:.svg=text && cp src/webview/index.html dist/webview/ && cp src/webview/theme-defaults.css dist/webview/ && cp src/webview/styles.css dist/webview/",
     "build:dev-server": "esbuild src/host/dev-server.ts --bundle --outfile=dist/dev-server.js --external:@anthropic-ai/* --external:ws --format=esm --platform=node --sourcemap",
     "build": "npm run build:extension && npm run build:webview && npm run build:dev-server",
