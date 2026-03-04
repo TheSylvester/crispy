@@ -10,6 +10,8 @@ import { openCrispyPanel, getOrCreatePanelForPrefill } from './host/webview-host
 import { startRescan, stopRescan } from './core/session-list-manager.js';
 import { findClaudeBinary } from './core/find-claude-binary.js';
 import { registerAllAdapters } from './host/adapter-registry.js';
+import { createAgentDispatch } from './host/agent-dispatch.js';
+import { initRosie, shutdownRosie } from './core/rosie/index.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
@@ -59,6 +61,16 @@ export function activate(context: vscode.ExtensionContext): void {
     : { cwd };
   initSettings(providerBase).catch((err) => console.error('[crispy] Failed to load settings:', err));
   startWatchingSettings();
+
+  // Create dispatch for internal consumers (Rosie, future features)
+  const dispatch = createAgentDispatch();
+  initRosie(dispatch);
+  context.subscriptions.push({
+    dispose: () => {
+      shutdownRosie();
+      dispatch.dispose();
+    },
+  });
 
   startRescan();
   context.subscriptions.push({ dispose: () => stopRescan() });

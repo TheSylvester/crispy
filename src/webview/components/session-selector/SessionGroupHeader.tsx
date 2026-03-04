@@ -13,8 +13,8 @@ interface SessionGroupHeaderProps {
 
 export function SessionGroupHeader({ label }: SessionGroupHeaderProps): React.JSX.Element {
   return (
-    <li className="crispy-session-group-header">
+    <div className="crispy-session-group-header">
       {label.toUpperCase()}
-    </li>
+    </div>
   );
 }

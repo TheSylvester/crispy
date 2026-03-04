@@ -9,6 +9,7 @@
  * That's the dispatch-handler's job.
  */
 
+import { randomUUID } from 'node:crypto';
 import type { SessionInfo, TurnIntent, TurnReceipt } from '../core/agent-adapter.js';
 import type { TranscriptEntry } from '../core/transcript.js';
 import type { ChildSessionOptions, ChildSessionResult } from '../core/session-manager.js';
@@ -44,7 +45,7 @@ export interface AgentDispatch {
 }
 
 export function createAgentDispatch(): AgentDispatch {
-  const clientId = `dispatch-${crypto.randomUUID()}`;
+  const clientId = `dispatch-${randomUUID()}`;
   const eventHandlers = new Set<(sessionId: string, event: HostEvent) => void>();
 
   const connection = createClientConnection(clientId, (msg: HostMessage) => {
