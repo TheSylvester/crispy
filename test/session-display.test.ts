@@ -54,4 +54,22 @@ describe('getSessionDisplayName', () => {
       label: '',
     })).toBe('abcdef12\u2026');
   });
+
+  it('skips whitespace-only strings in the priority chain', () => {
+    expect(getSessionDisplayName({
+      ...base,
+      title: '   ',
+      quest: '  \t ',
+      label: 'Fallback label',
+    })).toBe('Fallback label');
+  });
+
+  it('skips whitespace-only strings and falls to ID', () => {
+    expect(getSessionDisplayName({
+      ...base,
+      title: '   ',
+      quest: ' ',
+      label: '  ',
+    })).toBe('abcdef12\u2026');
+  });
 });

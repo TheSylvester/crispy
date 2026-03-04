@@ -12,6 +12,6 @@ import type { WireSessionInfo } from '../transport.js';
 export function getSessionDisplayName(
   session: Pick<WireSessionInfo, 'title' | 'quest' | 'label' | 'sessionId'>,
 ): string {
-  return session.title || session.quest || session.label
+  return session.title?.trim() || session.quest?.trim() || session.label?.trim()
     || session.sessionId.slice(0, 8) + '\u2026';
 }
