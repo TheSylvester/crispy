@@ -90,7 +90,7 @@ function TruncatedCell({ text, className }: { text: string; className?: string }
 
 export function ActivityPathView(): React.JSX.Element {
   const transport = useTransport();
-  const { sessions, setSelectedSessionId } = useSession();
+  const { sessions, setSelectedSessionId, selectedCwd } = useSession();
   const { setSidebarCollapsed } = usePreferences();
 
   const [entries, setEntries] = useState<ActivityIndexEntry[]>([]);
@@ -98,22 +98,22 @@ export function ActivityPathView(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [responsePreviews, setResponsePreviews] = useState<Map<string, string | null>>(new Map());
 
-  // ---- Fetch activity log (all entries, no time range filter) ----
+  // ---- Fetch activity log (scoped to selected project when set) ----
   useEffect(() => {
     setLoading(true);
-    transport.getActivityLog({}).then(result => {
+    transport.getActivityLog({}, selectedCwd ?? undefined).then(result => {
       setEntries(result);
       setLoading(false);
     }).catch(() => setLoading(false));
 
     // Poll every 30s for new entries (append-only, so length comparison is sufficient)
     const poll = setInterval(() => {
-      transport.getActivityLog({}).then(result => {
+      transport.getActivityLog({}, selectedCwd ?? undefined).then(result => {
         setEntries(prev => result.length !== prev.length ? result : prev);
       }).catch(() => {});
     }, 30_000);
     return () => clearInterval(poll);
-  }, [transport]);
+  }, [transport, selectedCwd]);
 
   // ---- Build session map & derived lookups ----
   const sessionMap = useMemo(() => {

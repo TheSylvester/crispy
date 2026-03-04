@@ -58,6 +58,11 @@
   outline: 1px solid var(--color-accent);
 }
 
+.crispy-filter-bar__cwd option {
+  background: var(--vscode-dropdown-background, #3c3c3c);
+  color: var(--vscode-dropdown-foreground, #d4d4d4);
+}
+
 /* --- Search + Open by ID (single row) --- */
 
 .crispy-filter-bar__search-row {

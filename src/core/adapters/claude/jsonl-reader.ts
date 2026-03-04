@@ -421,6 +421,194 @@ export function scanUserMessages(
 }
 
 /**
+ * Read the first N user message UUIDs from a JSONL file.
+ * Returns [{uuid, offset}] pairs. Used for fork lineage detection.
+ * Lightweight — stops after finding N user messages with non-null UUIDs, no full parse.
+ *
+ * @param filePath - Path to the JSONL file
+ * @param count - Maximum number of UUIDs to collect
+ * @returns Array of {uuid, offset} pairs
+ */
+export function scanFirstUserUuids(
+  filePath: string,
+  count: number,
+): Array<{ uuid: string; offset: number }> {
+  const results: Array<{ uuid: string; offset: number }> = [];
+  let fd: number | null = null;
+
+  try {
+    fd = fs.openSync(filePath, 'r');
+    const stat = fs.fstatSync(fd);
+    const fileSize = stat.size;
+
+    if (fileSize === 0) return results;
+
+    const buffer = Buffer.alloc(READ_BUFFER_SIZE);
+    let currentOffset = 0;
+    let remainder = '';
+    let lineStartOffset = 0;
+
+    while (currentOffset < fileSize && results.length < count) {
+      const chunkSize = Math.min(READ_BUFFER_SIZE, fileSize - currentOffset);
+      const bytesRead = fs.readSync(fd, buffer, 0, chunkSize, currentOffset);
+
+      if (bytesRead === 0) break;
+
+      const chunk = remainder + buffer.toString('utf-8', 0, bytesRead);
+      const lines = chunk.split('\n');
+
+      remainder = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        const lineBytes = Buffer.byteLength(line, 'utf-8') + 1; // +1 for \n
+
+        if (!trimmed) {
+          lineStartOffset += lineBytes;
+          continue;
+        }
+
+        // Fast-path: skip non-user entries
+        if (!trimmed.includes('"type":"user"')) {
+          lineStartOffset += lineBytes;
+          continue;
+        }
+
+        // Skip meta entries and tool results
+        if (trimmed.includes('"isMeta":true') || trimmed.includes('"toolUseResult"')) {
+          lineStartOffset += lineBytes;
+          continue;
+        }
+
+        try {
+          const entry = JSON.parse(trimmed) as ClaudeTranscriptEntry;
+
+          if (entry.type === 'user' && !entry.isMeta && !entry.toolUseResult && entry.uuid) {
+            results.push({ uuid: entry.uuid, offset: lineStartOffset });
+            if (results.length >= count) break;
+          }
+        } catch {
+          // Skip malformed lines
+        }
+
+        lineStartOffset += lineBytes;
+      }
+
+      currentOffset += bytesRead;
+    }
+
+    return results;
+  } catch {
+    return results;
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // Ignore close errors
+      }
+    }
+  }
+}
+
+/**
+ * Scan forward through a JSONL file, checking each user message UUID
+ * against a set of known parent UUIDs. Returns the byte offset of the
+ * first user message whose UUID is NOT in the parent set.
+ *
+ * If all user messages match the parent set, returns the end-of-file offset
+ * (meaning the entire file is shared content).
+ *
+ * @param filePath - Path to the JSONL file
+ * @param parentUuids - Set of UUIDs from the parent session
+ * @returns Byte offset where the fork diverges
+ */
+export function findDivergenceOffset(
+  filePath: string,
+  parentUuids: Set<string>,
+): { offset: number; lastSharedUuid: string | null } {
+  let fd: number | null = null;
+  let lastSharedUuid: string | null = null;
+
+  try {
+    fd = fs.openSync(filePath, 'r');
+    const stat = fs.fstatSync(fd);
+    const fileSize = stat.size;
+
+    if (fileSize === 0) return { offset: 0, lastSharedUuid: null };
+
+    const buffer = Buffer.alloc(READ_BUFFER_SIZE);
+    let currentOffset = 0;
+    let remainder = '';
+    let lineStartOffset = 0;
+
+    while (currentOffset < fileSize) {
+      const chunkSize = Math.min(READ_BUFFER_SIZE, fileSize - currentOffset);
+      const bytesRead = fs.readSync(fd, buffer, 0, chunkSize, currentOffset);
+
+      if (bytesRead === 0) break;
+
+      const chunk = remainder + buffer.toString('utf-8', 0, bytesRead);
+      const lines = chunk.split('\n');
+
+      remainder = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        const lineBytes = Buffer.byteLength(line, 'utf-8') + 1;
+
+        if (!trimmed) {
+          lineStartOffset += lineBytes;
+          continue;
+        }
+
+        // Fast-path: only check user entries for divergence
+        if (!trimmed.includes('"type":"user"')) {
+          lineStartOffset += lineBytes;
+          continue;
+        }
+
+        if (trimmed.includes('"isMeta":true') || trimmed.includes('"toolUseResult"')) {
+          lineStartOffset += lineBytes;
+          continue;
+        }
+
+        try {
+          const entry = JSON.parse(trimmed) as ClaudeTranscriptEntry;
+
+          if (entry.type === 'user' && !entry.isMeta && !entry.toolUseResult && entry.uuid) {
+            if (!parentUuids.has(entry.uuid)) {
+              // Found the divergence point — this is the first new message
+              return { offset: lineStartOffset, lastSharedUuid };
+            }
+            lastSharedUuid = entry.uuid;
+          }
+        } catch {
+          // Skip malformed lines
+        }
+
+        lineStartOffset += lineBytes;
+      }
+
+      currentOffset += bytesRead;
+    }
+
+    // All user messages matched the parent — entire file is shared
+    return { offset: lineStartOffset, lastSharedUuid };
+  } catch {
+    return { offset: 0, lastSharedUuid: null };
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // Ignore close errors
+      }
+    }
+  }
+}
+
+/**
  * Read the assistant response preview following a user prompt.
  *
  * Seeks to the given byte offset and reads forward to find the last

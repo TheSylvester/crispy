@@ -138,7 +138,7 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     getSettings: () => request<WireSettingsSnapshot>('getSettings'),
     updateSettings: (patch, opts) => request<WireSettingsSnapshot>('updateSettings', { patch, ...opts }),
 
-    getActivityLog: (timeRange?) => request<import('../core/activity-index.js').ActivityIndexEntry[]>('getActivityLog', timeRange ?? {}),
+    getActivityLog: (timeRange?, projectSlug?) => request<import('../core/activity-index.js').ActivityIndexEntry[]>('getActivityLog', { ...timeRange, projectSlug }),
     getResponsePreview: (file, offset) => request<string | null>('getResponsePreview', { file, offset }),
 
     onEvent(handler) {

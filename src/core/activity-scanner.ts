@@ -20,8 +20,15 @@ import {
   loadScanState,
   saveScanState,
   appendActivityEntries,
+  findParentByUuids,
+  getFileUuids,
+  recordLineage,
   type ActivityIndexEntry,
 } from './activity-index.js';
+import {
+  scanFirstUserUuids,
+  findDivergenceOffset,
+} from './adapters/claude/jsonl-reader.js';
 
 /**
  * Run a full scan of all registered vendor sessions.
@@ -60,8 +67,35 @@ export function runScan(): void {
         continue;
       }
 
-      // Reset offset if file was truncated (size < cached)
+      // Lineage detection: first encounter of this file (no scan state yet)
       let fromOffset = cached?.offset ?? 0;
+
+      if (!cached) {
+        const headUuids = scanFirstUserUuids(session.path, 5);
+        if (headUuids.length > 0) {
+          const parent = findParentByUuids(
+            headUuids.map((h) => h.uuid),
+            session.path,
+          );
+          if (parent) {
+            // Fork detected — find the divergence point
+            const parentUuidSet = getFileUuids(parent.parentFile);
+            const divergence = findDivergenceOffset(session.path, parentUuidSet);
+            recordLineage(
+              session.path,
+              parent.parentFile,
+              divergence.lastSharedUuid,
+              divergence.offset,
+            );
+            fromOffset = divergence.offset; // skip shared prefix
+          } else {
+            // Fresh conversation — no parent
+            recordLineage(session.path, null, null, 0);
+          }
+        }
+      }
+
+      // Reset offset if file was truncated (size < cached)
       if (cached && size < cached.size) {
         fromOffset = 0;
       }

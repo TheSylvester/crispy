@@ -48,7 +48,7 @@ import {
 } from "../core/session-list-manager.js";
 import { SESSION_LIST_CHANNEL_ID } from "../core/session-list-events.js";
 import { getGitFiles, fileExists, readImage, readTextFile } from "../core/file-service.js";
-import { queryActivity } from '../core/activity-index.js';
+import { queryActivity, getLineage, getChildSessions } from '../core/activity-index.js';
 import { readResponsePreview } from '../core/adapters/claude/jsonl-reader.js';
 import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-reader.js';
 
@@ -480,9 +480,18 @@ export function createClientConnection(
         const from = params.from as string | undefined;
         const to = params.to as string | undefined;
         const kind = (params.kind as string | undefined) ?? 'prompt';
+        const projectSlug = params.projectSlug as string | undefined;
+
+        // Convert project slug to file path prefix for filtering
+        let filePrefix: string | undefined;
+        if (projectSlug) {
+          filePrefix = resolve(homedir(), '.claude', 'projects', projectSlug);
+        }
+
         return queryActivity(
           from || to ? { from, to } : undefined,
           kind as 'prompt' | 'rosie-meta',
+          filePrefix,
         );
       }
 
@@ -494,6 +503,16 @@ export function createClientConnection(
           return readCodexResponsePreview(file, offset);
         }
         return readResponsePreview(file, offset);
+      }
+
+      case "getSessionLineage": {
+        const filePath = params.file as string;
+        return getLineage(filePath);
+      }
+
+      case "getSessionChildren": {
+        const filePath = params.file as string;
+        return getChildSessions(filePath);
       }
 
       default:

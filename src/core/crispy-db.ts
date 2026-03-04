@@ -2,7 +2,7 @@
  * Crispy Database — SQLite Singleton via node-sqlite3-wasm
  *
  * Owns the Database instance lifecycle: lazy init, pragmas, migrations,
- * and clean shutdown. activity-index.ts is the sole consumer.
+ * and clean shutdown. activity-index.ts and session-lineage consumers.
  *
  * Uses node-sqlite3-wasm (pure WASM, no native binaries) to avoid
  * Electron ABI mismatches that killed better-sqlite3 in dev.8.
@@ -118,7 +118,7 @@ const migrations: Migration[] = [
   {
     version: 2,
     description: 'Migrate legacy JSONL/JSON data',
-    up: (db: Database, dbPath: string) => {
+    up: (db: Database, dbPath: string): void => {
       const dir = dirname(dbPath);
       const jsonlPath = join(dir, 'activity-index.jsonl');
       const jsonlBak = jsonlPath + '.bak';
@@ -210,6 +210,95 @@ const migrations: Migration[] = [
             console.error('[crispy-db] Legacy scan-state migration warning:', err);
           }
         }
+      }
+    },
+  },
+  {
+    version: 3,
+    description: 'Create session_lineage table and backfill fork dedup',
+    up: (db: Database): void => {
+      // Create the lineage tracking table
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS session_lineage (
+          session_file      TEXT PRIMARY KEY,
+          parent_file       TEXT,
+          fork_point_uuid   TEXT,
+          fork_point_offset INTEGER NOT NULL DEFAULT 0,
+          created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_lineage_parent
+          ON session_lineage(parent_file);
+      `);
+
+      // Backfill: detect existing fork pairs by shared UUIDs and timestamps.
+      // For each pair of files sharing a UUID, the one with fewer total rows
+      // (or scanned later) is treated as the child. We pick the file with the
+      // lower rowid for the earliest matching entry as the parent.
+      //
+      // Step 1: Find fork relationships. Group by shared non-null UUIDs
+      // across different files. For each pair, the file whose first entry has
+      // the lower id is the parent (it was indexed first).
+      const forkPairs = db.all(`
+        SELECT
+          a1.file AS file_a,
+          a2.file AS file_b,
+          MIN(a1.id) AS first_id_a,
+          MIN(a2.id) AS first_id_b,
+          COUNT(*) AS shared_count
+        FROM activity_entries a1
+        JOIN activity_entries a2
+          ON a1.uuid = a2.uuid
+          AND a1.file < a2.file
+          AND a1.uuid IS NOT NULL
+        GROUP BY a1.file, a2.file
+        HAVING shared_count >= 2
+      `) as Array<Record<string, unknown>>;
+
+      for (const pair of forkPairs) {
+        const fileA = pair.file_a as string;
+        const fileB = pair.file_b as string;
+        const firstIdA = pair.first_id_a as number;
+        const firstIdB = pair.first_id_b as number;
+
+        // Parent = whichever file was indexed first (lower first row id)
+        const parentFile = firstIdA <= firstIdB ? fileA : fileB;
+        const childFile = parentFile === fileA ? fileB : fileA;
+
+        // Find the last shared UUID (the fork point)
+        const forkRow = db.get(`
+          SELECT a1.uuid, a1.byte_offset
+          FROM activity_entries a1
+          JOIN activity_entries a2
+            ON a1.uuid = a2.uuid
+            AND a1.uuid IS NOT NULL
+          WHERE a1.file = ? AND a2.file = ?
+          ORDER BY a1.byte_offset DESC
+          LIMIT 1
+        `, [childFile, parentFile]) as Record<string, unknown> | undefined;
+
+        const forkPointUuid = forkRow?.uuid as string | null ?? null;
+        const forkPointOffset = forkRow?.byte_offset as number ?? 0;
+
+        // Insert lineage record (ignore if already exists from a prior pair)
+        db.run(
+          `INSERT OR IGNORE INTO session_lineage
+           (session_file, parent_file, fork_point_uuid, fork_point_offset)
+           VALUES (?, ?, ?, ?)`,
+          [childFile, parentFile, forkPointUuid, forkPointOffset],
+        );
+
+        // Delete duplicate entries from the child file for the shared prefix.
+        // Keep the parent's entries, remove the child's entries that share UUIDs.
+        db.run(`
+          DELETE FROM activity_entries
+          WHERE file = ?
+            AND uuid IS NOT NULL
+            AND uuid IN (
+              SELECT uuid FROM activity_entries
+              WHERE file = ? AND uuid IS NOT NULL
+            )
+        `, [childFile, parentFile]);
       }
     },
   },

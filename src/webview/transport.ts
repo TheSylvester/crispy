@@ -78,7 +78,7 @@ export interface SessionService {
   updateSettings(patch: SettingsPatch, opts?: { expectedRevision?: number }): Promise<WireSettingsSnapshot>;
 
   /** Activity index — user prompt history across all sessions */
-  getActivityLog(timeRange?: { from?: string; to?: string }): Promise<ActivityIndexEntry[]>;
+  getActivityLog(timeRange?: { from?: string; to?: string }, projectSlug?: string): Promise<ActivityIndexEntry[]>;
   getResponsePreview(file: string, offset: number): Promise<string | null>;
 
   dispose(): void;

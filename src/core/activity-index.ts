@@ -282,6 +282,7 @@ export function appendActivityEntries(entries: ActivityIndexEntry[]): void {
 export function queryActivity(
   timeRange?: { from?: string; to?: string },
   kind?: ActivityIndexEntry['kind'],
+  filePrefix?: string,
 ): ActivityIndexEntry[] {
   try {
     const db = getDb(dbPath());
@@ -299,6 +300,10 @@ export function queryActivity(
     if (timeRange?.to) {
       conditions.push('timestamp <= ?');
       params.push(timeRange.to);
+    }
+    if (filePrefix) {
+      conditions.push('file LIKE ?');
+      params.push(filePrefix + '%');
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -335,6 +340,126 @@ export function getLatestRosieMeta(filePath?: string): ActivityIndexEntry | unde
     }
   }
   return latest;
+}
+
+// ============================================================================
+// Session Lineage
+// ============================================================================
+
+/**
+ * Check if any of the given UUIDs exist in activity_entries under a different file.
+ * Returns the parent file path and the matching UUID, or null if no match.
+ * Used by the scanner to detect fork lineage before first scan of a new file.
+ */
+export function findParentByUuids(
+  uuids: string[],
+  excludeFile: string,
+): { parentFile: string; matchedUuid: string } | null {
+  try {
+    const db = getDb(dbPath());
+    for (const uuid of uuids) {
+      const row = db.get(
+        'SELECT file FROM activity_entries WHERE uuid = ? AND file != ? LIMIT 1',
+        [uuid, excludeFile],
+      );
+      if (row) {
+        return {
+          parentFile: (row as Record<string, unknown>).file as string,
+          matchedUuid: uuid,
+        };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get all non-null UUIDs indexed for a given file.
+ * Used to build the parent UUID set for fork divergence detection.
+ */
+export function getFileUuids(file: string): Set<string> {
+  try {
+    const db = getDb(dbPath());
+    const rows = db.all(
+      'SELECT uuid FROM activity_entries WHERE file = ? AND uuid IS NOT NULL',
+      [file],
+    );
+    return new Set(rows.map((r) => (r as Record<string, unknown>).uuid as string));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Record a lineage relationship for a session file.
+ *
+ * @param sessionFile  - the JSONL file path of the fork (or fresh session)
+ * @param parentFile   - the parent file path (null for fresh conversations)
+ * @param forkPointUuid - the last shared message UUID before divergence
+ * @param forkPointOffset - byte offset in the fork file where unique content begins
+ */
+export function recordLineage(
+  sessionFile: string,
+  parentFile: string | null,
+  forkPointUuid: string | null,
+  forkPointOffset: number,
+): void {
+  try {
+    const db = getDb(dbPath());
+    db.run(
+      `INSERT OR REPLACE INTO session_lineage
+       (session_file, parent_file, fork_point_uuid, fork_point_offset)
+       VALUES (?, ?, ?, ?)`,
+      [sessionFile, parentFile, forkPointUuid, forkPointOffset],
+    );
+  } catch {
+    // Non-fatal — lineage is an optimization, not critical path
+  }
+}
+
+/**
+ * Get lineage information for a session file.
+ * Returns null if no lineage record exists.
+ */
+export function getLineage(sessionFile: string): {
+  parentFile: string | null;
+  forkPointUuid: string | null;
+  forkPointOffset: number;
+} | null {
+  try {
+    const db = getDb(dbPath());
+    const row = db.get(
+      'SELECT parent_file, fork_point_uuid, fork_point_offset FROM session_lineage WHERE session_file = ?',
+      [sessionFile],
+    );
+    if (!row) return null;
+    const r = row as Record<string, unknown>;
+    return {
+      parentFile: r.parent_file as string | null,
+      forkPointUuid: r.fork_point_uuid as string | null,
+      forkPointOffset: r.fork_point_offset as number,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get all child session files for a given parent file.
+ */
+export function getChildSessions(parentFile: string): string[] {
+  try {
+    const db = getDb(dbPath());
+    const rows = db.all(
+      'SELECT session_file FROM session_lineage WHERE parent_file = ?',
+      [parentFile],
+    );
+    return rows.map((r) => (r as Record<string, unknown>).session_file as string);
+  } catch {
+    return [];
+  }
 }
 
 // ============================================================================
