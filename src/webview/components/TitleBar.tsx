@@ -170,7 +170,7 @@ function ConnectionDot({
 }
 
 /** Max characters for the session label shown in the dropdown button */
-const BUTTON_LABEL_MAX = 32;
+const BUTTON_LABEL_MAX = 64;
 
 function truncateLabel(text: string, max: number): string {
   if (text.length <= max) return text;
