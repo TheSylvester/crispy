@@ -2770,7 +2770,7 @@ h2 {
 /* --- Session dropdown button (left) — extends base btn --- */
 
 .crispy-titlebar__session-btn {
-  max-width: calc(40vw - 0.5rem);
+  max-width: calc(80vw - 0.5rem);
   min-width: 0;
   flex-shrink: 1;
 }
