@@ -48,7 +48,7 @@ import {
 } from "../core/session-list-manager.js";
 import { SESSION_LIST_CHANNEL_ID } from "../core/session-list-events.js";
 import { getGitFiles, fileExists, readImage, readTextFile } from "../core/file-service.js";
-import { queryActivity, getLineage, getChildSessions } from '../core/activity-index.js';
+import { queryActivity, getLineage, getChildSessions, getLineageGraph } from '../core/activity-index.js';
 import { readResponsePreview } from '../core/adapters/claude/jsonl-reader.js';
 import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-reader.js';
 
@@ -513,6 +513,10 @@ export function createClientConnection(
       case "getSessionChildren": {
         const filePath = params.file as string;
         return getChildSessions(filePath);
+      }
+
+      case "getLineageGraph": {
+        return getLineageGraph();
       }
 
       default:

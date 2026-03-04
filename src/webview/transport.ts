@@ -80,6 +80,7 @@ export interface SessionService {
   /** Activity index — user prompt history across all sessions */
   getActivityLog(timeRange?: { from?: string; to?: string }, projectSlug?: string): Promise<ActivityIndexEntry[]>;
   getResponsePreview(file: string, offset: number): Promise<string | null>;
+  getLineageGraph(): Promise<Array<{ sessionFile: string; parentFile: string | null }>>;
 
   dispose(): void;
 

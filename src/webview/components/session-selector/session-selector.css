@@ -605,6 +605,7 @@
 
 .crispy-activity-path__prompt-row {
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
   padding: 4px 8px 2rem calc(var(--lane-indent, 0px) + 8px);
   height: 80px;
@@ -616,13 +617,63 @@
   overflow: hidden;
 }
 
+/* --- Provenance badges (Start / Fork) --- */
+
+.crispy-activity-path__badge {
+  align-self: flex-start;
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  padding: 1px 4px;
+  margin-bottom: 2px;
+  border-radius: 3px;
+  pointer-events: none;
+  text-transform: uppercase;
+}
+
+.crispy-activity-path__badge--start {
+  color: var(--lane-color, #4ec989);
+  background: color-mix(in srgb, var(--lane-color, #4ec989) 15%, transparent);
+}
+
+.crispy-activity-path__badge--fork {
+  color: var(--lane-color, #b07ee8);
+  background: color-mix(in srgb, var(--lane-color, #b07ee8) 15%, transparent);
+}
+
+.crispy-activity-path__badge--end {
+  position: static;
+  align-self: flex-end;
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--lane-color, #858585);
+  background: color-mix(in srgb, var(--lane-color, #858585) 12%, transparent);
+  visibility: hidden;
+}
+
+/* Response rows with an End badge need column flow so badge sits below text */
+.crispy-activity-path__response-row:has(.crispy-activity-path__badge--end) {
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+
+/* Reveal End badge alongside response text on hover/sibling/descendant */
+.crispy-activity-path__response-row.crispy-activity-path__row--highlighted .crispy-activity-path__badge--end,
+.crispy-activity-path__response-row.crispy-activity-path__row--sibling .crispy-activity-path__badge--end,
+.crispy-activity-path__response-row.crispy-activity-path__row--descendant .crispy-activity-path__badge--end {
+  visibility: visible;
+}
+
 /* Staircase indent bar — positioned via --lane-indent custom property */
 .crispy-activity-path__prompt-row::before {
   content: '';
   position: absolute;
   left: var(--lane-indent, 0px);
-  top: 4px;
-  bottom: 2rem;
+  top: 0;
+  bottom: 0;
   width: 3px;
   background: var(--lane-color, transparent);
   border-radius: 1px;
@@ -661,25 +712,29 @@
   background: color-mix(in srgb, var(--lane-color, transparent) 10%, var(--vscode-editor-background, #1e1e1e));
 }
 
+.crispy-activity-path__row--descendant {
+  background: color-mix(in srgb, var(--lane-color, transparent) 7%, var(--vscode-editor-background, #1e1e1e));
+}
+
 /* Dim inactive rows when any row is hovered — makes the active conversation pop */
 .crispy-activity-path__prompt-row .crispy-activity-path__clamp {
   transition: opacity 0.15s;
 }
 
 .crispy-activity-path__matrix:has(.crispy-activity-path__row--highlighted)
-  .crispy-activity-path__prompt-row:not(.crispy-activity-path__row--highlighted):not(.crispy-activity-path__row--sibling)
+  .crispy-activity-path__prompt-row:not(.crispy-activity-path__row--highlighted):not(.crispy-activity-path__row--sibling):not(.crispy-activity-path__row--descendant)
   .crispy-activity-path__clamp {
   opacity: 0.3;
 }
 
 .crispy-activity-path__matrix:has(.crispy-activity-path__row--highlighted)
-  .crispy-activity-path__time-row:not(.crispy-activity-path__row--highlighted):not(.crispy-activity-path__row--sibling) {
+  .crispy-activity-path__time-row:not(.crispy-activity-path__row--highlighted):not(.crispy-activity-path__row--sibling):not(.crispy-activity-path__row--descendant) {
   opacity: 0.35;
   transition: opacity 0.15s;
 }
 
 .crispy-activity-path__matrix:has(.crispy-activity-path__row--highlighted)
-  .crispy-activity-path__response-row:not(.crispy-activity-path__row--highlighted):not(.crispy-activity-path__row--sibling) {
+  .crispy-activity-path__response-row:not(.crispy-activity-path__row--highlighted):not(.crispy-activity-path__row--sibling):not(.crispy-activity-path__row--descendant) {
   opacity: 0.35;
   transition: opacity 0.15s;
 }
@@ -747,6 +802,16 @@
 }
 
 .crispy-activity-path__response-row.crispy-activity-path__row--sibling::after {
+  display: none;
+}
+
+/* On descendant hover: reveal response text at reduced opacity, hide dot */
+.crispy-activity-path__response-row.crispy-activity-path__row--descendant .crispy-activity-path__response-text {
+  visibility: visible;
+  opacity: 0.6;
+}
+
+.crispy-activity-path__response-row.crispy-activity-path__row--descendant::after {
   display: none;
 }
 

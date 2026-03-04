@@ -140,6 +140,7 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
 
     getActivityLog: (timeRange?, projectSlug?) => request<import('../core/activity-index.js').ActivityIndexEntry[]>('getActivityLog', { ...timeRange, projectSlug }),
     getResponsePreview: (file, offset) => request<string | null>('getResponsePreview', { file, offset }),
+    getLineageGraph: () => request<Array<{ sessionFile: string; parentFile: string | null }>>('getLineageGraph'),
 
     onEvent(handler) {
       eventHandlers.push(handler);

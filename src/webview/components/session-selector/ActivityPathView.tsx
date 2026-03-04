@@ -75,11 +75,9 @@ function fileColorIndex(file: string): number {
 // ============================================================================
 
 function TruncatedCell({ text, className }: { text: string; className?: string }) {
-  // Append ellipsis when the preview appears truncated (no terminal punctuation)
-  const display = text && !/[.!?…)\]]$/.test(text.trimEnd()) ? text + '…' : text;
   return (
     <div className={`crispy-activity-path__truncated ${className ?? ''}`} title={text}>
-      <span className="crispy-activity-path__clamp">{display}</span>
+      <span className="crispy-activity-path__clamp">{text}</span>
     </div>
   );
 }
@@ -97,6 +95,7 @@ export function ActivityPathView(): React.JSX.Element {
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [responsePreviews, setResponsePreviews] = useState<Map<string, string | null>>(new Map());
+  const [lineageEdges, setLineageEdges] = useState<Array<{ sessionFile: string; parentFile: string | null }>>([]);
 
   // ---- Fetch activity log (scoped to selected project when set) ----
   useEffect(() => {
@@ -114,6 +113,11 @@ export function ActivityPathView(): React.JSX.Element {
     }, 30_000);
     return () => clearInterval(poll);
   }, [transport, selectedCwd]);
+
+  // ---- Fetch lineage graph (once on mount, static data) ----
+  useEffect(() => {
+    transport.getLineageGraph().then(setLineageEdges).catch(() => {});
+  }, [transport]);
 
   // ---- Build session map & derived lookups ----
   const sessionMap = useMemo(() => {
@@ -163,6 +167,45 @@ export function ActivityPathView(): React.JSX.Element {
     return map;
   }, [entries, sessionMap]);
 
+  // ---- Lineage lookups for fork visualization ----
+  const { parentLookup, descendantMap } = useMemo(() => {
+    const parentLookup = new Map<string, string>();
+    const childrenAdj = new Map<string, string[]>();
+
+    for (const edge of lineageEdges) {
+      if (edge.parentFile) {
+        parentLookup.set(edge.sessionFile, edge.parentFile);
+        const siblings = childrenAdj.get(edge.parentFile);
+        if (siblings) siblings.push(edge.sessionFile);
+        else childrenAdj.set(edge.parentFile, [edge.sessionFile]);
+      }
+    }
+
+    // Transitive descendant sets via BFS
+    const descendantMap = new Map<string, Set<string>>();
+    function getDescendants(file: string): Set<string> {
+      const cached = descendantMap.get(file);
+      if (cached) return cached;
+      const result = new Set<string>();
+      const queue = [...(childrenAdj.get(file) ?? [])];
+      for (let i = 0; i < queue.length; i++) {
+        const child = queue[i];
+        result.add(child);
+        for (const grandchild of childrenAdj.get(child) ?? []) {
+          if (!result.has(grandchild)) {
+            result.add(grandchild);
+            queue.push(grandchild);
+          }
+        }
+      }
+      descendantMap.set(file, result);
+      return result;
+    }
+
+    for (const file of childrenAdj.keys()) getDescendants(file);
+    return { parentLookup, descendantMap };
+  }, [lineageEdges]);
+
   // ---- Sort + paginate entries ----
   // sortedEntries: newest-first (used for slicing the N most recent)
   const sortedEntries = useMemo(() => {
@@ -176,6 +219,13 @@ export function ActivityPathView(): React.JSX.Element {
   }, [sortedEntries, page]);
 
   const hasMore = paginatedEntries.length < sortedEntries.length;
+
+  // Last visible index per file (for End badges in the response column)
+  const lastIndexForFile = useMemo(() => {
+    const map = new Map<string, number>();
+    paginatedEntries.forEach((entry, i) => map.set(entry.file, i));
+    return map;
+  }, [paginatedEntries]);
 
   // Ref mirror of responsePreviews for stable reads inside the effect below
   // (avoids infinite loop from including responsePreviews in deps, while giving
@@ -271,6 +321,7 @@ export function ActivityPathView(): React.JSX.Element {
       el.classList.remove(
         'crispy-activity-path__row--highlighted',
         'crispy-activity-path__row--sibling',
+        'crispy-activity-path__row--descendant',
       );
     }
     // Reset response header to empty state
@@ -316,6 +367,32 @@ export function ActivityPathView(): React.JSX.Element {
       }
     }
 
+    // Lineage highlight: ancestors + descendants of hovered file
+    const lineageFiles = new Set<string>();
+
+    // Walk up ancestors
+    let ancestor = parentLookup.get(file);
+    while (ancestor) {
+      lineageFiles.add(ancestor);
+      ancestor = parentLookup.get(ancestor);
+    }
+
+    // Walk down descendants
+    const desc = descendantMap.get(file);
+    if (desc) for (const d of desc) lineageFiles.add(d);
+
+    // Apply --descendant class to lineage rows (skip already-highlighted/sibling)
+    if (lineageFiles.size > 0) {
+      const selectors = [...lineageFiles].map(f => `[data-file="${CSS.escape(f)}"]`).join(',');
+      for (const el of Array.from(matrix.querySelectorAll(selectors))) {
+        if (!el.classList.contains('crispy-activity-path__row--highlighted') &&
+            !el.classList.contains('crispy-activity-path__row--sibling')) {
+          el.classList.add('crispy-activity-path__row--descendant');
+          els.push(el);
+        }
+      }
+    }
+
     // Update response header with hovered session's identity
     const headerEl = responseHeaderRef.current;
     if (headerEl) {
@@ -326,7 +403,7 @@ export function ActivityPathView(): React.JSX.Element {
     }
 
     hoverRef.current = { row, file, els };
-  }, [clearHighlights, fileLabelMap, laneColorMap]);
+  }, [clearHighlights, fileLabelMap, laneColorMap, parentLookup, descendantMap]);
 
   // ---- Render ----
   if (loading) {
@@ -403,21 +480,37 @@ export function ActivityPathView(): React.JSX.Element {
                 </button>
               </div>
             )}
-            {paginatedEntries.map((entry, i) => {
-              const isClickable = !!sessionMap.get(entry.file);
-              return (
-                <div
-                  key={`prompt-${entry.timestamp}-${entry.uuid ?? i}`}
-                  className="crispy-activity-path__prompt-row"
-                  data-row={i}
-                  data-file={entry.file}
-                  onClick={isClickable ? () => handleEntryClick(entry.file) : undefined}
-                  style={{ cursor: isClickable ? 'pointer' : undefined, '--lane-color': laneColorMap.get(entry.file), '--lane-indent': `${(laneIndexMap.get(entry.file) ?? 0) * 6}px` } as React.CSSProperties}
-                >
-                  <TruncatedCell text={entry.preview} className="crispy-activity-path__prompt-text" />
-                </div>
-              );
-            })}
+            {(() => {
+              const seenFiles = new Set<string>();
+              return paginatedEntries.map((entry, i) => {
+                const isClickable = !!sessionMap.get(entry.file);
+                const isFirstForFile = !seenFiles.has(entry.file);
+                seenFiles.add(entry.file);
+
+                // Badge: only on first visible entry per session, only when lineage data loaded
+                const badge = isFirstForFile && lineageEdges.length > 0
+                  ? (parentLookup.has(entry.file) ? 'Fork' : 'Start')
+                  : null;
+
+                return (
+                  <div
+                    key={`prompt-${entry.timestamp}-${entry.uuid ?? i}`}
+                    className="crispy-activity-path__prompt-row"
+                    data-row={i}
+                    data-file={entry.file}
+                    onClick={isClickable ? () => handleEntryClick(entry.file) : undefined}
+                    style={{ cursor: isClickable ? 'pointer' : undefined, '--lane-color': laneColorMap.get(entry.file), '--lane-indent': `${(laneIndexMap.get(entry.file) ?? 0) * 6}px` } as React.CSSProperties}
+                  >
+                    {badge && (
+                      <span className={`crispy-activity-path__badge crispy-activity-path__badge--${badge.toLowerCase()}`}>
+                        {badge}
+                      </span>
+                    )}
+                    <TruncatedCell text={entry.preview} className="crispy-activity-path__prompt-text" />
+                  </div>
+                );
+              });
+            })()}
           </div>
 
           {/* RESPONSE column (flex-fill) */}
@@ -429,6 +522,7 @@ export function ActivityPathView(): React.JSX.Element {
               const previewKey = `${entry.file}:${entry.offset}`;
               const preview = responsePreviews.get(previewKey);
               const isClickable = !!sessionMap.get(entry.file);
+              const showEndBadge = lineageEdges.length > 0 && lastIndexForFile.get(entry.file) === i;
 
               return (
                 <div
@@ -444,6 +538,9 @@ export function ActivityPathView(): React.JSX.Element {
                   )}
                   {preview === undefined && (
                     <span className="crispy-activity-path__cell-placeholder">···</span>
+                  )}
+                  {showEndBadge && (
+                    <span className="crispy-activity-path__badge crispy-activity-path__badge--end">End</span>
                   )}
                 </div>
               );

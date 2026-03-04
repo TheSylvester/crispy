@@ -478,6 +478,26 @@ export function getChildSessions(parentFile: string): string[] {
 }
 
 /**
+ * Bulk-load the full lineage graph for fork visualization.
+ * Returns all parent→child edges from session_lineage.
+ */
+export function getLineageGraph(): Array<{ sessionFile: string; parentFile: string | null }> {
+  try {
+    const db = getDb(dbPath());
+    const rows = db.all('SELECT session_file, parent_file FROM session_lineage');
+    return rows.map((r) => {
+      const row = r as Record<string, unknown>;
+      return {
+        sessionFile: row.session_file as string,
+        parentFile: (row.parent_file as string) ?? null,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Delete duplicate activity entries from a child file that share UUIDs
  * with a parent file. Used during retroactive lineage detection for
  * files that were scanned before the lineage feature existed.
