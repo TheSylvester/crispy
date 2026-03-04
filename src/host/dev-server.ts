@@ -80,7 +80,42 @@ const server = createServer(async (req, res) => {
 // WebSocket Server
 // ============================================================================
 
-const wss = new WebSocketServer({ server, path: '/ws' });
+const wss = new WebSocketServer({ noServer: true });
+
+// ---------------------------------------------------------------------------
+// Origin validation — reject WebSocket upgrades from non-localhost Origins.
+// Blocks CSWSH (cross-site WebSocket hijacking) where a malicious webpage
+// connects to ws://localhost:3456/ws from the user's browser.
+// Same vulnerability class as CVE-2025-52882 / GHSA-w48q-cv73-mx4w.
+// ---------------------------------------------------------------------------
+
+function isLocalhostOrigin(origin: string): boolean {
+  if (!origin) return true; // no Origin header → non-browser client (CLI, curl)
+  try {
+    const { hostname } = new URL(origin);
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
+  } catch {
+    return false;
+  }
+}
+
+server.on('upgrade', (req, socket, head) => {
+  const { pathname } = new URL(req.url ?? '/', `http://localhost:${PORT}`);
+  if (pathname !== '/ws') {
+    socket.destroy();
+    return;
+  }
+
+  const origin = req.headers.origin ?? '';
+  if (!isLocalhostOrigin(origin)) {
+    console.warn(`[dev-server] Rejected WebSocket upgrade from origin: ${origin}`);
+    socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+});
 
 let connectionCounter = 0;
 
