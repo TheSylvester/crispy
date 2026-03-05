@@ -524,7 +524,7 @@
   background: var(--vscode-editor-background, #1e1e1e);
   border-right: 1px solid var(--vscode-panel-border, #333);
   box-sizing: border-box;
-  width: 240px;
+  width: 360px;
   flex-shrink: 0;
 }
 
@@ -568,7 +568,7 @@
   z-index: 1;
   background: var(--vscode-editor-background, #1e1e1e);
   border-right: 1px solid var(--vscode-panel-border, #333);
-  width: 240px;
+  width: 360px;
   flex-shrink: 0;
 }
 

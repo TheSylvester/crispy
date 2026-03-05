@@ -62,6 +62,8 @@ export interface SessionInfo {
   botSummary?: string;
   /** Rosie Bot: short conversation label. */
   title?: string;
+  /** Rosie Bot: current work status — done, in progress, blocked. */
+  status?: string;
 }
 
 // ============================================================================

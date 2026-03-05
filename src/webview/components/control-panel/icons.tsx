@@ -64,6 +64,27 @@ export function SettingsIcon({ className, ...props }: IconProps): React.JSX.Elem
   );
 }
 
+/** Robot head icon — Rosie observability panel. */
+export function RobotIcon({ className, ...props }: IconProps): React.JSX.Element {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="currentColor" {...props}>
+      {/* Antenna */}
+      <line x1="8" y1="1" x2="8" y2="3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <circle cx="8" cy="1" r="1" />
+      {/* Head */}
+      <rect x="3" y="3" width="10" height="9" rx="2" />
+      {/* Eyes */}
+      <circle cx="6" cy="7.5" r="1.2" fill="var(--bg-editor, #1e1e1e)" />
+      <circle cx="10" cy="7.5" r="1.2" fill="var(--bg-editor, #1e1e1e)" />
+      {/* Mouth */}
+      <rect x="5.5" y="10" width="5" height="0.8" rx="0.4" fill="var(--bg-editor, #1e1e1e)" />
+      {/* Ears */}
+      <rect x="1" y="5.5" width="1.5" height="3" rx="0.5" />
+      <rect x="13.5" y="5.5" width="1.5" height="3" rx="0.5" />
+    </svg>
+  );
+}
+
 /** Rewind (↺) icon — Unicode glyph. */
 export function RewindIcon({ className, ...props }: IconProps): React.JSX.Element {
   return <span className={className} {...props}>↺</span>;
