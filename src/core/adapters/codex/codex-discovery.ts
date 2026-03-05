@@ -219,7 +219,7 @@ export class CodexDiscovery implements VendorDiscovery {
 
     // Must initialize the protocol before any RPC calls
     await this.client.request('initialize', {
-      clientInfo: { name: 'crispy-discovery', version: '0.1.4-dev.22' },
+      clientInfo: { name: 'crispy-discovery', version: '0.1.4-dev.23' },
       capabilities: { experimentalApi: true },
     });
 
@@ -238,7 +238,7 @@ export class CodexDiscovery implements VendorDiscovery {
       label: thread.preview?.slice(0, 80),
       lastMessage: thread.preview,
       vendor: 'codex',
-      ...(rosie && { quest: rosie.quest, botSummary: rosie.summary, title: rosie.title }),
+      ...(rosie && { quest: rosie.quest, botSummary: rosie.summary, title: rosie.title, status: rosie.status }),
     };
   }
 
