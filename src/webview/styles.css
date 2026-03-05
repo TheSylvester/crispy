@@ -2676,6 +2676,8 @@ h2 {
   left: 50%;
   transform: translateX(calc(-50% + var(--popup-offset, 0px)));
   min-width: 420px;
+  max-height: 60vh;
+  overflow-y: auto;
   background: var(--bg-editor);
   border: 1px solid var(--border-panel);
   border-radius: var(--radius-md);
