@@ -811,7 +811,13 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       // Settings & config — default to loading all filesystem settings
       settingSources: opts.settingSources ?? ['user', 'project', 'local'],
       ...(opts.additionalDirectories && { additionalDirectories: opts.additionalDirectories }),
-      ...(opts.env && { env: opts.env }),
+      // MCP tool calls (e.g. recall) can take 60s+; the SDK kills the stream
+      // after CLAUDE_CODE_STREAM_CLOSE_TIMEOUT of inactivity (default 60s).
+      // Default to 120s so long-running MCP tools don't get aborted.
+      env: {
+        CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '120000',
+        ...opts.env,
+      },
       ...(opts.extraArgs && { extraArgs: opts.extraArgs }),
 
       // Limits

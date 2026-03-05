@@ -1,8 +1,8 @@
 /**
  * Tests for the external MCP server (servers/external.ts).
  *
- * Verifies the relay pattern: fetch data → build prompt → dispatch child → return.
- * Mocks AgentDispatch.dispatchChild and memory-queries to control both sides.
+ * Verifies the relay pattern: dispatch child with stdio MCP tools attached,
+ * child does its own searching and synthesis, relay returns the result.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -27,37 +27,6 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => {
     __getTools: () => tools,
   };
 });
-
-// Mock memory-queries — control what data the relay fetches
-vi.mock('../src/mcp/memory-queries.js', () => ({
-  getDbPath: () => '/tmp/test.db',
-  searchSessions: vi.fn().mockReturnValue([
-    {
-      id: 1,
-      timestamp: '2025-06-01T10:00:00Z',
-      kind: 'rosie-meta',
-      file: '/sessions/a.jsonl',
-      quest: 'implement authentication',
-      title: 'Auth System',
-      match_snippet: '>>>authentication<<< system implementation',
-      rank: -1.5,
-    },
-  ]),
-  listSessions: vi.fn().mockReturnValue([]),
-  sessionContext: vi.fn().mockReturnValue([
-    {
-      id: 1,
-      timestamp: '2025-06-01T10:00:00Z',
-      kind: 'rosie-meta',
-      file: '/sessions/a.jsonl',
-      quest: 'implement authentication',
-      summary: 'Built JWT auth with refresh tokens',
-      title: 'Auth System',
-      status: 'completed',
-      entities: '["JWT", "auth.ts"]',
-    },
-  ]),
-}));
 
 // ============================================================================
 // Helpers
@@ -106,7 +75,7 @@ describe('external MCP server — recall tool (relay pattern)', () => {
     expect(server).toBeDefined();
   });
 
-  it('dispatches child with pre-fetched data in prompt — no MCP servers', async () => {
+  it('dispatches child with stdio MCP tools and 120s timeout', async () => {
     const mockResult: ChildSessionResult = {
       sessionId: 'child-123',
       text: 'You worked on JWT authentication in the Auth System session.',
@@ -121,19 +90,30 @@ describe('external MCP server — recall tool (relay pattern)', () => {
     expect(dispatch.dispatchChild).toHaveBeenCalledOnce();
     const callArgs = (dispatch.dispatchChild as ReturnType<typeof vi.fn>).mock.calls[0][0];
 
-    // Core assertions: Rosie-style dispatch, NO MCP servers
+    // Core assertions: child gets MCP tools and sufficient timeout
     expect(callArgs.parentSessionId).toBe('session-abc');
     expect(callArgs.vendor).toBe('claude');
     expect(callArgs.settings.model).toBe('haiku');
+    expect(callArgs.settings.permissionMode).toBe('bypassPermissions');
+    expect(callArgs.settings.allowDangerouslySkipPermissions).toBe(true);
     expect(callArgs.skipPersistSession).toBe(true);
     expect(callArgs.autoClose).toBe(true);
-    expect(callArgs.mcpServers).toBeUndefined();  // ← the key change
-    expect(callArgs.env).toBeUndefined();          // ← no CLAUDECODE hack
+    expect(callArgs.timeoutMs).toBe(120_000);
 
-    // Prompt should contain the pre-fetched data
+    // MCP servers attached — child can call search tools
+    expect(callArgs.mcpServers).toBeDefined();
+    expect(callArgs.mcpServers['crispy-memory']).toBeDefined();
+    expect(callArgs.mcpServers['crispy-memory'].type).toBe('stdio');
+
+    // Env: bypass nested guard + extended MCP timeout
+    expect(callArgs.env.CLAUDECODE).toBe('');
+    expect(callArgs.env.CLAUDE_CODE_STREAM_CLOSE_TIMEOUT).toBe('120000');
+
+    // Prompt tells child to use MCP tools (not pre-fetched data)
     const promptText = callArgs.prompt[0].text;
     expect(promptText).toContain('authentication');
-    expect(promptText).toContain('Auth System');
+    expect(promptText).toContain('search_sessions');
+    expect(promptText).toContain('session_context');
 
     // Result passes through
     const content = (result as { content: Array<{ text: string }> }).content;
@@ -158,29 +138,5 @@ describe('external MCP server — recall tool (relay pattern)', () => {
     const result = await recallTool.handler({ query: 'anything' });
     const content = (result as { content: Array<{ text: string }> }).content;
     expect(content[0].text).toContain('timed out');
-  });
-
-  it('falls back to recent sessions when search returns nothing', async () => {
-    // Override search to return empty, list to return recent
-    const { searchSessions, listSessions } = await import('../src/mcp/memory-queries.js') as unknown as {
-      searchSessions: ReturnType<typeof vi.fn>;
-      listSessions: ReturnType<typeof vi.fn>;
-    };
-    searchSessions.mockReturnValueOnce([]);
-    listSessions.mockReturnValueOnce([
-      { file: '/sessions/recent.jsonl', last_activity: '2025-06-02', title: 'Recent Work', entry_count: 5 },
-    ]);
-
-    const mockResult: ChildSessionResult = { sessionId: 'child-456', text: 'Found recent sessions.' };
-    const dispatch = createMockDispatch(mockResult);
-    createExternalServer(dispatch, () => 'session-abc');
-
-    const recallTool = await getRecallTool();
-    await recallTool.handler({ query: 'xyzzy_nonexistent' });
-
-    const callArgs = (dispatch.dispatchChild as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    const promptText = callArgs.prompt[0].text;
-    expect(promptText).toContain('Recent Work');
-    expect(promptText).toContain('No direct search matches');
   });
 });

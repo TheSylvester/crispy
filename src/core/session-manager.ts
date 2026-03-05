@@ -816,7 +816,12 @@ export async function dispatchChildSession(
 
     const timer = setTimeout(() => {
       if (!settled) {
-        console.warn(`[child-session] Timeout after ${timeoutMs}ms — no idle event received (parent: ${parentSessionId}, vendor: ${vendor})`);
+        const parts: string[] = [];
+        if (lastError) parts.push(`error: ${lastError}`);
+        parts.push(`entries: [${entryTypes.join(', ')}]`);
+        if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
+        parts.push(`text: ${text.length} chars`);
+        console.warn(`[child-session] Timeout after ${timeoutMs}ms — no idle event received (parent: ${parentSessionId}, vendor: ${vendor}) — ${parts.join(' | ')}`);
         settled = true;
         cleanup();
         resolve(null);
@@ -851,9 +856,18 @@ export async function dispatchChildSession(
         // Skip catchup messages
         if (msg.type === 'catchup') return;
 
+        // Log every message type for diagnostics
+        if (msg.type === 'event') {
+          const evt = msg.event;
+          console.error(`[child-session] Event: ${evt.type}${evt.type === 'status' ? `=${(evt as { status?: string }).status}` : evt.type === 'notification' ? `/${(evt as { kind?: string }).kind}` : ''} (parent: ${parentSessionId})`);
+        } else if (msg.type === 'entry') {
+          console.error(`[child-session] Entry: ${msg.entry.type} (parent: ${parentSessionId})`);
+        }
+
         // Track error notifications from the adapter (SDK failures, auth errors, etc.)
         if (msg.type === 'event' && msg.event.type === 'notification' && msg.event.kind === 'error') {
           lastError = (msg.event as { error?: string }).error ?? 'unknown error';
+          console.error(`[child-session] Error notification: ${lastError} (parent: ${parentSessionId})`);
         }
 
         // Collect response text and structured output from entry messages.
@@ -913,9 +927,11 @@ export async function dispatchChildSession(
     childSessions.set(pendingId, { parentSessionId, autoClose });
 
     // Fire the turn with the explicit pending ID
+    console.error(`[child-session] Sending turn (parent: ${parentSessionId}, vendor: ${vendor}, pending: ${pendingId})`);
     sendTurn(intent, internalSubscriber, pendingId)
       .then((result) => {
         if (settled) return;
+        console.error(`[child-session] sendTurn resolved — sessionId: ${result.sessionId} (parent: ${parentSessionId})`);
         currentId = result.sessionId;
         // Migrate child tracking from pending to real ID
         childSessions.delete(pendingId);

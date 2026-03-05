@@ -46,12 +46,15 @@ export function createInternalServer(): McpServer {
       kind: z.enum(['prompt', 'rosie-meta']).optional().describe('Filter by entry kind'),
     },
     async (args) => {
+      console.error(`[internal-mcp] search_sessions: query="${args.query}" limit=${args.limit} kind=${args.kind ?? 'all'}`);
       try {
         const results = searchSessions(dbPath, args.query, args.limit, args.kind);
+        console.error(`[internal-mcp] search_sessions: ${results.length} results`);
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ results, count: results.length }, null, 2) }],
         };
       } catch (err) {
+        console.error(`[internal-mcp] search_sessions FAIL:`, err instanceof Error ? err.message : String(err));
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({
             results: [],
@@ -74,7 +77,9 @@ export function createInternalServer(): McpServer {
       since: z.string().optional().describe('ISO timestamp — only return sessions with activity after this time'),
     },
     async (args) => {
+      console.error(`[internal-mcp] list_sessions: limit=${args.limit} since=${args.since ?? 'all'}`);
       const results = listSessions(dbPath, args.limit, args.since);
+      console.error(`[internal-mcp] list_sessions: ${results.length} sessions`);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({ sessions: results, count: results.length }, null, 2) }],
       };
@@ -92,7 +97,9 @@ export function createInternalServer(): McpServer {
       kind: z.enum(['prompt', 'rosie-meta']).optional().describe('Filter by entry kind'),
     },
     async (args) => {
+      console.error(`[internal-mcp] session_context: file="${args.file}" kind=${args.kind ?? 'all'}`);
       const results = sessionContext(dbPath, args.file, args.kind);
+      console.error(`[internal-mcp] session_context: ${results.length} entries`);
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({ entries: results, count: results.length }, null, 2) }],
       };

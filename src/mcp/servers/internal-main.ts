@@ -13,9 +13,11 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createInternalServer } from './internal.js';
 
 async function main() {
+  console.error('[internal-mcp] Starting stdio server...');
   const server = createInternalServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  console.error('[internal-mcp] Connected — ready for tool calls');
 }
 
 main().catch((err) => {
