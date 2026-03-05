@@ -24,7 +24,7 @@ import { createAgentDispatch } from './agent-dispatch.js';
 import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
 import { runScan } from '../core/activity-scanner.js';
-import { initRosie, shutdownRosie } from '../core/rosie/index.js';
+import { initRosieSummarize, shutdownRosieSummarize } from '../core/rosie/index.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
 
@@ -156,7 +156,7 @@ registerAllAdapters({ cwd });
 
 // Create dispatch for internal consumers (Rosie, future features)
 const dispatch = createAgentDispatch();
-initRosie(dispatch);
+initRosieSummarize(dispatch);
 
 // Initialize settings from ~/.config/crispy/settings.json
 const providerBase = { cwd };
@@ -179,12 +179,12 @@ server.listen(PORT, () => {
 
 // Cleanup on shutdown
 process.on('SIGINT', () => {
-  shutdownRosie();
+  shutdownRosieSummarize();
   dispatch.dispose();
   process.exit(0);
 });
 process.on('SIGTERM', () => {
-  shutdownRosie();
+  shutdownRosieSummarize();
   dispatch.dispose();
   process.exit(0);
 });

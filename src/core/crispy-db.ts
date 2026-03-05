@@ -374,6 +374,13 @@ const migrations: Migration[] = [
       db.exec('ALTER TABLE activity_entries ADD COLUMN status TEXT');
     },
   },
+  {
+    version: 6,
+    description: 'Add entities column to activity_entries for Rosie entity extraction',
+    up: (db: Database): void => {
+      db.exec('ALTER TABLE activity_entries ADD COLUMN entities TEXT');
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {

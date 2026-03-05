@@ -366,4 +366,44 @@ describe('queryActivity', () => {
     const result = queryActivity(undefined, 'rosie-meta');
     expect(result[0].status).toBeUndefined();
   });
+
+  it('persists and retrieves entities field', () => {
+    const entities = JSON.stringify(['src/auth.ts', 'JWT', 'ECONNREFUSED']);
+    appendActivityEntries([{
+      timestamp: '2025-01-15T13:00:00Z',
+      kind: 'rosie-meta',
+      file: '/session-entities.jsonl',
+      preview: 'Auth implementation',
+      offset: 0,
+      quest: 'Implement authentication',
+      summary: 'Added JWT auth flow',
+      title: 'Auth Implementation',
+      status: 'In progress',
+      entities,
+    }]);
+
+    const result = queryActivity(undefined, 'rosie-meta');
+    const entry = result.find(e => e.file === '/session-entities.jsonl');
+    expect(entry).toBeDefined();
+    expect(entry!.entities).toBe(entities);
+    expect(JSON.parse(entry!.entities!)).toEqual(['src/auth.ts', 'JWT', 'ECONNREFUSED']);
+  });
+
+  it('returns undefined entities when not provided', () => {
+    appendActivityEntries([{
+      timestamp: '2025-01-15T14:00:00Z',
+      kind: 'rosie-meta',
+      file: '/session-no-entities.jsonl',
+      preview: 'Goal text',
+      offset: 0,
+      quest: 'Some goal',
+      summary: 'Some summary',
+      title: 'Some title',
+    }]);
+
+    const result = queryActivity(undefined, 'rosie-meta');
+    const entry = result.find(e => e.file === '/session-no-entities.jsonl');
+    expect(entry).toBeDefined();
+    expect(entry!.entities).toBeUndefined();
+  });
 });

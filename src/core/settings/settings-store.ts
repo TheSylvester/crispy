@@ -165,7 +165,10 @@ function applyPatch(current: CrispySettings, patch: SettingsPatch): CrispySettin
   }
 
   if (patch.rosie) {
-    result.rosie = { ...current.rosie, ...patch.rosie };
+    result.rosie = { ...current.rosie };
+    if (patch.rosie.summarize) {
+      result.rosie.summarize = { ...current.rosie.summarize, ...patch.rosie.summarize };
+    }
   }
 
   return result;
@@ -213,13 +216,23 @@ function sanitizeSettings(data: unknown): CrispySettings {
     result.turnDefaults = settings.turnDefaults as typeof result.turnDefaults;
   }
 
-  // Rosie Bot
+  // Rosie Bot — handle both old flat { enabled, model } and new nested { summarize: { enabled, model } }
   if (settings.rosie && typeof settings.rosie === 'object') {
     const rosie = settings.rosie as Record<string, unknown>;
-    if (typeof rosie.enabled === 'boolean') {
-      result.rosie = { enabled: rosie.enabled };
-      if (typeof rosie.model === 'string' && rosie.model.trim()) {
-        result.rosie.model = rosie.model.trim();
+    if (rosie.summarize && typeof rosie.summarize === 'object') {
+      // New nested shape
+      const summarize = rosie.summarize as Record<string, unknown>;
+      if (typeof summarize.enabled === 'boolean') {
+        result.rosie = { summarize: { enabled: summarize.enabled } };
+        if (typeof summarize.model === 'string' && summarize.model.trim()) {
+          result.rosie.summarize.model = summarize.model.trim();
+        }
+      }
+    } else if (typeof rosie.enabled === 'boolean') {
+      // Old flat shape — migrate in-memory to nested form
+      result.rosie = { summarize: { enabled: rosie.enabled } };
+      if (typeof rosie.model === 'string' && (rosie.model as string).trim()) {
+        result.rosie.summarize.model = (rosie.model as string).trim();
       }
     }
   }

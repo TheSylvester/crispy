@@ -206,8 +206,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         if (sessionId === SETTINGS_CHANNEL_ID && event.type === 'settings_snapshot') {
           const settingsEvent = event as SettingsChangedGlobalEvent;
           setProviders(settingsEvent.snapshot.settings.providers);
-          setRosieEnabled(settingsEvent.snapshot.settings.rosie?.enabled ?? false);
-          setRosieModel(settingsEvent.snapshot.settings.rosie?.model);
+          setRosieEnabled(settingsEvent.snapshot.settings.rosie?.summarize?.enabled ?? false);
+          setRosieModel(settingsEvent.snapshot.settings.rosie?.summarize?.model);
           transport.getModelGroups().then(setModelGroups).catch(console.error);
         }
       });
@@ -235,13 +235,13 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     useEffect(() => {
       transport.getSettings().then((snapshot) => {
-        setRosieEnabled(snapshot.settings.rosie?.enabled ?? false);
-        setRosieModel(snapshot.settings.rosie?.model);
+        setRosieEnabled(snapshot.settings.rosie?.summarize?.enabled ?? false);
+        setRosieModel(snapshot.settings.rosie?.summarize?.model);
       }).catch(console.error);
     }, [transport]);
 
     const handleUpdateRosie = useCallback(async (patch: { enabled?: boolean; model?: string }) => {
-      await transport.updateSettings({ rosie: patch });
+      await transport.updateSettings({ rosie: { summarize: patch } });
     }, [transport]);
 
     // Clear forkMode when switching sessions

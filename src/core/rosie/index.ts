@@ -1,1 +1,1 @@
-export { initRosie, shutdownRosie } from './rosie-hook.js';
+export { initRosieSummarize, shutdownRosieSummarize } from './summarize-hook.js';

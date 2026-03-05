@@ -1,5 +1,5 @@
 /**
- * Rosie Hook — Auto-extracts quest + summary after each turn
+ * Rosie Summarize Hook — Auto-extracts quest, summary, and entities after each turn
  *
  * Registers as a responseComplete lifecycle handler. On each turn completion,
  * dispatches an ephemeral child session to query a model for plain-text
@@ -8,7 +8,7 @@
  * Uses dispatch.dispatchChild() — the shared child session primitive in
  * session-manager — rather than hand-rolling session lifecycle management.
  *
- * @module rosie-hook
+ * @module rosie/summarize-hook
  */
 
 import { onResponseComplete } from '../lifecycle-hooks.js';
@@ -30,17 +30,17 @@ const inflight = new Set<string>();
 // Lifecycle
 // ============================================================================
 
-export function initRosie(d: AgentDispatch): void {
+export function initRosieSummarize(d: AgentDispatch): void {
   dispatch = d;
   unsubscribe = onResponseComplete(async (sessionId: string) => {
-    // Capture dispatch locally — shutdownRosie() can set the module-level
+    // Capture dispatch locally — shutdownRosieSummarize() can set the module-level
     // variable to null while this async handler is in-flight.
     const d = dispatch;
     if (!d) return;
 
     // Guard: settings check
     const snap = getSettingsSnapshotInternal();
-    if (!snap.settings.rosie.enabled) return;
+    if (!snap.settings.rosie.summarize.enabled) return;
 
     // Guard: pending IDs, inflight
     if (sessionId.startsWith('pending:')) return;
@@ -51,18 +51,18 @@ export function initRosie(d: AgentDispatch): void {
     if (!info) return;
 
     // Resolve model — settings override, else system default
-    const rosieModel = snap.settings.rosie.model; // "vendor:model" or undefined
+    const rosieModel = snap.settings.rosie.summarize.model; // "vendor:model" or undefined
 
     inflight.add(sessionId);
     try {
-      await runRosieAnalysis(d, sessionId, info.path, info.vendor, rosieModel);
+      await runSummarizeAnalysis(d, sessionId, info.path, info.vendor, rosieModel);
     } finally {
       inflight.delete(sessionId);
     }
   });
 }
 
-export function shutdownRosie(): void {
+export function shutdownRosieSummarize(): void {
   unsubscribe?.();
   unsubscribe = null;
   dispatch = null;
@@ -73,23 +73,51 @@ export function shutdownRosie(): void {
 // ============================================================================
 
 /**
- * Parse Rosie's XML-tagged response into structured fields.
+ * Parse the summarize hook's XML-tagged response into structured fields.
  *
  * Expects tags:
  *   <goal>...</goal>
  *   <title>...</title>
  *   <summary>...</summary>
+ *   <status>...</status>
+ *   <entities>...</entities>  (optional)
  *
  * Uses regex extraction — tags can appear anywhere in the response.
  * Returns null if goal or summary is missing.
  */
-function parseRosieResponse(text: string): { quest: string; title: string; summary: string; status: string } | null {
+function parseSummarizeResponse(text: string): {
+  quest: string;
+  title: string;
+  summary: string;
+  status: string;
+  entities: string;
+} | null {
   const quest = text.match(/<goal>([\s\S]*?)<\/goal>/)?.[1]?.trim() ?? '';
   const title = text.match(/<title>([\s\S]*?)<\/title>/)?.[1]?.trim() ?? '';
   const summary = text.match(/<summary>([\s\S]*?)<\/summary>/)?.[1]?.trim() ?? '';
   const status = text.match(/<status>([\s\S]*?)<\/status>/)?.[1]?.trim() ?? '';
+  const rawEntities = text.match(/<entities>([\s\S]*?)<\/entities>/)?.[1]?.trim() ?? '';
 
-  if (quest && summary) return { quest, title, summary, status };
+  // Validate entities as JSON array; fall back to comma-split if invalid
+  let entities = '[]';
+  if (rawEntities) {
+    try {
+      const parsed = JSON.parse(rawEntities);
+      if (Array.isArray(parsed)) {
+        entities = JSON.stringify(parsed);
+      }
+    } catch {
+      // Fall back: split on commas, trim quotes/whitespace, wrap as JSON array
+      const items = rawEntities
+        .replace(/^\[|\]$/g, '')
+        .split(',')
+        .map((s) => s.trim().replace(/^["']|["']$/g, ''))
+        .filter(Boolean);
+      entities = JSON.stringify(items);
+    }
+  }
+
+  if (quest && summary) return { quest, title, summary, status, entities };
   return null;
 }
 
@@ -99,7 +127,7 @@ function parseRosieResponse(text: string): { quest: string; title: string; summa
 
 const MAX_ATTEMPTS = 2;
 
-async function runRosieAnalysis(
+async function runSummarizeAnalysis(
   d: AgentDispatch,
   sessionId: string, sessionPath: string, parentVendor: string,
   modelOverride?: string,
@@ -114,7 +142,7 @@ async function runRosieAnalysis(
         parentSessionId: sessionId,
         vendor,
         parentVendor,
-        prompt: ROSIE_PROMPT,
+        prompt: SUMMARIZE_PROMPT,
         settings: {
           ...(model && { model }),
         },
@@ -124,15 +152,15 @@ async function runRosieAnalysis(
       });
 
       if (!result) {
-        console.warn(`[rosie] FAIL attempt ${attempt}/${MAX_ATTEMPTS}: dispatchChild returned null`);
+        console.warn(`[rosie.summarize] FAIL attempt ${attempt}/${MAX_ATTEMPTS}: dispatchChild returned null`);
         continue;
       }
 
-      console.log(`[rosie] OK response:`, result.text.slice(0, 500));
+      console.log(`[rosie.summarize] OK response:`, result.text.slice(0, 500));
 
-      const fields = parseRosieResponse(result.text);
+      const fields = parseSummarizeResponse(result.text);
       if (!fields) {
-        console.warn(`[rosie] FAIL parse: could not extract quest/summary from response: ${result.text.slice(0, 300)}`);
+        console.warn(`[rosie.summarize] FAIL parse: could not extract quest/summary from response: ${result.text.slice(0, 300)}`);
         continue;
       }
 
@@ -147,13 +175,14 @@ async function runRosieAnalysis(
         summary: fields.summary,
         title: fields.title,
         status: fields.status,
+        entities: fields.entities,
       }]);
 
       // Push updated metadata to all UI subscribers
       refreshAndNotify(sessionId);
       return;
     } catch (err) {
-      console.warn(`[rosie] FAIL attempt ${attempt}/${MAX_ATTEMPTS} threw:`, err);
+      console.warn(`[rosie.summarize] FAIL attempt ${attempt}/${MAX_ATTEMPTS} threw:`, err);
     }
   }
 }
@@ -162,14 +191,16 @@ async function runRosieAnalysis(
 // Constants
 // ============================================================================
 
-const ROSIE_PROMPT = `Consider this entire conversation so far.
+const SUMMARIZE_PROMPT = `Consider this entire conversation so far.
 What is the stated or apparent goal of this particular conversation?
 How would you label this conversation in a short sentence for a user to best remember what this session was for?
 Summarize the last turn: Describe the User Request and your Response; including any work completed
 What is the current status of the work in this conversation? Describe where things stand right now — what's done, what's in progress, what's blocked or paused.
+List the key entities mentioned in this conversation as a JSON array: file paths, function/class names, technical concepts, tools used, error types, libraries, and architectural decisions. Short identifiers only, no descriptions.
 
 Provide your output in this format:
 <goal>The goal of this conversation</goal>
 <title>Label the conversation</title>
 <summary>Turn summary</summary>
-<status>Current status of the work</status>`;
+<status>Current status of the work</status>
+<entities>["src/auth.ts", "JWT", "mutex", "ECONNREFUSED", "react-query", "prefer composition over inheritance"]</entities>`;

@@ -233,8 +233,8 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
             />
           </label>
 
-          {/* --- Rosie Bot Section --- */}
-          <div className="crispy-cp-settings__section-header">Rosie Bot</div>
+          {/* --- Rosie: Summarize Section --- */}
+          <div className="crispy-cp-settings__section-header">Rosie: Summarize</div>
           <label className="crispy-cp-settings__row">
             <span>Enabled</span>
             <input

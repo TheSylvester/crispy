@@ -95,7 +95,7 @@ export function RosiePanel({ pinned, onToggle, quest, title, summary, status }: 
       </button>
       {pinned && (
         <div ref={popupRef} className="crispy-cp-rosie__popup" onClick={(e) => e.stopPropagation()}>
-          <div className="crispy-cp-rosie__popup-header">✨ Rosie Bot ✨</div>
+          <div className="crispy-cp-rosie__popup-header">✨ Rosie: Summarize ✨</div>
           {hasData ? (
             <div className="crispy-cp-rosie__content">
               {title && <div className="crispy-cp-rosie__title">{title}</div>}
@@ -105,7 +105,7 @@ export function RosiePanel({ pinned, onToggle, quest, title, summary, status }: 
             </div>
           ) : (
             <div className="crispy-cp-rosie__empty">
-              No Rosie outputs yet. Rosie analysis results will appear here.
+              No Rosie outputs yet. Summarize analysis results will appear here after a turn completes.
             </div>
           )}
         </div>

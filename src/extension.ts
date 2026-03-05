@@ -12,7 +12,7 @@ import { runScan } from './core/activity-scanner.js';
 import { findClaudeBinary } from './core/find-claude-binary.js';
 import { registerAllAdapters } from './host/adapter-registry.js';
 import { createAgentDispatch } from './host/agent-dispatch.js';
-import { initRosie, shutdownRosie } from './core/rosie/index.js';
+import { initRosieSummarize, shutdownRosieSummarize } from './core/rosie/index.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
@@ -65,10 +65,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Create dispatch for internal consumers (Rosie, future features)
   const dispatch = createAgentDispatch();
-  initRosie(dispatch);
+  initRosieSummarize(dispatch);
   context.subscriptions.push({
     dispose: () => {
-      shutdownRosie();
+      shutdownRosieSummarize();
       dispatch.dispose();
     },
   });

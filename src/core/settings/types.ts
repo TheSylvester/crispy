@@ -76,10 +76,14 @@ export interface SettingsHooks {
 // Rosie Bot
 // ============================================================================
 
-export interface RosieSettings {
+export interface RosieSummarizeSettings {
   enabled: boolean;
   /** Model override — omit to use system default model. Format: "vendor:model" (e.g. "claude:haiku", "my-provider:glm-4.7"). */
   model?: string;
+}
+
+export interface RosieSettings {
+  summarize: RosieSummarizeSettings;
 }
 
 // ============================================================================
@@ -169,7 +173,7 @@ export type SettingsPatch = Partial<{
   envPresets: Partial<SettingsEnvPresets>;
   cliProfiles: Partial<SettingsCliProfiles>;
   turnDefaults: Partial<SettingsTurnDefaults>;
-  rosie: Partial<RosieSettings>;
+  rosie: { summarize?: Partial<RosieSummarizeSettings> };
 }>;
 
 // ============================================================================
@@ -200,6 +204,6 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     extraArgs: {},
   },
   rosie: {
-    enabled: false,
+    summarize: { enabled: false },
   },
 };
