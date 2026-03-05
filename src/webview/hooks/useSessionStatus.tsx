@@ -56,13 +56,8 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
   }, [selectedSessionId]);
 
   useEffect(() => {
-    // Reset channel state on every session switch so stale status from the
-    // previous session never bleeds through. Without this, the catchup
-    // guard below (streaming → idle suppression) would block the new
-    // session's catchup from correcting a stale 'streaming' state.
-    setChannelState(null);
-
     if (!selectedSessionId) {
+      setChannelState(null);
       return;
     }
 
