@@ -381,6 +381,51 @@ const migrations: Migration[] = [
       db.exec('ALTER TABLE activity_entries ADD COLUMN entities TEXT');
     },
   },
+  {
+    version: 7,
+    description: 'Create FTS5 full-text search index on activity_entries',
+    up: (db: Database): void => {
+      // External content FTS5 table — Porter stemmer + unicode61
+      db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS activity_fts USING fts5(
+          quest, summary, title, entities, preview,
+          content='activity_entries', content_rowid='id',
+          tokenize='porter unicode61 remove_diacritics 2'
+        );
+      `);
+
+      // Sync triggers — keep FTS5 in sync with activity_entries
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS activity_fts_ai AFTER INSERT ON activity_entries BEGIN
+          INSERT INTO activity_fts(rowid, quest, summary, title, entities, preview)
+          VALUES (new.id, new.quest, new.summary, new.title, new.entities, new.preview);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS activity_fts_ad AFTER DELETE ON activity_entries BEGIN
+          INSERT INTO activity_fts(activity_fts, rowid, quest, summary, title, entities, preview)
+          VALUES ('delete', old.id, old.quest, old.summary, old.title, old.entities, old.preview);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS activity_fts_au AFTER UPDATE ON activity_entries BEGIN
+          INSERT INTO activity_fts(activity_fts, rowid, quest, summary, title, entities, preview)
+          VALUES ('delete', old.id, old.quest, old.summary, old.title, old.entities, old.preview);
+          INSERT INTO activity_fts(rowid, quest, summary, title, entities, preview)
+          VALUES (new.id, new.quest, new.summary, new.title, new.entities, new.preview);
+        END;
+      `);
+
+      // Backfill: populate FTS5 from all existing rows
+      db.exec("INSERT INTO activity_fts(activity_fts) VALUES('rebuild')");
+
+      // Configure BM25 column weights (column order: quest, summary, title, entities, preview)
+      // quest(10): session goal, most concentrated signal
+      // title(8): short label, highly informative
+      // summary(5): turn summary, action detail
+      // entities(3): file paths, concepts, tools
+      // preview(1): raw prompt text, lowest signal density
+      db.exec("INSERT INTO activity_fts(activity_fts, rank) VALUES('rank', 'bm25(10.0, 5.0, 8.0, 3.0, 1.0)')");
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {

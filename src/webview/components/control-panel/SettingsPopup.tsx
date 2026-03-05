@@ -31,6 +31,8 @@ interface SettingsPopupProps {
   rosieEnabled: boolean;
   rosieModel?: string;
   onUpdateRosie: (patch: { enabled?: boolean; model?: string }) => void;
+  mcpMemoryEnabled: boolean;
+  onUpdateMcpMemory: (enabled: boolean) => void;
   modelGroups: VendorModelGroup[];
   providers?: Record<string, WireProviderConfig>;
   onSaveProvider?: (slug: string, config: ProviderConfig) => Promise<void>;
@@ -113,7 +115,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, rosieEnabled, rosieModel, onUpdateRosie, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, rosieEnabled, rosieModel, onUpdateRosie, mcpMemoryEnabled, onUpdateMcpMemory, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -249,6 +251,17 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               value={rosieModel ?? ''}
               onChange={(value) => onUpdateRosie({ model: value || undefined })}
               groups={modelGroups}
+            />
+          </label>
+
+          {/* --- MCP: Memory Section --- */}
+          <div className="crispy-cp-settings__section-header">MCP: Session Memory</div>
+          <label className="crispy-cp-settings__row">
+            <span>Enabled</span>
+            <input
+              type="checkbox"
+              checked={mcpMemoryEnabled}
+              onChange={(e) => onUpdateMcpMemory(e.target.checked)}
             />
           </label>
 

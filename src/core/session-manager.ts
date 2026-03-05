@@ -87,6 +87,10 @@ export interface ChildSessionOptions {
   autoClose?: boolean;
   /** Timeout in ms before giving up and returning null (default: 60000). */
   timeoutMs?: number;
+  /** MCP servers to attach to the child session (overrides default). */
+  mcpServers?: Record<string, unknown>;
+  /** Environment overrides for the child session. */
+  env?: Record<string, string>;
 }
 
 export interface ChildSessionResult {
@@ -506,7 +510,7 @@ export function createSession(
   vendor: Vendor,
   cwd: string,
   subscriber: Subscriber,
-  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean },
+  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string> },
   explicitPendingId?: string,
 ): PendingChannelResult {
   if (!adapters.has(vendor)) {
@@ -520,6 +524,8 @@ export function createSession(
     ...(options?.permissionMode && { permissionMode: options.permissionMode }),
     ...(options?.extraArgs && { extraArgs: options.extraArgs }),
     ...(options?.skipPersistSession && { skipPersistSession: true }),
+    ...(options?.mcpServers && { mcpServers: options.mcpServers }),
+    ...(options?.env && { env: options.env }),
   };
 
   return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
@@ -541,6 +547,8 @@ export function createForkSession(
     atMessageId?: string;
     settings?: TurnSettings;
     skipPersistSession?: boolean;
+    mcpServers?: Record<string, unknown>;
+    env?: Record<string, string>;
   },
   explicitPendingId?: string,
 ): PendingChannelResult {
@@ -555,6 +563,8 @@ export function createForkSession(
     ...(options?.settings?.model && { model: options.settings.model }),
     ...(options?.settings?.outputFormat && { outputFormat: options.settings.outputFormat }),
     ...(options?.skipPersistSession && { skipPersistSession: true }),
+    ...(options?.mcpServers && { mcpServers: options.mcpServers }),
+    ...(options?.env && { env: options.env }),
   };
 
   return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
@@ -667,6 +677,8 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
         {
           ...intent.settings,
           ...(intent.target.skipPersistSession && { skipPersistSession: true }),
+          ...(intent.target.mcpServers && { mcpServers: intent.target.mcpServers }),
+          ...(intent.target.env && { env: intent.target.env }),
         },
         pendingId,
       );
@@ -685,6 +697,8 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
           atMessageId: intent.target.atMessageId,
           settings: intent.settings,
           ...(intent.target.skipPersistSession && { skipPersistSession: true }),
+          ...(intent.target.mcpServers && { mcpServers: intent.target.mcpServers }),
+          ...(intent.target.env && { env: intent.target.env }),
         },
         pendingId,
       );
@@ -779,8 +793,8 @@ export async function dispatchChildSession(
 
   // Build target: fork if same vendor, new if cross-vendor
   const target: TurnTarget = vendor === parentVendor
-    ? { kind: 'fork', vendor: vendor as Vendor, fromSessionId: parentSessionId, skipPersistSession }
-    : { kind: 'new', vendor: vendor as Vendor, cwd, skipPersistSession };
+    ? { kind: 'fork', vendor: vendor as Vendor, fromSessionId: parentSessionId, skipPersistSession, ...(options.mcpServers && { mcpServers: options.mcpServers }), ...(options.env && { env: options.env }) }
+    : { kind: 'new', vendor: vendor as Vendor, cwd, skipPersistSession, ...(options.mcpServers && { mcpServers: options.mcpServers }), ...(options.env && { env: options.env }) };
 
   const intent: TurnIntent = {
     target,

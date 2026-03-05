@@ -18,6 +18,32 @@ vi.mock('../src/core/session-manager.js', () => ({
   unregisterAdapter: (...args: unknown[]) => mockUnregisterAdapter(...args),
 }));
 
+// Mock session-channel (getActiveChannels used by settings change listener)
+vi.mock('../src/core/session-channel.js', () => ({
+  getActiveChannels: () => [],
+}));
+
+// Mock settings module
+vi.mock('../src/core/settings/index.js', () => ({
+  getSettingsSnapshotInternal: () => ({
+    settings: { mcp: { memory: { vscode: true, devServer: true } } },
+    revision: 1,
+    updatedAt: new Date().toISOString(),
+  }),
+  onSettingsChanged: () => () => {},
+}));
+
+// Mock external MCP server
+const mockExternalServer = { type: 'sdk' as const, name: 'crispy', instance: {} };
+vi.mock('../src/mcp/servers/external.js', () => ({
+  createExternalServer: () => mockExternalServer,
+}));
+
+// Mock ClaudeAgentAdapter (imported for instanceof checks)
+vi.mock('../src/core/adapters/claude/claude-code-adapter.js', () => ({
+  ClaudeAgentAdapter: class {},
+}));
+
 // Mock the registration descriptors so we control them
 vi.mock('../src/core/adapters/claude/claude-registration.js', () => ({
   claudeRegistration: null,  // replaced in tests
@@ -37,6 +63,48 @@ function createMockDiscovery(vendor: string): VendorDiscovery {
     listSessions: vi.fn().mockReturnValue([]),
     loadHistory: vi.fn().mockResolvedValue([]),
   };
+}
+
+function createMockDispatch() {
+  return {
+    listSessions: vi.fn(),
+    findSession: vi.fn(),
+    loadSession: vi.fn(),
+    subscribe: vi.fn(),
+    unsubscribe: vi.fn(),
+    sendTurn: vi.fn(),
+    resolveApproval: vi.fn(),
+    interrupt: vi.fn(),
+    close: vi.fn(),
+    dispatchChild: vi.fn(),
+    onEvent: vi.fn().mockReturnValue(() => {}),
+    dispose: vi.fn(),
+  };
+}
+
+/** Re-apply all infrastructure mocks after vi.resetModules(). */
+function applyInfraMocks() {
+  vi.doMock('../src/core/session-manager.js', () => ({
+    registerAdapter: (...args: unknown[]) => mockRegisterAdapter(...args),
+    unregisterAdapter: (...args: unknown[]) => mockUnregisterAdapter(...args),
+  }));
+  vi.doMock('../src/core/session-channel.js', () => ({
+    getActiveChannels: () => [],
+  }));
+  vi.doMock('../src/core/settings/index.js', () => ({
+    getSettingsSnapshotInternal: () => ({
+      settings: { mcp: { memory: { vscode: true, devServer: true } } },
+      revision: 1,
+      updatedAt: new Date().toISOString(),
+    }),
+    onSettingsChanged: () => () => {},
+  }));
+  vi.doMock('../src/mcp/servers/external.js', () => ({
+    createExternalServer: () => mockExternalServer,
+  }));
+  vi.doMock('../src/core/adapters/claude/claude-code-adapter.js', () => ({
+    ClaudeAgentAdapter: class {},
+  }));
 }
 
 function createMockRegistration(
@@ -75,19 +143,8 @@ describe('registerAllAdapters', () => {
     const claude = createMockRegistration('claude', true);
     const codex = createMockRegistration('codex', true);
 
-    // Inject mock registrations into the module's allRegistrations array
-    const registryModule = await import('../src/core/adapters/claude/claude-registration.js');
-    const codexModule = await import('../src/core/adapters/codex/codex-registration.js');
-    (registryModule as Record<string, unknown>).claudeRegistration = claude;
-    (codexModule as Record<string, unknown>).codexRegistration = codex;
-
-    // Re-import to pick up the injected registrations
     vi.resetModules();
-    // Re-apply session-manager mock
-    vi.doMock('../src/core/session-manager.js', () => ({
-      registerAdapter: (...args: unknown[]) => mockRegisterAdapter(...args),
-      unregisterAdapter: (...args: unknown[]) => mockUnregisterAdapter(...args),
-    }));
+    applyInfraMocks();
     vi.doMock('../src/core/adapters/claude/claude-registration.js', () => ({
       claudeRegistration: claude,
     }));
@@ -96,14 +153,14 @@ describe('registerAllAdapters', () => {
     }));
 
     const freshMod = await import('../src/host/adapter-registry.js');
-    const config: HostAdapterConfig = { cwd: '/test' };
+    const config: HostAdapterConfig = { cwd: '/test', hostType: 'dev-server' as const, dispatch: createMockDispatch() as never };
 
     freshMod.registerAllAdapters(config);
 
-    expect(claude.available).toHaveBeenCalledWith(config);
-    expect(codex.available).toHaveBeenCalledWith(config);
-    expect(claude.createFactory).toHaveBeenCalledWith(config);
-    expect(codex.createFactory).toHaveBeenCalledWith(config);
+    expect(claude.available).toHaveBeenCalledWith(expect.objectContaining({ cwd: config.cwd, hostType: config.hostType }));
+    expect(codex.available).toHaveBeenCalledWith(expect.objectContaining({ cwd: config.cwd, hostType: config.hostType }));
+    expect(claude.createFactory).toHaveBeenCalledWith(expect.objectContaining({ cwd: config.cwd, hostType: config.hostType }));
+    expect(codex.createFactory).toHaveBeenCalledWith(expect.objectContaining({ cwd: config.cwd, hostType: config.hostType }));
     expect(mockRegisterAdapter).toHaveBeenCalledTimes(2);
   });
 
@@ -112,10 +169,7 @@ describe('registerAllAdapters', () => {
     const codex = createMockRegistration('codex', true);
 
     vi.resetModules();
-    vi.doMock('../src/core/session-manager.js', () => ({
-      registerAdapter: (...args: unknown[]) => mockRegisterAdapter(...args),
-      unregisterAdapter: (...args: unknown[]) => mockUnregisterAdapter(...args),
-    }));
+    applyInfraMocks();
     vi.doMock('../src/core/adapters/claude/claude-registration.js', () => ({
       claudeRegistration: claude,
     }));
@@ -124,16 +178,16 @@ describe('registerAllAdapters', () => {
     }));
 
     const freshMod = await import('../src/host/adapter-registry.js');
-    const config: HostAdapterConfig = { cwd: '/test' };
+    const config: HostAdapterConfig = { cwd: '/test', hostType: 'dev-server' as const, dispatch: createMockDispatch() as never };
 
     // Capture stderr
     const stderrSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     freshMod.registerAllAdapters(config);
 
-    expect(claude.available).toHaveBeenCalledWith(config);
+    expect(claude.available).toHaveBeenCalledWith(expect.objectContaining({ cwd: config.cwd, hostType: config.hostType }));
     expect(claude.createFactory).not.toHaveBeenCalled();
-    expect(codex.createFactory).toHaveBeenCalledWith(config);
+    expect(codex.createFactory).toHaveBeenCalledWith(expect.objectContaining({ cwd: config.cwd, hostType: config.hostType }));
     expect(mockRegisterAdapter).toHaveBeenCalledTimes(1);
     expect(stderrSpy).toHaveBeenCalledWith(
       expect.stringContaining('claude adapter skipped'),
@@ -146,10 +200,7 @@ describe('registerAllAdapters', () => {
     const claude = createMockRegistration('claude', true);
 
     vi.resetModules();
-    vi.doMock('../src/core/session-manager.js', () => ({
-      registerAdapter: (...args: unknown[]) => mockRegisterAdapter(...args),
-      unregisterAdapter: (...args: unknown[]) => mockUnregisterAdapter(...args),
-    }));
+    applyInfraMocks();
     vi.doMock('../src/core/adapters/claude/claude-registration.js', () => ({
       claudeRegistration: claude,
     }));
@@ -160,13 +211,15 @@ describe('registerAllAdapters', () => {
     const freshMod = await import('../src/host/adapter-registry.js');
     const config: HostAdapterConfig = {
       cwd: '/workspace',
+      hostType: 'vscode',
       pathToClaudeCodeExecutable: '/usr/bin/claude',
+      dispatch: createMockDispatch() as never,
     };
 
     freshMod.registerAllAdapters(config);
 
-    expect(claude.available).toHaveBeenCalledWith(config);
-    expect(claude.createFactory).toHaveBeenCalledWith(config);
+    expect(claude.available).toHaveBeenCalledWith(expect.objectContaining({ cwd: config.cwd, hostType: config.hostType }));
+    expect(claude.createFactory).toHaveBeenCalledWith(expect.objectContaining({ cwd: config.cwd, hostType: config.hostType }));
   });
 
   it('returns dispose function that calls unregisterAdapter for each registered vendor', async () => {
@@ -174,10 +227,7 @@ describe('registerAllAdapters', () => {
     const codex = createMockRegistration('codex', true);
 
     vi.resetModules();
-    vi.doMock('../src/core/session-manager.js', () => ({
-      registerAdapter: (...args: unknown[]) => mockRegisterAdapter(...args),
-      unregisterAdapter: (...args: unknown[]) => mockUnregisterAdapter(...args),
-    }));
+    applyInfraMocks();
     vi.doMock('../src/core/adapters/claude/claude-registration.js', () => ({
       claudeRegistration: claude,
     }));
@@ -186,7 +236,7 @@ describe('registerAllAdapters', () => {
     }));
 
     const freshMod = await import('../src/host/adapter-registry.js');
-    const config: HostAdapterConfig = { cwd: '/test' };
+    const config: HostAdapterConfig = { cwd: '/test', hostType: 'dev-server' as const, dispatch: createMockDispatch() as never };
 
     const dispose = freshMod.registerAllAdapters(config);
 
@@ -203,10 +253,7 @@ describe('registerAllAdapters', () => {
     const claude = createMockRegistration('claude', true);
 
     vi.resetModules();
-    vi.doMock('../src/core/session-manager.js', () => ({
-      registerAdapter: (...args: unknown[]) => mockRegisterAdapter(...args),
-      unregisterAdapter: (...args: unknown[]) => mockUnregisterAdapter(...args),
-    }));
+    applyInfraMocks();
     vi.doMock('../src/core/adapters/claude/claude-registration.js', () => ({
       claudeRegistration: claude,
     }));
@@ -215,7 +262,7 @@ describe('registerAllAdapters', () => {
     }));
 
     const freshMod = await import('../src/host/adapter-registry.js');
-    const config: HostAdapterConfig = { cwd: '/test' };
+    const config: HostAdapterConfig = { cwd: '/test', hostType: 'dev-server' as const, dispatch: createMockDispatch() as never };
 
     const dispose = freshMod.registerAllAdapters(config);
 
@@ -232,10 +279,7 @@ describe('registerAllAdapters', () => {
     const codex = createMockRegistration('codex', true);
 
     vi.resetModules();
-    vi.doMock('../src/core/session-manager.js', () => ({
-      registerAdapter: (...args: unknown[]) => mockRegisterAdapter(...args),
-      unregisterAdapter: (...args: unknown[]) => mockUnregisterAdapter(...args),
-    }));
+    applyInfraMocks();
     vi.doMock('../src/core/adapters/claude/claude-registration.js', () => ({
       claudeRegistration: claude,
     }));
@@ -244,7 +288,7 @@ describe('registerAllAdapters', () => {
     }));
 
     const freshMod = await import('../src/host/adapter-registry.js');
-    const config: HostAdapterConfig = { cwd: '/test' };
+    const config: HostAdapterConfig = { cwd: '/test', hostType: 'dev-server' as const, dispatch: createMockDispatch() as never };
 
     freshMod.registerAllAdapters(config);
 
@@ -260,10 +304,7 @@ describe('registerAllAdapters', () => {
     const codex = createMockRegistration('codex', true);
 
     vi.resetModules();
-    vi.doMock('../src/core/session-manager.js', () => ({
-      registerAdapter: (...args: unknown[]) => mockRegisterAdapter(...args),
-      unregisterAdapter: (...args: unknown[]) => mockUnregisterAdapter(...args),
-    }));
+    applyInfraMocks();
     vi.doMock('../src/core/adapters/claude/claude-registration.js', () => ({
       claudeRegistration: claude,
     }));
@@ -272,7 +313,7 @@ describe('registerAllAdapters', () => {
     }));
 
     const freshMod = await import('../src/host/adapter-registry.js');
-    const config: HostAdapterConfig = { cwd: '/test' };
+    const config: HostAdapterConfig = { cwd: '/test', hostType: 'dev-server' as const, dispatch: createMockDispatch() as never };
 
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const dispose = freshMod.registerAllAdapters(config);
@@ -281,5 +322,32 @@ describe('registerAllAdapters', () => {
     // Only codex was registered, so only codex should be unregistered
     expect(mockUnregisterAdapter).toHaveBeenCalledTimes(1);
     expect(mockUnregisterAdapter).toHaveBeenCalledWith('codex');
+  });
+
+  it('works without dispatch (no external server created)', async () => {
+    const claude = createMockRegistration('claude', true);
+
+    vi.resetModules();
+    applyInfraMocks();
+    vi.doMock('../src/core/adapters/claude/claude-registration.js', () => ({
+      claudeRegistration: claude,
+    }));
+    vi.doMock('../src/core/adapters/codex/codex-registration.js', () => ({
+      codexRegistration: createMockRegistration('codex', false),
+    }));
+
+    const freshMod = await import('../src/host/adapter-registry.js');
+    // No dispatch — external server should not be created
+    const config: HostAdapterConfig = { cwd: '/test', hostType: 'dev-server' as const };
+
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    freshMod.registerAllAdapters(config);
+
+    // Should still register adapters, just without MCP
+    expect(mockRegisterAdapter).toHaveBeenCalledTimes(1);
+    // Config passed to factory should NOT have mcpServers
+    const factoryCall = claude.createFactory as ReturnType<typeof vi.fn>;
+    const passedConfig = factoryCall.mock.calls[0][0];
+    expect(passedConfig.mcpServers).toBeUndefined();
   });
 });

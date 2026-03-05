@@ -162,8 +162,8 @@ export interface TurnSettings {
  */
 export type TurnTarget =
   | { kind: 'existing'; sessionId: string; model?: string }
-  | { kind: 'new'; vendor: Vendor; cwd: string; skipPersistSession?: boolean }
-  | { kind: 'fork'; vendor: Vendor; fromSessionId: string; atMessageId?: string; skipPersistSession?: boolean };
+  | { kind: 'new'; vendor: Vendor; cwd: string; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string> }
+  | { kind: 'fork'; vendor: Vendor; fromSessionId: string; atMessageId?: string; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string> };
 
 /**
  * Intent to send a turn (user message + settings).
@@ -207,8 +207,8 @@ export interface AdapterSettings {
  */
 export type SessionOpenSpec =
   | { mode: 'resume'; sessionId: string }
-  | { mode: 'fresh'; cwd: string; model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean }
-  | { mode: 'fork'; fromSessionId: string; atMessageId?: string; model?: string; skipPersistSession?: boolean; outputFormat?: TurnSettings['outputFormat'] }
+  | { mode: 'fresh'; cwd: string; model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string> }
+  | { mode: 'fork'; fromSessionId: string; atMessageId?: string; model?: string; skipPersistSession?: boolean; outputFormat?: TurnSettings['outputFormat']; mcpServers?: Record<string, unknown>; env?: Record<string, string> }
   | { mode: 'hydrated'; cwd: string; history: TranscriptEntry[]; sourceVendor: Vendor; sourceSessionId?: string; model?: string; permissionMode?: TurnSettings['permissionMode']; skipPersistSession?: boolean };
 
 // ============================================================================

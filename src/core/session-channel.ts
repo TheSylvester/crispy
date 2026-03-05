@@ -167,6 +167,16 @@ export function getChannel(channelId: string): SessionChannel | undefined {
   return channels.get(channelId);
 }
 
+/**
+ * Get all active channels (those with a bound adapter).
+ *
+ * Used by adapter-registry to propagate live configuration changes
+ * (e.g., MCP server toggle) to active sessions.
+ */
+export function getActiveChannels(): SessionChannel[] {
+  return [...channels.values()].filter((ch) => ch.adapter != null);
+}
+
 /** Destroy a channel — tears down adapter, removes from registry. */
 export function destroyChannel(channelId: string): void {
   const channel = channels.get(channelId);

@@ -7,6 +7,7 @@
  * @module adapters/claude/claude-registration
  */
 
+import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionOpenSpec, AgentAdapter } from '../../agent-adapter.js';
 import type { AdapterRegistration, HostAdapterConfig } from '../../../host/adapter-registry.js';
 import { ClaudeAgentAdapter, claudeDiscovery, getResumeModel, type SettingSource } from './claude-code-adapter.js';
@@ -23,54 +24,62 @@ let cachedBinaryPath: string | undefined;
  * closure — session-manager stays vendor-agnostic.
  */
 function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => AgentAdapter {
-  const base = {
+  // Build base per-invocation so live MCP toggle (config.mcpServers mutation) is picked up.
+  const getBase = () => ({
     ...(config.pathToClaudeCodeExecutable && {
       pathToClaudeCodeExecutable: config.pathToClaudeCodeExecutable,
     }),
-  };
+    ...(config.mcpServers && { mcpServers: config.mcpServers }),
+  });
 
   return (spec) => {
     switch (spec.mode) {
       case 'resume': {
         const model = getResumeModel(spec.sessionId);
         return new ClaudeAgentAdapter({
-          ...base, cwd: config.cwd, resume: spec.sessionId,
+          ...getBase(), cwd: config.cwd, resume: spec.sessionId,
           ...(model && { model }),
         });
       }
-      case 'fresh':
+      case 'fresh': {
+        // Ephemeral session config: Rosie (no mcpServers) gets single-turn/no tools;
+        // recall agent (with mcpServers) gets tools and multi-turn.
+        const freshEphemeral = spec.skipPersistSession
+          ? spec.mcpServers
+            ? { maxTurns: 5, settingSources: [] as SettingSource[], mcpServers: spec.mcpServers as Record<string, McpServerConfig> }
+            : { maxTurns: 1, settingSources: [] as SettingSource[], tools: [] as string[], mcpServers: undefined }
+          : {};
         return new ClaudeAgentAdapter({
-          ...base, cwd: spec.cwd,
+          ...getBase(), cwd: spec.cwd,
           ...(spec.model && { model: spec.model }),
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
           ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
           ...(spec.skipPersistSession && { skipPersistSession: true }),
-          // Ephemeral sessions (Rosie): restrict to single-turn, no tools, no settings
-          ...(spec.skipPersistSession && {
-            maxTurns: 1,
-            settingSources: [] as SettingSource[],
-            tools: [],
-          }),
+          ...(spec.env && { env: spec.env }),
+          ...freshEphemeral,
         });
-      case 'fork':
+      }
+      case 'fork': {
+        const forkEphemeral = spec.skipPersistSession
+          ? spec.mcpServers
+            ? { maxTurns: 5, settingSources: [] as SettingSource[], mcpServers: spec.mcpServers as Record<string, McpServerConfig> }
+            : { maxTurns: 1, settingSources: [] as SettingSource[], tools: [] as string[], mcpServers: undefined }
+          : {};
         return new ClaudeAgentAdapter({
-          ...base, cwd: config.cwd, resume: spec.fromSessionId, forkSession: true,
+          ...getBase(), cwd: config.cwd, resume: spec.fromSessionId, forkSession: true,
           ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
           ...(spec.skipPersistSession && { skipPersistSession: true }),
           ...(spec.outputFormat && { outputFormat: spec.outputFormat }),
           ...(spec.model && { model: spec.model }),
+          ...(spec.env && { env: spec.env }),
           // Structured output forks should complete in a single model response.
           ...(spec.outputFormat && { maxTurns: 1 }),
-          // Ephemeral sessions (Rosie): restrict to single-turn, no tools, no settings
-          ...(spec.skipPersistSession && {
-            maxTurns: 1,
-            settingSources: [] as SettingSource[],
-            tools: [],
-          }),
+          ...forkEphemeral,
         });
+      }
       case 'hydrated':
         return new ClaudeAgentAdapter({
-          ...base, cwd: spec.cwd,
+          ...getBase(), cwd: spec.cwd,
           hydratedHistory: spec.history,
           ...(spec.model && { model: spec.model }),
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),

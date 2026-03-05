@@ -18,7 +18,8 @@ export type SettingsSection =
   | 'envPresets'
   | 'cliProfiles'
   | 'turnDefaults'
-  | 'rosie';
+  | 'rosie'
+  | 'mcp';
 
 // ============================================================================
 // Preferences (globally persisted UI settings)
@@ -87,6 +88,21 @@ export interface RosieSettings {
 }
 
 // ============================================================================
+// MCP
+// ============================================================================
+
+export interface McpMemorySettings {
+  /** Enable memory MCP server on VS Code extension host. */
+  vscode: boolean;
+  /** Enable memory MCP server on dev-server host. */
+  devServer: boolean;
+}
+
+export interface McpSettings {
+  memory: McpMemorySettings;
+}
+
+// ============================================================================
 // Env Presets
 // ============================================================================
 
@@ -143,6 +159,7 @@ export interface CrispySettings {
   cliProfiles: SettingsCliProfiles;
   turnDefaults: SettingsTurnDefaults;
   rosie: RosieSettings;
+  mcp: McpSettings;
 }
 
 export interface CrispySettingsFile extends CrispySettings {
@@ -174,6 +191,7 @@ export type SettingsPatch = Partial<{
   cliProfiles: Partial<SettingsCliProfiles>;
   turnDefaults: Partial<SettingsTurnDefaults>;
   rosie: { summarize?: Partial<RosieSummarizeSettings> };
+  mcp: { memory?: Partial<McpMemorySettings> };
 }>;
 
 // ============================================================================
@@ -205,5 +223,8 @@ export const DEFAULT_SETTINGS: CrispySettings = {
   },
   rosie: {
     summarize: { enabled: false },
+  },
+  mcp: {
+    memory: { vscode: true, devServer: true },
   },
 };

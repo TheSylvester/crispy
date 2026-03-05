@@ -28,10 +28,14 @@ export function activate(context: vscode.ExtensionContext): void {
     );
   }
 
-  // Register all available adapters (Claude skipped if binary not found,
-  // Codex skipped if binary not found — both handled by available() checks)
+  // Create dispatch first — needed by adapter-registry for recall agent
+  const dispatch = createAgentDispatch();
+
+  // Register all available adapters (passes dispatch for recall tool)
   const disposeAdapters = registerAllAdapters({
     cwd,
+    hostType: 'vscode',
+    dispatch,
     ...(pathToClaudeCodeExecutable && { pathToClaudeCodeExecutable }),
   });
   context.subscriptions.push({ dispose: disposeAdapters });
@@ -63,8 +67,7 @@ export function activate(context: vscode.ExtensionContext): void {
   initSettings(providerBase).catch((err) => console.error('[crispy] Failed to load settings:', err));
   startWatchingSettings();
 
-  // Create dispatch for internal consumers (Rosie, future features)
-  const dispatch = createAgentDispatch();
+  // Wire up Rosie summarize hook
   initRosieSummarize(dispatch);
   context.subscriptions.push({
     dispose: () => {

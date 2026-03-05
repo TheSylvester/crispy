@@ -171,6 +171,13 @@ function applyPatch(current: CrispySettings, patch: SettingsPatch): CrispySettin
     }
   }
 
+  if (patch.mcp) {
+    result.mcp = { ...current.mcp };
+    if (patch.mcp.memory) {
+      result.mcp.memory = { ...current.mcp.memory, ...patch.mcp.memory };
+    }
+  }
+
   return result;
 }
 
@@ -234,6 +241,17 @@ function sanitizeSettings(data: unknown): CrispySettings {
       if (typeof rosie.model === 'string' && (rosie.model as string).trim()) {
         result.rosie.summarize.model = (rosie.model as string).trim();
       }
+    }
+  }
+
+  // MCP
+  if (settings.mcp && typeof settings.mcp === 'object') {
+    const mcp = settings.mcp as Record<string, unknown>;
+    if (mcp.memory && typeof mcp.memory === 'object') {
+      const memory = mcp.memory as Record<string, unknown>;
+      result.mcp = { memory: { ...DEFAULT_SETTINGS.mcp.memory } };
+      if (typeof memory.vscode === 'boolean') result.mcp.memory.vscode = memory.vscode;
+      if (typeof memory.devServer === 'boolean') result.mcp.memory.devServer = memory.devServer;
     }
   }
 
@@ -379,6 +397,7 @@ export function getSettingsSnapshotInternal(): SettingsSnapshot {
       cliProfiles: currentSettings.cliProfiles,
       turnDefaults: currentSettings.turnDefaults,
       rosie: currentSettings.rosie,
+      mcp: currentSettings.mcp,
     },
     revision: currentSettings.revision,
     updatedAt: currentSettings.updatedAt,

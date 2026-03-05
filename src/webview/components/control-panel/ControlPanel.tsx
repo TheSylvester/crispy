@@ -39,6 +39,7 @@ import { ForkButton } from './ForkButton.js';
 import { usePreferences } from '../../context/PreferencesContext.js';
 import { useTransport } from '../../context/TransportContext.js';
 import { useSession } from '../../context/SessionContext.js';
+import { useEnvironment } from '../../context/EnvironmentContext.js';
 import { slugToPath } from '../../hooks/useSessionCwd.js';
 import { useContextUsage } from '../../hooks/useContextUsage.js';
 import { useSessionStatus } from '../../hooks/useSessionStatus.js';
@@ -208,6 +209,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           setProviders(settingsEvent.snapshot.settings.providers);
           setRosieEnabled(settingsEvent.snapshot.settings.rosie?.summarize?.enabled ?? false);
           setRosieModel(settingsEvent.snapshot.settings.rosie?.summarize?.model);
+          const mcpMem = settingsEvent.snapshot.settings.mcp?.memory;
+          if (mcpMem) {
+            setMcpMemoryEnabled(mcpMem[mcpSettingsKey] ?? true);
+          }
           transport.getModelGroups().then(setModelGroups).catch(console.error);
         }
       });
@@ -243,6 +248,25 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const handleUpdateRosie = useCallback(async (patch: { enabled?: boolean; model?: string }) => {
       await transport.updateSettings({ rosie: { summarize: patch } });
     }, [transport]);
+
+    // --- MCP Memory settings state ---
+    const envKind = useEnvironment();
+    const mcpSettingsKey = envKind === 'vscode' ? 'vscode' : 'devServer';
+    const [mcpMemoryEnabled, setMcpMemoryEnabled] = useState(true); // default ON
+
+    useEffect(() => {
+      transport.getSettings().then((snapshot) => {
+        const mcpMem = snapshot.settings.mcp?.memory;
+        if (mcpMem) {
+          setMcpMemoryEnabled(mcpMem[mcpSettingsKey] ?? true);
+        }
+      }).catch(console.error);
+    }, [transport, mcpSettingsKey]);
+
+    const handleUpdateMcpMemory = useCallback(async (enabled: boolean) => {
+      setMcpMemoryEnabled(enabled);
+      await transport.updateSettings({ mcp: { memory: { [mcpSettingsKey]: enabled } } });
+    }, [transport, mcpSettingsKey]);
 
     // Clear forkMode when switching sessions
     useEffect(() => {
@@ -952,6 +976,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               rosieEnabled={rosieEnabled}
               rosieModel={rosieModel}
               onUpdateRosie={handleUpdateRosie}
+              mcpMemoryEnabled={mcpMemoryEnabled}
+              onUpdateMcpMemory={handleUpdateMcpMemory}
               modelGroups={modelGroups}
               providers={providers}
               onSaveProvider={async (slug, config) => { await transport.saveProvider(slug, config); }}

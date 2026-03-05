@@ -100,13 +100,14 @@ describe('migrations', () => {
     const db = getDb(dbPath);
 
     const rows = db.all('SELECT version, description FROM _migrations ORDER BY version');
-    expect(rows.length).toBe(6);
+    expect(rows.length).toBe(7);
     expect((rows[0] as Record<string, unknown>).version).toBe(1);
     expect((rows[1] as Record<string, unknown>).version).toBe(2);
     expect((rows[2] as Record<string, unknown>).version).toBe(3);
     expect((rows[3] as Record<string, unknown>).version).toBe(4);
     expect((rows[4] as Record<string, unknown>).version).toBe(5);
     expect((rows[5] as Record<string, unknown>).version).toBe(6);
+    expect((rows[6] as Record<string, unknown>).version).toBe(7);
   });
 
   it('runs migrations idempotently', () => {
@@ -119,7 +120,7 @@ describe('migrations', () => {
 
     const db = getDb(dbPath);
     const rows = db.all('SELECT version FROM _migrations ORDER BY version');
-    expect(rows.length).toBe(6);
+    expect(rows.length).toBe(7);
   });
 });
 
@@ -232,6 +233,84 @@ describe('FTS5 support', () => {
     const rows = db.all("SELECT * FROM test_fts WHERE test_fts MATCH 'hello'");
     expect(rows.length).toBe(1);
     expect((rows[0] as Record<string, unknown>).content).toBe('hello world');
+  });
+});
+
+// ============================================================================
+// FTS5 Migration (v7) — activity_fts
+// ============================================================================
+
+describe('FTS5 activity_fts (migration v7)', () => {
+  it('creates the activity_fts virtual table', () => {
+    const dbPath = join(testDir, 'crispy.db');
+    const db = getDb(dbPath);
+
+    // Verify table exists by querying sqlite_master
+    const row = db.get(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='activity_fts'",
+    ) as Record<string, unknown> | undefined;
+    expect(row).toBeDefined();
+    expect(row!.name).toBe('activity_fts');
+  });
+
+  it('syncs FTS5 on INSERT into activity_entries', () => {
+    const dbPath = join(testDir, 'crispy.db');
+    const db = getDb(dbPath);
+
+    db.run(
+      `INSERT INTO activity_entries (timestamp, kind, file, preview, quest, summary, title, entities)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['2025-06-01T10:00:00Z', 'rosie-meta', '/test.jsonl', 'test preview',
+       'implement dark mode', 'added dark theme support', 'Dark Mode', 'theme.ts, colors.css'],
+    );
+
+    const rows = db.all("SELECT * FROM activity_fts WHERE activity_fts MATCH 'dark'");
+    expect(rows.length).toBe(1);
+  });
+
+  it('returns BM25-ranked results ordered by relevance', () => {
+    const dbPath = join(testDir, 'crispy.db');
+    const db = getDb(dbPath);
+
+    // Insert entries with varying relevance to "authentication"
+    db.run(
+      `INSERT INTO activity_entries (timestamp, kind, file, preview, quest, summary, title)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ['2025-06-01T10:00:00Z', 'rosie-meta', '/a.jsonl', 'some preview',
+       'implement authentication', 'set up auth flow', 'Authentication Setup'],
+    );
+    db.run(
+      `INSERT INTO activity_entries (timestamp, kind, file, preview, quest, summary, title)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ['2025-06-01T11:00:00Z', 'prompt', '/b.jsonl',
+       'mentioned authentication in passing', null, null, null],
+    );
+
+    const rows = db.all(`
+      SELECT ae.id, bm25(activity_fts) as rank
+      FROM activity_fts
+      JOIN activity_entries ae ON ae.id = activity_fts.rowid
+      WHERE activity_fts MATCH 'authentication'
+      ORDER BY rank
+    `) as Array<Record<string, unknown>>;
+
+    expect(rows.length).toBe(2);
+    // First result should have better (more negative) rank due to quest+title+summary matches
+    expect(rows[0]!.rank as number).toBeLessThan(rows[1]!.rank as number);
+  });
+
+  it('supports Porter stemming (running matches run)', () => {
+    const dbPath = join(testDir, 'crispy.db');
+    const db = getDb(dbPath);
+
+    db.run(
+      `INSERT INTO activity_entries (timestamp, kind, file, summary)
+       VALUES (?, ?, ?, ?)`,
+      ['2025-06-01T10:00:00Z', 'rosie-meta', '/test.jsonl', 'running the test suite'],
+    );
+
+    const rows = db.all("SELECT * FROM activity_fts WHERE activity_fts MATCH 'run'");
+    expect(rows.length).toBe(1);
   });
 });
 

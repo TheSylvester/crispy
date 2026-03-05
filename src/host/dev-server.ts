@@ -13,6 +13,10 @@
  * @module dev-server
  */
 
+// Unblock nested Claude sessions — dev server is often launched from inside
+// Claude Code which sets CLAUDECODE=1, blocking child Claude processes.
+delete process.env.CLAUDECODE;
+
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join, extname } from 'node:path';
@@ -150,12 +154,14 @@ wss.on('connection', (ws: WebSocket) => {
 // Startup
 // ============================================================================
 
-// Register all available adapters
+// Create dispatch first — needed by adapter-registry for recall agent
 const cwd = process.cwd();
-registerAllAdapters({ cwd });
-
-// Create dispatch for internal consumers (Rosie, future features)
 const dispatch = createAgentDispatch();
+
+// Register all available adapters (passes dispatch for recall tool)
+registerAllAdapters({ cwd, hostType: 'dev-server', dispatch });
+
+// Wire up Rosie summarize hook
 initRosieSummarize(dispatch);
 
 // Initialize settings from ~/.config/crispy/settings.json
