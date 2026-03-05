@@ -2588,6 +2588,168 @@ h2 {
 }
 
 /* --------------------------------------------------------------------------
+   Above-input row — attachments left, rosie button right
+   -------------------------------------------------------------------------- */
+
+.crispy-cp-above-input {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.crispy-cp-above-input > .crispy-cp-rosie {
+  margin-left: auto;
+  align-self: flex-end;
+  flex-shrink: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Rosie Panel — robot icon with observability popup
+   -------------------------------------------------------------------------- */
+
+.crispy-cp-rosie {
+  position: relative;
+  display: inline-block;
+}
+
+.crispy-cp-rosie__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 12px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xl);
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground, #888);
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.crispy-cp-rosie__btn:active {
+  transform: scale(0.9);
+}
+
+/* Hover wobble — pure CSS, no React state needed */
+.crispy-cp-rosie:not(.crispy-cp-rosie--pinned):hover
+  .crispy-cp-rosie__btn {
+  color: var(--vscode-foreground, #d4d4d4);
+  animation: crispy-cp-rosie-wobble 0.5s ease;
+}
+
+/* Pinned state — highlighted (no rotation unlike gear) */
+.crispy-cp-rosie--pinned .crispy-cp-rosie__btn {
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+/* Pinned initial pop */
+.crispy-cp-rosie--pinned .crispy-cp-rosie__btn.animate-in {
+  animation: crispy-cp-rosie-pop 0.3s ease forwards;
+}
+
+/* Pinned hover wobble */
+.crispy-cp-rosie--pinned:hover .crispy-cp-rosie__btn:not(.animate-in) {
+  animation: crispy-cp-rosie-wobble 0.5s ease;
+}
+
+@keyframes crispy-cp-rosie-wobble {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  25% {
+    transform: scale(1.1) rotate(-8deg);
+  }
+  50% {
+    transform: scale(1.1) rotate(8deg);
+  }
+  75% {
+    transform: scale(1.05) rotate(-4deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes crispy-cp-rosie-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Rosie popup panel — centered on button, nudged by --popup-offset to stay in viewport */
+.crispy-cp-rosie__popup {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(calc(-50% + var(--popup-offset, 0px)));
+  min-width: 420px;
+  background: var(--bg-editor);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 500;
+  padding: 12px 16px;
+  font-size: var(--font-sm);
+}
+
+.crispy-cp-rosie__popup-header {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground, #888);
+  margin-bottom: 8px;
+}
+
+.crispy-cp-rosie__empty {
+  color: var(--vscode-descriptionForeground, #888);
+  font-style: italic;
+  padding: 16px 0;
+  text-align: center;
+}
+
+.crispy-cp-rosie__content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.crispy-cp-rosie__title {
+  font-weight: 600;
+  color: var(--fg-primary);
+  font-size: var(--font-sm);
+}
+
+.crispy-cp-rosie__quest {
+  color: var(--vscode-descriptionForeground, #aaa);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+}
+
+.crispy-cp-rosie__summary {
+  color: var(--fg-primary);
+  font-size: var(--font-xs);
+  line-height: 1.5;
+}
+
+.crispy-cp-rosie__status {
+  display: inline;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #888);
+  text-transform: lowercase;
+  font-style: italic;
+}
+
+/* --------------------------------------------------------------------------
    Fork Button — icon button with optional "Fork" text label
    -------------------------------------------------------------------------- */
 
@@ -3696,6 +3858,7 @@ h2 {
   .crispy-cp-fork__icon,
   .crispy-cp-send__icon,
   .crispy-cp-settings__btn,
+  .crispy-cp-rosie__btn,
   .crispy-titlebar__dot,
   .crispy-titlebar__dot-copied-label {
     animation: none !important;

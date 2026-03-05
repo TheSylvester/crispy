@@ -34,6 +34,7 @@ import { ModelSelect } from './ModelSelect.js';
 import { ContextWidget } from './ContextWidget.js';
 import { ChromeToggle } from './ChromeToggle.js';
 import { SettingsPopup } from './SettingsPopup.js';
+import { RosiePanel } from './RosiePanel.js';
 import { ForkButton } from './ForkButton.js';
 import { usePreferences } from '../../context/PreferencesContext.js';
 import { useTransport } from '../../context/TransportContext.js';
@@ -156,6 +157,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       }
     }, [ref]);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned, toolViewOverride, setToolViewOverride, debugMode, setDebugMode, toolPanelAutoOpen, setToolPanelAutoOpen } = usePreferences();
+    const [rosiePanelPinned, setRosiePanelPinned] = useState(false);
     const transport = useTransport();
     const { selectedSessionId, selectedCwd, setSelectedSessionId, sessions, workspaceCwdPath } = useSession();
     const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
@@ -882,10 +884,25 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         )}
         {children ?? (
           <>
-            <AttachmentsRow
-              images={state.attachedImages}
-              onRemove={(id) => dispatch({ type: 'REMOVE_IMAGE', id })}
-            />
+            <div className="crispy-cp-above-input">
+              <AttachmentsRow
+                images={state.attachedImages}
+                onRemove={(id) => dispatch({ type: 'REMOVE_IMAGE', id })}
+              />
+              {(() => {
+                const cs = sessions.find(s => s.sessionId === selectedSessionId);
+                return (
+                  <RosiePanel
+                    pinned={rosiePanelPinned}
+                    onToggle={() => setRosiePanelPinned(!rosiePanelPinned)}
+                    quest={cs?.quest}
+                    title={cs?.title}
+                    summary={cs?.botSummary}
+                    status={cs?.status}
+                  />
+                );
+              })()}
+            </div>
             <ChatInput
               value={state.input}
               attachedImages={state.attachedImages}
