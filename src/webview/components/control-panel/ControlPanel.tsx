@@ -884,25 +884,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         )}
         {children ?? (
           <>
-            <div className="crispy-cp-above-input">
-              <AttachmentsRow
-                images={state.attachedImages}
-                onRemove={(id) => dispatch({ type: 'REMOVE_IMAGE', id })}
-              />
-              {(() => {
-                const cs = sessions.find(s => s.sessionId === selectedSessionId);
-                return (
-                  <RosiePanel
-                    pinned={rosiePanelPinned}
-                    onToggle={() => setRosiePanelPinned(!rosiePanelPinned)}
-                    quest={cs?.quest}
-                    title={cs?.title}
-                    summary={cs?.botSummary}
-                    status={cs?.status}
-                  />
-                );
-              })()}
-            </div>
+            <AttachmentsRow
+              images={state.attachedImages}
+              onRemove={(id) => dispatch({ type: 'REMOVE_IMAGE', id })}
+            />
             <ChatInput
               value={state.input}
               attachedImages={state.attachedImages}
@@ -939,6 +924,19 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
                 disabled={togglesDisabled}
               />
             )}
+            {(() => {
+              const cs = sessions.find(s => s.sessionId === selectedSessionId);
+              return (
+                <RosiePanel
+                  pinned={rosiePanelPinned}
+                  onToggle={() => setRosiePanelPinned(!rosiePanelPinned)}
+                  quest={cs?.quest}
+                  title={cs?.title}
+                  summary={cs?.botSummary}
+                  status={cs?.status}
+                />
+              );
+            })()}
             <SettingsPopup
               pinned={settingsPinned}
               onToggle={() => setSettingsPinned(!settingsPinned)}

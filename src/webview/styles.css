@@ -2588,23 +2588,7 @@ h2 {
 }
 
 /* --------------------------------------------------------------------------
-   Above-input row — attachments left, rosie button right
-   -------------------------------------------------------------------------- */
-
-.crispy-cp-above-input {
-  display: flex;
-  align-items: flex-start;
-  width: 100%;
-}
-
-.crispy-cp-above-input > .crispy-cp-rosie {
-  margin-left: auto;
-  align-self: flex-end;
-  flex-shrink: 0;
-}
-
-/* --------------------------------------------------------------------------
-   Rosie Panel — robot icon with observability popup
+   Rosie Panel — robot icon with observability popup (controls row)
    -------------------------------------------------------------------------- */
 
 .crispy-cp-rosie {
@@ -2616,7 +2600,7 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 12px;
+  padding: 0 8px;
   background: transparent;
   border: none;
   border-radius: var(--radius-xl);
