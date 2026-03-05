@@ -1008,6 +1008,7 @@ h2 {
   border-radius: var(--radius-md);
   object-fit: contain;
   display: block;
+  cursor: zoom-in;
 }
 
 /* Right-align user images to match user text bubbles */
@@ -1868,6 +1869,7 @@ h2 {
   border-radius: var(--radius-md);
   font-size: var(--font-sm);
   cursor: default;
+  position: relative;
   transition:
     border-color 0.15s,
     background 0.15s;
@@ -1915,6 +1917,26 @@ h2 {
 .crispy-cp-image-chip__remove:hover {
   background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
   color: var(--vscode-errorForeground, #f48771);
+}
+
+.crispy-cp-image-chip__preview {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  transform: translateX(calc(-50% + var(--preview-offset, 0px)));
+  max-width: min(90vw, 800px);
+  max-height: 70vh;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  z-index: 500;
+  pointer-events: none;
+}
+
+.crispy-cp-image-chip:hover .crispy-cp-image-chip__preview {
+  display: block;
 }
 
 /* --------------------------------------------------------------------------
@@ -4154,6 +4176,7 @@ h2 {
   border-radius: var(--radius-md);
   object-fit: contain;
   display: block;
+  cursor: zoom-in;
 }
 
 .crispy-blocks-chrome-images {
@@ -4166,6 +4189,7 @@ h2 {
   border-radius: var(--radius-md);
   object-fit: contain;
   display: block;
+  cursor: zoom-in;
 }
 
 /* ============================================================================
@@ -4237,5 +4261,35 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
 
   /* Titlebar */
   --titlebar-bg: rgba(255, 255, 255, 0.65);
+}
+
+/* ============================================================================
+ * Image Lightbox — full-viewport overlay
+ * ============================================================================ */
+
+.crispy-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.8);
+  animation: crispy-lightbox-fadein 0.15s ease-out;
+  cursor: zoom-out;
+}
+
+@keyframes crispy-lightbox-fadein {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.crispy-lightbox__image {
+  max-width: 95vw;
+  max-height: 95vh;
+  object-fit: contain;
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+  cursor: default;
 }
 

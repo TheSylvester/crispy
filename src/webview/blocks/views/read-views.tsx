@@ -14,6 +14,8 @@ import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js
 import { FilePath } from '../../renderers/tools/shared/FilePath.js';
 import { extractResultText, extractImageBlocks, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { ToolCard } from './ToolCard.js';
+import { ImageLightbox } from '../../components/ImageLightbox.js';
+import { useLightbox } from '../../hooks/useLightbox.js';
 
 const meta = getToolData('Read');
 
@@ -69,6 +71,7 @@ export function ReadCompactView({ block, result, status }: ToolViewProps): React
 export function ReadExpandedView({ block, result, status, anchor }: ToolViewProps): ReactNode {
   const input = block.input as ReadInput;
   const filePath = input.file_path ?? '(unknown)';
+  const { lightboxSrc, openLightbox, closeLightbox } = useLightbox();
 
   // Compute line range string
   let lineRange: string | undefined;
@@ -104,14 +107,18 @@ export function ReadExpandedView({ block, result, status, anchor }: ToolViewProp
         <div className="crispy-blocks-tool-body">
           {images.length > 0 ? (
             <div className="crispy-blocks-tool-images">
-              {images.map((img, i) => (
-                <img
-                  key={i}
-                  className="crispy-blocks-tool-image"
-                  src={`data:${img.source.media_type ?? 'image/jpeg'};base64,${img.source.data}`}
-                  alt={`Image ${i + 1}`}
-                />
-              ))}
+              {images.map((img, i) => {
+                const src = `data:${img.source.media_type ?? 'image/jpeg'};base64,${img.source.data}`;
+                return (
+                  <img
+                    key={i}
+                    className="crispy-blocks-tool-image"
+                    src={src}
+                    alt={`Image ${i + 1}`}
+                    onClick={() => openLightbox(src)}
+                  />
+                );
+              })}
             </div>
           ) : (
             <pre className={`crispy-tool-result__text ${result.is_error ? 'crispy-tool-result__text--error' : ''}`}>
@@ -119,6 +126,9 @@ export function ReadExpandedView({ block, result, status, anchor }: ToolViewProp
             </pre>
           )}
         </div>
+      )}
+      {lightboxSrc && (
+        <ImageLightbox src={lightboxSrc} alt="Image preview" onClose={closeLightbox} />
       )}
     </ToolCard>
   );

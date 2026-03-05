@@ -16,6 +16,8 @@ import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js
 import { extractResultText, extractImageBlocks, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { ChromeMonoIcon } from '../../components/control-panel/icons.js';
 import { ToolCard } from './ToolCard.js';
+import { ImageLightbox } from '../../components/ImageLightbox.js';
+import { useLightbox } from '../../hooks/useLightbox.js';
 
 const CHROME_COLOR = 'linear-gradient(135deg, #EA4335, #FBBC04, #34A853)';
 const PREFIX = 'mcp__claude-in-chrome__';
@@ -270,6 +272,7 @@ export function ChromeExpandedView({ block, result, status, anchor }: ToolViewPr
   const emoji = getChromeActionEmoji(suffix, input);
   const label = getChromeBadgeLabel(suffix, input);
   const subject = getChromeSubject(suffix, input);
+  const { lightboxSrc, openLightbox, closeLightbox } = useLightbox();
 
   const resultText = extractResultText(result?.content);
   const resultSummary = result
@@ -293,14 +296,18 @@ export function ChromeExpandedView({ block, result, status, anchor }: ToolViewPr
         <div className="crispy-blocks-tool-body">
           {images.length > 0 && (
             <div className="crispy-blocks-chrome-images">
-              {images.map((img, i) => (
-                <img
-                  key={i}
-                  className="crispy-blocks-chrome-screenshot"
-                  src={`data:${img.source.media_type ?? 'image/jpeg'};base64,${img.source.data}`}
-                  alt={`Screenshot ${i + 1}`}
-                />
-              ))}
+              {images.map((img, i) => {
+                const src = `data:${img.source.media_type ?? 'image/jpeg'};base64,${img.source.data}`;
+                return (
+                  <img
+                    key={i}
+                    className="crispy-blocks-chrome-screenshot"
+                    src={src}
+                    alt={`Screenshot ${i + 1}`}
+                    onClick={() => openLightbox(src)}
+                  />
+                );
+              })}
             </div>
           )}
           {resultText && (
@@ -309,6 +316,9 @@ export function ChromeExpandedView({ block, result, status, anchor }: ToolViewPr
             </pre>
           )}
         </div>
+      )}
+      {lightboxSrc && (
+        <ImageLightbox src={lightboxSrc} alt="Chrome screenshot" onClose={closeLightbox} />
       )}
     </ToolCard>
   );

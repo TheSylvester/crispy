@@ -8,7 +8,7 @@
  * @module control-panel/AttachmentsRow
  */
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import type { AttachedImage } from './types.js';
 
 interface AttachmentsRowProps {
@@ -39,12 +39,49 @@ export function AttachmentsRow({ images, onRemove }: AttachmentsRowProps): React
     };
   }, [images]);
 
+  /** Compute horizontal nudge so the preview stays within the viewport */
+  const applyPreviewOffset = useCallback((chip: HTMLElement, preview: HTMLImageElement) => {
+    const chipRect = chip.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const previewWidth = Math.min(preview.naturalWidth || 400, vw * 0.9, 800);
+    const previewLeft = chipRect.left + chipRect.width / 2 - previewWidth / 2;
+
+    let offset = 0;
+    if (previewLeft < 8) {
+      offset = 8 - previewLeft;
+    } else if (previewLeft + previewWidth > vw - 8) {
+      offset = vw - 8 - (previewLeft + previewWidth);
+    }
+
+    chip.style.setProperty('--preview-offset', `${offset}px`);
+  }, []);
+
+  /** Nudge preview horizontally when near viewport edges */
+  const handleChipMouseEnter = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const chip = e.currentTarget;
+    const preview = chip.querySelector<HTMLImageElement>('.crispy-cp-image-chip__preview');
+    if (!preview) return;
+
+    // If the image hasn't loaded yet, calculate now with the fallback width
+    // and recalculate once dimensions are known
+    applyPreviewOffset(chip, preview);
+
+    if (!preview.naturalWidth) {
+      preview.addEventListener('load', () => applyPreviewOffset(chip, preview), { once: true });
+    }
+  }, [applyPreviewOffset]);
+
   if (images.length === 0) return null;
 
   return (
     <div className="crispy-cp-attachments" role="list" aria-label="Attached images">
       {images.map((img) => (
-        <div key={img.id} className="crispy-cp-image-chip" role="listitem">
+        <div
+          key={img.id}
+          className="crispy-cp-image-chip"
+          role="listitem"
+          onMouseEnter={handleChipMouseEnter}
+        >
           <img
             className="crispy-cp-image-chip__thumb"
             src={img.thumbnailUrl}
@@ -61,6 +98,12 @@ export function AttachmentsRow({ images, onRemove }: AttachmentsRowProps): React
           >
             ×
           </button>
+          <img
+            className="crispy-cp-image-chip__preview"
+            src={img.thumbnailUrl}
+            alt={`Preview of ${img.fileName}`}
+            loading="lazy"
+          />
         </div>
       ))}
     </div>

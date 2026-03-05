@@ -9,9 +9,12 @@
  */
 
 import type { ContentBlock, ImageBlock } from '../../core/transcript.js';
+import { ImageLightbox } from '../components/ImageLightbox.js';
+import { useLightbox } from '../hooks/useLightbox.js';
 
 export function ImageRenderer({ block }: { block: ContentBlock }): React.JSX.Element {
   const { source } = block as ImageBlock;
+  const { lightboxSrc, openLightbox, closeLightbox } = useLightbox();
 
   if (!source?.data) {
     return (
@@ -28,7 +31,14 @@ export function ImageRenderer({ block }: { block: ContentBlock }): React.JSX.Ele
 
   return (
     <div className="transcript-image">
-      <img src={dataUri} alt="Attached image" />
+      <img
+        src={dataUri}
+        alt="Attached image"
+        onClick={() => openLightbox(dataUri)}
+      />
+      {lightboxSrc && (
+        <ImageLightbox src={lightboxSrc} alt="Attached image" onClose={closeLightbox} />
+      )}
     </div>
   );
 }
