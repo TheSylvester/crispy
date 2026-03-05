@@ -934,6 +934,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
                   title={cs?.title}
                   summary={cs?.botSummary}
                   status={cs?.status}
+                  entities={cs?.entities}
                 />
               );
             })()}

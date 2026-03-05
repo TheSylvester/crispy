@@ -238,7 +238,7 @@ export class CodexDiscovery implements VendorDiscovery {
       label: thread.preview?.slice(0, 80),
       lastMessage: thread.preview,
       vendor: 'codex',
-      ...(rosie && { quest: rosie.quest, botSummary: rosie.summary, title: rosie.title, status: rosie.status }),
+      ...(rosie && { quest: rosie.quest, botSummary: rosie.summary, title: rosie.title, status: rosie.status, entities: rosie.entities }),
     };
   }
 

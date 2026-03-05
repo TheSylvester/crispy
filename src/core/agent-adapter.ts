@@ -64,6 +64,8 @@ export interface SessionInfo {
   title?: string;
   /** Rosie Bot: current work status — done, in progress, blocked. */
   status?: string;
+  /** Rosie Bot: key entities — JSON-stringified array of file paths, concepts, etc. */
+  entities?: string;
 }
 
 // ============================================================================

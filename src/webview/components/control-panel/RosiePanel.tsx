@@ -2,7 +2,7 @@
  * Rosie Observability Panel — robot icon with popup dashboard
  *
  * Robot icon with wobble hover animation. Pop animation on initial pin.
- * Popup displays Rosie bot analysis results (quest, title, summary, status).
+ * Popup displays Rosie bot analysis results (quest, title, summary, status, entities).
  * Click-outside closes popup.
  *
  * @module control-panel/RosiePanel
@@ -19,14 +19,26 @@ interface RosiePanelProps {
   title?: string;
   summary?: string;
   status?: string;
+  entities?: string;
 }
 
-export function RosiePanel({ pinned, onToggle, quest, title, summary, status }: RosiePanelProps): React.JSX.Element {
+export function RosiePanel({ pinned, onToggle, quest, title, summary, status, entities }: RosiePanelProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
 
   const popupRef = useRef<HTMLDivElement>(null);
-  const hasData = !!(quest || title || summary || status);
+  const hasData = !!(quest || title || summary || status || entities);
+
+  // Parse entities JSON array for rendering
+  const entityList: string[] = (() => {
+    if (!entities) return [];
+    try {
+      const parsed = JSON.parse(entities);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  })();
 
   // Recenter popup within viewport (same pattern as AttachmentsRow image preview)
   useEffect(() => {
@@ -102,6 +114,13 @@ export function RosiePanel({ pinned, onToggle, quest, title, summary, status }: 
               {quest && <div className="crispy-cp-rosie__quest"><CrispyMarkdown>{quest}</CrispyMarkdown></div>}
               {summary && <div className="crispy-cp-rosie__summary"><CrispyMarkdown>{summary}</CrispyMarkdown></div>}
               {status && <div className="crispy-cp-rosie__status"><CrispyMarkdown>{status}</CrispyMarkdown></div>}
+              {entityList.length > 0 && (
+                <div className="crispy-cp-rosie__entities">
+                  {entityList.map((e, i) => (
+                    <span key={i} className="crispy-cp-rosie__entity-tag">{e}</span>
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <div className="crispy-cp-rosie__empty">

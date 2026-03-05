@@ -2735,6 +2735,26 @@ h2 {
   font-style: italic;
 }
 
+.crispy-cp-rosie__entities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--vscode-editorGroup-border, rgba(255, 255, 255, 0.08));
+}
+
+.crispy-cp-rosie__entity-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--vscode-badge-background, rgba(255, 255, 255, 0.08));
+  color: var(--vscode-badge-foreground, #ccc);
+  white-space: nowrap;
+}
+
 /* --------------------------------------------------------------------------
    Fork Button — icon button with optional "Fork" text label
    -------------------------------------------------------------------------- */
