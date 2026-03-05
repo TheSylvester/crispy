@@ -83,12 +83,13 @@ export function shutdownRosie(): void {
  * Uses regex extraction — tags can appear anywhere in the response.
  * Returns null if goal or summary is missing.
  */
-function parseRosieResponse(text: string): { quest: string; title: string; summary: string } | null {
+function parseRosieResponse(text: string): { quest: string; title: string; summary: string; status: string } | null {
   const quest = text.match(/<goal>([\s\S]*?)<\/goal>/)?.[1]?.trim() ?? '';
   const title = text.match(/<title>([\s\S]*?)<\/title>/)?.[1]?.trim() ?? '';
   const summary = text.match(/<summary>([\s\S]*?)<\/summary>/)?.[1]?.trim() ?? '';
+  const status = text.match(/<status>([\s\S]*?)<\/status>/)?.[1]?.trim() ?? '';
 
-  if (quest && summary) return { quest, title, summary };
+  if (quest && summary) return { quest, title, summary, status };
   return null;
 }
 
@@ -145,6 +146,7 @@ async function runRosieAnalysis(
         quest: fields.quest,
         summary: fields.summary,
         title: fields.title,
+        status: fields.status,
       }]);
 
       // Push updated metadata to all UI subscribers
@@ -164,8 +166,10 @@ const ROSIE_PROMPT = `Consider this entire conversation so far.
 What is the stated or apparent goal of this particular conversation?
 How would you label this conversation in a short sentence for a user to best remember what this session was for?
 Summarize the last turn: Describe the User Request and your Response; including any work completed
+What is the current status of the work in this conversation? Describe where things stand right now — what's done, what's in progress, what's blocked or paused.
 
 Provide your output in this format:
 <goal>The goal of this conversation</goal>
 <title>Label the conversation</title>
-<summary>Turn summary</summary>`;
+<summary>Turn summary</summary>
+<status>Current status of the work</status>`;

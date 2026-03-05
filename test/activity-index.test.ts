@@ -329,4 +329,41 @@ describe('queryActivity', () => {
     const result = queryActivity();
     expect(result[0].uuid).toBeUndefined();
   });
+
+  it('persists and retrieves rosie-meta fields including status', () => {
+    appendActivityEntries([{
+      timestamp: '2025-01-15T10:00:00Z',
+      kind: 'rosie-meta',
+      file: '/session.jsonl',
+      preview: 'Build the tracker',
+      offset: 0,
+      quest: 'Build the project tracker MVP',
+      summary: 'User asked to implement the tracker. I created the schema.',
+      title: 'Project Tracker Implementation',
+      status: 'Schema created. Hook wiring in progress. Tests pending.',
+    }]);
+
+    const result = queryActivity(undefined, 'rosie-meta');
+    expect(result.length).toBe(1);
+    expect(result[0].quest).toBe('Build the project tracker MVP');
+    expect(result[0].summary).toBe('User asked to implement the tracker. I created the schema.');
+    expect(result[0].title).toBe('Project Tracker Implementation');
+    expect(result[0].status).toBe('Schema created. Hook wiring in progress. Tests pending.');
+  });
+
+  it('returns undefined status when not provided', () => {
+    appendActivityEntries([{
+      timestamp: '2025-01-15T10:00:00Z',
+      kind: 'rosie-meta',
+      file: '/session.jsonl',
+      preview: 'Goal text',
+      offset: 0,
+      quest: 'Some goal',
+      summary: 'Some summary',
+      title: 'Some title',
+    }]);
+
+    const result = queryActivity(undefined, 'rosie-meta');
+    expect(result[0].status).toBeUndefined();
+  });
 });

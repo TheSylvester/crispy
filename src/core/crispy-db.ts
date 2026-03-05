@@ -367,6 +367,13 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    version: 5,
+    description: 'Add status column to activity_entries for Rosie work-status tracking',
+    up: (db: Database): void => {
+      db.exec('ALTER TABLE activity_entries ADD COLUMN status TEXT');
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {

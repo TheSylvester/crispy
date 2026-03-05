@@ -50,6 +50,8 @@ export interface ActivityIndexEntry {
   summary?: string;
   /** Rosie Bot: short conversation label (rosie-meta entries only). */
   title?: string;
+  /** Rosie Bot: current work status — done, in progress, blocked (rosie-meta entries only). */
+  status?: string;
 }
 
 /**
@@ -239,8 +241,8 @@ export function appendActivityEntries(entries: ActivityIndexEntry[]): void {
   try {
     const stmt = db.prepare(
       `INSERT OR IGNORE INTO activity_entries
-       (timestamp, kind, file, preview, byte_offset, uuid, quest, summary, title)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (timestamp, kind, file, preview, byte_offset, uuid, quest, summary, title, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     try {
       for (const e of entries) {
@@ -254,6 +256,7 @@ export function appendActivityEntries(entries: ActivityIndexEntry[]): void {
           e.quest ?? null,
           e.summary ?? null,
           e.title ?? null,
+          e.status ?? null,
         ]);
       }
     } finally {
@@ -307,7 +310,7 @@ export function queryActivity(
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const sql = `SELECT timestamp, kind, file, preview, byte_offset, uuid, quest, summary, title
+    const sql = `SELECT timestamp, kind, file, preview, byte_offset, uuid, quest, summary, title, status
                  FROM activity_entries ${where} ORDER BY timestamp ASC`;
 
     const rows = db.all(sql, params.length > 0 ? params : undefined);
@@ -539,5 +542,6 @@ function rowToEntry(row: Record<string, unknown>): ActivityIndexEntry {
   if (r.quest != null) entry.quest = r.quest as string;
   if (r.summary != null) entry.summary = r.summary as string;
   if (r.title != null) entry.title = r.title as string;
+  if (r.status != null) entry.status = r.status as string;
   return entry;
 }

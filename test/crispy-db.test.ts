@@ -100,11 +100,12 @@ describe('migrations', () => {
     const db = getDb(dbPath);
 
     const rows = db.all('SELECT version, description FROM _migrations ORDER BY version');
-    expect(rows.length).toBe(4);
+    expect(rows.length).toBe(5);
     expect((rows[0] as Record<string, unknown>).version).toBe(1);
     expect((rows[1] as Record<string, unknown>).version).toBe(2);
     expect((rows[2] as Record<string, unknown>).version).toBe(3);
     expect((rows[3] as Record<string, unknown>).version).toBe(4);
+    expect((rows[4] as Record<string, unknown>).version).toBe(5);
   });
 
   it('runs migrations idempotently', () => {
@@ -117,7 +118,7 @@ describe('migrations', () => {
 
     const db = getDb(dbPath);
     const rows = db.all('SELECT version FROM _migrations ORDER BY version');
-    expect(rows.length).toBe(4);
+    expect(rows.length).toBe(5);
   });
 });
 
