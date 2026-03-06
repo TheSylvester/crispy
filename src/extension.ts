@@ -36,6 +36,7 @@ export function activate(context: vscode.ExtensionContext): void {
     cwd,
     hostType: 'vscode',
     dispatch,
+    extensionPath: context.extensionPath,
     ...(pathToClaudeCodeExecutable && { pathToClaudeCodeExecutable }),
   });
   context.subscriptions.push({ dispose: disposeAdapters });

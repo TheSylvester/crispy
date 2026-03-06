@@ -50,6 +50,17 @@ export interface HostAdapterConfig {
   mcpServerFactory?: () => Record<string, McpServerConfig>;
   /** Agent dispatch for internal consumers (recall agent, Rosie). */
   dispatch?: AgentDispatch;
+  /**
+   * Absolute path to the extension install directory (VS Code only).
+   *
+   * Used to resolve the bundled internal MCP server subprocess at
+   * dist/internal-mcp.js. Required for VS Code because process.cwd()
+   * is the user's workspace, not the extension directory. Dev server
+   * doesn't need this — it uses process.cwd() which IS the project root.
+   *
+   * Source: vscode.ExtensionContext.extensionPath in extension.ts.
+   */
+  extensionPath?: string;
 }
 
 /**
@@ -150,9 +161,40 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
   // fresh each invocation so each query gets its own McpServer instance.
   const dispatch = config.dispatch;
 
-  // Resolve internal MCP server paths once — deterministic, no need to re-resolve per-query.
-  const tsxBin = resolve(process.cwd(), 'node_modules', '.bin', 'tsx');
-  const entryPoint = resolve(process.cwd(), 'src', 'mcp', 'servers', 'internal-main.ts');
+  // -----------------------------------------------------------------------
+  // Resolve internal MCP server paths — host-dependent.
+  //
+  // The recall system spawns an internal MCP server as a stdio subprocess
+  // (via the child Claude Code session). The subprocess needs a command
+  // and script path. These differ by host:
+  //
+  // VS Code extension: Source .ts files don't exist in a packaged VSIX.
+  //   internal-main.ts is pre-bundled to dist/internal-mcp.js by the
+  //   build:internal-mcp script. Run with `node` (no tsx needed).
+  //   extensionPath is the VSIX install root, so dist/ is a sibling.
+  //
+  // Dev server: process.cwd() IS the project root (npm run dev runs from
+  //   there), so we use tsx to run the .ts source directly for fast iteration.
+  //
+  // If you're seeing recall failures, check that:
+  //   1. dist/internal-mcp.js exists (run `npm run build:internal-mcp`)
+  //   2. extensionPath is being passed from extension.ts
+  //   3. node-sqlite3-wasm is in node_modules/ (runtime dependency)
+  // -----------------------------------------------------------------------
+  let internalServerCommand: string;
+  let internalServerArgs: string[];
+
+  if (config.extensionPath) {
+    // VS Code: pre-bundled JS, run with node
+    internalServerCommand = 'node';
+    internalServerArgs = [resolve(config.extensionPath, 'dist', 'internal-mcp.js')];
+  } else {
+    // Dev server: tsx + TypeScript source from project root
+    internalServerCommand = resolve(process.cwd(), 'node_modules', '.bin', 'tsx');
+    internalServerArgs = [resolve(process.cwd(), 'src', 'mcp', 'servers', 'internal-main.ts')];
+  }
+
+  console.error(`[adapter-registry] Internal MCP server: ${internalServerCommand} ${internalServerArgs.join(' ')}`);
 
   // Build factory that creates fresh MCP server instances per-query.
   // Returns undefined when MCP is disabled or dispatch isn't available.
@@ -162,7 +204,7 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
         const server = createExternalServer(
           dispatch,
           getActiveClaudeSessionId,
-          { internalServerCommand: tsxBin, internalServerArgs: [entryPoint] },
+          { internalServerCommand, internalServerArgs },
           () => getSettingsSnapshotInternal().settings.rosie.summarize.model,
         );
         return { crispy: server };

@@ -13,7 +13,6 @@
  * @module mcp/servers/external
  */
 
-import { resolve } from 'node:path';
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod/v4';
@@ -59,22 +58,19 @@ User's query: ${query}`,
 /**
  * Build the MCP server config for the internal stdio server.
  *
- * The recall agent's child session gets this attached, giving it
- * access to the raw search tools via stdio. The stdio process is a
- * thin Node script that imports the query functions directly — no
- * nested Claude Code, just SQLite queries over MCP protocol.
+ * Paths are always provided by adapter-registry.ts, which resolves them
+ * based on host type (VS Code → bundled dist/internal-mcp.js + node,
+ * dev server → tsx + TypeScript source). No fallbacks here.
  */
 function buildInternalMcpConfig(
-  command?: string,
-  args?: string[],
+  command: string,
+  args: string[],
 ): Record<string, unknown> {
-  const tsxBin = command ?? resolve(__dirname, '..', '..', '..', 'node_modules', '.bin', 'tsx');
-  const entryArgs = args ?? [resolve(__dirname, 'internal-main.ts')];
   return {
     'crispy-memory': {
       type: 'stdio' as const,
-      command: tsxBin,
-      args: entryArgs,
+      command,
+      args,
     },
   };
 }
@@ -100,13 +96,13 @@ function textResult(data: string): { content: Array<{ type: 'text'; text: string
  *
  * @param dispatch - AgentDispatch for spawning child sessions
  * @param getActiveSessionId - Returns the current active session ID (for parent anchoring)
- * @param serverPaths - Optional overrides for the internal MCP server command/args (for bundled builds where __dirname differs)
+ * @param serverPaths - Command and args for the internal MCP server subprocess (resolved by adapter-registry based on host type)
  * @param getRosieModel - Returns the Rosie model setting ("vendor:model" or undefined for default)
  */
 export function createExternalServer(
   dispatch: AgentDispatch,
-  getActiveSessionId?: () => string | undefined,
-  serverPaths?: { internalServerCommand?: string; internalServerArgs?: string[] },
+  getActiveSessionId: () => string | undefined,
+  serverPaths: { internalServerCommand: string; internalServerArgs: string[] },
   getRosieModel?: () => string | undefined,
 ): McpSdkServerConfigWithInstance {
   return createSdkMcpServer({
@@ -146,7 +142,7 @@ export function createExternalServer(
                 allowDangerouslySkipPermissions: true,
               },
               forceNew: true,
-              mcpServers: buildInternalMcpConfig(serverPaths?.internalServerCommand, serverPaths?.internalServerArgs),
+              mcpServers: buildInternalMcpConfig(serverPaths.internalServerCommand, serverPaths.internalServerArgs),
               env: {
                 CLAUDECODE: '',                        // Bypass nested Claude Code guard
                 CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '120000',  // 120s MCP timeout

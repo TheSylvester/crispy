@@ -49,6 +49,11 @@ function createMockDispatch(result: ChildSessionResult | null = null): AgentDisp
   } as unknown as AgentDispatch;
 }
 
+const stubServerPaths = {
+  internalServerCommand: '/usr/bin/node',
+  internalServerArgs: ['/fake/dist/internal-mcp.js'],
+};
+
 async function getRecallTool() {
   const mod = await import('@anthropic-ai/claude-agent-sdk') as unknown as {
     __getTools: () => Map<string, { handler: (args: Record<string, unknown>) => Promise<unknown> }>;
@@ -71,7 +76,7 @@ describe('external MCP server — recall tool (relay pattern)', () => {
 
   it('creates a server with a recall tool', () => {
     const dispatch = createMockDispatch();
-    const server = createExternalServer(dispatch);
+    const server = createExternalServer(dispatch, () => undefined, stubServerPaths);
     expect(server).toBeDefined();
   });
 
@@ -81,7 +86,7 @@ describe('external MCP server — recall tool (relay pattern)', () => {
       text: 'You worked on JWT authentication in the Auth System session.',
     };
     const dispatch = createMockDispatch(mockResult);
-    createExternalServer(dispatch, () => 'session-abc');
+    createExternalServer(dispatch, () => 'session-abc', stubServerPaths);
 
     const recallTool = await getRecallTool();
     const result = await recallTool.handler({ query: 'authentication' });
@@ -123,7 +128,7 @@ describe('external MCP server — recall tool (relay pattern)', () => {
 
   it('returns error message when no active session', async () => {
     const dispatch = createMockDispatch();
-    createExternalServer(dispatch, () => undefined);
+    createExternalServer(dispatch, () => undefined, stubServerPaths);
 
     const recallTool = await getRecallTool();
     const result = await recallTool.handler({ query: 'anything' });
@@ -133,7 +138,7 @@ describe('external MCP server — recall tool (relay pattern)', () => {
 
   it('returns timeout message when dispatch returns null', async () => {
     const dispatch = createMockDispatch(null);
-    createExternalServer(dispatch, () => 'session-123');
+    createExternalServer(dispatch, () => 'session-123', stubServerPaths);
 
     const recallTool = await getRecallTool();
     const result = await recallTool.handler({ query: 'anything' });
