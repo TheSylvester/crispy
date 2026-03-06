@@ -116,6 +116,8 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
 
     subscribeSessionList: () => request<void>('subscribeSessionList'),
     unsubscribeSessionList: () => request<void>('unsubscribeSessionList'),
+    subscribeRosieLog: () => request<void>('subscribeRosieLog'),
+    unsubscribeRosieLog: () => request<void>('unsubscribeRosieLog'),
 
     getGitFiles: (cwd) => request<string[]>('getGitFiles', { cwd }),
     fileExists: (path) => request<boolean>('fileExists', { path }),

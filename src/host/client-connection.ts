@@ -47,6 +47,12 @@ import {
   type SessionListSubscriber,
 } from "../core/session-list-manager.js";
 import { SESSION_LIST_CHANNEL_ID } from "../core/session-list-events.js";
+import {
+  subscribeRosieLog,
+  unsubscribeRosieLog,
+  ROSIE_LOG_CHANNEL_ID,
+} from "../core/rosie/debug-log.js";
+import type { RosieLogEvent, RosieLogSubscriber } from "../core/rosie/debug-log.js";
 import { getGitFiles, fileExists, readImage, readTextFile } from "../core/file-service.js";
 import { queryActivity, getLineage, getChildSessions, getLineageGraph } from '../core/activity-index.js';
 import { readResponsePreview } from '../core/adapters/claude/jsonl-reader.js';
@@ -82,7 +88,7 @@ export type ClientMessage = {
 };
 
 /** Union of all events that can be pushed over the wire. */
-export type HostEvent = SubscriberMessage | SessionListEvent | SettingsChangedGlobalEvent;
+export type HostEvent = SubscriberMessage | SessionListEvent | SettingsChangedGlobalEvent | RosieLogEvent;
 
 /** Host → Client response or push event. */
 export type HostMessage =
@@ -123,6 +129,9 @@ export function createClientConnection(
 
   /** Global session-list subscription for this client. */
   let sessionListSub: SessionListSubscriber | null = null;
+
+  /** Global rosie-log subscription for this client. */
+  let rosieLogSub: RosieLogSubscriber | null = null;
 
   /** Flag set on dispose() to prevent re-keying after client disconnect. */
   let disposed = false;
@@ -401,6 +410,26 @@ export function createClientConnection(
         return { unsubscribed: true };
       }
 
+      case "subscribeRosieLog": {
+        if (rosieLogSub) return { subscribed: true };
+        rosieLogSub = {
+          id: clientId,
+          send(event) {
+            sendFn({ kind: "event", sessionId: ROSIE_LOG_CHANNEL_ID, event });
+          },
+        };
+        subscribeRosieLog(rosieLogSub);
+        return { subscribed: true };
+      }
+
+      case "unsubscribeRosieLog": {
+        if (rosieLogSub) {
+          unsubscribeRosieLog(rosieLogSub);
+          rosieLogSub = null;
+        }
+        return { unsubscribed: true };
+      }
+
       case "getGitFiles": {
         const cwd = params.cwd as string;
         return getGitFiles(cwd);
@@ -530,6 +559,10 @@ export function createClientConnection(
     if (sessionListSub) {
       unsubscribeSessionList(sessionListSub);
       sessionListSub = null;
+    }
+    if (rosieLogSub) {
+      unsubscribeRosieLog(rosieLogSub);
+      rosieLogSub = null;
     }
     for (const [, sub] of subscriptions) {
       try {

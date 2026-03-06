@@ -1,8 +1,9 @@
 /**
- * Rosie Observability Panel — robot icon with popup dashboard
+ * Rosie Log Panel — unified structured log stream
  *
  * Robot icon with wobble hover animation. Pop animation on initial pin.
- * Popup displays Rosie bot analysis results (quest, title, summary, status, entities).
+ * Popup displays a scrollable list of log entries (summarize results,
+ * debug info, warnings). Entries with data expand to show YAML on click.
  * Click-outside closes popup.
  *
  * @module control-panel/RosiePanel
@@ -10,50 +11,69 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { RobotIcon } from './icons.js';
-import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
+import { YamlDump } from '../../renderers/YamlDump.js';
+import type { RosieLogEntry } from '../../../core/rosie/debug-log.js';
 
 interface RosiePanelProps {
   pinned: boolean;
   onToggle: () => void;
-  quest?: string;
-  title?: string;
-  summary?: string;
-  status?: string;
-  entities?: string;
+  entries: RosieLogEntry[];
 }
 
-export function RosiePanel({ pinned, onToggle, quest, title, summary, status, entities }: RosiePanelProps): React.JSX.Element {
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function RosieLogEntryRow({ entry }: { entry: RosieLogEntry }): React.JSX.Element {
+  const [expanded, setExpanded] = useState(false);
+  const hasData = entry.data != null;
+
+  return (
+    <div
+      className={`crispy-cp-rosie__entry${hasData ? ' crispy-cp-rosie__entry--clickable' : ''}`}
+      onClick={hasData ? () => setExpanded(!expanded) : undefined}
+    >
+      <div className="crispy-cp-rosie__entry-header">
+        <span className="crispy-cp-rosie__entry-time">{formatTime(entry.ts)}</span>
+        <span className="crispy-cp-rosie__entry-source">{entry.source}</span>
+        {entry.level !== 'info' && (
+          <span className={`crispy-cp-rosie__entry-level crispy-cp-rosie__entry-level--${entry.level}`}>
+            {entry.level}
+          </span>
+        )}
+        <span className="crispy-cp-rosie__entry-summary">{entry.summary}</span>
+        {hasData && (
+          <span className={`crispy-cp-rosie__entry-chevron${expanded ? ' crispy-cp-rosie__entry-chevron--open' : ''}`}>
+            &#9656;
+          </span>
+        )}
+      </div>
+      {expanded && hasData && (
+        <pre className="crispy-cp-rosie__entry-data"><YamlDump value={entry.data} /></pre>
+      )}
+    </div>
+  );
+}
+
+export function RosiePanel({ pinned, onToggle, entries }: RosiePanelProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
-
   const popupRef = useRef<HTMLDivElement>(null);
-  const hasData = !!(quest || title || summary || status || entities);
 
-  // Parse entities JSON array for rendering
-  const entityList: string[] = (() => {
-    if (!entities) return [];
-    try {
-      const parsed = JSON.parse(entities);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  })();
-
-  // Recenter popup within viewport (same pattern as AttachmentsRow image preview)
+  // Recenter popup within viewport
   useEffect(() => {
     if (!pinned || !containerRef.current || !popupRef.current) return;
     const btnRect = containerRef.current.getBoundingClientRect();
     const popupWidth = popupRef.current.offsetWidth;
     const vw = window.innerWidth;
-    // Where the popup's left edge would be if perfectly centered on the button
     const idealLeft = btnRect.left + btnRect.width / 2 - popupWidth / 2;
 
     let offset = 0;
     if (idealLeft < 8) {
-      offset = 8 - idealLeft; // nudge right
+      offset = 8 - idealLeft;
     } else if (idealLeft + popupWidth > vw - 8) {
-      offset = vw - 8 - (idealLeft + popupWidth); // nudge left
+      offset = vw - 8 - (idealLeft + popupWidth);
     }
     containerRef.current.style.setProperty('--popup-offset', `${offset}px`);
   }, [pinned]);
@@ -99,7 +119,7 @@ export function RosiePanel({ pinned, onToggle, quest, title, summary, status, en
     >
       <button
         className={btnClass}
-        title="Rosie observability"
+        title="Rosie log stream"
         onClick={handleClick}
         onAnimationEnd={() => setJustPinned(false)}
       >
@@ -107,24 +127,16 @@ export function RosiePanel({ pinned, onToggle, quest, title, summary, status, en
       </button>
       {pinned && (
         <div ref={popupRef} className="crispy-cp-rosie__popup" onClick={(e) => e.stopPropagation()}>
-          <div className="crispy-cp-rosie__popup-header">✨ Rosie: Summarize ✨</div>
-          {hasData ? (
-            <div className="crispy-cp-rosie__content">
-              {title && <div className="crispy-cp-rosie__title">{title}</div>}
-              {quest && <div className="crispy-cp-rosie__quest"><CrispyMarkdown>{quest}</CrispyMarkdown></div>}
-              {summary && <div className="crispy-cp-rosie__summary"><CrispyMarkdown>{summary}</CrispyMarkdown></div>}
-              {status && <div className="crispy-cp-rosie__status"><CrispyMarkdown>{status}</CrispyMarkdown></div>}
-              {entityList.length > 0 && (
-                <div className="crispy-cp-rosie__entities">
-                  {entityList.map((e, i) => (
-                    <span key={i} className="crispy-cp-rosie__entity-tag">{e}</span>
-                  ))}
-                </div>
-              )}
+          <div className="crispy-cp-rosie__popup-header">Rosie Log</div>
+          {entries.length > 0 ? (
+            <div className="crispy-cp-rosie__log-list">
+              {entries.map((entry) => (
+                <RosieLogEntryRow key={entry.id} entry={entry} />
+              ))}
             </div>
           ) : (
             <div className="crispy-cp-rosie__empty">
-              No Rosie outputs yet. Summarize analysis results will appear here after a turn completes.
+              No log entries yet.
             </div>
           )}
         </div>
