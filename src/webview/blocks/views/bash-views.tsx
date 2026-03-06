@@ -23,6 +23,12 @@ interface BashInput {
   command?: string;
   description?: string;
   timeout?: number;
+  run_in_background?: boolean;
+}
+
+/** Convert ms timeout to compact label: "30s", "2min", "10min" */
+function formatTimeout(ms: number): string {
+  return ms < 60_000 ? `${Math.round(ms / 1000)}s` : `${Math.round(ms / 60_000)}min`;
 }
 
 // ============================================================================
@@ -46,6 +52,12 @@ export function BashCompactView({ block, result, status }: ToolViewProps): React
       <div className="crispy-blocks-compact-row">
         <span className="crispy-blocks-compact-icon">{meta.icon}</span>
         <ToolBadge color={meta.color} label="Bash" />
+        {input.run_in_background && (
+          <ToolBadge color="var(--vscode-badge-background, #666)" label="background" />
+        )}
+        {input.timeout != null && (
+          <ToolBadge color="var(--vscode-badge-background, #666)" label={`⏱ ${formatTimeout(input.timeout)}`} />
+        )}
         {input.description && (
           <span className="crispy-blocks-compact-description">{input.description}</span>
         )}
@@ -85,6 +97,12 @@ export function BashExpandedView({ block, result, status, anchor }: ToolViewProp
       <span className="crispy-blocks-tool-header">
         <span className="crispy-blocks-tool-icon">{meta.icon}</span>
         <ToolBadge color={meta.color} label="Bash" />
+        {input.run_in_background && (
+          <ToolBadge color="var(--vscode-badge-background, #666)" label="background" />
+        )}
+        {input.timeout != null && (
+          <ToolBadge color="var(--vscode-badge-background, #666)" label={`⏱ ${formatTimeout(input.timeout)}`} />
+        )}
         {input.description && (
           <span className="crispy-blocks-tool-description">{input.description}</span>
         )}
