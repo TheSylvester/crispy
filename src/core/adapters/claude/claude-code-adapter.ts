@@ -857,6 +857,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       // after CLAUDE_CODE_STREAM_CLOSE_TIMEOUT of inactivity (default 60s).
       // Default to 120s so long-running MCP tools don't get aborted.
       env: {
+        ...process.env,
         CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '120000',
         ...opts.env,
       },
