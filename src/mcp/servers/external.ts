@@ -57,14 +57,17 @@ User's query: ${query}`,
  * thin Node script that imports the query functions directly — no
  * nested Claude Code, just SQLite queries over MCP protocol.
  */
-function buildInternalMcpConfig(): Record<string, unknown> {
-  const tsxBin = resolve(__dirname, '..', '..', '..', 'node_modules', '.bin', 'tsx');
-  const entryPoint = resolve(__dirname, 'internal-main.ts');
+function buildInternalMcpConfig(
+  command?: string,
+  args?: string[],
+): Record<string, unknown> {
+  const tsxBin = command ?? resolve(__dirname, '..', '..', '..', 'node_modules', '.bin', 'tsx');
+  const entryArgs = args ?? [resolve(__dirname, 'internal-main.ts')];
   return {
     'crispy-memory': {
       type: 'stdio' as const,
       command: tsxBin,
-      args: [entryPoint],
+      args: entryArgs,
     },
   };
 }
@@ -90,10 +93,12 @@ function textResult(data: string): { content: Array<{ type: 'text'; text: string
  *
  * @param dispatch - AgentDispatch for spawning child sessions
  * @param getActiveSessionId - Returns the current active session ID (for parent anchoring)
+ * @param serverPaths - Optional overrides for the internal MCP server command/args (for bundled builds where __dirname differs)
  */
 export function createExternalServer(
   dispatch: AgentDispatch,
   getActiveSessionId?: () => string | undefined,
+  serverPaths?: { internalServerCommand?: string; internalServerArgs?: string[] },
 ): McpSdkServerConfigWithInstance {
   return createSdkMcpServer({
     name: 'crispy',
@@ -127,7 +132,8 @@ export function createExternalServer(
                 permissionMode: 'bypassPermissions',
                 allowDangerouslySkipPermissions: true,
               },
-              mcpServers: buildInternalMcpConfig(),
+              forceNew: true,
+              mcpServers: buildInternalMcpConfig(serverPaths?.internalServerCommand, serverPaths?.internalServerArgs),
               env: {
                 CLAUDECODE: '',                        // Bypass nested Claude Code guard
                 CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '120000',  // 120s MCP timeout

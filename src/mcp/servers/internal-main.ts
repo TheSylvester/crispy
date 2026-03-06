@@ -12,6 +12,11 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createInternalServer } from './internal.js';
 
+process.on('unhandledRejection', (err) => {
+  console.error('[internal-mcp] Unhandled rejection:', err instanceof Error ? err.message : String(err));
+  process.exit(1);
+});
+
 async function main() {
   console.error('[internal-mcp] Starting stdio server...');
   const server = createInternalServer();
@@ -21,6 +26,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('[internal-mcp] Fatal:', err);
+  console.error('[internal-mcp] Fatal:', err instanceof Error ? err.message : String(err));
   process.exit(1);
 });

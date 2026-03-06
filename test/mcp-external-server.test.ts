@@ -96,6 +96,7 @@ describe('external MCP server — recall tool (relay pattern)', () => {
     expect(callArgs.settings.model).toBe('haiku');
     expect(callArgs.settings.permissionMode).toBe('bypassPermissions');
     expect(callArgs.settings.allowDangerouslySkipPermissions).toBe(true);
+    expect(callArgs.forceNew).toBe(true);
     expect(callArgs.skipPersistSession).toBe(true);
     expect(callArgs.autoClose).toBe(true);
     expect(callArgs.timeoutMs).toBe(120_000);

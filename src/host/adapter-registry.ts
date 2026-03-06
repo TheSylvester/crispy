@@ -12,6 +12,7 @@
  * @module host/adapter-registry
  */
 
+import { resolve } from 'node:path';
 import type { AgentAdapter, VendorDiscovery, SessionOpenSpec } from '../core/agent-adapter.js';
 import type { McpServerConfig, McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
 import type { Vendor } from '../core/transcript.js';
@@ -135,7 +136,14 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
   let externalServer: McpSdkServerConfigWithInstance | undefined;
   if (config.dispatch) {
     try {
-      externalServer = createExternalServer(config.dispatch, getActiveClaudeSessionId);
+      // Resolve internal MCP server paths from cwd — works both in dev (tsx)
+      // and bundled builds where __dirname points to dist/ instead of source.
+      const tsxBin = resolve(process.cwd(), 'node_modules', '.bin', 'tsx');
+      const entryPoint = resolve(process.cwd(), 'src', 'mcp', 'servers', 'internal-main.ts');
+      externalServer = createExternalServer(config.dispatch, getActiveClaudeSessionId, {
+        internalServerCommand: tsxBin,
+        internalServerArgs: [entryPoint],
+      });
     } catch (err) {
       console.error('[adapter-registry] Failed to create external MCP server:', err);
     }

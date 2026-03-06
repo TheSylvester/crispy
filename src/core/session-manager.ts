@@ -87,6 +87,8 @@ export interface ChildSessionOptions {
   autoClose?: boolean;
   /** Timeout in ms before giving up and returning null (default: 60000). */
   timeoutMs?: number;
+  /** Force `kind: 'new'` even when vendor matches parent (skip fork transcript loading). */
+  forceNew?: boolean;
   /** MCP servers to attach to the child session (overrides default). */
   mcpServers?: Record<string, unknown>;
   /** Environment overrides for the child session. */
@@ -791,8 +793,8 @@ export async function dispatchChildSession(
   const parentInfo = findSession(parentSessionId);
   const cwd = parentInfo?.projectPath ?? process.cwd();
 
-  // Build target: fork if same vendor, new if cross-vendor
-  const target: TurnTarget = vendor === parentVendor
+  // Build target: fork if same vendor (unless forceNew), new if cross-vendor
+  const target: TurnTarget = (vendor === parentVendor && !options.forceNew)
     ? { kind: 'fork', vendor: vendor as Vendor, fromSessionId: parentSessionId, skipPersistSession, ...(options.mcpServers && { mcpServers: options.mcpServers }), ...(options.env && { env: options.env }) }
     : { kind: 'new', vendor: vendor as Vendor, cwd, skipPersistSession, ...(options.mcpServers && { mcpServers: options.mcpServers }), ...(options.env && { env: options.env }) };
 
@@ -830,15 +832,18 @@ export async function dispatchChildSession(
 
     const cleanup = () => {
       clearTimeout(timer);
-      // Always try cleanup with currentId — it's set synchronously before sendTurn.
-      const ch = getChannel(currentId);
-      if (ch) {
-        unsubscribe(ch, internalSubscriber);
-        if (autoClose) {
-          closeSession(currentId);
+      // Clean up both pendingId and currentId to handle the rekey race —
+      // if timeout fires mid-rekey, currentId may differ from pendingId.
+      for (const id of new Set([pendingId, currentId])) {
+        const ch = getChannel(id);
+        if (ch) {
+          unsubscribe(ch, internalSubscriber);
+          if (autoClose) {
+            closeSession(id);
+          }
         }
+        childSessions.delete(id);
       }
-      childSessions.delete(currentId);
     };
 
     // Diagnostics: track what the child session produced so failures are
@@ -949,7 +954,7 @@ export async function dispatchChildSession(
       })
       .catch((err) => {
         if (!settled) {
-          console.warn(`[child-session] sendTurn failed (parent: ${parentSessionId}, vendor: ${vendor}):`, err);
+          console.warn(`[child-session] sendTurn failed (parent: ${parentSessionId}, vendor: ${vendor}):`, err instanceof Error ? err.message : String(err));
           settled = true;
           cleanup();
           resolve(null);

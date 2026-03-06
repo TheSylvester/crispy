@@ -17,6 +17,38 @@ import { z } from 'zod/v4';
 import { searchSessions, listSessions, sessionContext, getDbPath } from '../memory-queries.js';
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+type McpToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: true };
+
+/** Wrap an MCP tool handler with consistent error handling and JSON serialization. */
+function wrapToolHandler<T extends unknown[]>(
+  toolName: string,
+  resultKey: string,
+  queryFn: (...args: T) => unknown[],
+): (...args: T) => McpToolResult {
+  return (...args: T): McpToolResult => {
+    try {
+      const results = queryFn(...args);
+      console.error(`[internal-mcp] ${toolName}: ${results.length} ${resultKey}`);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ [resultKey]: results, count: results.length }, null, 2) }],
+      };
+    } catch (err) {
+      console.error(`[internal-mcp] ${toolName} FAIL:`, err instanceof Error ? err.message : String(err));
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({
+          [resultKey]: [],
+          error: `${toolName} failed: ${err instanceof Error ? err.message : String(err)}`,
+        }, null, 2) }],
+        isError: true,
+      };
+    }
+  };
+}
+
+// ============================================================================
 // Server Factory
 // ============================================================================
 
@@ -37,6 +69,10 @@ export function createInternalServer(): McpServer {
   // ------------------------------------------------------------------
   // search_sessions — FTS5 search over activity entries
   // ------------------------------------------------------------------
+  const runSearch = wrapToolHandler('search_sessions', 'results',
+    (query: string, limit: number, kind?: string) => searchSessions(dbPath, query, limit, kind),
+  );
+
   server.tool(
     'search_sessions',
     'Full-text search over Crispy session activity. Searches Rosie-generated summaries, titles, quests, entities, and user prompts. Returns BM25-ranked results with match snippets.',
@@ -47,28 +83,17 @@ export function createInternalServer(): McpServer {
     },
     async (args) => {
       console.error(`[internal-mcp] search_sessions: query="${args.query}" limit=${args.limit} kind=${args.kind ?? 'all'}`);
-      try {
-        const results = searchSessions(dbPath, args.query, args.limit, args.kind);
-        console.error(`[internal-mcp] search_sessions: ${results.length} results`);
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ results, count: results.length }, null, 2) }],
-        };
-      } catch (err) {
-        console.error(`[internal-mcp] search_sessions FAIL:`, err instanceof Error ? err.message : String(err));
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({
-            results: [],
-            error: `Search failed: ${err instanceof Error ? err.message : String(err)}`,
-          }, null, 2) }],
-          isError: true,
-        };
-      }
+      return runSearch(args.query, args.limit, args.kind);
     },
   );
 
   // ------------------------------------------------------------------
   // list_sessions — List distinct sessions with latest metadata
   // ------------------------------------------------------------------
+  const runList = wrapToolHandler('list_sessions', 'sessions',
+    (limit: number, since?: string) => listSessions(dbPath, limit, since),
+  );
+
   server.tool(
     'list_sessions',
     'List distinct Crispy sessions with their latest Rosie metadata (quest, title, status). Ordered by most recent activity.',
@@ -78,17 +103,17 @@ export function createInternalServer(): McpServer {
     },
     async (args) => {
       console.error(`[internal-mcp] list_sessions: limit=${args.limit} since=${args.since ?? 'all'}`);
-      const results = listSessions(dbPath, args.limit, args.since);
-      console.error(`[internal-mcp] list_sessions: ${results.length} sessions`);
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ sessions: results, count: results.length }, null, 2) }],
-      };
+      return runList(args.limit, args.since);
     },
   );
 
   // ------------------------------------------------------------------
   // session_context — Full activity history for a specific session
   // ------------------------------------------------------------------
+  const runContext = wrapToolHandler('session_context', 'entries',
+    (file: string, kind?: string) => sessionContext(dbPath, file, kind),
+  );
+
   server.tool(
     'session_context',
     'Get the full activity history for a specific session file. Returns all prompts and Rosie summaries in chronological order.',
@@ -98,11 +123,7 @@ export function createInternalServer(): McpServer {
     },
     async (args) => {
       console.error(`[internal-mcp] session_context: file="${args.file}" kind=${args.kind ?? 'all'}`);
-      const results = sessionContext(dbPath, args.file, args.kind);
-      console.error(`[internal-mcp] session_context: ${results.length} entries`);
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ entries: results, count: results.length }, null, 2) }],
-      };
+      return runContext(args.file, args.kind);
     },
   );
 
