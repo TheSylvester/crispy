@@ -7,8 +7,8 @@
  * - VS Code extension: pre-bundled to `dist/internal-mcp.js` by the
  *   `build:internal-mcp` script, then spawned via `node dist/internal-mcp.js`
  *
- * The bundled version marks `node-sqlite3-wasm` as external because it
- * loads a .wasm file at runtime from its own package directory.
+ * The bundled version inlines node-sqlite3-wasm's JS and resolves
+ * the .wasm binary via __dirname (copied to dist/ by build:extension).
  *
  * Path resolution for spawning this process lives in adapter-registry.ts
  * (registerAllAdapters). It uses extensionPath for VS Code, process.cwd()

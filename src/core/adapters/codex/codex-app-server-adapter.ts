@@ -275,7 +275,7 @@ export class CodexAgentAdapter implements AgentAdapter {
 
     // Initialize protocol
     await this.client.request('initialize', {
-      clientInfo: { name: 'crispy', version: '0.1.4-dev.28' },
+      clientInfo: { name: 'crispy', version: '0.1.4-dev.29' },
       capabilities: { experimentalApi: true },
     });
 
