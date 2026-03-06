@@ -529,6 +529,84 @@ export function deleteDuplicateEntries(
 }
 
 // ============================================================================
+// Pruning
+// ============================================================================
+
+/**
+ * Remove all DB rows referencing file paths that no longer exist on disk.
+ *
+ * Called at the end of each scan cycle with the set of live file paths from
+ * listAllSessions(). Cleans activity_entries (FTS5 auto-cascades via trigger),
+ * scan_state, and session_lineage in a single transaction.
+ *
+ * Never throws — returns 0 on error with console.error.
+ */
+export function pruneDeletedFiles(livePaths: Set<string>): number {
+  try {
+    const db = getDb(dbPath());
+
+    // Collect all file paths referenced in the DB
+    const dbPaths = new Set<string>();
+    const scanRows = db.all('SELECT file_path FROM scan_state');
+    for (const r of scanRows) {
+      dbPaths.add((r as Record<string, unknown>).file_path as string);
+    }
+    const activityRows = db.all('SELECT DISTINCT file FROM activity_entries');
+    for (const r of activityRows) {
+      dbPaths.add((r as Record<string, unknown>).file as string);
+    }
+    const lineageRows = db.all('SELECT session_file FROM session_lineage');
+    for (const r of lineageRows) {
+      dbPaths.add((r as Record<string, unknown>).session_file as string);
+    }
+
+    // Find stale paths: in DB but not in live set
+    const stalePaths: string[] = [];
+    for (const p of dbPaths) {
+      if (!livePaths.has(p)) {
+        stalePaths.push(p);
+      }
+    }
+
+    if (stalePaths.length === 0) return 0;
+
+    db.exec('BEGIN');
+    try {
+      const delActivity = db.prepare('DELETE FROM activity_entries WHERE file = ?');
+      const delScan = db.prepare('DELETE FROM scan_state WHERE file_path = ?');
+      const delLineage = db.prepare('DELETE FROM session_lineage WHERE session_file = ?');
+      const nullParent = db.prepare('UPDATE session_lineage SET parent_file = NULL WHERE parent_file = ?');
+
+      try {
+        for (const p of stalePaths) {
+          delActivity.run([p]);
+          delScan.run([p]);
+          delLineage.run([p]);
+          nullParent.run([p]);
+        }
+      } finally {
+        delActivity.finalize();
+        delScan.finalize();
+        delLineage.finalize();
+        nullParent.finalize();
+      }
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+
+    // Invalidate rosie cache — pruned files may have had rosie-meta entries
+    rosieMetaCache = null;
+
+    return stalePaths.length;
+  } catch (err) {
+    console.error('[activity-index] pruneDeletedFiles error:', err);
+    return 0;
+  }
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
 
