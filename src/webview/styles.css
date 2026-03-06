@@ -3091,6 +3091,12 @@ h2 {
   animation: crispy-dot-pulse-amber 2s ease-in-out infinite;
 }
 
+.crispy-titlebar__dot--background {
+  background: var(--vscode-charts-blue, #6cb6ff);
+  box-shadow: 0 0 4px rgba(108, 182, 255, 0.5);
+  animation: crispy-dot-pulse-blue 4s ease-in-out infinite;
+}
+
 /* Dot wrapper — positioning context for copied label */
 .crispy-titlebar__dot-wrapper {
   position: relative;
@@ -3154,6 +3160,16 @@ h2 {
   }
   50% {
     box-shadow: 0 0 8px rgba(220, 220, 170, 0.7);
+  }
+}
+
+@keyframes crispy-dot-pulse-blue {
+  0%,
+  100% {
+    box-shadow: 0 0 4px rgba(108, 182, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 8px rgba(108, 182, 255, 0.7);
   }
 }
 

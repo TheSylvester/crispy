@@ -35,6 +35,7 @@ function mapCatchupState(state: string): SessionChannelState {
     case 'streaming':
     case 'awaiting_approval':
     case 'unattached':
+    case 'background':
       return state;
     case 'active':
       return 'streaming';
@@ -91,6 +92,9 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
             break;
           case 'awaiting_approval':
             setChannelState('awaiting_approval');
+            break;
+          case 'background':
+            setChannelState('background');
             break;
         }
       }

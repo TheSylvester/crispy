@@ -127,7 +127,9 @@ function ConnectionDot({
         ? 'crispy-titlebar__dot--idle'
         : channelState === 'awaiting_approval'
           ? 'crispy-titlebar__dot--approval'
-          : null;
+          : channelState === 'background'
+            ? 'crispy-titlebar__dot--background'
+            : null;
 
   if (!dotModifier) return null;
 
