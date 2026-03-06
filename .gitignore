@@ -1,5 +1,5 @@
 # Dependencies
-node_modules/
+node_modules
 
 # Build output
 out/
@@ -11,7 +11,7 @@ media/app.js
 media/app.js.map
 
 # Local AI reference files (not committed)
-.ai-reference/
+.ai-reference
 
 # Claude Code config (developer-specific)
 .claude/
