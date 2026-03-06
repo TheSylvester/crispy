@@ -348,7 +348,7 @@ export function scanUserMessages(
 
             prompts.push({
               timestamp: entry.timestamp || '',
-              preview: text.length > 120 ? text.slice(0, 120) : text,
+              preview: text,
               offset: lineStartOffset,
               uuid: entry.uuid,
             });
@@ -388,7 +388,7 @@ export function scanUserMessages(
             if (text && text !== 'Warmup') {
               prompts.push({
                 timestamp: entry.timestamp || '',
-                preview: text.length > 120 ? text.slice(0, 120) : text,
+                preview: text,
                 offset: lineStartOffset,
                 uuid: entry.uuid,
               });
@@ -729,6 +729,161 @@ export function readResponsePreview(
       } catch {
         // Ignore close errors
       }
+    }
+  }
+}
+
+// ============================================================================
+// Turn Content Retrieval
+// ============================================================================
+
+/** Maximum bytes per field to avoid blowup from thinking blocks / file rewrites. */
+const TURN_CONTENT_CAP = 8 * 1024;
+
+/**
+ * Extract ALL text blocks from a Claude transcript entry's content array.
+ *
+ * Unlike extractMessageText() which returns only the first text block,
+ * this concatenates all text blocks — important for assistant turns that
+ * interleave text blocks with tool_use blocks.
+ */
+function extractAllText(entry: ClaudeTranscriptEntry): string {
+  const content = entry.message?.content;
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+
+  const parts: string[] = [];
+  for (const block of content) {
+    if (block.type === 'text' && block.text) {
+      parts.push(block.text);
+    }
+  }
+  return parts.join('\n\n');
+}
+
+export interface TurnContent {
+  userPrompt: string;
+  assistantResponse: string | null;
+}
+
+/**
+ * Read the full user prompt and assistant response for a specific turn.
+ *
+ * Seeks to the given byte offset, parses the user prompt on the first line,
+ * then reads forward collecting ALL assistant text blocks until the next
+ * user message or EOF. Returns full text capped at 8KB per field.
+ *
+ * @param filePath - Path to the JSONL file
+ * @param byteOffset - Byte offset of the user prompt
+ * @returns Full turn content, or null on error
+ */
+export function readClaudeTurnContent(
+  filePath: string,
+  byteOffset: number,
+): TurnContent | null {
+  let fd: number | null = null;
+
+  try {
+    fd = fs.openSync(filePath, 'r');
+    const stat = fs.fstatSync(fd);
+    const fileSize = stat.size;
+
+    if (byteOffset >= fileSize) return null;
+
+    const buffer = Buffer.alloc(READ_BUFFER_SIZE);
+    let currentOffset = byteOffset;
+    let remainder = '';
+    let userPrompt: string | null = null;
+    const assistantParts: string[] = [];
+    let parsedFirstLine = false;
+
+    while (currentOffset < fileSize) {
+      const chunkSize = Math.min(READ_BUFFER_SIZE, fileSize - currentOffset);
+      const bytesRead = fs.readSync(fd, buffer, 0, chunkSize, currentOffset);
+      if (bytesRead === 0) break;
+
+      const chunk = remainder + buffer.toString('utf-8', 0, bytesRead);
+      const lines = chunk.split('\n');
+      remainder = lines.pop() || '';
+
+      let hitUserBoundary = false;
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        // First line is the user prompt at the offset
+        if (!parsedFirstLine) {
+          parsedFirstLine = true;
+          try {
+            const entry = JSON.parse(trimmed) as ClaudeTranscriptEntry;
+            const text = extractAllText(entry);
+            userPrompt = text.slice(0, TURN_CONTENT_CAP) || null;
+          } catch {
+            return null; // Can't parse the line at this offset
+          }
+          continue;
+        }
+
+        // Stop at next real user message
+        if (
+          trimmed.includes('"type":"user"') &&
+          !trimmed.includes('"isMeta":true') &&
+          !trimmed.includes('"toolUseResult"')
+        ) {
+          hitUserBoundary = true;
+          break;
+        }
+
+        // Collect assistant text
+        if (trimmed.includes('"type":"assistant"')) {
+          try {
+            const entry = JSON.parse(trimmed) as ClaudeTranscriptEntry;
+            if (entry.type === 'assistant') {
+              const text = extractAllText(entry);
+              if (text) assistantParts.push(text);
+            }
+          } catch {
+            // Skip malformed lines
+          }
+        }
+      }
+
+      if (hitUserBoundary) break;
+
+      currentOffset += bytesRead;
+    }
+
+    // Handle remainder
+    if (remainder.trim() && parsedFirstLine) {
+      const trimmed = remainder.trim();
+      if (trimmed.includes('"type":"assistant"')) {
+        try {
+          const entry = JSON.parse(trimmed) as ClaudeTranscriptEntry;
+          if (entry.type === 'assistant') {
+            const text = extractAllText(entry);
+            if (text) assistantParts.push(text);
+          }
+        } catch {
+          // Incomplete JSON at EOF
+        }
+      }
+    }
+
+    if (!userPrompt) return null;
+
+    const fullAssistant = assistantParts.join('\n\n');
+    return {
+      userPrompt,
+      assistantResponse: fullAssistant
+        ? fullAssistant.slice(0, TURN_CONTENT_CAP)
+        : null,
+    };
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch { /* ignore */ }
     }
   }
 }
@@ -1112,6 +1267,24 @@ export function isTrivialSession(
   const hasAssistant = messages.some((e) => e.type === "assistant");
   if (!hasAssistant && entries.length <= 3) {
     return true;
+  }
+
+  // 6. Ephemeral child session (Rosie summarize, recall agent, etc.)
+  //    The SDK writes JSONL files to disk even for `persistSession: false`
+  //    sessions. Detect these by checking if the first queue-operation's
+  //    content starts with a known ephemeral prompt prefix. We control
+  //    these prompts, so matching the prefix is reliable.
+  const firstQueueOp = entries.find(
+    (e) => e.type === "queue-operation" && (e as Record<string, unknown>).content,
+  );
+  if (firstQueueOp) {
+    const content = String((firstQueueOp as Record<string, unknown>).content);
+    if (
+      content.startsWith("Consider this entire conversation so far.") || // Rosie summarize
+      content.startsWith("You are a memory recall agent.") // Recall agent
+    ) {
+      return true;
+    }
   }
 
   // Everything else — not trivial

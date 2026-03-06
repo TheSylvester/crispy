@@ -24,12 +24,13 @@ let cachedBinaryPath: string | undefined;
  * closure — session-manager stays vendor-agnostic.
  */
 function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => AgentAdapter {
-  // Build base per-invocation so live MCP toggle (config.mcpServers mutation) is picked up.
+  // Build base per-invocation. mcpServerFactory creates fresh MCP server
+  // instances each query — avoids the SDK's "already connected" error.
   const getBase = () => ({
     ...(config.pathToClaudeCodeExecutable && {
       pathToClaudeCodeExecutable: config.pathToClaudeCodeExecutable,
     }),
-    ...(config.mcpServers && { mcpServers: config.mcpServers }),
+    ...(config.mcpServerFactory && { mcpServerFactory: config.mcpServerFactory }),
   });
 
   return (spec) => {
@@ -43,10 +44,13 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
       }
       case 'fresh': {
         // Ephemeral session config: Rosie (no mcpServers) gets single-turn/no tools;
-        // recall agent (with mcpServers) gets tools and multi-turn.
+        // recall agent (with mcpServers) gets MCP-only tools and multi-turn.
+        // tools: [] disables all built-in tools (Read, Bash, etc.) so the
+        // child can only reason + use the attached MCP server. allowedTools
+        // auto-approves the MCP calls so no permission prompts can hang.
         const freshEphemeral = spec.skipPersistSession
           ? spec.mcpServers
-            ? { maxTurns: 5, settingSources: [] as SettingSource[], mcpServers: spec.mcpServers as Record<string, McpServerConfig> }
+            ? { maxTurns: 5, settingSources: [] as SettingSource[], mcpServers: spec.mcpServers as Record<string, McpServerConfig>, tools: [] as string[], allowedTools: ['mcp__crispy_memory__*'] }
             : { maxTurns: 1, settingSources: [] as SettingSource[], tools: [] as string[], mcpServers: undefined }
           : {};
         return new ClaudeAgentAdapter({
@@ -62,7 +66,7 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
       case 'fork': {
         const forkEphemeral = spec.skipPersistSession
           ? spec.mcpServers
-            ? { maxTurns: 5, settingSources: [] as SettingSource[], mcpServers: spec.mcpServers as Record<string, McpServerConfig> }
+            ? { maxTurns: 5, settingSources: [] as SettingSource[], mcpServers: spec.mcpServers as Record<string, McpServerConfig>, tools: [] as string[], allowedTools: ['mcp__crispy_memory__*'] }
             : { maxTurns: 1, settingSources: [] as SettingSource[], tools: [] as string[], mcpServers: undefined }
           : {};
         return new ClaudeAgentAdapter({

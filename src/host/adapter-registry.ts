@@ -14,13 +14,12 @@
 
 import { resolve } from 'node:path';
 import type { AgentAdapter, VendorDiscovery, SessionOpenSpec } from '../core/agent-adapter.js';
-import type { McpServerConfig, McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { Vendor } from '../core/transcript.js';
 import { registerAdapter, unregisterAdapter } from '../core/session-manager.js';
 import { getActiveChannels } from '../core/session-channel.js';
 import { getSettingsSnapshotInternal, onSettingsChanged } from '../core/settings/index.js';
 import { createExternalServer } from '../mcp/servers/external.js';
-import { ClaudeAgentAdapter } from '../core/adapters/claude/claude-code-adapter.js';
 import type { AgentDispatch } from './agent-dispatch.js';
 
 // Import all registration descriptors
@@ -47,6 +46,8 @@ export interface HostAdapterConfig {
   hostType: 'vscode' | 'dev-server';
   /** MCP servers to inject into adapter sessions (set by registerAllAdapters). */
   mcpServers?: Record<string, McpServerConfig>;
+  /** Factory that creates fresh MCP server instances per-query. */
+  mcpServerFactory?: () => Record<string, McpServerConfig>;
   /** Agent dispatch for internal consumers (recall agent, Rosie). */
   dispatch?: AgentDispatch;
 }
@@ -103,7 +104,7 @@ const allRegistrations: AdapterRegistration[] = [
  */
 function getActiveClaudeSessionId(): string | undefined {
   for (const channel of getActiveChannels()) {
-    if (channel.adapter instanceof ClaudeAgentAdapter && channel.adapter.sessionId) {
+    if (channel.adapter?.vendor === 'claude' && channel.adapter.sessionId) {
       return channel.adapter.sessionId;
     }
   }
@@ -120,6 +121,11 @@ function getActiveClaudeSessionId(): string | undefined {
  * Iterates known registrations, checks availability, and registers each
  * available adapter. Skipped adapters are logged to stderr (not fatal).
  *
+ * MCP servers are created per-query via a factory closure rather than as
+ * a singleton. Each query() call gets a fresh McpServer instance, uses it,
+ * and closes it on teardown. This avoids the SDK's "already connected"
+ * error when Protocol.connect() is called on a reused instance.
+ *
  * Returns a dispose function that unregisters all adapters that were
  * registered. Safe to call multiple times (double-dispose is a no-op
  * since unregisterAdapter is a no-op for unregistered vendors).
@@ -131,24 +137,6 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
   const registered: string[] = [];
   const settingsKey = config.hostType === 'vscode' ? 'vscode' : 'devServer';
 
-  // Create the external MCP server (recall tool) if dispatch is available.
-  // Always created — we toggle inclusion at the adapter level based on settings.
-  let externalServer: McpSdkServerConfigWithInstance | undefined;
-  if (config.dispatch) {
-    try {
-      // Resolve internal MCP server paths from cwd — works both in dev (tsx)
-      // and bundled builds where __dirname points to dist/ instead of source.
-      const tsxBin = resolve(process.cwd(), 'node_modules', '.bin', 'tsx');
-      const entryPoint = resolve(process.cwd(), 'src', 'mcp', 'servers', 'internal-main.ts');
-      externalServer = createExternalServer(config.dispatch, getActiveClaudeSessionId, {
-        internalServerCommand: tsxBin,
-        internalServerArgs: [entryPoint],
-      });
-    } catch (err) {
-      console.error('[adapter-registry] Failed to create external MCP server:', err);
-    }
-  }
-
   // Read initial MCP setting — default to true if settings not loaded yet
   let mcpEnabled = true;
   try {
@@ -158,10 +146,36 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
     // Settings not initialized yet — use default (ON)
   }
 
-  const enrichedConfig = { ...config };
-  if (mcpEnabled && externalServer) {
-    enrichedConfig.mcpServers = { crispy: externalServer };
-    console.error(`[adapter-registry] MCP external server enabled (${config.hostType})`);
+  // Store factory deps once — the factory closure calls createExternalServer()
+  // fresh each invocation so each query gets its own McpServer instance.
+  const dispatch = config.dispatch;
+
+  // Resolve internal MCP server paths once — deterministic, no need to re-resolve per-query.
+  const tsxBin = resolve(process.cwd(), 'node_modules', '.bin', 'tsx');
+  const entryPoint = resolve(process.cwd(), 'src', 'mcp', 'servers', 'internal-main.ts');
+
+  // Build factory that creates fresh MCP server instances per-query.
+  // Returns undefined when MCP is disabled or dispatch isn't available.
+  const mcpServerFactory = dispatch
+    ? (): Record<string, McpServerConfig> => {
+        if (!mcpEnabled) return {};
+        const server = createExternalServer(
+          dispatch,
+          getActiveClaudeSessionId,
+          { internalServerCommand: tsxBin, internalServerArgs: [entryPoint] },
+          () => getSettingsSnapshotInternal().settings.rosie.summarize.model,
+        );
+        return { crispy: server };
+      }
+    : undefined;
+
+  const enrichedConfig: HostAdapterConfig = {
+    ...config,
+    ...(mcpServerFactory && { mcpServerFactory }),
+  };
+
+  if (mcpEnabled && mcpServerFactory) {
+    console.error(`[adapter-registry] MCP external server enabled via factory (${config.hostType})`);
   }
 
   for (const reg of allRegistrations) {
@@ -176,8 +190,10 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
     console.error(`[adapter-registry] ${reg.vendor} adapter registered`);
   }
 
-  // Subscribe to settings changes — toggle MCP on active Claude sessions
-  const unsubSettings = externalServer
+  // Subscribe to settings changes — toggle mcpEnabled flag.
+  // The factory checks the flag each invocation, so the toggle takes effect
+  // on the next query without needing to propagate to active sessions.
+  const unsubSettings = mcpServerFactory
     ? onSettingsChanged(({ snapshot, changedSections }) => {
         if (!changedSections.includes('mcp')) return;
 
@@ -185,23 +201,7 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
         if (newEnabled === mcpEnabled) return;
         mcpEnabled = newEnabled;
 
-        // Update config so new sessions pick up the toggle via getBase()
-        enrichedConfig.mcpServers = newEnabled ? { crispy: externalServer! } : undefined;
-
-        const newServers: Record<string, McpServerConfig> = newEnabled
-          ? { crispy: externalServer! }
-          : {};
-
-        // Propagate to all active Claude sessions
-        for (const channel of getActiveChannels()) {
-          if (channel.adapter instanceof ClaudeAgentAdapter) {
-            channel.adapter.setMcpServers(newServers).catch((err) => {
-              console.error('[adapter-registry] Failed to update MCP servers on live session:', err);
-            });
-          }
-        }
-
-        console.error(`[adapter-registry] MCP external server ${newEnabled ? 'enabled' : 'disabled'} (live update)`);
+        console.error(`[adapter-registry] MCP external server ${newEnabled ? 'enabled' : 'disabled'} (takes effect on next query)`);
       })
     : undefined;
 

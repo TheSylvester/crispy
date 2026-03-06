@@ -99,7 +99,7 @@ describe('scanUserMessages (Claude)', () => {
     expect(result.prompts[0].preview).toBe('Real prompt');
   });
 
-  it('truncates preview to 120 chars', () => {
+  it('stores full preview without truncation', () => {
     const longText = 'A'.repeat(200);
     const content = `{"type":"user","timestamp":"2024-01-01T00:00:00Z","message":{"role":"user","content":"${longText}"}}`;
 
@@ -107,8 +107,8 @@ describe('scanUserMessages (Claude)', () => {
     const result = scanUserMessages(filepath);
 
     expect(result.prompts).toHaveLength(1);
-    expect(result.prompts[0].preview).toHaveLength(120);
-    expect(result.prompts[0].preview).toBe('A'.repeat(120));
+    expect(result.prompts[0].preview).toHaveLength(200);
+    expect(result.prompts[0].preview).toBe('A'.repeat(200));
   });
 
   it('returns accurate byte offsets', () => {
@@ -287,7 +287,7 @@ describe('scanCodexUserMessages (Codex)', () => {
     expect(result.prompts[0].preview).toBe('User prompt');
   });
 
-  it('truncates preview to 120 chars', () => {
+  it('stores full preview without truncation', () => {
     const longText = 'B'.repeat(200);
     const content = `{"timestamp":"2024-01-01T00:00:00Z","type":"response_item","payload":{"role":"user","content":[{"type":"input_text","text":"${longText}"}]}}`;
 
@@ -295,8 +295,8 @@ describe('scanCodexUserMessages (Codex)', () => {
     const result = scanCodexUserMessages(filepath);
 
     expect(result.prompts).toHaveLength(1);
-    expect(result.prompts[0].preview).toHaveLength(120);
-    expect(result.prompts[0].preview).toBe('B'.repeat(120));
+    expect(result.prompts[0].preview).toHaveLength(200);
+    expect(result.prompts[0].preview).toBe('B'.repeat(200));
   });
 
   it('returns accurate byte offsets', () => {

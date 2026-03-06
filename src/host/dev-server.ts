@@ -183,6 +183,11 @@ server.listen(PORT, () => {
   setInterval(safeRunScan, 30_000);
 });
 
+// Crash guard — prevent unhandled MCP/SDK rejections from killing the process
+process.on('unhandledRejection', (reason) => {
+  console.error('[dev-server] Unhandled rejection:', reason);
+});
+
 // Cleanup on shutdown
 process.on('SIGINT', () => {
   shutdownRosieSummarize();

@@ -14,7 +14,7 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
-import { searchSessions, listSessions, sessionContext, getDbPath } from '../memory-queries.js';
+import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath } from '../memory-queries.js';
 
 // ============================================================================
 // Helpers
@@ -124,6 +124,45 @@ export function createInternalServer(): McpServer {
     async (args) => {
       console.error(`[internal-mcp] session_context: file="${args.file}" kind=${args.kind ?? 'all'}`);
       return runContext(args.file, args.kind);
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // read_turn — Read full turn content from disk
+  // ------------------------------------------------------------------
+  server.tool(
+    'read_turn',
+    'Read the full user prompt and assistant response for a specific turn. Use after search_sessions or session_context to get the actual content of a conversation turn. Returns both what the user asked and what the assistant answered.',
+    {
+      file: z.string().describe('Session transcript file path (from search results)'),
+      offset: z.number().describe('Byte offset of the turn (from search results or session_context)'),
+    },
+    async (args) => {
+      console.error(`[internal-mcp] read_turn: file="${args.file}" offset=${args.offset}`);
+      try {
+        const result = readTurnContent(args.file, args.offset);
+        if (!result) {
+          console.error('[internal-mcp] read_turn: not found');
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({ turn: null, found: false }, null, 2) }],
+            isError: true,
+          };
+        }
+        console.error(`[internal-mcp] read_turn: OK (prompt=${result.userPrompt.length} chars, response=${result.assistantResponse?.length ?? 0} chars)`);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ turn: result, found: true }, null, 2) }],
+        };
+      } catch (err) {
+        console.error('[internal-mcp] read_turn FAIL:', err instanceof Error ? err.message : String(err));
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({
+            turn: null,
+            found: false,
+            error: `read_turn failed: ${err instanceof Error ? err.message : String(err)}`,
+          }, null, 2) }],
+          isError: true,
+        };
+      }
     },
   );
 

@@ -235,16 +235,8 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
             />
           </label>
 
-          {/* --- Rosie: Summarize Section --- */}
-          <div className="crispy-cp-settings__section-header">Rosie: Summarize</div>
-          <label className="crispy-cp-settings__row">
-            <span>Enabled</span>
-            <input
-              type="checkbox"
-              checked={rosieEnabled}
-              onChange={(e) => onUpdateRosie({ enabled: e.target.checked })}
-            />
-          </label>
+          {/* --- Rosie Section --- */}
+          <div className="crispy-cp-settings__section-header">Rosie</div>
           <label className="crispy-cp-settings__row">
             <span>Model</span>
             <ModelSelect
@@ -253,11 +245,16 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               groups={modelGroups}
             />
           </label>
-
-          {/* --- MCP: Memory Section --- */}
-          <div className="crispy-cp-settings__section-header">MCP: Session Memory</div>
           <label className="crispy-cp-settings__row">
-            <span>Enabled</span>
+            <span>Summarize</span>
+            <input
+              type="checkbox"
+              checked={rosieEnabled}
+              onChange={(e) => onUpdateRosie({ enabled: e.target.checked })}
+            />
+          </label>
+          <label className="crispy-cp-settings__row">
+            <span>Recall</span>
             <input
               type="checkbox"
               checked={mcpMemoryEnabled}

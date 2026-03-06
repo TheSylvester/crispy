@@ -386,7 +386,7 @@ export function scanCodexUserMessages(
 
           prompts.push({
             timestamp: record.timestamp || '',
-            preview: text.length > 120 ? text.slice(0, 120) : text,
+            preview: text,
             offset: lineStartOffset,
             uuid: payload.id as string | undefined,
           });
@@ -431,7 +431,7 @@ export function scanCodexUserMessages(
               if (text) {
                 prompts.push({
                   timestamp: record.timestamp || '',
-                  preview: text.length > 120 ? text.slice(0, 120) : text,
+                  preview: text,
                   offset: lineStartOffset,
                   uuid: payload.id as string | undefined,
                 });
@@ -596,6 +596,161 @@ export function readCodexResponsePreview(
       } catch {
         // Ignore close errors
       }
+    }
+  }
+}
+
+// ============================================================================
+// Turn Content Retrieval
+// ============================================================================
+
+/** Maximum bytes per field to avoid blowup from thinking blocks / file rewrites. */
+const TURN_CONTENT_CAP = 8 * 1024;
+
+/**
+ * Extract ALL text blocks from a Codex response_item's content array.
+ *
+ * Concatenates all text blocks (input_text for user, output_text for assistant)
+ * rather than returning just the first one.
+ */
+function extractAllCodexText(
+  content: Array<Record<string, unknown>> | undefined,
+  textType: 'input_text' | 'output_text',
+): string {
+  if (!Array.isArray(content)) return '';
+  const parts: string[] = [];
+  for (const block of content) {
+    if (block.type === textType && typeof block.text === 'string') {
+      parts.push(block.text);
+    }
+  }
+  return parts.join('\n\n');
+}
+
+/** Same shape as Claude's TurnContent — kept as alias for vendor-prefixed exports. */
+export type CodexTurnContent = import('../claude/jsonl-reader.js').TurnContent;
+
+/**
+ * Read the full user prompt and assistant response for a specific turn.
+ *
+ * Seeks to the given byte offset, parses the user prompt on the first line,
+ * then reads forward collecting ALL assistant text blocks until the next
+ * user message or EOF. Returns full text capped at 8KB per field.
+ *
+ * @param filePath - Path to the JSONL file
+ * @param byteOffset - Byte offset of the user prompt
+ * @returns Full turn content, or null on error
+ */
+export function readCodexTurnContent(
+  filePath: string,
+  byteOffset: number,
+): CodexTurnContent | null {
+  let fd: number | null = null;
+
+  try {
+    fd = fs.openSync(filePath, 'r');
+    const stat = fs.fstatSync(fd);
+    const fileSize = stat.size;
+
+    if (byteOffset >= fileSize) return null;
+
+    const buffer = Buffer.alloc(READ_BUFFER_SIZE);
+    let currentOffset = byteOffset;
+    let remainder = '';
+    let userPrompt: string | null = null;
+    const assistantParts: string[] = [];
+    let parsedFirstLine = false;
+
+    while (currentOffset < fileSize) {
+      const chunkSize = Math.min(READ_BUFFER_SIZE, fileSize - currentOffset);
+      const bytesRead = fs.readSync(fd, buffer, 0, chunkSize, currentOffset);
+      if (bytesRead === 0) break;
+
+      const chunk = remainder + buffer.toString('utf-8', 0, bytesRead);
+      const lines = chunk.split('\n');
+      remainder = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        // First line is the user prompt at the offset
+        if (!parsedFirstLine) {
+          parsedFirstLine = true;
+          try {
+            const record = JSON.parse(trimmed) as CodexJsonlEnvelope;
+            if (record.type === 'response_item') {
+              const payload = record.payload as Record<string, unknown>;
+              const content = payload.content as Array<Record<string, unknown>> | undefined;
+              const text = extractAllCodexText(content, 'input_text');
+              userPrompt = text.slice(0, TURN_CONTENT_CAP) || null;
+            }
+          } catch {
+            return null;
+          }
+          continue;
+        }
+
+        // Stop at next user message
+        if (trimmed.includes('"role":"user"') && !trimmed.includes('"role":"developer"')) {
+          break;
+        }
+
+        // Collect assistant text
+        if (trimmed.includes('"role":"assistant"')) {
+          try {
+            const record = JSON.parse(trimmed) as CodexJsonlEnvelope;
+            if (record.type === 'response_item') {
+              const payload = record.payload as Record<string, unknown>;
+              if (payload.role === 'assistant') {
+                const content = payload.content as Array<Record<string, unknown>> | undefined;
+                const text = extractAllCodexText(content, 'output_text');
+                if (text) assistantParts.push(text);
+              }
+            }
+          } catch {
+            // Skip malformed lines
+          }
+        }
+      }
+
+      currentOffset += bytesRead;
+    }
+
+    // Handle remainder
+    if (remainder.trim() && parsedFirstLine) {
+      const trimmed = remainder.trim();
+      if (trimmed.includes('"role":"assistant"') && !trimmed.includes('"role":"user"')) {
+        try {
+          const record = JSON.parse(trimmed) as CodexJsonlEnvelope;
+          if (record.type === 'response_item') {
+            const payload = record.payload as Record<string, unknown>;
+            if (payload.role === 'assistant') {
+              const content = payload.content as Array<Record<string, unknown>> | undefined;
+              const text = extractAllCodexText(content, 'output_text');
+              if (text) assistantParts.push(text);
+            }
+          }
+        } catch {
+          // Incomplete JSON at EOF
+        }
+      }
+    }
+
+    if (!userPrompt) return null;
+
+    const fullAssistant = assistantParts.join('\n\n');
+    return {
+      userPrompt,
+      assistantResponse: fullAssistant
+        ? fullAssistant.slice(0, TURN_CONTENT_CAP)
+        : null,
+    };
+  } catch {
+    return null;
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch { /* ignore */ }
     }
   }
 }

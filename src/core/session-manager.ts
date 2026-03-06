@@ -320,6 +320,11 @@ function openChannel(channelId: string, vendor: Vendor, spec: SessionOpenSpec): 
   channel.onIdle = () => {
     const sessionId = channel.adapter?.sessionId;
     if (!sessionId) return;
+    // Child sessions (internal dispatches) don't fire lifecycle hooks.
+    // Check here — before broadcast delivers the idle event to subscribers
+    // whose cleanup() would delete the childSessions entry. The existing
+    // guard in fireResponseComplete is defense-in-depth but races with cleanup.
+    if (isChildSession(sessionId)) return;
     // Small grace period: the adapter emits idle synchronously when the SDK
     // yields the result message, but the SDK may not have flushed the JSONL
     // file to disk yet. 150ms is enough for the OS write buffer to flush.

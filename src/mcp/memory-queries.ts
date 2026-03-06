@@ -15,6 +15,10 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { getDb } from '../core/crispy-db.js';
 import { sanitizeFts5Query } from './query-sanitizer.js';
+import { readClaudeTurnContent, type TurnContent } from '../core/adapters/claude/jsonl-reader.js';
+import { readCodexTurnContent } from '../core/adapters/codex/codex-jsonl-reader.js';
+
+export type { TurnContent };
 
 // ============================================================================
 // Types
@@ -169,4 +173,19 @@ export function sessionContext(
       ${kindClause}
     ORDER BY timestamp ASC
   `, params) as unknown as ContextResult[];
+}
+
+/**
+ * Read the full user prompt and assistant response for a turn at a byte offset.
+ *
+ * Dispatches to the appropriate vendor reader based on the file path.
+ * Codex transcripts live under ~/.codex/ or contain /codex/ in the path.
+ */
+export function readTurnContent(file: string, offset: number): TurnContent | null {
+  if (file.includes('/.codex/') || file.includes('/codex/')) {
+    const result = readCodexTurnContent(file, offset);
+    if (!result) return null;
+    return { userPrompt: result.userPrompt, assistantResponse: result.assistantResponse };
+  }
+  return readClaudeTurnContent(file, offset);
 }

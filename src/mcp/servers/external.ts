@@ -19,6 +19,7 @@ import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-
 import { z } from 'zod/v4';
 import type { AgentDispatch } from '../../host/agent-dispatch.js';
 import type { ChildSessionOptions } from '../../core/session-manager.js';
+import { parseModelOption } from '../../core/model-utils.js';
 
 // ============================================================================
 // Recall Agent Prompt
@@ -33,11 +34,17 @@ You have access to MCP tools for searching session memory:
 - mcp__crispy_memory__search_sessions: Full-text search over session activity
 - mcp__crispy_memory__list_sessions: List sessions by recency
 - mcp__crispy_memory__session_context: Get detailed context for a specific session
+- mcp__crispy_memory__read_turn: Read the full user prompt and assistant response at a specific byte offset
+
+You have NO other tools. Do not attempt to read files, run commands, or use any tool besides the ones listed above.
 
 Strategy:
 1. Start by searching for the query topic using search_sessions
-2. If results look promising, drill into specific sessions using session_context
+2. If results look promising, drill into specific sessions using session_context for metadata,
+   or read_turn to see the exact conversation content
 3. Synthesize a concise answer from what you find
+
+Always cite which session(s) you found information in — include the session file path from the search results so the caller can reference the source.
 
 If you find nothing relevant, say so clearly.
 
@@ -94,11 +101,13 @@ function textResult(data: string): { content: Array<{ type: 'text'; text: string
  * @param dispatch - AgentDispatch for spawning child sessions
  * @param getActiveSessionId - Returns the current active session ID (for parent anchoring)
  * @param serverPaths - Optional overrides for the internal MCP server command/args (for bundled builds where __dirname differs)
+ * @param getRosieModel - Returns the Rosie model setting ("vendor:model" or undefined for default)
  */
 export function createExternalServer(
   dispatch: AgentDispatch,
   getActiveSessionId?: () => string | undefined,
   serverPaths?: { internalServerCommand?: string; internalServerArgs?: string[] },
+  getRosieModel?: () => string | undefined,
 ): McpSdkServerConfigWithInstance {
   return createSdkMcpServer({
     name: 'crispy',
@@ -122,13 +131,17 @@ export function createExternalServer(
           const t0 = Date.now();
 
           try {
+            // Resolve Rosie model — settings override, else default to haiku
+            const { vendor: recallVendor, model: parsedModel } = parseModelOption(getRosieModel?.() ?? '');
+            const recallModel = parsedModel || 'haiku';
+
             const options: ChildSessionOptions = {
               parentSessionId,
-              vendor: 'claude',
+              vendor: recallVendor,
               parentVendor: 'claude',
               prompt: buildRecallPrompt(args.query),
               settings: {
-                model: 'haiku',
+                model: recallModel,
                 permissionMode: 'bypassPermissions',
                 allowDangerouslySkipPermissions: true,
               },

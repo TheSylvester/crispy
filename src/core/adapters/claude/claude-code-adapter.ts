@@ -42,6 +42,7 @@ import type {
   PermissionMode,
   PermissionUpdate,
   McpServerConfig,
+  McpSdkServerConfigWithInstance,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources';
 
@@ -224,8 +225,10 @@ export interface ClaudeSessionOptions {
 
   // --- MCP servers ---
 
-  /** MCP server configurations */
+  /** MCP server configurations (static — used by ephemeral child sessions). */
   mcpServers?: Record<string, McpServerConfig>;
+  /** Factory that creates fresh MCP server instances per-query. */
+  mcpServerFactory?: () => Record<string, McpServerConfig>;
   /** Enforce strict MCP validation */
   strictMcpConfig?: boolean;
 
@@ -325,12 +328,6 @@ export interface McpServerStatus {
   error?: string;
 }
 
-export interface McpSetServersResult {
-  added: string[];
-  removed: string[];
-  errors: Record<string, string>;
-}
-
 export interface RewindFilesResult {
   canRewind: boolean;
   error?: string;
@@ -416,6 +413,8 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   private pendingSendCount = 0;
   /** Path to synthetic JSONL file written for hydrated sessions (cleaned up on close). */
   private syntheticSessionPath: string | undefined;
+  /** MCP servers created for the current query — closed on teardown. */
+  private activeMcpServers: Record<string, McpServerConfig> | null = null;
 
   private readonly options: ClaudeSessionOptions;
 
@@ -754,9 +753,29 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     await this.requireQuery('toggleMcpServer').toggleMcpServer(serverName, enabled);
   }
 
-  /** Dynamically set MCP servers. */
-  async setMcpServers(servers: Record<string, McpServerConfig>): Promise<McpSetServersResult> {
-    return await this.requireQuery('setMcpServers').setMcpServers(servers) as McpSetServersResult;
+  /**
+   * Close active MCP servers created for the current query.
+   *
+   * Idempotent — safe to call multiple times (null-checks + null-out).
+   * Fire-and-forget: close errors are logged but don't propagate.
+   */
+  private closeMcpServers(): void {
+    const servers = this.activeMcpServers;
+    if (!servers) return;
+    this.activeMcpServers = null;
+
+    for (const [name, config] of Object.entries(servers)) {
+      if (this.isSdkServer(config)) {
+        config.instance.close().catch((err: unknown) => {
+          console.error(`[claude-adapter] Failed to close MCP server '${name}':`, err);
+        });
+      }
+    }
+  }
+
+  /** Type guard: narrow McpServerConfig to SDK-type with a closeable instance. */
+  private isSdkServer(config: McpServerConfig): config is McpSdkServerConfigWithInstance {
+    return 'instance' in config;
   }
 
   // --------------------------------------------------------------------------
@@ -775,6 +794,24 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     this._contextUsage = null;
 
     const opts = this.options;
+
+    // Resolve MCP servers for this query:
+    // - Ephemeral child sessions (recall/Rosie) use static opts.mcpServers
+    // - Regular sessions call the factory for fresh instances each query
+    this.closeMcpServers(); // Clean up any leftover from a prior query
+    if (opts.mcpServers) {
+      this.activeMcpServers = opts.mcpServers;
+    } else if (opts.mcpServerFactory) {
+      try {
+        const servers = opts.mcpServerFactory();
+        this.activeMcpServers = Object.keys(servers).length ? servers : null;
+      } catch (err) {
+        console.error('[claude-adapter] Failed to create MCP servers:', err);
+        this.activeMcpServers = null;
+      }
+    } else {
+      this.activeMcpServers = null;
+    }
 
     // Build SDK options — map all ClaudeSessionOptions fields, apply defaults,
     // then lock adapter invariants (abortController, canUseTool, includePartialMessages)
@@ -828,8 +865,9 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       ...(opts.agents && { agents: opts.agents }),
       ...(opts.agent && { agent: opts.agent }),
 
-      // MCP servers
-      ...(opts.mcpServers && { mcpServers: opts.mcpServers }),
+      // MCP servers — resolved in startQuery() from static mcpServers (ephemeral)
+      // or factory (regular sessions).
+      ...(this.activeMcpServers && { mcpServers: this.activeMcpServers }),
       ...(opts.strictMcpConfig !== undefined && { strictMcpConfig: opts.strictMcpConfig }),
 
       // Plugins
@@ -909,6 +947,9 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   }
 
   private teardownQuery(): void {
+    // Close MCP servers before tearing down the query — fire-and-forget
+    this.closeMcpServers();
+
     // Abort the active query
     this.abortController?.abort();
     this.abortController = null;
@@ -969,6 +1010,9 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       // Query ended (normally or via error) — clean up and go idle.
       // Only mutate instance state if no newer query has started.
       if (this.queryGeneration === generation) {
+        // Close MCP servers — idempotent, safe even if teardownQuery already called it
+        this.closeMcpServers();
+
         // Clear pending approvals (same cleanup as teardownQuery).
         const pendingEntries = [...this.pendingApprovals.values()];
         this.pendingApprovals.clear();

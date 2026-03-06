@@ -132,6 +132,26 @@ describe('isTrivialSession', () => {
     expect(isTrivialSession(entries, 200)).toBe(true);
   });
 
+  it('detects Rosie summarize ephemeral session', () => {
+    const entries = [
+      makeEntry('queue-operation', { content: 'Consider this entire conversation so far.\nWhat is the stated or apparent goal...' }),
+      makeEntry('queue-operation'),
+      makeUser('Consider this entire conversation so far.\nWhat is the stated or apparent goal...'),
+      makeAssistant('<goal>Fix the bug</goal><summary>Fixed it</summary>'),
+    ];
+    expect(isTrivialSession(entries, 4500)).toBe(true);
+  });
+
+  it('detects recall agent ephemeral session', () => {
+    const entries = [
+      makeEntry('queue-operation', { content: 'You are a memory recall agent. Your job is to search...' }),
+      makeEntry('queue-operation'),
+      makeUser('You are a memory recall agent. Your job is to search...'),
+      makeAssistant('Based on your past sessions, I found...'),
+    ];
+    expect(isTrivialSession(entries, 6000)).toBe(true);
+  });
+
   // -- Non-trivial cases --
 
   it('keeps unparseable file (0 entries, >0 bytes)', () => {
