@@ -1119,12 +1119,10 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       };
       const totalTokens = tokens.input + tokens.output + tokens.cacheCreation + tokens.cacheRead;
       const cw = this._contextUsage?.contextWindow ?? 200_000;
-      const cwSource = this._contextUsage?.contextWindowSource ?? 'default';
       this._contextUsage = {
         tokens,
         totalTokens,
         contextWindow: cw,
-        contextWindowSource: cwSource,
         percent: Math.min(Math.round((totalTokens / cw) * 100), 100),
         totalCostUsd: this._contextUsage?.totalCostUsd,
       };
@@ -1184,7 +1182,6 @@ export class ClaudeAgentAdapter implements AgentAdapter {
           this._contextUsage = {
             ...this._contextUsage,
             contextWindow: mu.contextWindow,
-            contextWindowSource: 'sdk',
             percent: Math.min(Math.round((this._contextUsage.totalTokens / mu.contextWindow) * 100), 100),
           };
           break;
