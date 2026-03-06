@@ -17,6 +17,7 @@ import { getSettingsSnapshotInternal } from '../settings/index.js';
 import { parseModelOption } from '../model-utils.js';
 import { appendActivityEntries } from '../activity-index.js';
 import { refreshAndNotify } from '../session-list-manager.js';
+import { pushRosieLog } from './debug-log.js';
 
 // ============================================================================
 // Module State
@@ -153,6 +154,12 @@ async function runSummarizeAnalysis(
 
       if (!result) {
         console.warn(`[rosie.summarize] FAIL attempt ${attempt}/${MAX_ATTEMPTS}: dispatchChild returned null`);
+        pushRosieLog({
+          source: 'summarize',
+          level: 'warn',
+          summary: `Summarize failed: no response (attempt ${attempt}/${MAX_ATTEMPTS})`,
+          data: { sessionId, attempt },
+        });
         continue;
       }
 
@@ -161,6 +168,12 @@ async function runSummarizeAnalysis(
       const fields = parseSummarizeResponse(result.text);
       if (!fields) {
         console.warn(`[rosie.summarize] FAIL parse: could not extract quest/summary from response: ${result.text.slice(0, 300)}`);
+        pushRosieLog({
+          source: 'summarize',
+          level: 'warn',
+          summary: `Summarize failed: parse error (attempt ${attempt}/${MAX_ATTEMPTS})`,
+          data: { sessionId, attempt, responseSnippet: result.text.slice(0, 300) },
+        });
         continue;
       }
 
@@ -180,9 +193,32 @@ async function runSummarizeAnalysis(
 
       // Push updated metadata to all UI subscribers
       refreshAndNotify(sessionId);
+
+      // Push to rosie log stream
+      let parsedEntities: string[] = [];
+      try { parsedEntities = JSON.parse(fields.entities); } catch { /* keep empty */ }
+      pushRosieLog({
+        source: 'summarize',
+        level: 'info',
+        summary: `Summarize: ${fields.title || fields.quest}`,
+        data: {
+          quest: fields.quest,
+          title: fields.title,
+          summary: fields.summary,
+          status: fields.status,
+          entities: parsedEntities,
+          sessionId,
+        },
+      });
       return;
     } catch (err) {
       console.warn(`[rosie.summarize] FAIL attempt ${attempt}/${MAX_ATTEMPTS} threw:`, err);
+      pushRosieLog({
+        source: 'summarize',
+        level: 'error',
+        summary: `Summarize failed: ${err instanceof Error ? err.message : String(err)}`,
+        data: { sessionId, attempt, error: String(err) },
+      });
     }
   }
 }

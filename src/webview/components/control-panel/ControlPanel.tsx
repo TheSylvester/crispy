@@ -43,6 +43,7 @@ import { useEnvironment } from '../../context/EnvironmentContext.js';
 import { slugToPath } from '../../hooks/useSessionCwd.js';
 import { useContextUsage } from '../../hooks/useContextUsage.js';
 import { useSessionStatus } from '../../hooks/useSessionStatus.js';
+import { useRosieLog } from '../../hooks/useRosieLog.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent, TurnTarget } from '../../../core/agent-adapter.js';
@@ -159,6 +160,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     }, [ref]);
     const { renderMode, setRenderMode, settingsPinned, setSettingsPinned, toolViewOverride, setToolViewOverride, debugMode, setDebugMode, toolPanelAutoOpen, setToolPanelAutoOpen } = usePreferences();
     const [rosiePanelPinned, setRosiePanelPinned] = useState(false);
+    const rosieLogEntries = useRosieLog();
     const transport = useTransport();
     const { selectedSessionId, selectedCwd, setSelectedSessionId, sessions, workspaceCwdPath } = useSession();
     const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
@@ -941,6 +943,11 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           />
           <span className="crispy-cp-right">
             <ContextWidget percent={state.contextPercent} contextUsage={state.contextUsage} compact={compact} />
+            <RosiePanel
+              pinned={rosiePanelPinned}
+              onToggle={() => setRosiePanelPinned(!rosiePanelPinned)}
+              entries={rosieLogEntries}
+            />
             {parseModelOption(state.model).vendor === 'claude' && (
               <ChromeToggle
                 checked={state.chromeEnabled}
@@ -948,20 +955,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
                 disabled={togglesDisabled}
               />
             )}
-            {(() => {
-              const cs = sessions.find(s => s.sessionId === selectedSessionId);
-              return (
-                <RosiePanel
-                  pinned={rosiePanelPinned}
-                  onToggle={() => setRosiePanelPinned(!rosiePanelPinned)}
-                  quest={cs?.quest}
-                  title={cs?.title}
-                  summary={cs?.botSummary}
-                  status={cs?.status}
-                  entities={cs?.entities}
-                />
-              );
-            })()}
             <SettingsPopup
               pinned={settingsPinned}
               onToggle={() => setSettingsPinned(!settingsPinned)}
