@@ -103,6 +103,10 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
           );
           return next;
         });
+      } else if (event.type === 'session_list_remove') {
+        const removedId = event.sessionId;
+        setSessions((prev) => prev.filter((s) => s.sessionId !== removedId));
+        setSelectedSessionId((prev) => (prev === removedId ? null : prev));
       }
     });
 

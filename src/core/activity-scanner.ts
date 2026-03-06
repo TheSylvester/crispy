@@ -25,6 +25,7 @@ import {
   recordLineage,
   getAllLineageFiles,
   deleteDuplicateEntries,
+  pruneDeletedFiles,
   type ActivityIndexEntry,
 } from './activity-index.js';
 import {
@@ -162,5 +163,15 @@ export function runScan(): void {
   // Persist scan state (atomic write)
   if (stateChanged) {
     saveScanState(state);
+  }
+
+  // Prune DB rows for files that no longer exist on disk
+  const livePaths = new Set<string>();
+  for (const s of sessions) {
+    if (s.path) livePaths.add(s.path);
+  }
+  const pruned = pruneDeletedFiles(livePaths);
+  if (pruned > 0) {
+    console.log(`[activity-scanner] Pruned ${pruned} deleted session file(s) from DB`);
   }
 }

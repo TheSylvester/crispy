@@ -75,6 +75,20 @@ export function notifyUpsert(session: SessionInfo): void {
   }
 }
 
+/** Remove a session from the cache and broadcast removal to all subscribers. */
+function notifyRemoval(sessionId: string): void {
+  knownSessions.delete(sessionId);
+
+  const event: SessionListEvent = { type: 'session_list_remove', sessionId };
+  for (const [, sub] of subscribers) {
+    try {
+      sub.send(event);
+    } catch {
+      // Bad subscriber — swallow error, don't crash the manager
+    }
+  }
+}
+
 /**
  * Re-read a session's metadata from disk and push an upsert if found.
  *
@@ -128,17 +142,32 @@ function seedCache(): void {
   }
 }
 
-/** Rescan and emit upserts for new/changed sessions. */
+/** Rescan and emit upserts for new/changed sessions, removals for disappeared ones. */
 function rescan(): void {
   try {
     const all = listAllSessions();
+
+    // Build set of live IDs from this scan
+    const liveIds = new Set<string>();
     for (const session of all) {
+      liveIds.add(session.sessionId);
       const known = knownSessions.get(session.sessionId);
       const modifiedAt = session.modifiedAt.getTime();
 
       if (!known || known.modifiedAt !== modifiedAt) {
         notifyUpsert(session);
       }
+    }
+
+    // Detect disappeared sessions: in cache but not in live set
+    const staleIds: string[] = [];
+    for (const id of knownSessions.keys()) {
+      if (!liveIds.has(id)) {
+        staleIds.push(id);
+      }
+    }
+    for (const id of staleIds) {
+      notifyRemoval(id);
     }
   } catch {
     // Discovery error — skip this cycle, try again next interval
