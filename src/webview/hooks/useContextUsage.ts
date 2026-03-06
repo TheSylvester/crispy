@@ -40,7 +40,6 @@ export function computeContextFromEntries(entries: TranscriptEntry[]): ContextUs
         tokens: { input, output, cacheCreation, cacheRead },
         totalTokens,
         contextWindow,
-        contextWindowSource: 'default',
         percent,
       };
     }

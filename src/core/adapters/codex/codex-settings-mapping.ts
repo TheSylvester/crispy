@@ -176,7 +176,6 @@ export function mapTokenUsage(usage: Record<string, unknown>): ContextUsage {
     },
     totalTokens,
     contextWindow: modelContextWindow,
-    contextWindowSource: 'sdk',
     percent: Math.min(Math.round((totalTokens / modelContextWindow) * 100), 100),
     // totalCostUsd: omitted — Codex doesn't provide cost information
   };

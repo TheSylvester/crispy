@@ -509,8 +509,6 @@ export interface ContextUsage {
   totalTokens: number;
   /** Model's context window size in tokens */
   contextWindow: number;
-  /** Where the contextWindow value came from */
-  contextWindowSource: 'sdk' | 'default';
   /** Percentage of context used (0–100, capped) */
   percent: number;
   /** Total session cost in USD (from SDK result messages) */
