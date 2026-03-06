@@ -89,7 +89,7 @@ export interface Subscriber {
  * - streaming:  Actively consuming messages (adapter status is active).
  * - awaiting_approval: One or more pending approval requests from the adapter.
  */
-export type SessionChannelState = 'unattached' | 'idle' | 'streaming' | 'awaiting_approval';
+export type SessionChannelState = 'unattached' | 'idle' | 'streaming' | 'awaiting_approval' | 'background';
 
 
 // ============================================================================
@@ -331,6 +331,11 @@ function broadcastAndTrack(channel: SessionChannel, msg: ChannelMessage): void {
           channel.state = 'awaiting_approval';
           break;
         }
+        case 'background':
+          channel.pendingApprovals.clear();
+          channel.state = 'background';
+          // Do NOT fire onIdle — background tasks are still running
+          break;
       }
     }
     // notification events: no internal state change needed (just pass through)

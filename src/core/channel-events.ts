@@ -16,7 +16,7 @@
 // Channel Status (sticky state transitions)
 // ============================================================================
 
-export type ChannelStatus = 'idle' | 'active' | 'awaiting_approval';
+export type ChannelStatus = 'idle' | 'active' | 'awaiting_approval' | 'background';
 
 export interface IdleEvent {
   type: 'status';
@@ -26,6 +26,11 @@ export interface IdleEvent {
 export interface ActiveEvent {
   type: 'status';
   status: 'active';
+}
+
+export interface BackgroundEvent {
+  type: 'status';
+  status: 'background';
 }
 
 // ============================================================================
@@ -57,7 +62,7 @@ export interface AwaitingApprovalEvent {
   options: ApprovalOption[];
 }
 
-export type StatusEvent = IdleEvent | ActiveEvent | AwaitingApprovalEvent;
+export type StatusEvent = IdleEvent | ActiveEvent | BackgroundEvent | AwaitingApprovalEvent;
 
 // ============================================================================
 // Channel Notifications (point-in-time events)

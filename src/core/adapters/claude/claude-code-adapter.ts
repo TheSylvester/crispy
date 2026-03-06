@@ -35,6 +35,7 @@ import type {
   SDKStatusMessage,
   SDKCompactBoundaryMessage,
   SDKTaskStartedMessage,
+  SDKTaskNotificationMessage,
   SDKTaskProgressMessage,
   SDKLocalCommandOutputMessage,
   SDKElicitationCompleteMessage,
@@ -415,6 +416,8 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   private syntheticSessionPath: string | undefined;
   /** MCP servers created for the current query — closed on teardown. */
   private activeMcpServers: Record<string, McpServerConfig> | null = null;
+  /** Number of background agents/tasks currently running. */
+  private backgroundTaskCount = 0;
 
   private readonly options: ClaudeSessionOptions;
 
@@ -632,6 +635,8 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       this.syntheticSessionPath = undefined;
     }
 
+    // Reset background counter — adapter teardown always goes fully idle
+    this.backgroundTaskCount = 0;
     this.emitStatus('idle');
     this.outputQueue.done();
   }
@@ -1024,7 +1029,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         this.inputQueue = null;
         this.abortController = null;
         if (!this._closed) {
-          this.emitStatus('idle');
+          this.emitStatus(this.backgroundTaskCount > 0 ? 'background' : 'idle');
         }
       }
     }
@@ -1196,17 +1201,18 @@ export class ClaudeAgentAdapter implements AgentAdapter {
 
     this.emitEntry(msg);
 
-    // Result marks end-of-turn — transition to idle so subscribers know
-    // streaming has stopped. The query stays alive (waiting for next user
-    // input via inputQueue), so drainOutput's finally block won't fire
-    // until the query is fully closed/aborted.
-    this.emitStatus('idle');
+    // Result marks end-of-turn — transition to idle (or background if agents
+    // are still running) so subscribers know streaming has stopped. The query
+    // stays alive (waiting for next user input via inputQueue), so
+    // drainOutput's finally block won't fire until the query is fully
+    // closed/aborted.
+    this.emitStatus(this.backgroundTaskCount > 0 ? 'background' : 'idle');
   }
 
   private handleSystemMessage(msg: SDKMessage): void {
     const systemMsg = msg as
       | SDKSystemMessage | SDKStatusMessage | SDKCompactBoundaryMessage
-      | SDKTaskStartedMessage | SDKTaskProgressMessage
+      | SDKTaskStartedMessage | SDKTaskNotificationMessage | SDKTaskProgressMessage
       | SDKLocalCommandOutputMessage | SDKElicitationCompleteMessage;
 
     if (!('subtype' in systemMsg)) {
@@ -1298,8 +1304,22 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         this.emitEntry(msg);
         break;
 
+      // Background agent lifecycle
+      case 'task_started':
+        this.backgroundTaskCount++;
+        this.emitEntry(msg);
+        break;
+      case 'task_notification': {
+        this.backgroundTaskCount = Math.max(0, this.backgroundTaskCount - 1);
+        this.emitEntry(msg);
+        // All background tasks finished while in background state → go idle
+        if (this.backgroundTaskCount === 0 && this._status === 'background') {
+          this.emitStatus('idle');
+        }
+        break;
+      }
+
       // SDK 0.2.63+ system subtypes — pass through as entries
-      case 'task_started':        // Background agent started
       case 'task_progress':       // Background agent progress with usage
       case 'local_command_output': // Slash command output
       case 'elicitation_complete': // MCP elicitation done
@@ -1458,7 +1478,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   /**
    * Emit a status change event and update the internal status.
    */
-  private emitStatus(status: 'idle' | 'active'): void {
+  private emitStatus(status: 'idle' | 'active' | 'background'): void {
     this._status = status;
     this.outputQueue.enqueue({
       type: 'event',
