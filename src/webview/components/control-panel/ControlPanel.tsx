@@ -167,6 +167,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // --- sendTurn error banner ---
     const [sendError, setSendError] = useState<string | null>(null);
     const sendErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const forkTargetRef = useRef<string | undefined>(undefined);
 
     /** Show a send error with auto-dismiss after 8s. */
     const showSendError = useCallback((msg: string) => {
@@ -855,37 +856,26 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // Register executeRewind with parent for per-message rewind buttons
     useEffect(() => { onRegisterRewindHandler?.(executeRewind); }, [onRegisterRewindHandler, executeRewind]);
 
-    // --- Fork handler (control panel button — computes fork target, then delegates) ---
-    const handleFork = useCallback(() => {
-      if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
-      if (!entries || entries.length === 0) return;
-
-      let forkAtMessageId: string | undefined;
-
-      if (channelState === 'streaming') {
-        // While streaming: find last assistant before last user
-        let lastUserIdx = -1;
-        for (let i = entries.length - 1; i >= 0; i--) {
-          if (entries[i].type === 'user') { lastUserIdx = i; break; }
-        }
-        if (lastUserIdx > 0) {
-          for (let i = lastUserIdx - 1; i >= 0; i--) {
-            if (entries[i].type === 'assistant' && entries[i].uuid) {
-              forkAtMessageId = entries[i].uuid!; break;
-            }
-          }
-        }
-      } else {
-        // Not streaming: find last assistant entry with a uuid (simple backward scan)
-        for (let i = entries.length - 1; i >= 0; i--) {
-          if (entries[i].type === 'assistant' && entries[i].uuid) {
-            forkAtMessageId = entries[i].uuid!; break;
-          }
+    // --- Latched fork target — freezes during streaming, updates only when idle ---
+    useEffect(() => {
+      if (channelState !== 'idle' && channelState !== null) return;
+      if (!entries || entries.length === 0) {
+        forkTargetRef.current = undefined;
+        return;
+      }
+      for (let i = entries.length - 1; i >= 0; i--) {
+        if (entries[i].type === 'assistant' && entries[i].uuid) {
+          forkTargetRef.current = entries[i].uuid!;
+          return;
         }
       }
+      forkTargetRef.current = undefined;
+    }, [channelState, entries]);
 
-      if (forkAtMessageId) executeFork(forkAtMessageId);
-    }, [selectedSessionId, channelState, entries, executeFork]);
+    const handleFork = useCallback(() => {
+      if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
+      if (forkTargetRef.current) executeFork(forkTargetRef.current);
+    }, [selectedSessionId, executeFork]);
 
     const handleForkHover = useCallback(
       (hovering: boolean) => {
