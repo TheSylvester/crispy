@@ -1,0 +1,79 @@
+/* StreamingGhost — temporary assistant entry during live streaming */
+
+.streaming-ghost {
+  opacity: 0;
+  animation: streaming-ghost-fade-in 150ms ease-out forwards;
+}
+
+@keyframes streaming-ghost-fade-in {
+  to {
+    opacity: 1;
+  }
+}
+
+.streaming-ghost__blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.streaming-ghost__text {
+  word-break: break-word;
+}
+
+/* In-progress tail fragment — plain text, preserves whitespace */
+.streaming-ghost__tail {
+  white-space: pre-wrap;
+}
+
+/* Blinking cursor at the end of streaming text */
+.streaming-ghost__cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--vscode-editorCursor-foreground, var(--vscode-foreground, #d4d4d4));
+  animation: streaming-ghost-blink 0.8s step-end infinite;
+}
+
+@keyframes streaming-ghost-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* Thinking block (collapsed by default) */
+.streaming-ghost__thinking {
+  color: var(--vscode-descriptionForeground, #888);
+  font-size: 0.9em;
+}
+
+.streaming-ghost__thinking summary {
+  cursor: pointer;
+  font-style: italic;
+}
+
+.streaming-ghost__thinking-text {
+  margin: 4px 0;
+  padding: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.85em;
+  background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.1));
+  border-radius: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* Tool name pill */
+.streaming-ghost__tool-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 0.85em;
+  font-family: var(--vscode-editor-font-family, monospace);
+  color: var(--vscode-descriptionForeground, #888);
+  background: var(--vscode-badge-background, rgba(127, 127, 127, 0.15));
+  border-radius: 4px;
+  width: fit-content;
+}

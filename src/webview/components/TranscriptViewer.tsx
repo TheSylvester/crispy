@@ -40,6 +40,8 @@ import { useSessionStatus } from "../hooks/useSessionStatus.js";
 import type { ApprovalExtra } from "./approval/types.js";
 import type { TranscriptEntry } from "../../core/transcript.js";
 import { WelcomePage } from "./WelcomePage.js";
+import { useStreamingContent } from "../hooks/useStreamingContent.js";
+import { StreamingGhost } from "./StreamingGhost.js";
 import { isPerfMode, PerfProfiler } from "../perf/index.js";
 import { PerfStore } from "../perf/profiler.js";
 import { BlocksToolRegistryProvider } from "../blocks/BlocksToolRegistryContext.js";
@@ -57,6 +59,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const { renderMode, toolPanelOpen, debugMode } = usePreferences();
   useToolPanelAutoOpen(entries);
   const { approvalRequest, resolve: resolveApproval } = useApprovalRequest(selectedSessionId);
+  const streamingContent = useStreamingContent();
   const [bypassEnabled, setBypassEnabled] = useState(false);
   const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean } | null>(null);
   const [pendingAgencyMode, setPendingAgencyMode] = useState<{ agencyMode: AgencyMode; bypassEnabled: boolean } | null>(null);
@@ -363,6 +366,7 @@ export function TranscriptViewer(): React.JSX.Element {
                 ))}
               </PerfProfiler>
             )}
+            {streamingContent && <StreamingGhost content={streamingContent} />}
             <ThinkingIndicator />
             {/* Spacer: reserves space for the fixed control panel + stop button + gap.
                 Sized via CSS using --cp-height. Always reserves stop button space so

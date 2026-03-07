@@ -61,7 +61,8 @@ import {
   writeSyntheticSession,
 } from './claude-history-serializer.js';
 
-import type { TranscriptEntry, ContextUsage, MessageContent, Vendor } from '../../transcript.js';
+import type { TranscriptEntry, ContentBlock, TextBlock, ThinkingBlock, ContextUsage, MessageContent, Vendor } from '../../transcript.js';
+import type { ChannelEvent } from '../../channel-events.js';
 
 import { existsSync, readdirSync, statSync, unlinkSync } from 'fs';
 import { join } from 'path';
@@ -418,6 +419,16 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   private activeMcpServers: Record<string, McpServerConfig> | null = null;
   /** Number of background agents/tasks currently running. */
   private backgroundTaskCount = 0;
+
+  // --- Streaming delta accumulator ---
+  /** Buffer for accumulating streaming deltas into renderable content blocks. */
+  private streamingBlocks: ContentBlock[] = [];
+  /** Tracks accumulated partial JSON for tool_use input (keyed by block index). */
+  private streamingPartialJson = new Map<number, string>();
+  /** Throttle timer for streaming_content emission. */
+  private streamingEmitTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Minimum interval between streaming_content emissions (ms). */
+  private static readonly STREAMING_EMIT_INTERVAL = 16; // ~60fps
 
   private readonly options: ClaudeSessionOptions;
 
@@ -956,6 +967,9 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     // Close MCP servers before tearing down the query — fire-and-forget
     this.closeMcpServers();
 
+    // Clear streaming buffer so ghost entry disappears
+    this.clearStreamingBuffer();
+
     // Abort the active query
     this.abortController?.abort();
     this.abortController = null;
@@ -1018,6 +1032,9 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       if (this.queryGeneration === generation) {
         // Close MCP servers — idempotent, safe even if teardownQuery already called it
         this.closeMcpServers();
+
+        // Clear streaming buffer so ghost entry disappears on error/completion
+        this.clearStreamingBuffer();
 
         // Clear pending approvals (same cleanup as teardownQuery).
         const pendingEntries = [...this.pendingApprovals.values()];
@@ -1134,7 +1151,16 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       };
     }
 
+    // Only clear top-level streaming — ignore sub-agent assistant messages
+    if (msg.parent_tool_use_id !== null) {
+      this.emitEntry(msg);
+      return;
+    }
+
+    // Emit real entry FIRST so the webview has it before the ghost clears.
+    // This prevents a visible gap (separate WebSocket frames = separate renders).
     this.emitEntry(msg);
+    this.clearStreamingBuffer();
   }
 
   private handleUserMessage(msg: SDKUserMessage): void {
@@ -1334,19 +1360,145 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     }
   }
 
-  private handleStreamEvent(_msg: SDKPartialAssistantMessage): void {
-    // Intentionally not emitted. Stream events are partial deltas (content_block_start,
-    // content_block_delta, etc.) that lack a complete message.content array.
-    // adaptClaudeEntry produces entries with message: undefined for these, which:
-    // 1. Are already filtered from rendering by SKIP_ENTRY_TYPES ('stream_event')
-    // 2. Provide no content for tool registry pairing (no tool_use blocks)
-    // 3. Bloat the entries array with empty entries during live streaming
-    //
-    // The complete assistant message (type: 'assistant') arrives after streaming
-    // finishes and contains the full content array with all tool_use blocks.
-    // Text streaming in the webview is handled by progressive JSONL entries
-    // when loading from disk; during live SDK sessions, the assistant message
-    // provides the complete content in one shot.
+  private handleStreamEvent(msg: SDKPartialAssistantMessage): void {
+    // Only stream top-level assistant messages — ignore sub-agent deltas
+    if (msg.parent_tool_use_id !== null) return;
+
+    const event = msg.event;
+
+    switch (event.type) {
+      case 'message_start':
+        // Reset buffer for new message
+        this.streamingBlocks = [];
+        this.streamingPartialJson.clear();
+        break;
+
+      case 'content_block_start': {
+        const block = event.content_block;
+        if (block.type === 'text') {
+          this.streamingBlocks[event.index] = { type: 'text', text: '' };
+        } else if (block.type === 'tool_use') {
+          this.streamingBlocks[event.index] = {
+            type: 'tool_use',
+            id: block.id,
+            name: block.name,
+            input: {},
+          };
+          this.streamingPartialJson.set(event.index, '');
+        } else if (block.type === 'thinking') {
+          this.streamingBlocks[event.index] = {
+            type: 'thinking',
+            thinking: '',
+          };
+        }
+        // Other block types (redacted_thinking, server_tool_use, etc.) — skip
+        this.scheduleStreamingEmit();
+        break;
+      }
+
+      case 'content_block_delta': {
+        const existing = this.streamingBlocks[event.index];
+        if (!existing) break;
+
+        const delta = event.delta;
+        if (delta.type === 'text_delta' && existing.type === 'text') {
+          (existing as TextBlock).text += delta.text;
+        } else if (delta.type === 'input_json_delta' && existing.type === 'tool_use') {
+          const prev = this.streamingPartialJson.get(event.index) ?? '';
+          this.streamingPartialJson.set(event.index, prev + delta.partial_json);
+        } else if (delta.type === 'thinking_delta' && existing.type === 'thinking') {
+          (existing as ThinkingBlock).thinking += delta.thinking;
+        }
+        this.scheduleStreamingEmit();
+        break;
+      }
+
+      case 'content_block_stop': {
+        // Try to parse accumulated JSON for tool_use blocks
+        const existing = this.streamingBlocks[event.index];
+        if (existing?.type === 'tool_use') {
+          const json = this.streamingPartialJson.get(event.index) ?? '';
+          try {
+            (existing as { input: unknown }).input = JSON.parse(json);
+          } catch {
+            // Leave input as {}
+          }
+          this.streamingPartialJson.delete(event.index);
+        }
+        this.scheduleStreamingEmit();
+        break;
+      }
+
+      case 'message_stop':
+        // The complete assistant message arrives BEFORE message_stop (confirmed
+        // by spike testing). handleAssistantMessage has already cleared the
+        // buffer. This flush is a no-op safety net for edge cases.
+        this.flushStreamingEmit();
+        break;
+
+      case 'message_delta':
+        // Contains stop_reason and usage — not needed for streaming display
+        break;
+    }
+  }
+
+  /** Schedule a throttled streaming_content emission (~60fps). */
+  private scheduleStreamingEmit(): void {
+    if (this.streamingEmitTimer !== null) return;
+    if (this.streamingBlocks.length === 0) return;
+    this.streamingEmitTimer = setTimeout(() => {
+      this.streamingEmitTimer = null;
+      this.flushStreamingEmit();
+    }, ClaudeAgentAdapter.STREAMING_EMIT_INTERVAL);
+  }
+
+  /** Emit a snapshot of current accumulated streaming content. */
+  private flushStreamingEmit(): void {
+    if (this.streamingEmitTimer !== null) {
+      clearTimeout(this.streamingEmitTimer);
+      this.streamingEmitTimer = null;
+    }
+    if (this.streamingBlocks.length === 0) return;
+
+    // Filter out undefined slots (sparse array from index-based assignment)
+    const content = this.streamingBlocks.filter(Boolean);
+    if (content.length === 0) return;
+
+    this.outputQueue.enqueue({
+      type: 'event',
+      event: {
+        type: 'notification',
+        kind: 'streaming_content',
+        content: content.map(block => ({ ...block })),
+      } as unknown as ChannelEvent,
+    });
+  }
+
+  /** Clear the streaming buffer and emit a clear signal to the webview. */
+  private clearStreamingBuffer(): void {
+    // Cancel any pending throttle timer
+    if (this.streamingEmitTimer !== null) {
+      clearTimeout(this.streamingEmitTimer);
+      this.streamingEmitTimer = null;
+    }
+
+    // Skip if nothing was streaming — avoids redundant content:null events
+    // when called from multiple cleanup paths (teardownQuery + drainOutput finally)
+    const wasStreaming = this.streamingBlocks.length > 0 || this.streamingPartialJson.size > 0;
+    this.streamingBlocks = [];
+    this.streamingPartialJson.clear();
+
+    if (!wasStreaming) return;
+
+    // Emit null to signal the webview to remove the ghost entry
+    this.outputQueue.enqueue({
+      type: 'event',
+      event: {
+        type: 'notification',
+        kind: 'streaming_content',
+        content: null,
+      } as unknown as ChannelEvent,
+    });
   }
 
   // --------------------------------------------------------------------------

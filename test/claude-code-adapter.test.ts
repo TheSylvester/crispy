@@ -662,3 +662,326 @@ describe('sdkOptions invariants', () => {
     ch.close();
   });
 });
+
+// ========== Group 9: Streaming delta accumulation ==========
+
+describe('Streaming delta accumulation', () => {
+  it('accumulates text deltas and emits streaming_content events', async () => {
+    const deferred = createDeferredQuery();
+    mockQueryFn.mockReturnValue(deferred.query);
+
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
+    ch.sendTurn('go', {});
+    await tick();
+
+    const msg = (obj: Record<string, unknown>) => obj as unknown as SDKMessage;
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'message_start', message: { content: [] } },
+      parent_tool_use_id: null,
+      uuid: 'se-1',
+      session_id: 's1',
+    }));
+    await tick();
+
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      parent_tool_use_id: null,
+      uuid: 'se-2',
+      session_id: 's1',
+    }));
+    await tick();
+
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hello ' } },
+      parent_tool_use_id: null,
+      uuid: 'se-3',
+      session_id: 's1',
+    }));
+    await tick();
+
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'world' } },
+      parent_tool_use_id: null,
+      uuid: 'se-4',
+      session_id: 's1',
+    }));
+
+    // Wait for throttle timer to fire
+    await new Promise<void>(r => setTimeout(r, 30));
+
+    const output = await collectUntil(ch, (msgs) =>
+      msgs.some(m =>
+        m.type === 'event' &&
+        m.event.type === 'notification' &&
+        (m.event as { kind: string }).kind === 'streaming_content',
+      ),
+      200,
+    );
+
+    const streamingEvents = output.filter(m =>
+      m.type === 'event' &&
+      m.event.type === 'notification' &&
+      (m.event as { kind: string }).kind === 'streaming_content',
+    );
+    expect(streamingEvents.length).toBeGreaterThanOrEqual(1);
+
+    // Last streaming event should have accumulated text
+    const lastEvent = streamingEvents[streamingEvents.length - 1];
+    const content = (lastEvent as unknown as { type: 'event'; event: { content: unknown[] } }).event.content;
+    expect(content).toHaveLength(1);
+    expect((content[0] as { type: string; text: string }).type).toBe('text');
+    expect((content[0] as { type: string; text: string }).text).toContain('Hello ');
+
+    deferred.complete();
+    ch.close();
+  });
+
+  it('clears streaming buffer when assistant message arrives', async () => {
+    const deferred = createDeferredQuery();
+    mockQueryFn.mockReturnValue(deferred.query);
+
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
+    ch.sendTurn('go', {});
+    await tick();
+
+    const msg = (obj: Record<string, unknown>) => obj as unknown as SDKMessage;
+
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'message_start', message: { content: [] } },
+      parent_tool_use_id: null,
+      uuid: 'se-1',
+      session_id: 's1',
+    }));
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      parent_tool_use_id: null,
+      uuid: 'se-2',
+      session_id: 's1',
+    }));
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Hi' } },
+      parent_tool_use_id: null,
+      uuid: 'se-3',
+      session_id: 's1',
+    }));
+    await tick();
+
+    // Now send the complete assistant message
+    deferred.pushMessage(msg({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'Hi there' }] },
+      parent_tool_use_id: null,
+      uuid: 'a-1',
+      session_id: 's1',
+    }));
+
+    // Wait for throttle + processing
+    await new Promise<void>(r => setTimeout(r, 50));
+
+    // Collect — should see a streaming_content with null (clear signal)
+    const output = await collectUntil(ch, (msgs) =>
+      msgs.some(m =>
+        m.type === 'event' &&
+        m.event.type === 'notification' &&
+        (m.event as { kind: string }).kind === 'streaming_content' &&
+        (m.event as unknown as { content: unknown }).content === null,
+      ),
+      200,
+    );
+
+    const clearEvent = output.find(m =>
+      m.type === 'event' &&
+      m.event.type === 'notification' &&
+      (m.event as { kind: string }).kind === 'streaming_content' &&
+      (m.event as unknown as { content: unknown }).content === null,
+    );
+    expect(clearEvent).toBeDefined();
+
+    // Also should have the real entry
+    const entries = output.filter(m => m.type === 'entry');
+    expect(entries.length).toBeGreaterThanOrEqual(1);
+
+    deferred.complete();
+    ch.close();
+  });
+
+  it('accumulates tool_use JSON and parses on content_block_stop', async () => {
+    const deferred = createDeferredQuery();
+    mockQueryFn.mockReturnValue(deferred.query);
+
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
+    ch.sendTurn('go', {});
+    await tick();
+
+    const msg = (obj: Record<string, unknown>) => obj as unknown as SDKMessage;
+
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'message_start', message: { content: [] } },
+      parent_tool_use_id: null,
+      uuid: 'se-1',
+      session_id: 's1',
+    }));
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'tu-1', name: 'Read', input: {} } },
+      parent_tool_use_id: null,
+      uuid: 'se-2',
+      session_id: 's1',
+    }));
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"file_path":' } },
+      parent_tool_use_id: null,
+      uuid: 'se-3',
+      session_id: 's1',
+    }));
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '"/foo.ts"}' } },
+      parent_tool_use_id: null,
+      uuid: 'se-4',
+      session_id: 's1',
+    }));
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'content_block_stop', index: 0 },
+      parent_tool_use_id: null,
+      uuid: 'se-5',
+      session_id: 's1',
+    }));
+
+    // Wait for throttle
+    await new Promise<void>(r => setTimeout(r, 30));
+
+    const output = await collectUntil(ch, (msgs) =>
+      msgs.some(m =>
+        m.type === 'event' &&
+        m.event.type === 'notification' &&
+        (m.event as { kind: string }).kind === 'streaming_content',
+      ),
+      200,
+    );
+
+    const streamingEvents = output.filter(m =>
+      m.type === 'event' &&
+      m.event.type === 'notification' &&
+      (m.event as { kind: string }).kind === 'streaming_content',
+    );
+    expect(streamingEvents.length).toBeGreaterThanOrEqual(1);
+
+    const lastEvent = streamingEvents[streamingEvents.length - 1];
+    const content = (lastEvent as unknown as { type: 'event'; event: { content: unknown[] } }).event.content;
+    const toolBlock = content[0] as { type: string; name: string; input: unknown };
+    expect(toolBlock.type).toBe('tool_use');
+    expect(toolBlock.name).toBe('Read');
+    expect(toolBlock.input).toEqual({ file_path: '/foo.ts' });
+
+    deferred.complete();
+    ch.close();
+  });
+
+  it('falls back to {} for invalid JSON on content_block_stop', async () => {
+    const deferred = createDeferredQuery();
+    mockQueryFn.mockReturnValue(deferred.query);
+
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
+    ch.sendTurn('go', {});
+    await tick();
+
+    const msg = (obj: Record<string, unknown>) => obj as unknown as SDKMessage;
+
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'message_start', message: { content: [] } },
+      parent_tool_use_id: null,
+      uuid: 'se-1',
+      session_id: 's1',
+    }));
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'tu-1', name: 'Bash', input: {} } },
+      parent_tool_use_id: null,
+      uuid: 'se-2',
+      session_id: 's1',
+    }));
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{broken json' } },
+      parent_tool_use_id: null,
+      uuid: 'se-3',
+      session_id: 's1',
+    }));
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'content_block_stop', index: 0 },
+      parent_tool_use_id: null,
+      uuid: 'se-4',
+      session_id: 's1',
+    }));
+
+    await new Promise<void>(r => setTimeout(r, 30));
+
+    const output = await collectUntil(ch, (msgs) =>
+      msgs.some(m =>
+        m.type === 'event' &&
+        m.event.type === 'notification' &&
+        (m.event as { kind: string }).kind === 'streaming_content',
+      ),
+      200,
+    );
+
+    const streamingEvents = output.filter(m =>
+      m.type === 'event' &&
+      m.event.type === 'notification' &&
+      (m.event as { kind: string }).kind === 'streaming_content',
+    );
+    const lastEvent = streamingEvents[streamingEvents.length - 1];
+    const content = (lastEvent as unknown as { type: 'event'; event: { content: unknown[] } }).event.content;
+    const toolBlock = content[0] as { type: string; input: unknown };
+    expect(toolBlock.input).toEqual({}); // Falls back to empty object
+
+    deferred.complete();
+    ch.close();
+  });
+
+  it('ignores sub-agent stream events (parent_tool_use_id !== null)', async () => {
+    const deferred = createDeferredQuery();
+    mockQueryFn.mockReturnValue(deferred.query);
+
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
+    ch.sendTurn('go', {});
+    await tick();
+
+    const msg = (obj: Record<string, unknown>) => obj as unknown as SDKMessage;
+
+    // Sub-agent stream event — should be ignored
+    deferred.pushMessage(msg({
+      type: 'stream_event',
+      event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'sub-agent text' } },
+      parent_tool_use_id: 'parent-tu-1',
+      uuid: 'se-sub',
+      session_id: 's1',
+    }));
+
+    await new Promise<void>(r => setTimeout(r, 30));
+
+    const output = await collectUntil(ch, () => false, 50);
+    const streamingEvents = output.filter(m =>
+      m.type === 'event' &&
+      m.event.type === 'notification' &&
+      (m.event as { kind: string }).kind === 'streaming_content',
+    );
+    expect(streamingEvents).toHaveLength(0);
+
+    deferred.complete();
+    ch.close();
+  });
+});
