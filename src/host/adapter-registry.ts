@@ -25,6 +25,7 @@ import type { AgentDispatch } from './agent-dispatch.js';
 // Import all registration descriptors
 import { claudeRegistration } from '../core/adapters/claude/claude-registration.js';
 import { codexRegistration } from '../core/adapters/codex/codex-registration.js';
+import { opencodeRegistration } from '../core/adapters/opencode/opencode-registration.js';
 
 // ============================================================================
 // Types
@@ -101,6 +102,7 @@ export interface AdapterRegistration {
 const allRegistrations: AdapterRegistration[] = [
   claudeRegistration,
   codexRegistration,
+  opencodeRegistration,
 ];
 
 // ============================================================================

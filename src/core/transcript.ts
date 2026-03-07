@@ -80,13 +80,13 @@ import type {
 // ============================================================================
 
 /** Native vendors with compile-time exhaustive checks. */
-export type NativeVendor = 'claude' | 'codex' | 'gemini';
+export type NativeVendor = 'claude' | 'codex' | 'gemini' | 'opencode';
 
 /** Vendor identifier. Native vendors are literals; dynamic providers are arbitrary slugs. */
 export type Vendor = NativeVendor | (string & {});
 
 /** Runtime set of native vendor slugs. */
-export const NATIVE_VENDORS = new Set<string>(['claude', 'codex', 'gemini']);
+export const NATIVE_VENDORS = new Set<string>(['claude', 'codex', 'gemini', 'opencode']);
 
 /** Type guard for native vendors. */
 export function isNativeVendor(v: string): v is NativeVendor {
