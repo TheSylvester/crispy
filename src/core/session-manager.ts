@@ -857,6 +857,7 @@ export async function dispatchChildSession(
     let lastError: string | undefined;
     /** Per-entry content block types, e.g. "assistant:[tool_use,tool_use]" or "result:[text]" */
     const contentSummaries: string[] = [];
+    let streamingDots = false;
 
     const internalSubscriber: Subscriber = {
       id: `child-${crypto.randomUUID()}`,
@@ -869,8 +870,19 @@ export async function dispatchChildSession(
         // Log every message type for diagnostics
         if (msg.type === 'event') {
           const evt = msg.event;
-          console.error(`[child-session] Event: ${evt.type}${evt.type === 'status' ? `=${(evt as { status?: string }).status}` : evt.type === 'notification' ? `/${(evt as { kind?: string }).kind}` : ''} (parent: ${parentSessionId})`);
+          // Streaming content is too noisy — print label once then dots
+          if (evt.type === 'notification' && (evt as { kind?: string }).kind === 'streaming_content') {
+            if (!streamingDots) {
+              process.stderr.write(`[child-session] Event: notification/streaming_content (parent: ${parentSessionId}) `);
+              streamingDots = true;
+            }
+            process.stderr.write('.');
+          } else {
+            if (streamingDots) { process.stderr.write('\n'); streamingDots = false; }
+            console.error(`[child-session] Event: ${evt.type}${evt.type === 'status' ? `=${(evt as { status?: string }).status}` : evt.type === 'notification' ? `/${(evt as { kind?: string }).kind}` : ''} (parent: ${parentSessionId})`);
+          }
         } else if (msg.type === 'entry') {
+          if (streamingDots) { process.stderr.write('\n'); streamingDots = false; }
           console.error(`[child-session] Entry: ${msg.entry.type} (parent: ${parentSessionId})`);
         }
 
