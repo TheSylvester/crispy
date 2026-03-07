@@ -1167,6 +1167,12 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     // Skip replayed messages (they're history, not new content)
     if ('isReplay' in msg && (msg as { isReplay?: boolean }).isReplay) return;
 
+    // Skip SDK-injected synthetic messages (slash command echoes like /model,
+    // meta messages, transcript-only entries). These have isSynthetic: true
+    // and are not real user input — letting them through pollutes the transcript
+    // and causes rewind to prefill with command XML instead of real user text.
+    if ('isSynthetic' in msg && (msg as { isSynthetic?: boolean }).isSynthetic) return;
+
     // Tool-result user messages are system-generated (Claude Code feeding tool
     // output back to the model). They must NEVER be swallowed by echo
     // suppression — only the original user text input should be skipped.
