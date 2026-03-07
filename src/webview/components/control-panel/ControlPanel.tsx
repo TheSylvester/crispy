@@ -240,16 +240,23 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // --- Rosie Bot settings state ---
     const [rosieEnabled, setRosieEnabled] = useState(false);
     const [rosieModel, setRosieModel] = useState<string | undefined>(undefined);
+    const [trackerEnabled, setTrackerEnabled] = useState(false);
 
     useEffect(() => {
       transport.getSettings().then((snapshot) => {
         setRosieEnabled(snapshot.settings.rosie?.summarize?.enabled ?? false);
         setRosieModel(snapshot.settings.rosie?.summarize?.model);
+        setTrackerEnabled(snapshot.settings.rosie?.tracker?.enabled ?? false);
       }).catch(console.error);
     }, [transport]);
 
     const handleUpdateRosie = useCallback(async (patch: { enabled?: boolean; model?: string }) => {
       await transport.updateSettings({ rosie: { summarize: patch } });
+    }, [transport]);
+
+    const handleUpdateTracker = useCallback(async (enabled: boolean) => {
+      setTrackerEnabled(enabled);
+      await transport.updateSettings({ rosie: { tracker: { enabled } } });
     }, [transport]);
 
     // --- MCP Memory settings state ---
@@ -959,6 +966,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               rosieEnabled={rosieEnabled}
               rosieModel={rosieModel}
               onUpdateRosie={handleUpdateRosie}
+              trackerEnabled={trackerEnabled}
+              onUpdateTracker={handleUpdateTracker}
               mcpMemoryEnabled={mcpMemoryEnabled}
               onUpdateMcpMemory={handleUpdateMcpMemory}
               modelGroups={modelGroups}

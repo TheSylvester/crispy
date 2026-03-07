@@ -426,6 +426,51 @@ const migrations: Migration[] = [
       db.exec("INSERT INTO activity_fts(activity_fts, rank) VALUES('rank', 'bm25(10.0, 5.0, 8.0, 3.0, 1.0)')");
     },
   },
+  {
+    version: 8,
+    description: 'Create projects, project_sessions, project_files tables for Rosie.tracker',
+    up: (db: Database): void => {
+      db.exec(`
+        CREATE TABLE projects (
+          id               TEXT PRIMARY KEY,
+          title            TEXT NOT NULL,
+          status           TEXT NOT NULL CHECK (status IN ('active','done','blocked','planned','abandoned')),
+          blocked_by       TEXT,
+          summary          TEXT,
+          category         TEXT,
+          branch           TEXT,
+          entities         TEXT,
+          created_at       TEXT NOT NULL,
+          updated_at       TEXT NOT NULL,
+          last_activity_at TEXT,
+          closed_at        TEXT,
+          parent_id        TEXT REFERENCES projects(id)
+        );
+
+        CREATE TABLE project_sessions (
+          project_id   TEXT NOT NULL REFERENCES projects(id),
+          session_file TEXT NOT NULL,
+          detected_in  TEXT,
+          linked_at    TEXT NOT NULL,
+          PRIMARY KEY (project_id, session_file)
+        );
+
+        CREATE TABLE project_files (
+          project_id   TEXT NOT NULL REFERENCES projects(id),
+          file_path    TEXT NOT NULL,
+          session_file TEXT,
+          message_id   TEXT,
+          note         TEXT,
+          added_at     TEXT NOT NULL,
+          UNIQUE (project_id, file_path)
+        );
+
+        CREATE INDEX idx_projects_status ON projects(status);
+        CREATE INDEX idx_projects_parent ON projects(parent_id);
+        CREATE INDEX idx_project_sessions_file ON project_sessions(session_file);
+      `);
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {

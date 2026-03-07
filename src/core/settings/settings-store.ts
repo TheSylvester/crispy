@@ -169,6 +169,9 @@ function applyPatch(current: CrispySettings, patch: SettingsPatch): CrispySettin
     if (patch.rosie.summarize) {
       result.rosie.summarize = { ...current.rosie.summarize, ...patch.rosie.summarize };
     }
+    if (patch.rosie.tracker) {
+      result.rosie.tracker = { ...current.rosie.tracker, ...patch.rosie.tracker };
+    }
   }
 
   if (patch.mcp) {
@@ -230,16 +233,26 @@ function sanitizeSettings(data: unknown): CrispySettings {
       // New nested shape
       const summarize = rosie.summarize as Record<string, unknown>;
       if (typeof summarize.enabled === 'boolean') {
-        result.rosie = { summarize: { enabled: summarize.enabled } };
+        result.rosie = { ...result.rosie, summarize: { enabled: summarize.enabled } };
         if (typeof summarize.model === 'string' && summarize.model.trim()) {
           result.rosie.summarize.model = summarize.model.trim();
         }
       }
     } else if (typeof rosie.enabled === 'boolean') {
       // Old flat shape — migrate in-memory to nested form
-      result.rosie = { summarize: { enabled: rosie.enabled } };
+      result.rosie = { ...result.rosie, summarize: { enabled: rosie.enabled } };
       if (typeof rosie.model === 'string' && (rosie.model as string).trim()) {
         result.rosie.summarize.model = (rosie.model as string).trim();
+      }
+    }
+    // Tracker settings
+    if (rosie.tracker && typeof rosie.tracker === 'object') {
+      const tracker = rosie.tracker as Record<string, unknown>;
+      if (typeof tracker.enabled === 'boolean') {
+        result.rosie = { ...result.rosie, tracker: { enabled: tracker.enabled } };
+        if (typeof tracker.model === 'string' && tracker.model.trim()) {
+          result.rosie.tracker.model = tracker.model.trim();
+        }
       }
     }
   }

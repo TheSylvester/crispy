@@ -18,6 +18,7 @@ import { parseModelOption } from '../model-utils.js';
 import { appendActivityEntries } from '../activity-index.js';
 import { refreshAndNotify } from '../session-list-manager.js';
 import { pushRosieLog } from './debug-log.js';
+import { extractTag, normalizeEntitiesJson } from './xml-utils.js';
 
 // ============================================================================
 // Module State
@@ -93,30 +94,11 @@ function parseSummarizeResponse(text: string): {
   status: string;
   entities: string;
 } | null {
-  const quest = text.match(/<goal>([\s\S]*?)<\/goal>/)?.[1]?.trim() ?? '';
-  const title = text.match(/<title>([\s\S]*?)<\/title>/)?.[1]?.trim() ?? '';
-  const summary = text.match(/<summary>([\s\S]*?)<\/summary>/)?.[1]?.trim() ?? '';
-  const status = text.match(/<status>([\s\S]*?)<\/status>/)?.[1]?.trim() ?? '';
-  const rawEntities = text.match(/<entities>([\s\S]*?)<\/entities>/)?.[1]?.trim() ?? '';
-
-  // Validate entities as JSON array; fall back to comma-split if invalid
-  let entities = '[]';
-  if (rawEntities) {
-    try {
-      const parsed = JSON.parse(rawEntities);
-      if (Array.isArray(parsed)) {
-        entities = JSON.stringify(parsed);
-      }
-    } catch {
-      // Fall back: split on commas, trim quotes/whitespace, wrap as JSON array
-      const items = rawEntities
-        .replace(/^\[|\]$/g, '')
-        .split(',')
-        .map((s) => s.trim().replace(/^["']|["']$/g, ''))
-        .filter(Boolean);
-      entities = JSON.stringify(items);
-    }
-  }
+  const quest = extractTag(text, 'goal');
+  const title = extractTag(text, 'title');
+  const summary = extractTag(text, 'summary');
+  const status = extractTag(text, 'status');
+  const entities = normalizeEntitiesJson(extractTag(text, 'entities'));
 
   if (quest && summary) return { quest, title, summary, status, entities };
   return null;

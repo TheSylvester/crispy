@@ -89,7 +89,7 @@ export interface ScanState {
 let crispyDir = join(homedir(), '.crispy');
 
 /** Get the path to the database file. */
-function dbPath(): string {
+export function dbPath(): string {
   return join(crispyDir, 'crispy.db');
 }
 

@@ -28,7 +28,7 @@ import { createAgentDispatch } from './agent-dispatch.js';
 import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
 import { runScan } from '../core/activity-scanner.js';
-import { initRosieSummarize, shutdownRosieSummarize } from '../core/rosie/index.js';
+import { initRosieSummarize, shutdownRosieSummarize, initRosieTracker, shutdownRosieTracker } from '../core/rosie/index.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
 
@@ -161,8 +161,9 @@ const dispatch = createAgentDispatch();
 // Register all available adapters (passes dispatch for recall tool)
 registerAllAdapters({ cwd, hostType: 'dev-server', dispatch });
 
-// Wire up Rosie summarize hook
+// Wire up Rosie hooks (tracker phase-2 fires after summarize phase-1)
 initRosieSummarize(dispatch);
+initRosieTracker(dispatch);
 
 // Initialize settings from ~/.config/crispy/settings.json
 const providerBase = { cwd };
@@ -190,11 +191,13 @@ process.on('unhandledRejection', (reason) => {
 
 // Cleanup on shutdown
 process.on('SIGINT', () => {
+  shutdownRosieTracker();
   shutdownRosieSummarize();
   dispatch.dispose();
   process.exit(0);
 });
 process.on('SIGTERM', () => {
+  shutdownRosieTracker();
   shutdownRosieSummarize();
   dispatch.dispose();
   process.exit(0);

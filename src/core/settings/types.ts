@@ -83,8 +83,15 @@ export interface RosieSummarizeSettings {
   model?: string;
 }
 
+export interface RosieTrackerSettings {
+  enabled: boolean;
+  /** Model override — omit to use system default model. Format: "vendor:model" (e.g. "claude:haiku"). */
+  model?: string;
+}
+
 export interface RosieSettings {
   summarize: RosieSummarizeSettings;
+  tracker: RosieTrackerSettings;
 }
 
 // ============================================================================
@@ -190,7 +197,7 @@ export type SettingsPatch = Partial<{
   envPresets: Partial<SettingsEnvPresets>;
   cliProfiles: Partial<SettingsCliProfiles>;
   turnDefaults: Partial<SettingsTurnDefaults>;
-  rosie: { summarize?: Partial<RosieSummarizeSettings> };
+  rosie: { summarize?: Partial<RosieSummarizeSettings>; tracker?: Partial<RosieTrackerSettings> };
   mcp: { memory?: Partial<McpMemorySettings> };
 }>;
 
@@ -223,6 +230,7 @@ export const DEFAULT_SETTINGS: CrispySettings = {
   },
   rosie: {
     summarize: { enabled: false },
+    tracker: { enabled: false },
   },
   mcp: {
     memory: { vscode: true, devServer: true },

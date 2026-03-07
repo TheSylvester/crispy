@@ -12,7 +12,7 @@ import { runScan } from './core/activity-scanner.js';
 import { findClaudeBinary } from './core/find-claude-binary.js';
 import { registerAllAdapters } from './host/adapter-registry.js';
 import { createAgentDispatch } from './host/agent-dispatch.js';
-import { initRosieSummarize, shutdownRosieSummarize } from './core/rosie/index.js';
+import { initRosieSummarize, shutdownRosieSummarize, initRosieTracker, shutdownRosieTracker } from './core/rosie/index.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
@@ -68,10 +68,12 @@ export function activate(context: vscode.ExtensionContext): void {
   initSettings(providerBase).catch((err) => console.error('[crispy] Failed to load settings:', err));
   startWatchingSettings();
 
-  // Wire up Rosie summarize hook
+  // Wire up Rosie hooks (tracker phase-2 fires after summarize phase-1)
   initRosieSummarize(dispatch);
+  initRosieTracker(dispatch);
   context.subscriptions.push({
     dispose: () => {
+      shutdownRosieTracker();
       shutdownRosieSummarize();
       dispatch.dispose();
     },

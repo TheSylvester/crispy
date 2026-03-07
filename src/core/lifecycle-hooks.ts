@@ -35,6 +35,7 @@ export type ResponseCompleteHandler = (sessionId: string) => void | Promise<void
 // ============================================================================
 
 const responseCompleteHandlers = new Set<ResponseCompleteHandler>();
+const responseCompleteAfterHandlers = new Set<ResponseCompleteHandler>();
 
 // ============================================================================
 // Registration
@@ -47,6 +48,18 @@ const responseCompleteHandlers = new Set<ResponseCompleteHandler>();
 export function onResponseComplete(handler: ResponseCompleteHandler): () => void {
   responseCompleteHandlers.add(handler);
   return () => { responseCompleteHandlers.delete(handler); };
+}
+
+/**
+ * Register a handler for phase 2 of responseComplete.
+ * Phase-2 handlers fire AFTER all phase-1 handlers have settled.
+ * Use this when your handler depends on side effects from phase-1
+ * (e.g. tracker reads rosie-meta written by summarize in phase 1).
+ * Returns an unsubscribe function.
+ */
+export function onResponseCompleteAfter(handler: ResponseCompleteHandler): () => void {
+  responseCompleteAfterHandlers.add(handler);
+  return () => { responseCompleteAfterHandlers.delete(handler); };
 }
 
 // ============================================================================
@@ -68,15 +81,29 @@ export async function fireResponseComplete(sessionId: string): Promise<void> {
   // Covers all handlers — individual features don't need their own guard.
   if (isChildSession(sessionId)) return;
 
-  if (responseCompleteHandlers.size === 0) return;
+  if (responseCompleteHandlers.size === 0 && responseCompleteAfterHandlers.size === 0) return;
 
-  const results = await Promise.allSettled(
-    [...responseCompleteHandlers].map((handler) => Promise.resolve(handler(sessionId))),
-  );
+  // Phase 1: run all primary handlers concurrently
+  if (responseCompleteHandlers.size > 0) {
+    const results = await Promise.allSettled(
+      [...responseCompleteHandlers].map((handler) => Promise.resolve(handler(sessionId))),
+    );
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        console.warn('[lifecycle-hooks] responseComplete handler failed:', result.reason);
+      }
+    }
+  }
 
-  for (const result of results) {
-    if (result.status === 'rejected') {
-      console.warn('[lifecycle-hooks] responseComplete handler failed:', result.reason);
+  // Phase 2: run after-handlers concurrently (depend on phase-1 side effects)
+  if (responseCompleteAfterHandlers.size > 0) {
+    const afterResults = await Promise.allSettled(
+      [...responseCompleteAfterHandlers].map((handler) => Promise.resolve(handler(sessionId))),
+    );
+    for (const result of afterResults) {
+      if (result.status === 'rejected') {
+        console.warn('[lifecycle-hooks] responseCompleteAfter handler failed:', result.reason);
+      }
     }
   }
 }
@@ -88,4 +115,5 @@ export async function fireResponseComplete(sessionId: string): Promise<void> {
 /** Clear all registered handlers. Test helper only. */
 export function _clearAllHooks(): void {
   responseCompleteHandlers.clear();
+  responseCompleteAfterHandlers.clear();
 }
