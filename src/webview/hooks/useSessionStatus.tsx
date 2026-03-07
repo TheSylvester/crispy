@@ -71,11 +71,12 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
       if (event.type === 'catchup') {
         setChannelState(prev => {
           const mapped = mapCatchupState(event.state);
-          // Don't let a catchup downgrade an optimistic 'streaming' to 'idle'.
+          // Don't let a catchup downgrade an optimistic 'streaming'.
           // The host re-subscribes on sendTurn (mutable subscriber swap), which
-          // fires a catchup with the channel's current state ('idle') before the
-          // adapter has started. Real status events still override normally.
-          if (prev === 'streaming' && mapped === 'idle') return prev;
+          // fires a catchup with the channel's current state ('idle' or
+          // 'background') before the adapter has started. Real status events
+          // still override normally.
+          if (prev === 'streaming' && (mapped === 'idle' || mapped === 'background')) return prev;
           return mapped;
         });
         return;
