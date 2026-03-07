@@ -89,8 +89,9 @@ function ThinkingView({ block, autoCollapse }: { block: RichBlock; autoCollapse?
     }
   }, [autoCollapse]);
 
+  // Normalize whitespace for single-line preview; CSS handles truncation
   const preview = content.length > 0
-    ? content.replace(/\s+/g, ' ').trim().slice(0, 120) + (content.length > 120 ? '…' : '')
+    ? content.replace(/\s+/g, ' ').trim()
     : '';
 
   return (
