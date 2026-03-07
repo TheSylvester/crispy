@@ -210,6 +210,12 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     activity: { verb: 'Listing MCP', pastVerb: 'Listed MCP' },
     inspectorDefault: 'compact',
   },
+  'mcp__crispy__recall': {
+    icon: '\uD83E\uDDE0',
+    color: '#7c3aed',
+    activity: { verb: 'Recalling', pastVerb: 'Recalled' },
+    inspectorDefault: 'compact',
+  },
 };
 
 /** Default metadata for unknown tools (MCP, custom) */

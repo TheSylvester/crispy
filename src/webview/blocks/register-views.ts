@@ -28,6 +28,7 @@ import { WebFetchCompactView, WebFetchExpandedView } from './views/webfetch-view
 import { EnterPlanModeCompactView } from './views/enterplanmode-views.js';
 import { TaskOutputCompactView, TaskOutputExpandedView } from './views/taskoutput-views.js';
 import { ChromeCompactView, ChromeExpandedView } from './views/chrome-views.js';
+import { RecallCompactView, RecallExpandedView } from './views/recall-views.js';
 
 // ============================================================================
 // Register Default Views (fallback for unknown tools)
@@ -222,6 +223,15 @@ for (const toolName of CHROME_TOOL_NAMES) {
     expanded: ChromeExpandedView,
   });
 }
+
+// ============================================================================
+// Register Crispy Recall MCP Views
+// ============================================================================
+
+registerToolViews('mcp__crispy__recall', {
+  compact: RecallCompactView,
+  expanded: RecallExpandedView,
+});
 
 // ============================================================================
 // Register EnterPlanMode Views
