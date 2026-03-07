@@ -123,6 +123,13 @@
           "group": "navigation"
         }
       ],
+      "editor/title/context": [
+        {
+          "command": "crispy.executeFile",
+          "when": "resourceLangId == markdown",
+          "group": "navigation"
+        }
+      ],
       "explorer/context": [
         {
           "command": "crispy.executeFile",
