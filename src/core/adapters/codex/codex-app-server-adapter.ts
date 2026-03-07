@@ -684,7 +684,7 @@ export class CodexAgentAdapter implements AgentAdapter {
       event: {
         type: 'notification',
         kind: 'streaming_content',
-        content: content.map(block => ({ ...block })),
+        content,
       } as unknown as ChannelEvent,
     });
   }
