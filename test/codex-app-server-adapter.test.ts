@@ -353,7 +353,7 @@ describe('CodexAgentAdapter', () => {
       adapter.close();
     });
 
-    it('emits stream_event from agentMessage delta', async () => {
+    it('emits streaming_content events from agentMessage deltas', async () => {
       const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test' };
       const adapter = new CodexAgentAdapter(spec);
 
@@ -369,7 +369,10 @@ describe('CodexAgentAdapter', () => {
 
       await waitForTick();
 
-      // Push streaming delta
+      // Push turn/started so we're in active state
+      mockProcess.pushNotification('turn/started', { turn: { id: 'turn-1' } });
+
+      // Push streaming deltas
       mockProcess.pushNotification('item/agentMessage/delta', {
         threadId: 't-1',
         turnId: 'turn-1',
@@ -377,11 +380,200 @@ describe('CodexAgentAdapter', () => {
         delta: 'Hello ',
       });
 
+      mockProcess.pushNotification('item/agentMessage/delta', {
+        threadId: 't-1',
+        turnId: 'turn-1',
+        itemId: 'msg-stream-1',
+        delta: 'world!',
+      });
+
+      // Wait for throttled emission (~16ms)
       await waitForTick(50);
 
-      const messages = await collectUntil(adapter, (msgs) => msgs.some((m) => m.type === 'entry'), 200);
-      const streamEntry = messages.find((m) => m.type === 'entry' && m.entry.type === 'stream_event');
-      expect(streamEntry).toBeDefined();
+      const messages = await collectUntil(
+        adapter,
+        (msgs) => msgs.some((m) =>
+          m.type === 'event' && 'kind' in m.event && m.event.kind === 'streaming_content',
+        ),
+        200,
+      );
+
+      const streamEvent = messages.find(
+        (m) => m.type === 'event' && 'kind' in m.event && m.event.kind === 'streaming_content',
+      );
+      expect(streamEvent).toBeDefined();
+
+      // Check that accumulated text is present
+      if (streamEvent?.type === 'event') {
+        const evt = streamEvent.event as any;
+        expect(evt.content).toBeDefined();
+        const textBlock = evt.content.find((b: any) => b.type === 'text');
+        expect(textBlock).toBeDefined();
+        expect(textBlock.text).toContain('Hello ');
+      }
+
+      adapter.close();
+    });
+
+    it('emits streaming_content with thinking blocks from reasoning deltas', async () => {
+      const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test' };
+      const adapter = new CodexAgentAdapter(spec);
+
+      adapter.sendTurn('Test', {});
+
+      // Complete handshake
+      const initMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(initMsg.id, { userAgent: 'codex' });
+      const startMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(startMsg.id, { thread: { id: 't-1', turns: [] }, model: 'o3' });
+      const turnMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(turnMsg.id, { turn: { id: 'turn-1' } });
+
+      await waitForTick();
+
+      mockProcess.pushNotification('turn/started', { turn: { id: 'turn-1' } });
+
+      // Push reasoning delta
+      mockProcess.pushNotification('item/reasoning/summaryTextDelta', {
+        threadId: 't-1',
+        turnId: 'turn-1',
+        itemId: 'reason-1',
+        delta: 'Let me think...',
+        summaryIndex: 0,
+      });
+
+      await waitForTick(50);
+
+      const messages = await collectUntil(
+        adapter,
+        (msgs) => msgs.some((m) =>
+          m.type === 'event' && 'kind' in m.event && m.event.kind === 'streaming_content',
+        ),
+        200,
+      );
+
+      const streamEvent = messages.find(
+        (m) => m.type === 'event' && 'kind' in m.event && m.event.kind === 'streaming_content',
+      );
+      expect(streamEvent).toBeDefined();
+
+      if (streamEvent?.type === 'event') {
+        const evt = streamEvent.event as any;
+        const thinkingBlock = evt.content.find((b: any) => b.type === 'thinking');
+        expect(thinkingBlock).toBeDefined();
+        expect(thinkingBlock.thinking).toBe('Let me think...');
+      }
+
+      adapter.close();
+    });
+
+    it('clears streaming buffer on item/completed with agentMessage', async () => {
+      const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test' };
+      const adapter = new CodexAgentAdapter(spec);
+
+      adapter.sendTurn('Test', {});
+
+      // Complete handshake
+      const initMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(initMsg.id, { userAgent: 'codex' });
+      const startMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(startMsg.id, { thread: { id: 't-1', turns: [] }, model: 'o3' });
+      const turnMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(turnMsg.id, { turn: { id: 'turn-1' } });
+
+      await waitForTick();
+
+      mockProcess.pushNotification('turn/started', { turn: { id: 'turn-1' } });
+
+      // Push delta then complete item
+      mockProcess.pushNotification('item/agentMessage/delta', {
+        threadId: 't-1',
+        turnId: 'turn-1',
+        itemId: 'msg-1',
+        delta: 'Hello world',
+      });
+
+      await waitForTick(30);
+
+      // Now push item/completed
+      mockProcess.pushNotification('item/completed', {
+        threadId: 't-1',
+        turnId: 'turn-1',
+        item: {
+          type: 'agentMessage',
+          id: 'msg-1',
+          text: 'Hello world',
+        },
+      });
+
+      await waitForTick(50);
+
+      // Collect all messages and find the null clear event
+      const messages = await collectUntil(
+        adapter,
+        (msgs) => msgs.some((m) =>
+          m.type === 'event' && 'kind' in m.event &&
+          m.event.kind === 'streaming_content' && (m.event as any).content === null,
+        ),
+        300,
+      );
+
+      const clearEvent = messages.find(
+        (m) => m.type === 'event' && 'kind' in m.event &&
+          m.event.kind === 'streaming_content' && (m.event as any).content === null,
+      );
+      expect(clearEvent).toBeDefined();
+
+      adapter.close();
+    });
+
+    it('clears streaming buffer on turn/completed', async () => {
+      const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test' };
+      const adapter = new CodexAgentAdapter(spec);
+
+      adapter.sendTurn('Test', {});
+
+      // Complete handshake
+      const initMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(initMsg.id, { userAgent: 'codex' });
+      const startMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(startMsg.id, { thread: { id: 't-1', turns: [] }, model: 'o3' });
+      const turnMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(turnMsg.id, { turn: { id: 'turn-1' } });
+
+      await waitForTick();
+
+      mockProcess.pushNotification('turn/started', { turn: { id: 'turn-1' } });
+
+      // Push delta without item/completed
+      mockProcess.pushNotification('item/agentMessage/delta', {
+        threadId: 't-1',
+        turnId: 'turn-1',
+        itemId: 'msg-1',
+        delta: 'Partial text',
+      });
+
+      await waitForTick(30);
+
+      // End the turn (safety net clear)
+      mockProcess.pushNotification('turn/completed', { turn: { id: 'turn-1' } });
+
+      await waitForTick(50);
+
+      const messages = await collectUntil(
+        adapter,
+        (msgs) => msgs.some((m) =>
+          m.type === 'event' && 'kind' in m.event &&
+          m.event.kind === 'streaming_content' && (m.event as any).content === null,
+        ),
+        300,
+      );
+
+      const clearEvent = messages.find(
+        (m) => m.type === 'event' && 'kind' in m.event &&
+          m.event.kind === 'streaming_content' && (m.event as any).content === null,
+      );
+      expect(clearEvent).toBeDefined();
 
       adapter.close();
     });
@@ -703,12 +895,15 @@ describe('CodexAgentAdapter', () => {
 
       await waitForTick();
 
+      // Push turn/started so deltas are processed in active state
+      mockProcess.pushNotification('turn/started', { turn: { id: 'turn-1' } });
+
       // Push legacy notification (should be ignored)
       mockProcess.pushNotification('codex/event/agent_message_delta', {
         delta: 'Should be ignored',
       });
 
-      // Push v2 notification (should be processed)
+      // Push v2 notification (should produce streaming_content event)
       mockProcess.pushNotification('item/agentMessage/delta', {
         threadId: 't-1',
         turnId: 'turn-1',
@@ -718,11 +913,21 @@ describe('CodexAgentAdapter', () => {
 
       await waitForTick(50);
 
-      const messages = await collectUntil(adapter, (msgs) => msgs.some((m) => m.type === 'entry'), 200);
+      const messages = await collectUntil(
+        adapter,
+        (msgs) => msgs.some((m) =>
+          m.type === 'event' && 'kind' in m.event && m.event.kind === 'streaming_content',
+        ),
+        200,
+      );
 
-      // Only the v2 delta should result in an entry
+      // Only the v2 delta should result in a streaming_content event (not an entry)
+      const streamEvents = messages.filter(
+        (m) => m.type === 'event' && 'kind' in m.event && m.event.kind === 'streaming_content',
+      );
+      expect(streamEvents.length).toBeGreaterThanOrEqual(1);
       const entries = messages.filter((m) => m.type === 'entry');
-      expect(entries.length).toBe(1);
+      expect(entries.length).toBe(0);
 
       adapter.close();
     });

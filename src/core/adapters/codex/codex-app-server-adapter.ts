@@ -22,15 +22,16 @@ import type {
   AdapterSettings,
   TurnSettings,
 } from '../../agent-adapter.js';
-import type { ChannelStatus } from '../../channel-events.js';
+import type { ChannelEvent, ChannelStatus } from '../../channel-events.js';
 import type {
+  ContentBlock,
   ContextUsage,
   MessageContent,
   Vendor,
 } from '../../transcript.js';
 import { AsyncIterableQueue } from '../../async-iterable-queue.js';
 import { CodexRpcClient } from './codex-rpc-client.js';
-import { adaptCodexItem, adaptCodexDelta } from './codex-entry-adapter.js';
+import { adaptCodexItem } from './codex-entry-adapter.js';
 import { serializeToCodexHistory } from './codex-history-serializer.js';
 import {
   codexApprovalToEvent,
@@ -88,6 +89,16 @@ export class CodexAgentAdapter implements AgentAdapter {
    * are marked isMeta so the rendering filter and history serializer skip them.
    */
   private startupPhase = true;
+
+  // --- Streaming delta accumulator ---
+  /** Accumulated text from agentMessage deltas for the current turn. */
+  private streamingText = '';
+  /** Accumulated thinking text from reasoning deltas for the current turn. */
+  private streamingThinking = '';
+  /** Throttle timer for streaming_content emission. */
+  private streamingEmitTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Minimum interval between streaming_content emissions (ms). */
+  private static readonly STREAMING_EMIT_INTERVAL = 16; // ~60fps
   private readonly spec: SessionOpenSpec & { cwd?: string; command?: string; args?: string[] };
 
   constructor(spec: SessionOpenSpec & { cwd?: string; command?: string; args?: string[] }) {
@@ -216,6 +227,9 @@ export class CodexAgentAdapter implements AgentAdapter {
 
     // Detach from shared discovery
     codexDiscovery.detachClient();
+
+    // Clear streaming buffer before closing
+    this.clearStreamingBuffer();
 
     // Kill process
     this.client?.kill();
@@ -421,11 +435,15 @@ export class CodexAgentAdapter implements AgentAdapter {
         const turn = p.turn as Record<string, unknown> | undefined;
         this.currentTurnId = turn?.id as string | undefined;
         this.startupPhase = false;
+        // Reset streaming buffer for new turn (no clear event — fresh turn)
+        this.streamingText = '';
+        this.streamingThinking = '';
         this.emitStatus('active');
         break;
       }
 
       case 'turn/completed': {
+        this.clearStreamingBuffer();
         this.currentTurnId = undefined;
         // Only transition to idle if no pending approvals
         if (this.pendingApprovals.size === 0) {
@@ -485,15 +503,26 @@ export class CodexAgentAdapter implements AgentAdapter {
         } catch (err) {
           console.warn('[codex-adapter] Failed to adapt item:', err);
         }
+
+        // Clear streaming ghost when a complete assistant message arrives
+        // (emit entry first so the webview has it before the ghost clears)
+        if (item.type === 'agentMessage') {
+          this.clearStreamingBuffer();
+        }
         break;
       }
 
-      case 'item/agentMessage/delta':
+      case 'item/agentMessage/delta': {
+        const delta = (p.delta as string) ?? '';
+        this.streamingText += delta;
+        this.scheduleStreamingEmit();
+        break;
+      }
+
       case 'item/reasoning/summaryTextDelta': {
-        const entry = adaptCodexDelta(method, p);
-        if (entry) {
-          this.outputQueue.enqueue({ type: 'entry', entry });
-        }
+        const delta = (p.delta as string) ?? '';
+        this.streamingThinking += delta;
+        this.scheduleStreamingEmit();
         break;
       }
 
@@ -621,6 +650,66 @@ export class CodexAgentAdapter implements AgentAdapter {
     if (!this._closed) {
       this.emitStatus('idle');
     }
+  }
+
+  // --- Private: Streaming Emission ---
+
+  /** Schedule a throttled streaming_content emission (~60fps). */
+  private scheduleStreamingEmit(): void {
+    if (this.streamingEmitTimer !== null) return;
+    this.streamingEmitTimer = setTimeout(() => {
+      this.streamingEmitTimer = null;
+      this.flushStreamingEmit();
+    }, CodexAgentAdapter.STREAMING_EMIT_INTERVAL);
+  }
+
+  /** Emit a snapshot of current accumulated streaming content. */
+  private flushStreamingEmit(): void {
+    if (this.streamingEmitTimer !== null) {
+      clearTimeout(this.streamingEmitTimer);
+      this.streamingEmitTimer = null;
+    }
+
+    const content: ContentBlock[] = [];
+    if (this.streamingThinking) {
+      content.push({ type: 'thinking', thinking: this.streamingThinking });
+    }
+    if (this.streamingText) {
+      content.push({ type: 'text', text: this.streamingText });
+    }
+    if (content.length === 0) return;
+
+    this.outputQueue.enqueue({
+      type: 'event',
+      event: {
+        type: 'notification',
+        kind: 'streaming_content',
+        content: content.map(block => ({ ...block })),
+      } as unknown as ChannelEvent,
+    });
+  }
+
+  /** Clear the streaming buffer and emit a clear signal to the webview. */
+  private clearStreamingBuffer(): void {
+    if (this.streamingEmitTimer !== null) {
+      clearTimeout(this.streamingEmitTimer);
+      this.streamingEmitTimer = null;
+    }
+
+    const wasStreaming = this.streamingText.length > 0 || this.streamingThinking.length > 0;
+    this.streamingText = '';
+    this.streamingThinking = '';
+
+    if (!wasStreaming) return;
+
+    this.outputQueue.enqueue({
+      type: 'event',
+      event: {
+        type: 'notification',
+        kind: 'streaming_content',
+        content: null,
+      } as unknown as ChannelEvent,
+    });
   }
 
   // --- Private: Event Emitters ---
