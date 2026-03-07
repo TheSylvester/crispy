@@ -216,6 +216,14 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     activity: { verb: 'Recalling', pastVerb: 'Recalled' },
     inspectorDefault: 'compact',
   },
+
+  // Deferred tool loading
+  ToolSearch: {
+    icon: '\uD83D\uDD0D',
+    color: '#6b7280',
+    activity: { verb: 'Loading tools', pastVerb: 'Loaded tools' },
+    inspectorDefault: 'compact',
+  },
 };
 
 /** Default metadata for unknown tools (MCP, custom) */

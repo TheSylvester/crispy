@@ -29,6 +29,7 @@ import { EnterPlanModeCompactView } from './views/enterplanmode-views.js';
 import { TaskOutputCompactView, TaskOutputExpandedView } from './views/taskoutput-views.js';
 import { ChromeCompactView, ChromeExpandedView } from './views/chrome-views.js';
 import { RecallCompactView, RecallExpandedView } from './views/recall-views.js';
+import { ToolSearchCompactView, ToolSearchExpandedView } from './views/toolsearch-views.js';
 
 // ============================================================================
 // Register Default Views (fallback for unknown tools)
@@ -231,6 +232,15 @@ for (const toolName of CHROME_TOOL_NAMES) {
 registerToolViews('mcp__crispy__recall', {
   compact: RecallCompactView,
   expanded: RecallExpandedView,
+});
+
+// ============================================================================
+// Register ToolSearch Views
+// ============================================================================
+
+registerToolViews('ToolSearch', {
+  compact: ToolSearchCompactView,
+  expanded: ToolSearchExpandedView,
 });
 
 // ============================================================================
