@@ -1,10 +1,9 @@
 /**
  * TitleBar — Fixed header with session dropdown, CWD/status, and new-session button
  *
- * Three-column layout:
+ * Two-section layout:
  *   Left:   Session dropdown button (label + animated chevron) — toggles sidebar,
  *           followed by connection indicator dot
- *   Center: Spacer
  *   Right:  Tool panel toggle + New session button
  *
  * Connection dot shows streaming/idle/approval state with glow.
@@ -266,13 +265,10 @@ export function TitleBar(): React.JSX.Element {
             <SessionSelector />
           </div>
         )}
+
+        {/* Connection indicator — right after Conversations button */}
+        <ConnectionDot channelState={channelState} sessionId={selectedSessionId} />
       </div>
-
-      {/* Connection indicator — right after Conversations button */}
-      <ConnectionDot channelState={channelState} sessionId={selectedSessionId} />
-
-      {/* Spacer pushes right section to the end */}
-      <div className="crispy-titlebar__center" />
 
       {/* Right — Theme toggle (dev server only) + Tool panel toggle + New button */}
       <div className="crispy-titlebar__right">
