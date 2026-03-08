@@ -64,8 +64,9 @@ import {
 import type { TranscriptEntry, ContentBlock, TextBlock, ThinkingBlock, ContextUsage, MessageContent, Vendor } from '../../transcript.js';
 import type { ChannelEvent } from '../../channel-events.js';
 
-import { existsSync, readdirSync, statSync, unlinkSync } from 'fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, unlinkSync } from 'fs';
 import { join } from 'path';
+import { tmpdir } from 'os';
 import { homedir } from 'os';
 import { getLatestRosieMeta } from '../../activity-index.js';
 
@@ -419,6 +420,9 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   private activeMcpServers: Record<string, McpServerConfig> | null = null;
   /** Number of background agents/tasks currently running. */
   private backgroundTaskCount = 0;
+  /** Per-instance temp dir so nested CLI processes don't purge each other's
+   *  Bash tool output files (they all share /tmp/claude-<uid>/<slug>/tasks/). */
+  private readonly instanceTmpdir: string;
 
   // --- Streaming delta accumulator ---
   /** Buffer for accumulating streaming deltas into renderable content blocks. */
@@ -436,6 +440,9 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     this.options = options;
     this.vendor = options.vendor ?? 'claude';
     this._sessionId = options.resume;
+    // Each adapter gets its own tmpdir so multiple CLI instances don't
+    // purge each other's Bash tool output files on startup.
+    this.instanceTmpdir = mkdtempSync(join(tmpdir(), 'claude-session-'));
   }
 
   // --------------------------------------------------------------------------
@@ -645,6 +652,9 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       try { unlinkSync(this.syntheticSessionPath); } catch { /* best-effort */ }
       this.syntheticSessionPath = undefined;
     }
+
+    // Clean up per-instance tmpdir (created in constructor to isolate Bash tool output)
+    try { rmSync(this.instanceTmpdir, { recursive: true, force: true }); } catch { /* best-effort */ }
 
     // Reset background counter — adapter teardown always goes fully idle
     this.backgroundTaskCount = 0;
@@ -870,6 +880,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       env: {
         ...process.env,
         CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '120000',
+        CLAUDE_CODE_TMPDIR: this.instanceTmpdir,
         ...opts.env,
       },
       ...(opts.extraArgs && { extraArgs: opts.extraArgs }),
