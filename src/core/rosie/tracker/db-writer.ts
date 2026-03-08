@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { getDb } from '../../crispy-db.js';
 import { ensureCrispyDir, dbPath } from '../../activity-index.js';
 import type { TrackerBlock } from './types.js';
+import { pushRosieLog } from '../debug-log.js';
 
 // ============================================================================
 // Helpers
@@ -116,8 +117,10 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
     }
 
     db.exec('COMMIT');
+    pushRosieLog({ source: 'db', level: 'info', summary: `Tracker DB: wrote ${blocks.length} projects`, data: { count: blocks.length } });
   } catch (e) {
     db.exec('ROLLBACK');
+    pushRosieLog({ source: 'db', level: 'error', summary: `Tracker DB: rollback — ${e instanceof Error ? e.message : String(e)}`, data: { error: String(e) } });
     throw e;
   }
 }
