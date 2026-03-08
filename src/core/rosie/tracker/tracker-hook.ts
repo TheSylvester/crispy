@@ -13,6 +13,10 @@
  * @module rosie/tracker/tracker-hook
  */
 
+import { randomUUID } from 'node:crypto';
+import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { onResponseCompleteAfter } from '../../lifecycle-hooks.js';
 import type { AgentDispatch } from '../../../host/agent-dispatch.js';
 import { getSettingsSnapshotInternal } from '../../settings/index.js';
@@ -21,6 +25,7 @@ import { getLatestRosieMeta } from '../../activity-index.js';
 import { pushRosieLog } from '../debug-log.js';
 import { getExistingProjects } from './db-writer.js';
 import { buildInternalMcpConfig } from '../../../mcp/servers/external.js';
+import type { TrackerDecision } from '../../../mcp/servers/internal.js';
 
 // ============================================================================
 // Types
@@ -89,6 +94,51 @@ export function shutdownRosieTracker(): void {
 }
 
 // ============================================================================
+// Decision Sidecar
+// ============================================================================
+
+/** Create a temp file path for the MCP subprocess to write decisions to. */
+function createDecisionsFile(): string {
+  const file = join(tmpdir(), `crispy-tracker-${randomUUID()}.jsonl`);
+  writeFileSync(file, '');
+  return file;
+}
+
+/** Read and delete the decisions sidecar file. Returns parsed decisions. */
+function readDecisions(file: string): TrackerDecision[] {
+  try {
+    const raw = readFileSync(file, 'utf-8').trim();
+    if (!raw) return [];
+    return raw.split('\n').map((line) => JSON.parse(line) as TrackerDecision);
+  } catch {
+    return [];
+  } finally {
+    try { unlinkSync(file); } catch { /* best-effort cleanup */ }
+  }
+}
+
+/** Push individual rosie log entries for each tracker decision. */
+function logDecisions(decisions: TrackerDecision[], sessionId: string): void {
+  for (const d of decisions) {
+    if (d.tool === 'upsert_project') {
+      pushRosieLog({
+        source: 'tracker',
+        level: 'info',
+        summary: `Tracker: ${d.action} "${d.title}" → ${d.status}`,
+        data: { sessionId, ...d },
+      });
+    } else if (d.tool === 'mark_trivial') {
+      pushRosieLog({
+        source: 'tracker',
+        level: 'info',
+        summary: `Tracker: marked trivial — ${d.reason}`,
+        data: { sessionId, ...d },
+      });
+    }
+  }
+}
+
+// ============================================================================
 // Analysis
 // ============================================================================
 
@@ -116,6 +166,7 @@ async function runTrackerAnalysis(
   const prompt = buildTrackerPrompt(meta, existingProjects);
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const decisionsFile = createDecisionsFile();
     try {
       const promptToSend = attempt === 1
         ? prompt
@@ -136,12 +187,16 @@ async function runTrackerAnalysis(
         env: {
           CLAUDECODE: '',
           CRISPY_TRACKER_SESSION_FILE: sessionPath,
+          CRISPY_TRACKER_DECISIONS_FILE: decisionsFile,
           CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '30000',
         },
         skipPersistSession: true,
         autoClose: true,
         timeoutMs: 30_000,
       });
+
+      // Read decisions written by the MCP tool handlers in the subprocess
+      const decisions = readDecisions(decisionsFile);
 
       if (!result) {
         console.warn(`[rosie.tracker] FAIL attempt ${attempt}/${MAX_ATTEMPTS}: dispatchChild returned null`);
@@ -154,18 +209,19 @@ async function runTrackerAnalysis(
         continue;
       }
 
-      // Tool handlers in internal.ts write directly to the DB via
-      // writeTrackerResults(). The text response (if any) is just
-      // the model's confirmation — all data flows through tool calls.
-      console.log(`[rosie.tracker] OK — child completed (attempt ${attempt})`);
+      // Log individual decisions (upsert_project / mark_trivial calls)
+      console.log(`[rosie.tracker] OK — child completed (attempt ${attempt}, ${decisions.length} decision(s))`);
       pushRosieLog({
         source: 'tracker',
         level: 'info',
         summary: `Tracker: analysis completed`,
         data: { sessionId, attempt, responseSnippet: result.text.slice(0, 200) },
       });
+      logDecisions(decisions, sessionId);
       return;
     } catch (err) {
+      // Clean up decisions file on error (readDecisions won't have run)
+      try { unlinkSync(decisionsFile); } catch { /* best-effort */ }
       console.warn(`[rosie.tracker] FAIL attempt ${attempt}/${MAX_ATTEMPTS} threw:`, err);
       pushRosieLog({
         source: 'tracker',

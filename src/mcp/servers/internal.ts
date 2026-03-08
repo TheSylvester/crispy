@@ -13,6 +13,7 @@
  * @module mcp/servers/internal
  */
 
+import { appendFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath } from '../memory-queries.js';
@@ -32,6 +33,30 @@ export const INTERNAL_MCP_SERVER_NAME = 'crispy-memory';
 // ============================================================================
 
 type McpToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: true };
+
+/** Decision record appended to the sidecar file for parent-process observability. */
+export interface TrackerDecision {
+  tool: 'upsert_project' | 'mark_trivial';
+  action?: 'created' | 'updated';
+  title?: string;
+  status?: string;
+  reason?: string;
+}
+
+/**
+ * Append a decision record to the sidecar file (set via CRISPY_TRACKER_DECISIONS_FILE).
+ * The parent process reads this after dispatchChild completes and pushes entries
+ * to the rosie debug log. Silently no-ops if the env var is unset.
+ */
+function appendDecision(decision: TrackerDecision): void {
+  const file = process.env.CRISPY_TRACKER_DECISIONS_FILE;
+  if (!file) return;
+  try {
+    appendFileSync(file, JSON.stringify(decision) + '\n');
+  } catch {
+    // Best-effort — don't break the tool handler if the file can't be written
+  }
+}
 
 /** Wrap an MCP tool handler with consistent error handling and JSON serialization. */
 function wrapToolHandler<T extends unknown[]>(
@@ -230,10 +255,11 @@ export function createInternalServer(): McpServer {
 
       try {
         writeTrackerResults([block], sessionFile);
-        const action = args.id ? `updated "${args.title}"` : `created "${args.title}"`;
-        console.error(`[internal-mcp] upsert_project: ${action} (${args.status})`);
+        const action = args.id ? 'updated' : 'created';
+        console.error(`[internal-mcp] upsert_project: ${action} "${args.title}" (${args.status})`);
+        appendDecision({ tool: 'upsert_project', action, title: args.title, status: args.status });
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action: args.id ? 'updated' : 'created', project: args.title }) }],
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action, project: args.title }) }],
         };
       } catch (err) {
         console.error('[internal-mcp] upsert_project FAIL:', err instanceof Error ? err.message : String(err));
@@ -256,6 +282,7 @@ export function createInternalServer(): McpServer {
     },
     async (args) => {
       console.error(`[internal-mcp] mark_trivial: "${args.reason}"`);
+      appendDecision({ tool: 'mark_trivial', reason: args.reason });
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', trivial: true, reason: args.reason }) }],
       };
