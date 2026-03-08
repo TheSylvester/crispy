@@ -63,25 +63,27 @@ def load_tracker_system_prompt() -> str:
 
 TOOL_CALLING_PROMPT = """\
 You are a project tracker. You receive a session summary and a list of existing projects. \
-Your job is to link this session's work to existing projects or create new ones.
+Your job is to identify EVERY distinct project this session touched and file each one.
 
 You have two tools:
-- **upsert_project** — Create a new project or update an existing one. Call once per project this session touches.
+- **upsert_project** — Create or update a project. Call once PER DISTINCT PROJECT this session touches. Most sessions touch 1 project, but some touch 2-3.
 - **mark_trivial** — Mark the session as not warranting any project (quick recall, empty session, false start).
 
 ## Task
 
-Look at the session summary below. Determine which project(s) this session worked on:
+Analyze the session summary. Identify each distinct workstream:
 - Does it match an existing project? → call upsert_project with that project's id
 - Is it new work? → call upsert_project without an id
-- Is it trivial? → call mark_trivial
+- Is the entire session trivial? → call mark_trivial
+
+**Look for multiple projects.** Sessions often contain a primary quest plus secondary work — a sidequest, a tangential fix, a plan saved for a different feature, or a skill/tool created alongside the main work. If the session title contains "+", "&", or describes two unrelated topics, there are almost certainly multiple projects. Call upsert_project once for each.
 
 ## Matching Rules (priority order)
 
-1. **Title similarity** — if the session topic closely matches an existing project title, it's the same project
+1. **Title similarity** — if the topic closely matches an existing project title, it's the same project
 2. **Entity overlap** — shared files, branches, or function names confirm a match when titles differ
-3. **Quest continuity** — if the session continues an existing project's goal (e.g. one planned it, this one built it), same project
-4. **Status progression** — if the session picks up where an existing project left off (planned → active, active → done), that reinforces a match
+3. **Quest continuity** — if the topic continues an existing project's goal (e.g. one planned it, this one built it), same project
+4. **Status progression** — if the topic picks up where an existing project left off (planned → active, active → done), that reinforces a match
 
 Only create a new project when no existing project is a reasonable match.
 
@@ -98,7 +100,7 @@ If the session's primary activity was looking up, recapping, or checking the sta
 - **title**: Keep stable across sessions. Don't rename unless scope fundamentally changed.
 - **summary**: Reflect the CURRENT state, not history. What's true right now?
 - **entities**: Top 5-10. Include files, branches, key concepts. These are used for future matching.
-- **files**: Only meaningful artifacts — plans, specs, implementations. Not every file touched.
+- **files**: Non-code artifacts only — plans (.ai-reference/), specs, design docs, skill definitions. Source code belongs in entities, not files. Omit if none exist.
 
 Call your tools now. No commentary needed."""
 
@@ -619,7 +621,7 @@ def _build_tracker_mcp_server(log_path: str):
                         "properties": {
                             "path": {
                                 "type": "string",
-                                "description": "Relative file path (meaningful artifact, not every file touched).",
+                                "description": "File path to a non-code artifact.",
                             },
                             "note": {
                                 "type": "string",
@@ -628,7 +630,11 @@ def _build_tracker_mcp_server(log_path: str):
                         },
                         "required": ["path", "note"],
                     },
-                    "description": "Key files — plans, specs, implementations. Not every file touched.",
+                    "description": (
+                        "Non-code artifacts only: plans, specs, design docs, study writeups "
+                        "(e.g. .ai-reference/ files, skill definitions). NOT source code — "
+                        "source files belong in entities, not here. Omit if none."
+                    ),
                 },
             },
             "required": ["title", "status", "summary", "category", "entities"],
