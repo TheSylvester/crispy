@@ -29,7 +29,7 @@ import {
   destroyChannel, rekeyChannel, getChannel,
   broadcastUserEntry as channelBroadcastUserEntry,
 } from './session-channel.js';
-import { refreshAndNotify } from './session-list-manager.js';
+import { refreshAndNotify, notifyStatusChange } from './session-list-manager.js';
 import { fireResponseComplete } from './lifecycle-hooks.js';
 
 /** Type guard for session_changed notification events. */
@@ -335,6 +335,13 @@ function openChannel(channelId: string, vendor: Vendor, spec: SessionOpenSpec): 
       // handlers are error-isolated and run concurrently.
       fireResponseComplete(sessionId);
     }, 150);
+  };
+
+  channel.onStatusChange = (state) => {
+    const sessionId = channel.adapter?.sessionId;
+    if (!sessionId) return;
+    if (isChildSession(sessionId)) return;
+    notifyStatusChange(sessionId, state);
   };
 
   setAdapter(channel, liveAdapter);

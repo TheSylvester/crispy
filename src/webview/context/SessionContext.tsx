@@ -16,6 +16,7 @@ import type { WireSessionInfo } from '../transport.js';
 import { useTransport } from './TransportContext.js';
 import { useEnvironment } from './EnvironmentContext.js';
 import { SESSION_LIST_CHANNEL_ID } from '../../core/session-list-events.js';
+import type { SessionChannelState } from '../../core/session-channel.js';
 import { pathToSlug } from '../hooks/useSessionCwd.js';
 
 interface SessionState {
@@ -35,6 +36,8 @@ interface SessionContextValue extends SessionState {
   availableVendors: string[];
   /** Original workspace CWD path from the host (VS Code only). */
   workspaceCwdPath: string | null;
+  /** Live status of non-selected sessions (streaming/idle/etc.). */
+  sessionStatuses: Map<string, SessionChannelState>;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -51,6 +54,7 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sessionStatuses, setSessionStatuses] = useState<Map<string, SessionChannelState>>(new Map());
 
   // Manual refresh fallback — kept in context value for explicit "pull" scenarios
   const loadSessions = useCallback(async () => {
@@ -107,6 +111,18 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
         const removedId = event.sessionId;
         setSessions((prev) => prev.filter((s) => s.sessionId !== removedId));
         setSelectedSessionId((prev) => (prev === removedId ? null : prev));
+        setSessionStatuses(prev => {
+          const next = new Map(prev);
+          next.delete(removedId);
+          return next;
+        });
+      } else if (event.type === 'session_status_changed') {
+        setSessionStatuses(prev => {
+          if (prev.get(event.sessionId) === event.status) return prev;
+          const next = new Map(prev);
+          next.set(event.sessionId, event.status as SessionChannelState);
+          return next;
+        });
       }
     });
 
@@ -227,6 +243,7 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     findAndSelectSession,
     availableVendors,
     workspaceCwdPath,
+    sessionStatuses,
   };
 
   return (

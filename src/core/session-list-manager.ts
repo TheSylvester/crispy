@@ -14,6 +14,7 @@
  */
 
 import type { SessionInfo } from './agent-adapter.js';
+import type { SessionChannelState } from './session-channel.js';
 import type { SessionListEvent } from './session-list-events.js';
 import { findSession, listAllSessions } from './session-manager.js';
 
@@ -61,11 +62,8 @@ export function unsubscribeSessionList(subOrId: SessionListSubscriber | string):
 // Notification
 // ============================================================================
 
-/** Broadcast a session upsert to all subscribers. */
-export function notifyUpsert(session: SessionInfo): void {
-  knownSessions.set(session.sessionId, { modifiedAt: session.modifiedAt.getTime() });
-
-  const event: SessionListEvent = { type: 'session_list_upsert', session };
+/** Send an event to all subscribers, swallowing per-subscriber errors. */
+function broadcast(event: SessionListEvent): void {
   for (const [, sub] of subscribers) {
     try {
       sub.send(event);
@@ -75,18 +73,21 @@ export function notifyUpsert(session: SessionInfo): void {
   }
 }
 
+/** Broadcast a session upsert to all subscribers. */
+export function notifyUpsert(session: SessionInfo): void {
+  knownSessions.set(session.sessionId, { modifiedAt: session.modifiedAt.getTime() });
+  broadcast({ type: 'session_list_upsert', session });
+}
+
 /** Remove a session from the cache and broadcast removal to all subscribers. */
 function notifyRemoval(sessionId: string): void {
   knownSessions.delete(sessionId);
+  broadcast({ type: 'session_list_remove', sessionId });
+}
 
-  const event: SessionListEvent = { type: 'session_list_remove', sessionId };
-  for (const [, sub] of subscribers) {
-    try {
-      sub.send(event);
-    } catch {
-      // Bad subscriber — swallow error, don't crash the manager
-    }
-  }
+/** Broadcast a session status change to all subscribers. */
+export function notifyStatusChange(sessionId: string, status: SessionChannelState): void {
+  broadcast({ type: 'session_status_changed', sessionId, status });
 }
 
 /**

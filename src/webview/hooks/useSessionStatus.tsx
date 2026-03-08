@@ -62,6 +62,10 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
       return;
     }
 
+    // Reset channel state on session switch so stale state from the
+    // previous session doesn't leak through the catchup guard.
+    setChannelState(null);
+
     const off = transport.onEvent((sid, event) => {
       if (sid !== selectedSessionId) return;
 

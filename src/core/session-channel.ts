@@ -124,6 +124,9 @@ export interface SessionChannel {
 
   /** Optional callback invoked when the channel transitions to idle (end of turn). */
   onIdle?: () => void;
+
+  /** Optional callback invoked on any status state change (active/idle/approval/background). */
+  onStatusChange?: (state: SessionChannelState) => void;
 }
 
 // ============================================================================
@@ -337,6 +340,8 @@ function broadcastAndTrack(channel: SessionChannel, msg: ChannelMessage): void {
           // Do NOT fire onIdle — background tasks are still running
           break;
       }
+      // Notify external observers of the status transition
+      channel.onStatusChange?.(channel.state);
     }
     // notification events: no internal state change needed (just pass through)
   }

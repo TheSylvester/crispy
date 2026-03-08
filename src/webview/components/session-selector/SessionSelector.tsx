@@ -37,7 +37,7 @@ export function SessionSelector(): React.JSX.Element {
   const {
     sessions, selectedSessionId, setSelectedSessionId,
     selectedCwd, setSelectedCwd, availableVendors, isLoading,
-    findAndSelectSession,
+    findAndSelectSession, sessionStatuses,
   } = useSession();
   const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
   const { channelState } = useSessionStatus(selectedSessionId);
@@ -216,13 +216,16 @@ export function SessionSelector(): React.JSX.Element {
     });
   }, []);
 
-  // ---- LIVE badge (Phase 1: selected session only) ----
+  // ---- LIVE badge ----
   const isLiveSession = useCallback((sessionId: string): boolean => {
-    return (
-      sessionId === selectedSessionId &&
-      (channelState === 'streaming' || channelState === 'awaiting_approval')
-    );
-  }, [selectedSessionId, channelState]);
+    // For the selected session, use the precise channelState from the status hook
+    if (sessionId === selectedSessionId) {
+      return channelState === 'streaming' || channelState === 'awaiting_approval';
+    }
+    // For other sessions, use the session-list status events
+    const status = sessionStatuses.get(sessionId);
+    return status === 'streaming' || status === 'awaiting_approval';
+  }, [selectedSessionId, channelState, sessionStatuses]);
 
   // ---- Empty states ----
   if (isLoading) {
