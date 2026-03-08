@@ -42,20 +42,33 @@ export function initRosieSummarize(d: AgentDispatch): void {
 
     // Guard: settings check
     const snap = getSettingsSnapshotInternal();
-    if (!snap.settings.rosie.summarize.enabled) return;
+    if (!snap.settings.rosie.summarize.enabled) {
+      pushRosieLog({ source: 'summarize', level: 'info', summary: 'Summarize: skipped (disabled)' });
+      return;
+    }
 
     // Guard: pending IDs, inflight
-    if (sessionId.startsWith('pending:')) return;
-    if (inflight.has(sessionId)) return;
+    if (sessionId.startsWith('pending:')) {
+      pushRosieLog({ source: 'summarize', level: 'info', summary: 'Summarize: skipped (pending ID)' });
+      return;
+    }
+    if (inflight.has(sessionId)) {
+      pushRosieLog({ source: 'summarize', level: 'info', summary: 'Summarize: skipped (already running)' });
+      return;
+    }
 
     // Look up session info (child session guard is handled by lifecycle-hooks)
     const info = await d.findSession(sessionId);
-    if (!info) return;
+    if (!info) {
+      pushRosieLog({ source: 'summarize', level: 'warn', summary: `Summarize: skipped (session ${sessionId.slice(0, 12)}… not found)` });
+      return;
+    }
 
     // Resolve model — settings override, else system default
     const rosieModel = snap.settings.rosie.summarize.model; // "vendor:model" or undefined
 
     inflight.add(sessionId);
+    pushRosieLog({ source: 'summarize', level: 'info', summary: `Summarize: starting for ${sessionId.slice(0, 12)}…`, data: { sessionId, vendor: info.vendor } });
     try {
       await runSummarizeAnalysis(d, sessionId, info.path, info.vendor, rosieModel);
     } finally {
@@ -118,6 +131,7 @@ async function runSummarizeAnalysis(
   const parsed = modelOverride ? parseModelOption(modelOverride) : undefined;
   const vendor = parsed?.vendor ?? parentVendor;
   const model = parsed?.model;
+  pushRosieLog({ source: 'summarize', level: 'info', summary: `Summarize: using ${vendor}/${model || 'default'}`, data: { vendor, model } });
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
@@ -180,7 +194,7 @@ async function runSummarizeAnalysis(
 
       // Push to rosie log stream
       let parsedEntities: string[] = [];
-      try { parsedEntities = JSON.parse(fields.entities); } catch { /* keep empty */ }
+      try { parsedEntities = JSON.parse(fields.entities); } catch { pushRosieLog({ source: 'summarize', level: 'warn', summary: 'Summarize: entity JSON parse failed', data: { raw: fields.entities.slice(0, 200) } }); }
       pushRosieLog({
         source: 'summarize',
         level: 'info',
@@ -205,6 +219,7 @@ async function runSummarizeAnalysis(
       });
     }
   }
+  pushRosieLog({ source: 'summarize', level: 'warn', summary: `Summarize: all ${MAX_ATTEMPTS} attempts failed for ${sessionId.slice(0, 12)}…`, data: { sessionId } });
 }
 
 // ============================================================================
