@@ -13,6 +13,7 @@ import { registerAdapter, unregisterAdapter, getRegisteredVendors } from '../ses
 import { NATIVE_VENDORS, type Vendor } from '../transcript.js';
 import type { VendorDiscovery, SessionOpenSpec } from '../agent-adapter.js';
 import type { ProviderConfig } from './types.js';
+import { pushRosieLog } from '../rosie/index.js';
 
 // ============================================================================
 // Types
@@ -179,6 +180,7 @@ export function syncProviderAdapters(
     if (!providers[slug] || !providers[slug].enabled) {
       try { unregisterAdapter(slug); } catch { /* best effort */ }
       registeredDynamic.delete(slug);
+      pushRosieLog({ source: 'provider', level: 'info', summary: `Provider: unregistered ${slug}` });
     }
   }
 
@@ -195,7 +197,11 @@ export function syncProviderAdapters(
 
     registerAdapter(makeDiscovery(slug), makeFactory(slug, config, base));
     registeredDynamic.add(slug);
+    pushRosieLog({ source: 'provider', level: 'info', summary: `Provider: registered ${slug} (${config.label})`, data: { slug, label: config.label, baseUrl: config.baseUrl } });
   }
+
+  const activeCount = registeredDynamic.size;
+  pushRosieLog({ source: 'provider', level: 'info', summary: `Provider: sync complete — ${activeCount} dynamic provider(s) active` });
 }
 
 // ============================================================================

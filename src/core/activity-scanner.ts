@@ -15,6 +15,7 @@
  */
 
 import * as fs from 'node:fs';
+import { basename } from 'node:path';
 import { getDiscovery, listAllSessions } from './session-manager.js';
 import {
   loadScanState,
@@ -32,6 +33,7 @@ import {
   scanFirstUserUuids,
   findDivergenceOffset,
 } from './adapters/claude/jsonl-reader.js';
+import { pushRosieLog } from './rosie/index.js';
 
 /**
  * Run a full scan of all registered vendor sessions.
@@ -100,6 +102,7 @@ export function runScan(): void {
               divergence.offset,
             );
             lineageFiles.add(session.path);
+            pushRosieLog({ source: 'scanner', level: 'info', summary: `Scanner: fork detected — ${basename(session.path)} from ${basename(parent.parentFile)}`, data: { child: session.path, parent: parent.parentFile } });
             if (!cached) {
               fromOffset = divergence.offset; // skip shared prefix on first scan
             } else {
@@ -174,4 +177,5 @@ export function runScan(): void {
   if (pruned > 0) {
     console.log(`[activity-scanner] Pruned ${pruned} deleted session file(s) from DB`);
   }
+  pushRosieLog({ source: 'scanner', level: 'info', summary: `Scanner: scanned ${sessions.length} sessions, ${newEntries.length} new entries`, data: { sessionCount: sessions.length, newEntries: newEntries.length } });
 }
