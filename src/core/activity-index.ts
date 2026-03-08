@@ -21,6 +21,7 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { getDb, _resetDb } from './crispy-db.js';
+import { pushRosieLog } from './rosie/index.js';
 
 // ============================================================================
 // Types
@@ -599,6 +600,9 @@ export function pruneDeletedFiles(livePaths: Set<string>): number {
     // Invalidate rosie cache — pruned files may have had rosie-meta entries
     rosieMetaCache = null;
 
+    if (stalePaths.length > 0) {
+      pushRosieLog({ source: 'scanner', level: 'info', summary: `Index: pruned ${stalePaths.length} deleted sessions`, data: { count: stalePaths.length } });
+    }
     return stalePaths.length;
   } catch (err) {
     console.error('[activity-index] pruneDeletedFiles error:', err);

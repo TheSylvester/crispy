@@ -16,6 +16,7 @@
 import * as fs from 'node:fs';
 import { join, dirname } from 'node:path';
 import { Database } from 'node-sqlite3-wasm';
+import { pushRosieLog } from './rosie/index.js';
 
 // ============================================================================
 // Singleton
@@ -50,6 +51,7 @@ export function getDb(dbPath: string): Database {
   db.exec('PRAGMA journal_mode = DELETE');
 
   runMigrations(db, dbPath);
+  pushRosieLog({ source: 'db', level: 'info', summary: `DB: initialized at ${dbPath}` });
 
   return db;
 }
@@ -500,6 +502,7 @@ function runMigrations(db: Database, dbPath: string): void {
           [migration.version, migration.description],
         );
         db.exec('COMMIT');
+        pushRosieLog({ source: 'db', level: 'info', summary: `DB: migration v${migration.version} complete — ${migration.description}` });
       } catch (err) {
         db.exec('ROLLBACK');
         throw err;
