@@ -60,11 +60,8 @@ async function downloadModel(): Promise<string> {
   const modelPath = join(cacheDir, 'model.onnx');
 
   if (existsSync(modelPath)) {
-    pushRosieLog({ source: 'voice', level: 'info', summary: `VAD model cached at ${modelPath}` });
     return modelPath;
   }
-
-  pushRosieLog({ source: 'voice', level: 'info', summary: `Downloading Silero VAD model from ${MODEL_URL}...` });
 
   mkdirSync(cacheDir, { recursive: true });
 
@@ -76,7 +73,7 @@ async function downloadModel(): Promise<string> {
   const buffer = Buffer.from(await response.arrayBuffer());
   writeFileSync(modelPath, buffer);
 
-  pushRosieLog({ source: 'voice', level: 'info', summary: `VAD model downloaded (${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB)` });
+  pushRosieLog({ source: 'voice', level: 'info', summary: `VAD model downloaded from HuggingFace (${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB)` });
 
   return modelPath;
 }
@@ -93,8 +90,6 @@ export async function initVAD(): Promise<void> {
   if (session) return;
 
   try {
-    pushRosieLog({ source: 'voice', level: 'info', summary: 'Loading Silero VAD model...' });
-
     const modelPath = await downloadModel();
     session = await ort.InferenceSession.create(modelPath);
 

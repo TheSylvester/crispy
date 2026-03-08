@@ -185,7 +185,6 @@ function spawnRecorder(
 
     proc.stdout?.on('data', (data: Buffer) => {
       const output = data.toString().trim();
-      pushRosieLog({ source: 'voice', level: 'info', summary: `recorder stdout: ${output}` });
       if (output.includes('RECORDING_STARTED') && !resolved) {
         resolved = true;
         activeRecording = { process: proc, tempWavPath, tempScriptPath, startedAt: Date.now() };
@@ -195,7 +194,8 @@ function spawnRecorder(
 
     proc.stderr?.on('data', (data: Buffer) => {
       stderrOutput += data.toString();
-      pushRosieLog({ source: 'voice', level: 'warn', summary: `recorder stderr: ${data.toString().trim()}` });
+      const msg = data.toString().trim();
+      if (msg) pushRosieLog({ source: 'voice', level: 'warn', summary: `Voice: recorder stderr — ${msg.slice(0, 200)}` });
     });
 
     proc.on('error', (err) => {
@@ -207,7 +207,6 @@ function spawnRecorder(
     });
 
     proc.on('close', (code) => {
-      pushRosieLog({ source: 'voice', level: 'info', summary: `recorder exited with code ${code}` });
       if (!resolved) {
         resolved = true;
         reject(new Error(
