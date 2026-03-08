@@ -3,7 +3,20 @@
 tracker-run — Send a rosie-meta entry to the tracker prompt and validate output.
 
 Accepts a rowid (from tracker-lab) or selector. Assembles the prompt, sends to
-a model via super-agent, validates the XML response. No side effects.
+a model, validates the response. No side effects on the database.
+
+Two modes:
+  --xml (default)        Original XML output via super-agent
+  --tool-calling / --tc  Tool calling via Agent SDK + mock MCP server
+
+The --tc mode uses the Agent SDK directly with a mock MCP server that exposes
+upsert_project and mark_trivial tools. Tool calls are logged to a JSONL file
+for validation — no XML parsing needed.
+
+PRODUCTION NOTE:
+  In production, the same tool definitions (from tracker-mcp-server) will be
+  added to the internal MCP server (src/mcp/servers/internal.ts) and the
+  handlers will pass through to db-writer.ts. Same schema, real backend.
 """
 
 import sqlite3
@@ -13,12 +26,16 @@ import json
 import subprocess
 import tempfile
 import argparse
+import asyncio
 import re
 import textwrap
+import time
 from pathlib import Path
 
 DB = Path.home() / ".crispy" / "crispy.db"
 SUPER_AGENT = Path.home() / ".claude/skills/super-agent/scripts/super-agent"
+SCRIPT_DIR = Path(__file__).resolve().parent
+MOCK_MCP_SERVER = SCRIPT_DIR / "tracker-mcp-server"
 DEFAULT_MODEL = "claude-haiku-4-5"
 
 # ============================================================================
@@ -41,6 +58,52 @@ def load_tracker_system_prompt() -> str:
 
 
 # ============================================================================
+# Tool-Calling Prompt (alternative to XML prompt)
+# ============================================================================
+
+TOOL_CALLING_PROMPT = """\
+You are a project tracker. You receive a session summary and a list of existing projects. \
+Your job is to link this session's work to existing projects or create new ones.
+
+You have two tools:
+- **upsert_project** — Create a new project or update an existing one. Call once per project this session touches.
+- **mark_trivial** — Mark the session as not warranting any project (quick recall, empty session, false start).
+
+## Task
+
+Look at the session summary below. Determine which project(s) this session worked on:
+- Does it match an existing project? → call upsert_project with that project's id
+- Is it new work? → call upsert_project without an id
+- Is it trivial? → call mark_trivial
+
+## Matching Rules (priority order)
+
+1. **Title similarity** — if the session topic closely matches an existing project title, it's the same project
+2. **Entity overlap** — shared files, branches, or function names confirm a match when titles differ
+3. **Quest continuity** — if the session continues an existing project's goal (e.g. one planned it, this one built it), same project
+4. **Status progression** — if the session picks up where an existing project left off (planned → active, active → done), that reinforces a match
+
+Only create a new project when no existing project is a reasonable match.
+
+## Merge Rule
+
+If this session and prior sessions form one arc (diagnosis → root cause → fix), they belong to the same project. Do not create a new project for each phase.
+
+## Recall Rule
+
+If the session's primary activity was looking up, recapping, or checking the status of prior work — it is **trivial**. The recalled content belongs to the original sessions, not this one. Signals: quest mentions "recall", "did we discuss", "status check", "refresh understanding", "recap". Only create a project if the session performed NEW work beyond retrieval.
+
+## Rules
+
+- **title**: Keep stable across sessions. Don't rename unless scope fundamentally changed.
+- **summary**: Reflect the CURRENT state, not history. What's true right now?
+- **entities**: Top 5-10. Include files, branches, key concepts. These are used for future matching.
+- **files**: Only meaningful artifacts — plans, specs, implementations. Not every file touched.
+
+Call your tools now. No commentary needed."""
+
+
+# ============================================================================
 # Prompt Assembly
 # ============================================================================
 
@@ -49,7 +112,7 @@ def build_tracker_prompt(
     projects: list[dict],
     system_prompt: str | None = None,
 ) -> str:
-    """Replicate buildTrackerPrompt() from tracker-hook.ts."""
+    """Replicate buildTrackerPrompt() from tracker-hook.ts (XML mode)."""
     prompt_text = system_prompt or load_tracker_system_prompt()
 
     if projects:
@@ -68,6 +131,43 @@ def build_tracker_prompt(
 
 Title: {meta.get('title', '')}
 Quest: {meta.get('quest', '')}
+Status: {meta.get('status', '')}
+Entities: {meta.get('entities', '[]')}
+
+## Existing Projects
+
+{project_list}"""
+
+
+def build_tool_calling_prompt(
+    meta: dict,
+    projects: list[dict],
+    system_prompt: str | None = None,
+) -> str:
+    """Build prompt for tool-calling mode (includes summary)."""
+    prompt_text = system_prompt or TOOL_CALLING_PROMPT
+
+    if projects:
+        project_list = "\n".join(
+            f"[{p['id']}] {p['title']} ({p['status']}) — entities: {p['entities']}"
+            for p in projects
+        )
+    else:
+        project_list = "No existing projects yet."
+
+    # Include summary in tool-calling mode (fixes known gap)
+    summary = meta.get("summary", "")
+    summary_line = f"Summary: {summary}" if summary else ""
+
+    return f"""{prompt_text}
+
+---
+
+## Session Summary
+
+Title: {meta.get('title', '')}
+Quest: {meta.get('quest', '')}
+{summary_line}
 Status: {meta.get('status', '')}
 Entities: {meta.get('entities', '[]')}
 
@@ -126,7 +226,7 @@ def query_projects(db_path: Path) -> list[dict]:
 
 
 # ============================================================================
-# Response Validation
+# XML Response Validation (original mode)
 # ============================================================================
 
 def validate_response(text: str, existing_ids: set[str] | None = None) -> dict:
@@ -196,16 +296,115 @@ def validate_response(text: str, existing_ids: set[str] | None = None) -> dict:
     return results
 
 
+# ============================================================================
+# Tool-Call Validation (tool-calling mode)
+# ============================================================================
+
+VALID_STATUSES = {"active", "done", "blocked", "planned", "abandoned"}
+VALID_CATEGORIES = {"recall", "ui", "infra", "research", "meta"}
+
+
+def validate_tool_calls(log_path: Path, existing_ids: set[str] | None = None) -> dict:
+    """Validate tool calls captured by the mock MCP server."""
+    if not log_path.exists():
+        return {"calls": 0, "valid": 0, "errors": ["No tool call log found — model may not have called any tools"], "projects": [], "trivial": []}
+
+    calls = []
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            calls.append(json.loads(line))
+
+    results: dict = {"calls": len(calls), "valid": 0, "errors": [], "projects": [], "trivial": []}
+
+    if not calls:
+        results["errors"].append("Log file empty — model produced no tool calls")
+        return results
+
+    for i, call in enumerate(calls):
+        tool = call.get("tool", "")
+        args = call.get("arguments", {})
+
+        if tool == "mark_trivial":
+            reason = args.get("reason", "(no reason)")
+            results["trivial"].append(reason)
+            results["valid"] += 1
+            continue
+
+        if tool == "upsert_project":
+            errors = []
+
+            # Required fields
+            for field in ("title", "status", "summary", "category", "entities"):
+                if not args.get(field):
+                    errors.append(f"Call {i}: missing required field '{field}'")
+
+            # Status enum
+            status = args.get("status", "")
+            if status and status not in VALID_STATUSES:
+                errors.append(f"Call {i}: invalid status '{status}'")
+
+            # Category enum
+            category = args.get("category", "")
+            if category and category not in VALID_CATEGORIES:
+                errors.append(f"Call {i}: unknown category '{category}' (expected: {', '.join(sorted(VALID_CATEGORIES))})")
+
+            # ID reference check
+            pid = args.get("id", "")
+            if pid and existing_ids and pid not in existing_ids:
+                errors.append(f"Call {i}: project id '{pid[:12]}...' not in existing projects")
+
+            if errors:
+                results["errors"].extend(errors)
+            else:
+                results["valid"] += 1
+                action = f"UPDATE {pid[:8]}" if pid else "CREATE"
+                results["projects"].append({
+                    "action": action,
+                    "title": args.get("title", "?"),
+                    "status": status,
+                    "category": category,
+                    "summary": (args.get("summary", ""))[:80],
+                    "entities": args.get("entities", []),
+                    "files": args.get("files", []),
+                })
+            continue
+
+        results["errors"].append(f"Call {i}: unknown tool '{tool}'")
+
+    return results
+
+
 def print_validation(v: dict) -> None:
-    """Print validation results to stderr."""
-    print(f"  Blocks: {v['blocks']}, Valid: {v['valid']}, Errors: {len(v['errors'])}", file=sys.stderr)
-    for p in v["projects"]:
-        print(
-            f"  + {p['action']} — {p['title']} ({p['status']}, {p['category']})",
-            file=sys.stderr,
-        )
-        if p["summary"]:
-            print(f"    {p['summary']}", file=sys.stderr)
+    """Print validation results to stderr (works for both modes)."""
+    if "calls" in v:
+        # Tool-calling mode
+        print(f"  Tool calls: {v['calls']}, Valid: {v['valid']}, Errors: {len(v['errors'])}", file=sys.stderr)
+        for p in v["projects"]:
+            print(
+                f"  + {p['action']} — {p['title']} ({p['status']}, {p['category']})",
+                file=sys.stderr,
+            )
+            if p["summary"]:
+                print(f"    {p['summary']}", file=sys.stderr)
+            if p.get("entities"):
+                print(f"    entities: {p['entities'][:5]}{'...' if len(p['entities']) > 5 else ''}", file=sys.stderr)
+            if p.get("files"):
+                for f in p["files"][:3]:
+                    print(f"    file: {f['path']} — {f['note']}", file=sys.stderr)
+        for reason in v.get("trivial", []):
+            print(f"  ~ TRIVIAL: {reason}", file=sys.stderr)
+    else:
+        # XML mode
+        print(f"  Blocks: {v['blocks']}, Valid: {v['valid']}, Errors: {len(v['errors'])}", file=sys.stderr)
+        for p in v["projects"]:
+            print(
+                f"  + {p['action']} — {p['title']} ({p['status']}, {p['category']})",
+                file=sys.stderr,
+            )
+            if p["summary"]:
+                print(f"    {p['summary']}", file=sys.stderr)
+
     for err in v["errors"]:
         print(f"  x {err}", file=sys.stderr)
 
@@ -231,7 +430,335 @@ def print_entry_info(meta: dict) -> None:
         print(f"  Entities:  {len(ent_list)} items", file=sys.stderr)
     except (json.JSONDecodeError, TypeError):
         print(f"  Entities:  {str(entities)[:60]}", file=sys.stderr)
+
+    summary = meta.get("summary", "")
+    if summary:
+        preview = summary[:120] + "..." if len(summary) > 120 else summary
+        print(f"  Summary:   {preview}", file=sys.stderr)
+
     print(file=sys.stderr)
+
+
+# ============================================================================
+# Run Modes
+# ============================================================================
+
+def run_xml_mode(prompt: str, model: str, projects: list[dict], no_validate: bool) -> int:
+    """Original XML mode via super-agent subprocess."""
+    if not SUPER_AGENT.exists():
+        print(f"Error: super-agent not found at {SUPER_AGENT}", file=sys.stderr)
+        return 1
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".md", prefix="tracker-run-",
+        dir="/tmp", delete=False, encoding="utf-8",
+    ) as f:
+        f.write(prompt)
+        prompt_path = f.name
+
+    try:
+        env = os.environ.copy()
+        env["PROMPT_FILE"] = prompt_path
+        env["SUPER_AGENT_MODEL"] = model
+        env["SUPER_AGENT_DEBUG"] = "1"
+        env.pop("CLAUDECODE", None)
+
+        print(f"--- Sending to {model} via super-agent (XML mode) ---\n", file=sys.stderr)
+
+        result = subprocess.run(
+            [str(SUPER_AGENT), "--no-persist", "--no-chrome"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        response = result.stdout or ""
+
+        # The Agent SDK's transport layer captures subprocess stdout internally,
+        # so result.stdout is often empty. Fall back to the super-agent log file
+        # which always contains a copy of the output.
+        if not response.strip() and result.stderr:
+            log_match = re.search(r"\[output_file:\s*(.+?)\]", result.stderr)
+            if log_match:
+                log_path = Path(log_match.group(1).strip())
+                if log_path.exists():
+                    response = log_path.read_text(encoding="utf-8", errors="replace")
+                    print(f"  (read output from log: {log_path})", file=sys.stderr)
+
+        # Still empty? Scan for the most recent super-agent log as last resort
+        if not response.strip():
+            log_dir = Path("/tmp/crispy-agents")
+            if log_dir.exists():
+                logs = sorted(log_dir.glob("super-agent-*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+                if logs:
+                    candidate = logs[0]
+                    if time.time() - candidate.stat().st_mtime < 30:
+                        response = candidate.read_text(encoding="utf-8", errors="replace")
+                        print(f"  (read output from recent log: {candidate})", file=sys.stderr)
+
+        # Strip session_id footer from response (not part of LLM output)
+        response = re.sub(r"\n?\[session_id:.*?\]\s*$", "", response).strip()
+
+        # Strip markdown fences — models sometimes wrap XML in ```tracker or ```xml
+        response = re.sub(r"^```\w*\n?", "", response)
+        response = re.sub(r"\n?```\s*$", "", response).strip()
+
+        # Print raw response to stdout (pipeable)
+        print(response)
+
+        # Print cost/session info from stderr
+        if result.stderr:
+            for line in result.stderr.splitlines():
+                if any(k in line for k in ["[Cost", "[Session", "[session_id", "[output_file", "[Agent"]):
+                    print(f"  {line}", file=sys.stderr)
+            print(file=sys.stderr)
+
+        # Validate
+        if not no_validate and response.strip():
+            existing_ids = {p["id"] for p in projects} if projects else None
+            print(f"--- Validation ---", file=sys.stderr)
+            v = validate_response(response, existing_ids)
+            print_validation(v)
+
+        return 0 if result.returncode == 0 else 1
+    except subprocess.TimeoutExpired:
+        print("Error: super-agent timed out after 120s", file=sys.stderr)
+        return 1
+    finally:
+        os.unlink(prompt_path)
+
+
+def _build_tracker_mcp_server(log_path: str):
+    """Build an in-process SDK MCP server with tracker tools.
+
+    Uses create_sdk_mcp_server (in-process) instead of stdio subprocess.
+    The stdio pathway in the Python SDK doesn't reliably wire tools into the
+    model's tool list — the in-process pathway routes via the SDK control
+    protocol and works consistently.
+
+    Tool schemas match the canonical definitions in tracker-mcp-server.
+    """
+    from claude_agent_sdk import tool, create_sdk_mcp_server
+
+    log_file = Path(log_path)
+
+    def _log_call(tool_name: str, arguments: dict) -> None:
+        entry = {
+            "tool": tool_name,
+            "arguments": arguments,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        }
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+        print(f"[tracker-mcp] logged {tool_name} call", file=sys.stderr)
+
+    @tool(
+        name="upsert_project",
+        description=(
+            "Create a new project or update an existing one based on this session's work. "
+            "Call this once per project this session touches. "
+            "For existing projects, provide the id from the project list. "
+            "For new projects, omit the id or leave it empty."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string",
+                    "description": (
+                        "UUID of an existing project to update. "
+                        "Must match an id from the existing projects list. "
+                        "Leave empty or omit to create a new project."
+                    ),
+                },
+                "title": {
+                    "type": "string",
+                    "description": (
+                        "Short, stable project title. Keep consistent across sessions — "
+                        "don't rename unless scope fundamentally changed."
+                    ),
+                },
+                "status": {
+                    "type": "string",
+                    "enum": ["active", "done", "blocked", "planned", "abandoned"],
+                    "description": "Current project status.",
+                },
+                "summary": {
+                    "type": "string",
+                    "description": (
+                        "1-2 sentence summary of current project state. "
+                        "Reflect what's true RIGHT NOW, not history."
+                    ),
+                },
+                "category": {
+                    "type": "string",
+                    "enum": ["recall", "ui", "infra", "research", "meta"],
+                    "description": "Project category.",
+                },
+                "blocked_by": {
+                    "type": "string",
+                    "description": "Why it's blocked (only if status is 'blocked', otherwise omit).",
+                },
+                "branch": {
+                    "type": "string",
+                    "description": "Git branch name if applicable, otherwise omit.",
+                },
+                "entities": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Top 5-10 key entities: file paths, branch names, function names, "
+                        "concepts. Used for matching future sessions to this project."
+                    ),
+                },
+                "files": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "Relative file path (meaningful artifact, not every file touched).",
+                            },
+                            "note": {
+                                "type": "string",
+                                "description": "Why this file is relevant.",
+                            },
+                        },
+                        "required": ["path", "note"],
+                    },
+                    "description": "Key files — plans, specs, implementations. Not every file touched.",
+                },
+            },
+            "required": ["title", "status", "summary", "category", "entities"],
+        },
+    )
+    async def upsert_project(args):
+        _log_call("upsert_project", args)
+        return {"content": [{"type": "text", "text": json.dumps({"status": "ok", "tool": "upsert_project", "received": args}, indent=2)}]}
+
+    @tool(
+        name="mark_trivial",
+        description=(
+            "Mark this session as trivial — no project needed. Use when the session "
+            "was a quick recall, empty session, false start, or doesn't represent "
+            "meaningful project work."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "description": "Brief reason why no project is warranted.",
+                },
+            },
+            "required": ["reason"],
+        },
+    )
+    async def mark_trivial(args):
+        _log_call("mark_trivial", args)
+        return {"content": [{"type": "text", "text": json.dumps({"status": "ok", "tool": "mark_trivial", "received": args}, indent=2)}]}
+
+    return create_sdk_mcp_server("tracker", tools=[upsert_project, mark_trivial])
+
+
+async def run_tool_calling_mode(prompt: str, model: str, projects: list[dict], no_validate: bool) -> int:
+    """Tool-calling mode via Agent SDK + in-process MCP server.
+
+    Uses create_sdk_mcp_server for in-process tool routing (not stdio).
+    The stdio pathway passes --mcp-config to the CLI, but the CLI doesn't
+    reliably wire stdio MCP tools into the model's tool list. The in-process
+    pathway uses the SDK control protocol and works consistently.
+
+    PRODUCTION NOTE: The real implementation adds these tools to
+    src/mcp/servers/internal.ts — handlers pass through to db-writer.ts.
+    """
+    try:
+        from claude_agent_sdk import query, ClaudeAgentOptions
+        from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+    except ImportError:
+        print("Error: claude_agent_sdk not installed (pip install claude-agent-sdk)", file=sys.stderr)
+        return 1
+
+    # Create temp log file for tool call capture
+    log_fd, log_path = tempfile.mkstemp(suffix=".jsonl", prefix="tracker-tc-", dir="/tmp")
+    os.close(log_fd)
+    log_file = Path(log_path)
+
+    print(f"--- Sending to {model} via Agent SDK (tool-calling mode) ---", file=sys.stderr)
+    print(f"  MCP: in-process SDK server", file=sys.stderr)
+    print(f"  Tool call log: {log_path}\n", file=sys.stderr)
+
+    try:
+        server = _build_tracker_mcp_server(log_path)
+
+        opts = ClaudeAgentOptions(
+            model=model,
+            max_turns=5,
+            permission_mode="bypassPermissions",
+            setting_sources=["user", "project", "local"],
+            mcp_servers={"tracker": server},
+            env={
+                "CLAUDECODE": "",
+                "CLAUDE_CODE_TMPDIR": tempfile.mkdtemp(prefix="tracker-tc-"),
+            },
+            extra_args={
+                "no-session-persistence": None,
+            },
+        )
+
+        response_text = ""
+        session_id = None
+        cost = None
+
+        async for message in query(prompt=prompt, options=opts):
+            if isinstance(message, AssistantMessage):
+                for block in message.content:
+                    if isinstance(block, TextBlock):
+                        response_text += block.text
+            if isinstance(message, ResultMessage):
+                session_id = message.session_id
+                cost = message.total_cost_usd
+
+        # Print any text response (model might add commentary)
+        if response_text.strip():
+            print(response_text.strip())
+
+        # Print session/cost info
+        if session_id:
+            print(f"  [Session: {session_id}]", file=sys.stderr)
+        if cost:
+            print(f"  [Cost: ${cost:.4f}]", file=sys.stderr)
+        print(file=sys.stderr)
+
+        # Validate tool calls from the log
+        if not no_validate:
+            existing_ids = {p["id"] for p in projects} if projects else None
+            print(f"--- Validation ---", file=sys.stderr)
+            v = validate_tool_calls(log_file, existing_ids)
+            print_validation(v)
+
+            # Also dump raw tool calls for inspection
+            if log_file.exists() and log_file.stat().st_size > 0:
+                print(f"\n--- Raw Tool Calls ---", file=sys.stderr)
+                for line in log_file.read_text(encoding="utf-8").splitlines():
+                    call = json.loads(line)
+                    print(f"  {call['tool']}({json.dumps(call['arguments'], indent=2)})", file=sys.stderr)
+
+        return 0
+
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        return 1
+    finally:
+        # Keep log file for inspection (print path)
+        if log_file.exists() and log_file.stat().st_size > 0:
+            print(f"\n  Tool call log preserved: {log_path}", file=sys.stderr)
+        else:
+            log_file.unlink(missing_ok=True)
 
 
 # ============================================================================
@@ -244,12 +771,11 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             examples:
-              tracker-run 42                        # run entry with rowid 42
-              tracker-run latest                    # most recent entry
-              tracker-run 5                         # 5th most recent (if not a rowid)
-              tracker-run 42 --no-projects           # simulate empty projects table
-              tracker-run 42 --model claude-sonnet-4-5
-              tracker-run 42 --prompt-file ./alt.md  # test alternative prompt
+              tracker-run latest                         # XML mode (default)
+              tracker-run latest --tc                    # tool-calling mode
+              tracker-run 42 --tc --no-projects          # tool-calling, no existing projects
+              tracker-run 42 --model claude-sonnet-4-5   # different model
+              tracker-run 42 --prompt-file ./alt.md      # override prompt text
         """),
     )
     parser.add_argument(
@@ -271,6 +797,11 @@ def main() -> int:
     parser.add_argument(
         "--no-validate", action="store_true",
         help="Skip response validation",
+    )
+    parser.add_argument(
+        "--tool-calling", "--tc", action="store_true",
+        dest="tool_calling",
+        help="Use tool-calling mode (Agent SDK + mock MCP server) instead of XML",
     )
     args = parser.parse_args()
 
@@ -306,98 +837,18 @@ def main() -> int:
         projects = query_projects(DB)
         print(f"  Projects: {len(projects)} existing\n", file=sys.stderr)
 
-    # ── Build prompt ───────────────────────────────────────────────────────
+    # ── Build prompt & run ─────────────────────────────────────────────────
     system_prompt = None
     if args.prompt_file:
         system_prompt = Path(args.prompt_file).read_text(encoding="utf-8").strip()
         print(f"  System prompt: {args.prompt_file}\n", file=sys.stderr)
 
-    prompt = build_tracker_prompt(meta, projects, system_prompt)
-
-    # ── Send to model via super-agent ──────────────────────────────────────
-    if not SUPER_AGENT.exists():
-        print(f"Error: super-agent not found at {SUPER_AGENT}", file=sys.stderr)
-        return 1
-
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".md", prefix="tracker-run-",
-        dir="/tmp", delete=False, encoding="utf-8",
-    ) as f:
-        f.write(prompt)
-        prompt_path = f.name
-
-    try:
-        env = os.environ.copy()
-        env["PROMPT_FILE"] = prompt_path
-        env["SUPER_AGENT_MODEL"] = args.model
-        env["SUPER_AGENT_DEBUG"] = "1"
-        env.pop("CLAUDECODE", None)
-
-        print(f"--- Sending to {args.model} via super-agent ---\n", file=sys.stderr)
-
-        result = subprocess.run(
-            [str(SUPER_AGENT), "--no-persist", "--no-chrome"],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-
-        response = result.stdout or ""
-
-        # The Agent SDK's transport layer captures subprocess stdout internally,
-        # so result.stdout is often empty. Fall back to the super-agent log file
-        # which always contains a copy of the output.
-        if not response.strip() and result.stderr:
-            log_match = re.search(r"\[output_file:\s*(.+?)\]", result.stderr)
-            if log_match:
-                log_path = Path(log_match.group(1).strip())
-                if log_path.exists():
-                    response = log_path.read_text(encoding="utf-8", errors="replace")
-                    print(f"  (read output from log: {log_path})", file=sys.stderr)
-
-        # Still empty? Scan for the most recent super-agent log as last resort
-        if not response.strip():
-            log_dir = Path("/tmp/crispy-agents")
-            if log_dir.exists():
-                logs = sorted(log_dir.glob("super-agent-*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
-                if logs:
-                    candidate = logs[0]
-                    import time as _time
-                    if _time.time() - candidate.stat().st_mtime < 30:
-                        response = candidate.read_text(encoding="utf-8", errors="replace")
-                        print(f"  (read output from recent log: {candidate})", file=sys.stderr)
-
-        # Strip session_id footer from response (not part of LLM output)
-        response = re.sub(r"\n?\[session_id:.*?\]\s*$", "", response).strip()
-
-        # Strip markdown fences — models sometimes wrap XML in ```tracker or ```xml
-        response = re.sub(r"^```\w*\n?", "", response)
-        response = re.sub(r"\n?```\s*$", "", response).strip()
-
-        # Print raw response to stdout (pipeable)
-        print(response)
-
-        # Print cost/session info from stderr
-        if result.stderr:
-            for line in result.stderr.splitlines():
-                if any(k in line for k in ["[Cost", "[Session", "[session_id", "[output_file", "[Agent"]):
-                    print(f"  {line}", file=sys.stderr)
-            print(file=sys.stderr)
-
-        # ── Validate ───────────────────────────────────────────────────────
-        if not args.no_validate and response.strip():
-            existing_ids = {p["id"] for p in projects} if projects else None
-            print(f"--- Validation ---", file=sys.stderr)
-            v = validate_response(response, existing_ids)
-            print_validation(v)
-
-        return 0 if result.returncode == 0 else 1
-    except subprocess.TimeoutExpired:
-        print("Error: super-agent timed out after 120s", file=sys.stderr)
-        return 1
-    finally:
-        os.unlink(prompt_path)
+    if args.tool_calling:
+        prompt = build_tool_calling_prompt(meta, projects, system_prompt)
+        return asyncio.run(run_tool_calling_mode(prompt, args.model, projects, args.no_validate))
+    else:
+        prompt = build_tracker_prompt(meta, projects, system_prompt)
+        return run_xml_mode(prompt, args.model, projects, args.no_validate)
 
 
 if __name__ == "__main__":
