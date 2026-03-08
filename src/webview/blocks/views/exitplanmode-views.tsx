@@ -1,7 +1,7 @@
 /**
  * ExitPlanMode Tool Views — compact + expanded renderers
  *
- * - Compact: "Plan Ready" + permission count + Approved/Rejected status
+ * - Compact: dot-line with colored "exitplanmode" + plan info + status
  * - Expanded: ToolCard with plan as markdown (collapsed) + permissions list
  *
  * @module webview/blocks/views/exitplanmode-views
@@ -14,6 +14,7 @@ import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
 import { ToolCard } from './ToolCard.js';
+import { DotLine, DotLineStatus } from './default-views.js';
 
 const meta = getToolData('ExitPlanMode');
 
@@ -30,23 +31,18 @@ export function ExitPlanModeCompactView({ block, result, status }: ToolViewProps
   const input = block.input as ExitPlanInput;
   const permCount = input.allowedPrompts?.length ?? 0;
 
-  const resultSummary = result
-    ? result.is_error
-      ? 'Rejected'
-      : 'Approved'
-    : undefined;
-
   const description = permCount > 0
     ? `Plan Ready (${permCount} permission${permCount !== 1 ? 's' : ''})`
     : 'Plan Ready';
 
   return (
-    <div className="crispy-blocks-compact-row">
-      <span className="crispy-blocks-compact-icon">{meta.icon}</span>
-      <ToolBadge color={meta.color} label="ExitPlanMode" />
-      <span className="crispy-blocks-compact-description">{description}</span>
-      <StatusIndicator status={status} summary={resultSummary} />
-    </div>
+    <DotLine
+      icon={meta.icon}
+      color={meta.color}
+      name="exitplanmode"
+      subject={description}
+      result={<DotLineStatus status={status} />}
+    />
   );
 }
 

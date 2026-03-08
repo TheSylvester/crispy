@@ -11,8 +11,7 @@
 import type { ReactNode } from 'react';
 import type { ToolViewProps } from '../types.js';
 import { getToolData } from '../tool-definitions.js';
-import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
-import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
+import { DotLine, DotLineStatus } from './default-views.js';
 
 const meta = getToolData('EnterPlanMode');
 
@@ -21,18 +20,13 @@ const meta = getToolData('EnterPlanMode');
 // ============================================================================
 
 export function EnterPlanModeCompactView({ result, status }: ToolViewProps): ReactNode {
-  const resultSummary = result
-    ? result.is_error
-      ? 'Denied'
-      : 'Entered'
-    : undefined;
-
   return (
-    <div className="crispy-blocks-compact-row">
-      <span className="crispy-blocks-compact-icon">{meta.icon}</span>
-      <ToolBadge color={meta.color} label="EnterPlanMode" />
-      <span className="crispy-blocks-compact-description">Planning mode</span>
-      <StatusIndicator status={status} summary={resultSummary} />
-    </div>
+    <DotLine
+      icon={meta.icon}
+      color={meta.color}
+      name="enterplanmode"
+      subject="Planning mode"
+      result={<DotLineStatus status={status} />}
+    />
   );
 }

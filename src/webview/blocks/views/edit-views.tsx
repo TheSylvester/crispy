@@ -1,7 +1,7 @@
 /**
  * Edit Tool Views — custom renderers for Edit tool
  *
- * - Compact: file path + diff stats + status
+ * - Compact: dot-line with colored "edit" + file path + diff stats + status
  * - Expanded: file path + DiffView component
  *
  * @module webview/blocks/views/edit-views
@@ -9,7 +9,7 @@
 
 import type { ReactNode } from 'react';
 import type { ToolViewProps } from '../types.js';
-import { getToolData } from '../tool-definitions.js';
+import { getToolData, extractSubject } from '../tool-definitions.js';
 import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { FilePath } from '../../renderers/tools/shared/FilePath.js';
@@ -17,6 +17,7 @@ import { DiffView } from '../../renderers/tools/shared/DiffView.js';
 import { inferLanguage } from '../../renderers/tools/shared/tool-utils.js';
 import { ToolCard } from './ToolCard.js';
 import { useBlocksToolRegistry } from '../BlocksToolRegistryContext.js';
+import { DotLine, DotLineStatus } from './default-views.js';
 
 const meta = getToolData('Edit');
 
@@ -32,27 +33,24 @@ interface EditInput {
 
 export function EditCompactView({ block, result, status }: ToolViewProps): ReactNode {
   const input = block.input as EditInput;
-  const filePath = input.file_path ?? '(unknown)';
+  const subject = extractSubject(block);
   const oldLines = (input.old_string ?? '').split('\n').length;
   const newLines = (input.new_string ?? '').split('\n').length;
 
-  const resultSummary = result
-    ? result.is_error
-      ? 'Failed'
-      : 'Applied'
-    : undefined;
-
   return (
-    <div className="crispy-blocks-compact-row">
-      <span className="crispy-blocks-compact-icon">{meta.icon}</span>
-      <ToolBadge color={meta.color} label="Edit" />
-      <FilePath path={filePath} />
-      <span className="crispy-diff-stats">
+    <DotLine
+      icon={meta.icon}
+      color={meta.color}
+      name="edit"
+      subject={subject}
+      result={<>
         <span className="crispy-diff-stats-added">+{newLines}</span>
+        {' '}
         <span className="crispy-diff-stats-removed">-{oldLines}</span>
-      </span>
-      <StatusIndicator status={status} summary={resultSummary} />
-    </div>
+        {' '}
+        <DotLineStatus status={status} />
+      </>}
+    />
   );
 }
 

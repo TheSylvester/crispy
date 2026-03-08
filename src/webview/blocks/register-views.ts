@@ -12,6 +12,7 @@
 
 import { registerToolViews, getToolData } from './tool-definitions.js';
 import { defaultToolViews, GenericExpandedView } from './views/default-views.js';
+import { DefaultInlineView } from './views/inline-view.js';
 import { BashCompactView, BashExpandedView } from './views/bash-views.js';
 import { EditCompactView, EditExpandedView } from './views/edit-views.js';
 import { TaskCompactView, TaskExpandedView } from './views/task-views.js';
@@ -39,159 +40,145 @@ const defaultMeta = getToolData('_unknown');
 registerToolViews('_default', {
   ...defaultToolViews(defaultMeta),
   expanded: GenericExpandedView,
+  inline: DefaultInlineView,
 });
 
 // ============================================================================
 // Register Bash Views
 // ============================================================================
 
-const bashMeta = getToolData('Bash');
 registerToolViews('Bash', {
-  ...defaultToolViews(bashMeta),
   compact: BashCompactView,
   expanded: BashExpandedView,
+  inline: DefaultInlineView,
 });
 
 // ============================================================================
 // Register Edit Views
 // ============================================================================
 
-const editMeta = getToolData('Edit');
 registerToolViews('Edit', {
-  ...defaultToolViews(editMeta),
   compact: EditCompactView,
   expanded: EditExpandedView,
+  inline: DefaultInlineView,
 });
 
 // MultiEdit uses same views as Edit
 registerToolViews('MultiEdit', {
-  ...defaultToolViews(getToolData('MultiEdit')),
   compact: EditCompactView,
   expanded: EditExpandedView,
+  inline: DefaultInlineView,
 });
 
 // ============================================================================
-// Register Task Views
+// Register Task Views — NO inline (they have children)
 // ============================================================================
 
-const taskMeta = getToolData('Task');
 registerToolViews('Task', {
-  ...defaultToolViews(taskMeta),
   compact: TaskCompactView,
   expanded: TaskExpandedView,
+  // No inline — Task/Agent are exempt (they have children)
 });
 
 // Agent uses same views as Task (renamed in Claude Code 2.1.63+)
-const agentMeta = getToolData('Agent');
 registerToolViews('Agent', {
-  ...defaultToolViews(agentMeta),
   compact: TaskCompactView,
   expanded: TaskExpandedView,
+  // No inline — Task/Agent are exempt (they have children)
 });
 
 // ============================================================================
 // Register TaskOutput Views
 // ============================================================================
 
-const taskOutputMeta = getToolData('TaskOutput');
 registerToolViews('TaskOutput', {
-  ...defaultToolViews(taskOutputMeta),
   compact: TaskOutputCompactView,
   expanded: TaskOutputExpandedView,
+  inline: DefaultInlineView,
 });
 
 // ============================================================================
 // Register Read Views
 // ============================================================================
 
-const readMeta = getToolData('Read');
 registerToolViews('Read', {
-  ...defaultToolViews(readMeta),
   compact: ReadCompactView,
   expanded: ReadExpandedView,
+  inline: DefaultInlineView,
 });
 
 // ============================================================================
 // Register Write Views
 // ============================================================================
 
-const writeMeta = getToolData('Write');
 registerToolViews('Write', {
-  ...defaultToolViews(writeMeta),
   compact: WriteCompactView,
   expanded: WriteExpandedView,
+  inline: DefaultInlineView,
 });
 
 // ============================================================================
 // Register Search Tool Views
 // ============================================================================
 
-const grepMeta = getToolData('Grep');
 registerToolViews('Grep', {
-  ...defaultToolViews(grepMeta),
   compact: GrepCompactView,
   expanded: GrepExpandedView,
+  inline: DefaultInlineView,
 });
 
-const globMeta = getToolData('Glob');
 registerToolViews('Glob', {
-  ...defaultToolViews(globMeta),
   compact: GlobCompactView,
   expanded: GlobExpandedView,
+  inline: DefaultInlineView,
 });
 
 // ============================================================================
 // Register TodoWrite Views
 // ============================================================================
 
-const todoWriteMeta = getToolData('TodoWrite');
 registerToolViews('TodoWrite', {
-  ...defaultToolViews(todoWriteMeta),
   compact: TodoWriteCompactView,
   expanded: TodoWriteExpandedView,
+  inline: DefaultInlineView,
 });
 
 // ============================================================================
 // Register Interaction Tool Views (Skill, AskUserQuestion, ExitPlanMode)
 // ============================================================================
 
-const skillMeta = getToolData('Skill');
 registerToolViews('Skill', {
-  ...defaultToolViews(skillMeta),
   compact: SkillCompactView,
   expanded: SkillExpandedView,
+  inline: DefaultInlineView,
 });
 
-const askMeta = getToolData('AskUserQuestion');
 registerToolViews('AskUserQuestion', {
-  ...defaultToolViews(askMeta),
   compact: AskUserQuestionCompactView,
   expanded: AskUserQuestionExpandedView,
+  inline: DefaultInlineView,
 });
 
-const exitPlanMeta = getToolData('ExitPlanMode');
 registerToolViews('ExitPlanMode', {
-  ...defaultToolViews(exitPlanMeta),
   compact: ExitPlanModeCompactView,
   expanded: ExitPlanModeExpandedView,
+  inline: DefaultInlineView,
 });
 
 // ============================================================================
 // Register Web Tool Views
 // ============================================================================
 
-const webSearchMeta = getToolData('WebSearch');
 registerToolViews('WebSearch', {
-  ...defaultToolViews(webSearchMeta),
   compact: WebSearchCompactView,
   expanded: WebSearchExpandedView,
+  inline: DefaultInlineView,
 });
 
-const webFetchMeta = getToolData('WebFetch');
 registerToolViews('WebFetch', {
-  ...defaultToolViews(webFetchMeta),
   compact: WebFetchCompactView,
   expanded: WebFetchExpandedView,
+  inline: DefaultInlineView,
 });
 
 // ============================================================================
@@ -222,6 +209,7 @@ for (const toolName of CHROME_TOOL_NAMES) {
   registerToolViews(toolName, {
     compact: ChromeCompactView,
     expanded: ChromeExpandedView,
+    inline: DefaultInlineView,
   });
 }
 
@@ -232,6 +220,7 @@ for (const toolName of CHROME_TOOL_NAMES) {
 registerToolViews('mcp__crispy__recall', {
   compact: RecallCompactView,
   expanded: RecallExpandedView,
+  inline: DefaultInlineView,
 });
 
 // ============================================================================
@@ -241,17 +230,17 @@ registerToolViews('mcp__crispy__recall', {
 registerToolViews('ToolSearch', {
   compact: ToolSearchCompactView,
   expanded: ToolSearchExpandedView,
+  inline: DefaultInlineView,
 });
 
 // ============================================================================
 // Register EnterPlanMode Views
 // ============================================================================
 
-const enterPlanMeta = getToolData('EnterPlanMode');
 registerToolViews('EnterPlanMode', {
-  ...defaultToolViews(enterPlanMeta),
   compact: EnterPlanModeCompactView,
   expanded: GenericExpandedView,
+  inline: DefaultInlineView,
 });
 
 // ============================================================================
@@ -274,6 +263,7 @@ for (const toolName of defaultOnlyTools) {
   registerToolViews(toolName, {
     ...defaultToolViews(meta),
     expanded: GenericExpandedView,
+    inline: DefaultInlineView,
   });
 }
 

@@ -19,6 +19,7 @@ import type { ToolDefinition, ToolViewProps, RichBlock } from './types.js';
 const viewRegistry: Map<string, {
   compact: (props: ToolViewProps) => ReactNode;
   expanded: (props: ToolViewProps) => ReactNode;
+  inline?: (props: ToolViewProps) => ReactNode;
 }> = new Map();
 
 /**
@@ -30,6 +31,7 @@ export function registerToolViews(
   views: {
     compact: (props: ToolViewProps) => ReactNode;
     expanded: (props: ToolViewProps) => ReactNode;
+    inline?: (props: ToolViewProps) => ReactNode;
   },
 ): void {
   viewRegistry.set(name, views);
@@ -256,7 +258,7 @@ export function getToolDefinition(name: string): ToolDefinition | undefined {
     color: data.color,
     activity: data.activity,
     inspectorDefault: data.inspectorDefault,
-    views: { compact: views.compact, expanded: views.expanded },
+    views: { compact: views.compact, expanded: views.expanded, inline: views.inline },
   };
 }
 

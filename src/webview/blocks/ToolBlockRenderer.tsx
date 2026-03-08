@@ -59,7 +59,7 @@ export function ToolBlockRenderer({
   const result = registry.useResult(block.id);
 
   // Debug: global tool view override from preferences (?debug=1 settings)
-  const { toolViewOverride: globalOverride, toolPanelMode, toolPanelOpen, setToolPanelOpen } = usePreferences();
+  const { toolViewOverride: globalOverride, toolPanelMode, toolPanelOpen, setToolPanelOpen, inlineToolMode } = usePreferences();
 
   // Panel state: used for expansion override in tool-panel anchors
   const panelState = usePanelState();
@@ -126,7 +126,7 @@ export function ToolBlockRenderer({
   // Render with definition if available
   if (def) {
     // Select view: global debug override > auto selection
-    let viewMode = globalOverride ?? selectView(def, anchor, block, siblingCount, registry);
+    let viewMode: 'compact' | 'expanded' | 'inline' = globalOverride ?? selectView(def, anchor, block, siblingCount, registry, inlineToolMode);
 
     // Panel expansion override: in inspector mode, use the tool's declared
     // default unless the user has clicked or the tool is still streaming.
@@ -152,11 +152,16 @@ export function ToolBlockRenderer({
     // not to ToolBlockRenderer.  Compact and expanded views may call different
     // hooks, so a plain `viewFn(viewProps)` would violate rules-of-hooks when
     // the view mode flips.
-    const ViewComponent = def.views[viewMode];
+    const ViewComponent = def.views[viewMode] ?? (viewMode === 'inline' ? def.views.compact : undefined);
 
     if (ViewComponent) {
+      // Panel tinted cards: expanded tools get tinted border/background using the tool's color
+      const panelTintStyle = (anchor.type === 'tool-panel' && viewMode === 'expanded')
+        ? { border: `1px solid ${hexToRgba(def.color, 0.2)}`, background: hexToRgba(def.color, 0.04), borderRadius: '6px', margin: '4px 0', overflow: 'hidden' as const }
+        : undefined;
+
       return (
-        <div className="crispy-blocks-tool" data-tool-id={block.id} data-tool-name={block.name} data-panel-active={isPanelActive || undefined} onClick={clickable ? handleClick : undefined}>
+        <div className="crispy-blocks-tool" data-tool-id={block.id} data-tool-name={block.name} data-panel-active={isPanelActive || undefined} onClick={clickable ? handleClick : undefined} style={panelTintStyle}>
           <ViewComponent {...viewProps} />
         </div>
       );
@@ -307,6 +312,16 @@ const MemoizedBlocksEntry = memo(
 
 interface FallbackToolViewProps extends ToolViewProps {
   data: ReturnType<typeof getToolData>;
+}
+
+/**
+ * Convert a hex color (#rrggbb) to rgba() with the given alpha.
+ */
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 function FallbackToolView({ block, result, status, anchor, data }: FallbackToolViewProps): React.JSX.Element {

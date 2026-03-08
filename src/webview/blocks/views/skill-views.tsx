@@ -1,7 +1,7 @@
 /**
  * Skill Tool Views — compact and expanded renderers for Skill tool
  *
- * - Compact: skill name badge + status (no args)
+ * - Compact: dot-line with colored skill name + status
  * - Expanded: skill name badge + markdown-rendered result
  *
  * @module webview/blocks/views/skill-views
@@ -9,12 +9,13 @@
 
 import type { ReactNode } from 'react';
 import type { ToolViewProps } from '../types.js';
-import { getToolData } from '../tool-definitions.js';
+import { getToolData, extractSubject } from '../tool-definitions.js';
 import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
 import { extractResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { ToolCard } from './ToolCard.js';
+import { DotLine, DotLineStatus } from './default-views.js';
 
 const meta = getToolData('Skill');
 
@@ -31,19 +32,14 @@ export function SkillCompactView({ block, result, status }: ToolViewProps): Reac
   const input = block.input as SkillInput;
   const skillName = input.skill ?? 'skill';
 
-  const resultText = extractResultText(result?.content);
-  const resultSummary = result
-    ? result.is_error
-      ? 'Failed'
-      : formatCount(resultText, 'line')
-    : undefined;
-
   return (
-    <div className="crispy-blocks-compact-row">
-      <span className="crispy-blocks-compact-icon">{meta.icon}</span>
-      <ToolBadge color={meta.color} label={skillName} />
-      <StatusIndicator status={status} summary={resultSummary} />
-    </div>
+    <DotLine
+      icon={meta.icon}
+      color={meta.color}
+      name="skill"
+      subject={skillName}
+      result={<DotLineStatus status={status} />}
+    />
   );
 }
 

@@ -36,6 +36,8 @@ interface Preferences {
   debugMode: boolean;
   /** Auto-open tool panel on first tool use in a session. On by default. */
   toolPanelAutoOpen: boolean;
+  /** Inline tool mode: tools render as icon-only pills inline with text. Off by default. */
+  inlineToolMode: boolean;
 }
 
 interface PreferencesContextValue extends Preferences {
@@ -48,6 +50,7 @@ interface PreferencesContextValue extends Preferences {
   setToolViewOverride: (override: ToolViewOverride) => void;
   setDebugMode: (enabled: boolean) => void;
   setToolPanelAutoOpen: (enabled: boolean) => void;
+  setInlineToolMode: (enabled: boolean) => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
@@ -82,6 +85,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
   const [toolPanelMode, setToolPanelMode] = useState<ToolPanelMode>('inspector');
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
+  const [inlineToolMode, setInlineToolMode] = useState(false);
 
   // ============================================================================
   // Persisted preference — toolPanelAutoOpen only
@@ -182,6 +186,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     toolViewOverride,
     debugMode,
     toolPanelAutoOpen,
+    inlineToolMode,
     setRenderMode,
     setSettingsPinned,
     setSidebarCollapsed,
@@ -191,6 +196,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setToolViewOverride,
     setDebugMode,
     setToolPanelAutoOpen,
+    setInlineToolMode,
   };
 
   return (

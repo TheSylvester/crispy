@@ -54,7 +54,10 @@ export function BlocksToolPanel(): React.JSX.Element {
 
     // 2. User-focused tools (userOverrides where value=true and block exists)
     for (const [id, expanded] of panelState.userOverrides) {
-      if (expanded && !seen.has(id) && registry.getBlock(id)) {
+      const block = registry.getBlock(id);
+      if (expanded && !seen.has(id) && block) {
+        // Don't promote Task children to root panel entries
+        if (block.context.parentToolUseId) continue;
         ids.push(id);
         seen.add(id);
       }

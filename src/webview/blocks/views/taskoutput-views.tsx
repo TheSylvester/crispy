@@ -1,7 +1,7 @@
 /**
  * TaskOutput Tool Views — compact and expanded renderers for TaskOutput tool
  *
- * - Compact: 🤖 icon + "task-output" badge + task_id subject + blocking badge + status
+ * - Compact: dot-line with colored "task-output" + task_id + status
  * - Expanded: ToolCard with same header; body renders XML metadata as key-value
  *   pairs (polling responses) or rich markdown via CrispyMarkdown (completed output)
  *
@@ -10,12 +10,13 @@
 
 import type { ReactNode } from 'react';
 import type { ToolViewProps } from '../types.js';
-import { getToolData } from '../tool-definitions.js';
+import { getToolData, extractSubject } from '../tool-definitions.js';
 import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
 import { extractResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { ToolCard } from './ToolCard.js';
+import { DotLine, DotLineStatus } from './default-views.js';
 
 const meta = getToolData('TaskOutput');
 
@@ -61,32 +62,16 @@ function parseXmlMetadata(text: string): [string, string][] | null {
 // ============================================================================
 
 export function TaskOutputCompactView({ block, result, status }: ToolViewProps): ReactNode {
-  const input = block.input as TaskOutputInput;
-  const taskId = input.task_id ?? '';
-  const isBlocking = input.block !== false;
-
-  const resultText = extractResultText(result?.content);
-
-  // For compact summary, pull status from XML metadata if available
-  let resultSummary: string | undefined;
-  if (result) {
-    if (result.is_error) {
-      resultSummary = 'Failed';
-    } else if (resultText) {
-      const xmlPairs = parseXmlMetadata(resultText);
-      const statusValue = xmlPairs?.find(([k]) => k === 'status')?.[1];
-      resultSummary = statusValue ?? formatCount(resultText, 'line');
-    }
-  }
+  const subject = extractSubject(block);
 
   return (
-    <div className="crispy-blocks-compact-row">
-      <span className="crispy-blocks-compact-icon">{meta.icon}</span>
-      <ToolBadge color={meta.color} label="task-output" />
-      {isBlocking && <ToolBadge color="var(--vscode-badge-background, #666)" label="blocking" />}
-      {taskId && <span className="crispy-blocks-compact-subject">{taskId}</span>}
-      <StatusIndicator status={status} summary={resultSummary} />
-    </div>
+    <DotLine
+      icon={meta.icon}
+      color={meta.color}
+      name="task-output"
+      subject={subject}
+      result={<DotLineStatus status={status} />}
+    />
   );
 }
 

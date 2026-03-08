@@ -4,7 +4,7 @@
  * ToolSearch is pure plumbing: it loads deferred tools before they can be
  * called. High-frequency, low-information — the renderer keeps it minimal.
  *
- * - Compact: icon + badge + query + loaded tool names
+ * - Compact: dot-line with colored "toolsearch" + query + loaded count
  * - Expanded: same header + list of loaded tools
  *
  * @module webview/blocks/views/toolsearch-views
@@ -12,10 +12,11 @@
 
 import type { ReactNode } from 'react';
 import type { ToolViewProps } from '../types.js';
-import { getToolData } from '../tool-definitions.js';
+import { getToolData, extractSubject } from '../tool-definitions.js';
 import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { ToolCard } from './ToolCard.js';
+import { DotLine, DotLineStatus } from './default-views.js';
 
 const meta = getToolData('ToolSearch');
 
@@ -59,26 +60,16 @@ function formatQuery(query: string): string {
 // ============================================================================
 
 export function ToolSearchCompactView({ block, result, status }: ToolViewProps): ReactNode {
-  const input = block.input as ToolSearchInput;
-  const query = input.query ?? '(unknown)';
-  const displayQuery = formatQuery(query);
-
-  const toolNames = result ? extractToolNames(result.content) : [];
-  const resultSummary = result
-    ? result.is_error
-      ? 'Failed'
-      : toolNames.length > 0
-        ? `${toolNames.length} tool${toolNames.length !== 1 ? 's' : ''}`
-        : 'No tools'
-    : undefined;
+  const subject = extractSubject(block);
 
   return (
-    <div className="crispy-blocks-compact-row">
-      <span className="crispy-blocks-compact-icon">{meta.icon}</span>
-      <ToolBadge color={meta.color} label="ToolSearch" />
-      <span className="crispy-blocks-compact-subject">{displayQuery}</span>
-      <StatusIndicator status={status} summary={resultSummary} />
-    </div>
+    <DotLine
+      icon={meta.icon}
+      color={meta.color}
+      name="toolsearch"
+      subject={subject}
+      result={<DotLineStatus status={status} />}
+    />
   );
 }
 

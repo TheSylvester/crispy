@@ -5,16 +5,65 @@
  * for any tool. Tools can override specific views while keeping defaults
  * for others.
  *
+ * Also provides `DotLine` — the shared "colored mono + dots" compact view
+ * component used by all per-tool compact views.
+ *
  * @module webview/blocks/views/default-views
  */
 
 import type { ReactNode } from 'react';
 import type { ToolViewProps, ToolDefinition } from '../types.js';
 import { extractSubject } from '../tool-definitions.js';
-import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { extractResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { ToolCard } from './ToolCard.js';
+
+// ============================================================================
+// DotLine — shared colored mono + dots compact view
+// ============================================================================
+
+interface DotLineProps {
+  icon: ReactNode;
+  /** Tool color for the name text */
+  color: string;
+  /** Lowercase tool name displayed in mono */
+  name: string;
+  /** Primary subject (file path, command, pattern) — mono, blue */
+  subject?: string;
+  /** Description text — muted italic, used instead of subject for Bash descriptions */
+  description?: string;
+  /** Result area content */
+  result?: ReactNode;
+}
+
+/**
+ * Colored mono + dot leader compact view.
+ *
+ * Layout: icon + colored name + (subject | description) + dot leader + result
+ */
+export function DotLine({ icon, color, name, subject, description, result }: DotLineProps): ReactNode {
+  return (
+    <div className="crispy-blocks-dot-line">
+      <span className="crispy-blocks-dot-line__icon">{icon}</span>
+      <span className="crispy-blocks-dot-line__name" style={{ color }}>{name}</span>
+      {description
+        ? <span className="crispy-blocks-dot-line__desc">{description}</span>
+        : subject && <span className="crispy-blocks-dot-line__subject">{subject}</span>
+      }
+      <span className="crispy-blocks-dot-line__dots" />
+      {result && <span className="crispy-blocks-dot-line__result">{result}</span>}
+    </div>
+  );
+}
+
+/**
+ * Status icon only (no text summary) — for dot-line result area.
+ */
+export function DotLineStatus({ status }: { status: 'running' | 'complete' | 'error' }): ReactNode {
+  if (status === 'running') return <span className="crispy-status-pending">{'\u23F3'}</span>;
+  if (status === 'error') return <span className="crispy-status-error">{'\u2717'}</span>;
+  return <span className="crispy-status-success">{'\u2713'}</span>;
+}
 
 // ============================================================================
 // Default Views Helper
@@ -38,29 +87,24 @@ export function defaultToolViews(def: Pick<ToolDefinition, 'icon' | 'activity' |
 }
 
 // ============================================================================
-// Compact View — single row with badge, subject, and status
+// Compact View — dot-line with badge, subject, and status
 // ============================================================================
 
 interface DefaultCompactViewProps extends ToolViewProps {
   def: Pick<ToolDefinition, 'icon' | 'activity' | 'color'>;
 }
 
-function DefaultCompactView({ block, result, status, def }: DefaultCompactViewProps): ReactNode {
+function DefaultCompactView({ block, status, def }: DefaultCompactViewProps): ReactNode {
   const subject = extractSubject(block);
-  const resultText = extractResultText(result?.content);
-  const resultSummary = result
-    ? result.is_error
-      ? 'Error'
-      : formatCount(resultText, 'line')
-    : undefined;
 
   return (
-    <div className="crispy-blocks-compact-row">
-      <span className="crispy-blocks-compact-icon">{def.icon}</span>
-      <ToolBadge color={def.color} label={block.name} />
-      <span className="crispy-blocks-compact-subject">{subject}</span>
-      <StatusIndicator status={status} summary={resultSummary} />
-    </div>
+    <DotLine
+      icon={def.icon}
+      color={def.color}
+      name={block.name.toLowerCase()}
+      subject={subject}
+      result={<DotLineStatus status={status} />}
+    />
   );
 }
 

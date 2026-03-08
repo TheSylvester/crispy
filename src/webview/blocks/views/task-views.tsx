@@ -1,7 +1,7 @@
 /**
  * Task Tool Views — custom renderers for Task (sub-agent) tool
  *
- * - Compact: agent type badge + description + child count
+ * - Compact: dot-line with colored "task"/"agent" + description + status
  * - Expanded: nested children + result (prompt comes as first child entry)
  *
  * Task is special: it renders its children recursively using the blocks
@@ -13,13 +13,14 @@
 
 import type { ReactNode } from 'react';
 import type { ToolViewProps } from '../types.js';
-import { getToolData } from '../tool-definitions.js';
+import { getToolData, extractSubject } from '../tool-definitions.js';
 import { useBlocksToolRegistry } from '../BlocksToolRegistryContext.js';
 import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
 import { extractResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { ToolCard } from './ToolCard.js';
+import { DotLine, DotLineStatus } from './default-views.js';
 
 const meta = getToolData('Task');
 
@@ -36,27 +37,16 @@ interface TaskInput {
 export function TaskCompactView({ block, result, status }: ToolViewProps): ReactNode {
   const input = block.input as TaskInput;
   const agentType = input.subagent_type ?? 'agent';
-  const description = input.description ?? '';
-  const registry = useBlocksToolRegistry();
-  const isAsync = !!registry.getAsyncAgentId(block.id);
-
-  const resultText = extractResultText(result?.content);
-  const resultSummary = result
-    ? result.is_error
-      ? 'Failed'
-      : formatCount(resultText, 'line')
-    : undefined;
+  const subject = extractSubject(block);
 
   return (
-    <div className="crispy-blocks-task-compact">
-      <div className="crispy-blocks-compact-row">
-        <span className="crispy-blocks-compact-icon">{meta.icon}</span>
-        <ToolBadge color={meta.color} label={agentType} />
-        {isAsync && <ToolBadge color="var(--vscode-badge-background, #666)" label="background" />}
-        <span className="crispy-blocks-compact-description">{description}</span>
-        <StatusIndicator status={status} summary={resultSummary} />
-      </div>
-    </div>
+    <DotLine
+      icon={meta.icon}
+      color={meta.color}
+      name={agentType}
+      subject={subject}
+      result={<DotLineStatus status={status} />}
+    />
   );
 }
 

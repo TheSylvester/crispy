@@ -1,6 +1,7 @@
 /**
  * Read Tool Views — custom renderers for Read tool
  *
+ * - Compact: dot-line with colored "read" + file path + status
  * - Expanded: file path + line range + file content
  *
  * @module webview/blocks/views/read-views
@@ -8,16 +9,23 @@
 
 import type { ReactNode } from 'react';
 import type { ToolViewProps } from '../types.js';
-import { getToolData } from '../tool-definitions.js';
+import { getToolData, extractSubject } from '../tool-definitions.js';
 import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { FilePath } from '../../renderers/tools/shared/FilePath.js';
-import { extractResultText, extractImageBlocks, formatCount } from '../../renderers/tools/shared/tool-utils.js';
+import { extractResultText, extractImageBlocks, formatCount, inferLanguage } from '../../renderers/tools/shared/tool-utils.js';
+import { CodePreview } from '../../renderers/tools/shared/CodePreview.js';
 import { ToolCard } from './ToolCard.js';
 import { ImageLightbox } from '../../components/ImageLightbox.js';
 import { useLightbox } from '../../hooks/useLightbox.js';
+import { DotLine, DotLineStatus } from './default-views.js';
 
 const meta = getToolData('Read');
+
+/** Strip cat -n style line number prefixes: "     1\tcontent" → "content" */
+function stripLineNumbers(text: string): string {
+  return text.replace(/^ *\d+\t/gm, '');
+}
 
 interface ReadInput {
   file_path?: string;
@@ -30,37 +38,16 @@ interface ReadInput {
 // ============================================================================
 
 export function ReadCompactView({ block, result, status }: ToolViewProps): ReactNode {
-  const input = block.input as ReadInput;
-  const filePath = input.file_path ?? '(unknown)';
-
-  // Compute line range string (same logic as expanded)
-  let lineRange: string | undefined;
-  if (input.offset != null || input.limit != null) {
-    const start = (input.offset ?? 0) + 1;
-    if (input.limit != null) {
-      lineRange = `:${start}-${start + input.limit - 1}`;
-    } else {
-      lineRange = `:${start}+`;
-    }
-  }
-
-  const images = extractImageBlocks(result?.content);
-  const resultText = extractResultText(result?.content);
-  const resultSummary = result
-    ? result.is_error
-      ? 'Not found'
-      : images.length > 0
-        ? `${images.length} image${images.length !== 1 ? 's' : ''}`
-        : formatCount(resultText, 'line')
-    : undefined;
+  const subject = extractSubject(block);
 
   return (
-    <div className="crispy-blocks-compact-row">
-      <span className="crispy-blocks-compact-icon">{meta.icon}</span>
-      <ToolBadge color={meta.color} label="Read" />
-      <FilePath path={filePath} lineRange={lineRange} />
-      <StatusIndicator status={status} summary={resultSummary} />
-    </div>
+    <DotLine
+      icon={meta.icon}
+      color={meta.color}
+      name="read"
+      subject={subject}
+      result={<DotLineStatus status={status} />}
+    />
   );
 }
 
@@ -120,9 +107,15 @@ export function ReadExpandedView({ block, result, status, anchor }: ToolViewProp
                 );
               })}
             </div>
-          ) : (
-            <pre className={`crispy-tool-result__text ${result.is_error ? 'crispy-tool-result__text--error' : ''}`}>
+          ) : result.is_error ? (
+            <pre className="crispy-tool-result__text crispy-tool-result__text--error">
               {resultText ?? JSON.stringify(result.content, null, 2)}
+            </pre>
+          ) : resultText ? (
+            <CodePreview code={stripLineNumbers(resultText)} language={inferLanguage(filePath)} lineNumbers={false} />
+          ) : (
+            <pre className="crispy-tool-result__text">
+              {JSON.stringify(result.content, null, 2)}
             </pre>
           )}
         </div>

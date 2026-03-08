@@ -1,7 +1,7 @@
 /**
  * Bash Tool Views — custom renderers for Bash tool
  *
- * - Compact: icon + badge + description + exit status
+ * - Compact: dot-line with colored "bash" + command as subject + status
  * - Expanded: full command + stdout/stderr output
  *
  * @module webview/blocks/views/bash-views
@@ -9,13 +9,14 @@
 
 import type { ReactNode } from 'react';
 import type { ToolViewProps } from '../types.js';
-import { getToolData } from '../tool-definitions.js';
+import { getToolData, extractSubject } from '../tool-definitions.js';
 import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { extractResultText, extractRawResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { renderAnsi, hasAnsi } from '../../renderers/tools/shared/ansi.js';
 import { useThemeKind, isLightTheme } from '../../hooks/useThemeKind.js';
 import { ToolCard } from './ToolCard.js';
+import { DotLine, DotLineStatus } from './default-views.js';
 
 const meta = getToolData('Bash');
 
@@ -38,35 +39,15 @@ function formatTimeout(ms: number): string {
 export function BashCompactView({ block, result, status }: ToolViewProps): ReactNode {
   const input = block.input as BashInput;
 
-  const resultText = extractResultText(result?.content);
-  const resultSummary = result
-    ? result.is_error
-      ? 'Failed'
-      : formatCount(resultText, 'line')
-    : undefined;
-
-  const command = input.command ?? '';
-
   return (
-    <div className="crispy-blocks-bash-compact">
-      <div className="crispy-blocks-compact-row">
-        <span className="crispy-blocks-compact-icon">{meta.icon}</span>
-        <ToolBadge color={meta.color} label="Bash" />
-        {input.run_in_background && (
-          <ToolBadge color="var(--vscode-badge-background, #666)" label="background" />
-        )}
-        {input.timeout != null && (
-          <ToolBadge color="var(--vscode-badge-background, #666)" label={`⏱ ${formatTimeout(input.timeout)}`} />
-        )}
-        {input.description && (
-          <span className="crispy-blocks-compact-description">{input.description}</span>
-        )}
-        <StatusIndicator status={status} summary={resultSummary} />
-      </div>
-      {command && (
-        <code className="u-mono-pill crispy-tool-bash-inline crispy-tool-bash-inline--compact">{command}</code>
-      )}
-    </div>
+    <DotLine
+      icon={meta.icon}
+      color={meta.color}
+      name="bash"
+      description={input.description}
+      subject={input.description ? undefined : extractSubject(block)}
+      result={<DotLineStatus status={status} />}
+    />
   );
 }
 
@@ -101,7 +82,7 @@ export function BashExpandedView({ block, result, status, anchor }: ToolViewProp
           <ToolBadge color="var(--vscode-badge-background, #666)" label="background" />
         )}
         {input.timeout != null && (
-          <ToolBadge color="var(--vscode-badge-background, #666)" label={`⏱ ${formatTimeout(input.timeout)}`} />
+          <ToolBadge color="var(--vscode-badge-background, #666)" label={`\u23F1 ${formatTimeout(input.timeout)}`} />
         )}
         {input.description && (
           <span className="crispy-blocks-tool-description">{input.description}</span>

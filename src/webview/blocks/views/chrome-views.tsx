@@ -18,6 +18,7 @@ import { ChromeMonoIcon } from '../../components/control-panel/icons.js';
 import { ToolCard } from './ToolCard.js';
 import { ImageLightbox } from '../../components/ImageLightbox.js';
 import { useLightbox } from '../../hooks/useLightbox.js';
+import { DotLine, DotLineStatus } from './default-views.js';
 
 const CHROME_COLOR = 'linear-gradient(135deg, #EA4335, #FBBC04, #34A853)';
 const PREFIX = 'mcp__claude-in-chrome__';
@@ -241,24 +242,18 @@ function getChromeResultSummary(
 export function ChromeCompactView({ block, result, status }: ToolViewProps): ReactNode {
   const input = block.input as Record<string, unknown>;
   const suffix = parseChromeToolName(block.name);
-  const emoji = getChromeActionEmoji(suffix, input);
   const label = getChromeBadgeLabel(suffix, input);
   const subject = getChromeSubject(suffix, input);
-
-  const resultText = extractResultText(result?.content);
-  const resultSummary = result
-    ? getChromeResultSummary(suffix, input, resultText, !!result.is_error)
-    : undefined;
+  const displaySubject = subject ? `${label} ${subject}` : label;
 
   return (
-    <div className="crispy-blocks-compact-row">
-      <span className="crispy-blocks-compact-icon"><ChromeMonoIcon /></span>
-      <ToolBadge color={CHROME_COLOR} label="chrome" />
-      <span className="crispy-blocks-chrome-action">{label}</span>
-      <span className="crispy-blocks-chrome-emoji">{emoji}</span>
-      {subject && <span className="crispy-blocks-compact-subject">{subject}</span>}
-      <StatusIndicator status={status} summary={resultSummary} />
-    </div>
+    <DotLine
+      icon={<ChromeMonoIcon />}
+      color="#EA4335"
+      name="chrome"
+      subject={displaySubject}
+      result={<DotLineStatus status={status} />}
+    />
   );
 }
 

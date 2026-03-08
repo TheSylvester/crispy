@@ -1,7 +1,7 @@
 /**
  * Recall Tool Views — custom renderers for mcp__crispy__recall
  *
- * - Compact: brain icon + purple badge + query as subject + status
+ * - Compact: dot-line with colored "recall" + query + status
  * - Expanded: query in header, cleaned markdown response in body
  *
  * @module webview/blocks/views/recall-views
@@ -9,12 +9,13 @@
 
 import type { ReactNode } from 'react';
 import type { ToolViewProps } from '../types.js';
-import { getToolData } from '../tool-definitions.js';
+import { getToolData, extractSubject } from '../tool-definitions.js';
 import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { extractResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { ToolCard } from './ToolCard.js';
 import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
+import { DotLine, DotLineStatus } from './default-views.js';
 
 const meta = getToolData('mcp__crispy__recall');
 
@@ -38,25 +39,16 @@ function stripInternalCalls(text: string): string {
 // ============================================================================
 
 export function RecallCompactView({ block, result, status }: ToolViewProps): ReactNode {
-  const input = block.input as RecallInput;
-  const query = input.query ?? '(unknown)';
-
-  const resultText = extractResultText(result?.content);
-  const resultSummary = result
-    ? result.is_error
-      ? 'Failed'
-      : resultText
-        ? formatCount(resultText, 'line')
-        : 'No results'
-    : undefined;
+  const subject = extractSubject(block);
 
   return (
-    <div className="crispy-blocks-compact-row">
-      <span className="crispy-blocks-compact-icon">{meta.icon}</span>
-      <ToolBadge color={meta.color} label="recall" />
-      <span className="crispy-blocks-compact-subject">{query}</span>
-      <StatusIndicator status={status} summary={resultSummary} />
-    </div>
+    <DotLine
+      icon={meta.icon}
+      color={meta.color}
+      name="recall"
+      subject={subject}
+      result={<DotLineStatus status={status} />}
+    />
   );
 }
 

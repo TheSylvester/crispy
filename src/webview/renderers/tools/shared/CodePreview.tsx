@@ -14,9 +14,11 @@ interface CodePreviewProps {
   code: string;
   language?: string;
   maxHeight?: number;
+  /** Show line number gutter. Default true. */
+  lineNumbers?: boolean;
 }
 
-export function CodePreview({ code, language = 'text', maxHeight = 400 }: CodePreviewProps): React.JSX.Element {
+export function CodePreview({ code, language = 'text', maxHeight = 400, lineNumbers = true }: CodePreviewProps): React.JSX.Element {
   const themeKind = useThemeKind();
   const prismTheme = isLightTheme(themeKind) ? themes.vsLight : themes.vsDark;
 
@@ -29,9 +31,11 @@ export function CodePreview({ code, language = 'text', maxHeight = 400 }: CodePr
               const lineProps = getLineProps({ line, key: i });
               return (
                 <span key={i} {...lineProps}>
-                  <span style={{ color: 'var(--tint-strong)', display: 'inline-block', width: '3em', textAlign: 'right', marginRight: '1em', userSelect: 'none' }}>
-                    {i + 1}
-                  </span>
+                  {lineNumbers && (
+                    <span style={{ color: 'var(--tint-strong)', display: 'inline-block', width: '3em', textAlign: 'right', marginRight: '1em', userSelect: 'none' }}>
+                      {i + 1}
+                    </span>
+                  )}
                   {line.map((token, j) => (
                     <span key={j} {...getTokenProps({ token, key: j })} />
                   ))}

@@ -1,7 +1,7 @@
 /**
  * AskUserQuestion Tool Views — compact + expanded renderers
  *
- * - Compact: first question header + Answered/Denied status
+ * - Compact: dot-line with colored "ask" + first question header + status
  * - Expanded: ToolCard with questions list and their options
  *
  * @module webview/blocks/views/askuserquestion-views
@@ -9,10 +9,11 @@
 
 import type { ReactNode } from 'react';
 import type { ToolViewProps } from '../types.js';
-import { getToolData } from '../tool-definitions.js';
+import { getToolData, extractSubject } from '../tool-definitions.js';
 import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { ToolCard } from './ToolCard.js';
+import { DotLine, DotLineStatus } from './default-views.js';
 
 const meta = getToolData('AskUserQuestion');
 
@@ -35,22 +36,16 @@ interface AskUserQuestionInput {
 export function AskUserQuestionCompactView({ block, result, status }: ToolViewProps): ReactNode {
   const input = block.input as AskUserQuestionInput;
   const questions = input.questions ?? [];
-  const count = questions.length;
-  const firstHeader = questions[0]?.header ?? null;
-
-  const resultSummary = result
-    ? result.is_error
-      ? 'Denied'
-      : `${count} answered`
-    : undefined;
+  const firstHeader = questions[0]?.header ?? 'Question';
 
   return (
-    <div className="crispy-blocks-compact-row">
-      <span className="crispy-blocks-compact-icon">{meta.icon}</span>
-      <ToolBadge color={meta.color} label="AskUserQuestion" />
-      {firstHeader && <span className="crispy-blocks-compact-description">{firstHeader}</span>}
-      <StatusIndicator status={status} summary={resultSummary} />
-    </div>
+    <DotLine
+      icon={meta.icon}
+      color={meta.color}
+      name="ask"
+      subject={firstHeader}
+      result={<DotLineStatus status={status} />}
+    />
   );
 }
 

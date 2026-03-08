@@ -1,7 +1,7 @@
 /**
  * Select View — anchor-based view selection for tool blocks
  *
- * Determines which view (compact or expanded) to render based on
+ * Determines which view (compact, expanded, or inline) to render based on
  * the block's anchor point and completion status.
  *
  * @module webview/blocks/select-view
@@ -16,22 +16,25 @@ import type { BlocksToolRegistry } from './blocks-tool-registry.js';
  * Rules by anchor:
  * - tool-panel / task-in-panel: always expanded (collapsible via <details>)
  * - task-tool: always expanded (collapsible via <details>)
- * - main-thread: always compact (expanded views live in the tool panel)
+ * - main-thread: compact by default, inline when inlineMode is on and
+ *   the tool has an inline view registered
  *
  * @param def - Tool definition with available views
  * @param anchor - Where the block is being rendered
  * @param block - The tool_use block
  * @param siblingCount - Number of sibling tool_use blocks in same entry
  * @param registry - Tool registry for checking result status
+ * @param inlineMode - Whether inline tool mode is enabled
  * @returns View mode to use
  */
 export function selectView(
-  _def: ToolDefinition,
+  def: ToolDefinition,
   anchor: AnchorPoint,
   _block: RichBlock,
   _siblingCount: number,
   _registry: BlocksToolRegistry,
-): 'compact' | 'expanded' {
+  inlineMode = false,
+): 'compact' | 'expanded' | 'inline' {
   // Panel and nested task tools: always expanded — native <details>
   // handles collapse/expand. Completed tools render collapsed (no `open`
   // attr), running tools render expanded (`open`).
@@ -41,6 +44,11 @@ export function selectView(
 
   if (anchor.type === 'task-tool') {
     return 'expanded';
+  }
+
+  // Main thread with inline mode: use inline if the tool has an inline view
+  if (anchor.type === 'main-thread' && inlineMode && def.views.inline) {
+    return 'inline';
   }
 
   // Main thread: always compact — expanded views live in the tool panel

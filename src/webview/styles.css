@@ -1103,7 +1103,8 @@ h2 {
   display: inline-block;
   padding: 2px 8px;
   border-radius: var(--radius-sm);
-  font-size: 0.8em;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
   font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;
@@ -4042,7 +4043,7 @@ h2 {
 .crispy-blocks-tool-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   flex: 1 1 0;
   flex-wrap: wrap;
@@ -4050,6 +4051,7 @@ h2 {
 
 .crispy-blocks-tool-icon {
   flex-shrink: 0;
+  margin-right: 0;
 }
 
 .crispy-blocks-tool-description {
@@ -4109,6 +4111,118 @@ h2 {
 }
 
 /* (Collapsed group CSS removed — run coalescing deleted) */
+
+/* --- Blocks Dot Line — colored mono + dots compact view --- */
+
+.crispy-blocks-dot-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 1px 4px;
+  margin: 0 0 0 8px;
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+  font-size: var(--font-sm);
+}
+.crispy-blocks-dot-line:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+.crispy-blocks-dot-line__icon {
+  flex-shrink: 0;
+  font-size: 12px;
+  opacity: 0.9;
+}
+.crispy-blocks-dot-line__name {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  white-space: nowrap;
+  margin: 0 2px;
+  /* color set dynamically via style prop from tool definition */
+}
+.crispy-blocks-dot-line__subject {
+  color: var(--color-link);
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.crispy-blocks-dot-line__desc {
+  color: var(--vscode-descriptionForeground, #999);
+  font-size: var(--font-xs);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.crispy-blocks-dot-line__dots {
+  flex: 1;
+  border-bottom: 1px dotted rgba(255, 255, 255, 0.2);
+  min-width: 12px;
+  position: relative;
+  top: -3px;
+}
+.crispy-blocks-dot-line__result {
+  font-size: var(--font-xs);
+  color: var(--vscode-descriptionForeground, #999);
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+/* --- Inline Icon Mode — icon-only tool pills --- */
+
+.crispy-inline-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.12s;
+  position: relative;
+  vertical-align: middle;
+}
+.crispy-inline-icon:hover {
+  background: var(--tint-medium);
+}
+.crispy-inline-icon--error {
+  background: rgba(244, 76, 76, 0.12);
+}
+.crispy-inline-icon--error::after {
+  content: '';
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-diff-removed);
+}
+.crispy-inline-icon--running::after {
+  content: '';
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #dcdcaa;
+  animation: crispy-pulse 1.2s ease-in-out infinite;
+}
+@keyframes crispy-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.crispy-inline-icons {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
 
 /* --- Blocks Thinking View --- */
 

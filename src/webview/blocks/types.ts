@@ -113,6 +113,7 @@ export interface ToolDefinition {
   views: {
     compact: React.ComponentType<ToolViewProps>;
     expanded: React.ComponentType<ToolViewProps>;
+    inline?: React.ComponentType<ToolViewProps>;
   };
 }
 
