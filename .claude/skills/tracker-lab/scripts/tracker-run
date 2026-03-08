@@ -3,65 +3,30 @@
 tracker-run — Send a rosie-meta entry to the tracker prompt and validate output.
 
 Accepts a rowid (from tracker-lab) or selector. Assembles the prompt, sends to
-a model, validates the response. No side effects on the database.
-
-Two modes:
-  --xml (default)        Original XML output via super-agent
-  --tool-calling / --tc  Tool calling via Agent SDK + mock MCP server
-
-The --tc mode uses the Agent SDK directly with a mock MCP server that exposes
-upsert_project and mark_trivial tools. Tool calls are logged to a JSONL file
-for validation — no XML parsing needed.
-
-PRODUCTION NOTE:
-  In production, the same tool definitions (from tracker-mcp-server) will be
-  added to the internal MCP server (src/mcp/servers/internal.ts) and the
-  handlers will pass through to db-writer.ts. Same schema, real backend.
+a model via Agent SDK with in-process MCP tools, validates the response.
+No side effects on the database.
 """
 
 import sqlite3
 import sys
 import os
 import json
-import subprocess
 import tempfile
 import argparse
 import asyncio
-import re
 import textwrap
 import time
 from pathlib import Path
 
 DB = Path.home() / ".crispy" / "crispy.db"
-SUPER_AGENT = Path.home() / ".claude/skills/super-agent/scripts/super-agent"
-SCRIPT_DIR = Path(__file__).resolve().parent
-MOCK_MCP_SERVER = SCRIPT_DIR / "tracker-mcp-server"
 DEFAULT_MODEL = "claude-haiku-4-5"
 
-# ============================================================================
-# Tracker System Prompt — canonical source is tracker-prompt.md
-# Resolved relative to the repo root (4 levels up from this script).
-# Override at runtime with --prompt-file.
-# ============================================================================
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
-TRACKER_PROMPT_FILE = REPO_ROOT / "src" / "core" / "rosie" / "tracker" / "tracker-prompt.md"
-
-
-def load_tracker_system_prompt() -> str:
-    """Read the canonical tracker prompt from tracker-prompt.md."""
-    if not TRACKER_PROMPT_FILE.exists():
-        print(f"Error: tracker-prompt.md not found at {TRACKER_PROMPT_FILE}", file=sys.stderr)
-        print("  (expected relative to repo root)", file=sys.stderr)
-        sys.exit(1)
-    return TRACKER_PROMPT_FILE.read_text(encoding="utf-8").strip()
-
 
 # ============================================================================
-# Tool-Calling Prompt (alternative to XML prompt)
+# System Prompt — matches production (tracker-hook.ts TRACKER_SYSTEM_PROMPT)
 # ============================================================================
 
-TOOL_CALLING_PROMPT = """\
+SYSTEM_PROMPT = """\
 You are a project tracker. You receive a session summary and a list of existing projects. \
 Your job is to identify EVERY distinct project this session touched and file each one.
 
@@ -109,13 +74,13 @@ Call your tools now. No commentary needed."""
 # Prompt Assembly
 # ============================================================================
 
-def build_tracker_prompt(
+def build_prompt(
     meta: dict,
     projects: list[dict],
     system_prompt: str | None = None,
 ) -> str:
-    """Replicate buildTrackerPrompt() from tracker-hook.ts (XML mode)."""
-    prompt_text = system_prompt or load_tracker_system_prompt()
+    """Build the tracker prompt. Matches buildTrackerPrompt() in tracker-hook.ts."""
+    prompt_text = system_prompt or SYSTEM_PROMPT
 
     if projects:
         project_list = "\n".join(
@@ -125,41 +90,8 @@ def build_tracker_prompt(
     else:
         project_list = "No existing projects yet."
 
-    return f"""{prompt_text}
-
----
-
-## Session Summary
-
-Title: {meta.get('title', '')}
-Quest: {meta.get('quest', '')}
-Status: {meta.get('status', '')}
-Entities: {meta.get('entities', '[]')}
-
-## Existing Projects
-
-{project_list}"""
-
-
-def build_tool_calling_prompt(
-    meta: dict,
-    projects: list[dict],
-    system_prompt: str | None = None,
-) -> str:
-    """Build prompt for tool-calling mode (includes summary)."""
-    prompt_text = system_prompt or TOOL_CALLING_PROMPT
-
-    if projects:
-        project_list = "\n".join(
-            f"[{p['id']}] {p['title']} ({p['status']}) — entities: {p['entities']}"
-            for p in projects
-        )
-    else:
-        project_list = "No existing projects yet."
-
-    # Include summary in tool-calling mode (fixes known gap)
     summary = meta.get("summary", "")
-    summary_line = f"Summary: {summary}" if summary else ""
+    summary_line = f"Summary: {summary}\n" if summary else ""
 
     return f"""{prompt_text}
 
@@ -169,8 +101,7 @@ def build_tool_calling_prompt(
 
 Title: {meta.get('title', '')}
 Quest: {meta.get('quest', '')}
-{summary_line}
-Status: {meta.get('status', '')}
+{summary_line}Status: {meta.get('status', '')}
 Entities: {meta.get('entities', '[]')}
 
 ## Existing Projects
@@ -228,78 +159,7 @@ def query_projects(db_path: Path) -> list[dict]:
 
 
 # ============================================================================
-# XML Response Validation (original mode)
-# ============================================================================
-
-def validate_response(text: str, existing_ids: set[str] | None = None) -> dict:
-    """
-    Basic validation of tracker XML response.
-    Mirrors xml-extractor.ts + validator.ts logic.
-    """
-    blocks = re.findall(r"<tracker>([\s\S]*?)</tracker>", text)
-    # If no <tracker> wrappers but bare <project> blocks exist, treat each as a block
-    if not blocks and "<project" in text:
-        blocks = [text]
-    results: dict = {"blocks": len(blocks), "valid": 0, "errors": [], "projects": []}
-
-    for i, block in enumerate(blocks):
-        proj = re.search(
-            r'<project\s+action="upsert"\s+id="([^"]*)">([\s\S]*?)</project>', block
-        )
-        if not proj:
-            proj = re.search(
-                r'<project\s+id="([^"]*)"\s+action="upsert">([\s\S]*?)</project>', block
-            )
-        if not proj:
-            results["errors"].append(f"Block {i}: no <project> tag found")
-            continue
-
-        pid = proj.group(1).strip()
-        inner = proj.group(2)
-
-        title_m = re.search(r"<title>([\s\S]*?)</title>", inner)
-        status_m = re.search(r"<status>([\s\S]*?)</status>", inner)
-        summary_m = re.search(r"<summary>([\s\S]*?)</summary>", inner)
-        category_m = re.search(r"<category>([\s\S]*?)</category>", inner)
-
-        block_errors = []
-
-        if not title_m:
-            block_errors.append(f"Block {i}: missing <title>")
-        if not status_m:
-            block_errors.append(f"Block {i}: missing <status>")
-        elif status_m.group(1).strip() not in (
-            "active", "done", "blocked", "planned", "abandoned",
-        ):
-            block_errors.append(
-                f"Block {i}: invalid status '{status_m.group(1).strip()}'"
-            )
-
-        if pid and existing_ids and pid not in existing_ids:
-            block_errors.append(f"Block {i}: project id '{pid[:12]}...' not in existing projects")
-
-        if block_errors:
-            results["errors"].extend(block_errors)
-        else:
-            results["valid"] += 1
-            title = title_m.group(1).strip() if title_m else "?"
-            status = status_m.group(1).strip() if status_m else "?"
-            summary = summary_m.group(1).strip()[:80] if summary_m else ""
-            category = category_m.group(1).strip() if category_m else "?"
-            action = f"UPDATE {pid[:8]}" if pid else "CREATE"
-            results["projects"].append({
-                "action": action,
-                "title": title,
-                "status": status,
-                "category": category,
-                "summary": summary,
-            })
-
-    return results
-
-
-# ============================================================================
-# Tool-Call Validation (tool-calling mode)
+# Tool-Call Validation
 # ============================================================================
 
 VALID_STATUSES = {"active", "done", "blocked", "planned", "abandoned"}
@@ -307,7 +167,7 @@ VALID_CATEGORIES = {"recall", "ui", "infra", "research", "meta"}
 
 
 def validate_tool_calls(log_path: Path, existing_ids: set[str] | None = None) -> dict:
-    """Validate tool calls captured by the mock MCP server."""
+    """Validate tool calls captured by the in-process MCP server."""
     if not log_path.exists():
         return {"calls": 0, "valid": 0, "errors": ["No tool call log found — model may not have called any tools"], "projects": [], "trivial": []}
 
@@ -378,34 +238,22 @@ def validate_tool_calls(log_path: Path, existing_ids: set[str] | None = None) ->
 
 
 def print_validation(v: dict) -> None:
-    """Print validation results to stderr (works for both modes)."""
-    if "calls" in v:
-        # Tool-calling mode
-        print(f"  Tool calls: {v['calls']}, Valid: {v['valid']}, Errors: {len(v['errors'])}", file=sys.stderr)
-        for p in v["projects"]:
-            print(
-                f"  + {p['action']} — {p['title']} ({p['status']}, {p['category']})",
-                file=sys.stderr,
-            )
-            if p["summary"]:
-                print(f"    {p['summary']}", file=sys.stderr)
-            if p.get("entities"):
-                print(f"    entities: {p['entities'][:5]}{'...' if len(p['entities']) > 5 else ''}", file=sys.stderr)
-            if p.get("files"):
-                for f in p["files"][:3]:
-                    print(f"    file: {f['path']} — {f['note']}", file=sys.stderr)
-        for reason in v.get("trivial", []):
-            print(f"  ~ TRIVIAL: {reason}", file=sys.stderr)
-    else:
-        # XML mode
-        print(f"  Blocks: {v['blocks']}, Valid: {v['valid']}, Errors: {len(v['errors'])}", file=sys.stderr)
-        for p in v["projects"]:
-            print(
-                f"  + {p['action']} — {p['title']} ({p['status']}, {p['category']})",
-                file=sys.stderr,
-            )
-            if p["summary"]:
-                print(f"    {p['summary']}", file=sys.stderr)
+    """Print validation results to stderr."""
+    print(f"  Tool calls: {v['calls']}, Valid: {v['valid']}, Errors: {len(v['errors'])}", file=sys.stderr)
+    for p in v["projects"]:
+        print(
+            f"  + {p['action']} — {p['title']} ({p['status']}, {p['category']})",
+            file=sys.stderr,
+        )
+        if p["summary"]:
+            print(f"    {p['summary']}", file=sys.stderr)
+        if p.get("entities"):
+            print(f"    entities: {p['entities'][:5]}{'...' if len(p['entities']) > 5 else ''}", file=sys.stderr)
+        if p.get("files"):
+            for f in p["files"][:3]:
+                print(f"    file: {f['path']} — {f['note']}", file=sys.stderr)
+    for reason in v.get("trivial", []):
+        print(f"  ~ TRIVIAL: {reason}", file=sys.stderr)
 
     for err in v["errors"]:
         print(f"  x {err}", file=sys.stderr)
@@ -442,104 +290,14 @@ def print_entry_info(meta: dict) -> None:
 
 
 # ============================================================================
-# Run Modes
+# In-Process MCP Server
 # ============================================================================
-
-def run_xml_mode(prompt: str, model: str, projects: list[dict], no_validate: bool) -> int:
-    """Original XML mode via super-agent subprocess."""
-    if not SUPER_AGENT.exists():
-        print(f"Error: super-agent not found at {SUPER_AGENT}", file=sys.stderr)
-        return 1
-
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".md", prefix="tracker-run-",
-        dir="/tmp", delete=False, encoding="utf-8",
-    ) as f:
-        f.write(prompt)
-        prompt_path = f.name
-
-    try:
-        env = os.environ.copy()
-        env["PROMPT_FILE"] = prompt_path
-        env["SUPER_AGENT_MODEL"] = model
-        env["SUPER_AGENT_DEBUG"] = "1"
-        env.pop("CLAUDECODE", None)
-
-        print(f"--- Sending to {model} via super-agent (XML mode) ---\n", file=sys.stderr)
-
-        result = subprocess.run(
-            [str(SUPER_AGENT), "--no-persist", "--no-chrome"],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-
-        response = result.stdout or ""
-
-        # The Agent SDK's transport layer captures subprocess stdout internally,
-        # so result.stdout is often empty. Fall back to the super-agent log file
-        # which always contains a copy of the output.
-        if not response.strip() and result.stderr:
-            log_match = re.search(r"\[output_file:\s*(.+?)\]", result.stderr)
-            if log_match:
-                log_path = Path(log_match.group(1).strip())
-                if log_path.exists():
-                    response = log_path.read_text(encoding="utf-8", errors="replace")
-                    print(f"  (read output from log: {log_path})", file=sys.stderr)
-
-        # Still empty? Scan for the most recent super-agent log as last resort
-        if not response.strip():
-            log_dir = Path("/tmp/crispy-agents")
-            if log_dir.exists():
-                logs = sorted(log_dir.glob("super-agent-*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
-                if logs:
-                    candidate = logs[0]
-                    if time.time() - candidate.stat().st_mtime < 30:
-                        response = candidate.read_text(encoding="utf-8", errors="replace")
-                        print(f"  (read output from recent log: {candidate})", file=sys.stderr)
-
-        # Strip session_id footer from response (not part of LLM output)
-        response = re.sub(r"\n?\[session_id:.*?\]\s*$", "", response).strip()
-
-        # Strip markdown fences — models sometimes wrap XML in ```tracker or ```xml
-        response = re.sub(r"^```\w*\n?", "", response)
-        response = re.sub(r"\n?```\s*$", "", response).strip()
-
-        # Print raw response to stdout (pipeable)
-        print(response)
-
-        # Print cost/session info from stderr
-        if result.stderr:
-            for line in result.stderr.splitlines():
-                if any(k in line for k in ["[Cost", "[Session", "[session_id", "[output_file", "[Agent"]):
-                    print(f"  {line}", file=sys.stderr)
-            print(file=sys.stderr)
-
-        # Validate
-        if not no_validate and response.strip():
-            existing_ids = {p["id"] for p in projects} if projects else None
-            print(f"--- Validation ---", file=sys.stderr)
-            v = validate_response(response, existing_ids)
-            print_validation(v)
-
-        return 0 if result.returncode == 0 else 1
-    except subprocess.TimeoutExpired:
-        print("Error: super-agent timed out after 120s", file=sys.stderr)
-        return 1
-    finally:
-        os.unlink(prompt_path)
-
 
 def _build_tracker_mcp_server(log_path: str):
     """Build an in-process SDK MCP server with tracker tools.
 
     Uses create_sdk_mcp_server (in-process) instead of stdio subprocess.
-    The stdio pathway in the Python SDK doesn't reliably wire tools into the
-    model's tool list — the in-process pathway routes via the SDK control
-    protocol and works consistently.
-
-    Tool schemas match the canonical definitions in tracker-mcp-server.
+    Tool schemas match the production definitions in src/mcp/servers/internal.ts.
     """
     from claude_agent_sdk import tool, create_sdk_mcp_server
 
@@ -669,17 +427,12 @@ def _build_tracker_mcp_server(log_path: str):
     return create_sdk_mcp_server("tracker", tools=[upsert_project, mark_trivial])
 
 
-async def run_tool_calling_mode(prompt: str, model: str, projects: list[dict], no_validate: bool) -> int:
-    """Tool-calling mode via Agent SDK + in-process MCP server.
+# ============================================================================
+# Run
+# ============================================================================
 
-    Uses create_sdk_mcp_server for in-process tool routing (not stdio).
-    The stdio pathway passes --mcp-config to the CLI, but the CLI doesn't
-    reliably wire stdio MCP tools into the model's tool list. The in-process
-    pathway uses the SDK control protocol and works consistently.
-
-    PRODUCTION NOTE: The real implementation adds these tools to
-    src/mcp/servers/internal.ts — handlers pass through to db-writer.ts.
-    """
+async def run_tracker(prompt: str, model: str, projects: list[dict], no_validate: bool) -> int:
+    """Run tracker analysis via Agent SDK with in-process MCP tools."""
     try:
         from claude_agent_sdk import query, ClaudeAgentOptions
         from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
@@ -692,8 +445,7 @@ async def run_tool_calling_mode(prompt: str, model: str, projects: list[dict], n
     os.close(log_fd)
     log_file = Path(log_path)
 
-    print(f"--- Sending to {model} via Agent SDK (tool-calling mode) ---", file=sys.stderr)
-    print(f"  MCP: in-process SDK server", file=sys.stderr)
+    print(f"--- Sending to {model} via Agent SDK ---", file=sys.stderr)
     print(f"  Tool call log: {log_path}\n", file=sys.stderr)
 
     try:
@@ -777,9 +529,8 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             examples:
-              tracker-run latest                         # XML mode (default)
-              tracker-run latest --tc                    # tool-calling mode
-              tracker-run 42 --tc --no-projects          # tool-calling, no existing projects
+              tracker-run latest                         # run most recent entry
+              tracker-run 42 --no-projects               # simulate empty projects table
               tracker-run 42 --model claude-sonnet-4-5   # different model
               tracker-run 42 --prompt-file ./alt.md      # override prompt text
         """),
@@ -803,11 +554,6 @@ def main() -> int:
     parser.add_argument(
         "--no-validate", action="store_true",
         help="Skip response validation",
-    )
-    parser.add_argument(
-        "--tool-calling", "--tc", action="store_true",
-        dest="tool_calling",
-        help="Use tool-calling mode (Agent SDK + mock MCP server) instead of XML",
     )
     args = parser.parse_args()
 
@@ -849,12 +595,8 @@ def main() -> int:
         system_prompt = Path(args.prompt_file).read_text(encoding="utf-8").strip()
         print(f"  System prompt: {args.prompt_file}\n", file=sys.stderr)
 
-    if args.tool_calling:
-        prompt = build_tool_calling_prompt(meta, projects, system_prompt)
-        return asyncio.run(run_tool_calling_mode(prompt, args.model, projects, args.no_validate))
-    else:
-        prompt = build_tracker_prompt(meta, projects, system_prompt)
-        return run_xml_mode(prompt, args.model, projects, args.no_validate)
+    prompt = build_prompt(meta, projects, system_prompt)
+    return asyncio.run(run_tracker(prompt, args.model, projects, args.no_validate))
 
 
 if __name__ == "__main__":
