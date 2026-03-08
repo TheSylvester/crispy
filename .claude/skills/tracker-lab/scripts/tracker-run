@@ -1,0 +1,404 @@
+#!/usr/bin/env python3
+"""
+tracker-run — Send a rosie-meta entry to the tracker prompt and validate output.
+
+Accepts a rowid (from tracker-lab) or selector. Assembles the prompt, sends to
+a model via super-agent, validates the XML response. No side effects.
+"""
+
+import sqlite3
+import sys
+import os
+import json
+import subprocess
+import tempfile
+import argparse
+import re
+import textwrap
+from pathlib import Path
+
+DB = Path.home() / ".crispy" / "crispy.db"
+SUPER_AGENT = Path.home() / ".claude/skills/super-agent/scripts/super-agent"
+DEFAULT_MODEL = "claude-haiku-4-5"
+
+# ============================================================================
+# Tracker System Prompt — canonical source is tracker-prompt.md
+# Resolved relative to the repo root (4 levels up from this script).
+# Override at runtime with --prompt-file.
+# ============================================================================
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+TRACKER_PROMPT_FILE = REPO_ROOT / "src" / "core" / "rosie" / "tracker" / "tracker-prompt.md"
+
+
+def load_tracker_system_prompt() -> str:
+    """Read the canonical tracker prompt from tracker-prompt.md."""
+    if not TRACKER_PROMPT_FILE.exists():
+        print(f"Error: tracker-prompt.md not found at {TRACKER_PROMPT_FILE}", file=sys.stderr)
+        print("  (expected relative to repo root)", file=sys.stderr)
+        sys.exit(1)
+    return TRACKER_PROMPT_FILE.read_text(encoding="utf-8").strip()
+
+
+# ============================================================================
+# Prompt Assembly
+# ============================================================================
+
+def build_tracker_prompt(
+    meta: dict,
+    projects: list[dict],
+    system_prompt: str | None = None,
+) -> str:
+    """Replicate buildTrackerPrompt() from tracker-hook.ts."""
+    prompt_text = system_prompt or load_tracker_system_prompt()
+
+    if projects:
+        project_list = "\n".join(
+            f"[{p['id']}] {p['title']} ({p['status']}) — entities: {p['entities']}"
+            for p in projects
+        )
+    else:
+        project_list = "No existing projects yet."
+
+    return f"""{prompt_text}
+
+---
+
+## Session Summary
+
+Title: {meta.get('title', '')}
+Quest: {meta.get('quest', '')}
+Status: {meta.get('status', '')}
+Entities: {meta.get('entities', '[]')}
+
+## Existing Projects
+
+{project_list}"""
+
+
+# ============================================================================
+# Database Queries
+# ============================================================================
+
+def query_meta_by_rowid(db_path: Path, rowid: int) -> dict | None:
+    """Query a rosie-meta entry by rowid."""
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            "SELECT rowid AS rowid, * FROM activity_entries WHERE rowid = ? AND kind = 'rosie-meta'",
+            (rowid,),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def query_meta_by_selector(db_path: Path, selector: str) -> dict | None:
+    """Query a rosie-meta entry by relative position (latest, 2, 3, ...)."""
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        offset = 0 if selector == "latest" else int(selector) - 1
+        row = conn.execute(
+            "SELECT rowid AS rowid, * FROM activity_entries WHERE kind = 'rosie-meta' "
+            "ORDER BY timestamp DESC LIMIT 1 OFFSET ?",
+            (offset,),
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def query_projects(db_path: Path) -> list[dict]:
+    """Query existing non-abandoned projects."""
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT id, title, status, entities FROM projects "
+            "WHERE status != 'abandoned' ORDER BY updated_at DESC",
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
+# ============================================================================
+# Response Validation
+# ============================================================================
+
+def validate_response(text: str, existing_ids: set[str] | None = None) -> dict:
+    """
+    Basic validation of tracker XML response.
+    Mirrors xml-extractor.ts + validator.ts logic.
+    """
+    blocks = re.findall(r"<tracker>([\s\S]*?)</tracker>", text)
+    # If no <tracker> wrappers but bare <project> blocks exist, treat each as a block
+    if not blocks and "<project" in text:
+        blocks = [text]
+    results: dict = {"blocks": len(blocks), "valid": 0, "errors": [], "projects": []}
+
+    for i, block in enumerate(blocks):
+        proj = re.search(
+            r'<project\s+action="upsert"\s+id="([^"]*)">([\s\S]*?)</project>', block
+        )
+        if not proj:
+            proj = re.search(
+                r'<project\s+id="([^"]*)"\s+action="upsert">([\s\S]*?)</project>', block
+            )
+        if not proj:
+            results["errors"].append(f"Block {i}: no <project> tag found")
+            continue
+
+        pid = proj.group(1).strip()
+        inner = proj.group(2)
+
+        title_m = re.search(r"<title>([\s\S]*?)</title>", inner)
+        status_m = re.search(r"<status>([\s\S]*?)</status>", inner)
+        summary_m = re.search(r"<summary>([\s\S]*?)</summary>", inner)
+        category_m = re.search(r"<category>([\s\S]*?)</category>", inner)
+
+        block_errors = []
+
+        if not title_m:
+            block_errors.append(f"Block {i}: missing <title>")
+        if not status_m:
+            block_errors.append(f"Block {i}: missing <status>")
+        elif status_m.group(1).strip() not in (
+            "active", "done", "blocked", "planned", "abandoned",
+        ):
+            block_errors.append(
+                f"Block {i}: invalid status '{status_m.group(1).strip()}'"
+            )
+
+        if pid and existing_ids and pid not in existing_ids:
+            block_errors.append(f"Block {i}: project id '{pid[:12]}...' not in existing projects")
+
+        if block_errors:
+            results["errors"].extend(block_errors)
+        else:
+            results["valid"] += 1
+            title = title_m.group(1).strip() if title_m else "?"
+            status = status_m.group(1).strip() if status_m else "?"
+            summary = summary_m.group(1).strip()[:80] if summary_m else ""
+            category = category_m.group(1).strip() if category_m else "?"
+            action = f"UPDATE {pid[:8]}" if pid else "CREATE"
+            results["projects"].append({
+                "action": action,
+                "title": title,
+                "status": status,
+                "category": category,
+                "summary": summary,
+            })
+
+    return results
+
+
+def print_validation(v: dict) -> None:
+    """Print validation results to stderr."""
+    print(f"  Blocks: {v['blocks']}, Valid: {v['valid']}, Errors: {len(v['errors'])}", file=sys.stderr)
+    for p in v["projects"]:
+        print(
+            f"  + {p['action']} — {p['title']} ({p['status']}, {p['category']})",
+            file=sys.stderr,
+        )
+        if p["summary"]:
+            print(f"    {p['summary']}", file=sys.stderr)
+    for err in v["errors"]:
+        print(f"  x {err}", file=sys.stderr)
+
+
+# ============================================================================
+# Entry Display
+# ============================================================================
+
+def print_entry_info(meta: dict) -> None:
+    """Print selected entry info to stderr."""
+    print(f"--- Entry (rowid={meta.get('rowid', '?')}) ---", file=sys.stderr)
+    print(f"  Title:     {meta.get('title', '(none)')}", file=sys.stderr)
+
+    quest = meta.get("quest", "(none)") or "(none)"
+    if len(quest) > 100:
+        quest = quest[:100] + "..."
+    print(f"  Quest:     {quest}", file=sys.stderr)
+    print(f"  Timestamp: {meta.get('timestamp', '(none)')}", file=sys.stderr)
+
+    entities = meta.get("entities", "[]")
+    try:
+        ent_list = json.loads(entities) if entities else []
+        print(f"  Entities:  {len(ent_list)} items", file=sys.stderr)
+    except (json.JSONDecodeError, TypeError):
+        print(f"  Entities:  {str(entities)[:60]}", file=sys.stderr)
+    print(file=sys.stderr)
+
+
+# ============================================================================
+# Main
+# ============================================================================
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Send a rosie-meta entry to the tracker prompt and validate output",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=textwrap.dedent("""\
+            examples:
+              tracker-run 42                        # run entry with rowid 42
+              tracker-run latest                    # most recent entry
+              tracker-run 5                         # 5th most recent (if not a rowid)
+              tracker-run 42 --no-projects           # simulate empty projects table
+              tracker-run 42 --model claude-sonnet-4-5
+              tracker-run 42 --prompt-file ./alt.md  # test alternative prompt
+        """),
+    )
+    parser.add_argument(
+        "selector",
+        help="Entry rowid (from tracker-lab), 'latest', or N for Nth most recent",
+    )
+    parser.add_argument(
+        "--model", "-m", default=DEFAULT_MODEL,
+        help=f"Model to use (default: {DEFAULT_MODEL})",
+    )
+    parser.add_argument(
+        "--prompt-file", "-p",
+        help="Override system prompt with contents of this file",
+    )
+    parser.add_argument(
+        "--no-projects", action="store_true",
+        help="Omit existing projects from prompt (simulate first-run)",
+    )
+    parser.add_argument(
+        "--no-validate", action="store_true",
+        help="Skip response validation",
+    )
+    args = parser.parse_args()
+
+    # Preflight
+    if not DB.exists():
+        print(f"Error: Database not found at {DB}", file=sys.stderr)
+        return 1
+
+    # ── Select entry ───────────────────────────────────────────────────────
+    # Try as rowid first (any integer ≥ 100 is likely a rowid, not "5th most recent")
+    meta = None
+    try:
+        rowid = int(args.selector)
+        if rowid >= 100:
+            meta = query_meta_by_rowid(DB, rowid)
+    except ValueError:
+        pass
+
+    if not meta:
+        meta = query_meta_by_selector(DB, args.selector)
+
+    if not meta:
+        print(f"Error: No rosie-meta entry found for '{args.selector}'", file=sys.stderr)
+        return 1
+
+    print_entry_info(meta)
+
+    # ── Query projects ─────────────────────────────────────────────────────
+    if args.no_projects:
+        projects: list[dict] = []
+        print(f"  Projects: (omitted via --no-projects)\n", file=sys.stderr)
+    else:
+        projects = query_projects(DB)
+        print(f"  Projects: {len(projects)} existing\n", file=sys.stderr)
+
+    # ── Build prompt ───────────────────────────────────────────────────────
+    system_prompt = None
+    if args.prompt_file:
+        system_prompt = Path(args.prompt_file).read_text(encoding="utf-8").strip()
+        print(f"  System prompt: {args.prompt_file}\n", file=sys.stderr)
+
+    prompt = build_tracker_prompt(meta, projects, system_prompt)
+
+    # ── Send to model via super-agent ──────────────────────────────────────
+    if not SUPER_AGENT.exists():
+        print(f"Error: super-agent not found at {SUPER_AGENT}", file=sys.stderr)
+        return 1
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".md", prefix="tracker-run-",
+        dir="/tmp", delete=False, encoding="utf-8",
+    ) as f:
+        f.write(prompt)
+        prompt_path = f.name
+
+    try:
+        env = os.environ.copy()
+        env["PROMPT_FILE"] = prompt_path
+        env["SUPER_AGENT_MODEL"] = args.model
+        env["SUPER_AGENT_DEBUG"] = "1"
+        env.pop("CLAUDECODE", None)
+
+        print(f"--- Sending to {args.model} via super-agent ---\n", file=sys.stderr)
+
+        result = subprocess.run(
+            [str(SUPER_AGENT), "--no-persist", "--no-chrome"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        response = result.stdout or ""
+
+        # The Agent SDK's transport layer captures subprocess stdout internally,
+        # so result.stdout is often empty. Fall back to the super-agent log file
+        # which always contains a copy of the output.
+        if not response.strip() and result.stderr:
+            log_match = re.search(r"\[output_file:\s*(.+?)\]", result.stderr)
+            if log_match:
+                log_path = Path(log_match.group(1).strip())
+                if log_path.exists():
+                    response = log_path.read_text(encoding="utf-8", errors="replace")
+                    print(f"  (read output from log: {log_path})", file=sys.stderr)
+
+        # Still empty? Scan for the most recent super-agent log as last resort
+        if not response.strip():
+            log_dir = Path("/tmp/crispy-agents")
+            if log_dir.exists():
+                logs = sorted(log_dir.glob("super-agent-*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+                if logs:
+                    candidate = logs[0]
+                    import time as _time
+                    if _time.time() - candidate.stat().st_mtime < 30:
+                        response = candidate.read_text(encoding="utf-8", errors="replace")
+                        print(f"  (read output from recent log: {candidate})", file=sys.stderr)
+
+        # Strip session_id footer from response (not part of LLM output)
+        response = re.sub(r"\n?\[session_id:.*?\]\s*$", "", response).strip()
+
+        # Strip markdown fences — models sometimes wrap XML in ```tracker or ```xml
+        response = re.sub(r"^```\w*\n?", "", response)
+        response = re.sub(r"\n?```\s*$", "", response).strip()
+
+        # Print raw response to stdout (pipeable)
+        print(response)
+
+        # Print cost/session info from stderr
+        if result.stderr:
+            for line in result.stderr.splitlines():
+                if any(k in line for k in ["[Cost", "[Session", "[session_id", "[output_file", "[Agent"]):
+                    print(f"  {line}", file=sys.stderr)
+            print(file=sys.stderr)
+
+        # ── Validate ───────────────────────────────────────────────────────
+        if not args.no_validate and response.strip():
+            existing_ids = {p["id"] for p in projects} if projects else None
+            print(f"--- Validation ---", file=sys.stderr)
+            v = validate_response(response, existing_ids)
+            print_validation(v)
+
+        return 0 if result.returncode == 0 else 1
+    except subprocess.TimeoutExpired:
+        print("Error: super-agent timed out after 120s", file=sys.stderr)
+        return 1
+    finally:
+        os.unlink(prompt_path)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
