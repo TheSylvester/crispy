@@ -123,6 +123,18 @@ npm run build
 
 Then press `F5` in VS Code to launch the extension development host.
 
+To build a target-specific VSIX that only includes the matching native voice
+runtime, use one of:
+
+```bash
+npm run package:linux-x64
+npm run package:linux-arm64
+npm run package:darwin-x64
+npm run package:darwin-arm64
+npm run package:win32-x64
+npm run package:win32-arm64
+```
+
 ---
 
 ## Usage

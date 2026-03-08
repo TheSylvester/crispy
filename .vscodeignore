@@ -8,7 +8,9 @@ spike/**
 .cursor/**
 .agent/**
 .vscode/**
+.github/**
 .git/**
+crispy-local-data/**
 
 # Dev files
 tsconfig.json
@@ -20,8 +22,18 @@ dist/dev-server.js
 dist/dev-server.js.map
 dist/extension.js.map
 
-# Dependencies (esbuild bundles everything)
+# Dependencies
+# Most deps are bundled into dist/. onnxruntime-node remains external because
+# it loads native binaries from node_modules at runtime.
+# NOTE: vsce uses flat ignore/negate groups (not sequential like .gitignore),
+# so further exclusions within negated dirs must be handled by physically
+# removing files before packaging — see scripts/package-vsix.mjs.
 node_modules/**
+!node_modules/onnxruntime-node/**
+!node_modules/onnxruntime-common/**
+!node_modules/@huggingface/transformers/**
+!node_modules/@huggingface/jinja/**
+!node_modules/sharp/**
 
 # Misc
 *.vsix

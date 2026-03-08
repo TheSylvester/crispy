@@ -1,9 +1,13 @@
 # ============================================================================
-# Publish Crispy to OpenVSX
+# Publish Crispy to OpenVSX — Platform-specific builds
 # ============================================================================
 #
 # Trigger:  Push a version tag (v0.1.5, v0.2.0, etc.)
-# Flow:     Build → Package VSIX → Publish to OpenVSX → GitHub Release
+# Flow:     Matrix build (per-platform) → Publish all VSIXs → GitHub Release
+#
+# Each platform job installs onnxruntime-node (which bundles all platform
+# binaries), then package-vsix.mjs prunes to keep only the target platform's
+# native files — with CUDA/TensorRT excluded (CPU-only voice inference).
 #
 # Usage:
 #   git tag v0.1.5
@@ -14,130 +18,82 @@
 #
 # ============================================================================
 
-# ── Trigger ──────────────────────────────────────────────────────────────────
-# "on" defines WHEN this workflow runs.
-# push.tags means: only when a tag matching "v*" is pushed (v0.1.5, v1.0.0…).
-# Regular commits to main do NOT trigger this — only tags.
 on:
   push:
     tags:
       - "v*"
 
-# ── Permissions ──────────────────────────────────────────────────────────────
-# This workflow needs to create GitHub Releases (write to "contents").
-# Minimal permissions — only what's needed.
 permissions:
   contents: write
 
 # ── Jobs ─────────────────────────────────────────────────────────────────────
-# Today: one job, universal build (no native modules).
-# When you add SQLite: replace with a matrix build (see bottom of file).
 jobs:
-  publish:
-    # "runs-on" picks the virtual machine OS.
-    # ubuntu-latest is cheapest and fastest. Fine for universal (non-native) builds.
-    runs-on: ubuntu-latest
+
+  # ── Build: one job per platform ──────────────────────────────────────────
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,    target: linux-x64 }
+          - { os: ubuntu-24.04-arm, target: linux-arm64 }
+          - { os: macos-13,         target: darwin-x64 }
+          - { os: macos-latest,     target: darwin-arm64 }
+          - { os: windows-latest,   target: win32-x64 }
+          - { os: windows-latest,   target: win32-arm64 }
+
+    runs-on: ${{ matrix.os }}
 
     steps:
-      # ── Step 1: Check out the code ──────────────────────────────────────
-      # actions/checkout is a premade action that clones your repo.
-      # Without this, the runner has an empty filesystem.
       - uses: actions/checkout@v4
 
-      # ── Step 2: Set up Node.js ──────────────────────────────────────────
-      # The runner has Node.js, but this lets you pin a specific version
-      # and enables npm caching (faster installs on repeat runs).
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
-      # ── Step 3: Install dependencies ────────────────────────────────────
-      # "npm ci" is like "npm install" but:
-      #   - Uses package-lock.json exactly (no surprise upgrades)
-      #   - Faster (skips the dependency resolution step)
-      #   - Fails if lock file is out of sync (catches mistakes)
-      # Always use "npm ci" in CI. "npm install" is for local dev.
+      # npm ci installs all deps; onnxruntime-node bundles all platform
+      # binaries. CUDA download is skipped via .npmrc config.
       - run: npm ci
 
-      # ── Step 4: Type check ─────────────────────────────────────────────
-      # Catch type errors before packaging. If this fails, the whole
-      # workflow stops — no broken builds get published.
       - run: npm run typecheck
 
-      # ── Step 5: Run tests ──────────────────────────────────────────────
-      # test:unit is CI-safe (doesn't need local transcript fixtures).
       - run: npm run test:unit
 
-      # ── Step 6: Build ──────────────────────────────────────────────────
       - run: npm run build
 
-      # ── Step 7: Package VSIX ───────────────────────────────────────────
-      # Creates crispy-<version>.vsix in the working directory.
-      # No --target flag = universal VSIX (works on all platforms).
-      - run: npx vsce package
+      # package-vsix.mjs prunes .vscodeignore to keep only the target
+      # platform's native binaries and exclude CUDA/TensorRT providers.
+      - run: npm run package:${{ matrix.target }}
 
-      # ── Step 8: Publish to OpenVSX ─────────────────────────────────────
-      # npx ovsx = the OpenVSX CLI. Uploads the .vsix file.
-      # ${{ secrets.OVSX_TOKEN }} is read from your repo's encrypted secrets.
-      # It's never printed in logs — GitHub redacts it automatically.
-      - run: npx ovsx publish *.vsix -p ${{ secrets.OVSX_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix-${{ matrix.target }}
+          path: "*.vsix"
 
-      # ── Step 9: Attach VSIX to a GitHub Release ────────────────────────
-      # This creates a "Release" on GitHub's Releases page with the VSIX
-      # attached as a downloadable file. Users who don't use OpenVSX can
-      # grab it directly.
-      # "softprops/action-gh-release" is a community action that handles
-      # creating the release and uploading files.
+  # ── Publish: collect all VSIXs and release ───────────────────────────────
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: vsix
+          merge-multiple: true
+
+      - name: Publish to OpenVSX
+        run: |
+          for f in vsix/*.vsix; do
+            echo "Publishing $f"
+            npx ovsx publish "$f" -p ${{ secrets.OVSX_TOKEN }}
+          done
+
       - uses: softprops/action-gh-release@v2
         with:
-          files: "*.vsix"
+          files: vsix/*.vsix
           generate_release_notes: true
-
-# ============================================================================
-# FUTURE: Platform-specific builds (when you add better-sqlite3 + sqlite-vec)
-# ============================================================================
-#
-# Replace the single "publish" job above with these two jobs:
-#
-#   build:
-#     strategy:
-#       matrix:
-#         include:
-#           - { os: ubuntu-latest,    target: linux-x64 }
-#           - { os: ubuntu-24.04-arm, target: linux-arm64 }
-#           - { os: macos-latest,     target: darwin-arm64 }
-#           - { os: macos-13,         target: darwin-x64 }
-#           - { os: windows-latest,   target: win32-x64 }
-#     runs-on: ${{ matrix.os }}
-#     steps:
-#       - uses: actions/checkout@v4
-#       - uses: actions/setup-node@v4
-#         with:
-#           node-version: 20
-#           cache: npm
-#       - run: npm ci            # <-- pulls correct native binary per OS
-#       - run: npm run build
-#       - run: npx vsce package --target ${{ matrix.target }}
-#       - uses: actions/upload-artifact@v4
-#         with:
-#           name: vsix-${{ matrix.target }}
-#           path: "*.vsix"
-#
-#   publish:
-#     needs: build              # <-- waits for ALL build jobs to finish
-#     runs-on: ubuntu-latest
-#     steps:
-#       - uses: actions/download-artifact@v4
-#         with:
-#           path: vsix
-#           merge-multiple: true
-#       - run: |
-#           for f in vsix/*.vsix; do
-#             npx ovsx publish "$f" -p ${{ secrets.OVSX_TOKEN }}
-#           done
-#       - uses: softprops/action-gh-release@v2
-#         with:
-#           files: vsix/*.vsix
-#           generate_release_notes: true
-# ============================================================================
