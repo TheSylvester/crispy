@@ -17,7 +17,7 @@ import { appendFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath } from '../memory-queries.js';
-import { writeTrackerResults } from '../../core/rosie/tracker/db-writer.js';
+import { writeTrackerResults, recordTrackerOutcome } from '../../core/rosie/tracker/db-writer.js';
 import { VALID_STATUSES, VALID_CATEGORIES } from '../../core/rosie/tracker/types.js';
 import type { TrackerBlock } from '../../core/rosie/tracker/types.js';
 
@@ -258,6 +258,8 @@ export function createInternalServer(): McpServer {
         const action = args.id ? 'updated' : 'created';
         console.error(`[internal-mcp] upsert_project: ${action} "${args.title}" (${args.status})`);
         appendDecision({ tool: 'upsert_project', action, title: args.title, status: args.status });
+        // Persist tracked outcome to DB
+        recordTrackerOutcome(sessionFile, 'tracked', 1, args.title);
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action, project: args.title }) }],
         };
@@ -283,6 +285,11 @@ export function createInternalServer(): McpServer {
     async (args) => {
       console.error(`[internal-mcp] mark_trivial: "${args.reason}"`);
       appendDecision({ tool: 'mark_trivial', reason: args.reason });
+      // Persist trivial outcome to DB
+      const sessionFile = process.env.CRISPY_TRACKER_SESSION_FILE;
+      if (sessionFile) {
+        recordTrackerOutcome(sessionFile, 'trivial', 1, args.reason);
+      }
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', trivial: true, reason: args.reason }) }],
       };

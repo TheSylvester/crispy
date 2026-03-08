@@ -123,6 +123,30 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
 }
 
 /**
+ * Record the outcome of a tracker analysis attempt.
+ *
+ * Called after successful tool calls (tracked/trivial) or after all retries
+ * exhausted (failed). Uses INSERT OR REPLACE so re-runs overwrite prior results.
+ */
+export function recordTrackerOutcome(
+  sessionFile: string,
+  outcome: 'tracked' | 'trivial' | 'failed',
+  attempts: number,
+  reason?: string,
+): void {
+  try {
+    const db = getTrackerDb();
+    db.run(
+      `INSERT OR REPLACE INTO tracker_outcomes (session_file, outcome, reason, attempts, created_at)
+       VALUES (?, ?, ?, ?, datetime('now'))`,
+      [sessionFile, outcome, reason ?? null, attempts],
+    );
+  } catch (err) {
+    console.warn('[rosie.tracker] Failed to record outcome:', err instanceof Error ? err.message : String(err));
+  }
+}
+
+/**
  * Get all non-abandoned projects for prompt context and validation.
  */
 export function getExistingProjects(): { id: string; title: string; status: string; entities: string }[] {

@@ -23,7 +23,7 @@ import { getSettingsSnapshotInternal } from '../../settings/index.js';
 import { parseModelOption } from '../../model-utils.js';
 import { getLatestRosieMeta } from '../../activity-index.js';
 import { pushRosieLog } from '../debug-log.js';
-import { getExistingProjects } from './db-writer.js';
+import { getExistingProjects, recordTrackerOutcome } from './db-writer.js';
 import { buildInternalMcpConfig } from '../../../mcp/servers/external.js';
 import type { TrackerDecision } from '../../../mcp/servers/internal.js';
 
@@ -249,6 +249,9 @@ async function runTrackerAnalysis(
       });
     }
   }
+
+  // All attempts exhausted — record failure so backfill knows this was tried
+  recordTrackerOutcome(sessionPath, 'failed', MAX_ATTEMPTS, 'All attempts exhausted — no tool calls');
 }
 
 // ============================================================================

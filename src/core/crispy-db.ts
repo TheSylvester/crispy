@@ -471,6 +471,21 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 9,
+    description: 'Create tracker_outcomes table for tracking analysis attempts',
+    up: (db: Database): void => {
+      db.exec(`
+        CREATE TABLE tracker_outcomes (
+          session_file TEXT PRIMARY KEY,
+          outcome      TEXT NOT NULL CHECK (outcome IN ('tracked', 'trivial', 'failed')),
+          reason       TEXT,
+          attempts     INTEGER NOT NULL DEFAULT 1,
+          created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {
