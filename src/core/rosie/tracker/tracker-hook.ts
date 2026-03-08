@@ -279,7 +279,7 @@ If the session's primary activity was looking up, recapping, or checking the sta
 
 Call your tools now. No commentary needed.`;
 
-/** Build the full tracker prompt (system + user context). Exported for replay-harness reuse. */
+/** Build the full tracker prompt (system + user context). */
 export function buildTrackerPrompt(
   meta: { quest?: string; title?: string; summary?: string; status?: string; entities?: string },
   projects: { id: string; title: string; status: string; entities: string }[],

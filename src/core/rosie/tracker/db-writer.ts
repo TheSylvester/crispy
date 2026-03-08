@@ -5,8 +5,7 @@
  * tables. All writes in a single transaction. New projects get a random UUID;
  * existing projects are updated in place.
  *
- * Also provides getExistingProjects() for building prompt context and the
- * validator's ID set.
+ * Also provides getExistingProjects() for building prompt context.
  *
  * @module rosie/tracker/db-writer
  */

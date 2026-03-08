@@ -30,7 +30,7 @@ export function extractTag(text: string, tag: string): string {
  * Tries JSON.parse first; falls back to comma-splitting and quote-stripping.
  * Always returns a valid JSON array string (defaults to '[]').
  *
- * Used by summarize-hook, tracker xml-extractor, and tracker validator.
+ * Used by summarize-hook.
  */
 export function normalizeEntitiesJson(raw: string): string {
   if (!raw) return '[]';

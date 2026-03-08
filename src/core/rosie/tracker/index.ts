@@ -5,7 +5,6 @@ export type {
   ProjectUpsert,
   SessionRef,
   FileRef,
-  ValidationResult,
   ProjectStatus,
 } from './types.js';
 export { VALID_STATUSES, VALID_CATEGORIES } from './types.js';

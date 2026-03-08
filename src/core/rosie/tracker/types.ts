@@ -47,11 +47,3 @@ export interface TrackerBlock {
   files: FileRef[];
 }
 
-// ============================================================================
-// Validation
-// ============================================================================
-
-export interface ValidationResult {
-  valid: TrackerBlock[];
-  errors: string[];
-}
