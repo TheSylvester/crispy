@@ -18,7 +18,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath } from '../memory-queries.js';
 import { writeTrackerResults, recordTrackerOutcome } from '../../core/rosie/tracker/db-writer.js';
-import { VALID_STATUSES, VALID_CATEGORIES } from '../../core/rosie/tracker/types.js';
+import { VALID_STATUSES } from '../../core/rosie/tracker/types.js';
 import type { TrackerBlock } from '../../core/rosie/tracker/types.js';
 
 // ============================================================================
@@ -44,12 +44,29 @@ export interface TrackerDecision {
 }
 
 /**
- * Append a decision record to the sidecar file (set via CRISPY_TRACKER_DECISIONS_FILE).
+ * Options for configuring the internal MCP server.
+ *
+ * These values are passed as CLI args (--session-file, --decisions-file)
+ * rather than env vars, so they work regardless of how the host adapter
+ * spawns MCP subprocesses. Falls back to env vars for backwards compatibility.
+ */
+export interface InternalServerOptions {
+  /** Session file path for tracker's upsert_project tool. */
+  sessionFile?: string;
+  /** Sidecar JSONL file for tracker decision observability. */
+  decisionsFile?: string;
+}
+
+/** Module-level options — set by createInternalServer(), read by tool handlers. */
+let serverOptions: InternalServerOptions = {};
+
+/**
+ * Append a decision record to the sidecar file.
  * The parent process reads this after dispatchChild completes and pushes entries
- * to the rosie debug log. Silently no-ops if the env var is unset.
+ * to the rosie debug log. Silently no-ops if no decisions file is configured.
  */
 function appendDecision(decision: TrackerDecision): void {
-  const file = process.env.CRISPY_TRACKER_DECISIONS_FILE;
+  const file = serverOptions.decisionsFile ?? process.env.CRISPY_TRACKER_DECISIONS_FILE;
   if (!file) return;
   try {
     appendFileSync(file, JSON.stringify(decision) + '\n');
@@ -93,8 +110,12 @@ function wrapToolHandler<T extends unknown[]>(
  *
  * Returns the McpServer — callers connect their own transport (stdio for
  * production, in-memory for tests).
+ *
+ * @param options - CLI-provided options (session file, decisions file).
+ *   Falls back to env vars for backwards compatibility.
  */
-export function createInternalServer(): McpServer {
+export function createInternalServer(options?: InternalServerOptions): McpServer {
+  serverOptions = options ?? {};
   const server = new McpServer({
     name: INTERNAL_MCP_SERVER_NAME,
     version: '1.0.0',
@@ -218,7 +239,6 @@ export function createInternalServer(): McpServer {
       title: z.string().describe('Short, stable project title. Keep consistent across sessions — don\'t rename unless scope fundamentally changed.'),
       status: z.enum(VALID_STATUSES).describe('Current project status.'),
       summary: z.string().describe('1-2 sentence summary of current project state. Reflect what\'s true RIGHT NOW, not history.'),
-      category: z.enum(VALID_CATEGORIES).describe('Project category.'),
       blocked_by: z.string().optional().describe('Why it\'s blocked (only if status is \'blocked\', otherwise omit).'),
       branch: z.string().optional().describe('Git branch name if applicable, otherwise omit.'),
       entities: z.array(z.string()).describe('Top 5-10 key entities: file paths, branch names, function names, concepts. Used for matching future sessions to this project.'),
@@ -228,9 +248,9 @@ export function createInternalServer(): McpServer {
       })).optional().describe('Non-code artifacts only: plans, specs, design docs. NOT source code — source files belong in entities. Omit if none.'),
     },
     async (args) => {
-      const sessionFile = process.env.CRISPY_TRACKER_SESSION_FILE;
+      const sessionFile = serverOptions.sessionFile ?? process.env.CRISPY_TRACKER_SESSION_FILE;
       if (!sessionFile) {
-        console.error('[internal-mcp] upsert_project: CRISPY_TRACKER_SESSION_FILE not set');
+        console.error('[internal-mcp] upsert_project: session file not configured (no --session-file arg or CRISPY_TRACKER_SESSION_FILE env)');
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: 'Session file not configured — this tool is only available in tracker child sessions' }) }],
           isError: true,
@@ -245,7 +265,6 @@ export function createInternalServer(): McpServer {
           status: args.status,
           blocked_by: args.blocked_by ?? '',
           summary: args.summary,
-          category: args.category,
           branch: args.branch ?? '',
           entities: JSON.stringify(args.entities),
         },

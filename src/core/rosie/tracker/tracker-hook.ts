@@ -23,19 +23,13 @@ import { getSettingsSnapshotInternal } from '../../settings/index.js';
 import { parseModelOption } from '../../model-utils.js';
 import { getLatestRosieMeta } from '../../activity-index.js';
 import { pushRosieLog } from '../debug-log.js';
-import { getExistingProjects, recordTrackerOutcome } from './db-writer.js';
+import { getExistingProjects, recordTrackerOutcome, runDedupSweep } from './db-writer.js';
 import { buildInternalMcpConfig } from '../../../mcp/servers/external.js';
 import type { TrackerDecision } from '../../../mcp/servers/internal.js';
+import type { InternalServerPaths } from './types.js';
 
-// ============================================================================
-// Types
-// ============================================================================
-
-/** Paths for spawning the internal MCP server subprocess. */
-export interface InternalServerPaths {
-  command: string;
-  args: string[];
-}
+// Re-export for consumers that import from this module
+export type { InternalServerPaths } from './types.js';
 
 // ============================================================================
 // Module State
@@ -53,6 +47,12 @@ const inflight = new Set<string>();
 export function initRosieTracker(d: AgentDispatch, paths: InternalServerPaths): void {
   dispatch = d;
   serverPaths = paths;
+
+  // Startup dedup sweep — catches any duplicates that slipped through
+  runDedupSweep(d.dispatchChild).catch((err) => {
+    console.warn('[rosie.tracker] Startup dedup sweep failed:', err instanceof Error ? err.message : String(err));
+  });
+
   unsubscribe = onResponseCompleteAfter(async (sessionId: string) => {
     // Capture dispatch locally — shutdown can null it while we're in-flight
     const d = dispatch;
@@ -60,26 +60,47 @@ export function initRosieTracker(d: AgentDispatch, paths: InternalServerPaths): 
 
     // Guard: settings check
     const snap = getSettingsSnapshotInternal();
-    if (!snap.settings.rosie.tracker.enabled) return;
+    if (!snap.settings.rosie.tracker.enabled) {
+      pushRosieLog({ source: 'tracker', level: 'info', summary: 'Tracker: skipped (disabled)' });
+      return;
+    }
 
     // Guard: pending IDs, inflight
-    if (sessionId.startsWith('pending:')) return;
-    if (inflight.has(sessionId)) return;
+    if (sessionId.startsWith('pending:')) {
+      pushRosieLog({ source: 'tracker', level: 'info', summary: 'Tracker: skipped (pending ID)' });
+      return;
+    }
+    if (inflight.has(sessionId)) {
+      pushRosieLog({ source: 'tracker', level: 'info', summary: 'Tracker: skipped (already running)' });
+      return;
+    }
 
     // Look up session info
     const info = await d.findSession(sessionId);
-    if (!info) return;
+    if (!info) {
+      pushRosieLog({ source: 'tracker', level: 'warn', summary: `Tracker: skipped (session ${sessionId.slice(0, 12)}… not found)` });
+      return;
+    }
 
     // Get fresh rosie-meta (written by summarize in phase 1)
     const meta = getLatestRosieMeta(info.path);
-    if (!meta || !meta.quest || !meta.summary) return;
+    if (!meta || !meta.quest || !meta.summary) {
+      pushRosieLog({ source: 'tracker', level: 'info', summary: 'Tracker: skipped (no summarize metadata)' });
+      return;
+    }
 
     // Resolve model — settings override, else system default
     const rosieModel = snap.settings.rosie.tracker.model;
 
     inflight.add(sessionId);
+    pushRosieLog({ source: 'tracker', level: 'info', summary: `Tracker: starting for ${sessionId.slice(0, 12)}…`, data: { sessionId, vendor: info.vendor } });
     try {
       await runTrackerAnalysis(d, sessionId, info.path, info.vendor, meta, rosieModel);
+
+      // Fire-and-forget dedup sweep after successful write
+      runDedupSweep(d.dispatchChild).catch((err) => {
+        console.warn('[rosie.tracker] Post-write dedup sweep failed:', err instanceof Error ? err.message : String(err));
+      });
     } finally {
       inflight.delete(sessionId);
     }
@@ -110,7 +131,8 @@ function readDecisions(file: string): TrackerDecision[] {
     const raw = readFileSync(file, 'utf-8').trim();
     if (!raw) return [];
     return raw.split('\n').map((line) => JSON.parse(line) as TrackerDecision);
-  } catch {
+  } catch (err) {
+    pushRosieLog({ source: 'tracker', level: 'warn', summary: 'Tracker: decisions file parse error', data: { file, error: String(err) } });
     return [];
   } finally {
     try { unlinkSync(file); } catch { /* best-effort cleanup */ }
@@ -136,6 +158,9 @@ function logDecisions(decisions: TrackerDecision[], sessionId: string): void {
       });
     }
   }
+  const upserts = decisions.filter(d => d.tool === 'upsert_project').length;
+  const trivials = decisions.filter(d => d.tool === 'mark_trivial').length;
+  pushRosieLog({ source: 'tracker', level: 'info', summary: `Tracker: ${decisions.length} decisions (${upserts} upsert, ${trivials} trivial)`, data: { sessionId, total: decisions.length, upserts, trivials } });
 }
 
 // ============================================================================
@@ -160,9 +185,11 @@ async function runTrackerAnalysis(
   const parsed = modelOverride ? parseModelOption(modelOverride) : undefined;
   const vendor = parsed?.vendor ?? parentVendor;
   const model = parsed?.model;
+  pushRosieLog({ source: 'tracker', level: 'info', summary: `Tracker: using ${vendor}/${model || 'default'}`, data: { vendor, model } });
 
   // Build prompt with existing projects context
   const existingProjects = getExistingProjects();
+  pushRosieLog({ source: 'tracker', level: 'info', summary: `Tracker: ${existingProjects.length} existing projects in context` });
   const prompt = buildTrackerPrompt(meta, existingProjects);
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -186,11 +213,12 @@ async function runTrackerAnalysis(
           allowDangerouslySkipPermissions: true,
         },
         forceNew: true,
-        mcpServers: buildInternalMcpConfig(serverPaths.command, serverPaths.args),
+        mcpServers: buildInternalMcpConfig(serverPaths.command, serverPaths.args, [
+          `--session-file=${sessionPath}`,
+          `--decisions-file=${decisionsFile}`,
+        ]),
         env: {
           CLAUDECODE: '',
-          CRISPY_TRACKER_SESSION_FILE: sessionPath,
-          CRISPY_TRACKER_DECISIONS_FILE: decisionsFile,
           CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '30000',
         },
         skipPersistSession: true,

@@ -127,6 +127,22 @@ events. No direct file I/O or process spawning. **State ownership:** UI-only
 - **`transcript.ts`** — Vendor-agnostic universal types. No vendor-specific
   fields. Use the `metadata` bag for vendor extras.
 
+## Vendor model guidance
+
+When dispatching child sessions or referencing models in tests/scripts:
+
+- **Claude**: `haiku` for fast/cheap Rosie tasks, `sonnet` for quality.
+  Model strings: `claude-haiku-4-5`, `claude-sonnet-4-5`.
+- **Codex** (ChatGPT account): Do NOT use `o4-mini` — it's deprecated.
+  Use Codex's default (omit model) or specify explicitly:
+  - Fast/cheap: `gpt-5.3-instant` (best for Rosie summarize/tracker)
+  - Smart: `gpt-5.4-medium`
+  - Note: model availability depends on account type. When in doubt, omit
+    the model and let Codex pick its default.
+- **Gemini**: Always leave on Auto (omit model). OpenCode: TBD.
+- **Cross-vendor format**: `vendor:model` (e.g. `codex:gpt-5.3-instant`).
+  Parsed by `parseModelOption()` in `model-utils.ts`.
+
 ## Commands
 
 - `npm run typecheck` — strict TypeScript check

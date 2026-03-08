@@ -7,4 +7,4 @@ export type {
   FileRef,
   ProjectStatus,
 } from './types.js';
-export { VALID_STATUSES, VALID_CATEGORIES } from './types.js';
+export { VALID_STATUSES } from './types.js';

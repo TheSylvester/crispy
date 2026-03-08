@@ -17,6 +17,31 @@ import { findClaudeBinary } from '../../find-claude-binary.js';
 let cachedBinaryPath: string | undefined;
 
 /**
+ * Build ephemeral adapter config for Rosie child sessions.
+ *
+ * skipPersistSession + mcpServers → MCP tools available (tracker, recall).
+ * skipPersistSession without mcpServers → single-turn, no tools (summarize).
+ * The recall prompt instructs the model to use only MCP tools; allowedTools
+ * auto-approves MCP calls so no permission prompts can hang.
+ */
+function buildEphemeralConfig(spec: SessionOpenSpec): Record<string, unknown> {
+  if (!('skipPersistSession' in spec) || !spec.skipPersistSession) return {};
+  if ('mcpServers' in spec && spec.mcpServers) {
+    return {
+      settingSources: [] as SettingSource[],
+      mcpServers: spec.mcpServers as Record<string, McpServerConfig>,
+      allowedTools: ['mcp__crispy_memory__*'],
+    };
+  }
+  return {
+    maxTurns: 1,
+    settingSources: [] as SettingSource[],
+    tools: [] as string[],
+    mcpServers: undefined,
+  };
+}
+
+/**
  * Build a Claude adapter factory that bakes in host config.
  *
  * The returned factory is called by session-manager for each new session.
@@ -42,18 +67,7 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           ...(model && { model }),
         });
       }
-      case 'fresh': {
-        // Ephemeral session config: Rosie (no mcpServers) gets single-turn/no tools;
-        // recall agent (with mcpServers) gets unlimited turns + all tools available.
-        // The recall prompt instructs the model to use only MCP tools; allowedTools
-        // auto-approves MCP calls so no permission prompts can hang. Built-in tools
-        // (Read, Bash, etc.) remain available but the model rarely uses them.
-        // No maxTurns — the dispatch timeout (120s) is the only constraint.
-        const freshEphemeral = spec.skipPersistSession
-          ? spec.mcpServers
-            ? { settingSources: [] as SettingSource[], mcpServers: spec.mcpServers as Record<string, McpServerConfig>, allowedTools: ['mcp__crispy_memory__*'] }
-            : { maxTurns: 1, settingSources: [] as SettingSource[], tools: [] as string[], mcpServers: undefined }
-          : {};
+      case 'fresh':
         return new ClaudeAgentAdapter({
           ...getBase(), cwd: spec.cwd,
           ...(spec.model && { model: spec.model }),
@@ -61,15 +75,9 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
           ...(spec.skipPersistSession && { skipPersistSession: true }),
           ...(spec.env && { env: spec.env }),
-          ...freshEphemeral,
+          ...buildEphemeralConfig(spec),
         });
-      }
-      case 'fork': {
-        const forkEphemeral = spec.skipPersistSession
-          ? spec.mcpServers
-            ? { settingSources: [] as SettingSource[], mcpServers: spec.mcpServers as Record<string, McpServerConfig>, allowedTools: ['mcp__crispy_memory__*'] }
-            : { maxTurns: 1, settingSources: [] as SettingSource[], tools: [] as string[], mcpServers: undefined }
-          : {};
+      case 'fork':
         return new ClaudeAgentAdapter({
           ...getBase(), cwd: config.cwd, resume: spec.fromSessionId, forkSession: true,
           ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
@@ -79,9 +87,8 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           ...(spec.env && { env: spec.env }),
           // Structured output forks should complete in a single model response.
           ...(spec.outputFormat && { maxTurns: 1 }),
-          ...forkEphemeral,
+          ...buildEphemeralConfig(spec),
         });
-      }
       case 'hydrated':
         return new ClaudeAgentAdapter({
           ...getBase(), cwd: spec.cwd,
