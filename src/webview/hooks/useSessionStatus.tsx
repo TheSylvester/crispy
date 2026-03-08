@@ -11,7 +11,7 @@
  * @module useSessionStatus
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import type { SessionChannelState } from '../../core/session-channel.js';
 import { useTransport } from '../context/TransportContext.js';
 import { useSession } from '../context/SessionContext.js';
@@ -51,6 +51,16 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
   const [lastError, setLastError] = useState<string | null>(null);
   const clearError = useCallback(() => setLastError(null), []);
 
+  // Track whether state was set optimistically (via setOptimistic) so we
+  // can preserve it through session-ID changes caused by sendTurn
+  // (new/fork/vendor-switch/pending→real re-keying).
+  const optimisticRef = useRef(false);
+
+  const setOptimistic = useCallback((state: SessionChannelState) => {
+    optimisticRef.current = true;
+    setChannelState(state);
+  }, []);
+
   // Clear error on session switch
   useEffect(() => {
     setLastError(null);
@@ -58,13 +68,20 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
 
   useEffect(() => {
     if (!selectedSessionId) {
+      optimisticRef.current = false;
       setChannelState(null);
       return;
     }
 
     // Reset channel state on session switch so stale state from the
-    // previous session doesn't leak through the catchup guard.
-    setChannelState(null);
+    // previous session doesn't leak through the catchup guard — but
+    // preserve optimistic state. When the user sends a message,
+    // sendTurn may resolve with a new session ID (new/fork/vendor-switch),
+    // triggering this effect. Wiping state here would kill the optimistic
+    // 'streaming' set by ControlPanel before any real status event arrives.
+    if (!optimisticRef.current) {
+      setChannelState(null);
+    }
 
     const off = transport.onEvent((sid, event) => {
       if (sid !== selectedSessionId) return;
@@ -86,8 +103,10 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
         return;
       }
 
-      // Handle status events for state transitions
+      // Handle status events for state transitions — these are
+      // authoritative, so clear the optimistic flag.
       if (event.type === 'event' && event.event.type === 'status') {
+        optimisticRef.current = false;
         switch (event.event.status) {
           case 'active':
             setChannelState('streaming');
@@ -115,7 +134,7 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
   }, [selectedSessionId, transport]);
 
   return (
-    <SessionStatusContext.Provider value={{ channelState, setOptimistic: setChannelState, lastError, clearError }}>
+    <SessionStatusContext.Provider value={{ channelState, setOptimistic, lastError, clearError }}>
       {children}
     </SessionStatusContext.Provider>
   );
