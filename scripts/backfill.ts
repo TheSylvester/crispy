@@ -16,7 +16,7 @@
 delete process.env.CLAUDECODE;
 
 import { parseArgs } from 'node:util';
-import { existsSync, statSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { createAgentDispatch } from '../src/host/agent-dispatch.js';
 import { registerAllAdapters, resolveInternalServerPaths } from '../src/host/adapter-registry.js';
 import { initSettings } from '../src/core/settings/index.js';
@@ -29,15 +29,13 @@ import { buildTrackerPrompt } from '../src/core/rosie/tracker/tracker-hook.js';
 import { getExistingProjects } from '../src/core/rosie/tracker/db-writer.js';
 import { buildInternalMcpConfig } from '../src/mcp/servers/external.js';
 import { getDb } from '../src/core/crispy-db.js';
+import { isOversized, getExistingRosieMetas, extractBookendTurns, buildFallbackPrompt } from '../src/core/rosie/oversized-fallback.js';
 
 // ============================================================================
 // Constants
 // ============================================================================
 
 const DEFAULT_MODEL = 'claude-haiku-4-5';
-
-/** Conservative file-size threshold for fork mode. 2.1MB worked, 2.6MB didn't — use 2MB. */
-const MAX_FORK_FILE_SIZE = 2 * 1024 * 1024; // 2MB
 
 // ============================================================================
 // CLI Parsing
@@ -163,138 +161,6 @@ function buildFileFilter(workspace: string | undefined, session: string | undefi
     clause: parts.length > 0 ? `AND ${parts.join(' AND ')}` : '',
     params,
   };
-}
-
-// ============================================================================
-// Oversized Session Fallback
-// ============================================================================
-
-function isOversized(filePath: string): boolean {
-  try {
-    return statSync(filePath).size > MAX_FORK_FILE_SIZE;
-  } catch {
-    return false;
-  }
-}
-
-interface RosieMetaEntry {
-  timestamp: string;
-  quest: string;
-  title: string;
-  summary: string;
-  status: string;
-}
-
-/** Fetch existing rosie-meta entries for a session file, ordered chronologically. */
-function getExistingRosieMetas(file: string): RosieMetaEntry[] {
-  const db = getDb(dbPath());
-  const rows = db.all(`
-    SELECT timestamp, quest, title, summary, status
-    FROM activity_entries
-    WHERE kind = 'rosie-meta' AND file = ?
-    ORDER BY timestamp ASC
-  `, [file]) as Array<Record<string, unknown>>;
-
-  return rows.map((r) => ({
-    timestamp: (r.timestamp as string) ?? '',
-    quest: (r.quest as string) ?? '',
-    title: (r.title as string) ?? '',
-    summary: (r.summary as string) ?? '',
-    status: (r.status as string) ?? '',
-  }));
-}
-
-interface BookendTurn {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-/**
- * Extract the first N and last M user/assistant turns from a JSONL transcript.
- * Gives the model the conversation's opening (original ask) and ending (final state).
- */
-function extractBookendTurns(
-  filePath: string,
-  firstN: number = 2,
-  lastM: number = 2,
-): { first: BookendTurn[]; last: BookendTurn[] } {
-  const raw = readFileSync(filePath, 'utf-8');
-  const lines = raw.split('\n').filter(Boolean);
-
-  const entries: Array<Record<string, unknown>> = [];
-  for (const line of lines) {
-    try {
-      entries.push(JSON.parse(line));
-    } catch {
-      // skip malformed lines
-    }
-  }
-
-  // Filter to user/assistant message entries (skip system, meta, tool results, etc.)
-  const messageTurns = entries.filter(
-    (e) => (e.type === 'user' || e.type === 'assistant') && !e.isMeta && !e.toolUseResult,
-  );
-
-  const first = messageTurns.slice(0, firstN).map(summarizeTurn);
-  const last = messageTurns.length > firstN
-    ? messageTurns.slice(-lastM).map(summarizeTurn)
-    : [];
-  return { first, last };
-}
-
-const MAX_TURN_CHARS = 4000;
-
-function summarizeTurn(entry: Record<string, unknown>): BookendTurn {
-  const role = entry.type === 'user' ? 'user' as const : 'assistant' as const;
-  let content = '';
-
-  const msg = entry.message as { content?: unknown } | undefined;
-  if (typeof msg?.content === 'string') {
-    content = msg.content;
-  } else if (Array.isArray(msg?.content)) {
-    content = (msg.content as Array<{ type: string; text?: string }>)
-      .filter((b) => b.type === 'text' && b.text)
-      .map((b) => b.text!)
-      .join('\n');
-  }
-
-  if (content.length > MAX_TURN_CHARS) {
-    content = content.slice(0, MAX_TURN_CHARS) + '\n[...truncated]';
-  }
-  return { role, content };
-}
-
-/** Assemble synthetic context + summarize prompt for oversized sessions. */
-function buildFallbackPrompt(
-  firstTurns: BookendTurn[],
-  lastTurns: BookendTurn[],
-  metas: RosieMetaEntry[],
-): string {
-  let context = 'You are summarizing a conversation that was too long to show in full.\n\n';
-
-  context += '## Opening turns (verbatim)\n\n';
-  for (const t of firstTurns) {
-    context += `**${t.role}:** ${t.content}\n\n`;
-  }
-
-  if (metas.length > 0) {
-    context += '## Intermediate turn summaries (from prior analysis)\n\n';
-    for (const m of metas) {
-      context += `- **${m.title}** — ${m.quest}\n  Status: ${m.status}\n\n`;
-    }
-  } else {
-    context += '## Middle turns\n\n[No prior summaries available — middle of conversation omitted]\n\n';
-  }
-
-  context += '## Final turns (verbatim)\n\n';
-  for (const t of lastTurns) {
-    context += `**${t.role}:** ${t.content}\n\n`;
-  }
-
-  context += '---\n\nBased on the conversation above, produce the following analysis:\n\n';
-  context += SUMMARIZE_PROMPT;
-
-  return context;
 }
 
 // ============================================================================

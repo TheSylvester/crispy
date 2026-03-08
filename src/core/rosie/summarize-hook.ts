@@ -19,6 +19,7 @@ import { appendActivityEntries } from '../activity-index.js';
 import { refreshAndNotify } from '../session-list-manager.js';
 import { pushRosieLog } from './debug-log.js';
 import { extractTag, normalizeEntitiesJson } from './xml-utils.js';
+import { isOversized, getExistingRosieMetas, extractBookendTurns, buildFallbackPrompt } from './oversized-fallback.js';
 
 // ============================================================================
 // Module State
@@ -119,22 +120,50 @@ async function runSummarizeAnalysis(
   const vendor = parsed?.vendor ?? parentVendor;
   const model = parsed?.model;
 
+  const oversized = isOversized(sessionPath);
+
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const result = await d.dispatchChild({
-        parentSessionId: sessionId,
-        vendor,
-        parentVendor,
-        prompt: SUMMARIZE_PROMPT,
-        settings: {
-          ...(model && { model }),
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
-        },
-        skipPersistSession: true,
-        autoClose: true,
-        timeoutMs: 30_000,
-      });
+      let result;
+
+      if (oversized) {
+        const metas = getExistingRosieMetas(sessionPath);
+        const { first, last } = extractBookendTurns(sessionPath);
+        const prompt = buildFallbackPrompt(first, last, metas);
+
+        console.log(`[rosie.summarize] OVERSIZED — fallback (${first.length} first, ${metas.length} DB summaries, ${last.length} last)`);
+
+        result = await d.dispatchChild({
+          parentSessionId: sessionId,
+          vendor,
+          parentVendor,
+          prompt,
+          settings: {
+            ...(model && { model }),
+            permissionMode: 'bypassPermissions',
+            allowDangerouslySkipPermissions: true,
+          },
+          forceNew: true,
+          skipPersistSession: true,
+          autoClose: true,
+          timeoutMs: 30_000,
+        });
+      } else {
+        result = await d.dispatchChild({
+          parentSessionId: sessionId,
+          vendor,
+          parentVendor,
+          prompt: SUMMARIZE_PROMPT,
+          settings: {
+            ...(model && { model }),
+            permissionMode: 'bypassPermissions',
+            allowDangerouslySkipPermissions: true,
+          },
+          skipPersistSession: true,
+          autoClose: true,
+          timeoutMs: 30_000,
+        });
+      }
 
       if (!result) {
         console.warn(`[rosie.summarize] FAIL attempt ${attempt}/${MAX_ATTEMPTS}: dispatchChild returned null`);
