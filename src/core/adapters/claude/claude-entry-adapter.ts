@@ -36,6 +36,10 @@ import type {
  * - `<INSTRUCTIONS>` — AGENTS.md / skill instructions (Codex format)
  * - `# AGENTS.md instructions for` — Codex AGENTS.md header
  * - `<context>` at line start — Claude system context blocks
+ * - `<task-notification>` — background agent completion notifications
+ * - `<command-name>` — slash command invocations
+ * - `<local-command-stdout>` — slash command output
+ * - `<local-command-caveat>` — slash command caveats/warnings
  */
 function isSystemContextContent(message: TranscriptMessage | undefined): boolean {
   if (!message || message.role !== 'user') return false;
@@ -63,6 +67,14 @@ function isSystemContextContent(message: TranscriptMessage | undefined): boolean
   if (text.startsWith('<INSTRUCTIONS>')) return true;
   if (text.startsWith('# AGENTS.md instructions for')) return true;
   if (text.startsWith('<context>')) return true;
+
+  // Claude Code system-injected user messages — background task notifications,
+  // slash command invocations and their output. These are internal plumbing
+  // written as type: 'user' entries without isMeta in the JSONL.
+  if (text.startsWith('<task-notification>')) return true;
+  if (text.startsWith('<command-name>')) return true;
+  if (text.startsWith('<local-command-stdout>')) return true;
+  if (text.startsWith('<local-command-caveat>')) return true;
 
   return false;
 }
