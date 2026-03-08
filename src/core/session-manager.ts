@@ -19,7 +19,7 @@
  * @module session-manager
  */
 
-import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, ChannelMessage, TurnIntent, TurnTarget, TurnSettings, SubagentEntriesResult } from './agent-adapter.js';
+import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, ChannelMessage, TurnIntent, TurnTarget, TurnSettings, SubagentEntriesResult, EphemeralTargetOptions } from './agent-adapter.js';
 import type { TranscriptEntry, MessageContent, Vendor } from './transcript.js';
 import type { SessionChannel, Subscriber, SubscriberMessage } from './session-channel.js';
 import { parseModelOption } from './model-utils.js';
@@ -721,6 +721,28 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
       rekeyPromise = forked.rekeyPromise;
       break;
     }
+
+    case 'hydrated': {
+      const spec: SessionOpenSpec = {
+        mode: 'hydrated',
+        cwd: intent.target.cwd,
+        history: intent.target.history,
+        sourceVendor: intent.target.sourceVendor,
+        ...(intent.target.sourceSessionId && { sourceSessionId: intent.target.sourceSessionId }),
+        ...(intent.settings.model && { model: intent.settings.model }),
+        ...(intent.settings.permissionMode && { permissionMode: intent.settings.permissionMode }),
+        ...(intent.target.skipPersistSession && { skipPersistSession: true }),
+      };
+
+      const result = createPendingChannel(intent.target.vendor, spec, subscriber, {
+        explicitPendingId: pendingId,
+        entries: intent.target.history,
+      });
+      channel = result.channel;
+      sessionId = result.pendingId;
+      rekeyPromise = result.rekeyPromise;
+      break;
+    }
   }
 
   // Broadcast user entry to all subscribers before adapter sees it
@@ -777,15 +799,18 @@ export function closeSession(sessionId: string): void {
 // ============================================================================
 
 /**
- * Dispatch an ephemeral child session — fork or new — collect result, auto-close.
+ * Dispatch an ephemeral child session — fork, hydrated cross-vendor fork, or new — collect result, auto-close.
  *
  * This is the shared primitive for spawning child sessions. Rosie is the
  * first consumer; CLI Dispatch will reuse it later.
  *
- * - Forks when child vendor matches parent, starts new session when different
- * - Uses parent session's projectPath as cwd for cross-vendor new sessions
- * - Creates an internal subscriber, collects assistant text, waits for idle
- * - Returns { sessionId, text, structured } or null on timeout/error
+ * Routing:
+ * - Same vendor, !forceNew → native fork (child sees full transcript)
+ * - Cross-vendor, !forceNew → hydrated fork (parent history loaded, converted to universal format)
+ * - forceNew → blank new session (no transcript context, used by tracker/recall)
+ *
+ * Creates an internal subscriber, collects assistant text, waits for idle.
+ * Returns { sessionId, text, structured } or null on timeout/error.
  */
 export async function dispatchChildSession(
   options: ChildSessionOptions,
@@ -805,10 +830,39 @@ export async function dispatchChildSession(
   const parentInfo = findSession(parentSessionId);
   const cwd = parentInfo?.projectPath ?? process.cwd();
 
-  // Build target: fork if same vendor (unless forceNew), new if cross-vendor
-  const target: TurnTarget = (vendor === parentVendor && !options.forceNew)
-    ? { kind: 'fork', vendor: vendor as Vendor, fromSessionId: parentSessionId, skipPersistSession, ...(options.mcpServers && { mcpServers: options.mcpServers }), ...(options.env && { env: options.env }) }
-    : { kind: 'new', vendor: vendor as Vendor, cwd, skipPersistSession, ...(options.mcpServers && { mcpServers: options.mcpServers }), ...(options.env && { env: options.env }) };
+  // Common ephemeral options shared by all target kinds
+  const ephemeral: EphemeralTargetOptions = {
+    skipPersistSession,
+    ...(options.mcpServers && { mcpServers: options.mcpServers }),
+    ...(options.env && { env: options.env }),
+  };
+
+  // Build target: fork if same vendor (unless forceNew), hydrated cross-vendor
+  // fork if different vendor (unless forceNew), new if forceNew
+  let target: TurnTarget;
+  if (vendor === parentVendor && !options.forceNew) {
+    // Same vendor — native fork (child sees full transcript via vendor's fork mechanism)
+    target = { kind: 'fork', vendor: vendor as Vendor, fromSessionId: parentSessionId, ...ephemeral };
+  } else if (vendor !== parentVendor && !options.forceNew) {
+    // Cross-vendor fork — load parent's history and create a hydrated session
+    // so the child sees the full transcript converted to universal format
+    const parentReg = adapters.get(parentVendor as Vendor);
+    if (parentReg) {
+      const history = await parentReg.discovery.loadHistory(parentSessionId);
+      target = {
+        kind: 'hydrated', vendor: vendor as Vendor, cwd,
+        history, sourceVendor: parentVendor as Vendor, sourceSessionId: parentSessionId,
+        ...ephemeral,
+      };
+    } else {
+      // Parent vendor not registered — fall back to blank new session
+      console.warn(`[child-session] No adapter for parent vendor "${parentVendor}" — falling back to blank new session`);
+      target = { kind: 'new', vendor: vendor as Vendor, cwd, ...ephemeral };
+    }
+  } else {
+    // forceNew — intentionally blank (no transcript context needed, e.g. tracker/recall)
+    target = { kind: 'new', vendor: vendor as Vendor, cwd, ...ephemeral };
+  }
 
   const intent: TurnIntent = {
     target,
@@ -935,9 +989,11 @@ export async function dispatchChildSession(
         if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'idle') {
           settled = true;
           cleanup();
-          // Resolve if we have text OR structured output (structured-only is valid
-          // when using outputFormat with json_schema).
-          if (text || structured !== undefined) {
+          // A completed turn is a success — even with empty text. Tool-call-only
+          // workflows (e.g. tracker) produce side effects via MCP tools without
+          // a final text response. Only return null when idle fires with no
+          // assistant entries and an error, which signals the turn never ran.
+          if (text || structured !== undefined || entryTypes.length > 1) {
             resolve({ sessionId: currentId, text, structured });
           } else {
             const parts: string[] = [];

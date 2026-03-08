@@ -65,7 +65,7 @@ If the session's primary activity was looking up, recapping, or checking the sta
 - **title**: Keep stable across sessions. Don't rename unless scope fundamentally changed.
 - **summary**: Reflect the CURRENT state, not history. What's true right now?
 - **entities**: Top 5-10. Include files, branches, key concepts. These are used for future matching.
-- **files**: Non-code artifacts only — plans (.ai-reference/), specs, design docs, skill definitions. Source code belongs in entities, not files. Omit if none exist.
+- **files**: Non-code artifacts only — plans (.ai-reference/), specs, design docs, skill definitions. Source code belongs in entities, not files. Omit if none.
 
 Call your tools now. No commentary needed."""
 
@@ -163,7 +163,6 @@ def query_projects(db_path: Path) -> list[dict]:
 # ============================================================================
 
 VALID_STATUSES = {"active", "done", "blocked", "planned", "abandoned"}
-VALID_CATEGORIES = {"recall", "ui", "infra", "research", "meta"}
 
 
 def validate_tool_calls(log_path: Path, existing_ids: set[str] | None = None) -> dict:
@@ -197,7 +196,7 @@ def validate_tool_calls(log_path: Path, existing_ids: set[str] | None = None) ->
             errors = []
 
             # Required fields
-            for field in ("title", "status", "summary", "category", "entities"):
+            for field in ("title", "status", "summary", "entities"):
                 if not args.get(field):
                     errors.append(f"Call {i}: missing required field '{field}'")
 
@@ -205,11 +204,6 @@ def validate_tool_calls(log_path: Path, existing_ids: set[str] | None = None) ->
             status = args.get("status", "")
             if status and status not in VALID_STATUSES:
                 errors.append(f"Call {i}: invalid status '{status}'")
-
-            # Category enum
-            category = args.get("category", "")
-            if category and category not in VALID_CATEGORIES:
-                errors.append(f"Call {i}: unknown category '{category}' (expected: {', '.join(sorted(VALID_CATEGORIES))})")
 
             # ID reference check
             pid = args.get("id", "")
@@ -225,7 +219,6 @@ def validate_tool_calls(log_path: Path, existing_ids: set[str] | None = None) ->
                     "action": action,
                     "title": args.get("title", "?"),
                     "status": status,
-                    "category": category,
                     "summary": (args.get("summary", ""))[:80],
                     "entities": args.get("entities", []),
                     "files": args.get("files", []),
@@ -242,7 +235,7 @@ def print_validation(v: dict) -> None:
     print(f"  Tool calls: {v['calls']}, Valid: {v['valid']}, Errors: {len(v['errors'])}", file=sys.stderr)
     for p in v["projects"]:
         print(
-            f"  + {p['action']} — {p['title']} ({p['status']}, {p['category']})",
+            f"  + {p['action']} — {p['title']} ({p['status']})",
             file=sys.stderr,
         )
         if p["summary"]:
@@ -351,11 +344,6 @@ def _build_tracker_mcp_server(log_path: str):
                         "Reflect what's true RIGHT NOW, not history."
                     ),
                 },
-                "category": {
-                    "type": "string",
-                    "enum": ["recall", "ui", "infra", "research", "meta"],
-                    "description": "Project category.",
-                },
                 "blocked_by": {
                     "type": "string",
                     "description": "Why it's blocked (only if status is 'blocked', otherwise omit).",
@@ -395,7 +383,7 @@ def _build_tracker_mcp_server(log_path: str):
                     ),
                 },
             },
-            "required": ["title", "status", "summary", "category", "entities"],
+            "required": ["title", "status", "summary", "entities"],
         },
     )
     async def upsert_project(args):

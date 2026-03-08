@@ -183,11 +183,12 @@ async function runTrackerAnalysis(
           allowDangerouslySkipPermissions: true,
         },
         forceNew: true,
-        mcpServers: buildInternalMcpConfig(serverPaths.command, serverPaths.args),
+        mcpServers: buildInternalMcpConfig(serverPaths.command, serverPaths.args, [
+          `--session-file=${sessionPath}`,
+          `--decisions-file=${decisionsFile}`,
+        ]),
         env: {
           CLAUDECODE: '',
-          CRISPY_TRACKER_SESSION_FILE: sessionPath,
-          CRISPY_TRACKER_DECISIONS_FILE: decisionsFile,
           CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '30000',
         },
         skipPersistSession: true,

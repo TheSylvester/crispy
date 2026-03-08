@@ -128,6 +128,8 @@ async function runSummarizeAnalysis(
         prompt: SUMMARIZE_PROMPT,
         settings: {
           ...(model && { model }),
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
         },
         skipPersistSession: true,
         autoClose: true,
@@ -209,7 +211,7 @@ async function runSummarizeAnalysis(
 // Constants
 // ============================================================================
 
-const SUMMARIZE_PROMPT = `Consider this entire conversation so far.
+export const SUMMARIZE_PROMPT = `Consider this entire conversation so far.
 What is the stated or apparent goal of this particular conversation?
 How would you label this conversation in a short sentence for a user to best remember what this session was for?
 Summarize the last turn: Describe the User Request and your Response; including any work completed

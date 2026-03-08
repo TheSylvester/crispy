@@ -153,17 +153,26 @@ export interface TurnSettings {
   outputFormat?: { type: 'json_schema'; schema: Record<string, unknown> };
 }
 
+/** Options common to new/fork/hydrated targets (ephemeral child sessions). */
+export interface EphemeralTargetOptions {
+  skipPersistSession?: boolean;
+  mcpServers?: Record<string, unknown>;
+  env?: Record<string, string>;
+}
+
 /**
  * Target for a turn — where to send it.
  *
  * 'existing': send to an existing session
  * 'new': create a new session, then send
  * 'fork': fork from an existing session, then send
+ * 'hydrated': create a new session pre-loaded with cross-vendor history, then send
  */
 export type TurnTarget =
   | { kind: 'existing'; sessionId: string; model?: string }
-  | { kind: 'new'; vendor: Vendor; cwd: string; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string> }
-  | { kind: 'fork'; vendor: Vendor; fromSessionId: string; atMessageId?: string; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string> };
+  | { kind: 'new'; vendor: Vendor; cwd: string } & EphemeralTargetOptions
+  | { kind: 'fork'; vendor: Vendor; fromSessionId: string; atMessageId?: string } & EphemeralTargetOptions
+  | { kind: 'hydrated'; vendor: Vendor; cwd: string; history: TranscriptEntry[]; sourceVendor: Vendor; sourceSessionId?: string } & EphemeralTargetOptions;
 
 /**
  * Intent to send a turn (user message + settings).

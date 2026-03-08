@@ -58,16 +58,21 @@ User's query: ${query}`,
  * Paths are always provided by adapter-registry.ts, which resolves them
  * based on host type (VS Code → bundled dist/internal-mcp.js + node,
  * dev server → tsx + TypeScript source). No fallbacks here.
+ *
+ * @param extraArgs - Additional CLI args appended after the base args.
+ *   Used by tracker to pass --session-file and --decisions-file as CLI
+ *   args instead of env vars, which works for any adapter's MCP subprocess.
  */
 export function buildInternalMcpConfig(
   command: string,
   args: string[],
+  extraArgs?: string[],
 ): Record<string, unknown> {
   return {
     [INTERNAL_MCP_SERVER_NAME]: {
       type: 'stdio' as const,
       command,
-      args,
+      args: extraArgs ? [...args, ...extraArgs] : args,
     },
   };
 }
@@ -92,13 +97,13 @@ function textResult(data: string): { content: Array<{ type: 'text'; text: string
  * result. The child gets 120s and access to the query tools.
  *
  * @param dispatch - AgentDispatch for spawning child sessions
- * @param getActiveSessionId - Returns the current active session ID (for parent anchoring)
+ * @param getActiveSession - Returns the current active session's ID and vendor (for parent anchoring)
  * @param serverPaths - Command and args for the internal MCP server subprocess (resolved by adapter-registry based on host type)
  * @param getRosieModel - Returns the Rosie model setting ("vendor:model" or undefined for default)
  */
 export function createExternalServer(
   dispatch: AgentDispatch,
-  getActiveSessionId: () => string | undefined,
+  getActiveSession: () => { sessionId: string; vendor: string } | undefined,
   serverPaths: { internalServerCommand: string; internalServerArgs: string[] },
   getRosieModel?: () => string | undefined,
 ): McpSdkServerConfigWithInstance {
@@ -114,13 +119,13 @@ export function createExternalServer(
         },
         async (args) => {
           console.error(`[recall] Tool handler invoked with query: "${args.query}"`);
-          const parentSessionId = getActiveSessionId?.();
-          if (!parentSessionId) {
+          const activeSession = getActiveSession?.();
+          if (!activeSession) {
             console.error('[recall] No active session — cannot dispatch child');
             return textResult('Cannot recall: no active session context available.');
           }
 
-          console.error(`[recall] Dispatching child for query: "${args.query}" (parent: ${parentSessionId})`);
+          console.error(`[recall] Dispatching child for query: "${args.query}" (parent: ${activeSession.sessionId}, vendor: ${activeSession.vendor})`);
           const t0 = Date.now();
 
           try {
@@ -129,9 +134,9 @@ export function createExternalServer(
             const recallModel = parsedModel || 'haiku';
 
             const options: ChildSessionOptions = {
-              parentSessionId,
+              parentSessionId: activeSession.sessionId,
               vendor: recallVendor,
-              parentVendor: 'claude',
+              parentVendor: activeSession.vendor,
               prompt: buildRecallPrompt(args.query),
               settings: {
                 model: recallModel,
