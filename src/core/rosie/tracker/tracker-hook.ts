@@ -142,7 +142,7 @@ function logDecisions(decisions: TrackerDecision[], sessionId: string): void {
 // Analysis
 // ============================================================================
 
-const MAX_ATTEMPTS = 2;
+const MAX_ATTEMPTS = 3;
 
 async function runTrackerAnalysis(
   d: AgentDispatch,
@@ -168,9 +168,12 @@ async function runTrackerAnalysis(
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const decisionsFile = createDecisionsFile();
     try {
-      const promptToSend = attempt === 1
-        ? prompt
-        : `${prompt}\n\nIMPORTANT: You must call either upsert_project or mark_trivial. Use your tools now.`;
+      const retryNudge = attempt === 2
+        ? `\n\nIMPORTANT: Your previous attempt failed because you did not call any tools. You MUST call upsert_project or mark_trivial. Do not output JSON or text — use the tool calling interface.`
+        : attempt >= 3
+          ? `\n\nCRITICAL FINAL ATTEMPT: You failed twice to call tools. Call upsert_project or mark_trivial RIGHT NOW. No text output. Tools only.`
+          : '';
+      const promptToSend = prompt + retryNudge;
 
       const result = await d.dispatchChild({
         parentSessionId: sessionId,
@@ -195,11 +198,27 @@ async function runTrackerAnalysis(
         timeoutMs: 30_000,
       });
 
-      // Read decisions written by the MCP tool handlers in the subprocess
+      // Read decisions written by the MCP tool handlers in the subprocess.
+      // Tools write to a sidecar file as a side-effect — dispatchChild may
+      // return null (no text output) even when tools fired successfully.
       const decisions = readDecisions(decisionsFile);
 
+      if (decisions.length > 0) {
+        // Tools fired — success regardless of whether dispatchChild returned text
+        const snippet = result?.text?.slice(0, 200) ?? '(no text — tools-only response)';
+        console.log(`[rosie.tracker] OK — ${decisions.length} decision(s) via tool calls (attempt ${attempt})`);
+        pushRosieLog({
+          source: 'tracker',
+          level: 'info',
+          summary: `Tracker: analysis completed`,
+          data: { sessionId, attempt, responseSnippet: snippet },
+        });
+        logDecisions(decisions, sessionId);
+        return;
+      }
+
       if (!result) {
-        console.warn(`[rosie.tracker] FAIL attempt ${attempt}/${MAX_ATTEMPTS}: dispatchChild returned null`);
+        console.warn(`[rosie.tracker] FAIL attempt ${attempt}/${MAX_ATTEMPTS}: no tool calls and no text response`);
         pushRosieLog({
           source: 'tracker',
           level: 'warn',
@@ -209,16 +228,15 @@ async function runTrackerAnalysis(
         continue;
       }
 
-      // Log individual decisions (upsert_project / mark_trivial calls)
-      console.log(`[rosie.tracker] OK — child completed (attempt ${attempt}, ${decisions.length} decision(s))`);
+      // Got text but no tool calls — model commented instead of calling tools
+      console.warn(`[rosie.tracker] FAIL attempt ${attempt}/${MAX_ATTEMPTS}: text response but no tool calls`);
       pushRosieLog({
         source: 'tracker',
-        level: 'info',
-        summary: `Tracker: analysis completed`,
+        level: 'warn',
+        summary: `Tracker failed: text output but no tool calls (attempt ${attempt}/${MAX_ATTEMPTS})`,
         data: { sessionId, attempt, responseSnippet: result.text.slice(0, 200) },
       });
-      logDecisions(decisions, sessionId);
-      return;
+      continue;
     } catch (err) {
       // Clean up decisions file on error (readDecisions won't have run)
       try { unlinkSync(decisionsFile); } catch { /* best-effort */ }
@@ -268,16 +286,25 @@ If this session and prior sessions form one arc (diagnosis → root cause → fi
 
 ## Recall Rule
 
-If the session's primary activity was looking up, recapping, or checking the status of prior work — it is **trivial**. The recalled content belongs to the original sessions, not this one. Signals: quest mentions "recall", "did we discuss", "status check", "refresh understanding", "recap". Only create a project if the session performed NEW work beyond retrieval.
+If the session's primary activity was looking up, recapping, or checking the status of prior work — it is **trivial**. The recalled content belongs to the original sessions, not this one.
+
+**Trivial signals** (any of these → strongly consider mark_trivial):
+- Quest mentions: "recall", "did we discuss", "status check", "refresh understanding", "recap", "what was", "check on", "review plans"
+- Session is a brief conversation with no code changes or design decisions
+- Session rehashes or summarizes prior work without advancing it
+- Session is an audit, inventory check, or portfolio review with no new deliverables
+- Session asks about or retrieves information but produces no artifacts
+
+Only create a project if the session performed **NEW work** beyond retrieval — code written, design decisions made, plans created, or bugs fixed.
 
 ## Rules
 
 - **title**: Keep stable across sessions. Don't rename unless scope fundamentally changed.
 - **summary**: Reflect the CURRENT state, not history. What's true right now?
-- **entities**: Top 5-10. Include files, branches, key concepts. These are used for future matching.
+- **entities**: Top 5-10. Include files, branches, key concepts. These are used for future matching. **Ignore stable infrastructure** — don't include foundational files that appear in many sessions (e.g. transcript.ts, channel-events.ts, session-manager.ts, activity-index.ts, CLAUDE.md) unless the session specifically modified them. Focus on files and concepts unique to THIS work.
 - **files**: Non-code artifacts only — plans (.ai-reference/), specs, design docs, skill definitions. Source code belongs in entities, not files. Omit if none exist.
 
-Call your tools now. No commentary needed.`;
+**You MUST call your tools.** Do not emit JSON, markdown, or commentary. Call upsert_project or mark_trivial directly.`;
 
 /** Build the full tracker prompt (system + user context). */
 export function buildTrackerPrompt(
