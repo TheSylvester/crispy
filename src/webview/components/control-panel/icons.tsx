@@ -94,3 +94,13 @@ export function RewindIcon({ className, ...props }: IconProps): React.JSX.Elemen
 export function ForkIcon({ className, ...props }: IconProps): React.JSX.Element {
   return <span className={className} {...props}>⑂</span>;
 }
+
+/** Microphone icon — voice input. */
+export function MicIcon({ className, ...props }: IconProps): React.JSX.Element {
+  return (
+    <svg className={className} width="16" height="16" viewBox="0 0 16 16" fill="currentColor" {...props}>
+      <path d="M8 1a2 2 0 0 0-2 2v4a2 2 0 1 0 4 0V3a2 2 0 0 0-2-2z" />
+      <path d="M3.5 6.5a.5.5 0 0 1 1 0V7a3.5 3.5 0 1 0 7 0v-.5a.5.5 0 0 1 1 0V7a4.5 4.5 0 0 1-4 4.473V13.5h2a.5.5 0 0 1 0 1h-5a.5.5 0 0 1 0-1h2v-2.027A4.5 4.5 0 0 1 3.5 7V6.5z" />
+    </svg>
+  );
+}

@@ -44,6 +44,7 @@ import { slugToPath } from '../../hooks/useSessionCwd.js';
 import { useContextUsage } from '../../hooks/useContextUsage.js';
 import { useSessionStatus } from '../../hooks/useSessionStatus.js';
 import { useRosieLog } from '../../hooks/useRosieLog.js';
+import { useVoiceInput } from '../../hooks/useVoiceInput.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent, TurnTarget } from '../../../core/agent-adapter.js';
@@ -162,6 +163,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const [rosiePanelPinned, setRosiePanelPinned] = useState(false);
     const rosieLogEntries = useRosieLog();
     const transport = useTransport();
+
     const { selectedSessionId, selectedCwd, setSelectedSessionId, sessions, workspaceCwdPath } = useSession();
     const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
     const togglesDisabled = channelState === 'streaming' || channelState === 'awaiting_approval';
@@ -183,6 +185,34 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       setSendError(null);
       if (sendErrorTimerRef.current) { clearTimeout(sendErrorTimerRef.current); sendErrorTimerRef.current = null; }
     }, []);
+
+    // --- Voice input ---
+    // In VS Code mode, delegate recording + transcription to extension host
+    // (Electron denies getUserMedia in webview iframes).
+    const hostCapture = useMemo(() => {
+      if (!transport.startVoiceCapture || !transport.stopVoiceCapture) return undefined;
+      const start = transport.startVoiceCapture.bind(transport);
+      const stop = transport.stopVoiceCapture.bind(transport);
+      return { start, stop };
+    }, [transport]);
+
+    const voice = useVoiceInput({
+      transcribe: useCallback((pcm: Float32Array, sr: number) => transport.transcribeAudio(pcm, sr), [transport]),
+      onTranscript: useCallback((text: string) => {
+        // Append transcribed text to existing input (hybrid input support).
+        // Read current value from DOM since useReducer doesn't support functional updates.
+        const textarea = document.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
+        const current = textarea?.value ?? '';
+        const separator = current && !current.endsWith(' ') ? ' ' : '';
+        dispatch({ type: 'SET_INPUT', value: current + separator + text });
+        textarea?.focus();
+      }, []),
+      onError: useCallback((error: string) => {
+        console.error('[Voice]', error);
+        showSendError(`Voice: ${error}`);
+      }, [showSendError]),
+      hostCapture,
+    });
 
     // --- Compact mode detection via ResizeObserver ---
     // Matches the @container (max-width: 480px) breakpoint in CSS.
@@ -399,11 +429,20 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           dispatch({ type: 'SET_MODEL', model: next });
           return;
         }
+
+        // Ctrl+Shift+Space / Cmd+Shift+Space: Toggle voice input (dev-server fallback)
+        // Use e.code (physical key) — e.key is unreliable with input methods.
+        if (e.code === 'Space' && (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey) {
+          e.preventDefault();
+          console.log('[Voice] keyboard shortcut Ctrl+Shift+Space fired, voice.state:', voice.state);
+          voice.toggle();
+          return;
+        }
       };
 
       document.addEventListener('keydown', handleKeyDown);
       return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [state.bypassEnabled, state.agencyMode, state.model, togglesDisabled, allCyclable]);
+    }, [state.bypassEnabled, state.agencyMode, state.model, togglesDisabled, allCyclable, voice]);
 
     // --- Server → UI: settings sync notifications ---
     // Server-initiated setting changes update the local state. Handles both
@@ -918,6 +957,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onSend={handleSend}
               forkMode={!!state.forkMode}
               onFork={handleFork}
+              voiceState={voice.state}
+              onVoiceToggle={voice.toggle}
             />
           </>
         )}

@@ -33,7 +33,7 @@ function isAnyPanelActive(): boolean {
 /**
  * Get the most recently created panel (last in insertion order).
  */
-function getMostRecentPanel(): vscode.WebviewPanel | undefined {
+export function getMostRecentPanel(): vscode.WebviewPanel | undefined {
   const all = Array.from(panels.values());
   return all[all.length - 1];
 }
@@ -295,7 +295,7 @@ function getWebviewHtml(
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'none'; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource};"
+    content="default-src 'none'; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource}; media-src 'self';"
   >
   <title>Crispy</title>
   <link rel="stylesheet" href="${cssUri}">

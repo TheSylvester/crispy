@@ -13,6 +13,7 @@ import type { TranscriptEntry } from '../core/transcript.js';
 import type { TurnReceipt } from '../core/agent-adapter.js';
 import type { WireProviderConfig, WireSettingsSnapshot, SettingsPatch } from '../core/settings/types.js';
 import type { VendorModelGroup } from './components/control-panel/types.js';
+import { float32ToBase64 } from './utils/encoding.js';
 
 /** Pending request awaiting a response. */
 interface PendingRequest {
@@ -182,6 +183,12 @@ export function createWebSocketTransport(url: string): SessionService {
     getActivityLog: (timeRange?, projectSlug?) => request<import('../core/activity-index.js').ActivityIndexEntry[]>('getActivityLog', { ...timeRange, projectSlug }),
     getResponsePreview: (file, offset) => request<string | null>('getResponsePreview', { file, offset }),
     getLineageGraph: () => request<Array<{ sessionFile: string; parentFile: string | null }>>('getLineageGraph'),
+
+    transcribeAudio: (pcmFloat32, sampleRate) => {
+      const audioBase64 = float32ToBase64(pcmFloat32);
+      console.log(`[Voice] transport: sending transcribeAudio RPC, ${pcmFloat32.length} samples, base64 length: ${audioBase64.length}`);
+      return request<{ text: string }>('transcribeAudio', { audioBase64, sampleRate });
+    },
 
     onEvent(handler) {
       eventHandlers.push(handler);

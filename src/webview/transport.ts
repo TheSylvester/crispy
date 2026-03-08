@@ -84,6 +84,13 @@ export interface SessionService {
   getResponsePreview(file: string, offset: number): Promise<string | null>;
   getLineageGraph(): Promise<Array<{ sessionFile: string; parentFile: string | null }>>;
 
+  /** Voice input — send recorded audio to host for VAD + STT transcription */
+  transcribeAudio(pcmFloat32: Float32Array, sampleRate: number): Promise<{ text: string }>;
+
+  /** Host-side voice capture (VS Code only — bypasses webview getUserMedia restriction) */
+  startVoiceCapture?(): Promise<void>;
+  stopVoiceCapture?(): Promise<{ text: string }>;
+
   dispose(): void;
 
   /** Fire-and-forget message to the host. VS Code only; no-op elsewhere. */

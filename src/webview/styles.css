@@ -1690,7 +1690,7 @@ h2 {
   flex: 1 1 0%; /* Grow to fill, shrink allowed, zero basis for flex calc */
   min-width: 0; /* Allow flex shrinking below content size */
   min-height: 32px; /* Never collapse vertically */
-  padding: 6px calc(4em + 18px) 6px 8px; /* Right padding reserves space for overlaid send button */
+  padding: 6px calc(4em + 48px) 6px 8px; /* Right padding reserves space for mic + send buttons */
   background: var(--tint-light);
   color: var(--vscode-input-foreground, #d4d4d4);
   border: 1px solid var(--tint-light);
@@ -1771,6 +1771,68 @@ h2 {
   color: inherit;
   font-weight: 600;
   border-radius: 1px;
+}
+
+/* --- Mic Button (Voice Input) --- */
+
+.crispy-cp-mic {
+  position: absolute;
+  right: calc(4em + 12px);
+  bottom: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  color: var(--vscode-descriptionForeground, #858585);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  z-index: 1;
+}
+
+.crispy-cp-mic:hover:not(:disabled) {
+  color: var(--vscode-input-foreground, #d4d4d4);
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-cp-mic:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Recording state — pulsing red */
+.crispy-cp-mic--recording {
+  color: #ef4444;
+  animation: crispy-cp-mic-pulse 1s ease-in-out infinite;
+}
+
+.crispy-cp-mic--recording:hover:not(:disabled) {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.15);
+}
+
+/* Transcribing state — subtle spin/pulse */
+.crispy-cp-mic--transcribing {
+  color: var(--color-accent);
+  animation: crispy-cp-mic-spin 1s linear infinite;
+}
+
+@keyframes crispy-cp-mic-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes crispy-cp-mic-spin {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.85); opacity: 0.6; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 /* --- Send Button --- */

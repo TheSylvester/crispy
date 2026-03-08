@@ -13,6 +13,7 @@ import type { TranscriptEntry } from '../core/transcript.js';
 import type { TurnReceipt } from '../core/agent-adapter.js';
 import type { WireProviderConfig, WireSettingsSnapshot, SettingsPatch } from '../core/settings/types.js';
 import type { VendorModelGroup } from './components/control-panel/types.js';
+import { float32ToBase64 } from './utils/encoding.js';
 
 interface VSCodeAPI {
   postMessage(message: unknown): void;
@@ -66,13 +67,13 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
 
   window.addEventListener('message', onMessage);
 
-  function request<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+  function request<T>(method: string, params?: Record<string, unknown>, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const id = nextId();
       const timer = setTimeout(() => {
         pending.delete(id);
-        reject(new Error(`Request "${method}" timed out after ${REQUEST_TIMEOUT_MS}ms`));
-      }, REQUEST_TIMEOUT_MS);
+        reject(new Error(`Request "${method}" timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
 
       pending.set(id, {
         resolve: resolve as (result: unknown) => void,
@@ -143,6 +144,15 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     getActivityLog: (timeRange?, projectSlug?) => request<import('../core/activity-index.js').ActivityIndexEntry[]>('getActivityLog', { ...timeRange, projectSlug }),
     getResponsePreview: (file, offset) => request<string | null>('getResponsePreview', { file, offset }),
     getLineageGraph: () => request<Array<{ sessionFile: string; parentFile: string | null }>>('getLineageGraph'),
+
+    transcribeAudio: (pcmFloat32, sampleRate) => {
+      const audioBase64 = float32ToBase64(pcmFloat32);
+      return request<{ text: string }>('transcribeAudio', { audioBase64, sampleRate });
+    },
+
+    startVoiceCapture: () => request<void>('startVoiceCapture'),
+    // Longer timeout: first call may download + load VAD/STT models
+    stopVoiceCapture: () => request<{ text: string }>('stopVoiceCapture', undefined, 120_000),
 
     onEvent(handler) {
       eventHandlers.push(handler);
