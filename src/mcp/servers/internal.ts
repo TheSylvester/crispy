@@ -70,20 +70,22 @@ export function createInternalServer(): McpServer {
   // search_sessions — FTS5 search over activity entries
   // ------------------------------------------------------------------
   const runSearch = wrapToolHandler('search_sessions', 'results',
-    (query: string, limit: number, kind?: string) => searchSessions(dbPath, query, limit, kind),
+    (query: string, limit: number, kind?: string, since?: string, before?: string) => searchSessions(dbPath, query, limit, kind, since, before),
   );
 
   server.tool(
     'search_sessions',
-    'Full-text search over Crispy session activity. Searches Rosie-generated summaries, titles, quests, entities, and user prompts. Returns BM25-ranked results with match snippets.',
+    'Full-text search over session activity. Returns BM25-ranked results with match snippets, summaries, and titles — often enough to answer without drilling deeper. Start here for most queries. Supports FTS5 syntax: use OR for broad searches ("sqlite OR database"), "quoted phrases" for exact matches, prefix* for partial terms. Supports time filtering with since/before.',
     {
-      query: z.string().describe('Search query — supports natural language or FTS5 syntax (AND, OR, NOT, "quoted phrases", prefix*)'),
+      query: z.string().describe('Search query — use OR to broaden, "quoted phrases" for exact matches, prefix* for partial terms. Prefer short keywords over long natural-language phrases.'),
       limit: z.number().optional().default(20).describe('Maximum results to return (default 20)'),
-      kind: z.enum(['prompt', 'rosie-meta']).optional().describe('Filter by entry kind'),
+      kind: z.enum(['prompt', 'rosie-meta']).optional().describe('Filter by entry kind: "rosie-meta" for AI-generated summaries (richer), "prompt" for raw user prompts'),
+      since: z.string().optional().describe('ISO timestamp — only return results after this time (e.g. "2026-03-01T00:00:00Z")'),
+      before: z.string().optional().describe('ISO timestamp — only return results before this time'),
     },
     async (args) => {
-      console.error(`[internal-mcp] search_sessions: query="${args.query}" limit=${args.limit} kind=${args.kind ?? 'all'}`);
-      return runSearch(args.query, args.limit, args.kind);
+      console.error(`[internal-mcp] search_sessions: query="${args.query}" limit=${args.limit} kind=${args.kind ?? 'all'} since=${args.since ?? '-'} before=${args.before ?? '-'}`);
+      return runSearch(args.query, args.limit, args.kind, args.since, args.before);
     },
   );
 
@@ -96,7 +98,7 @@ export function createInternalServer(): McpServer {
 
   server.tool(
     'list_sessions',
-    'List distinct Crispy sessions with their latest Rosie metadata (quest, title, status). Ordered by most recent activity.',
+    'Browse sessions by recency — use when you need to scan recent work without a specific search term, or when search returns nothing and you want to browse what exists. Returns session titles, quests, and status.',
     {
       limit: z.number().optional().default(50).describe('Maximum sessions to return (default 50)'),
       since: z.string().optional().describe('ISO timestamp — only return sessions with activity after this time'),
@@ -116,7 +118,7 @@ export function createInternalServer(): McpServer {
 
   server.tool(
     'session_context',
-    'Get the full activity history for a specific session file. Returns all prompts and Rosie summaries in chronological order.',
+    'Get the activity index for a specific session — returns timestamped metadata entries (titles, quests, summaries, entities) in chronological order. This is structured metadata, NOT the raw conversation. Use read_turn to get actual conversation content.',
     {
       file: z.string().describe('Session transcript file path (from search_sessions or list_sessions results)'),
       kind: z.enum(['prompt', 'rosie-meta']).optional().describe('Filter by entry kind'),
@@ -132,10 +134,10 @@ export function createInternalServer(): McpServer {
   // ------------------------------------------------------------------
   server.tool(
     'read_turn',
-    'Read the full user prompt and assistant response for a specific turn. Use after search_sessions or session_context to get the actual content of a conversation turn. Returns both what the user asked and what the assistant answered.',
+    'Read the full user prompt and assistant response at a byte offset. This is the only way to see actual conversation content. Use the file path and byte offset from search_sessions or session_context results.',
     {
       file: z.string().describe('Session transcript file path (from search results)'),
-      offset: z.number().describe('Byte offset of the turn (from search results or session_context)'),
+      offset: z.number().describe('Byte offset of the turn (from the "id" field in search results or session_context entries)'),
     },
     async (args) => {
       console.error(`[internal-mcp] read_turn: file="${args.file}" offset=${args.offset}`);

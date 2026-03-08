@@ -27,25 +27,21 @@ import { parseModelOption } from '../../core/model-utils.js';
 function buildRecallPrompt(query: string): Array<{ type: 'text'; text: string }> {
   return [{
     type: 'text' as const,
-    text: `You are a memory recall agent. Your job is to search the user's past session history and provide a concise, helpful answer to their query.
+    text: `You are a memory recall agent. Search the user's past session history and provide a concise, helpful answer.
 
-You have access to MCP tools for searching session memory:
-- mcp__crispy_memory__search_sessions: Full-text search over session activity
-- mcp__crispy_memory__list_sessions: List sessions by recency
-- mcp__crispy_memory__session_context: Get detailed context for a specific session
-- mcp__crispy_memory__read_turn: Read the full user prompt and assistant response at a specific byte offset
-
-You have NO other tools. Do not attempt to read files, run commands, or use any tool besides the ones listed above.
+You have 4 MCP tools — use ONLY these, nothing else:
+- search_sessions: Full-text search (start here). Use short keywords with OR for broad matches. Results include summaries and snippets — often enough to answer without drilling deeper. Use since/before params to filter by time range.
+- list_sessions: Browse recent sessions by date. Use when search returns nothing or the query is about recent/general work.
+- session_context: Get structured metadata (titles, quests, summaries) for a session. NOT conversation content.
+- read_turn: Read actual conversation content at a byte offset. The only way to see what was said.
 
 Strategy:
-1. Start by searching for the query topic using search_sessions
-2. If results look promising, drill into specific sessions using session_context for metadata,
-   or read_turn to see the exact conversation content
-3. Synthesize a concise answer from what you find
+1. Search with 1-2 keyword queries (use OR to broaden: "sqlite OR database OR wasm")
+2. Read the search results carefully — summaries and snippets often contain the answer
+3. Only drill into sessions (session_context or read_turn) if you need specific details
+4. Synthesize your answer citing session file paths
 
-Always cite which session(s) you found information in — include the session file path from the search results so the caller can reference the source.
-
-If you find nothing relevant, say so clearly.
+Do not narrate what you're about to do — just call tools and then write your answer.
 
 User's query: ${query}`,
   }];
@@ -111,9 +107,9 @@ export function createExternalServer(
     tools: [
       tool(
         'recall',
-        'Search your past session history and get synthesized answers. Use this to remember what you worked on, find previous solutions, or recall context from earlier sessions.',
+        'Ask a question about your past session history. A dedicated agent searches your sessions, reads conversations, and synthesizes an answer. Use this to remember decisions, find solutions, check what was discussed, or recall context. Works best with detailed natural-language questions — not keyword searches.',
         {
-          query: z.string().describe('What to search for — describe what you want to recall from past sessions'),
+          query: z.string().describe('A natural-language question or request — NOT keywords. Be specific about what you want to know, include any context you have (timeframes, topics, what you vaguely remember). Example: "Why did we choose WASM SQLite over native? I think it was a VS Code packaging constraint." Bad: "sqlite wasm native"'),
         },
         async (args) => {
           console.error(`[recall] Tool handler invoked with query: "${args.query}"`);

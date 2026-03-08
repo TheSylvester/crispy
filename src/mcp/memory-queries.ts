@@ -85,16 +85,26 @@ export function searchSessions(
   query: string,
   limit: number = 20,
   kind?: string,
+  since?: string,
+  before?: string,
 ): SearchResult[] {
   const sanitized = sanitizeFts5Query(query);
   if (!sanitized) return [];
 
   const db = getDb(dbPath);
   const params: (string | number)[] = [sanitized];
-  let kindClause = '';
+  let extraClauses = '';
   if (kind) {
-    kindClause = 'AND ae.kind = ?';
+    extraClauses += 'AND ae.kind = ? ';
     params.push(kind);
+  }
+  if (since) {
+    extraClauses += 'AND ae.timestamp >= ? ';
+    params.push(since);
+  }
+  if (before) {
+    extraClauses += 'AND ae.timestamp <= ? ';
+    params.push(before);
   }
   params.push(limit);
 
@@ -106,7 +116,7 @@ export function searchSessions(
     FROM activity_fts
     JOIN activity_entries ae ON ae.id = activity_fts.rowid
     WHERE activity_fts MATCH ?
-      ${kindClause}
+      ${extraClauses}
     ORDER BY rank
     LIMIT ?
   `, params) as unknown as SearchResult[];

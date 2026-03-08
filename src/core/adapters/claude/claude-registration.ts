@@ -44,13 +44,14 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
       }
       case 'fresh': {
         // Ephemeral session config: Rosie (no mcpServers) gets single-turn/no tools;
-        // recall agent (with mcpServers) gets MCP-only tools and multi-turn.
-        // tools: [] disables all built-in tools (Read, Bash, etc.) so the
-        // child can only reason + use the attached MCP server. allowedTools
-        // auto-approves the MCP calls so no permission prompts can hang.
+        // recall agent (with mcpServers) gets unlimited turns + all tools available.
+        // The recall prompt instructs the model to use only MCP tools; allowedTools
+        // auto-approves MCP calls so no permission prompts can hang. Built-in tools
+        // (Read, Bash, etc.) remain available but the model rarely uses them.
+        // No maxTurns — the dispatch timeout (120s) is the only constraint.
         const freshEphemeral = spec.skipPersistSession
           ? spec.mcpServers
-            ? { maxTurns: 5, settingSources: [] as SettingSource[], mcpServers: spec.mcpServers as Record<string, McpServerConfig>, tools: [] as string[], allowedTools: ['mcp__crispy_memory__*'] }
+            ? { settingSources: [] as SettingSource[], mcpServers: spec.mcpServers as Record<string, McpServerConfig>, allowedTools: ['mcp__crispy_memory__*'] }
             : { maxTurns: 1, settingSources: [] as SettingSource[], tools: [] as string[], mcpServers: undefined }
           : {};
         return new ClaudeAgentAdapter({
@@ -66,7 +67,7 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
       case 'fork': {
         const forkEphemeral = spec.skipPersistSession
           ? spec.mcpServers
-            ? { maxTurns: 5, settingSources: [] as SettingSource[], mcpServers: spec.mcpServers as Record<string, McpServerConfig>, tools: [] as string[], allowedTools: ['mcp__crispy_memory__*'] }
+            ? { settingSources: [] as SettingSource[], mcpServers: spec.mcpServers as Record<string, McpServerConfig>, allowedTools: ['mcp__crispy_memory__*'] }
             : { maxTurns: 1, settingSources: [] as SettingSource[], tools: [] as string[], mcpServers: undefined }
           : {};
         return new ClaudeAgentAdapter({
