@@ -44,3 +44,13 @@ export interface TrackerBlock {
   files: FileRef[];
 }
 
+// ============================================================================
+// Shared Types
+// ============================================================================
+
+/** Paths for spawning the internal MCP server subprocess. */
+export interface InternalServerPaths {
+  command: string;
+  args: string[];
+}
+

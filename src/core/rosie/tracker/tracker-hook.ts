@@ -23,19 +23,13 @@ import { getSettingsSnapshotInternal } from '../../settings/index.js';
 import { parseModelOption } from '../../model-utils.js';
 import { getLatestRosieMeta } from '../../activity-index.js';
 import { pushRosieLog } from '../debug-log.js';
-import { getExistingProjects } from './db-writer.js';
+import { getExistingProjects, runDedupSweep } from './db-writer.js';
 import { buildInternalMcpConfig } from '../../../mcp/servers/external.js';
 import type { TrackerDecision } from '../../../mcp/servers/internal.js';
+import type { InternalServerPaths } from './types.js';
 
-// ============================================================================
-// Types
-// ============================================================================
-
-/** Paths for spawning the internal MCP server subprocess. */
-export interface InternalServerPaths {
-  command: string;
-  args: string[];
-}
+// Re-export for consumers that import from this module
+export type { InternalServerPaths } from './types.js';
 
 // ============================================================================
 // Module State
@@ -53,6 +47,12 @@ const inflight = new Set<string>();
 export function initRosieTracker(d: AgentDispatch, paths: InternalServerPaths): void {
   dispatch = d;
   serverPaths = paths;
+
+  // Startup dedup sweep — catches any duplicates that slipped through
+  runDedupSweep(d.dispatchChild).catch((err) => {
+    console.warn('[rosie.tracker] Startup dedup sweep failed:', err instanceof Error ? err.message : String(err));
+  });
+
   unsubscribe = onResponseCompleteAfter(async (sessionId: string) => {
     // Capture dispatch locally — shutdown can null it while we're in-flight
     const d = dispatch;
@@ -80,6 +80,11 @@ export function initRosieTracker(d: AgentDispatch, paths: InternalServerPaths): 
     inflight.add(sessionId);
     try {
       await runTrackerAnalysis(d, sessionId, info.path, info.vendor, meta, rosieModel);
+
+      // Fire-and-forget dedup sweep after successful write
+      runDedupSweep(d.dispatchChild).catch((err) => {
+        console.warn('[rosie.tracker] Post-write dedup sweep failed:', err instanceof Error ? err.message : String(err));
+      });
     } finally {
       inflight.delete(sessionId);
     }
