@@ -275,7 +275,7 @@ If the session's primary activity was looking up, recapping, or checking the sta
 - **title**: Keep stable across sessions. Don't rename unless scope fundamentally changed.
 - **summary**: Reflect the CURRENT state, not history. What's true right now?
 - **entities**: Top 5-10. Include files, branches, key concepts. These are used for future matching.
-- **files**: Non-code artifacts only — plans (.ai-reference/), specs, design docs, skill definitions. Source code belongs in entities, not files. Omit if none exist.
+- **files**: Non-code artifacts only — plans (.ai-reference/), specs, design docs, skill definitions. Source code belongs in entities, not files. Omit if none.
 
 Call your tools now. No commentary needed.`;
 

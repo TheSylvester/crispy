@@ -18,7 +18,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath } from '../memory-queries.js';
 import { writeTrackerResults } from '../../core/rosie/tracker/db-writer.js';
-import { VALID_STATUSES, VALID_CATEGORIES } from '../../core/rosie/tracker/types.js';
+import { VALID_STATUSES } from '../../core/rosie/tracker/types.js';
 import type { TrackerBlock } from '../../core/rosie/tracker/types.js';
 
 // ============================================================================
@@ -218,7 +218,6 @@ export function createInternalServer(): McpServer {
       title: z.string().describe('Short, stable project title. Keep consistent across sessions — don\'t rename unless scope fundamentally changed.'),
       status: z.enum(VALID_STATUSES).describe('Current project status.'),
       summary: z.string().describe('1-2 sentence summary of current project state. Reflect what\'s true RIGHT NOW, not history.'),
-      category: z.enum(VALID_CATEGORIES).describe('Project category.'),
       blocked_by: z.string().optional().describe('Why it\'s blocked (only if status is \'blocked\', otherwise omit).'),
       branch: z.string().optional().describe('Git branch name if applicable, otherwise omit.'),
       entities: z.array(z.string()).describe('Top 5-10 key entities: file paths, branch names, function names, concepts. Used for matching future sessions to this project.'),
@@ -245,7 +244,6 @@ export function createInternalServer(): McpServer {
           status: args.status,
           blocked_by: args.blocked_by ?? '',
           summary: args.summary,
-          category: args.category,
           branch: args.branch ?? '',
           entities: JSON.stringify(args.entities),
         },

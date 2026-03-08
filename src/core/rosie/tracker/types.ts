@@ -14,8 +14,6 @@
 export const VALID_STATUSES = ['active', 'done', 'blocked', 'planned', 'abandoned'] as const;
 export type ProjectStatus = (typeof VALID_STATUSES)[number];
 
-export const VALID_CATEGORIES = ['recall', 'ui', 'infra', 'research', 'meta'] as const;
-
 // ============================================================================
 // Parsed Output Types
 // ============================================================================
@@ -27,7 +25,6 @@ export interface ProjectUpsert {
   status: ProjectStatus;
   blocked_by: string;
   summary: string;
-  category: string;
   branch: string;
   entities: string;     // JSON array string
 }

@@ -55,12 +55,12 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
   db.exec('BEGIN');
   try {
     const insertProject = db.prepare(
-      `INSERT INTO projects (id, title, status, blocked_by, summary, category, branch, entities, created_at, updated_at, last_activity_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO projects (id, title, status, blocked_by, summary, branch, entities, created_at, updated_at, last_activity_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const updateProject = db.prepare(
       `UPDATE projects SET
-         title = ?, status = ?, blocked_by = ?, summary = ?, category = ?,
+         title = ?, status = ?, blocked_by = ?, summary = ?,
          branch = ?, entities = ?, updated_at = ?, last_activity_at = ?,
          closed_at = CASE WHEN ? IN ('done', 'abandoned') THEN ? ELSE closed_at END
        WHERE id = ?`,
@@ -84,14 +84,14 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
           projectId = randomUUID();
           insertProject.run([
             projectId, p.title, p.status, p.blocked_by || null, p.summary || null,
-            p.category || null, p.branch || null, p.entities || '[]',
+            p.branch || null, p.entities || '[]',
             now, now, now,
           ]);
         } else {
           // Update existing project
           projectId = p.id;
           updateProject.run([
-            p.title, p.status, p.blocked_by || null, p.summary || null, p.category || null,
+            p.title, p.status, p.blocked_by || null, p.summary || null,
             p.branch || null, p.entities || '[]', now, now,
             p.status, now, // for the CASE WHEN closed_at
             projectId,
