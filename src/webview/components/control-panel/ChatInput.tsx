@@ -1,18 +1,20 @@
 /**
- * Chat Input — auto-resizing textarea with send button
+ * Chat Input — auto-resizing textarea with send button and voice input
  *
  * Textarea auto-grows up to 300px. Ctrl+Enter triggers send.
  * Send button uses hover jiggle animation.
  * Supports @-mention autocomplete for file paths.
+ * Mic button toggles push-to-talk voice recording.
  *
  * @module control-panel/ChatInput
  */
 
 import { useRef, useLayoutEffect, useEffect, useCallback } from 'react';
 import type { AttachedImage } from './types.js';
-import { ForkIcon } from './icons.js';
+import { ForkIcon, MicIcon } from './icons.js';
 import { useMention } from '../../hooks/useMention.js';
 import { MentionDropdown } from './MentionDropdown.js';
+import type { VoiceState } from '../../hooks/useVoiceInput.js';
 
 interface ChatInputProps {
   value: string;
@@ -22,9 +24,13 @@ interface ChatInputProps {
   placeholder?: string;
   forkMode?: boolean;
   onFork?: () => void;
+  /** Voice input state — 'idle' | 'recording' | 'transcribing'. */
+  voiceState?: VoiceState;
+  /** Toggle voice recording on/off. */
+  onVoiceToggle?: () => void;
 }
 
-export function ChatInput({ value, attachedImages, onInput, onSend, placeholder, forkMode, onFork }: ChatInputProps): React.JSX.Element {
+export function ChatInput({ value, attachedImages, onInput, onSend, placeholder, forkMode, onFork, voiceState = 'idle', onVoiceToggle }: ChatInputProps): React.JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mention = useMention(textareaRef, value, onInput);
 
@@ -33,16 +39,18 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
     textareaRef.current?.focus();
   }, []);
 
-  // Focus textarea when host sends focusInput message (e.g. keybinding, panel activation)
+  // Handle host messages: focusInput (keybinding, panel activation), toggleVoiceInput (VS Code keybinding)
   useEffect(() => {
     function onMessage(ev: MessageEvent): void {
       if (ev.data?.kind === 'focusInput') {
         textareaRef.current?.focus();
+      } else if (ev.data?.kind === 'toggleVoiceInput') {
+        onVoiceToggle?.();
       }
     }
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, []);
+  }, [onVoiceToggle]);
 
   // Auto-resize textarea when value changes
   useLayoutEffect(() => {
@@ -99,6 +107,12 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
 
   const isEmpty = !value.trim() && attachedImages.length === 0;
 
+  const micTitle = voiceState === 'recording'
+    ? 'Stop recording (Ctrl+Shift+Space)'
+    : voiceState === 'transcribing'
+      ? 'Transcribing...'
+      : 'Voice input (Ctrl+Shift+Space)';
+
   return (
     <div className="crispy-cp-input-row">
       {mention.active && (mention.results.length > 0 || mention.query.length > 0) && (
@@ -119,6 +133,17 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
         onKeyDown={handleKeyDown}
         onSelect={(e) => mention.handleInputChange(e.currentTarget)}
       />
+      {onVoiceToggle && (
+        <button
+          className={`crispy-cp-mic ${voiceState !== 'idle' ? `crispy-cp-mic--${voiceState}` : ''}`}
+          title={micTitle}
+          disabled={voiceState === 'transcribing'}
+          onClick={onVoiceToggle}
+          type="button"
+        >
+          <MicIcon />
+        </button>
+      )}
       <button
         className={`crispy-cp-send ${forkMode ? 'crispy-cp-send--fork' : ''}`}
         title={forkMode ? "Send forked message (Ctrl+Enter)" : "Send message (Ctrl+Enter)"}

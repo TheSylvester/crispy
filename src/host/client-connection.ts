@@ -51,12 +51,17 @@ import {
   subscribeRosieLog,
   unsubscribeRosieLog,
   ROSIE_LOG_CHANNEL_ID,
+  pushRosieLog,
 } from "../core/rosie/debug-log.js";
 import type { RosieLogEvent, RosieLogSubscriber } from "../core/rosie/debug-log.js";
 import { getGitFiles, fileExists, readImage, readTextFile } from "../core/file-service.js";
 import { queryActivity, getLineage, getChildSessions, getLineageGraph } from '../core/activity-index.js';
 import { readResponsePreview } from '../core/adapters/claude/jsonl-reader.js';
 import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-reader.js';
+// Voice module is lazy-loaded to avoid pulling onnxruntime-node native bindings
+// at extension activation time (crashes VS Code's Electron host).
+// import { transcribeAudio } from '../core/voice/index.js'; // <-- lazy below
+import { startCapture, stopCapture } from './audio-capture.js';
 
 // ============================================================================
 // Path Containment
@@ -546,6 +551,64 @@ export function createClientConnection(
 
       case "getLineageGraph": {
         return getLineageGraph();
+      }
+
+      case "transcribeAudio": {
+        const audioBase64 = params.audioBase64 as string;
+        const sampleRate = params.sampleRate as number;
+
+        // Decode base64 → Float32Array
+        const binary = Buffer.from(audioBase64, 'base64');
+        pushRosieLog({
+          source: 'voice',
+          level: 'info',
+          summary: `RPC transcribeAudio received: ${binary.byteLength} bytes, sampleRate=${sampleRate}, base64 length=${audioBase64.length}`,
+        });
+        if (binary.byteLength % 4 !== 0) {
+          throw new Error(`Audio buffer length ${binary.byteLength} is not aligned to 4 bytes`);
+        }
+        const pcmFloat32 = new Float32Array(binary.buffer, binary.byteOffset, binary.byteLength / 4);
+        pushRosieLog({
+          source: 'voice',
+          level: 'info',
+          summary: `Decoded ${pcmFloat32.length} samples (${(pcmFloat32.length / sampleRate).toFixed(1)}s), calling transcribeAudio...`,
+        });
+
+        const { transcribeAudio } = await import('../core/voice/index.js');
+        const result = await transcribeAudio(pcmFloat32, sampleRate);
+        pushRosieLog({
+          source: 'voice',
+          level: 'info',
+          summary: `transcribeAudio result: ${result.segments} segments, ${result.durationMs}ms, text="${result.text.slice(0, 80)}"`,
+        });
+        return { text: result.text };
+      }
+
+      case "startVoiceCapture": {
+        await startCapture();
+        return { started: true };
+      }
+
+      case "stopVoiceCapture": {
+        const captured = await stopCapture();
+        if (!captured) {
+          return { text: '' };
+        }
+
+        pushRosieLog({
+          source: 'voice',
+          level: 'info',
+          summary: `Host capture: ${captured.pcmFloat32.length} samples (${(captured.pcmFloat32.length / captured.sampleRate).toFixed(1)}s), running transcription...`,
+        });
+
+        const { transcribeAudio: transcribe } = await import('../core/voice/index.js');
+        const txResult = await transcribe(captured.pcmFloat32, captured.sampleRate);
+        pushRosieLog({
+          source: 'voice',
+          level: 'info',
+          summary: `Host capture transcription: ${txResult.segments} segments, ${txResult.durationMs}ms, text="${txResult.text.slice(0, 80)}"`,
+        });
+        return { text: txResult.text };
       }
 
       default:
