@@ -31,6 +31,7 @@ import {
 } from './session-channel.js';
 import { refreshAndNotify, notifyStatusChange } from './session-list-manager.js';
 import { fireResponseComplete } from './lifecycle-hooks.js';
+import { pushRosieLog } from './rosie/index.js';
 
 /** Type guard for session_changed notification events. */
 function isSessionChangedEvent(msg: SubscriberMessage): msg is ChannelMessage & { type: 'event'; event: { type: 'notification'; kind: 'session_changed'; sessionId: string } } {
@@ -411,6 +412,7 @@ function createPendingChannel(
         if (isSessionChangedEvent(msg)) {
           const realId = msg.event.sessionId;
           rekeyChannel(pendingId, realId);
+          pushRosieLog({ source: 'session', level: 'info', summary: `Session: re-keyed ${pendingId.slice(0, 20)}… → ${realId.slice(0, 12)}…`, data: { pendingId, realId } });
           sessions.delete(pendingId);
           sessions.set(realId, channel);
           unsubscribe(channel, rekeySubscriber);
@@ -542,6 +544,7 @@ export function createSession(
     ...(options?.env && { env: options.env }),
   };
 
+  pushRosieLog({ source: 'session', level: 'info', summary: `Session: creating new (${vendor})`, data: { vendor, cwd } });
   return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
 }
 
@@ -581,6 +584,7 @@ export function createForkSession(
     ...(options?.env && { env: options.env }),
   };
 
+  pushRosieLog({ source: 'session', level: 'info', summary: `Session: forking from ${fromSessionId} (${vendor})`, data: { vendor, fromSessionId } });
   return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
 }
 
@@ -790,6 +794,7 @@ export async function interruptSession(sessionId: string): Promise<void> {
  */
 export function closeSession(sessionId: string): void {
   if (!sessions.has(sessionId)) return;
+  pushRosieLog({ source: 'session', level: 'info', summary: `Session: destroyed ${sessionId.slice(0, 12)}…` });
   destroyChannel(sessionId);
   sessions.delete(sessionId);
 }
@@ -874,6 +879,8 @@ export async function dispatchChildSession(
   // Allocate a deterministic pending ID up front so cleanup always has a
   // channel reference, even if sendTurn hasn't resolved yet.
   const pendingId = `pending:child-${crypto.randomUUID()}`;
+
+  pushRosieLog({ source: 'session', level: 'info', summary: `Session: dispatching child (${vendor}) for parent ${parentSessionId.slice(0, 12)}…`, data: { parentSessionId, vendor, timeoutMs } });
 
   return new Promise<ChildSessionResult | null>((resolve) => {
     let text = '';
@@ -1035,6 +1042,7 @@ export async function dispatchChildSession(
       .catch((err) => {
         if (!settled) {
           console.warn(`[child-session] sendTurn failed (parent: ${parentSessionId}, vendor: ${vendor}):`, err instanceof Error ? err.message : String(err));
+          pushRosieLog({ source: 'session', level: 'error', summary: `Session: child dispatch failed (${vendor})`, data: { parentSessionId, vendor, error: err instanceof Error ? err.message : String(err) } });
           settled = true;
           cleanup();
           resolve(null);
