@@ -19,6 +19,7 @@ import { z } from 'zod/v4';
 import type { AgentDispatch } from '../../host/agent-dispatch.js';
 import type { ChildSessionOptions } from '../../core/session-manager.js';
 import { parseModelOption } from '../../core/model-utils.js';
+import { INTERNAL_MCP_SERVER_NAME } from './internal.js';
 
 // ============================================================================
 // Recall Agent Prompt
@@ -58,12 +59,12 @@ User's query: ${query}`,
  * based on host type (VS Code → bundled dist/internal-mcp.js + node,
  * dev server → tsx + TypeScript source). No fallbacks here.
  */
-function buildInternalMcpConfig(
+export function buildInternalMcpConfig(
   command: string,
   args: string[],
 ): Record<string, unknown> {
   return {
-    'crispy-memory': {
+    [INTERNAL_MCP_SERVER_NAME]: {
       type: 'stdio' as const,
       command,
       args,

@@ -10,7 +10,7 @@ import { openCrispyPanel, getOrCreatePanelForPrefill, getMostRecentPanel } from 
 import { startRescan, stopRescan } from './core/session-list-manager.js';
 import { runScan } from './core/activity-scanner.js';
 import { findClaudeBinary } from './core/find-claude-binary.js';
-import { registerAllAdapters } from './host/adapter-registry.js';
+import { registerAllAdapters, resolveInternalServerPaths } from './host/adapter-registry.js';
 import { createAgentDispatch } from './host/agent-dispatch.js';
 import { initRosieSummarize, shutdownRosieSummarize, initRosieTracker, shutdownRosieTracker } from './core/rosie/index.js';
 
@@ -76,7 +76,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Wire up Rosie hooks (tracker phase-2 fires after summarize phase-1)
   initRosieSummarize(dispatch);
-  initRosieTracker(dispatch);
+  initRosieTracker(dispatch, resolveInternalServerPaths(context.extensionPath));
   context.subscriptions.push({
     dispose: () => {
       shutdownRosieTracker();

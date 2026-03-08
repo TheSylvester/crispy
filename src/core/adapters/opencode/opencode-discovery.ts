@@ -63,10 +63,9 @@ async function queryDb<T>(dbPath: string, sql: string): Promise<T[]> {
     const error = err as NodeJS.ErrnoException;
     if (error.code === 'ENOENT') {
       console.error('[opencode-discovery] sqlite3 CLI not found — install sqlite3 to list OpenCode sessions');
-    } else {
-      console.error('[opencode-discovery] Query failed:', error.message);
+      return [];
     }
-    return [];
+    throw err;
   }
 }
 
@@ -251,15 +250,33 @@ class OpenCodeDiscovery implements VendorDiscovery {
       return;
     }
 
-    const rows = await queryDb<SessionRow>(
-      dbPath,
-      `SELECT id, project_id, directory, title, parent_id,
-              COALESCE(json_extract(summary, '$.additions'), 0) as summary_additions,
-              COALESCE(json_extract(summary, '$.deletions'), 0) as summary_deletions,
-              COALESCE(json_extract(summary, '$.files'), 0) as summary_files,
-              time_created, time_updated
-       FROM session ORDER BY time_updated DESC`,
-    );
+    // Try with summary column first; fall back without it for older OpenCode
+    // schemas that lack the column (the summary stats are cosmetic only).
+    let rows: SessionRow[];
+    try {
+      rows = await queryDb<SessionRow>(
+        dbPath,
+        `SELECT id, project_id, directory, title, parent_id,
+                COALESCE(json_extract(summary, '$.additions'), 0) as summary_additions,
+                COALESCE(json_extract(summary, '$.deletions'), 0) as summary_deletions,
+                COALESCE(json_extract(summary, '$.files'), 0) as summary_files,
+                time_created, time_updated
+         FROM session ORDER BY time_updated DESC`,
+      );
+    } catch {
+      try {
+        rows = await queryDb<SessionRow>(
+          dbPath,
+          `SELECT id, project_id, directory, title, parent_id,
+                  0 as summary_additions, 0 as summary_deletions, 0 as summary_files,
+                  time_created, time_updated
+           FROM session ORDER BY time_updated DESC`,
+        );
+      } catch (fallbackErr) {
+        console.error('[opencode-discovery] Query failed:', fallbackErr);
+        return;
+      }
+    }
 
     this.sessionCache = rows.map((row) => this.rowToSessionInfo(row, dbPath));
     this.cacheTimestamp = Date.now();

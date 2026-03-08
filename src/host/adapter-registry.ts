@@ -125,6 +125,31 @@ function getActiveClaudeSessionId(): string | undefined {
 }
 
 // ============================================================================
+// Internal Server Path Resolution
+// ============================================================================
+
+/**
+ * Resolve paths for spawning the internal MCP server subprocess.
+ *
+ * Used by adapter-registry (recall agent) and tracker-hook (tracker agent)
+ * to spawn the same internal server. Paths differ by host:
+ * - VS Code: pre-bundled dist/internal-mcp.js, run with node
+ * - Dev server: TypeScript source, run with tsx
+ */
+export function resolveInternalServerPaths(extensionPath?: string): { command: string; args: string[] } {
+  if (extensionPath) {
+    return {
+      command: 'node',
+      args: [resolve(extensionPath, 'dist', 'internal-mcp.js')],
+    };
+  }
+  return {
+    command: resolve(process.cwd(), 'node_modules', '.bin', 'tsx'),
+    args: [resolve(process.cwd(), 'src', 'mcp', 'servers', 'internal-main.ts')],
+  };
+}
+
+// ============================================================================
 // Public API
 // ============================================================================
 
@@ -163,39 +188,8 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
   // fresh each invocation so each query gets its own McpServer instance.
   const dispatch = config.dispatch;
 
-  // -----------------------------------------------------------------------
-  // Resolve internal MCP server paths — host-dependent.
-  //
-  // The recall system spawns an internal MCP server as a stdio subprocess
-  // (via the child Claude Code session). The subprocess needs a command
-  // and script path. These differ by host:
-  //
-  // VS Code extension: Source .ts files don't exist in a packaged VSIX.
-  //   internal-main.ts is pre-bundled to dist/internal-mcp.js by the
-  //   build:internal-mcp script. Run with `node` (no tsx needed).
-  //   extensionPath is the VSIX install root, so dist/ is a sibling.
-  //
-  // Dev server: process.cwd() IS the project root (npm run dev runs from
-  //   there), so we use tsx to run the .ts source directly for fast iteration.
-  //
-  // If you're seeing recall failures, check that:
-  //   1. dist/internal-mcp.js exists (run `npm run build:internal-mcp`)
-  //   2. extensionPath is being passed from extension.ts
-  //   3. node-sqlite3-wasm is in node_modules/ (runtime dependency)
-  // -----------------------------------------------------------------------
-  let internalServerCommand: string;
-  let internalServerArgs: string[];
-
-  if (config.extensionPath) {
-    // VS Code: pre-bundled JS, run with node
-    internalServerCommand = 'node';
-    internalServerArgs = [resolve(config.extensionPath, 'dist', 'internal-mcp.js')];
-  } else {
-    // Dev server: tsx + TypeScript source from project root
-    internalServerCommand = resolve(process.cwd(), 'node_modules', '.bin', 'tsx');
-    internalServerArgs = [resolve(process.cwd(), 'src', 'mcp', 'servers', 'internal-main.ts')];
-  }
-
+  // Resolve internal MCP server paths — shared with tracker-hook
+  const { command: internalServerCommand, args: internalServerArgs } = resolveInternalServerPaths(config.extensionPath);
   console.error(`[adapter-registry] Internal MCP server: ${internalServerCommand} ${internalServerArgs.join(' ')}`);
 
   // Build factory that creates fresh MCP server instances per-query.

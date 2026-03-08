@@ -29,6 +29,7 @@ import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
 import { runScan } from '../core/activity-scanner.js';
 import { initRosieSummarize, shutdownRosieSummarize, initRosieTracker, shutdownRosieTracker } from '../core/rosie/index.js';
+import { resolveInternalServerPaths } from './adapter-registry.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
 
@@ -163,7 +164,7 @@ registerAllAdapters({ cwd, hostType: 'dev-server', dispatch });
 
 // Wire up Rosie hooks (tracker phase-2 fires after summarize phase-1)
 initRosieSummarize(dispatch);
-initRosieTracker(dispatch);
+initRosieTracker(dispatch, resolveInternalServerPaths());
 
 // Initialize settings from ~/.config/crispy/settings.json
 const providerBase = { cwd };

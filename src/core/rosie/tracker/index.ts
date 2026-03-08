@@ -1,4 +1,5 @@
 export { initRosieTracker, shutdownRosieTracker, buildTrackerPrompt } from './tracker-hook.js';
+export type { InternalServerPaths } from './tracker-hook.js';
 export type {
   TrackerBlock,
   ProjectUpsert,

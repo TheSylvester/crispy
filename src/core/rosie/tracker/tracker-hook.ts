@@ -3,7 +3,9 @@
  *
  * Registers as a phase-2 responseComplete handler (fires AFTER summarize).
  * Reads the fresh rosie-meta output, dispatches an ephemeral child session
- * to match/create projects, then writes results to the projects tables.
+ * with MCP tools (upsert_project, mark_trivial) to match/create projects.
+ * The tool handlers in the internal MCP server write directly to the DB —
+ * no XML parsing or post-hoc validation needed.
  *
  * Mirrors summarize-hook.ts structure: module state, init/shutdown,
  * dispatchChild with retry.
@@ -17,15 +19,25 @@ import { getSettingsSnapshotInternal } from '../../settings/index.js';
 import { parseModelOption } from '../../model-utils.js';
 import { getLatestRosieMeta } from '../../activity-index.js';
 import { pushRosieLog } from '../debug-log.js';
-import { parseTrackerResponse } from './xml-extractor.js';
-import { validateTrackerBlocks } from './validator.js';
-import { writeTrackerResults, getExistingProjects } from './db-writer.js';
+import { getExistingProjects } from './db-writer.js';
+import { buildInternalMcpConfig } from '../../../mcp/servers/external.js';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/** Paths for spawning the internal MCP server subprocess. */
+export interface InternalServerPaths {
+  command: string;
+  args: string[];
+}
 
 // ============================================================================
 // Module State
 // ============================================================================
 
 let dispatch: AgentDispatch | null = null;
+let serverPaths: InternalServerPaths | null = null;
 let unsubscribe: (() => void) | null = null;
 const inflight = new Set<string>();
 
@@ -33,8 +45,9 @@ const inflight = new Set<string>();
 // Lifecycle
 // ============================================================================
 
-export function initRosieTracker(d: AgentDispatch): void {
+export function initRosieTracker(d: AgentDispatch, paths: InternalServerPaths): void {
   dispatch = d;
+  serverPaths = paths;
   unsubscribe = onResponseCompleteAfter(async (sessionId: string) => {
     // Capture dispatch locally — shutdown can null it while we're in-flight
     const d = dispatch;
@@ -72,6 +85,7 @@ export function shutdownRosieTracker(): void {
   unsubscribe?.();
   unsubscribe = null;
   dispatch = null;
+  serverPaths = null;
 }
 
 // ============================================================================
@@ -88,23 +102,24 @@ async function runTrackerAnalysis(
   meta: { quest?: string; title?: string; summary?: string; status?: string; entities?: string },
   modelOverride?: string,
 ): Promise<void> {
+  if (!serverPaths) {
+    console.warn('[rosie.tracker] Internal MCP server paths not configured');
+    return;
+  }
+
   const parsed = modelOverride ? parseModelOption(modelOverride) : undefined;
   const vendor = parsed?.vendor ?? parentVendor;
   const model = parsed?.model;
 
   // Build prompt with existing projects context
   const existingProjects = getExistingProjects();
-  const existingIds = new Set(existingProjects.map((p) => p.id));
   const prompt = buildTrackerPrompt(meta, existingProjects);
-
-  let lastResponse = '';
-  let lastErrors: string[] = [];
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       const promptToSend = attempt === 1
         ? prompt
-        : buildRetryPrompt(lastResponse, lastErrors);
+        : `${prompt}\n\nIMPORTANT: You must call either upsert_project or mark_trivial. Use your tools now.`;
 
       const result = await d.dispatchChild({
         parentSessionId: sessionId,
@@ -113,6 +128,15 @@ async function runTrackerAnalysis(
         prompt: promptToSend,
         settings: {
           ...(model && { model }),
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
+        },
+        forceNew: true,
+        mcpServers: buildInternalMcpConfig(serverPaths.command, serverPaths.args),
+        env: {
+          CLAUDECODE: '',
+          CRISPY_TRACKER_SESSION_FILE: sessionPath,
+          CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '30000',
         },
         skipPersistSession: true,
         autoClose: true,
@@ -130,67 +154,16 @@ async function runTrackerAnalysis(
         continue;
       }
 
-      console.log(`[rosie.tracker] OK response:`, result.text.slice(0, 500));
-      lastResponse = result.text;
-
-      // Parse
-      const blocks = parseTrackerResponse(result.text);
-      if (blocks.length === 0) {
-        console.warn(`[rosie.tracker] No tracker blocks parsed from response`);
-        pushRosieLog({
-          source: 'tracker',
-          level: 'warn',
-          summary: `Tracker: no blocks parsed (attempt ${attempt}/${MAX_ATTEMPTS})`,
-          data: { sessionId, attempt, responseSnippet: result.text.slice(0, 300) },
-        });
-        // No blocks could mean the session was trivial — not necessarily an error
-        if (attempt === 1) continue;
-        return;
-      }
-
-      // Validate
-      const validation = validateTrackerBlocks(blocks, existingIds);
-
-      if (validation.errors.length > 0 && attempt < MAX_ATTEMPTS) {
-        console.warn(`[rosie.tracker] Validation errors (attempt ${attempt}):`, validation.errors);
-        lastErrors = validation.errors;
-        pushRosieLog({
-          source: 'tracker',
-          level: 'warn',
-          summary: `Tracker: validation errors, retrying (attempt ${attempt}/${MAX_ATTEMPTS})`,
-          data: { sessionId, attempt, errors: validation.errors },
-        });
-        continue;
-      }
-
-      if (validation.errors.length > 0) {
-        console.warn(`[rosie.tracker] Validation errors after final attempt:`, validation.errors);
-        pushRosieLog({
-          source: 'tracker',
-          level: 'warn',
-          summary: `Tracker: validation errors after ${MAX_ATTEMPTS} attempts`,
-          data: { sessionId, errors: validation.errors },
-        });
-      }
-
-      // Write valid blocks
-      if (validation.valid.length > 0) {
-        writeTrackerResults(validation.valid, sessionPath);
-
-        pushRosieLog({
-          source: 'tracker',
-          level: 'info',
-          summary: `Tracker: ${validation.valid.length} project(s) updated`,
-          data: {
-            sessionId,
-            projects: validation.valid.map((b) => ({
-              id: b.project.id || '(new)',
-              title: b.project.title,
-              status: b.project.status,
-            })),
-          },
-        });
-      }
+      // Tool handlers in internal.ts write directly to the DB via
+      // writeTrackerResults(). The text response (if any) is just
+      // the model's confirmation — all data flows through tool calls.
+      console.log(`[rosie.tracker] OK — child completed (attempt ${attempt})`);
+      pushRosieLog({
+        source: 'tracker',
+        level: 'info',
+        summary: `Tracker: analysis completed`,
+        data: { sessionId, attempt, responseSnippet: result.text.slice(0, 200) },
+      });
       return;
     } catch (err) {
       console.warn(`[rosie.tracker] FAIL attempt ${attempt}/${MAX_ATTEMPTS} threw:`, err);
@@ -208,26 +181,28 @@ async function runTrackerAnalysis(
 // Prompt Building
 // ============================================================================
 
-const TRACKER_SYSTEM_PROMPT = `You are a project tracker. You receive a session summary and a list of existing projects. Your job is to link this session's topics to existing projects or create new ones.
+const TRACKER_SYSTEM_PROMPT = `You are a project tracker. You receive a session summary and a list of existing projects. \
+Your job is to identify EVERY distinct project this session touched and file each one.
 
-## Input
-
-You will receive:
-1. A session summary with: title, quest (main topic), sidequests (tangential topics), status, and entities
-2. A list of existing projects with: id, title, status, and key entities
+You have two tools:
+- **upsert_project** — Create or update a project. Call once PER DISTINCT PROJECT this session touches. Most sessions touch 1 project, but some touch 2-3.
+- **mark_trivial** — Mark the session as not warranting any project (quick recall, empty session, false start).
 
 ## Task
 
-For each topic (quest and each sidequest), determine:
-- Does it match an existing project? → upsert with that project's id
-- Is it new work not covered by any existing project? → upsert with empty id
+Analyze the session summary. Identify each distinct workstream:
+- Does it match an existing project? → call upsert_project with that project's id
+- Is it new work? → call upsert_project without an id
+- Is the entire session trivial? → call mark_trivial
 
-## Matching Rules (in priority order)
+**Look for multiple projects.** Sessions often contain a primary quest plus secondary work — a sidequest, a tangential fix, a plan saved for a different feature, or a skill/tool created alongside the main work. If the session title contains "+", "&", or describes two unrelated topics, there are almost certainly multiple projects. Call upsert_project once for each.
 
-1. Title similarity — if the topic closely matches an existing project title, it's the same project
-2. Entity overlap — shared files, branches, or function names confirm a match when titles differ
-3. Quest continuity — if the topic describes work that continues an existing project's goal (e.g. one planned it, this one built it), it's the same project
-4. Status progression — if the topic picks up where an existing project left off (planned → active, active → done), that reinforces a match
+## Matching Rules (priority order)
+
+1. **Title similarity** — if the topic closely matches an existing project title, it's the same project
+2. **Entity overlap** — shared files, branches, or function names confirm a match when titles differ
+3. **Quest continuity** — if the topic continues an existing project's goal (e.g. one planned it, this one built it), same project
+4. **Status progression** — if the topic picks up where an existing project left off (planned → active, active → done), that reinforces a match
 
 Only create a new project when no existing project is a reasonable match.
 
@@ -235,39 +210,18 @@ Only create a new project when no existing project is a reasonable match.
 
 If this session and prior sessions form one arc (diagnosis → root cause → fix), they belong to the same project. Do not create a new project for each phase.
 
-## Nest Rule
+## Recall Rule
 
-If this session orchestrated sub-tasks (e.g. parallel worktree sprint), use parent_id to group children under the orchestrating project.
+If the session's primary activity was looking up, recapping, or checking the status of prior work — it is **trivial**. The recalled content belongs to the original sessions, not this one. Signals: quest mentions "recall", "did we discuss", "status check", "refresh understanding", "recap". Only create a project if the session performed NEW work beyond retrieval.
 
-## Status Values
+## Rules
 
-Use exactly one of: active, done, blocked, planned, abandoned
+- **title**: Keep stable across sessions. Don't rename unless scope fundamentally changed.
+- **summary**: Reflect the CURRENT state, not history. What's true right now?
+- **entities**: Top 5-10. Include files, branches, key concepts. These are used for future matching.
+- **files**: Non-code artifacts only — plans (.ai-reference/), specs, design docs, skill definitions. Source code belongs in entities, not files. Omit if none exist.
 
-## Output Format
-
-Output one <tracker> block per project this session touches. Nothing else — no commentary, no explanation.
-
-<tracker>
-  <project action="upsert" id="existing-project-uuid OR empty-for-new">
-    <title>Short, stable project title</title>
-    <status>active|done|blocked|planned|abandoned</status>
-    <blocked_by>Why it's blocked (only if status is blocked, otherwise empty)</blocked_by>
-    <summary>1-2 sentence summary of current project state</summary>
-    <category>recall|ui|infra|research|meta</category>
-    <branch>git branch name if applicable, otherwise empty</branch>
-    <entities>["file1.ts","file2.ts","concept1","concept2"]</entities>
-  </project>
-  <session detected_in="message-uuid" />
-  <file path="relative/path/to/file" note="Why this file is relevant" />
-  <file path="another/file" note="Description" />
-</tracker>
-
-Rules for the output:
-- title: Keep stable across runs. Don't rename a project unless its scope fundamentally changed.
-- summary: Reflect the CURRENT state, not history. What's true right now?
-- entities: Top 5-10. Include files, branches, key concepts. These are used for future matching.
-- files: Only list files that are meaningful artifacts — plans, specs, implementations. Not every file touched.
-- If a topic is trivial (quick recall, empty session, false start), do not create a project for it.`;
+Call your tools now. No commentary needed.`;
 
 /** Build the full tracker prompt (system + user context). Exported for replay-harness reuse. */
 export function buildTrackerPrompt(
@@ -278,6 +232,8 @@ export function buildTrackerPrompt(
     ? projects.map((p) => `[${p.id}] ${p.title} (${p.status}) — entities: ${p.entities}`).join('\n')
     : 'No existing projects yet.';
 
+  const summaryLine = meta.summary ? `Summary: ${meta.summary}\n` : '';
+
   return `${TRACKER_SYSTEM_PROMPT}
 
 ---
@@ -286,24 +242,10 @@ export function buildTrackerPrompt(
 
 Title: ${meta.title ?? ''}
 Quest: ${meta.quest ?? ''}
-Status: ${meta.status ?? ''}
+${summaryLine}Status: ${meta.status ?? ''}
 Entities: ${meta.entities ?? '[]'}
 
 ## Existing Projects
 
 ${projectList}`;
-}
-
-function buildRetryPrompt(lastResponse: string, errors: string[]): string {
-  return `Your previous output had validation errors. Please fix them and output corrected <tracker> blocks.
-
-## Validation Errors
-
-${errors.map((e) => `- ${e}`).join('\n')}
-
-## Your Previous Output
-
-${lastResponse}
-
-Please output corrected <tracker> blocks. Nothing else — no commentary, no explanation.`;
 }

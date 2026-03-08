@@ -1,9 +1,10 @@
 /**
  * Internal stdio MCP Server — raw tools for internal agents.
  *
- * Exposes search_sessions, list_sessions, and session_context as MCP tools
- * over stdio. Designed to be spawned as a child process by the recall agent
- * or any vendor's child agents that need session memory access.
+ * Exposes search/browse tools for the recall agent and project tracking
+ * tools for the tracker agent, all over stdio. Designed to be spawned as
+ * a child process by any vendor's child agents that need session memory
+ * access. Each consumer sees only its tools via allowedTools glob patterns.
  *
  * Uses @modelcontextprotocol/sdk (vendor-agnostic) — not the Claude SDK.
  * This is the extensible knowledge backend — future graph search, commit
@@ -15,6 +16,16 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath } from '../memory-queries.js';
+import { writeTrackerResults } from '../../core/rosie/tracker/db-writer.js';
+import { VALID_STATUSES, VALID_CATEGORIES } from '../../core/rosie/tracker/types.js';
+import type { TrackerBlock } from '../../core/rosie/tracker/types.js';
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/** Canonical server name — referenced by MCP config builders and allowedTools patterns. */
+export const INTERNAL_MCP_SERVER_NAME = 'crispy-memory';
 
 // ============================================================================
 // Helpers
@@ -60,7 +71,7 @@ function wrapToolHandler<T extends unknown[]>(
  */
 export function createInternalServer(): McpServer {
   const server = new McpServer({
-    name: 'crispy-memory',
+    name: INTERNAL_MCP_SERVER_NAME,
     version: '1.0.0',
   });
 
@@ -165,6 +176,89 @@ export function createInternalServer(): McpServer {
           isError: true,
         };
       }
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // upsert_project — Create or update a tracked project
+  // ------------------------------------------------------------------
+  // Only available when CRISPY_TRACKER_SESSION_FILE is set (tracker child
+  // sessions). The env var provides the session file path for DB writes.
+  // ------------------------------------------------------------------
+  server.tool(
+    'upsert_project',
+    'Create a new project or update an existing one based on this session\'s work. Call this once per project this session touches. For existing projects, provide the id from the project list. For new projects, omit the id or leave it empty.',
+    {
+      id: z.string().optional().describe('UUID of an existing project to update. Must match an id from the existing projects list. Leave empty or omit to create a new project.'),
+      title: z.string().describe('Short, stable project title. Keep consistent across sessions — don\'t rename unless scope fundamentally changed.'),
+      status: z.enum(VALID_STATUSES).describe('Current project status.'),
+      summary: z.string().describe('1-2 sentence summary of current project state. Reflect what\'s true RIGHT NOW, not history.'),
+      category: z.enum(VALID_CATEGORIES).describe('Project category.'),
+      blocked_by: z.string().optional().describe('Why it\'s blocked (only if status is \'blocked\', otherwise omit).'),
+      branch: z.string().optional().describe('Git branch name if applicable, otherwise omit.'),
+      entities: z.array(z.string()).describe('Top 5-10 key entities: file paths, branch names, function names, concepts. Used for matching future sessions to this project.'),
+      files: z.array(z.object({
+        path: z.string().describe('File path to a non-code artifact.'),
+        note: z.string().describe('Why this file is relevant.'),
+      })).optional().describe('Non-code artifacts only: plans, specs, design docs. NOT source code — source files belong in entities. Omit if none.'),
+    },
+    async (args) => {
+      const sessionFile = process.env.CRISPY_TRACKER_SESSION_FILE;
+      if (!sessionFile) {
+        console.error('[internal-mcp] upsert_project: CRISPY_TRACKER_SESSION_FILE not set');
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: 'Session file not configured — this tool is only available in tracker child sessions' }) }],
+          isError: true,
+        };
+      }
+
+      const block: TrackerBlock = {
+        project: {
+          action: 'upsert',
+          id: args.id ?? '',
+          title: args.title,
+          status: args.status,
+          blocked_by: args.blocked_by ?? '',
+          summary: args.summary,
+          category: args.category,
+          branch: args.branch ?? '',
+          entities: JSON.stringify(args.entities),
+        },
+        sessionRef: { detected_in: '' },
+        files: (args.files ?? []).map((f) => ({ path: f.path, note: f.note })),
+      };
+
+      try {
+        writeTrackerResults([block], sessionFile);
+        const action = args.id ? `updated "${args.title}"` : `created "${args.title}"`;
+        console.error(`[internal-mcp] upsert_project: ${action} (${args.status})`);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action: args.id ? 'updated' : 'created', project: args.title }) }],
+        };
+      } catch (err) {
+        console.error('[internal-mcp] upsert_project FAIL:', err instanceof Error ? err.message : String(err));
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: `upsert_project failed: ${err instanceof Error ? err.message : String(err)}` }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // mark_trivial — Flag session as not warranting project tracking
+  // ------------------------------------------------------------------
+  server.tool(
+    'mark_trivial',
+    'Mark this session as trivial — no project needed. Use when the session was a quick recall, empty session, false start, or doesn\'t represent meaningful project work.',
+    {
+      reason: z.string().describe('Brief reason why no project is warranted.'),
+    },
+    async (args) => {
+      console.error(`[internal-mcp] mark_trivial: "${args.reason}"`);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', trivial: true, reason: args.reason }) }],
+      };
     },
   );
 
