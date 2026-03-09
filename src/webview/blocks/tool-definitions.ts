@@ -18,6 +18,7 @@ import type { ToolDefinition, ToolViewProps, RichBlock } from './types.js';
 // Views are imported and assigned at runtime by the view modules
 const viewRegistry: Map<string, {
   compact: (props: ToolViewProps) => ReactNode;
+  condensed?: (props: ToolViewProps) => ReactNode;
   expanded: (props: ToolViewProps) => ReactNode;
   inline?: (props: ToolViewProps) => ReactNode;
 }> = new Map();
@@ -30,6 +31,7 @@ export function registerToolViews(
   name: string,
   views: {
     compact: (props: ToolViewProps) => ReactNode;
+    condensed?: (props: ToolViewProps) => ReactNode;
     expanded: (props: ToolViewProps) => ReactNode;
     inline?: (props: ToolViewProps) => ReactNode;
   },
@@ -258,7 +260,7 @@ export function getToolDefinition(name: string): ToolDefinition | undefined {
     color: data.color,
     activity: data.activity,
     inspectorDefault: data.inspectorDefault,
-    views: { compact: views.compact, expanded: views.expanded, inline: views.inline },
+    views: { compact: views.compact, condensed: views.condensed, expanded: views.expanded, inline: views.inline },
   };
 }
 

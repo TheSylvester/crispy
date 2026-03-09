@@ -14,6 +14,7 @@
 import type { ReactNode } from 'react';
 import type { ToolViewProps, ToolDefinition } from '../types.js';
 import { extractSubject } from '../tool-definitions.js';
+import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { extractResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { ToolCard } from './ToolCard.js';
@@ -45,7 +46,7 @@ export function DotLine({ icon, color, name, subject, description, result }: Dot
   return (
     <div className="crispy-blocks-dot-line">
       <span className="crispy-blocks-dot-line__icon">{icon}</span>
-      <span className="crispy-blocks-dot-line__name" style={{ color }}>{name}</span>
+      <ToolBadge color={color} label={name} />
       {description
         ? <span className="crispy-blocks-dot-line__desc">{description}</span>
         : subject && <span className="crispy-blocks-dot-line__subject">{subject}</span>

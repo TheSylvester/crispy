@@ -34,7 +34,8 @@ export function selectView(
   _siblingCount: number,
   _registry: BlocksToolRegistry,
   inlineMode = false,
-): 'compact' | 'expanded' | 'inline' {
+  condensedMode = false,
+): 'compact' | 'condensed' | 'expanded' | 'inline' {
   // Panel and nested task tools: always expanded — native <details>
   // handles collapse/expand. Completed tools render collapsed (no `open`
   // attr), running tools render expanded (`open`).
@@ -49,6 +50,11 @@ export function selectView(
   // Main thread with inline mode: use inline if the tool has an inline view
   if (anchor.type === 'main-thread' && inlineMode && def.views.inline) {
     return 'inline';
+  }
+
+  // Main thread with condensed mode: use condensed (dot-line) if available
+  if (anchor.type === 'main-thread' && condensedMode && def.views.condensed) {
+    return 'condensed';
   }
 
   // Main thread: always compact — expanded views live in the tool panel

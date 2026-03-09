@@ -112,6 +112,7 @@ export interface ToolDefinition {
    *  calls — so each view gets its own React fiber and hook scope. */
   views: {
     compact: React.ComponentType<ToolViewProps>;
+    condensed?: React.ComponentType<ToolViewProps>;
     expanded: React.ComponentType<ToolViewProps>;
     inline?: React.ComponentType<ToolViewProps>;
   };

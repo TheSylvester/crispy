@@ -38,6 +38,8 @@ interface Preferences {
   toolPanelAutoOpen: boolean;
   /** Inline tool mode: tools render as icon-only pills inline with text. Off by default. */
   inlineToolMode: boolean;
+  /** Condensed tool mode: tools render as dot-lines instead of full compact rows. Off by default. */
+  condensedToolMode: boolean;
 }
 
 interface PreferencesContextValue extends Preferences {
@@ -51,6 +53,7 @@ interface PreferencesContextValue extends Preferences {
   setDebugMode: (enabled: boolean) => void;
   setToolPanelAutoOpen: (enabled: boolean) => void;
   setInlineToolMode: (enabled: boolean) => void;
+  setCondensedToolMode: (enabled: boolean) => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
@@ -86,6 +89,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [toolPanelMode, setToolPanelMode] = useState<ToolPanelMode>('inspector');
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
   const [inlineToolMode, setInlineToolMode] = useState(false);
+  const [condensedToolMode, setCondensedToolMode] = useState(false);
 
   // ============================================================================
   // Persisted preference — toolPanelAutoOpen only
@@ -187,6 +191,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     debugMode,
     toolPanelAutoOpen,
     inlineToolMode,
+    condensedToolMode,
     setRenderMode,
     setSettingsPinned,
     setSidebarCollapsed,
@@ -197,6 +202,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setDebugMode,
     setToolPanelAutoOpen,
     setInlineToolMode,
+    setCondensedToolMode,
   };
 
   return (

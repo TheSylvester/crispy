@@ -33,21 +33,33 @@ function formatTimeout(ms: number): string {
 }
 
 // ============================================================================
-// Compact View
+// Compact View (expanded header without collapsible body)
 // ============================================================================
 
 export function BashCompactView({ block, result, status }: ToolViewProps): ReactNode {
   const input = block.input as BashInput;
+  const command = input.command ?? '';
 
   return (
-    <DotLine
-      icon={meta.icon}
-      color={meta.color}
-      name="bash"
-      description={input.description}
-      subject={input.description ? undefined : extractSubject(block)}
-      result={<DotLineStatus status={status} />}
-    />
+    <div className="crispy-blocks-bash-compact">
+      <div className="crispy-blocks-compact-row">
+        <span className="crispy-blocks-compact-icon">{meta.icon}</span>
+        <ToolBadge color={meta.color} label="Bash" />
+        {input.run_in_background && (
+          <ToolBadge color="var(--vscode-badge-background, #666)" label="background" />
+        )}
+        {input.timeout != null && (
+          <ToolBadge color="var(--vscode-badge-background, #666)" label={`\u23F1 ${formatTimeout(input.timeout)}`} />
+        )}
+        {input.description && (
+          <span className="crispy-blocks-tool-description">{input.description}</span>
+        )}
+        <DotLineStatus status={status} />
+      </div>
+      {command && (
+        <code className="u-mono-pill crispy-tool-bash-inline crispy-tool-bash-inline--compact">{command}</code>
+      )}
+    </div>
   );
 }
 
