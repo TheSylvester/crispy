@@ -225,18 +225,21 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     color: '#8be9fd',
     activity: { verb: 'Reading MCP', pastVerb: 'Read MCP' },
     inspectorDefault: 'compact',
+    renderCategory: 'block',
   },
   ListMcpResources: {
     icon: '\uD83D\uDD0D',
     color: '#7dcfff',
     activity: { verb: 'Listing MCP', pastVerb: 'Listed MCP' },
     inspectorDefault: 'compact',
+    renderCategory: 'block',
   },
   'mcp__crispy__recall': {
     icon: '\uD83E\uDDE0',
     color: '#bd93f9',
     activity: { verb: 'Recalling', pastVerb: 'Recalled' },
     inspectorDefault: 'compact',
+    renderCategory: 'block',
   },
 
   // Deferred tool loading
