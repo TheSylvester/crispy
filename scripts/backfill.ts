@@ -26,14 +26,14 @@ import { registerAllAdapters, resolveInternalServerPaths } from '../src/host/ada
 import { initSettings } from '../src/core/settings/index.js';
 import { parseModelOption } from '../src/core/model-utils.js';
 import { appendActivityEntries, dbPath } from '../src/core/activity-index.js';
-import { listAllSessions } from '../src/core/session-manager.js';
+import { listAllSessions, loadSession } from '../src/core/session-manager.js';
 import { extractTag, normalizeEntitiesJson } from '../src/core/rosie/xml-utils.js';
 import { SUMMARIZE_PROMPT } from '../src/core/rosie/summarize-hook.js';
 import { buildTrackerPrompt } from '../src/core/rosie/tracker/tracker-hook.js';
 import { getExistingProjects } from '../src/core/rosie/tracker/db-writer.js';
 import { buildInternalMcpConfig } from '../src/mcp/servers/external.js';
 import { getDb } from '../src/core/crispy-db.js';
-import { isOversized, getExistingRosieMetas, extractBookendTurns, buildFallbackPrompt } from '../src/core/rosie/oversized-fallback.js';
+import type { TranscriptEntry } from '../src/core/transcript.js';
 
 // ============================================================================
 // Constants
@@ -173,6 +173,35 @@ function buildFileFilter(workspace: string | undefined, session: string | undefi
 }
 
 // ============================================================================
+// Content-level filtering
+// ============================================================================
+
+/**
+ * Strip tool_use, tool_result, and thinking blocks from transcript entries.
+ * Keeps only text content blocks in message.content — the actual conversation.
+ * Drops entries that become empty after stripping (e.g. pure tool_result entries).
+ */
+function stripToolContent(entries: TranscriptEntry[]): TranscriptEntry[] {
+  const out: TranscriptEntry[] = [];
+  for (const entry of entries) {
+    if (entry.type !== 'user' && entry.type !== 'assistant') continue;
+    const msg = entry.message;
+    if (!msg) continue;
+    if (typeof msg.content === 'string') {
+      if (msg.content.trim()) out.push(entry);
+      continue;
+    }
+    if (!Array.isArray(msg.content)) { out.push(entry); continue; }
+    const textBlocks = msg.content.filter(
+      (b) => b.type === 'text' && (b as { text?: string }).text?.trim(),
+    );
+    if (textBlocks.length === 0) continue;
+    out.push({ ...entry, message: { ...msg, content: textBlocks } });
+  }
+  return out;
+}
+
+// ============================================================================
 // Concurrency Pool
 // ============================================================================
 
@@ -262,9 +291,8 @@ async function runSummarize(dispatch: ReturnType<typeof createAgentDispatch>, op
 
     const vendor = modelVendor;
     const model = modelName || undefined;
-    const oversized = isOversized(c.file);
 
-    log(`  Session: ${sessionInfo.sessionId} | Parent: ${sessionInfo.vendor} | Child: ${vendor}:${model ?? 'default'}${oversized ? ' | OVERSIZED' : ''}`);
+    log(`  Session: ${sessionInfo.sessionId} | Parent: ${sessionInfo.vendor} | Child: ${vendor}:${model ?? 'default'}`);
 
     if (opts.dryRun) {
       result(JSON.stringify({
@@ -275,54 +303,34 @@ async function runSummarize(dispatch: ReturnType<typeof createAgentDispatch>, op
         vendor,
         model: model ?? 'default',
         turns: c.turns,
-        oversized,
-        fallbackMode: oversized ? 'synthetic' : 'fork',
       }));
       return;
     }
 
     try {
       const t0 = Date.now();
-      let childResult;
 
-      if (oversized) {
-        const metas = getExistingRosieMetas(c.file);
-        const { first, last } = extractBookendTurns(c.file);
-        const prompt = buildFallbackPrompt(first, last, metas);
+      // Load full history, then strip tool content — keeps only user/assistant text blocks.
+      // Even 36MB sessions compress to ~36KB since tool outputs dominate transcript size.
+      const fullHistory = await loadSession(sessionInfo.sessionId);
+      const filtered = stripToolContent(fullHistory);
+      log(`  History: ${fullHistory.length} → ${filtered.length} entries`);
 
-        log(`  OVERSIZED — fallback (${first.length} first, ${metas.length} metas, ${last.length} last)`);
-
-        childResult = await dispatch.dispatchChild({
-          parentSessionId: sessionInfo.sessionId,
-          vendor,
-          parentVendor: sessionInfo.vendor,
-          prompt,
-          settings: {
-            ...(model && { model }),
-            permissionMode: 'bypassPermissions',
-            allowDangerouslySkipPermissions: true,
-          },
-          forceNew: true,
-          skipPersistSession: true,
-          autoClose: true,
-          timeoutMs: 60_000,
-        });
-      } else {
-        childResult = await dispatch.dispatchChild({
-          parentSessionId: sessionInfo.sessionId,
-          vendor,
-          parentVendor: sessionInfo.vendor,
-          prompt: SUMMARIZE_PROMPT,
-          settings: {
-            ...(model && { model }),
-            permissionMode: 'bypassPermissions',
-            allowDangerouslySkipPermissions: true,
-          },
-          skipPersistSession: true,
-          autoClose: true,
-          timeoutMs: 60_000,
-        });
-      }
+      const childResult = await dispatch.dispatchChild({
+        parentSessionId: sessionInfo.sessionId,
+        vendor,
+        parentVendor: sessionInfo.vendor,
+        prompt: SUMMARIZE_PROMPT,
+        settings: {
+          ...(model && { model }),
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
+        },
+        hydratedHistory: filtered,
+        skipPersistSession: true,
+        autoClose: true,
+        timeoutMs: 60_000,
+      });
 
       const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 

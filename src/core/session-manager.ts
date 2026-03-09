@@ -90,6 +90,8 @@ export interface ChildSessionOptions {
   timeoutMs?: number;
   /** Force `kind: 'new'` even when vendor matches parent (skip fork transcript loading). */
   forceNew?: boolean;
+  /** Pre-loaded, pre-filtered history to use for a hydrated fork (bypasses loadHistory). */
+  hydratedHistory?: TranscriptEntry[];
   /** MCP servers to attach to the child session (overrides default). */
   mcpServers?: Record<string, unknown>;
   /** Environment overrides for the child session. */
@@ -842,10 +844,20 @@ export async function dispatchChildSession(
     ...(options.env && { env: options.env }),
   };
 
-  // Build target: fork if same vendor (unless forceNew), hydrated cross-vendor
-  // fork if different vendor (unless forceNew), new if forceNew
+  // Build target: hydrated if caller provided pre-loaded history, fork if same
+  // vendor (unless forceNew), hydrated cross-vendor fork if different vendor
+  // (unless forceNew), new if forceNew
   let target: TurnTarget;
-  if (vendor === parentVendor && !options.forceNew) {
+  if (options.hydratedHistory) {
+    // Caller provided pre-loaded, pre-filtered history — use hydrated path directly
+    // (bypasses loadHistory, useful for filtered transcripts that strip tool blocks)
+    target = {
+      kind: 'hydrated', vendor: vendor as Vendor, cwd,
+      history: options.hydratedHistory, sourceVendor: parentVendor as Vendor,
+      sourceSessionId: parentSessionId,
+      ...ephemeral,
+    };
+  } else if (vendor === parentVendor && !options.forceNew) {
     // Same vendor — native fork (child sees full transcript via vendor's fork mechanism)
     target = { kind: 'fork', vendor: vendor as Vendor, fromSessionId: parentSessionId, ...ephemeral };
   } else if (vendor !== parentVendor && !options.forceNew) {
