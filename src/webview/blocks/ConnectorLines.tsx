@@ -53,9 +53,11 @@ function useConnectorPaths(): ConnectorPath[] {
       getComputedStyle(document.documentElement).getPropertyValue('--titlebar-height')
     ) || 36;
 
-    // First pass: collect visible line endpoints
+    // First pass: collect visible line endpoints, tagging inline tools
+    const Y_GROUP_THRESHOLD = 4; // px — inline icons on the same row
     const items: Array<{
       toolId: string;
+      inline: boolean;
       leftX: number; leftY: number;
       rightX: number; rightY: number;
     }> = [];
@@ -84,6 +86,7 @@ function useConnectorPaths(): ConnectorPath[] {
 
       items.push({
         toolId,
+        inline: transcriptEl.classList.contains('crispy-blocks-tool--inline'),
         leftX: tRect.right,
         leftY: (tVisibleTop + tVisibleBottom) / 2 - titlebarHeight,
         rightX: pRect.left,
@@ -91,18 +94,59 @@ function useConnectorPaths(): ConnectorPath[] {
       });
     }
 
-    // Second pass: sort by transcript Y so lines fan out top-to-bottom,
-    // then spread each line's vertical segment into its own lane across
-    // the gap. With N lines the lanes sit at 1/(N+1), 2/(N+1), … N/(N+1).
+    // Second pass: merge inline tools sharing the same transcript Y into
+    // single connector lines, then sort and fan out as before.
     items.sort((a, b) => a.leftY - b.leftY);
-    const count = items.length;
 
+    // Group consecutive inline items at the same Y
+    const merged: typeof items = [];
+    let i = 0;
+    while (i < items.length) {
+      const item = items[i];
+      if (!item.inline) {
+        merged.push(item);
+        i++;
+        continue;
+      }
+      // Collect all inline items at approximately the same Y
+      const group = [item];
+      let j = i + 1;
+      while (j < items.length && items[j].inline &&
+             Math.abs(items[j].leftY - item.leftY) <= Y_GROUP_THRESHOLD) {
+        group.push(items[j]);
+        j++;
+      }
+      // Merge: average the panel Y, use the leftmost X on transcript side
+      const avgPanelY = group.reduce((s, g) => s + g.rightY, 0) / group.length;
+      merged.push({
+        toolId: group.map(g => g.toolId).join('+'),
+        inline: true,
+        leftX: Math.max(...group.map(g => g.leftX)),
+        leftY: item.leftY, // all ~same Y
+        rightX: Math.min(...group.map(g => g.rightX)),
+        rightY: avgPanelY,
+      });
+      i = j;
+    }
+
+    // Fan out vertical segments near the panel edge.
+    // First stop at 5rem from panel, each subsequent stop +1rem further out
+    // (i.e. closer to transcript). If the gap is too small, use 1rem per step.
+    const remPx = parseFloat(
+      getComputedStyle(document.documentElement).fontSize,
+    ) || 16;
+    const count = merged.length;
     const result: ConnectorPath[] = [];
-    for (let i = 0; i < count; i++) {
-      const { toolId, leftX, leftY, rightX, rightY } = items[i];
-      const t = count === 1 ? 0.5 : (i + 1) / (count + 1);
-      const midX = leftX + (rightX - leftX) * t;
-      const d = `M ${leftX},${leftY} H ${midX} V ${rightY} H ${rightX}`;
+    for (let k = 0; k < count; k++) {
+      const { toolId, leftX, leftY, rightX, rightY } = merged[k];
+      const gap = rightX - leftX;
+      const baseOffset = 5 * remPx;
+      const needed = baseOffset + (count - 1) * remPx;
+      // If gap can't fit 5rem base, fall back to 1rem per step from panel
+      const midX = gap >= needed
+        ? rightX - baseOffset - (count - 1 - k) * remPx
+        : rightX - (count - k) * remPx;
+      const d = `M ${leftX},${leftY} H ${Math.max(midX, leftX + 8)} V ${rightY} H ${rightX}`;
       result.push({ toolId, d });
     }
 
@@ -195,7 +239,7 @@ export function ConnectorLines(): React.JSX.Element | null {
         width: '100vw',
         height: 'calc(100vh - var(--titlebar-height, 36px))',
         pointerEvents: 'none',
-        zIndex: 99,
+        zIndex: 9999,
       }}
     >
       {paths.map(({ toolId, d }) => (
