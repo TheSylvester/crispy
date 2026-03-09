@@ -21,8 +21,38 @@ import { ToolBlockRenderer } from './ToolBlockRenderer.js';
 import { getToolRenderCategory } from './tool-definitions.js';
 import type { RichBlock } from './types.js';
 
+import type { RenderMode } from '../types.js';
+import type { BlocksToolRegistry } from './blocks-tool-registry.js';
+
 /** Threshold in px — auto-scroll when within this distance of the bottom */
 const AUTO_SCROLL_THRESHOLD = 80;
+
+/**
+ * Format the inspector count label. In Icons mode, splits active (streaming)
+ * from shown (completed inline tools) for clarity.
+ */
+function formatInspectorCount(
+  ids: string[],
+  registry: BlocksToolRegistry,
+  renderMode: RenderMode,
+): string {
+  if (ids.length === 0) return 'idle';
+  if (renderMode !== 'icons') return `${ids.length} active`;
+
+  let active = 0;
+  let shown = 0;
+  for (const id of ids) {
+    if (!registry.getResult(id)) {
+      active++;
+    } else {
+      shown++;
+    }
+  }
+
+  if (active > 0 && shown > 0) return `${active} active, ${shown} shown`;
+  if (active > 0) return `${active} active`;
+  return `${shown} shown`;
+}
 
 export function BlocksToolPanel(): React.JSX.Element {
   const dispatch = usePanelDispatch();
@@ -206,7 +236,7 @@ export function BlocksToolPanel(): React.JSX.Element {
         <span className="crispy-tool-panel__title">TOOLS</span>
         <span className="crispy-tool-panel__count">
           {toolPanelMode === 'inspector'
-            ? (displayToolIds.length === 0 ? 'idle' : `${displayToolIds.length} active`)
+            ? formatInspectorCount(displayToolIds, registry, renderMode)
             : `${visibleToolIds.length} visible`}
         </span>
         <button
