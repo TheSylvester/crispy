@@ -19,6 +19,17 @@ body {
   height: 100vh;
 }
 
+/* Global link style — underline + distinct link color everywhere */
+a {
+  color: var(--color-link-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: rgba(125, 175, 255, 0.4);
+}
+a:hover {
+  text-decoration-color: var(--color-link-text);
+}
+
 h2 {
   font-weight: 600;
   margin: 0 0 8px;
@@ -34,6 +45,7 @@ h2 {
   --color-accent: #e88040;
   --color-accent-hover: #d06a2c;
   --color-link: #60a5fa;
+  --color-link-text: #7dafff;
   --color-keyword: #569cd6;
   --color-diff-added: #4ec9b0;
   --color-diff-removed: #f14c4c;
@@ -70,7 +82,7 @@ h2 {
   --font-md: 14px;
 
   /* --- Shared backgrounds & borders --- */
-  --bg-code: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.2));
+  --bg-code: rgba(0, 0, 0, 0.5);
   --bg-editor: var(--vscode-editor-background, #1e1e1e);
   --border-panel: var(--vscode-panel-border, #333);
   --font-mono: var(--vscode-editor-font-family, monospace);
@@ -905,12 +917,14 @@ h2 {
 
 /* Links */
 .prose a {
-  color: var(--color-link);
-  text-decoration: none;
+  color: var(--color-link-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: rgba(125, 175, 255, 0.4);
 }
 
 .prose a:hover {
-  text-decoration: underline;
+  text-decoration-color: var(--color-link-text);
 }
 
 /* Headings */
@@ -1097,7 +1111,7 @@ h2 {
  * Tool-specific styles — badges, nesting, file paths, diffs, code
  * ============================================================================ */
 
-/* --- Badge pill (text only, no icon inside) --- */
+/* --- Badge pill — frosted glass style --- */
 
 .crispy-tool-badge {
   display: inline-block;
@@ -1108,6 +1122,7 @@ h2 {
   font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;
+  /* border, background, box-shadow set via inline style from ToolBadge component */
 }
 
 /* --- File path (monospace, dark pill like grep params) --- */
@@ -1120,15 +1135,15 @@ h2 {
 /* --- Clickable file link (linkification) --- */
 
 .crispy-file-link {
-  color: var(--color-link);
-  text-decoration: none;
+  color: var(--color-link-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: rgba(125, 175, 255, 0.4);
   cursor: pointer;
-  border-bottom: 1px dotted rgba(96, 165, 250, 0.4);
 }
 
 .crispy-file-link:hover {
-  text-decoration: underline;
-  border-bottom-color: transparent;
+  text-decoration-color: var(--color-link-text);
 }
 
 .crispy-file-link .crispy-tool-filepath {
@@ -1190,6 +1205,7 @@ h2 {
 .crispy-diff-stats {
   display: inline-flex;
   gap: 6px;
+  margin-right: 8px;
   font-size: 0.85em;
   font-family: var(--font-mono);
 }
@@ -4140,7 +4156,7 @@ h2 {
   /* color set dynamically via style prop from tool definition */
 }
 .crispy-blocks-dot-line__subject {
-  color: var(--color-link);
+  color: #a0a0b0;
   font-family: var(--font-mono);
   font-size: var(--font-xs);
   white-space: nowrap;
@@ -4157,18 +4173,22 @@ h2 {
   text-overflow: ellipsis;
   min-width: 0;
 }
+.crispy-blocks-dot-line__meta {
+  flex-shrink: 0;
+  font-size: var(--font-sm);
+  margin-left: 6px;
+}
 .crispy-blocks-dot-line__dots {
-  flex: 1;
+  width: 24px;
+  flex-shrink: 0;
   border-bottom: 1px dotted rgba(255, 255, 255, 0.2);
-  min-width: 12px;
   position: relative;
   top: -3px;
 }
 .crispy-blocks-dot-line__result {
-  font-size: var(--font-xs);
-  color: var(--vscode-descriptionForeground, #999);
+  font-size: var(--font-sm);
+  font-weight: 700;
   white-space: nowrap;
-  font-family: var(--font-mono);
 }
 
 /* --- Inline Icon Mode — icon-only tool pills --- */
@@ -4569,6 +4589,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   --color-accent: #c96a2e;
   --color-accent-hover: #b35a20;
   --color-link: #0066cc;
+  --color-link-text: #0055aa;
   --color-keyword: #0000ff;
   --color-diff-added: #1a7f37;
   --color-diff-removed: #cf222e;

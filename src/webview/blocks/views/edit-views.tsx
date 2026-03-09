@@ -33,7 +33,7 @@ interface EditInput {
 
 export function EditCompactView({ block, result, status }: ToolViewProps): ReactNode {
   const input = block.input as EditInput;
-  const subject = extractSubject(block);
+  const filePath = input.file_path ?? extractSubject(block);
   const oldLines = (input.old_string ?? '').split('\n').length;
   const newLines = (input.new_string ?? '').split('\n').length;
 
@@ -42,14 +42,13 @@ export function EditCompactView({ block, result, status }: ToolViewProps): React
       icon={meta.icon}
       color={meta.color}
       name="edit"
-      subject={subject}
-      result={<>
+      subject={<FilePath path={filePath} />}
+      meta={<span className="crispy-diff-stats">
         <span className="crispy-diff-stats-added">+{newLines}</span>
         {' '}
         <span className="crispy-diff-stats-removed">-{oldLines}</span>
-        {' '}
-        <DotLineStatus status={status} />
-      </>}
+      </span>}
+      result={<DotLineStatus status={status} />}
     />
   );
 }

@@ -1,10 +1,9 @@
 /**
- * Tool Badge — colored mono tool name with tinted background
+ * Tool Badge — frosted glass mono tool name pill
  *
- * Renders the tool name in colored monospace text over a subtle
- * tinted pill background. Used in expanded card headers.
- *
- * The icon is rendered beside the badge inside the tool card summary row.
+ * Renders the tool name in colored monospace text over a frosted
+ * glass background with subtle border. Used in dot-lines and
+ * expanded card headers.
  *
  * @module webview/renderers/tools/shared/ToolBadge
  */
@@ -26,13 +25,16 @@ function hexToRgba(hex: string, alpha: number): string | null {
 }
 
 export function ToolBadge({ color, textColor, label }: ToolBadgeProps): React.JSX.Element {
-  const bg = hexToRgba(color, 0.12);
+  const bg = hexToRgba(color, 0.10);
+  const border = hexToRgba(color, 0.25);
   return (
     <span
       className="crispy-tool-badge"
       style={{
         color: textColor ?? color,
         background: bg ?? 'var(--tint-soft)',
+        border: `1px solid ${border ?? 'var(--glass-border)'}`,
+        boxShadow: `inset 0 0 8px ${hexToRgba(color, 0.04) ?? 'transparent'}`,
       }}
     >
       {label.toLowerCase()}

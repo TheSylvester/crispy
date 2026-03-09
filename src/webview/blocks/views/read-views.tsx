@@ -38,14 +38,15 @@ interface ReadInput {
 // ============================================================================
 
 export function ReadCompactView({ block, result, status }: ToolViewProps): ReactNode {
-  const subject = extractSubject(block);
+  const input = block.input as ReadInput;
+  const filePath = input.file_path ?? extractSubject(block);
 
   return (
     <DotLine
       icon={meta.icon}
       color={meta.color}
       name="read"
-      subject={subject}
+      subject={<FilePath path={filePath} />}
       result={<DotLineStatus status={status} />}
     />
   );

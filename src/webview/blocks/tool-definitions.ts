@@ -60,37 +60,37 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
   // Core file operations
   Bash: {
     icon: '\uD83D\uDCBB',
-    color: '#f59e0b',
+    color: '#ffb86c',
     activity: { verb: 'Running', pastVerb: 'Ran' },
     inspectorDefault: 'expanded',
   },
   Read: {
     icon: '\uD83D\uDCC4',
-    color: '#0ea5e9',
+    color: '#8be9fd',
     activity: { verb: 'Reading', pastVerb: 'Read' },
     inspectorDefault: 'compact',
   },
   Write: {
     icon: '\u270E',
-    color: '#10b981',
+    color: '#50fa7b',
     activity: { verb: 'Writing', pastVerb: 'Wrote' },
     inspectorDefault: 'expanded',
   },
   Edit: {
     icon: '\uD83D\uDCDD',
-    color: '#f43f5e',
+    color: '#ff5555',
     activity: { verb: 'Editing', pastVerb: 'Edited' },
     inspectorDefault: 'expanded',
   },
   MultiEdit: {
     icon: '\uD83D\uDCDD',
-    color: '#f43f5e',
+    color: '#ff5555',
     activity: { verb: 'Editing', pastVerb: 'Edited' },
     inspectorDefault: 'expanded',
   },
   NotebookEdit: {
     icon: '\uD83D\uDCD3',
-    color: '#10b981',
+    color: '#50fa7b',
     activity: { verb: 'Editing notebook', pastVerb: 'Edited notebook' },
     inspectorDefault: 'expanded',
   },
@@ -98,19 +98,19 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
   // Search tools
   Glob: {
     icon: '\uD83D\uDCC2',
-    color: '#d946ef',
+    color: '#ff79c6',
     activity: { verb: 'Searching', pastVerb: 'Found' },
     inspectorDefault: 'compact',
   },
   Grep: {
     icon: '\uD83D\uDD0D',
-    color: '#06b6d4',
+    color: '#7dcfff',
     activity: { verb: 'Searching', pastVerb: 'Searched' },
     inspectorDefault: 'compact',
   },
   LS: {
     icon: '\uD83D\uDD0D',
-    color: '#06b6d4',
+    color: '#7dcfff',
     activity: { verb: 'Listing', pastVerb: 'Listed' },
     inspectorDefault: 'compact',
   },
@@ -118,13 +118,13 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
   // Web tools
   WebSearch: {
     icon: '\uD83C\uDF10',
-    color: '#8b5cf6',
+    color: '#bd93f9',
     activity: { verb: 'Searching', pastVerb: 'Searched' },
     inspectorDefault: 'compact',
   },
   WebFetch: {
     icon: '\uD83C\uDF0E',
-    color: '#6366f1',
+    color: '#bd93f9',
     activity: { verb: 'Fetching', pastVerb: 'Fetched' },
     inspectorDefault: 'compact',
   },
@@ -132,31 +132,31 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
   // Agent tools
   Task: {
     icon: '\uD83E\uDD16',
-    color: '#64748b',
+    color: '#e0e0e0',
     activity: { verb: 'Running agent', pastVerb: 'Agent completed' },
     inspectorDefault: 'expanded',
   },
   Agent: {
     icon: '\uD83E\uDD16',
-    color: '#64748b',
+    color: '#e0e0e0',
     activity: { verb: 'Running agent', pastVerb: 'Agent completed' },
     inspectorDefault: 'expanded',
   },
   TaskOutput: {
     icon: '\uD83E\uDD16',
-    color: '#64748b',
+    color: '#e0e0e0',
     activity: { verb: 'Getting output', pastVerb: 'Got output' },
     inspectorDefault: 'expanded',
   },
   KillShell: {
     icon: '\uD83E\uDD16',
-    color: '#64748b',
+    color: '#e0e0e0',
     activity: { verb: 'Killing shell', pastVerb: 'Killed shell' },
     inspectorDefault: 'expanded',
   },
   TaskStop: {
     icon: '\uD83D\uDED1',
-    color: '#ef4444',
+    color: '#ff5555',
     activity: { verb: 'Stopping task', pastVerb: 'Stopped task' },
     inspectorDefault: 'compact',
   },
@@ -164,13 +164,13 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
   // Utility tools
   TodoWrite: {
     icon: '\u2611\uFE0F',
-    color: '#8b5cf6',
+    color: '#bd93f9',
     activity: { verb: 'Updating todos', pastVerb: 'Updated todos' },
     inspectorDefault: 'expanded',
   },
   Skill: {
     icon: '\u2728',
-    color: '#7c3aed',
+    color: '#bd93f9',
     activity: { verb: 'Running skill', pastVerb: 'Ran skill' },
     inspectorDefault: 'expanded',
   },
@@ -178,25 +178,25 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
   // User interaction tools
   AskUserQuestion: {
     icon: '\u2753',
-    color: '#14b8a6',
+    color: '#8be9fd',
     activity: { verb: 'Asking', pastVerb: 'Asked' },
     inspectorDefault: 'expanded',
   },
   ExitPlanMode: {
     icon: '\uD83D\uDCCB',
-    color: '#3b82f6',
+    color: '#8be9fd',
     activity: { verb: 'Exiting plan mode', pastVerb: 'Exited plan mode' },
     inspectorDefault: 'expanded',
   },
   EnterPlanMode: {
     icon: '\uD83D\uDCCB',
-    color: '#3b82f6',
+    color: '#8be9fd',
     activity: { verb: 'Entering plan mode', pastVerb: 'Entered plan mode' },
     inspectorDefault: 'expanded',
   },
   EnterWorktree: {
     icon: '\uD83C\uDF33',
-    color: '#22c55e',
+    color: '#50fa7b',
     activity: { verb: 'Creating worktree', pastVerb: 'Created worktree' },
     inspectorDefault: 'compact',
   },
@@ -204,19 +204,19 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
   // MCP tools
   ReadMcpResource: {
     icon: '\uD83D\uDCC4',
-    color: '#0ea5e9',
+    color: '#8be9fd',
     activity: { verb: 'Reading MCP', pastVerb: 'Read MCP' },
     inspectorDefault: 'compact',
   },
   ListMcpResources: {
     icon: '\uD83D\uDD0D',
-    color: '#06b6d4',
+    color: '#7dcfff',
     activity: { verb: 'Listing MCP', pastVerb: 'Listed MCP' },
     inspectorDefault: 'compact',
   },
   'mcp__crispy__recall': {
     icon: '\uD83E\uDDE0',
-    color: '#7c3aed',
+    color: '#bd93f9',
     activity: { verb: 'Recalling', pastVerb: 'Recalled' },
     inspectorDefault: 'compact',
   },
@@ -224,7 +224,7 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
   // Deferred tool loading
   ToolSearch: {
     icon: '\uD83D\uDD0D',
-    color: '#6b7280',
+    color: '#6272a4',
     activity: { verb: 'Loading tools', pastVerb: 'Loaded tools' },
     inspectorDefault: 'compact',
   },
@@ -233,7 +233,7 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
 /** Default metadata for unknown tools (MCP, custom) */
 const DEFAULT_DATA: ToolDefinitionData = {
   icon: '\uD83D\uDD27',
-  color: '#4b5563',
+  color: '#6272a4',
   activity: { verb: 'Running', pastVerb: 'Ran' },
   inspectorDefault: 'compact',
 };

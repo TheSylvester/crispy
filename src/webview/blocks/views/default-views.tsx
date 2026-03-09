@@ -30,9 +30,11 @@ interface DotLineProps {
   /** Lowercase tool name displayed in mono */
   name: string;
   /** Primary subject (file path, command, pattern) — mono, blue */
-  subject?: string;
+  subject?: ReactNode;
   /** Description text — muted italic, used instead of subject for Bash descriptions */
   description?: string;
+  /** Metadata displayed after subject but before the dot gap (e.g. diff stats) */
+  meta?: ReactNode;
   /** Result area content */
   result?: ReactNode;
 }
@@ -42,7 +44,7 @@ interface DotLineProps {
  *
  * Layout: icon + colored name + (subject | description) + dot leader + result
  */
-export function DotLine({ icon, color, name, subject, description, result }: DotLineProps): ReactNode {
+export function DotLine({ icon, color, name, subject, description, meta, result }: DotLineProps): ReactNode {
   return (
     <div className="crispy-blocks-dot-line">
       <span className="crispy-blocks-dot-line__icon">{icon}</span>
@@ -51,6 +53,7 @@ export function DotLine({ icon, color, name, subject, description, result }: Dot
         ? <span className="crispy-blocks-dot-line__desc">{description}</span>
         : subject && <span className="crispy-blocks-dot-line__subject">{subject}</span>
       }
+      {meta && <span className="crispy-blocks-dot-line__meta">{meta}</span>}
       <span className="crispy-blocks-dot-line__dots" />
       {result && <span className="crispy-blocks-dot-line__result">{result}</span>}
     </div>

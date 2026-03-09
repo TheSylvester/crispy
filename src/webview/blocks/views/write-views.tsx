@@ -30,14 +30,15 @@ interface WriteInput {
 // ============================================================================
 
 export function WriteCompactView({ block, result, status }: ToolViewProps): ReactNode {
-  const subject = extractSubject(block);
+  const input = block.input as WriteInput;
+  const filePath = input.file_path ?? extractSubject(block);
 
   return (
     <DotLine
       icon={meta.icon}
       color={meta.color}
       name="write"
-      subject={subject}
+      subject={<FilePath path={filePath} />}
       result={<DotLineStatus status={status} />}
     />
   );
