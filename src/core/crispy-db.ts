@@ -488,6 +488,95 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 10,
+    description: 'Create provenance tables for git history indexing',
+    up: (db: Database): void => {
+      db.exec(`
+        CREATE TABLE file_mutations (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_file   TEXT NOT NULL,
+          session_id     TEXT,
+          tool           TEXT NOT NULL,
+          bash_category  TEXT,
+          file_path      TEXT,
+          timestamp      TEXT,
+          message_uuid   TEXT,
+          tool_use_id    TEXT,
+          byte_offset    INTEGER NOT NULL,
+          command         TEXT,
+          old_hash        TEXT,
+          new_hash        TEXT,
+          commit_sha      TEXT,
+          UNIQUE (session_file, tool_use_id)
+        );
+
+        CREATE INDEX idx_mut_file ON file_mutations(file_path);
+        CREATE INDEX idx_mut_session ON file_mutations(session_file);
+        CREATE INDEX idx_mut_commit ON file_mutations(commit_sha);
+        CREATE INDEX idx_mut_ts ON file_mutations(timestamp);
+
+        CREATE TABLE commit_index (
+          sha              TEXT PRIMARY KEY,
+          message          TEXT NOT NULL,
+          author           TEXT,
+          author_date      TEXT NOT NULL,
+          repo_path        TEXT NOT NULL,
+          session_file     TEXT,
+          session_id       TEXT,
+          message_uuid     TEXT,
+          match_confidence REAL NOT NULL DEFAULT 0.0,
+          matched_at       TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX idx_ci_session ON commit_index(session_file);
+        CREATE INDEX idx_ci_date ON commit_index(author_date);
+        CREATE INDEX idx_ci_repo ON commit_index(repo_path);
+
+        CREATE TABLE commit_file_changes (
+          commit_sha  TEXT NOT NULL REFERENCES commit_index(sha),
+          file_path   TEXT NOT NULL,
+          additions   INTEGER NOT NULL DEFAULT 0,
+          deletions   INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (commit_sha, file_path)
+        );
+
+        CREATE VIRTUAL TABLE commit_fts USING fts5(
+          message,
+          content='commit_index', content_rowid='rowid',
+          tokenize='porter unicode61 remove_diacritics 2'
+        );
+
+        CREATE TRIGGER commit_fts_ai AFTER INSERT ON commit_index BEGIN
+          INSERT INTO commit_fts(rowid, message) VALUES (new.rowid, new.message);
+        END;
+
+        CREATE TRIGGER commit_fts_ad AFTER DELETE ON commit_index BEGIN
+          INSERT INTO commit_fts(commit_fts, rowid, message)
+          VALUES ('delete', old.rowid, old.message);
+        END;
+
+        CREATE TRIGGER commit_fts_au AFTER UPDATE ON commit_index BEGIN
+          INSERT INTO commit_fts(commit_fts, rowid, message)
+          VALUES ('delete', old.rowid, old.message);
+          INSERT INTO commit_fts(rowid, message) VALUES (new.rowid, new.message);
+        END;
+
+        CREATE TABLE provenance_scan_state (
+          file_path   TEXT PRIMARY KEY,
+          mtime       INTEGER NOT NULL,
+          size        INTEGER NOT NULL,
+          byte_offset INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE provenance_repo_state (
+          repo_path   TEXT PRIMARY KEY,
+          head_sha    TEXT NOT NULL,
+          scanned_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {

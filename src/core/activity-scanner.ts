@@ -34,6 +34,7 @@ import {
   findDivergenceOffset,
 } from './adapters/claude/jsonl-reader.js';
 import { pushRosieLog } from './rosie/index.js';
+import { runProvenanceScan } from './provenance/index.js';
 
 /**
  * Run a full scan of all registered vendor sessions.
@@ -178,4 +179,11 @@ export function runScan(): void {
     console.log(`[activity-scanner] Pruned ${pruned} deleted session file(s) from DB`);
   }
   pushRosieLog({ source: 'scanner', level: 'info', summary: `Scanner: scanned ${sessions.length} sessions, ${newEntries.length} new entries`, data: { sessionCount: sessions.length, newEntries: newEntries.length } });
+
+  // Provenance scan — index file mutations and git commits
+  try {
+    runProvenanceScan(sessions);
+  } catch (err) {
+    console.error('[activity-scanner] Provenance scan error:', err);
+  }
 }
