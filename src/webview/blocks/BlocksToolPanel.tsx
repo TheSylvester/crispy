@@ -76,10 +76,19 @@ export function BlocksToolPanel(): React.JSX.Element {
     const seen = new Set<string>();
 
     // 1. Active tools (visible AND pending — no result yet)
+    //    In Icons mode, also include all visible inline-category tools since
+    //    the icon pill hides all details — the panel is the only way to see results.
+    const isIconsMode = renderMode === 'icons';
     for (const id of visibleToolIds) {
       if (!registry.getResult(id)) {
         ids.push(id);
         seen.add(id);
+      } else if (isIconsMode) {
+        const block = registry.getBlock(id);
+        if (block && block.type === 'tool_use' && getToolRenderCategory(block.name) === 'inline') {
+          ids.push(id);
+          seen.add(id);
+        }
       }
     }
 
@@ -98,36 +107,6 @@ export function BlocksToolPanel(): React.JSX.Element {
     if (lastArrivedId && !seen.has(lastArrivedId)) {
       ids.push(lastArrivedId);
       seen.add(lastArrivedId);
-    }
-
-    // 4. Icons mode Y-expansion: inline icons on the same row share a Y
-    //    position. When any tool is selected (active, user-clicked, or
-    //    lastArrived), also include all visible inline tools at the same Y.
-    //    This keeps row-mates grouped without pulling in the entire transcript.
-    if (renderMode === 'icons' && ids.length > 0) {
-      const scrollRoot = document.querySelector('.crispy-transcript') as HTMLElement | null;
-      if (scrollRoot) {
-        // Collect Y positions of already-selected tools
-        const selectedYs = new Set<number>();
-        for (const id of ids) {
-          const el = scrollRoot.querySelector(`[data-run-id="${id}"]`);
-          if (el) selectedYs.add(Math.round(el.getBoundingClientRect().top));
-        }
-
-        // Include visible inline tools at those same Y positions
-        for (const id of visibleToolIds) {
-          if (seen.has(id)) continue;
-          const block = registry.getBlock(id);
-          if (!block || block.type !== 'tool_use') continue;
-          if (getToolRenderCategory(block.name) !== 'inline') continue;
-
-          const el = scrollRoot.querySelector(`[data-run-id="${id}"]`);
-          if (el && selectedYs.has(Math.round(el.getBoundingClientRect().top))) {
-            ids.push(id);
-            seen.add(id);
-          }
-        }
-      }
     }
 
     return ids;
