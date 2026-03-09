@@ -18,6 +18,7 @@ import { usePreferences } from '../context/PreferencesContext.js';
 import { RenderLocationProvider } from '../context/RenderLocationContext.js';
 import { usePanelState, usePanelDispatch, useSetPanelDisplayIds } from './PanelStateContext.js';
 import { ToolBlockRenderer } from './ToolBlockRenderer.js';
+import { getToolRenderCategory } from './tool-definitions.js';
 import type { RichBlock } from './types.js';
 
 /** Threshold in px — auto-scroll when within this distance of the bottom */
@@ -28,7 +29,7 @@ export function BlocksToolPanel(): React.JSX.Element {
   const panelState = usePanelState();
   const visibleToolIds = useBlocksVisibleToolIds();
   const registry = useBlocksToolRegistry();
-  const { toolPanelMode, setToolPanelMode, setToolPanelWidthPx, setToolPanelOpen } = usePreferences();
+  const { toolPanelMode, setToolPanelMode, setToolPanelWidthPx, setToolPanelOpen, renderMode } = usePreferences();
   const lastArrivedId = useBlocksLastArrivedToolId();
   const _pendingGen = registry.usePendingCount(); // triggers re-render on pending changes
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -45,10 +46,19 @@ export function BlocksToolPanel(): React.JSX.Element {
     const seen = new Set<string>();
 
     // 1. Active tools (visible AND pending — no result yet)
+    //    In Icons mode, also include all visible inline-category tools since
+    //    the icon pill hides all details — the panel is the only way to see results.
+    const isIconsMode = renderMode === 'icons';
     for (const id of visibleToolIds) {
       if (!registry.getResult(id)) {
         ids.push(id);
         seen.add(id);
+      } else if (isIconsMode) {
+        const block = registry.getBlock(id);
+        if (block && block.type === 'tool_use' && getToolRenderCategory(block.name) === 'inline') {
+          ids.push(id);
+          seen.add(id);
+        }
       }
     }
 
@@ -70,7 +80,7 @@ export function BlocksToolPanel(): React.JSX.Element {
     }
 
     return ids;
-  }, [toolPanelMode, visibleToolIds, panelState.userOverrides, lastArrivedId, _pendingGen]);
+  }, [toolPanelMode, visibleToolIds, panelState.userOverrides, lastArrivedId, _pendingGen, renderMode]);
 
   // Publish display set so transcript-side ToolBlockRenderer can highlight
   const setPanelDisplayIds = useSetPanelDisplayIds();
