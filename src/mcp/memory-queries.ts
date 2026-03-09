@@ -16,8 +16,10 @@ import { dbPath as crispyDbPath } from '../core/activity-index.js';
 import { sanitizeFts5Query } from './query-sanitizer.js';
 import { readClaudeTurnContent, type TurnContent } from '../core/adapters/claude/jsonl-reader.js';
 import { readCodexTurnContent } from '../core/adapters/codex/codex-jsonl-reader.js';
+import { searchMessagesFts, getMessageByUuid, getAdjacentMessages } from '../core/recall/message-store.js';
+import type { MessageRecord, MessageSearchResult } from '../core/recall/message-store.js';
 
-export type { TurnContent };
+export type { TurnContent, MessageRecord, MessageSearchResult };
 
 // ============================================================================
 // Types
@@ -197,4 +199,68 @@ export function readTurnContent(file: string, offset: number): TurnContent | nul
     return { userPrompt: result.userPrompt, assistantResponse: result.assistantResponse };
   }
   return readClaudeTurnContent(file, offset);
+}
+
+// ============================================================================
+// Message-Level Query Functions
+// ============================================================================
+
+/**
+ * FTS5 full-text search over raw transcript messages.
+ *
+ * Delegates to message-store's searchMessagesFts. Project-scoped when
+ * projectId is provided.
+ */
+export function searchTranscript(
+  query: string,
+  limit: number = 20,
+  projectId?: string,
+): MessageSearchResult[] {
+  return searchMessagesFts(query, limit, projectId);
+}
+
+/**
+ * Read a full conversation turn (user prompt + assistant response) by message UUID.
+ *
+ * Uses the messages table directly — queries adjacent rows by message_seq
+ * instead of loading the full transcript from disk. The target message's
+ * seq determines the user/assistant pairing: even seqs are user prompts,
+ * odd seqs are assistant responses (but we match by actual position).
+ */
+export function readMessageTurn(
+  sessionId: string,
+  messageId: string,
+): { userText: string; assistantText: string; messageSeq: number } | null {
+  const record = getMessageByUuid(sessionId, messageId);
+  if (!record) return null;
+
+  // Fetch the target plus its neighbor (±1 in message_seq)
+  const adjacent = getAdjacentMessages(sessionId, record.message_seq);
+  if (adjacent.length === 0) return null;
+
+  // Find target in the adjacent set
+  const target = adjacent.find(m => m.message_id === messageId);
+  if (!target) return null;
+
+  // Determine the pair based on seq ordering
+  const prev = adjacent.find(m => m.message_seq === target.message_seq - 1);
+  const next = adjacent.find(m => m.message_seq === target.message_seq + 1);
+
+  // Heuristic: even seq = user, odd seq = assistant (matches ingest ordering)
+  // But we use seq adjacency regardless of role assumptions
+  if (target.message_seq % 2 === 0) {
+    // Target is likely user — pair with next (assistant)
+    return {
+      userText: target.message_text,
+      assistantText: next?.message_text ?? '',
+      messageSeq: target.message_seq,
+    };
+  } else {
+    // Target is likely assistant — pair with prev (user)
+    return {
+      userText: prev?.message_text ?? '',
+      assistantText: target.message_text,
+      messageSeq: target.message_seq,
+    };
+  }
 }

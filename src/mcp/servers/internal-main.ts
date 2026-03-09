@@ -29,11 +29,12 @@ process.on('unhandledRejection', (err) => {
  * Parse --key=value CLI args into an options object.
  * Supports: --session-file, --decisions-file
  */
-function parseCliArgs(): { sessionFile?: string; decisionsFile?: string } {
-  const opts: { sessionFile?: string; decisionsFile?: string } = {};
+function parseCliArgs(): { sessionFile?: string; decisionsFile?: string; projectId?: string } {
+  const opts: { sessionFile?: string; decisionsFile?: string; projectId?: string } = {};
   for (const arg of process.argv.slice(2)) {
     if (arg.startsWith('--session-file=')) opts.sessionFile = arg.slice('--session-file='.length);
     else if (arg.startsWith('--decisions-file=')) opts.decisionsFile = arg.slice('--decisions-file='.length);
+    else if (arg.startsWith('--project-id=')) opts.projectId = arg.slice('--project-id='.length);
   }
   return opts;
 }

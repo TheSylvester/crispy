@@ -635,6 +635,48 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 12,
+    description: 'Message-level recall indexing with FTS5',
+    up: (db: Database, _dbPath: string) => {
+      db.exec(`
+        CREATE TABLE messages (
+          message_id    TEXT PRIMARY KEY,
+          session_id    TEXT NOT NULL,
+          message_seq   INTEGER NOT NULL,
+          message_text  TEXT NOT NULL,
+          project_id    TEXT,
+          created_at    INTEGER NOT NULL,
+          UNIQUE(session_id, message_id)
+        );
+
+        CREATE INDEX idx_messages_session ON messages(session_id);
+        CREATE INDEX idx_messages_project ON messages(project_id);
+
+        CREATE VIRTUAL TABLE messages_fts USING fts5(
+          message_text,
+          content=messages,
+          content_rowid=rowid,
+          tokenize='porter unicode61'
+        );
+
+        CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN
+          INSERT INTO messages_fts(rowid, message_text) VALUES (new.rowid, new.message_text);
+        END;
+
+        CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN
+          INSERT INTO messages_fts(messages_fts, rowid, message_text)
+          VALUES ('delete', old.rowid, old.message_text);
+        END;
+
+        CREATE TRIGGER messages_fts_au AFTER UPDATE ON messages BEGIN
+          INSERT INTO messages_fts(messages_fts, rowid, message_text)
+          VALUES ('delete', old.rowid, old.message_text);
+          INSERT INTO messages_fts(rowid, message_text) VALUES (new.rowid, new.message_text);
+        END;
+      `);
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {

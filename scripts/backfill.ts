@@ -37,6 +37,8 @@ import { getDb } from '../src/core/crispy-db.js';
 import { stripToolContent } from '../src/core/recall/transcript-utils.js';
 import { ingestSession } from '../src/core/recall/ingest.js';
 import { hasSessionChunks } from '../src/core/recall/store.js';
+import { ingestSessionMessages } from '../src/core/recall/message-ingest.js';
+import { hasSessionMessages } from '../src/core/recall/message-store.js';
 
 // ============================================================================
 // Constants
@@ -54,8 +56,9 @@ function printUsage(): void {
 Usage: npx tsx scripts/backfill.ts <command> [options]
 
 Commands:
-  summarize    Generate rosie-meta for sessions that don't have it
-  track        Run tracker on rosie-meta entries not yet tracked
+  summarize    Generate rosie-meta for sessions (paused for rework)
+  track        Run tracker on rosie-meta entries (paused for rework)
+  index        Populate the message-level FTS5 recall index
   embed        Chunk and embed session transcripts for semantic recall
 
 Options:
@@ -94,7 +97,7 @@ Examples:
 }
 
 interface CliOptions {
-  command: 'summarize' | 'track' | 'embed';
+  command: 'summarize' | 'track' | 'embed' | 'index';
   model: string;
   concurrency: number;
   workspace: string | undefined;
@@ -115,7 +118,7 @@ function parseCli(): CliOptions | null {
     return null;
   }
 
-  if (command !== 'summarize' && command !== 'track' && command !== 'embed') {
+  if (command !== 'summarize' && command !== 'track' && command !== 'embed' && command !== 'index') {
     console.error(`Unknown command: ${command}`);
     printUsage();
     return null;
@@ -144,7 +147,7 @@ function parseCli(): CliOptions | null {
   }
 
   return {
-    command: command as 'summarize' | 'track' | 'embed',
+    command: command as 'summarize' | 'track' | 'embed' | 'index',
     model: values.model as string,
     concurrency: Math.max(1, parseInt(values.concurrency as string, 10) || DEFAULT_CONCURRENCY),
     workspace: values.workspace as string | undefined,
@@ -691,6 +694,125 @@ async function runEmbed(opts: CliOptions): Promise<void> {
 }
 
 // ============================================================================
+// Index Command
+// ============================================================================
+
+interface IndexCandidate {
+  sessionId: string;
+  size: number;
+}
+
+/**
+ * Find sessions eligible for message-level indexing. Uses the adapter registry
+ * to discover sessions, then filters out sessions that already have messages
+ * in the DB (unless --force).
+ */
+function findIndexCandidates(
+  workspace: string | undefined,
+  session: string | undefined,
+  limit: number,
+  force: boolean,
+): IndexCandidate[] {
+  const allSessions = listAllSessions();
+  const candidates: IndexCandidate[] = [];
+
+  for (const s of allSessions) {
+    if (s.isSidechain) continue;
+    if (workspace && !s.path.includes(workspace)) continue;
+    if (session && !s.path.includes(session) && !s.sessionId.includes(session)) continue;
+    if (!existsSync(s.path)) continue;
+
+    // Skip already-processed sessions unless --force
+    if (!force && hasSessionMessages(s.sessionId)) continue;
+
+    candidates.push({
+      sessionId: s.sessionId,
+      size: s.size,
+    });
+
+    if (candidates.length >= limit) break;
+  }
+
+  return candidates;
+}
+
+async function runIndex(opts: CliOptions): Promise<void> {
+  const candidates = findIndexCandidates(opts.workspace, opts.session, opts.limit, opts.force);
+
+  if (candidates.length === 0) {
+    log('No sessions found to index');
+    return;
+  }
+
+  log(`Found ${candidates.length} session(s) to index (concurrency: ${opts.concurrency}${opts.force ? ', force' : ''})`);
+
+  let okCount = 0;
+  let failCount = 0;
+  let skipCount = 0;
+  let totalMessages = 0;
+  const startTime = Date.now();
+
+  await pooled(candidates, opts.concurrency, async (c, i) => {
+    const label = `[${i + 1}/${candidates.length}]`;
+    const sizeKb = (c.size / 1024).toFixed(0);
+    log(`\n${label} ${c.sessionId} (${sizeKb} KB)`);
+
+    if (opts.dryRun) {
+      result(JSON.stringify({
+        action: 'index',
+        dryRun: true,
+        sessionId: c.sessionId,
+        sizeBytes: c.size,
+      }));
+      return;
+    }
+
+    try {
+      const t0 = Date.now();
+
+      const ingestResult = await ingestSessionMessages(c.sessionId, {
+        force: opts.force,
+        verbose: opts.verbose,
+      });
+
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+
+      if (ingestResult.error) {
+        log(`  FAIL — ${ingestResult.error} (${elapsed}s)`);
+        failCount++;
+        return;
+      }
+
+      if (ingestResult.skipped) {
+        log(`  SKIP — already processed or no content`);
+        skipCount++;
+        return;
+      }
+
+      totalMessages += ingestResult.chunksCreated;
+      okCount++;
+      log(`  OK (${elapsed}s) — ${ingestResult.chunksCreated} messages`);
+
+      result(JSON.stringify({
+        action: 'index',
+        sessionId: c.sessionId,
+        messages: ingestResult.chunksCreated,
+      }));
+    } catch (err) {
+      failCount++;
+      log(`  ERROR — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, (waveEnd) => {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+    const rate = okCount > 0 ? (okCount / (Date.now() - startTime) * 1000 * 60).toFixed(1) : '0';
+    log(`\n--- Wave complete (${waveEnd}/${candidates.length}) | OK: ${okCount} | Fail: ${failCount} | Skip: ${skipCount} | Messages: ${totalMessages} | ${elapsed}s elapsed | ~${rate}/min ---`);
+  });
+
+  const totalElapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+  log(`\n=== Index complete: ${okCount} OK, ${failCount} failed, ${skipCount} skipped, ${totalMessages} messages in ${totalElapsed}s ===`);
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -721,9 +843,11 @@ async function main(): Promise<void> {
 
   try {
     if (opts.command === 'summarize') {
-      await runSummarize(dispatch, opts);
+      log(`Summarize is paused for rework. Use 'index' to populate the message-level FTS5 index.`);
     } else if (opts.command === 'track') {
-      await runTrack(dispatch, opts);
+      log(`Track is paused for rework. Use 'index' to populate the message-level FTS5 index.`);
+    } else if (opts.command === 'index') {
+      await runIndex(opts);
     } else {
       await runEmbed(opts);
     }

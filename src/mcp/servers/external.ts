@@ -18,6 +18,7 @@ import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-
 import { z } from 'zod/v4';
 import type { AgentDispatch } from '../../host/agent-dispatch.js';
 import type { ChildSessionOptions } from '../../core/session-manager.js';
+import { findSession } from '../../core/session-manager.js';
 import { parseModelOption } from '../../core/model-utils.js';
 import { INTERNAL_MCP_SERVER_NAME } from './internal.js';
 import { pushRosieLog } from '../../core/rosie/index.js';
@@ -31,17 +32,16 @@ function buildRecallPrompt(query: string): Array<{ type: 'text'; text: string }>
     type: 'text' as const,
     text: `You are a memory recall agent. Search the user's past session history and provide a concise, helpful answer.
 
-You have 4 MCP tools — use ONLY these, nothing else:
-- search_sessions: Full-text search (start here). Use short keywords with OR for broad matches. Results include summaries and snippets — often enough to answer without drilling deeper. Use since/before params to filter by time range.
+You have 3 MCP tools — use ONLY these, nothing else:
+- search_transcript: Full-text search over raw conversation content. Start here. Use short keywords with OR for broad matches ("sqlite OR database OR wasm"). Returns message UUIDs and text snippets — often enough to answer directly.
+- read_message: Read a full conversation turn (user prompt + assistant response) by message UUID. Use when you need complete context beyond the snippet.
 - list_sessions: Browse recent sessions by date. Use when search returns nothing or the query is about recent/general work.
-- session_context: Get structured metadata (titles, quests, summaries) for a session. NOT conversation content.
-- read_turn: Read actual conversation content at a byte offset. The only way to see what was said.
 
 Strategy:
-1. Search with 1-2 keyword queries (use OR to broaden: "sqlite OR database OR wasm")
-2. Read the search results carefully — summaries and snippets often contain the answer
-3. Only drill into sessions (session_context or read_turn) if you need specific details
-4. Synthesize your answer citing session file paths
+1. Search with 1-2 keyword queries (use OR to broaden)
+2. Read the search results — snippets often contain the answer
+3. Use read_message only when you need the full turn context
+4. Synthesize your answer citing session IDs
 
 Do not narrate what you're about to do — just call tools and then write your answer.
 
@@ -137,6 +137,11 @@ export function createExternalServer(
             const { vendor: recallVendor, model: parsedModel } = parseModelOption(getRosieModel?.() ?? '');
             const recallModel = parsedModel || 'haiku';
 
+            // Derive project scope for search_transcript
+            const sessionInfo = findSession(activeSession.sessionId);
+            const projectId = sessionInfo?.projectPath ?? '';
+            const projectArgs = projectId ? [`--project-id=${projectId}`] : [];
+
             const options: ChildSessionOptions = {
               parentSessionId: activeSession.sessionId,
               vendor: recallVendor,
@@ -148,7 +153,7 @@ export function createExternalServer(
                 allowDangerouslySkipPermissions: true,
               },
               forceNew: true,
-              mcpServers: buildInternalMcpConfig(serverPaths.internalServerCommand, serverPaths.internalServerArgs),
+              mcpServers: buildInternalMcpConfig(serverPaths.internalServerCommand, serverPaths.internalServerArgs, projectArgs),
               env: {
                 CLAUDECODE: '',                        // Bypass nested Claude Code guard
                 CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '120000',  // 120s MCP timeout

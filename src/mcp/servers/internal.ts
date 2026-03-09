@@ -16,7 +16,7 @@
 import { appendFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
-import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath } from '../memory-queries.js';
+import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath, searchTranscript, readMessageTurn } from '../memory-queries.js';
 
 import { writeTrackerResults, recordTrackerOutcome } from '../../core/rosie/tracker/db-writer.js';
 import { VALID_STATUSES } from '../../core/rosie/tracker/types.js';
@@ -56,6 +56,8 @@ export interface InternalServerOptions {
   sessionFile?: string;
   /** Sidecar JSONL file for tracker decision observability. */
   decisionsFile?: string;
+  /** Project path for scoping search_transcript results. */
+  projectId?: string;
 }
 
 /** Module-level options — set by createInternalServer(), read by tool handlers. */
@@ -313,6 +315,78 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', trivial: true, reason: args.reason }) }],
       };
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // search_transcript — FTS5 search over raw conversation content
+  // ------------------------------------------------------------------
+  server.tool(
+    'search_transcript',
+    'Full-text search over raw conversation content from past sessions. Returns matching messages with session ID, message UUID, and text snippet. Project-scoped by default — searches only sessions from the current workspace. Supports FTS5 syntax: OR for broad searches, "quoted phrases" for exact matches, prefix* for partial terms.',
+    {
+      query: z.string().describe('Search query — short keywords work best. Use OR to broaden: "sqlite OR database"'),
+      limit: z.number().optional().default(20).describe('Maximum results (default 20)'),
+      all_projects: z.boolean().optional().default(false).describe('Search across all projects instead of just the current workspace'),
+    },
+    async (args) => {
+      const projectId = args.all_projects ? undefined : serverOptions.projectId;
+      console.error(`[internal-mcp] search_transcript: query="${args.query}" limit=${args.limit} project=${projectId ?? 'all'}`);
+      try {
+        const results = searchTranscript(args.query, args.limit, projectId);
+        console.error(`[internal-mcp] search_transcript: ${results.length} results`);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ results, count: results.length }, null, 2) }],
+        };
+      } catch (err) {
+        console.error(`[internal-mcp] search_transcript FAIL:`, err instanceof Error ? err.message : String(err));
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({
+            results: [],
+            error: `search_transcript failed: ${err instanceof Error ? err.message : String(err)}`,
+          }, null, 2) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // read_message — Read a full conversation turn by message UUID
+  // ------------------------------------------------------------------
+  server.tool(
+    'read_message',
+    'Read a full conversation turn (user prompt + assistant response) by message UUID. Returns the stripped text without tool calls. Use the message_id and session_id from search_transcript results.',
+    {
+      session_id: z.string().describe('Session ID from search results'),
+      message_id: z.string().describe('Message UUID from search results'),
+    },
+    async (args) => {
+      console.error(`[internal-mcp] read_message: session=${args.session_id} message=${args.message_id}`);
+      try {
+        const result = readMessageTurn(args.session_id, args.message_id);
+        if (!result) {
+          console.error('[internal-mcp] read_message: not found');
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({ turn: null, found: false }, null, 2) }],
+            isError: true,
+          };
+        }
+        console.error(`[internal-mcp] read_message: OK (user=${result.userText.length} chars, assistant=${result.assistantText.length} chars)`);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ turn: result, found: true }, null, 2) }],
+        };
+      } catch (err) {
+        console.error('[internal-mcp] read_message FAIL:', err instanceof Error ? err.message : String(err));
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({
+            turn: null,
+            found: false,
+            error: `read_message failed: ${err instanceof Error ? err.message : String(err)}`,
+          }, null, 2) }],
+          isError: true,
+        };
+      }
     },
   );
 
