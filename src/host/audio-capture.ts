@@ -21,7 +21,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { writeFileSync, promises as fsp } from 'node:fs';
+import { writeFileSync, readdirSync, unlinkSync, promises as fsp } from 'node:fs';
 import { pushRosieLog } from '../core/rosie/index.js';
 
 // ---------------------------------------------------------------------------
@@ -40,6 +40,39 @@ interface ActiveRecording {
 // ---------------------------------------------------------------------------
 
 let activeRecording: ActiveRecording | null = null;
+
+// ---------------------------------------------------------------------------
+// Startup cleanup
+// ---------------------------------------------------------------------------
+
+/**
+ * Remove orphaned crispy-voice-*.wav files left behind by previous sessions
+ * (e.g. crash, force-quit, or stopProcess timeout). Call once at startup.
+ */
+export function cleanupOrphanedVoiceFiles(): void {
+  try {
+    const tmp = tmpdir();
+    const orphans = readdirSync(tmp).filter(
+      (f) => f.startsWith('crispy-voice-') && f.endsWith('.wav'),
+    );
+    for (const file of orphans) {
+      try {
+        unlinkSync(join(tmp, file));
+      } catch {
+        // best-effort — file may be in use by an active recording
+      }
+    }
+    if (orphans.length > 0) {
+      pushRosieLog({
+        source: 'voice',
+        level: 'info',
+        summary: `Cleaned up ${orphans.length} orphaned voice temp file(s)`,
+      });
+    }
+  } catch {
+    // tmpdir read failure is non-fatal
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -100,18 +133,18 @@ export async function stopCapture(): Promise<{ pcmFloat32: Float32Array; sampleR
   const { process: proc, tempWavPath, tempScriptPath, startedAt } = activeRecording;
   activeRecording = null;
 
-  // Signal the recorder to stop by writing to stdin
-  await stopProcess(proc);
-
-  const durationMs = Date.now() - startedAt;
-
-  pushRosieLog({
-    source: 'voice',
-    level: 'info',
-    summary: `Recording stopped after ${durationMs}ms, reading ${tempWavPath}...`,
-  });
-
   try {
+    // Signal the recorder to stop by writing to stdin
+    await stopProcess(proc);
+
+    const durationMs = Date.now() - startedAt;
+
+    pushRosieLog({
+      source: 'voice',
+      level: 'info',
+      summary: `Recording stopped after ${durationMs}ms, reading ${tempWavPath}...`,
+    });
+
     const wavBuffer = await fsp.readFile(tempWavPath);
     const result = wavToFloat32(wavBuffer);
 
@@ -126,11 +159,11 @@ export async function stopCapture(): Promise<{ pcmFloat32: Float32Array; sampleR
     pushRosieLog({
       source: 'voice',
       level: 'error',
-      summary: `Failed to read WAV file: ${err instanceof Error ? err.message : err}`,
+      summary: `Failed to stop/read recording: ${err instanceof Error ? err.message : err}`,
     });
     return null;
   } finally {
-    // Cleanup temp files
+    // Cleanup temp files — always runs, even if stopProcess times out
     fsp.unlink(tempWavPath).catch(() => {});
     if (tempScriptPath) fsp.unlink(tempScriptPath).catch(() => {});
   }

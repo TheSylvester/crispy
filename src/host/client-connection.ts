@@ -61,7 +61,10 @@ import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-rea
 // Voice module is lazy-loaded to avoid pulling onnxruntime-node native bindings
 // at extension activation time (crashes VS Code's Electron host).
 // import { transcribeAudio } from '../core/voice/index.js'; // <-- lazy below
-import { startCapture, stopCapture } from './audio-capture.js';
+import { startCapture, stopCapture, cleanupOrphanedVoiceFiles } from './audio-capture.js';
+
+// Clean up any orphaned voice temp files from previous sessions on module load.
+cleanupOrphanedVoiceFiles();
 
 // ============================================================================
 // Path Containment
