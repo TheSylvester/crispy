@@ -16,6 +16,98 @@ import type { RawMutation, GitCommitCommand, BashCategory, ScanResult } from './
 
 const READ_BUFFER_SIZE = 256 * 1024; // 256KB chunks
 
+// Pre-compiled regexes — avoid recompilation in hot loops
+const RE_GIT_CMD = /\bgit\s/;
+const RE_GIT_COMMIT = /\bgit\s+commit\b/;
+const RE_GIT_BRANCH_OP = /\bgit\s+(checkout|rebase|merge|cherry-pick)\b/;
+const RE_GIT_RESET = /\bgit\s+reset\b/;
+const RE_GIT_READONLY = /\bgit\s+(status|log|diff|branch|show|stash|fetch|pull|push|remote|tag|blame|rev-parse|ls-files|describe|shortlog|reflog|config|init|clone|add|rm\s+--cached|restore\s+--staged)\b/;
+const RE_SED_I = /\bsed\s+-i\b/;
+const RE_RM = /\brm\s/;
+const RE_RM_CACHED = /\brm\s+--cached\b/;
+const RE_MV = /\bmv\s/;
+const RE_AMEND = /--amend/;
+const RE_COMMIT_MSG = /\bgit\s+commit\b.*?-m\s+(?:"([^"]*(?:\\.[^"]*)*)"|'([^']*)')/s;
+const RE_HEREDOC = /<<\s*'?EOF'?\s*\n([\s\S]*?)\n\s*EOF/;
+
+// ============================================================================
+// Tool_use Extraction Helper
+// ============================================================================
+
+interface ExtractionContext {
+  mutations: RawMutation[];
+  gitCommitCommands: GitCommitCommand[];
+}
+
+/**
+ * Extract mutations and git commit commands from a parsed JSONL entry's
+ * content blocks. Shared between main loop and remainder handler.
+ */
+function extractToolUses(
+  content: unknown[],
+  timestamp: string | null,
+  messageUuid: string | null,
+  lineStartOffset: number,
+  ctx: ExtractionContext,
+): void {
+  for (const block of content) {
+    const b = block as Record<string, unknown>;
+    if (b.type !== 'tool_use') continue;
+
+    const toolName = b.name as string;
+    const input = (b.input || {}) as Record<string, unknown>;
+    const toolUseId = (b.id as string) || `${lineStartOffset}-${toolName}`;
+
+    if (toolName === 'Edit') {
+      ctx.mutations.push({
+        tool: 'Edit',
+        filePath: (input.file_path as string) || null,
+        timestamp,
+        messageUuid,
+        toolUseId,
+        byteOffset: lineStartOffset,
+        oldHash: input.old_string ? sha256(input.old_string as string) : undefined,
+        newHash: input.new_string ? sha256(input.new_string as string) : undefined,
+      });
+    } else if (toolName === 'Write') {
+      ctx.mutations.push({
+        tool: 'Write',
+        filePath: (input.file_path as string) || null,
+        timestamp,
+        messageUuid,
+        toolUseId,
+        byteOffset: lineStartOffset,
+      });
+    } else if (toolName === 'Bash') {
+      const command = (input.command as string) || '';
+      const classified = classifyBashCommand(command);
+      if (!classified) continue;
+
+      if (classified.category === 'git-commit') {
+        ctx.gitCommitCommands.push({
+          timestamp,
+          messageUuid,
+          toolUseId,
+          byteOffset: lineStartOffset,
+          command,
+          extractedMessage: extractCommitMessage(command),
+        });
+      }
+
+      ctx.mutations.push({
+        tool: 'Bash',
+        bashCategory: classified.category,
+        filePath: classified.filePaths[0] || null,
+        timestamp,
+        messageUuid,
+        toolUseId,
+        byteOffset: lineStartOffset,
+        command,
+      });
+    }
+  }
+}
+
 // ============================================================================
 // Public API
 // ============================================================================
@@ -27,8 +119,7 @@ const READ_BUFFER_SIZE = 256 * 1024; // 256KB chunks
  * and metadata (sessionId, cwd) extracted from the file.
  */
 export function scanProvenanceEntries(filepath: string, startOffset = 0): ScanResult {
-  const mutations: RawMutation[] = [];
-  const gitCommitCommands: GitCommitCommand[] = [];
+  const ctx: ExtractionContext = { mutations: [], gitCommitCommands: [] };
   let sessionId: string | null = null;
   let cwd: string | null = null;
   let fd: number | null = null;
@@ -39,7 +130,7 @@ export function scanProvenanceEntries(filepath: string, startOffset = 0): ScanRe
     const fileSize = stat.size;
 
     if (startOffset >= fileSize) {
-      return { mutations, gitCommitCommands, offset: startOffset, sessionId, cwd };
+      return { ...ctx, offset: startOffset, sessionId, cwd };
     }
 
     const buffer = Buffer.alloc(READ_BUFFER_SIZE);
@@ -98,71 +189,15 @@ export function scanProvenanceEntries(filepath: string, startOffset = 0): ScanRe
           if (!sessionId && entry.sessionId) sessionId = entry.sessionId;
           if (!cwd && entry.cwd) cwd = entry.cwd;
 
-          const timestamp = entry.timestamp || null;
-          const messageUuid = entry.uuid || null;
-
-          // Iterate content blocks for tool_use
           const content = entry.message?.content;
-          if (!Array.isArray(content)) {
-            lineStartOffset += lineBytes;
-            lastCompleteLineOffset = lineStartOffset;
-            continue;
-          }
-
-          for (const block of content) {
-            if (block.type !== 'tool_use') continue;
-
-            const toolName = block.name;
-            const input = block.input || {};
-            const toolUseId = block.id || `${lineStartOffset}-${toolName}`;
-
-            if (toolName === 'Edit') {
-              mutations.push({
-                tool: 'Edit',
-                filePath: input.file_path || null,
-                timestamp,
-                messageUuid,
-                toolUseId,
-                byteOffset: lineStartOffset,
-                oldHash: input.old_string ? sha256(input.old_string) : undefined,
-                newHash: input.new_string ? sha256(input.new_string) : undefined,
-              });
-            } else if (toolName === 'Write') {
-              mutations.push({
-                tool: 'Write',
-                filePath: input.file_path || null,
-                timestamp,
-                messageUuid,
-                toolUseId,
-                byteOffset: lineStartOffset,
-              });
-            } else if (toolName === 'Bash') {
-              const command = input.command || '';
-              const classified = classifyBashCommand(command);
-              if (!classified) continue;
-
-              if (classified.category === 'git-commit') {
-                gitCommitCommands.push({
-                  timestamp,
-                  messageUuid,
-                  toolUseId,
-                  byteOffset: lineStartOffset,
-                  command,
-                  extractedMessage: extractCommitMessage(command),
-                });
-              }
-
-              mutations.push({
-                tool: 'Bash',
-                bashCategory: classified.category,
-                filePath: classified.filePaths[0] || null,
-                timestamp,
-                messageUuid,
-                toolUseId,
-                byteOffset: lineStartOffset,
-                command,
-              });
-            }
+          if (Array.isArray(content)) {
+            extractToolUses(
+              content,
+              entry.timestamp || null,
+              entry.uuid || null,
+              lineStartOffset,
+              ctx,
+            );
           }
 
           lineStartOffset += lineBytes;
@@ -190,64 +225,15 @@ export function scanProvenanceEntries(filepath: string, startOffset = 0): ScanRe
           if (!sessionId && entry.sessionId) sessionId = entry.sessionId;
           if (!cwd && entry.cwd) cwd = entry.cwd;
 
-          const timestamp = entry.timestamp || null;
-          const messageUuid = entry.uuid || null;
           const content = entry.message?.content;
-
           if (Array.isArray(content)) {
-            for (const block of content) {
-              if (block.type !== 'tool_use') continue;
-              const toolName = block.name;
-              const input = block.input || {};
-              const toolUseId = block.id || `${lineStartOffset}-${toolName}`;
-
-              if (toolName === 'Edit') {
-                mutations.push({
-                  tool: 'Edit',
-                  filePath: input.file_path || null,
-                  timestamp,
-                  messageUuid,
-                  toolUseId,
-                  byteOffset: lineStartOffset,
-                  oldHash: input.old_string ? sha256(input.old_string) : undefined,
-                  newHash: input.new_string ? sha256(input.new_string) : undefined,
-                });
-              } else if (toolName === 'Write') {
-                mutations.push({
-                  tool: 'Write',
-                  filePath: input.file_path || null,
-                  timestamp,
-                  messageUuid,
-                  toolUseId,
-                  byteOffset: lineStartOffset,
-                });
-              } else if (toolName === 'Bash') {
-                const command = input.command || '';
-                const classified = classifyBashCommand(command);
-                if (classified) {
-                  if (classified.category === 'git-commit') {
-                    gitCommitCommands.push({
-                      timestamp,
-                      messageUuid,
-                      toolUseId,
-                      byteOffset: lineStartOffset,
-                      command,
-                      extractedMessage: extractCommitMessage(command),
-                    });
-                  }
-                  mutations.push({
-                    tool: 'Bash',
-                    bashCategory: classified.category,
-                    filePath: classified.filePaths[0] || null,
-                    timestamp,
-                    messageUuid,
-                    toolUseId,
-                    byteOffset: lineStartOffset,
-                    command,
-                  });
-                }
-              }
-            }
+            extractToolUses(
+              content,
+              entry.timestamp || null,
+              entry.uuid || null,
+              lineStartOffset,
+              ctx,
+            );
           }
 
           lastCompleteLineOffset += Buffer.byteLength(remainder, 'utf-8');
@@ -259,7 +245,7 @@ export function scanProvenanceEntries(filepath: string, startOffset = 0): ScanRe
       }
     }
 
-    return { mutations, gitCommitCommands, offset: lastCompleteLineOffset, sessionId, cwd };
+    return { ...ctx, offset: lastCompleteLineOffset, sessionId, cwd };
   } catch {
     return { mutations: [], gitCommitCommands: [], offset: startOffset, sessionId: null, cwd: null };
   } finally {
@@ -280,21 +266,27 @@ interface BashClassification {
 
 /** Check if a command is a git commit */
 export function isGitCommitCommand(cmd: string): boolean {
-  return /\bgit\s+commit\b/.test(cmd);
+  return RE_GIT_COMMIT.test(cmd);
 }
 
 /** Extract commit message from a git commit command */
 export function extractCommitMessage(cmd: string): string | null {
-  // -m "message" or -m 'message'
-  const mFlag = cmd.match(/\bgit\s+commit\b.*?-m\s+(?:"([^"]*(?:\\.[^"]*)*)"|'([^']*)')/s);
-  if (mFlag) return mFlag[1] ?? mFlag[2] ?? null;
-
-  // Heredoc pattern: -m "$(cat <<'EOF'\n...\nEOF\n)"
-  const heredoc = cmd.match(/<<\s*'?EOF'?\s*\n([\s\S]*?)\n\s*EOF/);
+  // Heredoc pattern first — -m "$(cat <<'EOF'\n...\nEOF\n)"
+  // Must check before -m because RE_COMMIT_MSG's [^"]* greedily captures
+  // the entire heredoc construct as a single string (garbage).
+  const heredoc = cmd.match(RE_HEREDOC);
   if (heredoc) return heredoc[1]?.trim() ?? null;
 
+  // -m "message" or -m 'message'
+  const mFlag = cmd.match(RE_COMMIT_MSG);
+  if (mFlag) {
+    const msg = mFlag[1] ?? mFlag[2] ?? null;
+    // Reject subshell captures that slipped through (e.g., "$(...")
+    if (msg && !msg.startsWith('$(')) return msg;
+  }
+
   // --amend without -m — no extractable message
-  if (/--amend/.test(cmd)) return null;
+  if (RE_AMEND.test(cmd)) return null;
 
   return null;
 }
@@ -310,18 +302,18 @@ export function classifyBashCommand(cmd: string): BashClassification | null {
   if (!trimmed) return null;
 
   // Git commands
-  if (/\bgit\s/.test(trimmed)) {
-    if (isGitCommitCommand(trimmed)) {
+  if (RE_GIT_CMD.test(trimmed)) {
+    if (RE_GIT_COMMIT.test(trimmed)) {
       return { category: 'git-commit', filePaths: [] };
     }
-    if (/\bgit\s+(checkout|rebase|merge|cherry-pick)\b/.test(trimmed)) {
+    if (RE_GIT_BRANCH_OP.test(trimmed)) {
       return { category: 'git-branch-op', filePaths: [] };
     }
-    if (/\bgit\s+reset\b/.test(trimmed)) {
+    if (RE_GIT_RESET.test(trimmed)) {
       return { category: 'git-reset', filePaths: [] };
     }
     // Read-only git commands — skip
-    if (/\bgit\s+(status|log|diff|branch|show|stash|fetch|pull|push|remote|tag|blame|rev-parse|ls-files|describe|shortlog|reflog|config|init|clone|add|rm\s+--cached|restore\s+--staged)\b/.test(trimmed)) {
+    if (RE_GIT_READONLY.test(trimmed)) {
       return null;
     }
     // Other git commands — skip by default
@@ -329,19 +321,19 @@ export function classifyBashCommand(cmd: string): BashClassification | null {
   }
 
   // sed -i
-  if (/\bsed\s+-i\b/.test(trimmed)) {
+  if (RE_SED_I.test(trimmed)) {
     const paths = extractSedPaths(trimmed);
     return { category: 'file-mutation', filePaths: paths };
   }
 
   // rm (but not rm --cached)
-  if (/\brm\s/.test(trimmed) && !/\brm\s+--cached\b/.test(trimmed)) {
+  if (RE_RM.test(trimmed) && !RE_RM_CACHED.test(trimmed)) {
     const paths = extractRmPaths(trimmed);
     if (paths.length > 0) return { category: 'file-deletion', filePaths: paths };
   }
 
   // mv
-  if (/\bmv\s/.test(trimmed)) {
+  if (RE_MV.test(trimmed)) {
     const paths = extractMvPaths(trimmed);
     if (paths.length > 0) return { category: 'file-rename', filePaths: paths };
   }
@@ -356,7 +348,7 @@ export function classifyBashCommand(cmd: string): BashClassification | null {
 /** Extract file paths from sed -i command (last non-flag argument) */
 function extractSedPaths(cmd: string): string[] {
   // Split by pipes/semicolons — only process the sed part
-  const sedPart = cmd.split(/[|;]/).find(p => /\bsed\s+-i\b/.test(p));
+  const sedPart = cmd.split(/[|;]/).find(p => RE_SED_I.test(p));
   if (!sedPart) return [];
 
   // Remove the sed command and flags, take remaining non-flag args

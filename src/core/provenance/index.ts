@@ -21,6 +21,7 @@ import {
   saveRepoState,
 } from './store.js';
 import type { GitCommitCommand } from './types.js';
+import type { SessionInfo } from '../agent-adapter.js';
 
 // Re-export query functions for recall consumers
 export {
@@ -42,11 +43,6 @@ export type {
   CommitFileChange,
 } from './types.js';
 
-interface SessionInfo {
-  path?: string;
-  projectPath?: string;
-}
-
 /**
  * Run a full provenance scan across all sessions.
  *
@@ -61,6 +57,10 @@ export function runProvenanceScan(sessions: SessionInfo[]): void {
 
   // Collect git commit commands grouped by repo path
   const repoCommitCommands = new Map<string, { commands: GitCommitCommand[]; sessionFile: string; sessionId: string | null }[]>();
+
+  // Deferred scan state saves — files with commit commands save AFTER Phase 2
+  // to avoid losing commit attribution if Phase 2 fails or process crashes.
+  const deferredScanStates: Array<{ filePath: string; mtime: number; size: number; byteOffset: number }> = [];
 
   // Phase 1: Scan JSONL files
   for (const session of sessions) {
@@ -84,11 +84,14 @@ export function runProvenanceScan(sessions: SessionInfo[]): void {
       }
 
       const result = scanProvenanceEntries(session.path, fromOffset);
+      const sessionId = result.sessionId ?? session.sessionId ?? null;
 
       // Store mutations
       if (result.mutations.length > 0) {
-        insertMutations(session.path, result.sessionId, result.mutations);
+        insertMutations(session.path, sessionId, result.mutations);
       }
+
+      const scanState = { filePath: session.path, mtime, size, byteOffset: result.offset };
 
       // Collect git commit commands for Phase 2
       if (result.gitCommitCommands.length > 0) {
@@ -100,18 +103,15 @@ export function runProvenanceScan(sessions: SessionInfo[]): void {
           repoCommitCommands.get(repoPath)!.push({
             commands: result.gitCommitCommands,
             sessionFile: session.path,
-            sessionId: result.sessionId,
+            sessionId,
           });
         }
+        // Defer state save until after Phase 2 matching
+        deferredScanStates.push(scanState);
+      } else {
+        // No commit commands — safe to save immediately
+        saveProvenanceScanState(scanState);
       }
-
-      // Save scan state
-      saveProvenanceScanState({
-        filePath: session.path,
-        mtime,
-        size,
-        byteOffset: result.offset,
-      });
     } catch (err) {
       console.error(`[provenance] Error scanning ${session.path}:`, err);
     }
@@ -134,27 +134,29 @@ export function runProvenanceScan(sessions: SessionInfo[]): void {
 
           // Link preceding Edit/Write mutations to this commit
           if (commit.messageUuid) {
-            // Find the commit command's timestamp to define the window
             const cmd = group.commands.find(c => c.messageUuid === commit.messageUuid);
             if (cmd?.timestamp) {
-              // Link mutations from up to 30 minutes before the commit
-              const commitTs = new Date(cmd.timestamp);
-              const windowStart = new Date(commitTs.getTime() - 30 * 60_000).toISOString();
+              const windowStart = new Date(new Date(cmd.timestamp).getTime() - 30 * 60_000).toISOString();
               linkMutationsToCommit(group.sessionFile, commit.sha, cmd.timestamp, windowStart);
             }
           }
         }
-
-        // Save repo HEAD state
-        try {
-          const head = execSync('git rev-parse HEAD', {
-            cwd: repoPath, timeout: 5000, encoding: 'utf-8',
-          }).trim();
-          saveRepoState(repoPath, head);
-        } catch { /* skip */ }
       } catch (err) {
         console.error(`[provenance] Error matching commits in ${repoPath}:`, err);
       }
     }
+
+    // Save repo HEAD state — once per repo, not per session group
+    try {
+      const head = execSync('git rev-parse HEAD', {
+        cwd: repoPath, timeout: 5000, encoding: 'utf-8',
+      }).trim();
+      saveRepoState(repoPath, head);
+    } catch { /* skip */ }
+  }
+
+  // Phase 3: Save deferred scan states (after Phase 2 succeeded)
+  for (const state of deferredScanStates) {
+    saveProvenanceScanState(state);
   }
 }

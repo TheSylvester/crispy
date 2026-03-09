@@ -34,16 +34,23 @@ export function matchCommits(
       const after = new Date(ts.getTime() - 30_000).toISOString();
 
       const output = execSync(
-        `git log --format="%H|%s|%aN|%aI" --after="${after}" --before="${before}"`,
+        `git log --format="%H%n%s%n%aN%n%aI%n" --after="${after}" --before="${before}"`,
         { cwd: repoPath, timeout: 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
       ).trim();
 
       if (!output) continue;
 
-      const candidates = output.split('\n').map(line => {
-        const [sha, subject, author, date] = line.split('|');
-        return { sha: sha!, subject: subject!, author: author!, date: date! };
-      });
+      // Parse 4-line groups (sha, subject, author, date) separated by blank lines
+      const lines = output.split('\n');
+      const candidates: Candidate[] = [];
+      for (let i = 0; i + 3 <= lines.length; i += 5) {
+        candidates.push({
+          sha: lines[i]!,
+          subject: lines[i + 1]!,
+          author: lines[i + 2]!,
+          date: lines[i + 3]!,
+        });
+      }
 
       // Try to match by message
       const best = findBestMatch(candidates, cmd.extractedMessage);

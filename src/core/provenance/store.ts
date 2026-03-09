@@ -128,8 +128,8 @@ export function insertCommitFileChanges(sha: string, changes: CommitFileChange[]
 export function linkMutationsToCommit(
   sessionFile: string,
   commitSha: string,
-  beforeTs: string,
-  afterTs: string,
+  commitTimestamp: string,
+  windowStart: string,
 ): void {
   db().run(`
     UPDATE file_mutations
@@ -140,7 +140,7 @@ export function linkMutationsToCommit(
       AND timestamp >= ?
       AND timestamp <= ?
       AND tool IN ('Edit', 'Write')
-  `, [commitSha, sessionFile, afterTs, beforeTs]);
+  `, [commitSha, sessionFile, windowStart, commitTimestamp]);
 }
 
 // ============================================================================
@@ -284,20 +284,38 @@ export function searchCommits(query: string): CommitSession[] {
 
 /** Get commits prepared for external embedding */
 export function getCommitsForEmbedding(since?: string): CommitForEmbedding[] {
-  const rows = db().all(
+  const d = db();
+  const rows = d.all(
     since
       ? 'SELECT sha, message, author_date, repo_path, session_file, session_id FROM commit_index WHERE author_date > ? ORDER BY author_date ASC'
       : 'SELECT sha, message, author_date, repo_path, session_file, session_id FROM commit_index ORDER BY author_date ASC',
     since ? [since] : [],
   ) as Array<Record<string, unknown>>;
 
+  if (rows.length === 0) return [];
+
+  // Batch-fetch all file changes in one query to avoid N+1
+  const shas = rows.map(r => r.sha as string);
+  const placeholders = shas.map(() => '?').join(',');
+  const allFileRows = d.all(
+    `SELECT commit_sha, file_path, additions, deletions FROM commit_file_changes WHERE commit_sha IN (${placeholders})`,
+    shas,
+  ) as Array<Record<string, unknown>>;
+
+  // Group file changes by commit SHA
+  const filesBySha = new Map<string, CommitFileChange[]>();
+  for (const f of allFileRows) {
+    const sha = f.commit_sha as string;
+    if (!filesBySha.has(sha)) filesBySha.set(sha, []);
+    filesBySha.get(sha)!.push({
+      filePath: f.file_path as string,
+      additions: f.additions as number,
+      deletions: f.deletions as number,
+    });
+  }
+
   return rows.map(row => {
     const sha = row.sha as string;
-    const fileRows = db().all(
-      'SELECT file_path, additions, deletions FROM commit_file_changes WHERE commit_sha = ?',
-      [sha],
-    ) as Array<Record<string, unknown>>;
-
     return {
       sha,
       message: row.message as string,
@@ -305,11 +323,7 @@ export function getCommitsForEmbedding(since?: string): CommitForEmbedding[] {
       repoPath: row.repo_path as string,
       sessionFile: row.session_file as string | null,
       sessionId: row.session_id as string | null,
-      files: fileRows.map(f => ({
-        filePath: f.file_path as string,
-        additions: f.additions as number,
-        deletions: f.deletions as number,
-      })),
+      files: filesBySha.get(sha) ?? [],
     };
   });
 }
