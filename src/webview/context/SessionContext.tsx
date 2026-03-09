@@ -55,6 +55,20 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sessionStatuses, setSessionStatuses] = useState<Map<string, SessionChannelState>>(new Map());
+  const selectedSessionIdRef = useRef<string | null>(null);
+  const pendingSessionRekeysRef = useRef(new Map<string, string>());
+
+  useEffect(() => {
+    selectedSessionIdRef.current = selectedSessionId;
+
+    if (!selectedSessionId?.startsWith('pending:')) return;
+
+    const resolvedId = pendingSessionRekeysRef.current.get(selectedSessionId);
+    if (resolvedId && resolvedId !== selectedSessionId) {
+      pendingSessionRekeysRef.current.delete(selectedSessionId);
+      setSelectedSessionId(resolvedId);
+    }
+  }, [selectedSessionId]);
 
   // Manual refresh fallback — kept in context value for explicit "pull" scenarios
   const loadSessions = useCallback(async () => {
@@ -133,6 +147,29 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     };
   }, [transport]);
 
+  // Track pending→real session re-keys globally so a fast session_changed event
+  // can't be lost between sendTurn() resolving and the pending selection effect attaching.
+  useEffect(() => {
+    const off = transport.onEvent((sessionId, event) => {
+      if (
+        event.type !== 'event' ||
+        event.event.type !== 'notification' ||
+        event.event.kind !== 'session_changed'
+      ) {
+        return;
+      }
+
+      pendingSessionRekeysRef.current.set(sessionId, event.event.sessionId);
+
+      if (selectedSessionIdRef.current === sessionId) {
+        pendingSessionRekeysRef.current.delete(sessionId);
+        setSelectedSessionId(event.event.sessionId);
+      }
+    });
+
+    return off;
+  }, [transport]);
+
   // Auto-sync: when selectedSessionId changes, update CWD to that session's slug
   useEffect(() => {
     if (!selectedSessionId) return;
@@ -182,22 +219,6 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
       setSelectedCwd(firstSlug);
     }
   }, [sessions, selectedCwd, transportKind]);
-
-  // When a pending session gets its real ID, update selection
-  useEffect(() => {
-    if (!selectedSessionId?.startsWith('pending:')) return;
-    const off = transport.onEvent((sessionId, event) => {
-      if (
-        sessionId === selectedSessionId &&
-        event.type === 'event' &&
-        event.event.type === 'notification' &&
-        event.event.kind === 'session_changed'
-      ) {
-        setSelectedSessionId(event.event.sessionId);
-      }
-    });
-    return off;
-  }, [selectedSessionId, transport]);
 
   // Derive available vendors from sessions — native vendors first in stable order,
   // then dynamic vendors alphabetically.

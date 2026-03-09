@@ -66,19 +66,30 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
     setLastError(null);
   }, [selectedSessionId]);
 
+  // Track previous selectedSessionId to detect expected transition chains
+  // (oldId → pending:xxx → realId) vs unexpected navigations.
+  const prevIdRef = useRef<string | null>(null);
+
   useEffect(() => {
+    const prevId = prevIdRef.current;
+    prevIdRef.current = selectedSessionId;
+
     if (!selectedSessionId) {
       optimisticRef.current = false;
       setChannelState(null);
       return;
     }
 
-    // Reset channel state on session switch so stale state from the
-    // previous session doesn't leak through the catchup guard — but
-    // preserve optimistic state. When the user sends a message,
-    // sendTurn may resolve with a new session ID (new/fork/vendor-switch),
-    // triggering this effect. Wiping state here would kill the optimistic
-    // 'streaming' set by ControlPanel before any real status event arrives.
+    // Only preserve optimistic state through the expected transition chain:
+    //   oldId → pending:xxx  (sendTurn resolved)
+    //   pending:xxx → realId (session_changed fired)
+    // Any other transition means the user navigated away — clear optimistic.
+    const isPendingToReal = prevId?.startsWith('pending:') && !selectedSessionId.startsWith('pending:');
+    const isToPending = selectedSessionId.startsWith('pending:');
+    if (!isPendingToReal && !isToPending) {
+      optimisticRef.current = false;
+    }
+
     if (!optimisticRef.current) {
       setChannelState(null);
     }
@@ -97,7 +108,7 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
           // fires a catchup with the channel's current state ('idle' or
           // 'background') before the adapter has started. Real status events
           // still override normally.
-          if (prev === 'streaming' && (mapped === 'idle' || mapped === 'background')) return prev;
+          if (optimisticRef.current && prev === 'streaming' && (mapped === 'idle' || mapped === 'background')) return prev;
           return mapped;
         });
         return;

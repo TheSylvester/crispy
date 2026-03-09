@@ -110,21 +110,12 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
         return;
       }
 
-      // Pending→real transition: the previous session was a pending placeholder
-      // that has now resolved to its real ID. The event stream is already active
-      // (the host re-keys the channel), so entries and optimistic messages are
-      // already in state. Skip the destructive load cycle to preserve them.
-      if (prevSessionId?.startsWith('pending:')) {
-        setIsLoading(false);
-        return;
-      }
-
       setIsLoading(true);
       setError(null);
       try {
-        // Subscribe — the catchup message includes history entries, so we no
-        // longer need a separate loadSession() call. The onEvent handler above
-        // will receive the catchup and populate entries.
+        // Subscribe — on pending→real transitions this replays catchup from the
+        // already-live host subscription, recovering any status/history events
+        // that may have raced ahead of the UI's sessionId update.
         await transport.subscribe(sessionId!);
         if (unmounted) return;
       } catch (err) {
