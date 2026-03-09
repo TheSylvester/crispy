@@ -357,7 +357,7 @@ export function TranscriptViewer(): React.JSX.Element {
               <div className="crispy-loading">Loading transcript...</div>
             ) : (
               <PerfProfiler id="TranscriptList">
-                {renderMode === 'blocks' ? (
+                {(renderMode === 'blocks' || renderMode === 'icons') ? (
                   <BlocksTranscriptRenderer
                     entries={filteredEntries}
                     forkTargets={forkTargets}

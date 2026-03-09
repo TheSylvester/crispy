@@ -7,4 +7,4 @@
  */
 
 /** Render mode for transcript entries */
-export type RenderMode = 'yaml' | 'compact' | 'blocks';
+export type RenderMode = 'yaml' | 'compact' | 'blocks' | 'icons';

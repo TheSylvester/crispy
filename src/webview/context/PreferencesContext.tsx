@@ -36,8 +36,6 @@ interface Preferences {
   debugMode: boolean;
   /** Auto-open tool panel on first tool use in a session. On by default. */
   toolPanelAutoOpen: boolean;
-  /** Inline tool mode: tools render as icon-only pills inline with text. Off by default. */
-  inlineToolMode: boolean;
   /** Condensed tool mode: tools render as dot-lines instead of full compact rows. Off by default. */
   condensedToolMode: boolean;
 }
@@ -52,7 +50,6 @@ interface PreferencesContextValue extends Preferences {
   setToolViewOverride: (override: ToolViewOverride) => void;
   setDebugMode: (enabled: boolean) => void;
   setToolPanelAutoOpen: (enabled: boolean) => void;
-  setInlineToolMode: (enabled: boolean) => void;
   setCondensedToolMode: (enabled: boolean) => void;
 }
 
@@ -64,10 +61,10 @@ const PreferencesContext = createContext<PreferencesContextValue | null>(null);
 function getInitialRenderMode(): RenderMode {
   const params = new URLSearchParams(window.location.search);
   const mode = params.get('mode');
-  if (mode === 'yaml' || mode === 'compact' || mode === 'blocks') {
+  if (mode === 'yaml' || mode === 'compact' || mode === 'blocks' || mode === 'icons') {
     return mode;
   }
-  return 'blocks';
+  return 'icons';
 }
 
 /** Debounce delay for persisted writes (ms). */
@@ -88,7 +85,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
   const [toolPanelMode, setToolPanelMode] = useState<ToolPanelMode>('inspector');
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
-  const [inlineToolMode, setInlineToolMode] = useState(false);
   const [condensedToolMode, setCondensedToolMode] = useState(false);
 
   // ============================================================================
@@ -190,7 +186,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     toolViewOverride,
     debugMode,
     toolPanelAutoOpen,
-    inlineToolMode,
     condensedToolMode,
     setRenderMode,
     setSettingsPinned,
@@ -201,7 +196,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setToolViewOverride,
     setDebugMode,
     setToolPanelAutoOpen,
-    setInlineToolMode,
     setCondensedToolMode,
   };
 

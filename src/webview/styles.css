@@ -444,28 +444,28 @@ h2 {
   border-left: 3px solid transparent;
 }
 
-/* Blocks mode: entry wrappers become invisible — blocks own their own spacing */
-[data-render-mode="blocks"] .message {
+/* Blocks/Icons mode: entry wrappers become invisible — blocks own their own spacing */
+:is([data-render-mode="blocks"], [data-render-mode="icons"]) .message {
   margin: 0;
   padding: 0;
   border: none;
 }
 
-/* Blocks mode: per-block spacing (replaces entry-level margin) */
-[data-render-mode="blocks"] [data-run-id] {
+/* Blocks/Icons mode: per-block spacing (replaces entry-level margin) */
+:is([data-render-mode="blocks"], [data-render-mode="icons"]) [data-run-id] {
   margin-bottom: 0.375rem;
 }
 /* Inline icon containers and their children skip block spacing */
-[data-render-mode="blocks"] .crispy-inline-icons [data-run-id] {
+:is([data-render-mode="blocks"], [data-render-mode="icons"]) .crispy-inline-icons [data-run-id] {
   margin-bottom: 0;
 }
-[data-render-mode="blocks"] .crispy-inline-icons {
+:is([data-render-mode="blocks"], [data-render-mode="icons"]) .crispy-inline-icons {
   margin-bottom: 0.375rem;
 }
 
-[data-render-mode="blocks"] .user-text,
-[data-render-mode="blocks"] .assistant-text,
-[data-render-mode="blocks"] .crispy-blocks-thinking {
+:is([data-render-mode="blocks"], [data-render-mode="icons"]) .user-text,
+:is([data-render-mode="blocks"], [data-render-mode="icons"]) .assistant-text,
+:is([data-render-mode="blocks"], [data-render-mode="icons"]) .crispy-blocks-thinking {
   margin-top: 1rem;
   margin-bottom: 1rem;
 }
@@ -4198,50 +4198,50 @@ h2 {
   white-space: nowrap;
 }
 
-/* --- Inline Icon Mode — icon-only tool pills --- */
+/* --- Icons Mode — icon-only tool pills for non-destructive tools --- */
 
 /* Inline-only entries: default to right-aligned block row.
    When preceded by a text message (via :has selector below), switch to inline flow. */
-[data-render-mode="blocks"] .message--inline-only {
+[data-render-mode="icons"] .message--inline-only {
   display: flex;
   justify-content: flex-end;
   margin: -0.25rem 0 0.25rem 0;
   padding: 0;
   border: none;
 }
-[data-render-mode="blocks"] .message--inline-only .crispy-inline-icons {
+[data-render-mode="icons"] .message--inline-only .crispy-inline-icons {
   display: inline-flex;
   vertical-align: middle;
   gap: 2px;
   margin-left: 2px;
   margin-bottom: 0;
 }
-[data-render-mode="blocks"] .message--inline-only .crispy-inline-icons [data-run-id] {
+[data-render-mode="icons"] .message--inline-only .crispy-inline-icons [data-run-id] {
   margin-bottom: 0;
 }
 /* When an assistant message is followed by an inline-only entry, make the
    inline-only entry flow inline with the preceding text. */
-[data-render-mode="blocks"] .message.assistant + .message--inline-only {
+[data-render-mode="icons"] .message.assistant + .message--inline-only {
   display: inline;
   margin: 0;
 }
 
 /* Standalone inline icon rows inside merged entries (e.g. after thinking blocks):
    right-align, tight spacing, subtle appearance. */
-[data-render-mode="blocks"] .message.assistant > .crispy-inline-icons {
+[data-render-mode="icons"] .message.assistant > .crispy-inline-icons {
   display: flex;
   justify-content: flex-end;
   gap: 2px;
   margin: -0.25rem 0 0.25rem 0;
   padding: 0;
 }
-[data-render-mode="blocks"] .message.assistant > .crispy-inline-icons [data-run-id] {
+[data-render-mode="icons"] .message.assistant > .crispy-inline-icons [data-run-id] {
   margin-bottom: 0;
 }
 
 /* Fallback: when trailingInlineContent can't be injected into the last <p>
    (multi-paragraph text, code blocks, etc.), icons land inside .prose — right-align them. */
-[data-render-mode="blocks"] .prose.assistant-text > .crispy-inline-icons {
+[data-render-mode="icons"] .prose.assistant-text > .crispy-inline-icons {
   display: flex;
   justify-content: flex-end;
   gap: 2px;
@@ -4251,7 +4251,7 @@ h2 {
 
 /* Preceding assistant text entry: when followed by an inline-only entry,
    make the last prose paragraph inline so icons flow on the same line. */
-[data-render-mode="blocks"] .message.assistant:has(+ .message--inline-only) > .assistant-text > :last-child {
+[data-render-mode="icons"] .message.assistant:has(+ .message--inline-only) > .assistant-text > :last-child {
   display: inline;
 }
 

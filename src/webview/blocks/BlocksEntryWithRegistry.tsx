@@ -6,7 +6,7 @@
  * BlocksTranscriptRenderer, EntryRenderer, and ToolBlockRenderer (for
  * rendering Task children recursively).
  *
- * When inline tool mode is active, consecutive tool_use blocks after text
+ * When Icons render mode is active, consecutive tool_use blocks after text
  * blocks are grouped and rendered inline (as icon pills) within the
  * preceding text block's container. Task/Agent tools are exempt — they
  * always render as standalone blocks.
@@ -42,7 +42,7 @@ export function BlocksEntryWithRegistry({
   isLastEntry = false,
 }: BlocksEntryWithRegistryProps): React.JSX.Element | null {
   const registry = useBlocksToolRegistry();
-  const { inlineToolMode } = usePreferences();
+  const { renderMode } = usePreferences();
 
   // Normalize entry to rich blocks
   const blocks = useMemo(
@@ -71,10 +71,10 @@ export function BlocksEntryWithRegistry({
   // Fork/rewind only on root-level user messages (no parentToolUseId)
   const showActions = !parentToolUseId && role === 'user' && forkTargetId !== undefined;
 
-  // When inline mode is on and we're on the main thread, group tool_use blocks
+  // When Icons mode is active and we're on the main thread, group tool_use blocks
   // that follow text blocks to render them inline.
   const isMainThread = anchor.type === 'main-thread';
-  const useInline = inlineToolMode && isMainThread;
+  const useInline = renderMode === 'icons' && isMainThread;
 
   // Detect inline-only entries: all blocks are inline-category tool_use.
   // These render as <span> so they can flow inline with preceding text.

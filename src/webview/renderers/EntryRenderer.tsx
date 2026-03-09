@@ -45,6 +45,7 @@ export const EntryRenderer = memo(
       case "compact":
         return <CompactEntry entry={entry} />;
       case "blocks":
+      case "icons":
         return <BlocksEntryWithRegistry entry={entry} forkTargetId={forkTargetId} />;
     }
   },

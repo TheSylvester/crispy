@@ -297,7 +297,10 @@ export function getToolData(name: string): ToolDefinitionData {
  */
 export function getToolRenderCategory(name: string): RenderCategory {
   const data = TOOL_DATA[name];
-  return data?.renderCategory ?? 'inline';
+  if (data) return data.renderCategory ?? 'inline';
+  // MCP tools and skills render as blocks — they're not simple read/search icons
+  if (name.startsWith('mcp__') || name.startsWith('mcp_')) return 'block';
+  return 'inline';
 }
 
 /**
