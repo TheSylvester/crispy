@@ -10,7 +10,7 @@
  * @module rosie/oversized-fallback
  */
 
-import { statSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { getDb } from '../crispy-db.js';
 import { dbPath } from '../activity-index.js';
 import { SUMMARIZE_PROMPT } from './summarize-hook.js';
@@ -19,8 +19,14 @@ import { SUMMARIZE_PROMPT } from './summarize-hook.js';
 // Constants
 // ============================================================================
 
-/** Conservative file-size threshold for fork mode. 2.1MB worked, 2.6MB didn't — use 2MB. */
-export const MAX_FORK_FILE_SIZE = 2 * 1024 * 1024; // 2MB
+/**
+ * Conservative character-count threshold for fork mode.
+ * Fork sends the ENTIRE transcript (tool uses, tool results, system messages —
+ * not just user/assistant text). A 1.6MB file ≈ 400k tokens, which blows
+ * GLM-4.7's 128k limit. At ~4 chars/token, 128k tokens ≈ 512k chars of total
+ * file content; with system prompt overhead, cap at 400k total file chars.
+ */
+export const MAX_FORK_CONTENT_CHARS = 400_000;
 
 const MAX_TURN_CHARS = 4000;
 
@@ -45,10 +51,16 @@ export interface BookendTurn {
 // Functions
 // ============================================================================
 
-/** Check whether a transcript file exceeds the fork-mode size threshold. */
+/**
+ * Check whether a transcript exceeds the fork-mode character threshold.
+ * Counts total file content (not just user/assistant text) because fork mode
+ * sends the entire transcript including tool uses, tool results, and system
+ * messages — all of which consume tokens.
+ */
 export function isOversized(filePath: string): boolean {
   try {
-    return statSync(filePath).size > MAX_FORK_FILE_SIZE;
+    const raw = readFileSync(filePath, 'utf-8');
+    return raw.length > MAX_FORK_CONTENT_CHARS;
   } catch {
     return false;
   }

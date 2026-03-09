@@ -4,6 +4,10 @@
  * Bootstraps the adapter system (same as dev-server), then uses production
  * code to process old sessions through the summarize → tracker chain.
  *
+ * Supports concurrent dispatch (--concurrency / -c) to parallelize LLM calls.
+ * Summarize is embarrassingly parallel; tracker batches refresh project context
+ * between waves to avoid stale matches.
+ *
  * Usage:
  *   npx tsx scripts/backfill.ts summarize [options]
  *   npx tsx scripts/backfill.ts track [options]
@@ -36,6 +40,7 @@ import { isOversized, getExistingRosieMetas, extractBookendTurns, buildFallbackP
 // ============================================================================
 
 const DEFAULT_MODEL = 'claude-haiku-4-5';
+const DEFAULT_CONCURRENCY = 1;
 
 // ============================================================================
 // CLI Parsing
@@ -51,6 +56,7 @@ Commands:
 
 Options:
   --model, -m <vendor:model>   Model to use (default: ${DEFAULT_MODEL})
+  --concurrency, -c <n>        Parallel dispatches (default: ${DEFAULT_CONCURRENCY})
   --workspace, -w <name>       Filter by workspace path substring
   --session, -s <id>           Target a specific session by ID or file path substring
   --limit, -l <n>              Process at most N entries (default: 1)
@@ -59,17 +65,17 @@ Options:
   --help, -h                   Show this help
 
 Examples:
-  # Summarize the oldest unsummarized crispy session
-  npx tsx scripts/backfill.ts summarize -w crispy
+  # Summarize 100 sessions, 8 at a time
+  npx tsx scripts/backfill.ts summarize -l 100 -c 8
 
-  # Summarize a specific session with zai
-  npx tsx scripts/backfill.ts summarize -s 59db280a -m zai:GLM-4.7
+  # Summarize all crispy sessions with max parallelism
+  npx tsx scripts/backfill.ts summarize -w crispy -l 9999 -c 10
 
-  # Track the next untracked entry with haiku
-  npx tsx scripts/backfill.ts track -w crispy
+  # Track 50 entries sequentially (tracker needs sequential for project context)
+  npx tsx scripts/backfill.ts track -l 50
 
-  # Track a specific session
-  npx tsx scripts/backfill.ts track -s cb4132ca -m zai:GLM-4.7
+  # Track with moderate parallelism (refreshes projects between waves)
+  npx tsx scripts/backfill.ts track -l 200 -c 4
 
   # Dry-run: see what would be processed
   npx tsx scripts/backfill.ts summarize -w crispy -l 10 --dry-run
@@ -79,6 +85,7 @@ Examples:
 interface CliOptions {
   command: 'summarize' | 'track';
   model: string;
+  concurrency: number;
   workspace: string | undefined;
   session: string | undefined;
   limit: number;
@@ -105,6 +112,7 @@ function parseCli(): CliOptions | null {
     args: args.slice(1),
     options: {
       model: { type: 'string', short: 'm', default: DEFAULT_MODEL },
+      concurrency: { type: 'string', short: 'c', default: String(DEFAULT_CONCURRENCY) },
       workspace: { type: 'string', short: 'w' },
       session: { type: 'string', short: 's' },
       limit: { type: 'string', short: 'l', default: '1' },
@@ -123,6 +131,7 @@ function parseCli(): CliOptions | null {
   return {
     command: command as 'summarize' | 'track',
     model: values.model as string,
+    concurrency: Math.max(1, parseInt(values.concurrency as string, 10) || DEFAULT_CONCURRENCY),
     workspace: values.workspace as string | undefined,
     session: values.session as string | undefined,
     limit: parseInt(values.limit as string, 10) || 1,
@@ -164,6 +173,27 @@ function buildFileFilter(workspace: string | undefined, session: string | undefi
 }
 
 // ============================================================================
+// Concurrency Pool
+// ============================================================================
+
+/**
+ * Run async tasks with bounded concurrency. Processes items in waves of N,
+ * calling onWaveComplete between waves for state refresh.
+ */
+async function pooled<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<void>,
+  onWaveComplete?: (waveEnd: number) => void,
+): Promise<void> {
+  for (let start = 0; start < items.length; start += concurrency) {
+    const wave = items.slice(start, start + concurrency);
+    await Promise.all(wave.map((item, j) => fn(item, start + j)));
+    onWaveComplete?.(start + wave.length);
+  }
+}
+
+// ============================================================================
 // Summarize Command
 // ============================================================================
 
@@ -200,41 +230,41 @@ async function runSummarize(dispatch: ReturnType<typeof createAgentDispatch>, op
     return;
   }
 
-  log(`Found ${candidates.length} session(s) to summarize`);
+  log(`Found ${candidates.length} session(s) to summarize (concurrency: ${opts.concurrency})`);
 
   const allSessions = listAllSessions();
   const sessionsByPath = new Map(allSessions.map((s) => [s.path, s]));
 
   const { vendor: modelVendor, model: modelName } = parseModelOption(opts.model);
 
-  for (let i = 0; i < candidates.length; i++) {
-    const c = candidates[i];
-    log(`\n[${i + 1}/${candidates.length}] ${c.file}`);
+  let okCount = 0;
+  let failCount = 0;
+  let skipCount = 0;
+  const startTime = Date.now();
+
+  await pooled(candidates, opts.concurrency, async (c, i) => {
+    const label = `[${i + 1}/${candidates.length}]`;
+    log(`\n${label} ${c.file}`);
     log(`  First prompt: ${c.firstTs} | Turns: ${c.turns}`);
 
     if (!existsSync(c.file)) {
       log('  SKIP — file not found on disk');
-      continue;
+      skipCount++;
+      return;
     }
 
     const sessionInfo = sessionsByPath.get(c.file);
     if (!sessionInfo) {
       log('  SKIP — no session found in adapter registry (adapter may not be registered)');
-      continue;
+      skipCount++;
+      return;
     }
 
-    // Summarize uses fork mode — child needs to see the full transcript.
-    // dispatchChildSession routes by vendor match:
-    // - Same vendor → native fork (e.g. zai forking claude — same CLI)
-    // - Cross-vendor → hydrated fork (loads history, converts to universal format)
-    // - forceNew → blank session (no transcript context)
-    // Pass the session's actual vendor as parentVendor so cross-vendor hydration works.
     const vendor = modelVendor;
     const model = modelName || undefined;
-
     const oversized = isOversized(c.file);
 
-    log(`  Session: ${sessionInfo.sessionId} | Parent vendor: ${sessionInfo.vendor} | Child vendor: ${vendor} | Model: ${model ?? 'default'}${oversized ? ' | OVERSIZED' : ''}`);
+    log(`  Session: ${sessionInfo.sessionId} | Parent: ${sessionInfo.vendor} | Child: ${vendor}:${model ?? 'default'}${oversized ? ' | OVERSIZED' : ''}`);
 
     if (opts.dryRun) {
       result(JSON.stringify({
@@ -248,10 +278,11 @@ async function runSummarize(dispatch: ReturnType<typeof createAgentDispatch>, op
         oversized,
         fallbackMode: oversized ? 'synthetic' : 'fork',
       }));
-      continue;
+      return;
     }
 
     try {
+      const t0 = Date.now();
       let childResult;
 
       if (oversized) {
@@ -259,7 +290,7 @@ async function runSummarize(dispatch: ReturnType<typeof createAgentDispatch>, op
         const { first, last } = extractBookendTurns(c.file);
         const prompt = buildFallbackPrompt(first, last, metas);
 
-        log(`  OVERSIZED — using fallback (${first.length} first turns, ${metas.length} DB summaries, ${last.length} last turns)`);
+        log(`  OVERSIZED — fallback (${first.length} first, ${metas.length} metas, ${last.length} last)`);
 
         childResult = await dispatch.dispatchChild({
           parentSessionId: sessionInfo.sessionId,
@@ -277,7 +308,6 @@ async function runSummarize(dispatch: ReturnType<typeof createAgentDispatch>, op
           timeoutMs: 60_000,
         });
       } else {
-        log('  Dispatching child session (fork)...');
         childResult = await dispatch.dispatchChild({
           parentSessionId: sessionInfo.sessionId,
           vendor,
@@ -294,9 +324,12 @@ async function runSummarize(dispatch: ReturnType<typeof createAgentDispatch>, op
         });
       }
 
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+
       if (!childResult) {
-        log('  FAIL — dispatchChild returned null (timeout or empty response)');
-        continue;
+        log(`  FAIL — null response (${elapsed}s)`);
+        failCount++;
+        return;
       }
 
       if (opts.verbose) {
@@ -305,8 +338,9 @@ async function runSummarize(dispatch: ReturnType<typeof createAgentDispatch>, op
 
       const fields = parseSummarizeResponse(childResult.text);
       if (!fields) {
-        log(`  FAIL — could not parse response: ${childResult.text.slice(0, 200)}`);
-        continue;
+        log(`  FAIL — parse error (${elapsed}s): ${childResult.text.slice(0, 200)}`);
+        failCount++;
+        return;
       }
 
       appendActivityEntries([{
@@ -331,11 +365,20 @@ async function runSummarize(dispatch: ReturnType<typeof createAgentDispatch>, op
         entitiesCount: JSON.parse(fields.entities || '[]').length,
       }));
 
-      log(`  OK — "${fields.title}"`);
+      okCount++;
+      log(`  OK (${elapsed}s) — "${fields.title}"`);
     } catch (err) {
+      failCount++;
       log(`  ERROR — ${err instanceof Error ? err.message : String(err)}`);
     }
-  }
+  }, (waveEnd) => {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+    const rate = (okCount / (Date.now() - startTime) * 1000 * 60).toFixed(1);
+    log(`\n--- Wave complete (${waveEnd}/${candidates.length}) | OK: ${okCount} | Fail: ${failCount} | Skip: ${skipCount} | ${elapsed}s elapsed | ~${rate}/min ---`);
+  });
+
+  const totalElapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+  log(`\n=== Summarize complete: ${okCount} OK, ${failCount} failed, ${skipCount} skipped in ${totalElapsed}s ===`);
 }
 
 function parseSummarizeResponse(text: string): {
@@ -369,6 +412,11 @@ interface TrackCandidate {
   entities: string;
 }
 
+/**
+ * Find rosie-meta entries not yet tracked. Uses tracker_outcomes as the
+ * authoritative "already processed" marker — not project_sessions, since
+ * trivial entries are recorded in tracker_outcomes but never linked to a project.
+ */
 function findTrackCandidates(workspace: string | undefined, session: string | undefined, limit: number): TrackCandidate[] {
   const db = getDb(dbPath());
   const filter = buildFileFilter(workspace, session);
@@ -377,7 +425,7 @@ function findTrackCandidates(workspace: string | undefined, session: string | un
     SELECT rowid, timestamp, file, quest, title, summary, status, entities
     FROM activity_entries
     WHERE kind = 'rosie-meta'
-    AND file NOT IN (SELECT session_file FROM project_sessions)
+    AND file NOT IN (SELECT session_file FROM tracker_outcomes)
     ${filter.clause}
     ORDER BY timestamp ASC LIMIT ?
   `, [...filter.params, limit]) as Array<Record<string, unknown>>;
@@ -401,7 +449,7 @@ async function runTrack(dispatch: ReturnType<typeof createAgentDispatch>, opts: 
     return;
   }
 
-  log(`Found ${candidates.length} rosie-meta entry/entries to track`);
+  log(`Found ${candidates.length} rosie-meta entry/entries to track (concurrency: ${opts.concurrency})`);
 
   const allSessions = listAllSessions();
   const sessionsByPath = new Map(allSessions.map((s) => [s.path, s]));
@@ -409,32 +457,41 @@ async function runTrack(dispatch: ReturnType<typeof createAgentDispatch>, opts: 
   const { vendor: modelVendor, model: modelName } = parseModelOption(opts.model);
   const serverPaths = resolveInternalServerPaths();
 
-  for (let i = 0; i < candidates.length; i++) {
-    const c = candidates[i];
-    log(`\n[${i + 1}/${candidates.length}] ${c.file}`);
+  let okCount = 0;
+  let failCount = 0;
+  let skipCount = 0;
+  const startTime = Date.now();
+
+  // Cache existing projects; refresh between waves for tracker accuracy
+  let cachedProjects = getExistingProjects();
+
+  await pooled(candidates, opts.concurrency, async (c, i) => {
+    const label = `[${i + 1}/${candidates.length}]`;
+    log(`\n${label} ${c.file}`);
     log(`  Title: ${c.title} | Quest: ${c.quest.slice(0, 80)}`);
 
     if (!existsSync(c.file)) {
       log('  SKIP — file not found on disk');
-      continue;
+      skipCount++;
+      return;
     }
 
     const sessionInfo = sessionsByPath.get(c.file);
     if (!sessionInfo) {
       log('  SKIP — no session found in adapter registry');
-      continue;
+      skipCount++;
+      return;
     }
 
     const vendor = modelVendor;
     const model = modelName;
 
-    const existingProjects = getExistingProjects();
     const prompt = buildTrackerPrompt(
       { quest: c.quest, title: c.title, summary: c.summary, status: c.status, entities: c.entities },
-      existingProjects,
+      cachedProjects,
     );
 
-    log(`  Session: ${sessionInfo.sessionId} | Projects in DB: ${existingProjects.length} | Dispatch via ${vendor}:${model}`);
+    log(`  Session: ${sessionInfo.sessionId} | Projects: ${cachedProjects.length} | ${vendor}:${model}`);
 
     if (opts.dryRun) {
       result(JSON.stringify({
@@ -444,14 +501,14 @@ async function runTrack(dispatch: ReturnType<typeof createAgentDispatch>, opts: 
         sessionId: sessionInfo.sessionId,
         title: c.title,
         quest: c.quest,
-        existingProjects: existingProjects.length,
+        existingProjects: cachedProjects.length,
         promptLength: prompt.length,
       }));
-      continue;
+      return;
     }
 
     try {
-      log('  Dispatching tracker child session...');
+      const t0 = Date.now();
       const childResult = await dispatch.dispatchChild({
         parentSessionId: sessionInfo.sessionId,
         vendor,
@@ -475,9 +532,12 @@ async function runTrack(dispatch: ReturnType<typeof createAgentDispatch>, opts: 
         timeoutMs: 60_000,
       });
 
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+
       if (!childResult) {
-        log('  FAIL — dispatchChild returned null (timeout or empty response)');
-        continue;
+        log(`  FAIL — null response (${elapsed}s)`);
+        failCount++;
+        return;
       }
 
       if (opts.verbose) {
@@ -491,11 +551,23 @@ async function runTrack(dispatch: ReturnType<typeof createAgentDispatch>, opts: 
         responseLength: childResult.text.length,
       }));
 
-      log(`  OK — tracker completed`);
+      okCount++;
+      log(`  OK (${elapsed}s) — tracker completed`);
     } catch (err) {
+      failCount++;
       log(`  ERROR — ${err instanceof Error ? err.message : String(err)}`);
     }
-  }
+  }, (waveEnd) => {
+    // Refresh project cache between waves — new projects created in this wave
+    // need to be visible to the next wave for accurate matching
+    cachedProjects = getExistingProjects();
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+    const rate = okCount > 0 ? (okCount / (Date.now() - startTime) * 1000 * 60).toFixed(1) : '0';
+    log(`\n--- Wave complete (${waveEnd}/${candidates.length}) | OK: ${okCount} | Fail: ${failCount} | Skip: ${skipCount} | ${elapsed}s elapsed | ~${rate}/min | Projects: ${cachedProjects.length} ---`);
+  });
+
+  const totalElapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+  log(`\n=== Track complete: ${okCount} OK, ${failCount} failed, ${skipCount} skipped in ${totalElapsed}s ===`);
 }
 
 // ============================================================================
@@ -513,7 +585,7 @@ async function main(): Promise<void> {
   const unregister = registerAllAdapters({ cwd, hostType: 'dev-server', dispatch });
   await initSettings({ cwd });
 
-  log(`[backfill] Ready — command: ${opts.command}, model: ${opts.model}, limit: ${opts.limit}${opts.workspace ? `, workspace: ${opts.workspace}` : ''}${opts.session ? `, session: ${opts.session}` : ''}${opts.dryRun ? ' (dry-run)' : ''}`);
+  log(`[backfill] Ready — command: ${opts.command}, model: ${opts.model}, concurrency: ${opts.concurrency}, limit: ${opts.limit}${opts.workspace ? `, workspace: ${opts.workspace}` : ''}${opts.session ? `, session: ${opts.session}` : ''}${opts.dryRun ? ' (dry-run)' : ''}`);
 
   const shutdown = () => {
     log('\n[backfill] Shutting down...');
