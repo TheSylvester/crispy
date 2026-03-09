@@ -1,12 +1,15 @@
 /**
- * Tool Badge — frosted glass mono tool name pill
+ * Tool Badge — tool name pill with configurable style
  *
- * Renders the tool name in colored monospace text over a frosted
- * glass background with subtle border. Used in dot-lines and
- * expanded card headers.
+ * Supports three visual styles (controlled by badgeStyle preference):
+ * - solid:   solid colored background, white text (classic)
+ * - tinted:  colored text on subtle tinted background
+ * - frosted: colored text, tinted bg, border, inner glow (default)
  *
  * @module webview/renderers/tools/shared/ToolBadge
  */
+
+import { usePreferences } from '../../../context/PreferencesContext.js';
 
 interface ToolBadgeProps {
   color: string;
@@ -25,6 +28,38 @@ function hexToRgba(hex: string, alpha: number): string | null {
 }
 
 export function ToolBadge({ color, textColor, label }: ToolBadgeProps): React.JSX.Element {
+  const { badgeStyle } = usePreferences();
+
+  if (badgeStyle === 'solid') {
+    return (
+      <span
+        className="crispy-tool-badge"
+        style={{
+          color: textColor ?? '#fff',
+          background: color,
+        }}
+      >
+        {label}
+      </span>
+    );
+  }
+
+  if (badgeStyle === 'tinted') {
+    const bg = hexToRgba(color, 0.12);
+    return (
+      <span
+        className="crispy-tool-badge"
+        style={{
+          color: textColor ?? color,
+          background: bg ?? 'var(--tint-soft)',
+        }}
+      >
+        {label.toLowerCase()}
+      </span>
+    );
+  }
+
+  // frosted (default)
   const bg = hexToRgba(color, 0.10);
   const border = hexToRgba(color, 0.25);
   return (

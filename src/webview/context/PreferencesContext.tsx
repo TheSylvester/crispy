@@ -21,6 +21,9 @@ export type ToolViewOverride = 'compact' | 'expanded' | null;
 /** Tool panel mode: inspector shows active/focused tools, viewport mirrors scroll position. */
 export type ToolPanelMode = 'inspector' | 'viewport';
 
+/** Badge style for tool name pills. */
+export type BadgeStyle = 'solid' | 'tinted' | 'frosted';
+
 interface Preferences {
   renderMode: RenderMode;
   settingsPinned: boolean;
@@ -38,6 +41,8 @@ interface Preferences {
   toolPanelAutoOpen: boolean;
   /** Condensed tool mode: tools render as dot-lines instead of full compact rows. Off by default. */
   condensedToolMode: boolean;
+  /** Badge style for tool name pills. */
+  badgeStyle: BadgeStyle;
 }
 
 interface PreferencesContextValue extends Preferences {
@@ -51,6 +56,7 @@ interface PreferencesContextValue extends Preferences {
   setDebugMode: (enabled: boolean) => void;
   setToolPanelAutoOpen: (enabled: boolean) => void;
   setCondensedToolMode: (enabled: boolean) => void;
+  setBadgeStyle: (style: BadgeStyle) => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
@@ -86,6 +92,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [toolPanelMode, setToolPanelMode] = useState<ToolPanelMode>('inspector');
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
   const [condensedToolMode, setCondensedToolMode] = useState(false);
+  const [badgeStyle, setBadgeStyle] = useState<BadgeStyle>('frosted');
 
   // ============================================================================
   // Persisted preference — toolPanelAutoOpen only
@@ -187,6 +194,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     debugMode,
     toolPanelAutoOpen,
     condensedToolMode,
+    badgeStyle,
     setRenderMode,
     setSettingsPinned,
     setSidebarCollapsed,
@@ -197,6 +205,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setDebugMode,
     setToolPanelAutoOpen,
     setCondensedToolMode,
+    setBadgeStyle,
   };
 
   return (

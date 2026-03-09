@@ -14,7 +14,7 @@ import { SettingsIcon } from './icons.js';
 import { ModelSelect } from './ModelSelect.js';
 import type { VendorModelGroup } from './types.js';
 import type { RenderMode } from '../../types.js';
-import type { ToolViewOverride } from '../../context/PreferencesContext.js';
+import type { ToolViewOverride, BadgeStyle } from '../../context/PreferencesContext.js';
 import type { WireProviderConfig, ProviderConfig } from '../../../core/settings/types.js';
 
 interface SettingsPopupProps {
@@ -28,6 +28,8 @@ interface SettingsPopupProps {
   onDebugModeChange: (enabled: boolean) => void;
   toolPanelAutoOpen: boolean;
   onToolPanelAutoOpenChange: (enabled: boolean) => void;
+  badgeStyle: BadgeStyle;
+  onBadgeStyleChange: (style: BadgeStyle) => void;
   rosieEnabled: boolean;
   rosieModel?: string;
   onUpdateRosie: (patch: { enabled?: boolean; model?: string }) => void;
@@ -46,6 +48,12 @@ const RENDER_MODES: { value: RenderMode; label: string }[] = [
   { value: 'blocks', label: 'Blocks' },
   { value: 'yaml', label: 'YAML' },
   { value: 'compact', label: 'Compact' },
+];
+
+const BADGE_STYLES: { value: BadgeStyle; label: string }[] = [
+  { value: 'frosted', label: 'Frosted' },
+  { value: 'tinted', label: 'Tinted' },
+  { value: 'solid', label: 'Solid' },
 ];
 
 const TOOL_VIEW_MODES: { value: string; label: string }[] = [
@@ -118,7 +126,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, rosieEnabled, rosieModel, onUpdateRosie, trackerEnabled, onUpdateTracker, mcpMemoryEnabled, onUpdateMcpMemory, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, rosieEnabled, rosieModel, onUpdateRosie, trackerEnabled, onUpdateTracker, mcpMemoryEnabled, onUpdateMcpMemory, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -197,6 +205,19 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               onChange={(e) => onRenderModeChange(e.target.value as RenderMode)}
             >
               {RENDER_MODES.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="crispy-cp-settings__row">
+            <span>Badge Style</span>
+            <select
+              value={badgeStyle}
+              onChange={(e) => onBadgeStyleChange(e.target.value as BadgeStyle)}
+            >
+              {BADGE_STYLES.map((m) => (
                 <option key={m.value} value={m.value}>
                   {m.label}
                 </option>
