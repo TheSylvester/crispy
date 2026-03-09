@@ -23,13 +23,12 @@ import { ToolBlockRenderer } from './ToolBlockRenderer.js';
 import { BlocksBlockRenderer } from './BlocksBlockRenderer.js';
 import { MessageActions } from '../components/MessageActions.js';
 import { usePreferences } from '../context/PreferencesContext.js';
-import { getToolDefinition } from './tool-definitions.js';
-
-/** Agent-category tools that are exempt from inline mode (they have children). */
-const AGENT_TOOLS = new Set(['Task', 'Agent']);
+import { getToolRenderCategory } from './tool-definitions.js';
 
 interface BlocksEntryWithRegistryProps {
   entry: TranscriptEntry;
+  /** Optional pre-normalized blocks, used when transcript renderer merges entries */
+  blocksOverride?: RichBlock[];
   /** Fork target assistant message ID (for fork/rewind buttons) */
   forkTargetId?: string;
   /** True when this is the last entry in the transcript */
@@ -38,6 +37,7 @@ interface BlocksEntryWithRegistryProps {
 
 export function BlocksEntryWithRegistry({
   entry,
+  blocksOverride,
   forkTargetId,
   isLastEntry = false,
 }: BlocksEntryWithRegistryProps): React.JSX.Element | null {
@@ -46,8 +46,8 @@ export function BlocksEntryWithRegistry({
 
   // Normalize entry to rich blocks
   const blocks = useMemo(
-    () => normalizeToRichBlocks(entry),
-    [entry],
+    () => blocksOverride ?? normalizeToRichBlocks(entry),
+    [blocksOverride, entry],
   );
 
   // Skip empty entries
@@ -75,6 +75,37 @@ export function BlocksEntryWithRegistry({
   // that follow text blocks to render them inline.
   const isMainThread = anchor.type === 'main-thread';
   const useInline = inlineToolMode && isMainThread;
+
+  // Detect inline-only entries: all blocks are inline-category tool_use.
+  // These render as <span> so they can flow inline with preceding text.
+  const isInlineOnly = useInline
+    && blocks.length > 0
+    && blocks.every(b => b.type === 'tool_use' && getToolRenderCategory(b.name) === 'inline');
+
+  if (isInlineOnly) {
+    return (
+      <span
+        className={`message ${role} message--inline-only`}
+        data-uuid={entry.uuid}
+      >
+        <span className="crispy-inline-icons">
+          {blocks.map(block => {
+            const toolBlock = block as RichBlock & { type: 'tool_use' };
+            return (
+              <span key={toolBlock.id} data-run-id={toolBlock.id}>
+                <ToolBlockRenderer
+                  block={toolBlock}
+                  anchor={anchor}
+                  registry={registry}
+                  siblingCount={siblingCount}
+                />
+              </span>
+            );
+          })}
+        </span>
+      </span>
+    );
+  }
 
   return (
     <div
@@ -131,8 +162,10 @@ function renderWithInlineGrouping(
     const block = blocks[i];
 
     if (block.type === 'tool_use') {
-      // Agent tools always render standalone
-      if (AGENT_TOOLS.has(block.name)) {
+      const category = getToolRenderCategory(block.name);
+
+      // Non-inline tools (block, bash) always render standalone
+      if (category !== 'inline') {
         elements.push(
           <div key={`tool-${block.id}`} data-run-id={block.id}>
             <ToolBlockRenderer
@@ -147,36 +180,31 @@ function renderWithInlineGrouping(
         continue;
       }
 
-      // Check if this tool has an inline view registered
-      const def = getToolDefinition(block.name);
-      if (!def?.views.inline) {
-        // No inline view — render as standalone compact
-        elements.push(
-          <div key={`tool-${block.id}`} data-run-id={block.id}>
-            <ToolBlockRenderer
-              block={block}
-              anchor={anchor}
-              registry={registry}
-              siblingCount={siblingCount}
-            />
-          </div>
-        );
-        i++;
-        continue;
+      // Collect consecutive standalone inline tools into one row
+      const inlineRun: (RichBlock & { type: 'tool_use' })[] = [block as RichBlock & { type: 'tool_use' }];
+      let k = i + 1;
+      while (k < blocks.length && blocks[k].type === 'tool_use') {
+        const next = blocks[k] as RichBlock & { type: 'tool_use' };
+        if (getToolRenderCategory(next.name) !== 'inline') break;
+        inlineRun.push(next);
+        k++;
       }
 
-      // Standalone inline tool (no preceding text) — render as standalone
       elements.push(
-        <div key={`tool-${block.id}`} data-run-id={block.id}>
-          <ToolBlockRenderer
-            block={block}
-            anchor={anchor}
-            registry={registry}
-            siblingCount={siblingCount}
-          />
-        </div>
+        <span key={`inline-run-${block.id}`} className="crispy-inline-icons">
+          {inlineRun.map(tb => (
+            <span key={tb.id} data-run-id={tb.id}>
+              <ToolBlockRenderer
+                block={tb}
+                anchor={anchor}
+                registry={registry}
+                siblingCount={siblingCount}
+              />
+            </span>
+          ))}
+        </span>
       );
-      i++;
+      i = k;
       continue;
     }
 
@@ -191,30 +219,35 @@ function renderWithInlineGrouping(
     let j = i + 1;
     while (j < blocks.length && blocks[j].type === 'tool_use') {
       const toolBlock = blocks[j] as RichBlock & { type: 'tool_use' };
-      if (AGENT_TOOLS.has(toolBlock.name)) break;
-      const def = getToolDefinition(toolBlock.name);
-      if (!def?.views.inline) break;
+      if (getToolRenderCategory(toolBlock.name) !== 'inline') break;
       inlineTools.push(toolBlock);
       j++;
     }
 
     if (block.type === 'text' && inlineTools.length > 0) {
+      const trailingInlineIcons = (
+        <span className="crispy-inline-icons">
+          {inlineTools.map(tb => (
+            <span key={tb.id} data-run-id={tb.id}>
+              <ToolBlockRenderer
+                block={tb}
+                anchor={anchor}
+                registry={registry}
+                siblingCount={siblingCount}
+              />
+            </span>
+          ))}
+        </span>
+      );
+
       // Render text block with inline tool icons appended
       elements.push(
         <div key={`block-${block.context.entryUuid}-${i}`} className="crispy-blocks-text-with-inline">
-          <BlocksBlockRenderer block={block} autoCollapse={autoCollapse} />
-          <span className="crispy-inline-icons">
-            {inlineTools.map(tb => (
-              <span key={tb.id} data-run-id={tb.id}>
-                <ToolBlockRenderer
-                  block={tb}
-                  anchor={anchor}
-                  registry={registry}
-                  siblingCount={siblingCount}
-                />
-              </span>
-            ))}
-          </span>
+          <BlocksBlockRenderer
+            block={block}
+            autoCollapse={autoCollapse}
+            trailingInlineContent={trailingInlineIcons}
+          />
         </div>
       );
       i = j;

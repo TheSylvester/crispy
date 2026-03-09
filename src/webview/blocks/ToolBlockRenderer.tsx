@@ -160,10 +160,13 @@ export function ToolBlockRenderer({
         ? { border: `1px solid ${hexToRgba(def.color, 0.2)}`, background: hexToRgba(def.color, 0.04), borderRadius: '6px', margin: '4px 0', overflow: 'hidden' as const }
         : undefined;
 
+      // Inline views use <span> to flow inline with text; all others use <div>
+      const Tag = viewMode === 'inline' ? 'span' : 'div';
+
       return (
-        <div className="crispy-blocks-tool" data-tool-id={block.id} data-tool-name={block.name} data-panel-active={isPanelActive || undefined} onClick={clickable ? handleClick : undefined} style={panelTintStyle}>
+        <Tag className={`crispy-blocks-tool${viewMode === 'inline' ? ' crispy-blocks-tool--inline' : ''}`} data-tool-id={block.id} data-tool-name={block.name} data-panel-active={isPanelActive || undefined} onClick={clickable ? handleClick : undefined} style={panelTintStyle}>
           <ViewComponent {...viewProps} />
-        </div>
+        </Tag>
       );
     }
   }

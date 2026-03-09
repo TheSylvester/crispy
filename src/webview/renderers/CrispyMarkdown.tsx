@@ -17,6 +17,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { PreBlock } from './markdown-components.js';
 import { LinkifiedP, LinkifiedLi, LinkifiedTd, LinkifiedCode } from './linkify-components.js';
+import type { Components } from 'react-markdown';
 
 const plugins = [remarkGfm];
 const defaultComponents = {
@@ -29,11 +30,12 @@ const defaultComponents = {
 
 interface CrispyMarkdownProps {
   children: string;
+  components?: Components;
 }
 
-export function CrispyMarkdown({ children }: CrispyMarkdownProps): React.JSX.Element {
+export function CrispyMarkdown({ children, components }: CrispyMarkdownProps): React.JSX.Element {
   return (
-    <Markdown remarkPlugins={plugins} components={defaultComponents}>
+    <Markdown remarkPlugins={plugins} components={{ ...defaultComponents, ...components }}>
       {children}
     </Markdown>
   );

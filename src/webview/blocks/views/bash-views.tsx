@@ -64,6 +64,32 @@ export function BashCompactView({ block, result, status }: ToolViewProps): React
 }
 
 // ============================================================================
+// Condensed View (Icon mode — single line, description only, no command pill)
+// ============================================================================
+
+export function BashCondensedView({ block, result, status }: ToolViewProps): ReactNode {
+  const input = block.input as BashInput;
+  const description = input.description
+    ?? (input.command ? truncateCommand(input.command, 60) : undefined);
+
+  return (
+    <DotLine
+      icon={meta.icon}
+      color={meta.color}
+      name="bash"
+      description={description}
+      result={<DotLineStatus status={status} />}
+    />
+  );
+}
+
+/** Truncate command to first line, max length. */
+function truncateCommand(cmd: string, max: number): string {
+  const first = cmd.split('\n')[0];
+  return first.length > max ? first.slice(0, max - 1) + '…' : first;
+}
+
+// ============================================================================
 // Expanded View
 // ============================================================================
 

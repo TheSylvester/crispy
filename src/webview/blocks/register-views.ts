@@ -13,7 +13,7 @@
 import { registerToolViews, getToolData } from './tool-definitions.js';
 import { defaultToolViews, GenericExpandedView } from './views/default-views.js';
 import { DefaultInlineView } from './views/inline-view.js';
-import { BashCompactView, BashExpandedView } from './views/bash-views.js';
+import { BashCompactView, BashCondensedView, BashExpandedView } from './views/bash-views.js';
 import { EditCompactView, EditExpandedView } from './views/edit-views.js';
 import { TaskCompactView, TaskExpandedView } from './views/task-views.js';
 import { ReadCompactView, ReadExpandedView } from './views/read-views.js';
@@ -49,6 +49,7 @@ registerToolViews('_default', {
 
 registerToolViews('Bash', {
   compact: BashCompactView,
+  condensed: BashCondensedView,
   expanded: BashExpandedView,
   inline: DefaultInlineView,
 });

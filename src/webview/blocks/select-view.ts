@@ -9,6 +9,7 @@
 
 import type { ToolDefinition, AnchorPoint, RichBlock } from './types.js';
 import type { BlocksToolRegistry } from './blocks-tool-registry.js';
+import { getToolRenderCategory } from './tool-definitions.js';
 
 /**
  * Select which view to render for a tool block.
@@ -47,9 +48,12 @@ export function selectView(
     return 'expanded';
   }
 
-  // Main thread with inline mode: use inline if the tool has an inline view
-  if (anchor.type === 'main-thread' && inlineMode && def.views.inline) {
-    return 'inline';
+  // Main thread with inline mode: dispatch based on render category
+  if (anchor.type === 'main-thread' && inlineMode) {
+    const category = getToolRenderCategory(def.name);
+    if (category === 'inline' && def.views.inline) return 'inline';
+    if (category === 'bash' && def.views.condensed) return 'condensed';
+    // 'block' category falls through to compact
   }
 
   // Main thread with condensed mode: use condensed (dot-line) if available

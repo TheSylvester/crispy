@@ -455,6 +455,13 @@ h2 {
 [data-render-mode="blocks"] [data-run-id] {
   margin-bottom: 0.375rem;
 }
+/* Inline icon containers and their children skip block spacing */
+[data-render-mode="blocks"] .crispy-inline-icons [data-run-id] {
+  margin-bottom: 0;
+}
+[data-render-mode="blocks"] .crispy-inline-icons {
+  margin-bottom: 0.375rem;
+}
 
 [data-render-mode="blocks"] .user-text,
 [data-render-mode="blocks"] .assistant-text,
@@ -4193,6 +4200,74 @@ h2 {
 
 /* --- Inline Icon Mode — icon-only tool pills --- */
 
+/* Inline-only entries: default to right-aligned block row.
+   When preceded by a text message (via :has selector below), switch to inline flow. */
+[data-render-mode="blocks"] .message--inline-only {
+  display: flex;
+  justify-content: flex-end;
+  margin: -0.25rem 0 0.25rem 0;
+  padding: 0;
+  border: none;
+}
+[data-render-mode="blocks"] .message--inline-only .crispy-inline-icons {
+  display: inline-flex;
+  vertical-align: middle;
+  gap: 2px;
+  margin-left: 2px;
+  margin-bottom: 0;
+}
+[data-render-mode="blocks"] .message--inline-only .crispy-inline-icons [data-run-id] {
+  margin-bottom: 0;
+}
+/* When an assistant message is followed by an inline-only entry, make the
+   inline-only entry flow inline with the preceding text. */
+[data-render-mode="blocks"] .message.assistant + .message--inline-only {
+  display: inline;
+  margin: 0;
+}
+
+/* Standalone inline icon rows inside merged entries (e.g. after thinking blocks):
+   right-align, tight spacing, subtle appearance. */
+[data-render-mode="blocks"] .message.assistant > .crispy-inline-icons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  margin: -0.25rem 0 0.25rem 0;
+  padding: 0;
+}
+[data-render-mode="blocks"] .message.assistant > .crispy-inline-icons [data-run-id] {
+  margin-bottom: 0;
+}
+
+/* Fallback: when trailingInlineContent can't be injected into the last <p>
+   (multi-paragraph text, code blocks, etc.), icons land inside .prose — right-align them. */
+[data-render-mode="blocks"] .prose.assistant-text > .crispy-inline-icons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+}
+
+/* Preceding assistant text entry: when followed by an inline-only entry,
+   make the last prose paragraph inline so icons flow on the same line. */
+[data-render-mode="blocks"] .message.assistant:has(+ .message--inline-only) > .assistant-text > :last-child {
+  display: inline;
+}
+
+/* Intra-entry grouping: text block with trailing inline icons in same entry */
+.crispy-blocks-text-with-inline .crispy-inline-icons {
+  display: inline-flex;
+  vertical-align: middle;
+  gap: 2px;
+  margin-left: 4px;
+  margin-bottom: 0;
+}
+
+.crispy-blocks-tool--inline {
+  display: inline;
+}
+
 .crispy-inline-icon {
   display: inline-flex;
   align-items: center;
@@ -4676,4 +4751,3 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
   cursor: default;
 }
-

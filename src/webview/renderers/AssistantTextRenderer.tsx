@@ -11,19 +11,46 @@
  * @module webview/renderers/AssistantTextRenderer
  */
 
+import type { ReactNode } from 'react';
 import { CrispyMarkdown } from './CrispyMarkdown.js';
+import { LinkifiedP } from './linkify-components.js';
 import { isPerfMode } from '../perf/index.js';
 import { PerfStore } from '../perf/profiler.js';
 import type { ContentBlock, TextBlock } from '../../core/transcript.js';
 
-export function AssistantTextRenderer({ block }: { block: ContentBlock }): React.JSX.Element {
+interface AssistantTextRendererProps {
+  block: ContentBlock;
+  trailingInlineContent?: ReactNode;
+}
+
+function canAppendInlineTail(text: string): boolean {
+  return !text.includes('\n\n')
+    && !text.includes('```')
+    && !/^\s{0,3}(?:#|>|\||[-*+] |\d+\. )/m.test(text);
+}
+
+export function AssistantTextRenderer({
+  block,
+  trailingInlineContent,
+}: AssistantTextRendererProps): React.JSX.Element {
   const { text } = block as TextBlock;
+  const inlineTail = trailingInlineContent && canAppendInlineTail(text)
+    ? {
+        p: (props: React.HTMLAttributes<HTMLParagraphElement>) => (
+          <LinkifiedP {...props}>
+            {props.children}
+            {trailingInlineContent}
+          </LinkifiedP>
+        ),
+      }
+    : undefined;
 
   if (isPerfMode) {
     const t0 = performance.now();
     const el = (
       <div className="prose assistant-text">
-        <CrispyMarkdown>{text}</CrispyMarkdown>
+        <CrispyMarkdown components={inlineTail}>{text}</CrispyMarkdown>
+        {!inlineTail && trailingInlineContent}
       </div>
     );
     PerfStore.recordMarkdownRender(performance.now() - t0);
@@ -32,7 +59,8 @@ export function AssistantTextRenderer({ block }: { block: ContentBlock }): React
 
   return (
     <div className="prose assistant-text">
-      <CrispyMarkdown>{text}</CrispyMarkdown>
+      <CrispyMarkdown components={inlineTail}>{text}</CrispyMarkdown>
+      {!inlineTail && trailingInlineContent}
     </div>
   );
 }

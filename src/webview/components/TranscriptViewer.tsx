@@ -24,6 +24,7 @@ import { useAutoScroll } from "../hooks/useAutoScroll.js";
 import { useToolPanelAutoOpen } from "../hooks/useToolPanelAutoOpen.js";
 import { shouldRenderEntry } from "../utils/entry-filters.js";
 import { EntryRenderer } from "../renderers/EntryRenderer.js";
+import { BlocksTranscriptRenderer } from "../blocks/BlocksTranscriptRenderer.js";
 import { PlaybackControls } from "./PlaybackControls.js";
 import { ForkProvider } from "../context/ForkContext.js";
 import { ControlPanel } from "./control-panel/index.js";
@@ -356,14 +357,21 @@ export function TranscriptViewer(): React.JSX.Element {
               <div className="crispy-loading">Loading transcript...</div>
             ) : (
               <PerfProfiler id="TranscriptList">
-                {filteredEntries.map((entry, i) => (
-                  <EntryRenderer
-                    key={entry.uuid ?? `entry-${i}`}
-                    entry={entry}
-                    mode={renderMode}
-                    forkTargetId={entry.uuid ? forkTargets.get(entry.uuid) : undefined}
+                {renderMode === 'blocks' ? (
+                  <BlocksTranscriptRenderer
+                    entries={filteredEntries}
+                    forkTargets={forkTargets}
                   />
-                ))}
+                ) : (
+                  filteredEntries.map((entry, i) => (
+                    <EntryRenderer
+                      key={entry.uuid ?? `entry-${i}`}
+                      entry={entry}
+                      mode={renderMode}
+                      forkTargetId={entry.uuid ? forkTargets.get(entry.uuid) : undefined}
+                    />
+                  ))
+                )}
               </PerfProfiler>
             )}
             {streamingContent && <StreamingGhost content={streamingContent} />}

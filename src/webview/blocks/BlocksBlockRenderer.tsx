@@ -14,6 +14,7 @@
  */
 
 import { useRef, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import type { RichBlock } from './types.js';
 import { AssistantTextRenderer } from '../renderers/AssistantTextRenderer.js';
 import { UserTextRenderer } from '../renderers/UserTextRenderer.js';
@@ -23,6 +24,8 @@ export interface BlocksBlockRendererProps {
   block: RichBlock;
   /** When true, thinking blocks auto-collapse (one-shot, user can re-expand) */
   autoCollapse?: boolean;
+  /** Optional inline tail content for assistant text blocks */
+  trailingInlineContent?: ReactNode;
 }
 
 /**
@@ -34,6 +37,7 @@ export interface BlocksBlockRendererProps {
 export function BlocksBlockRenderer({
   block,
   autoCollapse,
+  trailingInlineContent,
 }: BlocksBlockRendererProps): React.JSX.Element | null {
   switch (block.type) {
     case 'tool_result':
@@ -50,7 +54,7 @@ export function BlocksBlockRenderer({
       if (block.context.role === 'user') {
         return <UserTextRenderer block={block} />;
       }
-      return <AssistantTextRenderer block={block} />;
+      return <AssistantTextRenderer block={block} trailingInlineContent={trailingInlineContent} />;
 
     case 'thinking':
       return <ThinkingView block={block} autoCollapse={autoCollapse} />;

@@ -43,11 +43,16 @@ export function registerToolViews(
 // Tool Definitions — static metadata + dynamic view lookup
 // ============================================================================
 
+/** How a tool renders in Icon mode: inline pill, block dot-line, or simplified bash line. */
+export type RenderCategory = 'inline' | 'block' | 'bash';
+
 interface ToolDefinitionData {
   icon: string;
   color: string;
   activity: { verb: string; pastVerb: string };
   inspectorDefault: 'expanded' | 'compact';
+  /** How this tool renders in Icon mode. Default: 'inline' (non-destructive icon pill). */
+  renderCategory?: RenderCategory;
 }
 
 /**
@@ -63,6 +68,7 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     color: '#ffb86c',
     activity: { verb: 'Running', pastVerb: 'Ran' },
     inspectorDefault: 'expanded',
+    renderCategory: 'bash',
   },
   Read: {
     icon: '\uD83D\uDCC4',
@@ -75,24 +81,28 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     color: '#50fa7b',
     activity: { verb: 'Writing', pastVerb: 'Wrote' },
     inspectorDefault: 'expanded',
+    renderCategory: 'block',
   },
   Edit: {
     icon: '\uD83D\uDCDD',
     color: '#ff5555',
     activity: { verb: 'Editing', pastVerb: 'Edited' },
     inspectorDefault: 'expanded',
+    renderCategory: 'block',
   },
   MultiEdit: {
     icon: '\uD83D\uDCDD',
     color: '#ff5555',
     activity: { verb: 'Editing', pastVerb: 'Edited' },
     inspectorDefault: 'expanded',
+    renderCategory: 'block',
   },
   NotebookEdit: {
     icon: '\uD83D\uDCD3',
     color: '#50fa7b',
     activity: { verb: 'Editing notebook', pastVerb: 'Edited notebook' },
     inspectorDefault: 'expanded',
+    renderCategory: 'block',
   },
 
   // Search tools
@@ -135,12 +145,14 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     color: '#e0e0e0',
     activity: { verb: 'Running agent', pastVerb: 'Agent completed' },
     inspectorDefault: 'expanded',
+    renderCategory: 'block',
   },
   Agent: {
     icon: '\uD83E\uDD16',
     color: '#e0e0e0',
     activity: { verb: 'Running agent', pastVerb: 'Agent completed' },
     inspectorDefault: 'expanded',
+    renderCategory: 'block',
   },
   TaskOutput: {
     icon: '\uD83E\uDD16',
@@ -153,12 +165,14 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     color: '#e0e0e0',
     activity: { verb: 'Killing shell', pastVerb: 'Killed shell' },
     inspectorDefault: 'expanded',
+    renderCategory: 'block',
   },
   TaskStop: {
     icon: '\uD83D\uDED1',
     color: '#ff5555',
     activity: { verb: 'Stopping task', pastVerb: 'Stopped task' },
     inspectorDefault: 'compact',
+    renderCategory: 'block',
   },
 
   // Utility tools
@@ -167,12 +181,14 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     color: '#bd93f9',
     activity: { verb: 'Updating todos', pastVerb: 'Updated todos' },
     inspectorDefault: 'expanded',
+    renderCategory: 'block',
   },
   Skill: {
     icon: '\u2728',
     color: '#bd93f9',
     activity: { verb: 'Running skill', pastVerb: 'Ran skill' },
     inspectorDefault: 'expanded',
+    renderCategory: 'block',
   },
 
   // User interaction tools
@@ -181,12 +197,14 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     color: '#8be9fd',
     activity: { verb: 'Asking', pastVerb: 'Asked' },
     inspectorDefault: 'expanded',
+    renderCategory: 'block',
   },
   ExitPlanMode: {
     icon: '\uD83D\uDCCB',
     color: '#8be9fd',
     activity: { verb: 'Exiting plan mode', pastVerb: 'Exited plan mode' },
     inspectorDefault: 'expanded',
+    renderCategory: 'block',
   },
   EnterPlanMode: {
     icon: '\uD83D\uDCCB',
@@ -269,6 +287,17 @@ export function getToolDefinition(name: string): ToolDefinition | undefined {
  */
 export function getToolData(name: string): ToolDefinitionData {
   return TOOL_DATA[name] ?? getDefaultData(name);
+}
+
+/**
+ * Get the render category for a tool in Icon mode.
+ * - 'inline': non-destructive → icon pill
+ * - 'block': destructive/novel → stays as dot-line/rich view
+ * - 'bash': simplified single-line view
+ */
+export function getToolRenderCategory(name: string): RenderCategory {
+  const data = TOOL_DATA[name];
+  return data?.renderCategory ?? 'inline';
 }
 
 /**
