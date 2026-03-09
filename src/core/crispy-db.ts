@@ -577,6 +577,64 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 11,
+    description: 'Add recall chunk storage with FTS5 and vector tables',
+    up: (db: Database, _dbPath: string) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS chunks (
+          chunk_id    TEXT PRIMARY KEY,
+          session_id  TEXT NOT NULL,
+          message_uuid TEXT,
+          chunk_seq   INTEGER NOT NULL,
+          heading     TEXT,
+          heading_level INTEGER,
+          chunk_text  TEXT NOT NULL,
+          project_id  TEXT,
+          created_at  INTEGER NOT NULL,
+          UNIQUE(session_id, chunk_seq)
+        );
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+          chunk_text,
+          heading,
+          content=chunks,
+          content_rowid=rowid,
+          tokenize='porter unicode61'
+        );
+
+        -- Sync triggers (same pattern as activity_fts in migration v7)
+        CREATE TRIGGER IF NOT EXISTS chunks_fts_ai AFTER INSERT ON chunks BEGIN
+          INSERT INTO chunks_fts(rowid, chunk_text, heading)
+          VALUES (new.rowid, new.chunk_text, new.heading);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS chunks_fts_ad AFTER DELETE ON chunks BEGIN
+          INSERT INTO chunks_fts(chunks_fts, rowid, chunk_text, heading)
+          VALUES ('delete', old.rowid, old.chunk_text, old.heading);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS chunks_fts_au AFTER UPDATE ON chunks BEGIN
+          INSERT INTO chunks_fts(chunks_fts, rowid, chunk_text, heading)
+          VALUES ('delete', old.rowid, old.chunk_text, old.heading);
+          INSERT INTO chunks_fts(rowid, chunk_text, heading)
+          VALUES (new.rowid, new.chunk_text, new.heading);
+        END;
+
+        CREATE TABLE IF NOT EXISTS chunk_vectors (
+          chunk_id      TEXT PRIMARY KEY REFERENCES chunks(chunk_id),
+          embedding_f32 BLOB NOT NULL,
+          embedding_q8  BLOB NOT NULL,
+          norm          REAL NOT NULL,
+          quant_scale   REAL NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_chunks_session ON chunks(session_id);
+        CREATE INDEX IF NOT EXISTS idx_chunks_project ON chunks(project_id);
+        CREATE INDEX IF NOT EXISTS idx_chunks_created ON chunks(created_at);
+      `);
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {

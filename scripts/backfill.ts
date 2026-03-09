@@ -11,6 +11,7 @@
  * Usage:
  *   npx tsx scripts/backfill.ts summarize [options]
  *   npx tsx scripts/backfill.ts track [options]
+ *   npx tsx scripts/backfill.ts embed [options]
  *
  * @module scripts/backfill
  */
@@ -33,7 +34,9 @@ import { buildTrackerPrompt } from '../src/core/rosie/tracker/tracker-hook.js';
 import { getExistingProjects } from '../src/core/rosie/tracker/db-writer.js';
 import { buildInternalMcpConfig } from '../src/mcp/servers/external.js';
 import { getDb } from '../src/core/crispy-db.js';
-import type { TranscriptEntry } from '../src/core/transcript.js';
+import { stripToolContent } from '../src/core/recall/transcript-utils.js';
+import { ingestSession } from '../src/core/recall/ingest.js';
+import { hasSessionChunks } from '../src/core/recall/store.js';
 
 // ============================================================================
 // Constants
@@ -53,6 +56,7 @@ Usage: npx tsx scripts/backfill.ts <command> [options]
 Commands:
   summarize    Generate rosie-meta for sessions that don't have it
   track        Run tracker on rosie-meta entries not yet tracked
+  embed        Chunk and embed session transcripts for semantic recall
 
 Options:
   --model, -m <vendor:model>   Model to use (default: ${DEFAULT_MODEL})
@@ -62,6 +66,7 @@ Options:
   --limit, -l <n>              Process at most N entries (default: 1)
   --dry-run                    Show what would happen without writing
   --verbose                    Print extra debug info
+  --force                      Re-process sessions that already have chunks (embed only)
   --help, -h                   Show this help
 
 Examples:
@@ -77,13 +82,19 @@ Examples:
   # Track with moderate parallelism (refreshes projects between waves)
   npx tsx scripts/backfill.ts track -l 200 -c 4
 
+  # Embed 500 sessions, 4 at a time
+  npx tsx scripts/backfill.ts embed -l 500 -c 4
+
+  # Re-embed a specific session
+  npx tsx scripts/backfill.ts embed -s abc123 --force
+
   # Dry-run: see what would be processed
   npx tsx scripts/backfill.ts summarize -w crispy -l 10 --dry-run
 `);
 }
 
 interface CliOptions {
-  command: 'summarize' | 'track';
+  command: 'summarize' | 'track' | 'embed';
   model: string;
   concurrency: number;
   workspace: string | undefined;
@@ -91,6 +102,8 @@ interface CliOptions {
   limit: number;
   dryRun: boolean;
   verbose: boolean;
+  force: boolean;
+  withEmbeddings: boolean;
 }
 
 function parseCli(): CliOptions | null {
@@ -102,7 +115,7 @@ function parseCli(): CliOptions | null {
     return null;
   }
 
-  if (command !== 'summarize' && command !== 'track') {
+  if (command !== 'summarize' && command !== 'track' && command !== 'embed') {
     console.error(`Unknown command: ${command}`);
     printUsage();
     return null;
@@ -118,6 +131,8 @@ function parseCli(): CliOptions | null {
       limit: { type: 'string', short: 'l', default: '1' },
       'dry-run': { type: 'boolean', default: false },
       verbose: { type: 'boolean', default: false },
+      force: { type: 'boolean', default: false },
+      'with-embeddings': { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
     },
     allowPositionals: true,
@@ -129,7 +144,7 @@ function parseCli(): CliOptions | null {
   }
 
   return {
-    command: command as 'summarize' | 'track',
+    command: command as 'summarize' | 'track' | 'embed',
     model: values.model as string,
     concurrency: Math.max(1, parseInt(values.concurrency as string, 10) || DEFAULT_CONCURRENCY),
     workspace: values.workspace as string | undefined,
@@ -137,6 +152,8 @@ function parseCli(): CliOptions | null {
     limit: parseInt(values.limit as string, 10) || 1,
     dryRun: values['dry-run'] as boolean,
     verbose: values.verbose as boolean,
+    force: values.force as boolean,
+    withEmbeddings: values['with-embeddings'] as boolean,
   };
 }
 
@@ -170,35 +187,6 @@ function buildFileFilter(workspace: string | undefined, session: string | undefi
     clause: parts.length > 0 ? `AND ${parts.join(' AND ')}` : '',
     params,
   };
-}
-
-// ============================================================================
-// Content-level filtering
-// ============================================================================
-
-/**
- * Strip tool_use, tool_result, and thinking blocks from transcript entries.
- * Keeps only text content blocks in message.content — the actual conversation.
- * Drops entries that become empty after stripping (e.g. pure tool_result entries).
- */
-function stripToolContent(entries: TranscriptEntry[]): TranscriptEntry[] {
-  const out: TranscriptEntry[] = [];
-  for (const entry of entries) {
-    if (entry.type !== 'user' && entry.type !== 'assistant') continue;
-    const msg = entry.message;
-    if (!msg) continue;
-    if (typeof msg.content === 'string') {
-      if (msg.content.trim()) out.push(entry);
-      continue;
-    }
-    if (!Array.isArray(msg.content)) { out.push(entry); continue; }
-    const textBlocks = msg.content.filter(
-      (b) => b.type === 'text' && (b as { text?: string }).text?.trim(),
-    );
-    if (textBlocks.length === 0) continue;
-    out.push({ ...entry, message: { ...msg, content: textBlocks } });
-  }
-  return out;
 }
 
 // ============================================================================
@@ -579,6 +567,130 @@ async function runTrack(dispatch: ReturnType<typeof createAgentDispatch>, opts: 
 }
 
 // ============================================================================
+// Embed Command
+// ============================================================================
+
+interface EmbedCandidate {
+  file: string;
+  sessionId: string;
+  size: number;
+}
+
+/**
+ * Find session JSONL files eligible for embedding. Uses the adapter registry
+ * to discover sessions (same as summarize/track), then filters out sessions
+ * that already have chunks in the DB (unless --force).
+ */
+function findEmbedCandidates(
+  workspace: string | undefined,
+  session: string | undefined,
+  limit: number,
+  force: boolean,
+): EmbedCandidate[] {
+  const allSessions = listAllSessions();
+  const candidates: EmbedCandidate[] = [];
+
+  for (const s of allSessions) {
+    if (workspace && !s.path.includes(workspace)) continue;
+    if (session && !s.path.includes(session) && !s.sessionId.includes(session)) continue;
+    if (!s.path.endsWith('.jsonl')) continue;
+    if (!existsSync(s.path)) continue;
+
+    // Skip already-processed sessions unless --force
+    if (!force && hasSessionChunks(s.sessionId)) continue;
+
+    candidates.push({
+      file: s.path,
+      sessionId: s.sessionId,
+      size: s.size,
+    });
+
+    if (candidates.length >= limit) break;
+  }
+
+  return candidates;
+}
+
+async function runEmbed(opts: CliOptions): Promise<void> {
+  const candidates = findEmbedCandidates(opts.workspace, opts.session, opts.limit, opts.force);
+
+  if (candidates.length === 0) {
+    log('No sessions found to embed');
+    return;
+  }
+
+  log(`Found ${candidates.length} session(s) to embed (concurrency: ${opts.concurrency}${opts.force ? ', force' : ''})`);
+
+  let okCount = 0;
+  let failCount = 0;
+  let skipCount = 0;
+  let totalChunks = 0;
+  const startTime = Date.now();
+
+  await pooled(candidates, opts.concurrency, async (c, i) => {
+    const label = `[${i + 1}/${candidates.length}]`;
+    const sizeKb = (c.size / 1024).toFixed(0);
+    log(`\n${label} ${c.file} (${sizeKb} KB)`);
+
+    if (opts.dryRun) {
+      result(JSON.stringify({
+        action: 'embed',
+        dryRun: true,
+        file: c.file,
+        sessionId: c.sessionId,
+        sizeBytes: c.size,
+      }));
+      return;
+    }
+
+    try {
+      const t0 = Date.now();
+
+      const ingestResult = await ingestSession(c.file, {
+        force: opts.force,
+        verbose: opts.verbose,
+        withEmbeddings: opts.withEmbeddings,
+      });
+
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+
+      if (ingestResult.error) {
+        log(`  FAIL — ${ingestResult.error} (${elapsed}s)`);
+        failCount++;
+        return;
+      }
+
+      if (ingestResult.skipped) {
+        log(`  SKIP — already processed or no content`);
+        skipCount++;
+        return;
+      }
+
+      totalChunks += ingestResult.chunksCreated;
+      okCount++;
+      log(`  OK (${elapsed}s) — ${ingestResult.chunksCreated} chunks`);
+
+      result(JSON.stringify({
+        action: 'embed',
+        file: c.file,
+        sessionId: c.sessionId,
+        chunks: ingestResult.chunksCreated,
+      }));
+    } catch (err) {
+      failCount++;
+      log(`  ERROR — ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }, (waveEnd) => {
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+    const rate = okCount > 0 ? (okCount / (Date.now() - startTime) * 1000 * 60).toFixed(1) : '0';
+    log(`\n--- Wave complete (${waveEnd}/${candidates.length}) | OK: ${okCount} | Fail: ${failCount} | Skip: ${skipCount} | Chunks: ${totalChunks} | ${elapsed}s elapsed | ~${rate}/min ---`);
+  });
+
+  const totalElapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+  log(`\n=== Embed complete: ${okCount} OK, ${failCount} failed, ${skipCount} skipped, ${totalChunks} chunks in ${totalElapsed}s ===`);
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -610,8 +722,10 @@ async function main(): Promise<void> {
   try {
     if (opts.command === 'summarize') {
       await runSummarize(dispatch, opts);
-    } else {
+    } else if (opts.command === 'track') {
       await runTrack(dispatch, opts);
+    } else {
+      await runEmbed(opts);
     }
   } finally {
     shutdown();

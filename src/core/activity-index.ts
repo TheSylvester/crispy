@@ -1,12 +1,11 @@
 /**
  * Activity Index — Persistence Layer for User Activity Data
  *
- * Owns ALL reads/writes to ~/.crispy/. No other module should touch these
- * files directly. The underlying storage is a SQLite database (crispy.db)
- * managed by crispy-db.ts. Provides:
- * - CRUD for activity entries (user prompts and rosie-meta)
- * - Scan state persistence (scan progress tracking)
- * - Rosie Bot metadata queries (getLatestRosieMeta)
+ * Owns activity entry CRUD, scan state, session lineage, rosie metadata
+ * cache, and pruning for ~/.crispy/. The underlying storage is a SQLite
+ * database (crispy.db) managed by crispy-db.ts.
+ *
+ * Chunk/vector storage lives in recall/store.ts (extracted 2026-03).
  *
  * The activity index is an acceleration structure, not a source of truth.
  * Duplicates are prevented by a UNIQUE(timestamp, file, uuid) constraint

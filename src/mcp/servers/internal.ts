@@ -17,6 +17,7 @@ import { appendFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath } from '../memory-queries.js';
+import { search as vectorSearch } from '../../core/recall/vector-search.js';
 import { writeTrackerResults, recordTrackerOutcome } from '../../core/rosie/tracker/db-writer.js';
 import { VALID_STATUSES } from '../../core/rosie/tracker/types.js';
 import type { TrackerBlock } from '../../core/rosie/tracker/types.js';
@@ -218,6 +219,64 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
             turn: null,
             found: false,
             error: `read_turn failed: ${err instanceof Error ? err.message : String(err)}`,
+          }, null, 2) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // semantic_search — Dual-path vector + keyword search over chunks
+  // ------------------------------------------------------------------
+  server.tool(
+    'semantic_search',
+    'Semantic + keyword search over embedded session chunks. Finds matches even with zero keyword overlap by using vector similarity. Also runs BM25 keyword matching. Results include chunk text, session ID, heading, relevance scores, and how each result was found (semantic, bm25, or both). Use this when search_sessions misses conceptually related content, or for natural-language queries.',
+    {
+      query: z.string().min(1).describe('Natural-language search query. Can be a question, description, or keywords — semantic matching handles all styles.'),
+      workspace: z.string().optional().describe('Filter results to a specific workspace/project ID'),
+      topK: z.number().optional().default(10).describe('Maximum results to return (default 10)'),
+    },
+    async (args) => {
+      console.error(`[internal-mcp] semantic_search: query="${args.query}" topK=${args.topK} workspace=${args.workspace ?? '-'}`);
+      try {
+        const results = await vectorSearch({
+          query: args.query,
+          projectId: args.workspace,
+          topK: args.topK,
+        });
+
+        if (results.length === 0) {
+          console.error('[internal-mcp] semantic_search: no results');
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({
+              results: [],
+              count: 0,
+              note: 'No matching chunks found. The embedding index may be empty — run the backfill script to index session history.',
+            }, null, 2) }],
+          };
+        }
+
+        // Format results for agent consumption
+        const formatted = results.map((r, i) => [
+          `--- Result ${i + 1} (score: ${r.score.toFixed(3)}, source: ${r.source}) ---`,
+          `Session: ${r.sessionId}`,
+          r.heading ? `Heading: ${r.heading}` : null,
+          `Scores: semantic=${r.semanticScore.toFixed(3)}, bm25=${r.bm25Score.toFixed(3)}`,
+          '',
+          r.chunkText,
+        ].filter(Boolean).join('\n'));
+
+        console.error(`[internal-mcp] semantic_search: ${results.length} results`);
+        return {
+          content: [{ type: 'text' as const, text: formatted.join('\n\n') }],
+        };
+      } catch (err) {
+        console.error('[internal-mcp] semantic_search FAIL:', err instanceof Error ? err.message : String(err));
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({
+            results: [],
+            error: `semantic_search failed: ${err instanceof Error ? err.message : String(err)}`,
           }, null, 2) }],
           isError: true,
         };

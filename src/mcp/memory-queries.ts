@@ -11,9 +11,8 @@
  * @module mcp/memory-queries
  */
 
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { getDb } from '../core/crispy-db.js';
+import { dbPath as crispyDbPath } from '../core/activity-index.js';
 import { sanitizeFts5Query } from './query-sanitizer.js';
 import { readClaudeTurnContent, type TurnContent } from '../core/adapters/claude/jsonl-reader.js';
 import { readCodexTurnContent } from '../core/adapters/codex/codex-jsonl-reader.js';
@@ -67,7 +66,7 @@ export interface ContextResult {
 
 /** Default database path: ~/.crispy/crispy.db */
 export function getDbPath(): string {
-  return join(homedir(), '.crispy', 'crispy.db');
+  return crispyDbPath();
 }
 
 // ============================================================================
