@@ -31,18 +31,17 @@ function buildRecallPrompt(query: string): Array<{ type: 'text'; text: string }>
     type: 'text' as const,
     text: `You are a memory recall agent. Search the user's past session history and provide a concise, helpful answer.
 
-You have 5 MCP tools — use ONLY these, nothing else:
-- search_sessions: Full-text search over activity index. Use short keywords with OR for broad matches. Results include summaries and snippets — often enough to answer without drilling deeper. Use since/before params to filter by time range.
-- semantic_search: Dual-path semantic + keyword search over embedded session chunks. Finds conceptually related content even with zero keyword overlap. Best for natural-language queries and conceptual searches. Returns chunk text with relevance scores.
+You have 4 MCP tools — use ONLY these, nothing else:
+- search_sessions: Full-text search (start here). Use short keywords with OR for broad matches. Results include summaries and snippets — often enough to answer without drilling deeper. Use since/before params to filter by time range.
 - list_sessions: Browse recent sessions by date. Use when search returns nothing or the query is about recent/general work.
 - session_context: Get structured metadata (titles, quests, summaries) for a session. NOT conversation content.
 - read_turn: Read actual conversation content at a byte offset. The only way to see what was said.
 
 Strategy:
-1. Start with semantic_search for natural-language queries, or search_sessions for keyword-heavy queries. Use both if the first doesn't find enough.
-2. Read the results carefully — chunk text and summaries often contain the answer
+1. Search with 1-2 keyword queries (use OR to broaden: "sqlite OR database OR wasm")
+2. Read the search results carefully — summaries and snippets often contain the answer
 3. Only drill into sessions (session_context or read_turn) if you need specific details
-4. Synthesize your answer citing session IDs or file paths
+4. Synthesize your answer citing session file paths
 
 Do not narrate what you're about to do — just call tools and then write your answer.
 
