@@ -76,19 +76,10 @@ export function BlocksToolPanel(): React.JSX.Element {
     const seen = new Set<string>();
 
     // 1. Active tools (visible AND pending — no result yet)
-    //    In Icons mode, also include all visible inline-category tools since
-    //    the icon pill hides all details — the panel is the only way to see results.
-    const isIconsMode = renderMode === 'icons';
     for (const id of visibleToolIds) {
       if (!registry.getResult(id)) {
         ids.push(id);
         seen.add(id);
-      } else if (isIconsMode) {
-        const block = registry.getBlock(id);
-        if (block && block.type === 'tool_use' && getToolRenderCategory(block.name) === 'inline') {
-          ids.push(id);
-          seen.add(id);
-        }
       }
     }
 
@@ -107,6 +98,62 @@ export function BlocksToolPanel(): React.JSX.Element {
     if (lastArrivedId && !seen.has(lastArrivedId)) {
       ids.push(lastArrivedId);
       seen.add(lastArrivedId);
+    }
+
+    // 4. Icons mode Y-grouping: find an anchor tool and include all visible
+    //    inline tools at the same Y position (same row). The anchor is
+    //    lastArrivedId if still visible, otherwise the bottom-most visible
+    //    inline tool (the one the user most recently scrolled to).
+    if (renderMode === 'icons') {
+      const scrollRoot = document.querySelector('.crispy-transcript') as HTMLElement | null;
+      if (scrollRoot) {
+        const visibleSet = new Set(visibleToolIds);
+
+        // Find anchor Y: prefer lastArrivedId if visible, else bottom-most visible inline
+        let anchorY: number | null = null;
+
+        if (lastArrivedId && visibleSet.has(lastArrivedId)) {
+          const el = scrollRoot.querySelector(`[data-run-id="${lastArrivedId}"]`);
+          if (el) anchorY = Math.round(el.getBoundingClientRect().top);
+        }
+
+        if (anchorY === null) {
+          // Walk visible tools bottom-up to find the last inline tool
+          for (let i = visibleToolIds.length - 1; i >= 0; i--) {
+            const id = visibleToolIds[i];
+            const block = registry.getBlock(id);
+            if (block && block.type === 'tool_use' && getToolRenderCategory(block.name) === 'inline') {
+              const el = scrollRoot.querySelector(`[data-run-id="${id}"]`);
+              if (el) {
+                anchorY = Math.round(el.getBoundingClientRect().top);
+                break;
+              }
+            }
+          }
+        }
+
+        // Collect all already-selected Y positions + the anchor Y
+        const groupYs = new Set<number>();
+        for (const id of ids) {
+          const el = scrollRoot.querySelector(`[data-run-id="${id}"]`);
+          if (el) groupYs.add(Math.round(el.getBoundingClientRect().top));
+        }
+        if (anchorY !== null) groupYs.add(anchorY);
+
+        // Include visible inline tools at those Y positions
+        for (const id of visibleToolIds) {
+          if (seen.has(id)) continue;
+          const block = registry.getBlock(id);
+          if (!block || block.type !== 'tool_use') continue;
+          if (getToolRenderCategory(block.name) !== 'inline') continue;
+
+          const el = scrollRoot.querySelector(`[data-run-id="${id}"]`);
+          if (el && groupYs.has(Math.round(el.getBoundingClientRect().top))) {
+            ids.push(id);
+            seen.add(id);
+          }
+        }
+      }
     }
 
     return ids;

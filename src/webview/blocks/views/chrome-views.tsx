@@ -20,7 +20,10 @@ import { ImageLightbox } from '../../components/ImageLightbox.js';
 import { useLightbox } from '../../hooks/useLightbox.js';
 import { DotLine, DotLineStatus } from './default-views.js';
 
-const CHROME_COLOR = 'linear-gradient(135deg, #EA4335, #FBBC04, #34A853)';
+/** Chrome brand blue — the center of the Chrome logo. */
+const CHROME_BLUE = '#4285F4';
+/** Multi-color gradient for expanded badge background hints. */
+const CHROME_GRADIENT = 'linear-gradient(135deg, #EA4335, #FBBC04, #34A853)';
 const PREFIX = 'mcp__claude-in-chrome__';
 
 // ============================================================================
@@ -249,7 +252,7 @@ export function ChromeCompactView({ block, result, status }: ToolViewProps): Rea
   return (
     <DotLine
       icon={<ChromeMonoIcon />}
-      color="#EA4335"
+      color={CHROME_BLUE}
       name="chrome"
       subject={displaySubject}
       result={<DotLineStatus status={status} />}
@@ -280,7 +283,7 @@ export function ChromeExpandedView({ block, result, status, anchor }: ToolViewPr
     <ToolCard anchor={anchor} open={status === 'running'} summary={<>
       <span className="crispy-blocks-tool-header">
         <span className="crispy-blocks-tool-icon"><ChromeMonoIcon /></span>
-        <ToolBadge color={CHROME_COLOR} label="chrome" />
+        <ToolBadge color={CHROME_BLUE} label="chrome" />
         <span className="crispy-blocks-chrome-action">{label}</span>
         <span className="crispy-blocks-chrome-emoji">{emoji}</span>
         {subject && <span className="crispy-blocks-tool-description">{subject}</span>}
