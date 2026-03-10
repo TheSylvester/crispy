@@ -30,7 +30,7 @@ function buildEphemeralConfig(spec: SessionOpenSpec): Record<string, unknown> {
     return {
       settingSources: [] as SettingSource[],
       mcpServers: spec.mcpServers as Record<string, McpServerConfig>,
-      allowedTools: ['mcp__crispy_memory__*'],
+      allowedTools: ['mcp__crispy-memory__*'],
     };
   }
   return {
