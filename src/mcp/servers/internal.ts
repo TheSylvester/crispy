@@ -16,7 +16,7 @@
 import { appendFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
-import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath, searchTranscript, readMessageTurn } from '../memory-queries.js';
+import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath, searchTranscript, searchTranscriptMeta, readMessageTurn, grepMessages, readSessionMessages } from '../memory-queries.js';
 import { pushEventLog } from '../../core/rosie/event-log.js';
 
 import { writeTrackerResults, recordTrackerOutcome } from '../../core/rosie/tracker/db-writer.js';
@@ -369,25 +369,30 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
   // ------------------------------------------------------------------
   server.tool(
     'search_transcript',
-    'Full-text search over raw conversation content from past sessions. Returns matching messages with session ID, message UUID, highlighted snippet, and a short preview (up to 200 chars). Project-scoped by default. Supports FTS5 syntax: OR for broad searches, "quoted phrases" for exact matches, prefix* for partial terms. Use read_message to get the full conversation turn.',
+    'Full-text search over raw conversation content from past sessions. Returns matching messages with session ID, message UUID, highlighted snippet, and a short preview (up to 200 chars). Also returns total_matches and session_hits (per-session hit counts) so you can see how many sessions discuss a topic. Project-scoped by default. Supports FTS5 syntax: OR for broad searches, "quoted phrases" for exact matches, prefix* for partial terms. Use read_message to get the full conversation turn. Use session_id to search within a specific session.',
     {
       query: z.string().describe('Search query — short keywords work best. Use OR to broaden: "sqlite OR database"'),
       limit: z.number().optional().default(20).describe('Maximum results (default 20)'),
+      session_id: z.string().optional().describe('Scope search to a single session (use after broad search to drill into a specific session)'),
       all_projects: z.boolean().optional().default(false).describe('Search across all projects instead of just the current workspace'),
     },
     async (args) => {
       const projectId = args.all_projects ? undefined : serverOptions.projectId;
-      console.error(`[internal-mcp] search_transcript: query="${args.query}" limit=${args.limit} project=${projectId ?? 'all'}`);
+      const sessionId = args.session_id;
+      console.error(`[internal-mcp] search_transcript: query="${args.query}" limit=${args.limit} project=${projectId ?? 'all'} session=${sessionId ?? 'all'}`);
       const t0 = Date.now();
       try {
-        const results = searchTranscript(args.query, args.limit, projectId);
+        const results = searchTranscript(args.query, args.limit, projectId, sessionId);
+        const meta = searchTranscriptMeta(args.query, projectId, sessionId);
         const elapsed = Date.now() - t0;
-        console.error(`[internal-mcp] search_transcript: ${results.length} results`);
+        console.error(`[internal-mcp] search_transcript: ${results.length} of ${meta.total_matches} results (${Object.keys(meta.session_hits).length} sessions)`);
         pushEventLog({
           source: 'recall:search_transcript',
-          summary: `${results.length} results in ${elapsed}ms`,
+          summary: `${results.length} of ${meta.total_matches} results in ${elapsed}ms`,
           data: {
-            query: args.query, limit: args.limit, projectId, resultCount: results.length, elapsed,
+            query: args.query, limit: args.limit, projectId, sessionId,
+            resultCount: results.length, totalMatches: meta.total_matches,
+            sessionCount: Object.keys(meta.session_hits).length, elapsed,
             hits: results.slice(0, 10).map((r) => ({
               sessionId: r.session_id,
               snippet: r.match_snippet?.slice(0, 100),
@@ -395,7 +400,12 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
           },
         }, getDbPath());
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ results, count: results.length }, null, 2) }],
+          content: [{ type: 'text' as const, text: JSON.stringify({
+            results,
+            count: results.length,
+            total_matches: meta.total_matches,
+            session_hits: meta.session_hits,
+          }, null, 2) }],
         };
       } catch (err) {
         const elapsed = Date.now() - t0;
@@ -404,7 +414,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
           source: 'recall:search_transcript',
           level: 'error',
           summary: `FAIL in ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
-          data: { query: args.query, limit: args.limit, projectId, elapsed, error: String(err) },
+          data: { query: args.query, limit: args.limit, projectId, sessionId, elapsed, error: String(err) },
         }, getDbPath());
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({
@@ -422,16 +432,18 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
   // ------------------------------------------------------------------
   server.tool(
     'read_message',
-    'Read a full conversation turn (user prompt + assistant response) by message UUID. Returns the stripped text without tool calls. Use the message_id and session_id from search_transcript results.',
+    'Read a full conversation turn (user prompt + assistant response) by message UUID. Returns the stripped text without tool calls. Use context > 0 to see surrounding messages (like reading a window of a file). Response includes session_total_messages and showing_seq_range so you know how much of the session you\'ve seen.',
     {
       session_id: z.string().describe('Session ID from search results'),
       message_id: z.string().describe('Message UUID from search results'),
+      context: z.number().optional().default(0).describe('Number of extra turns to include on each side (0-5). Use 2-3 to see surrounding conversation flow.'),
     },
     async (args) => {
-      console.error(`[internal-mcp] read_message: session=${args.session_id} message=${args.message_id}`);
+      const ctx = args.context ?? 0;
+      console.error(`[internal-mcp] read_message: session=${args.session_id} message=${args.message_id} context=${ctx}`);
       const t0 = Date.now();
       try {
-        const result = readMessageTurn(args.session_id, args.message_id);
+        const result = readMessageTurn(args.session_id, args.message_id, ctx);
         const elapsed = Date.now() - t0;
         if (!result) {
           console.error('[internal-mcp] read_message: not found');
@@ -439,7 +451,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
             source: 'recall:read_message',
             level: 'warn',
             summary: `not found in ${elapsed}ms`,
-            data: { sessionId: args.session_id, messageId: args.message_id, elapsed },
+            data: { sessionId: args.session_id, messageId: args.message_id, context: ctx, elapsed },
           }, getDbPath());
           return {
             content: [{ type: 'text' as const, text: JSON.stringify({ turn: null, found: false }, null, 2) }],
@@ -448,11 +460,12 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
         }
         const userChars = result.userText.length;
         const assistantChars = result.assistantText.length;
-        console.error(`[internal-mcp] read_message: OK (user=${userChars} chars, assistant=${assistantChars} chars)`);
+        const ctxCount = result.context_messages?.length ?? 0;
+        console.error(`[internal-mcp] read_message: OK (user=${userChars} chars, assistant=${assistantChars} chars, context=${ctxCount} msgs)`);
         pushEventLog({
           source: 'recall:read_message',
-          summary: `OK in ${elapsed}ms — user=${userChars} chars, assistant=${assistantChars} chars`,
-          data: { sessionId: args.session_id, messageId: args.message_id, elapsed, userChars, assistantChars },
+          summary: `OK in ${elapsed}ms — user=${userChars} chars, assistant=${assistantChars} chars, context=${ctxCount}`,
+          data: { sessionId: args.session_id, messageId: args.message_id, context: ctx, elapsed, userChars, assistantChars, ctxCount },
         }, getDbPath());
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ turn: result, found: true }, null, 2) }],
@@ -464,7 +477,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
           source: 'recall:read_message',
           level: 'error',
           summary: `FAIL in ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
-          data: { sessionId: args.session_id, messageId: args.message_id, elapsed, error: String(err) },
+          data: { sessionId: args.session_id, messageId: args.message_id, context: ctx, elapsed, error: String(err) },
         }, getDbPath());
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({
@@ -472,6 +485,113 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
             found: false,
             error: `read_message failed: ${err instanceof Error ? err.message : String(err)}`,
           }, null, 2) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // grep — Regex search over clean message text
+  // ------------------------------------------------------------------
+  server.tool(
+    'grep',
+    'Regex search over conversation text (tool calls already stripped). Use when FTS5 keyword search misses — grep finds substrings, patterns, and partial matches that FTS5 tokenization can\'t. Scope to a session_id for fast targeted search, or omit to scan recent messages across sessions. Returns matching text with surrounding context.',
+    {
+      pattern: z.string().describe('Regex pattern (case-insensitive). Use simple substrings like "intermediary" or patterns like "ToolSearch.*bypass". Invalid regex is treated as literal text.'),
+      session_id: z.string().optional().describe('Scope to a single session (fast). Omit to scan across recent sessions.'),
+      limit: z.number().optional().default(20).describe('Maximum matches to return (default 20)'),
+      all_projects: z.boolean().optional().default(false).describe('Search across all projects instead of just the current workspace'),
+    },
+    async (args) => {
+      const projectId = args.all_projects ? undefined : serverOptions.projectId;
+      console.error(`[internal-mcp] grep: pattern="${args.pattern}" session=${args.session_id ?? 'all'} limit=${args.limit}`);
+      const t0 = Date.now();
+      try {
+        const results = grepMessages(args.pattern, args.limit, args.session_id, projectId);
+        const elapsed = Date.now() - t0;
+        const sessionCount = new Set(results.map(r => r.session_id)).size;
+        console.error(`[internal-mcp] grep: ${results.length} matches across ${sessionCount} sessions in ${elapsed}ms`);
+        pushEventLog({
+          source: 'recall:grep',
+          summary: `${results.length} matches in ${elapsed}ms`,
+          data: { pattern: args.pattern, sessionId: args.session_id, limit: args.limit, resultCount: results.length, sessionCount, elapsed },
+        }, getDbPath());
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({
+            matches: results,
+            count: results.length,
+            sessions: sessionCount,
+          }, null, 2) }],
+        };
+      } catch (err) {
+        const elapsed = Date.now() - t0;
+        console.error(`[internal-mcp] grep FAIL:`, err instanceof Error ? err.message : String(err));
+        pushEventLog({
+          source: 'recall:grep',
+          level: 'error',
+          summary: `FAIL in ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
+          data: { pattern: args.pattern, elapsed, error: String(err) },
+        }, getDbPath());
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ matches: [], error: String(err) }, null, 2) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // read_session — Sequential session reader with pagination
+  // ------------------------------------------------------------------
+  server.tool(
+    'read_session',
+    'Read messages from a session sequentially, like reading a file with offset/limit. Returns clean conversation text (tool calls stripped) with pagination: "showing 0-9 of 47, has_more: true". Use to browse a session\'s conversation flow, or continue reading from where you left off.',
+    {
+      session_id: z.string().describe('Session ID to read'),
+      offset: z.number().optional().default(0).describe('Start from this message index (0-based). Use the value from a previous response to continue reading.'),
+      limit: z.number().optional().default(10).describe('Number of messages to return (default 10, max 20)'),
+    },
+    async (args) => {
+      const limit = Math.min(args.limit ?? 10, 20);
+      console.error(`[internal-mcp] read_session: session=${args.session_id} offset=${args.offset} limit=${limit}`);
+      const t0 = Date.now();
+      try {
+        const page = readSessionMessages(args.session_id, args.offset ?? 0, limit);
+        const elapsed = Date.now() - t0;
+        if (!page) {
+          console.error('[internal-mcp] read_session: session not found or empty');
+          pushEventLog({
+            source: 'recall:read_session',
+            level: 'warn',
+            summary: `not found in ${elapsed}ms`,
+            data: { sessionId: args.session_id, offset: args.offset, limit, elapsed },
+          }, getDbPath());
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({ session: null, found: false }, null, 2) }],
+            isError: true,
+          };
+        }
+        console.error(`[internal-mcp] read_session: OK (${page.showing_count} of ${page.total_messages} messages, has_more=${page.has_more})`);
+        pushEventLog({
+          source: 'recall:read_session',
+          summary: `OK in ${elapsed}ms — ${page.showing_count} of ${page.total_messages} msgs`,
+          data: { sessionId: args.session_id, offset: args.offset, limit, elapsed, total: page.total_messages, returned: page.showing_count },
+        }, getDbPath());
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ session: page, found: true }, null, 2) }],
+        };
+      } catch (err) {
+        const elapsed = Date.now() - t0;
+        console.error('[internal-mcp] read_session FAIL:', err instanceof Error ? err.message : String(err));
+        pushEventLog({
+          source: 'recall:read_session',
+          level: 'error',
+          summary: `FAIL in ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
+          data: { sessionId: args.session_id, offset: args.offset, limit, elapsed, error: String(err) },
+        }, getDbPath());
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ session: null, found: false, error: String(err) }, null, 2) }],
           isError: true,
         };
       }

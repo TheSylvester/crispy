@@ -16,10 +16,11 @@ import { dbPath as crispyDbPath } from '../core/activity-index.js';
 import { sanitizeFts5Query } from './query-sanitizer.js';
 import { readClaudeTurnContent, type TurnContent } from '../core/adapters/claude/jsonl-reader.js';
 import { readCodexTurnContent } from '../core/adapters/codex/codex-jsonl-reader.js';
-import { searchMessagesFts, getMessageByUuid, getAdjacentMessages } from '../core/recall/message-store.js';
-import type { MessageRecord, MessageSearchResult } from '../core/recall/message-store.js';
+import { searchMessagesFts, searchMessagesFtsMeta, getMessageByUuid, getAdjacentMessages, getSessionMessageCount, grepMessages, readSessionMessages } from '../core/recall/message-store.js';
+import type { MessageRecord, MessageSearchResult, MessageSearchMeta, GrepMatch, SessionPage } from '../core/recall/message-store.js';
 
-export type { TurnContent, MessageRecord, MessageSearchResult };
+export type { TurnContent, MessageRecord, MessageSearchResult, MessageSearchMeta, GrepMatch, SessionPage };
+export { grepMessages, readSessionMessages };
 
 // ============================================================================
 // Types
@@ -209,14 +210,47 @@ export function readTurnContent(file: string, offset: number): TurnContent | nul
  * FTS5 full-text search over raw transcript messages.
  *
  * Delegates to message-store's searchMessagesFts. Project-scoped when
- * projectId is provided.
+ * projectId is provided. Optionally scoped to a single session.
  */
 export function searchTranscript(
   query: string,
   limit: number = 20,
   projectId?: string,
+  sessionId?: string,
 ): MessageSearchResult[] {
-  return searchMessagesFts(query, limit, projectId);
+  return searchMessagesFts(query, limit, projectId, sessionId);
+}
+
+/**
+ * Return total match count and per-session hit distribution for an FTS5 query.
+ */
+export function searchTranscriptMeta(
+  query: string,
+  projectId?: string,
+  sessionId?: string,
+): MessageSearchMeta {
+  return searchMessagesFtsMeta(query, projectId, sessionId);
+}
+
+/** Single turn in a context window. */
+export interface MessageTurnEntry {
+  message_seq: number;
+  message_id: string;
+  text: string;
+  is_target: boolean;
+}
+
+/** Result of reading a message turn with optional context window. */
+export interface ReadMessageResult {
+  userText: string;
+  assistantText: string;
+  messageSeq: number;
+  /** Context window messages (only present when context > 0). */
+  context_messages?: MessageTurnEntry[];
+  /** Seq range shown in this response. */
+  showing_seq_range?: [number, number];
+  /** Total messages in this session. */
+  session_total_messages?: number;
 }
 
 /**
@@ -226,15 +260,20 @@ export function searchTranscript(
  * instead of loading the full transcript from disk. The target message's
  * seq determines the user/assistant pairing: even seqs are user prompts,
  * odd seqs are assistant responses (but we match by actual position).
+ *
+ * @param context — number of extra turns on each side (0 = just the pair, max 5)
  */
 export function readMessageTurn(
   sessionId: string,
   messageId: string,
-): { userText: string; assistantText: string; messageSeq: number } | null {
+  context: number = 0,
+): ReadMessageResult | null {
   const record = getMessageByUuid(sessionId, messageId);
   if (!record) return null;
 
-  // Fetch the target plus its neighbor (±1 in message_seq)
+  const clampedContext = Math.min(Math.max(context, 0), 5);
+
+  // Fetch the target plus its neighbor (±1 in message_seq) for the core pair
   const adjacent = getAdjacentMessages(sessionId, record.message_seq);
   if (adjacent.length === 0) return null;
 
@@ -247,20 +286,35 @@ export function readMessageTurn(
   const next = adjacent.find(m => m.message_seq === target.message_seq + 1);
 
   // Heuristic: even seq = user, odd seq = assistant (matches ingest ordering)
-  // But we use seq adjacency regardless of role assumptions
+  let userText: string;
+  let assistantText: string;
   if (target.message_seq % 2 === 0) {
-    // Target is likely user — pair with next (assistant)
-    return {
-      userText: target.message_text,
-      assistantText: next?.message_text ?? '',
-      messageSeq: target.message_seq,
-    };
+    userText = target.message_text;
+    assistantText = next?.message_text ?? '';
   } else {
-    // Target is likely assistant — pair with prev (user)
-    return {
-      userText: prev?.message_text ?? '',
-      assistantText: target.message_text,
-      messageSeq: target.message_seq,
-    };
+    userText = prev?.message_text ?? '';
+    assistantText = target.message_text;
   }
+
+  const result: ReadMessageResult = { userText, assistantText, messageSeq: target.message_seq };
+
+  // If context window requested, fetch wider range and add metadata
+  if (clampedContext > 0) {
+    const windowMessages = getAdjacentMessages(sessionId, record.message_seq, clampedContext * 2);
+    result.context_messages = windowMessages.map(m => ({
+      message_seq: m.message_seq,
+      message_id: m.message_id,
+      text: m.message_text,
+      is_target: m.message_id === messageId,
+    }));
+    if (windowMessages.length > 0) {
+      result.showing_seq_range = [
+        windowMessages[0]!.message_seq,
+        windowMessages[windowMessages.length - 1]!.message_seq,
+      ];
+    }
+    result.session_total_messages = getSessionMessageCount(sessionId);
+  }
+
+  return result;
 }

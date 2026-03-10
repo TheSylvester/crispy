@@ -91,6 +91,9 @@ export function sanitizeFts5Query(raw: string): string | null {
   // Single word — just return as-is
   if (words.length === 1) return words[0]!;
 
-  // Multiple words — quote each token for implicit AND
-  return words.map((w) => `"${w}"`).join(' ');
+  // 2 words — implicit AND (high precision, usually fine)
+  if (words.length <= 2) return words.map((w) => `"${w}"`).join(' ');
+
+  // 3+ words — implicit OR (recall over precision; BM25 ranks multi-word matches higher)
+  return words.map((w) => `"${w}"`).join(' OR ');
 }
