@@ -16,7 +16,7 @@ import { extractResultText, extractRawResultText, formatCount } from '../../rend
 import { renderAnsi, hasAnsi } from '../../renderers/tools/shared/ansi.js';
 import { useThemeKind, isLightTheme } from '../../hooks/useThemeKind.js';
 import { ToolCard } from './ToolCard.js';
-import { DotLine, DotLineStatus } from './default-views.js';
+import { CompactBlock } from './default-views.js';
 
 const meta = getToolData('Bash');
 
@@ -41,25 +41,22 @@ export function BashCompactView({ block, result, status }: ToolViewProps): React
   const command = input.command ?? '';
 
   return (
-    <div className="crispy-blocks-bash-compact">
-      <div className="crispy-blocks-compact-row">
-        <span className="crispy-blocks-compact-icon">{meta.icon}</span>
-        <ToolBadge color={meta.color} label="Bash" />
+    <CompactBlock
+      icon={meta.icon}
+      color={meta.color}
+      name="bash"
+      description={input.description}
+      codePill={command || undefined}
+      badges={<>
         {input.run_in_background && (
           <ToolBadge color="#888" textColor="#d4d4d4" label="background" />
         )}
         {input.timeout != null && (
           <ToolBadge color="#888" textColor="#d4d4d4" label={`\u23F1 ${formatTimeout(input.timeout)}`} />
         )}
-        {input.description && (
-          <span className="crispy-blocks-tool-description">{input.description}</span>
-        )}
-        <DotLineStatus status={status} />
-      </div>
-      {command && (
-        <code className="u-mono-pill crispy-tool-bash-inline crispy-tool-bash-inline--compact">{command}</code>
-      )}
-    </div>
+      </>}
+      status={status}
+    />
   );
 }
 
@@ -73,12 +70,12 @@ export function BashCondensedView({ block, result, status }: ToolViewProps): Rea
     ?? (input.command ? truncateCommand(input.command, 60) : undefined);
 
   return (
-    <DotLine
+    <CompactBlock
       icon={meta.icon}
       color={meta.color}
       name="bash"
       description={description}
-      result={<DotLineStatus status={status} />}
+      status={status}
     />
   );
 }

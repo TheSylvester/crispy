@@ -67,7 +67,7 @@ h2 {
 
   /* --- Radius tokens --- */
   --radius-xs: 2px;
-  --radius-sm: 3px;
+  --radius-sm: 5px;
   --radius-md: 4px;
   --radius-lg: 6px;
   --radius-xl: 8px;
@@ -90,13 +90,16 @@ h2 {
   /* --- Glassmorphism tokens --- */
   --glass-bg: rgba(30, 30, 30, 0.55);
   --glass-bg-hover: rgba(50, 50, 50, 0.7);
-  --glass-bg-opaque: rgba(30, 30, 30, 0.85);
+  --glass-bg-opaque: rgba(30, 30, 30, 0.72);
   --glass-bg-drag: rgba(42, 45, 46, 0.9);
   --glass-bg-solid: rgba(30, 30, 30, 0.95);
   --glass-bg-muted: rgba(60, 60, 60, 0.6);
   --glass-border: rgba(255, 255, 255, 0.05);
   --glass-border-md: rgba(255, 255, 255, 0.08);
   --glass-border-strong: rgba(255, 255, 255, 0.15);
+  --glass-inner-glow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 0 20px rgba(255, 255, 255, 0.03);
+  --glass-shadow-subtle: 0 2px 12px rgba(0, 0, 0, 0.25);
+  --glass-border-frost: rgba(255, 255, 255, 0.12);
 
   /* --- Tint tokens (subtle foreground-based overlays) --- */
   --tint-subtle: rgba(255, 255, 255, 0.02);
@@ -362,7 +365,7 @@ h2 {
   right: 1.5rem;
   width: 36px;
   height: 36px;
-  border-radius: var(--radius-xl);
+  border-radius: 10px;
   background: var(--scroll-nav-bg);
   color: var(--scroll-nav-text);
   border: 1px solid var(--scroll-nav-border);
@@ -610,7 +613,7 @@ h2 {
   -webkit-backdrop-filter: blur(40px) saturate(170%);
   backdrop-filter: blur(40px) saturate(170%);
   border: 1px solid var(--glass-border-md);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   padding: 2px 14px;
   cursor: pointer;
   display: flex;
@@ -641,7 +644,7 @@ h2 {
   -webkit-backdrop-filter: blur(40px) saturate(170%);
   backdrop-filter: blur(40px) saturate(170%);
   border: 1px solid var(--glass-border-md);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   padding: 8px 12px;
   display: flex;
   flex-direction: column;
@@ -853,7 +856,7 @@ h2 {
 .md-code-block {
   margin: 1em 0;
   padding: 1em;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   background: var(--bg-editor);
   border: 1px solid var(--border-panel);
   overflow-x: auto;
@@ -1030,7 +1033,7 @@ h2 {
   margin-left: auto;
   max-width: 80%;
   background: var(--vscode-button-secondaryBackground, #3a3d41);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   padding: 10px 14px;
 }
 
@@ -1136,7 +1139,7 @@ h2 {
 .crispy-tool-badge {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: 3px;
   font-family: var(--font-mono);
   font-size: var(--font-xs);
   font-weight: 600;
@@ -1214,10 +1217,18 @@ h2 {
   max-width: 100%;
 }
 
-.crispy-blocks-bash-compact {
+.crispy-blocks-bash-compact,
+.crispy-blocks-compact-block {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.crispy-tool-subject-pill {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* --- Diff stats --- */
@@ -1561,15 +1572,16 @@ h2 {
   background: var(--glass-bg);
   -webkit-backdrop-filter: blur(40px) saturate(170%);
   backdrop-filter: blur(40px) saturate(170%);
-  border: 1px solid var(--glass-border);
+  border: 1px solid var(--glass-border-frost);
   max-width: 800px;
   width: calc(
     var(--container-width, 100vw) - var(--right-panels-width, 0px) - 3rem
   );
-  border-radius: var(--radius-2xl);
+  border-radius: 10px;
   box-shadow:
     0 4px 24px rgba(0, 0, 0, 0.4),
-    0 1px 4px rgba(0, 0, 0, 0.2);
+    0 1px 4px rgba(0, 0, 0, 0.2),
+    var(--glass-inner-glow);
   position: fixed;
   bottom: 1rem;
   left: calc(
@@ -1676,7 +1688,7 @@ h2 {
   backdrop-filter: blur(40px) saturate(170%);
   color: var(--vscode-button-secondaryForeground, #d4d4d4);
   border: 1px solid var(--agency-white);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: var(--font-base);
   font-family: inherit;
@@ -1731,7 +1743,7 @@ h2 {
   background: var(--tint-light);
   color: var(--vscode-input-foreground, #d4d4d4);
   border: 1px solid var(--tint-light);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   font-family: inherit;
   font-size: inherit;
   resize: none;
@@ -2065,7 +2077,7 @@ h2 {
   background: var(--bg-editor);
   color: var(--vscode-descriptionForeground, #888);
   border: 1px solid var(--tint-medium);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   font-size: var(--font-sm);
   cursor: pointer;
   flex-shrink: 0; /* Never squish — wrap instead */
@@ -2149,7 +2161,7 @@ h2 {
   padding: 4px 6px;
   cursor: pointer;
   border: 1px solid transparent;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   flex-shrink: 0; /* Icon toggles never squish */
   transition:
     background 0.15s,
@@ -2359,7 +2371,7 @@ h2 {
   color: var(--vscode-descriptionForeground, #888);
   background: transparent;
   border: 1px solid var(--tint-medium);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
     background 0.15s,
@@ -2404,7 +2416,7 @@ h2 {
   padding: 4px 12px;
   font-family: var(--font-mono);
   cursor: pointer;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   transition: background 0.15s;
 }
 
@@ -2493,7 +2505,7 @@ h2 {
   padding: 4px 12px;
   background: transparent;
   border: none;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--vscode-descriptionForeground, #888);
   transition:
@@ -2566,12 +2578,14 @@ h2 {
   bottom: calc(100% + 8px);
   right: -8px;
   min-width: 200px;
-  background: var(--bg-editor);
-  border: 1px solid var(--border-panel);
-  border-radius: var(--radius-md);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  background: var(--glass-bg-solid);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid var(--glass-border-frost);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), var(--glass-inner-glow);
   z-index: 500;
-  padding: 8px 12px;
+  padding: 10px 14px;
   font-size: var(--font-sm);
 }
 
@@ -2595,7 +2609,7 @@ h2 {
   background: var(--vscode-dropdown-background, #3c3c3c);
   color: var(--vscode-dropdown-foreground, #d4d4d4);
   border: 1px solid var(--vscode-input-border, #3c3c3c);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   font-size: var(--font-sm);
   cursor: pointer;
 }
@@ -2706,7 +2720,7 @@ h2 {
   padding: 0 8px;
   background: transparent;
   border: none;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--vscode-descriptionForeground, #888);
   transition:
@@ -2910,7 +2924,7 @@ h2 {
   background: transparent;
   color: var(--vscode-descriptionForeground, #888);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   font-size: var(--font-sm);
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
@@ -3062,11 +3076,12 @@ h2 {
   align-items: center;
   gap: 12px;
   padding: 0 12px;
-  background: var(--titlebar-bg);
+  background: var(--glass-bg);
   -webkit-backdrop-filter: blur(40px) saturate(170%);
   backdrop-filter: blur(40px) saturate(170%);
   color: var(--vscode-sideBar-foreground, #cccccc);
-  border-bottom: 1px solid var(--glass-border);
+  border-bottom: 1px solid var(--glass-border-frost);
+  box-shadow: var(--glass-inner-glow);
   z-index: 300;
   user-select: none;
   flex-shrink: 0;
@@ -3082,7 +3097,7 @@ h2 {
   background: var(--vscode-button-secondaryBackground, #3a3d41);
   color: var(--vscode-button-secondaryForeground, #d4d4d4);
   border: none;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: var(--font-sm);
   font-family: inherit;
@@ -3534,7 +3549,7 @@ h2 {
 .crispy-perf-overlay {
   background: var(--glass-bg-solid);
   border: 1px solid var(--border-panel);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
   font-size: var(--font-xs);
   font-family: var(--font-mono);
@@ -3567,7 +3582,7 @@ h2 {
 }
 
 .crispy-perf-overlay--collapsed .crispy-perf-titlebar {
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
 }
 
 .crispy-perf-title {
@@ -3781,8 +3796,11 @@ h2 {
   right: 0;
   width: var(--tool-panel-actual-width, var(--tool-panel-width, 0px));
   height: calc(100vh - var(--titlebar-height));
-  background: var(--vscode-sideBar-background, #252526);
-  border-left: 1px solid var(--border-panel);
+  background: var(--glass-bg-opaque);
+  -webkit-backdrop-filter: blur(40px) saturate(170%);
+  backdrop-filter: blur(40px) saturate(170%);
+  border-left: 1px solid var(--glass-border-frost);
+  box-shadow: var(--glass-inner-glow);
   display: flex;
   flex-direction: column;
   z-index: 100;
@@ -3803,8 +3821,15 @@ h2 {
 
 /* Overlay mode — panel floats over content with shadow, above control panel */
 [data-tool-panel="overlay"] .crispy-tool-panel {
-  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4), var(--glass-inner-glow);
+  border-radius: var(--radius-sm) 0 0 var(--radius-xl);
   z-index: 250;
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .crispy-tool-panel {
+    background: var(--vscode-sideBar-background, #252526);
+  }
 }
 
 /* --- Resize handle — draggable left edge --- */
@@ -3832,7 +3857,7 @@ h2 {
   gap: 8px;
   padding: 6px 12px;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--border-panel);
+  border-bottom: 1px solid var(--glass-border-frost);
 }
 
 .crispy-tool-panel__title {
@@ -4019,14 +4044,14 @@ h2 {
 
 .crispy-blocks-tool:hover {
   background: var(--vscode-list-hoverBackground, #2a2d2e);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 /* Panel-active highlight: fuzzy glow on tools currently shown in the tool panel.
    Must override contain: layout style — containment clips box-shadow overflow. */
 .crispy-blocks-tool[data-panel-active] {
   contain: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   box-shadow: 0 0 6px 1px rgba(255, 255, 255, 0.12);
 }
 
@@ -4352,7 +4377,7 @@ h2 {
   margin-left: 8px;
   border: 1px solid var(--tint-light);
   box-shadow: 0 0 6px rgba(255, 255, 255, 0.03);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-sm);
   padding: 0 10px;
 }
 

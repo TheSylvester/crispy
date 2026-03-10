@@ -11,7 +11,7 @@
 import type { ReactNode } from 'react';
 import type { ToolViewProps } from '../types.js';
 import { getToolData } from '../tool-definitions.js';
-import { DotLine, DotLineStatus } from './default-views.js';
+import { CompactBlock } from './default-views.js';
 
 const meta = getToolData('EnterPlanMode');
 
@@ -21,12 +21,12 @@ const meta = getToolData('EnterPlanMode');
 
 export function EnterPlanModeCompactView({ result, status }: ToolViewProps): ReactNode {
   return (
-    <DotLine
+    <CompactBlock
       icon={meta.icon}
       color={meta.color}
       name="enterplanmode"
       subject="Planning mode"
-      result={<DotLineStatus status={status} />}
+      status={status}
     />
   );
 }

@@ -18,7 +18,7 @@ import { CodePreview } from '../../renderers/tools/shared/CodePreview.js';
 import { ToolCard } from './ToolCard.js';
 import { ImageLightbox } from '../../components/ImageLightbox.js';
 import { useLightbox } from '../../hooks/useLightbox.js';
-import { DotLine, DotLineStatus } from './default-views.js';
+import { CompactBlock } from './default-views.js';
 
 const meta = getToolData('Read');
 
@@ -42,12 +42,12 @@ export function ReadCompactView({ block, result, status }: ToolViewProps): React
   const filePath = input.file_path ?? extractSubject(block);
 
   return (
-    <DotLine
+    <CompactBlock
       icon={meta.icon}
       color={meta.color}
       name="read"
       subject={<FilePath path={filePath} />}
-      result={<DotLineStatus status={status} />}
+      status={status}
     />
   );
 }

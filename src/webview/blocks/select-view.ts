@@ -54,7 +54,6 @@ export function selectView(
     const category = getToolRenderCategory(def.name, { bashAsBlock });
     if (category === 'inline' && def.views.inline) return 'inline';
     if (category === 'bash' && def.views.condensed) return 'condensed';
-    // 'block' category falls through to compact
   }
 
   // Main thread with condensed mode: use condensed (dot-line) if available

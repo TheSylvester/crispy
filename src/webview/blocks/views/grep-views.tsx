@@ -14,7 +14,7 @@ import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { extractResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { ToolCard } from './ToolCard.js';
-import { DotLine, DotLineStatus } from './default-views.js';
+import { CompactBlock } from './default-views.js';
 
 const meta = getToolData('Grep');
 
@@ -33,12 +33,12 @@ export function GrepCompactView({ block, result, status }: ToolViewProps): React
   const subject = extractSubject(block);
 
   return (
-    <DotLine
+    <CompactBlock
       icon={meta.icon}
       color={meta.color}
       name="grep"
       subject={subject}
-      result={<DotLineStatus status={status} />}
+      status={status}
     />
   );
 }

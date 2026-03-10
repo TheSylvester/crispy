@@ -15,7 +15,7 @@ import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js
 import { extractResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { ToolCard } from './ToolCard.js';
 import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
-import { DotLine, DotLineStatus } from './default-views.js';
+import { CompactBlock } from './default-views.js';
 
 const meta = getToolData('mcp__crispy__recall');
 
@@ -42,12 +42,12 @@ export function RecallCompactView({ block, result, status }: ToolViewProps): Rea
   const subject = extractSubject(block);
 
   return (
-    <DotLine
+    <CompactBlock
       icon={meta.icon}
       color={meta.color}
       name="recall"
       subject={subject}
-      result={<DotLineStatus status={status} />}
+      status={status}
     />
   );
 }
