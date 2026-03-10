@@ -3796,8 +3796,11 @@ h2 {
   right: 0;
   width: var(--tool-panel-actual-width, var(--tool-panel-width, 0px));
   height: calc(100vh - var(--titlebar-height));
-  background: var(--vscode-sideBar-background, #252526);
-  border-left: 1px solid var(--border-panel);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(40px) saturate(170%);
+  backdrop-filter: blur(40px) saturate(170%);
+  border-left: 1px solid var(--glass-border-frost);
+  box-shadow: var(--glass-inner-glow);
   display: flex;
   flex-direction: column;
   z-index: 100;
@@ -3818,7 +3821,7 @@ h2 {
 
 /* Overlay mode — panel floats over content with shadow, above control panel */
 [data-tool-panel="overlay"] .crispy-tool-panel {
-  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4), var(--glass-inner-glow);
   border-radius: var(--radius-sm) 0 0 var(--radius-xl);
   z-index: 250;
 }
