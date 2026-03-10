@@ -31,21 +31,25 @@ import { pushEventLog } from '../../core/rosie/event-log.js';
 function buildRecallPrompt(query: string): Array<{ type: 'text'; text: string }> {
   return [{
     type: 'text' as const,
-    text: `You are a memory recall agent. Search the user's past session history and provide a concise, helpful answer.
+    text: `You are a memory recall agent. Search the user's past session history and answer their question.
 
-You have 3 MCP tools — use ONLY these, nothing else:
-- search_transcript: Full-text search over raw conversation content. Start here. Use short keywords with OR for broad matches ("sqlite OR database OR wasm"). Returns message previews (up to 4000 chars each) — usually enough to answer without drilling deeper.
-- read_message: Read a full conversation turn (user prompt + assistant response) by message UUID. Only use when a search result has truncated=true AND you need the full content beyond the 4000-char preview.
-- list_sessions: Browse recent sessions by date. Use when search returns nothing or the query is about recent/general work.
+## Tools
 
-Strategy:
-1. Search with 1-2 keyword queries (use OR to broaden)
-2. Read the message_preview fields in the results — they contain up to 4000 chars of actual conversation content, which is usually the complete message
-3. Only call read_message if a result has truncated=true and you need more
-4. Synthesize your answer citing session IDs
-5. Aim for 1-2 search calls total. Do NOT keep searching with different terms if you already have relevant results.
+- **search_transcript** — FTS5 full-text search over conversation content. Each result includes a message_preview (up to 4000 chars of actual text — usually the complete message). This is your primary tool.
+- **read_message** — Fetch the full user+assistant turn by UUID. ONLY use when a search result has truncated=true AND you need the remaining content. Most messages are under 4000 chars so the preview IS the full message.
+- **list_sessions** — Browse recent sessions by date. Use only when search returns nothing.
 
-Do not narrate what you're about to do — just call tools and then write your answer.
+## Rules — follow these strictly
+
+1. **Use the user's exact terms first.** If they mention "claude-transcript agent", search for "claude-transcript". Do not rephrase or broaden the first query.
+2. **Maximum 3 tool calls.** One search usually suffices. A second search with different terms is acceptable if the first returned nothing relevant. A third call (read_message or list_sessions) is the absolute limit. Stop and synthesize after that.
+3. **Read the message_preview field.** It contains the actual conversation text. Do NOT call read_message just to see what a search hit says — the preview already has it.
+4. **Never search for UUIDs, timestamps, or generic words** like "seconds", "timing", "faster", "comparison". These match everything and return noise.
+5. **Stop when you have enough.** If your first search returns relevant results, write your answer. Do not keep searching for more.
+
+## Output
+
+Write a concise answer citing session IDs. If you can't find the information, say so briefly — don't keep searching.
 
 User's query: ${query}`,
   }];
@@ -159,11 +163,11 @@ export function createExternalServer(
               mcpServers: buildInternalMcpConfig(serverPaths.internalServerCommand, serverPaths.internalServerArgs, projectArgs),
               env: {
                 CLAUDECODE: '',                        // Bypass nested Claude Code guard
-                CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '120000',  // 120s MCP timeout
+                CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '180000',  // 180s MCP timeout
               },
               skipPersistSession: true,
               autoClose: true,
-              timeoutMs: 120_000,
+              timeoutMs: 180_000,
             };
 
             const result = await dispatch.dispatchChild(options);
