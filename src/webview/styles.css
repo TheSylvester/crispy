@@ -4130,6 +4130,7 @@ h2 {
 
 .crispy-blocks-tool-body {
   padding-left: 20px;
+  padding-right: 2px;
   min-width: 0;
   overflow: hidden;
 }
