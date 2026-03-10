@@ -122,7 +122,7 @@ export function DotLine({ icon, color, name, subject, description, meta, result 
  * Status icon only (no text summary) — for dot-line and compact-block result area.
  */
 export function DotLineStatus({ status }: { status: 'running' | 'complete' | 'error' }): ReactNode {
-  if (status === 'running') return <span className="crispy-status-pending">{'\u23F3'}</span>;
+  if (status === 'running') return <span className="crispy-status-spinner" />;
   if (status === 'error') return <span className="crispy-status-error">{'\u2717'}</span>;
   return <span className="crispy-status-success">{'\u2713'}</span>;
 }
