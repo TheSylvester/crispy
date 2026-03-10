@@ -136,7 +136,7 @@ export function searchMessagesFts(
     }
     params.push(limit);
 
-    const MAX_PREVIEW = 4000;
+    const MAX_PREVIEW = 200;
     const rows = db().all(
       `SELECT m.message_id, m.session_id, m.message_seq,
               m.project_id, m.created_at, f.rank,

@@ -35,21 +35,44 @@ function buildRecallPrompt(query: string): Array<{ type: 'text'; text: string }>
 
 ## Tools
 
-- **search_transcript** — FTS5 full-text search over conversation content. Each result includes a message_preview (up to 4000 chars of actual text — usually the complete message). This is your primary tool.
-- **read_message** — Fetch the full user+assistant turn by UUID. ONLY use when a search result has truncated=true AND you need the remaining content. Most messages are under 4000 chars so the preview IS the full message.
-- **list_sessions** — Browse recent sessions by date. Use only when search returns nothing.
+- **search_transcript** — FTS5 full-text search. Returns a short snippet and 200-char preview per hit. Use this to **locate** relevant sessions and messages.
+- **read_message** — Read the full conversation turn by UUID. Use this to **understand** what was actually discussed. Always read before answering.
+- **list_sessions** — Browse recent sessions by date. Useful when keyword search returns nothing.
 
-## Rules — follow these strictly
+## Workflow: search → locate → read → answer
 
-1. **Use the user's exact terms first.** If they mention "claude-transcript agent", search for "claude-transcript". Do not rephrase or broaden the first query.
-2. **Maximum 3 tool calls.** One search usually suffices. A second search with different terms is acceptable if the first returned nothing relevant. A third call (read_message or list_sessions) is the absolute limit. Stop and synthesize after that.
-3. **Read the message_preview field.** It contains the actual conversation text. Do NOT call read_message just to see what a search hit says — the preview already has it.
-4. **Never search for UUIDs, timestamps, or generic words** like "seconds", "timing", "faster", "comparison". These match everything and return noise.
-5. **Stop when you have enough.** If your first search returns relevant results, write your answer. Do not keep searching for more.
+1. **Search** with 1-2 discriminating keywords to find candidate sessions.
+2. **Read** the most promising hits with read_message to see full context.
+3. **Answer** only after reading enough to be confident.
+
+Do NOT answer from search snippets alone — they're too short. Always read_message for the hits you want to cite.
+
+## How to search — think like grep, not Google
+
+search_transcript uses FTS5 with implicit AND. Every word must appear in the same message. More words = fewer results.
+
+**One or two discriminating keywords per search.** Pick technical terms, proper nouns, or unique concepts — not common verbs like "discuss", "change", "fix".
+
+Good: \`"deferred"\`, \`"ToolSearch"\`, \`"allowedTools"\`
+Bad: \`"renaming the Recall MCP to improve deferred tool discovery"\`
+
+**Search in parallel.** Fire 2-3 single-keyword searches simultaneously. Cross-reference session IDs across result sets.
+
+**Iterate.** If the first round misses, try synonyms, related terms, or broader keywords. Read the snippets — they contain adjacent terms to search for next.
+
+**FTS5 syntax:** OR (\`"deferred OR ToolSearch"\`), prefix (\`"defer*"\`), phrase (\`'"deferred tools"'\`).
+
+## Rules
+
+1. **No tool call limit.** Search and read as many times as needed. Accuracy matters more than speed.
+2. **Read before answering.** Search results give you locations. read_message gives you understanding. Don't skip the read step.
+3. **Distinguish similar topics.** If keywords appear in multiple distinct conversations, read into each one. The user may be asking about a specific instance.
+4. **When ambiguous, present candidates.** List the top 2-3 matches with session IDs and a one-line summary. Let the user pick.
+5. **If you can't find it, say so.** Don't fabricate from tangentially related results.
 
 ## Output
 
-Write a concise answer citing session IDs. If you can't find the information, say so briefly — don't keep searching.
+Write a concise answer citing session IDs. If multiple candidates exist, list them with enough context to tell them apart.
 
 User's query: ${query}`,
   }];
