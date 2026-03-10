@@ -16,7 +16,7 @@ import { getToolData, extractSubject } from '../tool-definitions.js';
 import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { ToolCard } from './ToolCard.js';
-import { DotLine, DotLineStatus } from './default-views.js';
+import { CompactBlock } from './default-views.js';
 
 const meta = getToolData('ToolSearch');
 
@@ -63,12 +63,12 @@ export function ToolSearchCompactView({ block, result, status }: ToolViewProps):
   const subject = extractSubject(block);
 
   return (
-    <DotLine
+    <CompactBlock
       icon={meta.icon}
       color={meta.color}
       name="toolsearch"
       subject={subject}
-      result={<DotLineStatus status={status} />}
+      status={status}
     />
   );
 }

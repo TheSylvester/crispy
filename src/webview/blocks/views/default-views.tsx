@@ -5,8 +5,11 @@
  * for any tool. Tools can override specific views while keeping defaults
  * for others.
  *
- * Also provides `DotLine` — the shared "colored mono + dots" compact view
- * component used by all per-tool compact views.
+ * Also provides:
+ * - `CompactBlock` — two-row compact view (header row + subject pill),
+ *   aligned with BashCompactView. Used by all per-tool compact views.
+ * - `DotLine` — single-line condensed view (icon + badge + dots + status).
+ *   Used for condensed mode only.
  *
  * @module webview/blocks/views/default-views
  */
@@ -20,7 +23,62 @@ import { extractResultText, formatCount } from '../../renderers/tools/shared/too
 import { ToolCard } from './ToolCard.js';
 
 // ============================================================================
-// DotLine — shared colored mono + dots compact view
+// CompactBlock — two-row compact view aligned with BashCompactView
+// ============================================================================
+
+interface CompactBlockProps {
+  icon: ReactNode;
+  /** Tool color for the badge */
+  color: string;
+  /** Lowercase tool name displayed in badge */
+  name: string;
+  /** Subject shown inline in the header row (file path, pattern, description text) */
+  subject?: ReactNode;
+  /** Description text — shown inline in header row (muted italic) */
+  description?: string;
+  /** Extra badges (e.g. "background", timeout) — inserted after name badge */
+  badges?: ReactNode;
+  /** Metadata displayed in header row after subject (e.g. diff stats) */
+  meta?: ReactNode;
+  /** Optional code pill on a second row (e.g. Bash command) */
+  codePill?: string;
+  /** Tool status */
+  status: 'running' | 'complete' | 'error';
+}
+
+/**
+ * Compact block view — single row with optional second-row code pill.
+ *
+ * Row 1: icon + colored badge + [extra badges] + [subject] + [description] + [meta] + status
+ * Row 2 (optional): code pill (e.g. Bash command)
+ *
+ * Visually aligned with BashCompactView — same CSS classes, same layout.
+ */
+export function CompactBlock({ icon, color, name, subject, description, badges, meta, codePill, status }: CompactBlockProps): ReactNode {
+  return (
+    <div className="crispy-blocks-compact-block">
+      <div className="crispy-blocks-compact-row">
+        <span className="crispy-blocks-compact-icon">{icon}</span>
+        <ToolBadge color={color} label={name} />
+        {badges}
+        {subject && (
+          <span className="crispy-blocks-dot-line__subject">{subject}</span>
+        )}
+        {description && (
+          <span className="crispy-blocks-tool-description">{description}</span>
+        )}
+        {meta}
+        <DotLineStatus status={status} />
+      </div>
+      {codePill && (
+        <code className="u-mono-pill crispy-tool-subject-pill">{codePill}</code>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// DotLine — single-line condensed view (for condensed mode only)
 // ============================================================================
 
 interface DotLineProps {
@@ -40,7 +98,7 @@ interface DotLineProps {
 }
 
 /**
- * Colored mono + dot leader compact view.
+ * Colored mono + dot leader condensed view.
  *
  * Layout: icon + colored name + (subject | description) + dot leader + result
  */
@@ -61,7 +119,7 @@ export function DotLine({ icon, color, name, subject, description, meta, result 
 }
 
 /**
- * Status icon only (no text summary) — for dot-line result area.
+ * Status icon only (no text summary) — for dot-line and compact-block result area.
  */
 export function DotLineStatus({ status }: { status: 'running' | 'complete' | 'error' }): ReactNode {
   if (status === 'running') return <span className="crispy-status-pending">{'\u23F3'}</span>;
@@ -91,7 +149,7 @@ export function defaultToolViews(def: Pick<ToolDefinition, 'icon' | 'activity' |
 }
 
 // ============================================================================
-// Compact View — dot-line with badge, subject, and status
+// Compact View — CompactBlock with badge, subject, and status
 // ============================================================================
 
 interface DefaultCompactViewProps extends ToolViewProps {
@@ -102,12 +160,12 @@ function DefaultCompactView({ block, status, def }: DefaultCompactViewProps): Re
   const subject = extractSubject(block);
 
   return (
-    <DotLine
+    <CompactBlock
       icon={def.icon}
       color={def.color}
       name={block.name.toLowerCase()}
       subject={subject}
-      result={<DotLineStatus status={status} />}
+      status={status}
     />
   );
 }

@@ -14,7 +14,7 @@ import { ToolBadge } from '../../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js';
 import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
 import { ToolCard } from './ToolCard.js';
-import { DotLine, DotLineStatus } from './default-views.js';
+import { CompactBlock } from './default-views.js';
 
 const meta = getToolData('ExitPlanMode');
 
@@ -36,12 +36,12 @@ export function ExitPlanModeCompactView({ block, result, status }: ToolViewProps
     : 'Plan Ready';
 
   return (
-    <DotLine
+    <CompactBlock
       icon={meta.icon}
       color={meta.color}
       name="exitplanmode"
       subject={description}
-      result={<DotLineStatus status={status} />}
+      status={status}
     />
   );
 }

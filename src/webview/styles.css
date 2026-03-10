@@ -1217,10 +1217,18 @@ h2 {
   max-width: 100%;
 }
 
-.crispy-blocks-bash-compact {
+.crispy-blocks-bash-compact,
+.crispy-blocks-compact-block {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.crispy-tool-subject-pill {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* --- Diff stats --- */

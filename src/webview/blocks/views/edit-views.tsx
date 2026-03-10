@@ -17,7 +17,7 @@ import { DiffView } from '../../renderers/tools/shared/DiffView.js';
 import { inferLanguage } from '../../renderers/tools/shared/tool-utils.js';
 import { ToolCard } from './ToolCard.js';
 import { useBlocksToolRegistry } from '../BlocksToolRegistryContext.js';
-import { DotLine, DotLineStatus } from './default-views.js';
+import { CompactBlock } from './default-views.js';
 
 const meta = getToolData('Edit');
 
@@ -38,7 +38,7 @@ export function EditCompactView({ block, result, status }: ToolViewProps): React
   const newLines = (input.new_string ?? '').split('\n').length;
 
   return (
-    <DotLine
+    <CompactBlock
       icon={meta.icon}
       color={meta.color}
       name="edit"
@@ -48,7 +48,7 @@ export function EditCompactView({ block, result, status }: ToolViewProps): React
         {' '}
         <span className="crispy-diff-stats-removed">-{oldLines}</span>
       </span>}
-      result={<DotLineStatus status={status} />}
+      status={status}
     />
   );
 }

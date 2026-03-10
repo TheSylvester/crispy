@@ -18,7 +18,7 @@ import { ChromeMonoIcon } from '../../components/control-panel/icons.js';
 import { ToolCard } from './ToolCard.js';
 import { ImageLightbox } from '../../components/ImageLightbox.js';
 import { useLightbox } from '../../hooks/useLightbox.js';
-import { DotLine, DotLineStatus } from './default-views.js';
+import { CompactBlock } from './default-views.js';
 
 /** Chrome brand blue — the center of the Chrome logo. */
 const CHROME_BLUE = '#4285F4';
@@ -250,12 +250,12 @@ export function ChromeCompactView({ block, result, status }: ToolViewProps): Rea
   const displaySubject = subject ? `${label} ${subject}` : label;
 
   return (
-    <DotLine
+    <CompactBlock
       icon={<ChromeMonoIcon />}
       color={CHROME_BLUE}
       name="chrome"
       subject={displaySubject}
-      result={<DotLineStatus status={status} />}
+      status={status}
     />
   );
 }

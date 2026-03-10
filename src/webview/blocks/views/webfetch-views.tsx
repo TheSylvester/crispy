@@ -15,7 +15,7 @@ import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js
 import { extractResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
 import { ToolCard } from './ToolCard.js';
-import { DotLine, DotLineStatus } from './default-views.js';
+import { CompactBlock } from './default-views.js';
 
 const meta = getToolData('WebFetch');
 
@@ -36,12 +36,12 @@ export function WebFetchCompactView({ block, result, status }: ToolViewProps): R
   const subject = extractSubject(block);
 
   return (
-    <DotLine
+    <CompactBlock
       icon={meta.icon}
       color={meta.color}
       name="webfetch"
       subject={subject}
-      result={<DotLineStatus status={status} />}
+      status={status}
     />
   );
 }

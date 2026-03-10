@@ -15,7 +15,7 @@ import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js
 import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
 import { extractResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { ToolCard } from './ToolCard.js';
-import { DotLine, DotLineStatus } from './default-views.js';
+import { CompactBlock } from './default-views.js';
 
 const meta = getToolData('Skill');
 
@@ -33,12 +33,12 @@ export function SkillCompactView({ block, result, status }: ToolViewProps): Reac
   const skillName = input.skill ?? 'skill';
 
   return (
-    <DotLine
+    <CompactBlock
       icon={meta.icon}
       color={meta.color}
       name="skill"
       subject={skillName}
-      result={<DotLineStatus status={status} />}
+      status={status}
     />
   );
 }

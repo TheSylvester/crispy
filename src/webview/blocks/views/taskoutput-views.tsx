@@ -16,7 +16,7 @@ import { StatusIndicator } from '../../renderers/tools/shared/StatusIndicator.js
 import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
 import { extractResultText, formatCount } from '../../renderers/tools/shared/tool-utils.js';
 import { ToolCard } from './ToolCard.js';
-import { DotLine, DotLineStatus } from './default-views.js';
+import { CompactBlock } from './default-views.js';
 
 const meta = getToolData('TaskOutput');
 
@@ -65,12 +65,12 @@ export function TaskOutputCompactView({ block, result, status }: ToolViewProps):
   const subject = extractSubject(block);
 
   return (
-    <DotLine
+    <CompactBlock
       icon={meta.icon}
       color={meta.color}
       name="task-output"
       subject={subject}
-      result={<DotLineStatus status={status} />}
+      status={status}
     />
   );
 }

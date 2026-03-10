@@ -16,7 +16,7 @@ import { FilePath } from '../../renderers/tools/shared/FilePath.js';
 import { CodePreview } from '../../renderers/tools/shared/CodePreview.js';
 import { inferLanguage } from '../../renderers/tools/shared/tool-utils.js';
 import { ToolCard } from './ToolCard.js';
-import { DotLine, DotLineStatus } from './default-views.js';
+import { CompactBlock } from './default-views.js';
 
 const meta = getToolData('Write');
 
@@ -34,12 +34,12 @@ export function WriteCompactView({ block, result, status }: ToolViewProps): Reac
   const filePath = input.file_path ?? extractSubject(block);
 
   return (
-    <DotLine
+    <CompactBlock
       icon={meta.icon}
       color={meta.color}
       name="write"
       subject={<FilePath path={filePath} />}
-      result={<DotLineStatus status={status} />}
+      status={status}
     />
   );
 }
