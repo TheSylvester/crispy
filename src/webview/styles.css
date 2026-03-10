@@ -4370,8 +4370,8 @@ h2 {
 .crispy-blocks-thinking {
   margin: 4px 0;
   margin-left: 8px;
-  border: 1px solid var(--tint-light);
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.06), 0 0 2px rgba(255, 255, 255, 0.04);
   border-radius: var(--radius-sm);
   padding: 0 10px;
 }
