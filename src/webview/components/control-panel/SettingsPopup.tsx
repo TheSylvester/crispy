@@ -30,6 +30,8 @@ interface SettingsPopupProps {
   onToolPanelAutoOpenChange: (enabled: boolean) => void;
   badgeStyle: BadgeStyle;
   onBadgeStyleChange: (style: BadgeStyle) => void;
+  bashBlockInIcons: boolean;
+  onBashBlockInIconsChange: (enabled: boolean) => void;
   rosieEnabled: boolean;
   rosieModel?: string;
   onUpdateRosie: (patch: { enabled?: boolean; model?: string }) => void;
@@ -126,7 +128,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, rosieEnabled, rosieModel, onUpdateRosie, trackerEnabled, onUpdateTracker, mcpMemoryEnabled, onUpdateMcpMemory, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, rosieEnabled, rosieModel, onUpdateRosie, trackerEnabled, onUpdateTracker, mcpMemoryEnabled, onUpdateMcpMemory, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -224,6 +226,16 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               ))}
             </select>
           </label>
+          {renderMode === 'icons' && (
+            <label className="crispy-cp-settings__row">
+              <span>Block Bash</span>
+              <input
+                type="checkbox"
+                checked={bashBlockInIcons}
+                onChange={(e) => onBashBlockInIconsChange(e.target.checked)}
+              />
+            </label>
+          )}
           {debugMode && onToolViewOverrideChange && (
             <label className="crispy-cp-settings__row">
               <span>Tool View</span>

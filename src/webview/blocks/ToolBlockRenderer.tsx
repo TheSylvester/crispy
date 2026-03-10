@@ -59,7 +59,7 @@ export function ToolBlockRenderer({
   const result = registry.useResult(block.id);
 
   // Debug: global tool view override from preferences (?debug=1 settings)
-  const { toolViewOverride: globalOverride, toolPanelMode, toolPanelOpen, setToolPanelOpen, renderMode, condensedToolMode } = usePreferences();
+  const { toolViewOverride: globalOverride, toolPanelMode, toolPanelOpen, setToolPanelOpen, renderMode, condensedToolMode, bashBlockInIcons } = usePreferences();
 
   // Panel state: used for expansion override in tool-panel anchors
   const panelState = usePanelState();
@@ -126,7 +126,7 @@ export function ToolBlockRenderer({
   // Render with definition if available
   if (def) {
     // Select view: global debug override > auto selection
-    let viewMode: 'compact' | 'condensed' | 'expanded' | 'inline' = globalOverride ?? selectView(def, anchor, block, siblingCount, registry, renderMode === 'icons', condensedToolMode);
+    let viewMode: 'compact' | 'condensed' | 'expanded' | 'inline' = globalOverride ?? selectView(def, anchor, block, siblingCount, registry, renderMode === 'icons', condensedToolMode, bashBlockInIcons);
 
     // Panel expansion override: in inspector mode, use the tool's declared
     // default unless the user has clicked or the tool is still streaming.

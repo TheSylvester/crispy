@@ -298,9 +298,17 @@ export function getToolData(name: string): ToolDefinitionData {
  * - 'block': destructive/novel → stays as dot-line/rich view
  * - 'bash': simplified single-line view
  */
-export function getToolRenderCategory(name: string): RenderCategory {
+export function getToolRenderCategory(
+  name: string,
+  overrides?: { bashAsBlock?: boolean },
+): RenderCategory {
   const data = TOOL_DATA[name];
-  if (data) return data.renderCategory ?? 'inline';
+  if (data) {
+    const cat = data.renderCategory ?? 'inline';
+    // User pref: promote 'bash' → 'block' so Bash renders as full compact view
+    if (cat === 'bash' && overrides?.bashAsBlock) return 'block';
+    return cat;
+  }
   // MCP tools and skills render as blocks — they're not simple read/search icons
   if (name.startsWith('mcp__') || name.startsWith('mcp_')) return 'block';
   return 'inline';

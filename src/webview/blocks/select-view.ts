@@ -36,6 +36,7 @@ export function selectView(
   _registry: BlocksToolRegistry,
   inlineMode = false,
   condensedMode = false,
+  bashAsBlock = false,
 ): 'compact' | 'condensed' | 'expanded' | 'inline' {
   // Panel and nested task tools: always expanded — native <details>
   // handles collapse/expand. Completed tools render collapsed (no `open`
@@ -50,7 +51,7 @@ export function selectView(
 
   // Main thread with inline mode: dispatch based on render category
   if (anchor.type === 'main-thread' && inlineMode) {
-    const category = getToolRenderCategory(def.name);
+    const category = getToolRenderCategory(def.name, { bashAsBlock });
     if (category === 'inline' && def.views.inline) return 'inline';
     if (category === 'bash' && def.views.condensed) return 'condensed';
     // 'block' category falls through to compact

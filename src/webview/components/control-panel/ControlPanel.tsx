@@ -159,7 +159,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         (ref as React.RefObject<HTMLDivElement | null>).current = node;
       }
     }, [ref]);
-    const { renderMode, setRenderMode, settingsPinned, setSettingsPinned, toolViewOverride, setToolViewOverride, debugMode, setDebugMode, toolPanelAutoOpen, setToolPanelAutoOpen, badgeStyle, setBadgeStyle } = usePreferences();
+    const { renderMode, setRenderMode, settingsPinned, setSettingsPinned, toolViewOverride, setToolViewOverride, debugMode, setDebugMode, toolPanelAutoOpen, setToolPanelAutoOpen, badgeStyle, setBadgeStyle, bashBlockInIcons, setBashBlockInIcons } = usePreferences();
     const [rosiePanelPinned, setRosiePanelPinned] = useState(false);
     const rosieLogEntries = useRosieLog();
     const transport = useTransport();
@@ -1006,6 +1006,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onToolPanelAutoOpenChange={setToolPanelAutoOpen}
               badgeStyle={badgeStyle}
               onBadgeStyleChange={setBadgeStyle}
+              bashBlockInIcons={bashBlockInIcons}
+              onBashBlockInIconsChange={setBashBlockInIcons}
               rosieEnabled={rosieEnabled}
               rosieModel={rosieModel}
               onUpdateRosie={handleUpdateRosie}

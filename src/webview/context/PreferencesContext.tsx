@@ -43,6 +43,8 @@ interface Preferences {
   condensedToolMode: boolean;
   /** Badge style for tool name pills. */
   badgeStyle: BadgeStyle;
+  /** In Icons mode, render Bash as a full block instead of condensed single-line. */
+  bashBlockInIcons: boolean;
 }
 
 interface PreferencesContextValue extends Preferences {
@@ -57,6 +59,7 @@ interface PreferencesContextValue extends Preferences {
   setToolPanelAutoOpen: (enabled: boolean) => void;
   setCondensedToolMode: (enabled: boolean) => void;
   setBadgeStyle: (style: BadgeStyle) => void;
+  setBashBlockInIcons: (enabled: boolean) => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
@@ -93,6 +96,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
   const [condensedToolMode, setCondensedToolMode] = useState(false);
   const [badgeStyle, setBadgeStyle] = useState<BadgeStyle>('frosted');
+  const [bashBlockInIcons, setBashBlockInIcons] = useState(false);
 
   // ============================================================================
   // Persisted preference — toolPanelAutoOpen only
@@ -195,6 +199,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     toolPanelAutoOpen,
     condensedToolMode,
     badgeStyle,
+    bashBlockInIcons,
     setRenderMode,
     setSettingsPinned,
     setSidebarCollapsed,
@@ -206,6 +211,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setToolPanelAutoOpen,
     setCondensedToolMode,
     setBadgeStyle,
+    setBashBlockInIcons,
   };
 
   return (
