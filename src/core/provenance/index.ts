@@ -50,7 +50,7 @@ export type {
  * Phase 2: Match git commit commands to actual commits
  * Phase 3: Save scan state for incremental scanning
  *
- * Called by activity-scanner.ts after the main activity scan.
+ * Called after the main activity scan.
  */
 export function runProvenanceScan(sessions: SessionInfo[]): void {
   const scanStates = loadProvenanceScanStates();

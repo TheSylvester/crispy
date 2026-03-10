@@ -48,10 +48,9 @@ export function initRosieTracker(d: AgentDispatch, paths: InternalServerPaths): 
   dispatch = d;
   serverPaths = paths;
 
-  // Startup dedup sweep — catches any duplicates that slipped through
-  runDedupSweep(d.dispatchChild).catch((err) => {
-    console.warn('[rosie.tracker] Startup dedup sweep failed:', err instanceof Error ? err.message : String(err));
-  });
+  // Startup dedup sweep removed — caused DB lock contention during boot
+  // (WASM SQLite rollback journal can't handle concurrent writers).
+  // Dedup still runs after each tracker response via onResponseCompleteAfter.
 
   unsubscribe = onResponseCompleteAfter(async (sessionId: string) => {
     // Capture dispatch locally — shutdown can null it while we're in-flight
