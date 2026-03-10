@@ -16,9 +16,10 @@
 import { appendFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
-import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath } from '../memory-queries.js';
-import { writeTrackerResults } from '../../core/rosie/tracker/db-writer.js';
-import { VALID_STATUSES, VALID_CATEGORIES } from '../../core/rosie/tracker/types.js';
+import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath, searchTranscript, readMessageTurn } from '../memory-queries.js';
+
+import { writeTrackerResults, recordTrackerOutcome } from '../../core/rosie/tracker/db-writer.js';
+import { VALID_STATUSES } from '../../core/rosie/tracker/types.js';
 import type { TrackerBlock } from '../../core/rosie/tracker/types.js';
 
 // ============================================================================
@@ -44,12 +45,31 @@ export interface TrackerDecision {
 }
 
 /**
- * Append a decision record to the sidecar file (set via CRISPY_TRACKER_DECISIONS_FILE).
+ * Options for configuring the internal MCP server.
+ *
+ * These values are passed as CLI args (--session-file, --decisions-file)
+ * rather than env vars, so they work regardless of how the host adapter
+ * spawns MCP subprocesses. Falls back to env vars for backwards compatibility.
+ */
+export interface InternalServerOptions {
+  /** Session file path for tracker's upsert_project tool. */
+  sessionFile?: string;
+  /** Sidecar JSONL file for tracker decision observability. */
+  decisionsFile?: string;
+  /** Project path for scoping search_transcript results. */
+  projectId?: string;
+}
+
+/** Module-level options — set by createInternalServer(), read by tool handlers. */
+let serverOptions: InternalServerOptions = {};
+
+/**
+ * Append a decision record to the sidecar file.
  * The parent process reads this after dispatchChild completes and pushes entries
- * to the rosie debug log. Silently no-ops if the env var is unset.
+ * to the rosie debug log. Silently no-ops if no decisions file is configured.
  */
 function appendDecision(decision: TrackerDecision): void {
-  const file = process.env.CRISPY_TRACKER_DECISIONS_FILE;
+  const file = serverOptions.decisionsFile ?? process.env.CRISPY_TRACKER_DECISIONS_FILE;
   if (!file) return;
   try {
     appendFileSync(file, JSON.stringify(decision) + '\n');
@@ -93,8 +113,12 @@ function wrapToolHandler<T extends unknown[]>(
  *
  * Returns the McpServer — callers connect their own transport (stdio for
  * production, in-memory for tests).
+ *
+ * @param options - CLI-provided options (session file, decisions file).
+ *   Falls back to env vars for backwards compatibility.
  */
-export function createInternalServer(): McpServer {
+export function createInternalServer(options?: InternalServerOptions): McpServer {
+  serverOptions = options ?? {};
   const server = new McpServer({
     name: INTERNAL_MCP_SERVER_NAME,
     version: '1.0.0',
@@ -218,7 +242,6 @@ export function createInternalServer(): McpServer {
       title: z.string().describe('Short, stable project title. Keep consistent across sessions — don\'t rename unless scope fundamentally changed.'),
       status: z.enum(VALID_STATUSES).describe('Current project status.'),
       summary: z.string().describe('1-2 sentence summary of current project state. Reflect what\'s true RIGHT NOW, not history.'),
-      category: z.enum(VALID_CATEGORIES).describe('Project category.'),
       blocked_by: z.string().optional().describe('Why it\'s blocked (only if status is \'blocked\', otherwise omit).'),
       branch: z.string().optional().describe('Git branch name if applicable, otherwise omit.'),
       entities: z.array(z.string()).describe('Top 5-10 key entities: file paths, branch names, function names, concepts. Used for matching future sessions to this project.'),
@@ -228,9 +251,9 @@ export function createInternalServer(): McpServer {
       })).optional().describe('Non-code artifacts only: plans, specs, design docs. NOT source code — source files belong in entities. Omit if none.'),
     },
     async (args) => {
-      const sessionFile = process.env.CRISPY_TRACKER_SESSION_FILE;
+      const sessionFile = serverOptions.sessionFile ?? process.env.CRISPY_TRACKER_SESSION_FILE;
       if (!sessionFile) {
-        console.error('[internal-mcp] upsert_project: CRISPY_TRACKER_SESSION_FILE not set');
+        console.error('[internal-mcp] upsert_project: session file not configured (no --session-file arg or CRISPY_TRACKER_SESSION_FILE env)');
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: 'Session file not configured — this tool is only available in tracker child sessions' }) }],
           isError: true,
@@ -245,7 +268,6 @@ export function createInternalServer(): McpServer {
           status: args.status,
           blocked_by: args.blocked_by ?? '',
           summary: args.summary,
-          category: args.category,
           branch: args.branch ?? '',
           entities: JSON.stringify(args.entities),
         },
@@ -258,6 +280,8 @@ export function createInternalServer(): McpServer {
         const action = args.id ? 'updated' : 'created';
         console.error(`[internal-mcp] upsert_project: ${action} "${args.title}" (${args.status})`);
         appendDecision({ tool: 'upsert_project', action, title: args.title, status: args.status });
+        // Persist tracked outcome to DB
+        recordTrackerOutcome(sessionFile, 'tracked', 1, args.title);
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action, project: args.title }) }],
         };
@@ -283,9 +307,86 @@ export function createInternalServer(): McpServer {
     async (args) => {
       console.error(`[internal-mcp] mark_trivial: "${args.reason}"`);
       appendDecision({ tool: 'mark_trivial', reason: args.reason });
+      // Persist trivial outcome to DB
+      const sessionFile = process.env.CRISPY_TRACKER_SESSION_FILE;
+      if (sessionFile) {
+        recordTrackerOutcome(sessionFile, 'trivial', 1, args.reason);
+      }
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', trivial: true, reason: args.reason }) }],
       };
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // search_transcript — FTS5 search over raw conversation content
+  // ------------------------------------------------------------------
+  server.tool(
+    'search_transcript',
+    'Full-text search over raw conversation content from past sessions. Returns matching messages with session ID, message UUID, and text snippet. Project-scoped by default — searches only sessions from the current workspace. Supports FTS5 syntax: OR for broad searches, "quoted phrases" for exact matches, prefix* for partial terms.',
+    {
+      query: z.string().describe('Search query — short keywords work best. Use OR to broaden: "sqlite OR database"'),
+      limit: z.number().optional().default(20).describe('Maximum results (default 20)'),
+      all_projects: z.boolean().optional().default(false).describe('Search across all projects instead of just the current workspace'),
+    },
+    async (args) => {
+      const projectId = args.all_projects ? undefined : serverOptions.projectId;
+      console.error(`[internal-mcp] search_transcript: query="${args.query}" limit=${args.limit} project=${projectId ?? 'all'}`);
+      try {
+        const results = searchTranscript(args.query, args.limit, projectId);
+        console.error(`[internal-mcp] search_transcript: ${results.length} results`);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ results, count: results.length }, null, 2) }],
+        };
+      } catch (err) {
+        console.error(`[internal-mcp] search_transcript FAIL:`, err instanceof Error ? err.message : String(err));
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({
+            results: [],
+            error: `search_transcript failed: ${err instanceof Error ? err.message : String(err)}`,
+          }, null, 2) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // read_message — Read a full conversation turn by message UUID
+  // ------------------------------------------------------------------
+  server.tool(
+    'read_message',
+    'Read a full conversation turn (user prompt + assistant response) by message UUID. Returns the stripped text without tool calls. Use the message_id and session_id from search_transcript results.',
+    {
+      session_id: z.string().describe('Session ID from search results'),
+      message_id: z.string().describe('Message UUID from search results'),
+    },
+    async (args) => {
+      console.error(`[internal-mcp] read_message: session=${args.session_id} message=${args.message_id}`);
+      try {
+        const result = readMessageTurn(args.session_id, args.message_id);
+        if (!result) {
+          console.error('[internal-mcp] read_message: not found');
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({ turn: null, found: false }, null, 2) }],
+            isError: true,
+          };
+        }
+        console.error(`[internal-mcp] read_message: OK (user=${result.userText.length} chars, assistant=${result.assistantText.length} chars)`);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ turn: result, found: true }, null, 2) }],
+        };
+      } catch (err) {
+        console.error('[internal-mcp] read_message FAIL:', err instanceof Error ? err.message : String(err));
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({
+            turn: null,
+            found: false,
+            error: `read_message failed: ${err instanceof Error ? err.message : String(err)}`,
+          }, null, 2) }],
+          isError: true,
+        };
+      }
     },
   );
 

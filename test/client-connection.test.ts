@@ -337,6 +337,36 @@ describe('ClientConnection', () => {
 
       handler.dispose();
     });
+
+    it('replays catchup on an existing subscription', async () => {
+      const s1 = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
+      const historyEntries: TranscriptEntry[] = [
+        { type: 'assistant', uuid: 'a-1', message: { role: 'assistant', content: 'hello' } },
+      ];
+      const discovery = createMockDiscovery({
+        vendor: 'claude',
+        sessions: [s1],
+        historyEntries,
+      });
+      registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+
+      await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
+      await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
+
+      const catchups = messages.filter(
+        (m) => m.kind === 'event' && (m as any).event.type === 'catchup',
+      );
+      expect(catchups).toHaveLength(2);
+      if (catchups[1]?.kind === 'event' && catchups[1].event.type === 'catchup') {
+        expect(catchups[1].sessionId).toBe('sess-1');
+        expect(catchups[1].event.entries).toEqual(historyEntries);
+      }
+
+      handler.dispose();
+    });
   });
 
   describe('unsubscribe', () => {

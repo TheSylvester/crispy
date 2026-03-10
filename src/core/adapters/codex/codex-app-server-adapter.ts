@@ -281,6 +281,8 @@ export class CodexAgentAdapter implements AgentAdapter {
       ...(this.spec.command && { command: this.spec.command }),
       ...(this.spec.args && { args: this.spec.args }),
       cwd: (this.spec.mode === 'fresh' || this.spec.mode === 'hydrated') ? this.spec.cwd : undefined,
+      // Forward env overrides from spec (Rosie child sessions set CLAUDECODE, MCP timeouts, etc.)
+      ...('env' in this.spec && this.spec.env && { env: this.spec.env }),
       onNotification: (method, params) => this.handleNotification(method, params),
       onRequest: (method, id, params) => this.handleServerRequest(method, id, params),
       onError: (err) => this.emitError(err),
@@ -289,7 +291,7 @@ export class CodexAgentAdapter implements AgentAdapter {
 
     // Initialize protocol
     await this.client.request('initialize', {
-      clientInfo: { name: 'crispy', version: '0.1.4-dev.34' },
+      clientInfo: { name: 'crispy', version: '0.1.4-dev.38' },
       capabilities: { experimentalApi: true },
     });
 
@@ -300,10 +302,19 @@ export class CodexAgentAdapter implements AgentAdapter {
       case 'fresh': {
         const params: Record<string, unknown> = {
           cwd: this.spec.cwd,
+          experimentalRawEvents: false,
         };
         if (this.spec.model) params.model = this.spec.model;
         if (this.spec.permissionMode) {
           params.approvalPolicy = mapPermissionMode(this.spec.permissionMode);
+        }
+        // Ephemeral sessions for Rosie child dispatches — not persisted by Codex
+        if (this.spec.skipPersistSession) {
+          params.ephemeral = true;
+        }
+        // Try injecting MCP servers via the config bag on thread/start
+        if (this.spec.mcpServers && Object.keys(this.spec.mcpServers).length > 0) {
+          params.config = { mcp_servers: this.spec.mcpServers };
         }
 
         response = await this.client.request('thread/start', params);
@@ -323,6 +334,10 @@ export class CodexAgentAdapter implements AgentAdapter {
         };
         if (this.spec.atMessageId) {
           forkParams.atItemId = this.spec.atMessageId;
+        }
+        // Try injecting MCP servers via the config bag on thread/fork
+        if (this.spec.mcpServers && Object.keys(this.spec.mcpServers).length > 0) {
+          forkParams.config = { mcp_servers: this.spec.mcpServers };
         }
         response = await this.client.request('thread/fork', forkParams);
         break;

@@ -19,6 +19,7 @@ import { appendActivityEntries } from '../activity-index.js';
 import { refreshAndNotify } from '../session-list-manager.js';
 import { pushRosieLog } from './debug-log.js';
 import { extractTag, normalizeEntitiesJson } from './xml-utils.js';
+import { isOversized, getExistingRosieMetas, extractBookendTurns, buildFallbackPrompt } from './oversized-fallback.js';
 
 // ============================================================================
 // Module State
@@ -42,20 +43,33 @@ export function initRosieSummarize(d: AgentDispatch): void {
 
     // Guard: settings check
     const snap = getSettingsSnapshotInternal();
-    if (!snap.settings.rosie.summarize.enabled) return;
+    if (!snap.settings.rosie.summarize.enabled) {
+      pushRosieLog({ source: 'summarize', level: 'info', summary: 'Summarize: skipped (disabled)' });
+      return;
+    }
 
     // Guard: pending IDs, inflight
-    if (sessionId.startsWith('pending:')) return;
-    if (inflight.has(sessionId)) return;
+    if (sessionId.startsWith('pending:')) {
+      pushRosieLog({ source: 'summarize', level: 'info', summary: 'Summarize: skipped (pending ID)' });
+      return;
+    }
+    if (inflight.has(sessionId)) {
+      pushRosieLog({ source: 'summarize', level: 'info', summary: 'Summarize: skipped (already running)' });
+      return;
+    }
 
     // Look up session info (child session guard is handled by lifecycle-hooks)
     const info = await d.findSession(sessionId);
-    if (!info) return;
+    if (!info) {
+      pushRosieLog({ source: 'summarize', level: 'warn', summary: `Summarize: skipped (session ${sessionId.slice(0, 12)}… not found)` });
+      return;
+    }
 
     // Resolve model — settings override, else system default
     const rosieModel = snap.settings.rosie.summarize.model; // "vendor:model" or undefined
 
     inflight.add(sessionId);
+    pushRosieLog({ source: 'summarize', level: 'info', summary: `Summarize: starting for ${sessionId.slice(0, 12)}…`, data: { sessionId, vendor: info.vendor } });
     try {
       await runSummarizeAnalysis(d, sessionId, info.path, info.vendor, rosieModel);
     } finally {
@@ -118,21 +132,52 @@ async function runSummarizeAnalysis(
   const parsed = modelOverride ? parseModelOption(modelOverride) : undefined;
   const vendor = parsed?.vendor ?? parentVendor;
   const model = parsed?.model;
+  pushRosieLog({ source: 'summarize', level: 'info', summary: `Summarize: using ${vendor}/${model || 'default'}`, data: { vendor, model } });
+
+  const oversized = isOversized(sessionPath);
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const result = await d.dispatchChild({
-        parentSessionId: sessionId,
-        vendor,
-        parentVendor,
-        prompt: SUMMARIZE_PROMPT,
-        settings: {
-          ...(model && { model }),
-        },
-        skipPersistSession: true,
-        autoClose: true,
-        timeoutMs: 30_000,
-      });
+      let result;
+
+      if (oversized) {
+        const metas = getExistingRosieMetas(sessionPath);
+        const { first, last } = extractBookendTurns(sessionPath);
+        const prompt = buildFallbackPrompt(first, last, metas);
+
+        console.log(`[rosie.summarize] OVERSIZED — fallback (${first.length} first, ${metas.length} DB summaries, ${last.length} last)`);
+
+        result = await d.dispatchChild({
+          parentSessionId: sessionId,
+          vendor,
+          parentVendor,
+          prompt,
+          settings: {
+            ...(model && { model }),
+            permissionMode: 'bypassPermissions',
+            allowDangerouslySkipPermissions: true,
+          },
+          forceNew: true,
+          skipPersistSession: true,
+          autoClose: true,
+          timeoutMs: 30_000,
+        });
+      } else {
+        result = await d.dispatchChild({
+          parentSessionId: sessionId,
+          vendor,
+          parentVendor,
+          prompt: SUMMARIZE_PROMPT,
+          settings: {
+            ...(model && { model }),
+            permissionMode: 'bypassPermissions',
+            allowDangerouslySkipPermissions: true,
+          },
+          skipPersistSession: true,
+          autoClose: true,
+          timeoutMs: 30_000,
+        });
+      }
 
       if (!result) {
         console.warn(`[rosie.summarize] FAIL attempt ${attempt}/${MAX_ATTEMPTS}: dispatchChild returned null`);
@@ -178,7 +223,7 @@ async function runSummarizeAnalysis(
 
       // Push to rosie log stream
       let parsedEntities: string[] = [];
-      try { parsedEntities = JSON.parse(fields.entities); } catch { /* keep empty */ }
+      try { parsedEntities = JSON.parse(fields.entities); } catch { pushRosieLog({ source: 'summarize', level: 'warn', summary: 'Summarize: entity JSON parse failed', data: { raw: fields.entities.slice(0, 200) } }); }
       pushRosieLog({
         source: 'summarize',
         level: 'info',
@@ -203,13 +248,14 @@ async function runSummarizeAnalysis(
       });
     }
   }
+  pushRosieLog({ source: 'summarize', level: 'warn', summary: `Summarize: all ${MAX_ATTEMPTS} attempts failed for ${sessionId.slice(0, 12)}…`, data: { sessionId } });
 }
 
 // ============================================================================
 // Constants
 // ============================================================================
 
-const SUMMARIZE_PROMPT = `Consider this entire conversation so far.
+export const SUMMARIZE_PROMPT = `Consider this entire conversation so far.
 What is the stated or apparent goal of this particular conversation?
 How would you label this conversation in a short sentence for a user to best remember what this session was for?
 Summarize the last turn: Describe the User Request and your Response; including any work completed

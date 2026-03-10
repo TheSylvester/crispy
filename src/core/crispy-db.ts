@@ -16,6 +16,7 @@
 import * as fs from 'node:fs';
 import { join, dirname } from 'node:path';
 import { Database } from 'node-sqlite3-wasm';
+import { pushRosieLog } from './rosie/index.js';
 
 // ============================================================================
 // Singleton
@@ -50,6 +51,7 @@ export function getDb(dbPath: string): Database {
   db.exec('PRAGMA journal_mode = DELETE');
 
   runMigrations(db, dbPath);
+  pushRosieLog({ source: 'db', level: 'info', summary: `DB: initialized at ${dbPath}` });
 
   return db;
 }
@@ -471,6 +473,210 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 9,
+    description: 'Create tracker_outcomes table for tracking analysis attempts',
+    up: (db: Database): void => {
+      db.exec(`
+        CREATE TABLE tracker_outcomes (
+          session_file TEXT PRIMARY KEY,
+          outcome      TEXT NOT NULL CHECK (outcome IN ('tracked', 'trivial', 'failed')),
+          reason       TEXT,
+          attempts     INTEGER NOT NULL DEFAULT 1,
+          created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+    },
+  },
+  {
+    version: 10,
+    description: 'Create provenance tables for git history indexing',
+    up: (db: Database): void => {
+      db.exec(`
+        CREATE TABLE file_mutations (
+          id             INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_file   TEXT NOT NULL,
+          session_id     TEXT,
+          tool           TEXT NOT NULL,
+          bash_category  TEXT,
+          file_path      TEXT,
+          timestamp      TEXT,
+          message_uuid   TEXT,
+          tool_use_id    TEXT,
+          byte_offset    INTEGER NOT NULL,
+          command         TEXT,
+          old_hash        TEXT,
+          new_hash        TEXT,
+          commit_sha      TEXT,
+          UNIQUE (session_file, tool_use_id)
+        );
+
+        CREATE INDEX idx_mut_file ON file_mutations(file_path);
+        CREATE INDEX idx_mut_session ON file_mutations(session_file);
+        CREATE INDEX idx_mut_commit ON file_mutations(commit_sha);
+        CREATE INDEX idx_mut_ts ON file_mutations(timestamp);
+
+        CREATE TABLE commit_index (
+          sha              TEXT PRIMARY KEY,
+          message          TEXT NOT NULL,
+          author           TEXT,
+          author_date      TEXT NOT NULL,
+          repo_path        TEXT NOT NULL,
+          session_file     TEXT,
+          session_id       TEXT,
+          message_uuid     TEXT,
+          match_confidence REAL NOT NULL DEFAULT 0.0,
+          matched_at       TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX idx_ci_session ON commit_index(session_file);
+        CREATE INDEX idx_ci_date ON commit_index(author_date);
+        CREATE INDEX idx_ci_repo ON commit_index(repo_path);
+
+        CREATE TABLE commit_file_changes (
+          commit_sha  TEXT NOT NULL REFERENCES commit_index(sha),
+          file_path   TEXT NOT NULL,
+          additions   INTEGER NOT NULL DEFAULT 0,
+          deletions   INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY (commit_sha, file_path)
+        );
+
+        CREATE VIRTUAL TABLE commit_fts USING fts5(
+          message,
+          content='commit_index', content_rowid='rowid',
+          tokenize='porter unicode61 remove_diacritics 2'
+        );
+
+        CREATE TRIGGER commit_fts_ai AFTER INSERT ON commit_index BEGIN
+          INSERT INTO commit_fts(rowid, message) VALUES (new.rowid, new.message);
+        END;
+
+        CREATE TRIGGER commit_fts_ad AFTER DELETE ON commit_index BEGIN
+          INSERT INTO commit_fts(commit_fts, rowid, message)
+          VALUES ('delete', old.rowid, old.message);
+        END;
+
+        CREATE TRIGGER commit_fts_au AFTER UPDATE ON commit_index BEGIN
+          INSERT INTO commit_fts(commit_fts, rowid, message)
+          VALUES ('delete', old.rowid, old.message);
+          INSERT INTO commit_fts(rowid, message) VALUES (new.rowid, new.message);
+        END;
+
+        CREATE TABLE provenance_scan_state (
+          file_path   TEXT PRIMARY KEY,
+          mtime       INTEGER NOT NULL,
+          size        INTEGER NOT NULL,
+          byte_offset INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE TABLE provenance_repo_state (
+          repo_path   TEXT PRIMARY KEY,
+          head_sha    TEXT NOT NULL,
+          scanned_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+      `);
+    },
+  },
+  {
+    version: 11,
+    description: 'Add recall chunk storage with FTS5 and vector tables',
+    up: (db: Database, _dbPath: string) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS chunks (
+          chunk_id    TEXT PRIMARY KEY,
+          session_id  TEXT NOT NULL,
+          message_uuid TEXT,
+          chunk_seq   INTEGER NOT NULL,
+          heading     TEXT,
+          heading_level INTEGER,
+          chunk_text  TEXT NOT NULL,
+          project_id  TEXT,
+          created_at  INTEGER NOT NULL,
+          UNIQUE(session_id, chunk_seq)
+        );
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+          chunk_text,
+          heading,
+          content=chunks,
+          content_rowid=rowid,
+          tokenize='porter unicode61'
+        );
+
+        -- Sync triggers (same pattern as activity_fts in migration v7)
+        CREATE TRIGGER IF NOT EXISTS chunks_fts_ai AFTER INSERT ON chunks BEGIN
+          INSERT INTO chunks_fts(rowid, chunk_text, heading)
+          VALUES (new.rowid, new.chunk_text, new.heading);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS chunks_fts_ad AFTER DELETE ON chunks BEGIN
+          INSERT INTO chunks_fts(chunks_fts, rowid, chunk_text, heading)
+          VALUES ('delete', old.rowid, old.chunk_text, old.heading);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS chunks_fts_au AFTER UPDATE ON chunks BEGIN
+          INSERT INTO chunks_fts(chunks_fts, rowid, chunk_text, heading)
+          VALUES ('delete', old.rowid, old.chunk_text, old.heading);
+          INSERT INTO chunks_fts(rowid, chunk_text, heading)
+          VALUES (new.rowid, new.chunk_text, new.heading);
+        END;
+
+        CREATE TABLE IF NOT EXISTS chunk_vectors (
+          chunk_id      TEXT PRIMARY KEY REFERENCES chunks(chunk_id),
+          embedding_f32 BLOB NOT NULL,
+          embedding_q8  BLOB NOT NULL,
+          norm          REAL NOT NULL,
+          quant_scale   REAL NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_chunks_session ON chunks(session_id);
+        CREATE INDEX IF NOT EXISTS idx_chunks_project ON chunks(project_id);
+        CREATE INDEX IF NOT EXISTS idx_chunks_created ON chunks(created_at);
+      `);
+    },
+  },
+  {
+    version: 12,
+    description: 'Message-level recall indexing with FTS5',
+    up: (db: Database, _dbPath: string) => {
+      db.exec(`
+        CREATE TABLE messages (
+          message_id    TEXT PRIMARY KEY,
+          session_id    TEXT NOT NULL,
+          message_seq   INTEGER NOT NULL,
+          message_text  TEXT NOT NULL,
+          project_id    TEXT,
+          created_at    INTEGER NOT NULL,
+          UNIQUE(session_id, message_id)
+        );
+
+        CREATE INDEX idx_messages_session ON messages(session_id);
+        CREATE INDEX idx_messages_project ON messages(project_id);
+
+        CREATE VIRTUAL TABLE messages_fts USING fts5(
+          message_text,
+          content=messages,
+          content_rowid=rowid,
+          tokenize='porter unicode61'
+        );
+
+        CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN
+          INSERT INTO messages_fts(rowid, message_text) VALUES (new.rowid, new.message_text);
+        END;
+
+        CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN
+          INSERT INTO messages_fts(messages_fts, rowid, message_text)
+          VALUES ('delete', old.rowid, old.message_text);
+        END;
+
+        CREATE TRIGGER messages_fts_au AFTER UPDATE ON messages BEGIN
+          INSERT INTO messages_fts(messages_fts, rowid, message_text)
+          VALUES ('delete', old.rowid, old.message_text);
+          INSERT INTO messages_fts(rowid, message_text) VALUES (new.rowid, new.message_text);
+        END;
+      `);
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {
@@ -500,6 +706,7 @@ function runMigrations(db: Database, dbPath: string): void {
           [migration.version, migration.description],
         );
         db.exec('COMMIT');
+        pushRosieLog({ source: 'db', level: 'info', summary: `DB: migration v${migration.version} complete — ${migration.description}` });
       } catch (err) {
         db.exec('ROLLBACK');
         throw err;

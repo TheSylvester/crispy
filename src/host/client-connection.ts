@@ -227,8 +227,13 @@ export function createClientConnection(
       case "subscribe": {
         const sessionId = params.sessionId as string;
 
-        // Don't double-subscribe
-        if (subscriptions.has(sessionId)) {
+        // Already subscribed — resend catchup so the client can resync
+        // after a pending→real handoff or listener race without creating
+        // a duplicate subscriber.
+        const existing = subscriptions.get(sessionId);
+        if (existing) {
+          const entries = await loadSession(sessionId);
+          subscribe(existing.channel, existing.subscriber, entries);
           return { subscribed: true };
         }
 

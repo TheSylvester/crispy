@@ -18,8 +18,10 @@ import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-
 import { z } from 'zod/v4';
 import type { AgentDispatch } from '../../host/agent-dispatch.js';
 import type { ChildSessionOptions } from '../../core/session-manager.js';
+import { findSession } from '../../core/session-manager.js';
 import { parseModelOption } from '../../core/model-utils.js';
 import { INTERNAL_MCP_SERVER_NAME } from './internal.js';
+import { pushRosieLog } from '../../core/rosie/index.js';
 
 // ============================================================================
 // Recall Agent Prompt
@@ -30,17 +32,16 @@ function buildRecallPrompt(query: string): Array<{ type: 'text'; text: string }>
     type: 'text' as const,
     text: `You are a memory recall agent. Search the user's past session history and provide a concise, helpful answer.
 
-You have 4 MCP tools — use ONLY these, nothing else:
-- search_sessions: Full-text search (start here). Use short keywords with OR for broad matches. Results include summaries and snippets — often enough to answer without drilling deeper. Use since/before params to filter by time range.
+You have 3 MCP tools — use ONLY these, nothing else:
+- search_transcript: Full-text search over raw conversation content. Start here. Use short keywords with OR for broad matches ("sqlite OR database OR wasm"). Returns message UUIDs and text snippets — often enough to answer directly.
+- read_message: Read a full conversation turn (user prompt + assistant response) by message UUID. Use when you need complete context beyond the snippet.
 - list_sessions: Browse recent sessions by date. Use when search returns nothing or the query is about recent/general work.
-- session_context: Get structured metadata (titles, quests, summaries) for a session. NOT conversation content.
-- read_turn: Read actual conversation content at a byte offset. The only way to see what was said.
 
 Strategy:
-1. Search with 1-2 keyword queries (use OR to broaden: "sqlite OR database OR wasm")
-2. Read the search results carefully — summaries and snippets often contain the answer
-3. Only drill into sessions (session_context or read_turn) if you need specific details
-4. Synthesize your answer citing session file paths
+1. Search with 1-2 keyword queries (use OR to broaden)
+2. Read the search results — snippets often contain the answer
+3. Use read_message only when you need the full turn context
+4. Synthesize your answer citing session IDs
 
 Do not narrate what you're about to do — just call tools and then write your answer.
 
@@ -58,16 +59,21 @@ User's query: ${query}`,
  * Paths are always provided by adapter-registry.ts, which resolves them
  * based on host type (VS Code → bundled dist/internal-mcp.js + node,
  * dev server → tsx + TypeScript source). No fallbacks here.
+ *
+ * @param extraArgs - Additional CLI args appended after the base args.
+ *   Used by tracker to pass --session-file and --decisions-file as CLI
+ *   args instead of env vars, which works for any adapter's MCP subprocess.
  */
 export function buildInternalMcpConfig(
   command: string,
   args: string[],
+  extraArgs?: string[],
 ): Record<string, unknown> {
   return {
     [INTERNAL_MCP_SERVER_NAME]: {
       type: 'stdio' as const,
       command,
-      args,
+      args: extraArgs ? [...args, ...extraArgs] : args,
     },
   };
 }
@@ -92,13 +98,13 @@ function textResult(data: string): { content: Array<{ type: 'text'; text: string
  * result. The child gets 120s and access to the query tools.
  *
  * @param dispatch - AgentDispatch for spawning child sessions
- * @param getActiveSessionId - Returns the current active session ID (for parent anchoring)
+ * @param getActiveSession - Returns the current active session's ID and vendor (for parent anchoring)
  * @param serverPaths - Command and args for the internal MCP server subprocess (resolved by adapter-registry based on host type)
  * @param getRosieModel - Returns the Rosie model setting ("vendor:model" or undefined for default)
  */
 export function createExternalServer(
   dispatch: AgentDispatch,
-  getActiveSessionId: () => string | undefined,
+  getActiveSession: () => { sessionId: string; vendor: string } | undefined,
   serverPaths: { internalServerCommand: string; internalServerArgs: string[] },
   getRosieModel?: () => string | undefined,
 ): McpSdkServerConfigWithInstance {
@@ -114,13 +120,16 @@ export function createExternalServer(
         },
         async (args) => {
           console.error(`[recall] Tool handler invoked with query: "${args.query}"`);
-          const parentSessionId = getActiveSessionId?.();
-          if (!parentSessionId) {
+          pushRosieLog({ source: 'recall', level: 'info', summary: `Recall: query "${args.query.slice(0, 80)}"`, data: { query: args.query } });
+          const activeSession = getActiveSession?.();
+          if (!activeSession) {
             console.error('[recall] No active session — cannot dispatch child');
+            pushRosieLog({ source: 'recall', level: 'warn', summary: 'Recall: no active session for dispatch' });
             return textResult('Cannot recall: no active session context available.');
           }
 
-          console.error(`[recall] Dispatching child for query: "${args.query}" (parent: ${parentSessionId})`);
+          console.error(`[recall] Dispatching child for query: "${args.query}" (parent: ${activeSession.sessionId}, vendor: ${activeSession.vendor})`);
+          pushRosieLog({ source: 'recall', level: 'info', summary: `Recall: dispatching child (vendor: ${activeSession.vendor})`, data: { parentSessionId: activeSession.sessionId, vendor: activeSession.vendor } });
           const t0 = Date.now();
 
           try {
@@ -128,10 +137,15 @@ export function createExternalServer(
             const { vendor: recallVendor, model: parsedModel } = parseModelOption(getRosieModel?.() ?? '');
             const recallModel = parsedModel || 'haiku';
 
+            // Derive project scope for search_transcript
+            const sessionInfo = findSession(activeSession.sessionId);
+            const projectId = sessionInfo?.projectPath ?? '';
+            const projectArgs = projectId ? [`--project-id=${projectId}`] : [];
+
             const options: ChildSessionOptions = {
-              parentSessionId,
+              parentSessionId: activeSession.sessionId,
               vendor: recallVendor,
-              parentVendor: 'claude',
+              parentVendor: activeSession.vendor,
               prompt: buildRecallPrompt(args.query),
               settings: {
                 model: recallModel,
@@ -139,7 +153,7 @@ export function createExternalServer(
                 allowDangerouslySkipPermissions: true,
               },
               forceNew: true,
-              mcpServers: buildInternalMcpConfig(serverPaths.internalServerCommand, serverPaths.internalServerArgs),
+              mcpServers: buildInternalMcpConfig(serverPaths.internalServerCommand, serverPaths.internalServerArgs, projectArgs),
               env: {
                 CLAUDECODE: '',                        // Bypass nested Claude Code guard
                 CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '120000',  // 120s MCP timeout
@@ -154,14 +168,17 @@ export function createExternalServer(
 
             if (!result) {
               console.error(`[recall] Child returned null after ${elapsed}ms — timeout or empty response`);
+              pushRosieLog({ source: 'recall', level: 'warn', summary: `Recall: no response after ${elapsed}ms`, data: { elapsed } });
               return textResult('Recall agent timed out or failed to produce a result.');
             }
 
             console.error(`[recall] OK in ${elapsed}ms — ${result.text.length} chars`);
+            pushRosieLog({ source: 'recall', level: 'info', summary: `Recall: OK in ${elapsed}ms — ${result.text.length} chars`, data: { elapsed, chars: result.text.length } });
             return textResult(result.text);
           } catch (err) {
             const elapsed = Date.now() - t0;
             console.error(`[recall] FAIL after ${elapsed}ms:`, err instanceof Error ? err.message : String(err));
+            pushRosieLog({ source: 'recall', level: 'error', summary: `Recall: failed after ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`, data: { elapsed, error: String(err) } });
             return textResult(`Recall failed: ${err instanceof Error ? err.message : String(err)}`);
           }
         },

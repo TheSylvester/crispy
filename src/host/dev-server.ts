@@ -27,7 +27,6 @@ import { createClientConnection } from './client-connection.js';
 import { createAgentDispatch } from './agent-dispatch.js';
 import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
-import { runScan } from '../core/activity-scanner.js';
 import { initRosieSummarize, shutdownRosieSummarize, initRosieTracker, shutdownRosieTracker } from '../core/rosie/index.js';
 import { resolveInternalServerPaths } from './adapter-registry.js';
 
@@ -155,34 +154,57 @@ wss.on('connection', (ws: WebSocket) => {
 // Startup
 // ============================================================================
 
-// Create dispatch first — needed by adapter-registry for recall agent
+function phase(name: string): () => void {
+  const t0 = performance.now();
+  console.log(`[dev-server] ▸ ${name}...`);
+  return () => console.log(`[dev-server] ✓ ${name} (${(performance.now() - t0).toFixed(0)}ms)`);
+}
+
+const bootStart = performance.now();
+
+let done: () => void;
+
+done = phase('create agent dispatch');
 const cwd = process.cwd();
 const dispatch = createAgentDispatch();
+done();
 
-// Register all available adapters (passes dispatch for recall tool)
+done = phase('register adapters');
 registerAllAdapters({ cwd, hostType: 'dev-server', dispatch });
+done();
 
-// Wire up Rosie hooks (tracker phase-2 fires after summarize phase-1)
+done = phase('init rosie summarize');
 initRosieSummarize(dispatch);
+done();
+
+done = phase('init rosie tracker');
 initRosieTracker(dispatch, resolveInternalServerPaths());
+done();
 
-// Initialize settings from ~/.config/crispy/settings.json
+const settingsDone = phase('init settings');
 const providerBase = { cwd };
-initSettings(providerBase).then(() => startWatchingSettings()).catch((err) => console.error('[dev-server] Failed to initialize settings:', err));
+initSettings(providerBase)
+  .then(() => {
+    startWatchingSettings();
+    settingsDone();
+  })
+  .catch((err) => {
+    console.error('[dev-server] ✗ init settings failed:', err);
+  });
 
+const listenDone = phase('listen');
 server.listen(PORT, () => {
-  console.log(`[dev-server] Crispy dev server running at http://localhost:${PORT}`);
-  console.log(`[dev-server] WebSocket endpoint: ws://localhost:${PORT}/ws`);
-  console.log(`[dev-server] Serving static files from: ${STATIC_DIR}`);
-  console.log(`[dev-server] Adapters registered`);
+  listenDone();
+
+  console.log(`[dev-server] ──────────────────────────────────────`);
+  console.log(`[dev-server] HTTP:      http://localhost:${PORT}`);
+  console.log(`[dev-server] WebSocket: ws://localhost:${PORT}/ws`);
+  console.log(`[dev-server] Static:    ${STATIC_DIR}`);
+  console.log(`[dev-server] ──────────────────────────────────────`);
+
   startRescan();
 
-  // Activity scanning — deferred to avoid blocking server startup
-  const safeRunScan = () => {
-    try { runScan(); } catch (err) { console.error('[dev-server] Activity scan failed:', err); }
-  };
-  setImmediate(safeRunScan);
-  setInterval(safeRunScan, 30_000);
+  console.log(`[dev-server] ★ ready — accepting connections (${(performance.now() - bootStart).toFixed(0)}ms)`);
 });
 
 // Crash guard — prevent unhandled MCP/SDK rejections from killing the process

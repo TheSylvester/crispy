@@ -110,15 +110,16 @@ const allRegistrations: AdapterRegistration[] = [
 // ============================================================================
 
 /**
- * Get the ID of the most recently active Claude session.
+ * Get the ID and vendor of the most recently active session.
  *
  * Used by the external MCP server's recall tool to anchor child sessions.
- * Returns the first active Claude session's ID, or undefined if none.
+ * Returns the first active session's ID and vendor, or undefined if none.
+ * Vendor-agnostic — works with Claude, Codex, or any future adapter.
  */
-function getActiveClaudeSessionId(): string | undefined {
+function getActiveSession(): { sessionId: string; vendor: string } | undefined {
   for (const channel of getActiveChannels()) {
-    if (channel.adapter?.vendor === 'claude' && channel.adapter.sessionId) {
-      return channel.adapter.sessionId;
+    if (channel.adapter?.sessionId) {
+      return { sessionId: channel.adapter.sessionId, vendor: channel.adapter.vendor };
     }
   }
   return undefined;
@@ -199,7 +200,7 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
         if (!mcpEnabled) return {};
         const server = createExternalServer(
           dispatch,
-          getActiveClaudeSessionId,
+          getActiveSession,
           { internalServerCommand, internalServerArgs },
           () => getSettingsSnapshotInternal().settings.rosie.summarize.model,
         );

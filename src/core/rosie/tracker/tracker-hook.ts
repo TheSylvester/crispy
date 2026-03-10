@@ -23,19 +23,13 @@ import { getSettingsSnapshotInternal } from '../../settings/index.js';
 import { parseModelOption } from '../../model-utils.js';
 import { getLatestRosieMeta } from '../../activity-index.js';
 import { pushRosieLog } from '../debug-log.js';
-import { getExistingProjects } from './db-writer.js';
+import { getExistingProjects, recordTrackerOutcome, runDedupSweep } from './db-writer.js';
 import { buildInternalMcpConfig } from '../../../mcp/servers/external.js';
 import type { TrackerDecision } from '../../../mcp/servers/internal.js';
+import type { InternalServerPaths } from './types.js';
 
-// ============================================================================
-// Types
-// ============================================================================
-
-/** Paths for spawning the internal MCP server subprocess. */
-export interface InternalServerPaths {
-  command: string;
-  args: string[];
-}
+// Re-export for consumers that import from this module
+export type { InternalServerPaths } from './types.js';
 
 // ============================================================================
 // Module State
@@ -53,6 +47,11 @@ const inflight = new Set<string>();
 export function initRosieTracker(d: AgentDispatch, paths: InternalServerPaths): void {
   dispatch = d;
   serverPaths = paths;
+
+  // Startup dedup sweep removed — caused DB lock contention during boot
+  // (WASM SQLite rollback journal can't handle concurrent writers).
+  // Dedup still runs after each tracker response via onResponseCompleteAfter.
+
   unsubscribe = onResponseCompleteAfter(async (sessionId: string) => {
     // Capture dispatch locally — shutdown can null it while we're in-flight
     const d = dispatch;
@@ -60,26 +59,47 @@ export function initRosieTracker(d: AgentDispatch, paths: InternalServerPaths): 
 
     // Guard: settings check
     const snap = getSettingsSnapshotInternal();
-    if (!snap.settings.rosie.tracker.enabled) return;
+    if (!snap.settings.rosie.tracker.enabled) {
+      pushRosieLog({ source: 'tracker', level: 'info', summary: 'Tracker: skipped (disabled)' });
+      return;
+    }
 
     // Guard: pending IDs, inflight
-    if (sessionId.startsWith('pending:')) return;
-    if (inflight.has(sessionId)) return;
+    if (sessionId.startsWith('pending:')) {
+      pushRosieLog({ source: 'tracker', level: 'info', summary: 'Tracker: skipped (pending ID)' });
+      return;
+    }
+    if (inflight.has(sessionId)) {
+      pushRosieLog({ source: 'tracker', level: 'info', summary: 'Tracker: skipped (already running)' });
+      return;
+    }
 
     // Look up session info
     const info = await d.findSession(sessionId);
-    if (!info) return;
+    if (!info) {
+      pushRosieLog({ source: 'tracker', level: 'warn', summary: `Tracker: skipped (session ${sessionId.slice(0, 12)}… not found)` });
+      return;
+    }
 
     // Get fresh rosie-meta (written by summarize in phase 1)
     const meta = getLatestRosieMeta(info.path);
-    if (!meta || !meta.quest || !meta.summary) return;
+    if (!meta || !meta.quest || !meta.summary) {
+      pushRosieLog({ source: 'tracker', level: 'info', summary: 'Tracker: skipped (no summarize metadata)' });
+      return;
+    }
 
     // Resolve model — settings override, else system default
     const rosieModel = snap.settings.rosie.tracker.model;
 
     inflight.add(sessionId);
+    pushRosieLog({ source: 'tracker', level: 'info', summary: `Tracker: starting for ${sessionId.slice(0, 12)}…`, data: { sessionId, vendor: info.vendor } });
     try {
       await runTrackerAnalysis(d, sessionId, info.path, info.vendor, meta, rosieModel);
+
+      // Fire-and-forget dedup sweep after successful write
+      runDedupSweep(d.dispatchChild).catch((err) => {
+        console.warn('[rosie.tracker] Post-write dedup sweep failed:', err instanceof Error ? err.message : String(err));
+      });
     } finally {
       inflight.delete(sessionId);
     }
@@ -110,7 +130,8 @@ function readDecisions(file: string): TrackerDecision[] {
     const raw = readFileSync(file, 'utf-8').trim();
     if (!raw) return [];
     return raw.split('\n').map((line) => JSON.parse(line) as TrackerDecision);
-  } catch {
+  } catch (err) {
+    pushRosieLog({ source: 'tracker', level: 'warn', summary: 'Tracker: decisions file parse error', data: { file, error: String(err) } });
     return [];
   } finally {
     try { unlinkSync(file); } catch { /* best-effort cleanup */ }
@@ -136,13 +157,16 @@ function logDecisions(decisions: TrackerDecision[], sessionId: string): void {
       });
     }
   }
+  const upserts = decisions.filter(d => d.tool === 'upsert_project').length;
+  const trivials = decisions.filter(d => d.tool === 'mark_trivial').length;
+  pushRosieLog({ source: 'tracker', level: 'info', summary: `Tracker: ${decisions.length} decisions (${upserts} upsert, ${trivials} trivial)`, data: { sessionId, total: decisions.length, upserts, trivials } });
 }
 
 // ============================================================================
 // Analysis
 // ============================================================================
 
-const MAX_ATTEMPTS = 2;
+const MAX_ATTEMPTS = 3;
 
 async function runTrackerAnalysis(
   d: AgentDispatch,
@@ -160,17 +184,22 @@ async function runTrackerAnalysis(
   const parsed = modelOverride ? parseModelOption(modelOverride) : undefined;
   const vendor = parsed?.vendor ?? parentVendor;
   const model = parsed?.model;
+  pushRosieLog({ source: 'tracker', level: 'info', summary: `Tracker: using ${vendor}/${model || 'default'}`, data: { vendor, model } });
 
   // Build prompt with existing projects context
   const existingProjects = getExistingProjects();
+  pushRosieLog({ source: 'tracker', level: 'info', summary: `Tracker: ${existingProjects.length} existing projects in context` });
   const prompt = buildTrackerPrompt(meta, existingProjects);
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const decisionsFile = createDecisionsFile();
     try {
-      const promptToSend = attempt === 1
-        ? prompt
-        : `${prompt}\n\nIMPORTANT: You must call either upsert_project or mark_trivial. Use your tools now.`;
+      const retryNudge = attempt === 2
+        ? `\n\nIMPORTANT: Your previous attempt failed because you did not call any tools. You MUST call upsert_project or mark_trivial. Do not output JSON or text — use the tool calling interface.`
+        : attempt >= 3
+          ? `\n\nCRITICAL FINAL ATTEMPT: You failed twice to call tools. Call upsert_project or mark_trivial RIGHT NOW. No text output. Tools only.`
+          : '';
+      const promptToSend = prompt + retryNudge;
 
       const result = await d.dispatchChild({
         parentSessionId: sessionId,
@@ -183,11 +212,12 @@ async function runTrackerAnalysis(
           allowDangerouslySkipPermissions: true,
         },
         forceNew: true,
-        mcpServers: buildInternalMcpConfig(serverPaths.command, serverPaths.args),
+        mcpServers: buildInternalMcpConfig(serverPaths.command, serverPaths.args, [
+          `--session-file=${sessionPath}`,
+          `--decisions-file=${decisionsFile}`,
+        ]),
         env: {
           CLAUDECODE: '',
-          CRISPY_TRACKER_SESSION_FILE: sessionPath,
-          CRISPY_TRACKER_DECISIONS_FILE: decisionsFile,
           CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '30000',
         },
         skipPersistSession: true,
@@ -195,11 +225,27 @@ async function runTrackerAnalysis(
         timeoutMs: 30_000,
       });
 
-      // Read decisions written by the MCP tool handlers in the subprocess
+      // Read decisions written by the MCP tool handlers in the subprocess.
+      // Tools write to a sidecar file as a side-effect — dispatchChild may
+      // return null (no text output) even when tools fired successfully.
       const decisions = readDecisions(decisionsFile);
 
+      if (decisions.length > 0) {
+        // Tools fired — success regardless of whether dispatchChild returned text
+        const snippet = result?.text?.slice(0, 200) ?? '(no text — tools-only response)';
+        console.log(`[rosie.tracker] OK — ${decisions.length} decision(s) via tool calls (attempt ${attempt})`);
+        pushRosieLog({
+          source: 'tracker',
+          level: 'info',
+          summary: `Tracker: analysis completed`,
+          data: { sessionId, attempt, responseSnippet: snippet },
+        });
+        logDecisions(decisions, sessionId);
+        return;
+      }
+
       if (!result) {
-        console.warn(`[rosie.tracker] FAIL attempt ${attempt}/${MAX_ATTEMPTS}: dispatchChild returned null`);
+        console.warn(`[rosie.tracker] FAIL attempt ${attempt}/${MAX_ATTEMPTS}: no tool calls and no text response`);
         pushRosieLog({
           source: 'tracker',
           level: 'warn',
@@ -209,16 +255,15 @@ async function runTrackerAnalysis(
         continue;
       }
 
-      // Log individual decisions (upsert_project / mark_trivial calls)
-      console.log(`[rosie.tracker] OK — child completed (attempt ${attempt}, ${decisions.length} decision(s))`);
+      // Got text but no tool calls — model commented instead of calling tools
+      console.warn(`[rosie.tracker] FAIL attempt ${attempt}/${MAX_ATTEMPTS}: text response but no tool calls`);
       pushRosieLog({
         source: 'tracker',
-        level: 'info',
-        summary: `Tracker: analysis completed`,
+        level: 'warn',
+        summary: `Tracker failed: text output but no tool calls (attempt ${attempt}/${MAX_ATTEMPTS})`,
         data: { sessionId, attempt, responseSnippet: result.text.slice(0, 200) },
       });
-      logDecisions(decisions, sessionId);
-      return;
+      continue;
     } catch (err) {
       // Clean up decisions file on error (readDecisions won't have run)
       try { unlinkSync(decisionsFile); } catch { /* best-effort */ }
@@ -231,6 +276,9 @@ async function runTrackerAnalysis(
       });
     }
   }
+
+  // All attempts exhausted — record failure so backfill knows this was tried
+  recordTrackerOutcome(sessionPath, 'failed', MAX_ATTEMPTS, 'All attempts exhausted — no tool calls');
 }
 
 // ============================================================================
@@ -268,16 +316,25 @@ If this session and prior sessions form one arc (diagnosis → root cause → fi
 
 ## Recall Rule
 
-If the session's primary activity was looking up, recapping, or checking the status of prior work — it is **trivial**. The recalled content belongs to the original sessions, not this one. Signals: quest mentions "recall", "did we discuss", "status check", "refresh understanding", "recap". Only create a project if the session performed NEW work beyond retrieval.
+If the session's primary activity was looking up, recapping, or checking the status of prior work — it is **trivial**. The recalled content belongs to the original sessions, not this one.
+
+**Trivial signals** (any of these → strongly consider mark_trivial):
+- Quest mentions: "recall", "did we discuss", "status check", "refresh understanding", "recap", "what was", "check on", "review plans"
+- Session is a brief conversation with no code changes or design decisions
+- Session rehashes or summarizes prior work without advancing it
+- Session is an audit, inventory check, or portfolio review with no new deliverables
+- Session asks about or retrieves information but produces no artifacts
+
+Only create a project if the session performed **NEW work** beyond retrieval — code written, design decisions made, plans created, or bugs fixed.
 
 ## Rules
 
 - **title**: Keep stable across sessions. Don't rename unless scope fundamentally changed.
 - **summary**: Reflect the CURRENT state, not history. What's true right now?
-- **entities**: Top 5-10. Include files, branches, key concepts. These are used for future matching.
+- **entities**: Top 5-10. Include files, branches, key concepts. These are used for future matching. **Ignore stable infrastructure** — don't include foundational files that appear in many sessions (e.g. transcript.ts, channel-events.ts, session-manager.ts, activity-index.ts, CLAUDE.md) unless the session specifically modified them. Focus on files and concepts unique to THIS work.
 - **files**: Non-code artifacts only — plans (.ai-reference/), specs, design docs, skill definitions. Source code belongs in entities, not files. Omit if none exist.
 
-Call your tools now. No commentary needed.`;
+**You MUST call your tools.** Do not emit JSON, markdown, or commentary. Call upsert_project or mark_trivial directly.`;
 
 /** Build the full tracker prompt (system + user context). */
 export function buildTrackerPrompt(

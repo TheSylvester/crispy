@@ -25,9 +25,24 @@ process.on('unhandledRejection', (err) => {
   process.exit(1);
 });
 
+/**
+ * Parse --key=value CLI args into an options object.
+ * Supports: --session-file, --decisions-file
+ */
+function parseCliArgs(): { sessionFile?: string; decisionsFile?: string; projectId?: string } {
+  const opts: { sessionFile?: string; decisionsFile?: string; projectId?: string } = {};
+  for (const arg of process.argv.slice(2)) {
+    if (arg.startsWith('--session-file=')) opts.sessionFile = arg.slice('--session-file='.length);
+    else if (arg.startsWith('--decisions-file=')) opts.decisionsFile = arg.slice('--decisions-file='.length);
+    else if (arg.startsWith('--project-id=')) opts.projectId = arg.slice('--project-id='.length);
+  }
+  return opts;
+}
+
 async function main() {
-  console.error('[internal-mcp] Starting stdio server...');
-  const server = createInternalServer();
+  const cliOpts = parseCliArgs();
+  console.error('[internal-mcp] Starting stdio server...', cliOpts.sessionFile ? `session=${cliOpts.sessionFile}` : '');
+  const server = createInternalServer(cliOpts);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('[internal-mcp] Connected — ready for tool calls');

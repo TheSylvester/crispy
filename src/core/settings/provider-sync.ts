@@ -7,11 +7,13 @@
  * @module settings/provider-sync
  */
 
-import { ClaudeAgentAdapter, getResumeModel } from '../adapters/claude/claude-code-adapter.js';
+import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
+import { ClaudeAgentAdapter, getResumeModel, type SettingSource } from '../adapters/claude/claude-code-adapter.js';
 import { registerAdapter, unregisterAdapter, getRegisteredVendors } from '../session-manager.js';
 import { NATIVE_VENDORS, type Vendor } from '../transcript.js';
 import type { VendorDiscovery, SessionOpenSpec } from '../agent-adapter.js';
 import type { ProviderConfig } from './types.js';
+import { pushRosieLog } from '../rosie/index.js';
 
 // ============================================================================
 // Types
@@ -76,6 +78,29 @@ export function buildEnvDict(config: ProviderConfig): Record<string, string> {
   return env;
 }
 
+/**
+ * Build ephemeral adapter config for Rosie child sessions.
+ *
+ * skipPersistSession + mcpServers → MCP tools available (tracker, recall)
+ * skipPersistSession without mcpServers → single-turn, no tools (summarize)
+ */
+function buildEphemeralConfig(spec: SessionOpenSpec & { skipPersistSession?: boolean; mcpServers?: Record<string, unknown> }): Record<string, unknown> {
+  if (!('skipPersistSession' in spec) || !spec.skipPersistSession) return {};
+  if (spec.mcpServers) {
+    return {
+      settingSources: [] as SettingSource[],
+      mcpServers: spec.mcpServers as Record<string, McpServerConfig>,
+      allowedTools: ['mcp__crispy_memory__*'],
+    };
+  }
+  return {
+    maxTurns: 1,
+    settingSources: [] as SettingSource[],
+    tools: [] as string[],
+    mcpServers: undefined,
+  };
+}
+
 /** Create an empty VendorDiscovery for a dynamic provider (sessions live in Claude's store). */
 export function makeDiscovery(slug: string): VendorDiscovery {
   return {
@@ -92,31 +117,41 @@ export function makeFactory(
   config: ProviderConfig,
   base: { cwd: string; pathToClaudeCodeExecutable?: string },
 ) {
-  const env = buildEnvDict(config);
+  const providerEnv = buildEnvDict(config);
   return (spec: SessionOpenSpec) => {
     switch (spec.mode) {
       case 'resume': {
         const model = getResumeModel(spec.sessionId);
-        return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, vendor: slug, env, ...(model && { model }) });
+        return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, vendor: slug, env: providerEnv, ...(model && { model }) });
       }
       case 'fresh':
         return new ClaudeAgentAdapter({
-          ...base, cwd: spec.cwd, vendor: slug, env,
+          ...base, cwd: spec.cwd, vendor: slug,
+          env: { ...providerEnv, ...(spec.env ?? {}) },
           ...(spec.model && { model: spec.model }),
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
           ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
+          ...(spec.skipPersistSession && { skipPersistSession: true }),
+          ...buildEphemeralConfig(spec),
         });
       case 'fork':
         return new ClaudeAgentAdapter({
-          ...base, resume: spec.fromSessionId, forkSession: true, vendor: slug, env,
+          ...base, resume: spec.fromSessionId, forkSession: true, vendor: slug,
+          env: { ...providerEnv, ...(spec.env ?? {}) },
           ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
+          ...(spec.skipPersistSession && { skipPersistSession: true }),
+          ...(spec.outputFormat && { outputFormat: spec.outputFormat }),
+          ...(spec.model && { model: spec.model }),
+          ...(spec.outputFormat && { maxTurns: 1 }),
+          ...buildEphemeralConfig(spec),
         });
       case 'hydrated':
         return new ClaudeAgentAdapter({
-          ...base, cwd: spec.cwd, vendor: slug, env,
+          ...base, cwd: spec.cwd, vendor: slug, env: providerEnv,
           hydratedHistory: spec.history,
           ...(spec.model && { model: spec.model }),
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+          ...(spec.skipPersistSession && { skipPersistSession: true }),
         });
     }
   };
@@ -145,6 +180,7 @@ export function syncProviderAdapters(
     if (!providers[slug] || !providers[slug].enabled) {
       try { unregisterAdapter(slug); } catch { /* best effort */ }
       registeredDynamic.delete(slug);
+      pushRosieLog({ source: 'provider', level: 'info', summary: `Provider: unregistered ${slug}` });
     }
   }
 
@@ -161,7 +197,11 @@ export function syncProviderAdapters(
 
     registerAdapter(makeDiscovery(slug), makeFactory(slug, config, base));
     registeredDynamic.add(slug);
+    pushRosieLog({ source: 'provider', level: 'info', summary: `Provider: registered ${slug} (${config.label})`, data: { slug, label: config.label, baseUrl: config.baseUrl } });
   }
+
+  const activeCount = registeredDynamic.size;
+  pushRosieLog({ source: 'provider', level: 'info', summary: `Provider: sync complete — ${activeCount} dynamic provider(s) active` });
 }
 
 // ============================================================================
