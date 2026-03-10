@@ -12,6 +12,7 @@ import { findClaudeBinary } from './core/find-claude-binary.js';
 import { registerAllAdapters, resolveInternalServerPaths } from './host/adapter-registry.js';
 import { createAgentDispatch } from './host/agent-dispatch.js';
 import { initRosieSummarize, shutdownRosieSummarize, initRosieTracker, shutdownRosieTracker } from './core/rosie/index.js';
+import { initRecallIngest, shutdownRecallIngest } from './core/recall/ingest-hook.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
@@ -73,13 +74,18 @@ export function activate(context: vscode.ExtensionContext): void {
   initSettings(providerBase).catch((err) => console.error('[crispy] Failed to load settings:', err));
   startWatchingSettings();
 
-  // Wire up Rosie hooks (tracker phase-2 fires after summarize phase-1)
+  // Wire up lifecycle hooks:
+  //   Phase 0 (before): recall message ingest (lightweight SQLite indexing)
+  //   Phase 1: Rosie summarize (LLM-based analysis)
+  //   Phase 2 (after): Rosie tracker (depends on summarize output)
+  initRecallIngest();
   initRosieSummarize(dispatch);
   initRosieTracker(dispatch, resolveInternalServerPaths(context.extensionPath));
   context.subscriptions.push({
     dispose: () => {
       shutdownRosieTracker();
       shutdownRosieSummarize();
+      shutdownRecallIngest();
       dispatch.dispose();
     },
   });

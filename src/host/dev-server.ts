@@ -28,6 +28,7 @@ import { createAgentDispatch } from './agent-dispatch.js';
 import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
 import { initRosieSummarize, shutdownRosieSummarize, initRosieTracker, shutdownRosieTracker } from '../core/rosie/index.js';
+import { initRecallIngest, shutdownRecallIngest } from '../core/recall/ingest-hook.js';
 import { resolveInternalServerPaths } from './adapter-registry.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
@@ -173,6 +174,10 @@ done = phase('register adapters');
 registerAllAdapters({ cwd, hostType: 'dev-server', dispatch });
 done();
 
+done = phase('init recall ingest');
+initRecallIngest();
+done();
+
 done = phase('init rosie summarize');
 initRosieSummarize(dispatch);
 done();
@@ -216,12 +221,14 @@ process.on('unhandledRejection', (reason) => {
 process.on('SIGINT', () => {
   shutdownRosieTracker();
   shutdownRosieSummarize();
+  shutdownRecallIngest();
   dispatch.dispose();
   process.exit(0);
 });
 process.on('SIGTERM', () => {
   shutdownRosieTracker();
   shutdownRosieSummarize();
+  shutdownRecallIngest();
   dispatch.dispose();
   process.exit(0);
 });
