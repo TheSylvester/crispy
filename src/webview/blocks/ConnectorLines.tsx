@@ -94,11 +94,12 @@ function useConnectorPaths(): ConnectorPath[] {
       });
     }
 
-    // Second pass: merge inline tools sharing the same transcript Y into
-    // single connector lines, then sort and fan out as before.
+    // Second pass: normalize inline tools sharing the same transcript Y so
+    // they share a common left endpoint (the icon group's right edge).
+    // Each tool keeps its own right endpoint → the fan-out algorithm draws
+    // individual lines that split from one point to each panel card.
     items.sort((a, b) => a.leftY - b.leftY);
 
-    // Group consecutive inline items at the same Y
     const merged: typeof items = [];
     let i = 0;
     while (i < items.length) {
@@ -116,38 +117,76 @@ function useConnectorPaths(): ConnectorPath[] {
         group.push(items[j]);
         j++;
       }
-      // Merge: average the panel Y, use the leftmost X on transcript side
-      const avgPanelY = group.reduce((s, g) => s + g.rightY, 0) / group.length;
-      merged.push({
-        toolId: group.map(g => g.toolId).join('+'),
-        inline: true,
-        leftX: Math.max(...group.map(g => g.leftX)),
-        leftY: item.leftY, // all ~same Y
-        rightX: Math.min(...group.map(g => g.rightX)),
-        rightY: avgPanelY,
-      });
+      // Normalize: all group members share the same left X/Y (rightmost
+      // icon edge, first item's Y) but keep their individual panel endpoints.
+      const sharedLeftX = Math.max(...group.map(g => g.leftX));
+      const sharedLeftY = item.leftY;
+      const sharedRightX = Math.min(...group.map(g => g.rightX));
+      for (const g of group) {
+        merged.push({
+          ...g,
+          leftX: sharedLeftX,
+          leftY: sharedLeftY,
+          rightX: sharedRightX,
+        });
+      }
       i = j;
     }
 
-    // Fan out vertical segments near the panel edge.
-    // First stop at 2rem from panel, each subsequent stop +1rem further out
-    // (i.e. closer to transcript). If the gap is too small, use 1rem per step.
+    // Build paths. Inline groups get a single shared horizontal trunk from
+    // the icon group to a split point, then individual vertical→horizontal
+    // legs to each panel card. Non-inline items get simple stepped lines.
+    // The split point is 2rem from the panel edge; each additional line in
+    // the group fans out 1rem further.
     const remPx = parseFloat(
       getComputedStyle(document.documentElement).fontSize,
     ) || 16;
-    const count = merged.length;
     const result: ConnectorPath[] = [];
-    for (let k = 0; k < count; k++) {
-      const { toolId, leftX, leftY, rightX, rightY } = merged[k];
-      const gap = rightX - leftX;
-      const baseOffset = 2 * remPx;
-      const needed = baseOffset + (count - 1) * remPx;
-      // If gap can't fit 5rem base, fall back to 1rem per step from panel
-      const midX = gap >= needed
-        ? rightX - baseOffset - (count - 1 - k) * remPx
-        : rightX - (count - k) * remPx;
-      const d = `M ${leftX},${leftY} H ${Math.max(midX, leftX + 8)} V ${rightY} H ${rightX}`;
-      result.push({ toolId, d });
+
+    // Walk merged items, detecting inline groups (consecutive items with
+    // same leftY, which we normalized above).
+    let k = 0;
+    while (k < merged.length) {
+      const cur = merged[k];
+
+      // Non-inline: simple stepped line
+      if (!cur.inline) {
+        const midX = Math.max(cur.rightX - 2 * remPx, cur.leftX + 8);
+        const d = `M ${cur.leftX},${cur.leftY} H ${midX} V ${cur.rightY} H ${cur.rightX}`;
+        result.push({ toolId: cur.toolId, d });
+        k++;
+        continue;
+      }
+
+      // Inline group: collect all consecutive items at the same leftY
+      const group = [cur];
+      let g = k + 1;
+      while (g < merged.length && merged[g].inline &&
+             Math.abs(merged[g].leftY - cur.leftY) <= Y_GROUP_THRESHOLD) {
+        group.push(merged[g]);
+        g++;
+      }
+
+      // Single split point for the whole group — 2rem from panel
+      const splitX = Math.max(cur.rightX - 2 * remPx, cur.leftX + 8);
+
+      if (group.length === 1) {
+        // Solo inline tool — simple stepped line
+        const d = `M ${cur.leftX},${cur.leftY} H ${splitX} V ${cur.rightY} H ${cur.rightX}`;
+        result.push({ toolId: cur.toolId, d });
+      } else {
+        // Shared trunk: one horizontal line from icon group to split point.
+        // Then per-tool legs: vertical from split point to each panel Y,
+        // then horizontal to the panel card.
+        // Draw the trunk as part of each tool's path so all paths are
+        // self-contained (the overlapping trunk renders as one line visually).
+        for (const member of group) {
+          const d = `M ${member.leftX},${member.leftY} H ${splitX} V ${member.rightY} H ${member.rightX}`;
+          result.push({ toolId: member.toolId, d });
+        }
+      }
+
+      k = g;
     }
 
     setPaths(result);
