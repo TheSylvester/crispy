@@ -115,6 +115,8 @@ export function deleteSessionMessages(sessionId: string): void {
 export type MessageSearchResult = Pick<MessageRecord, 'message_id' | 'session_id' | 'message_seq' | 'project_id' | 'created_at'> & {
   rank: number;
   match_snippet: string;
+  message_preview: string;
+  truncated: boolean;
 };
 
 export function searchMessagesFts(
@@ -134,12 +136,14 @@ export function searchMessagesFts(
     }
     params.push(limit);
 
+    const MAX_PREVIEW = 4000;
     const rows = db().all(
       `SELECT m.message_id, m.session_id, m.message_seq,
               m.project_id, m.created_at, f.rank,
-              snippet(messages_fts, 0, '>>>', '<<<', '...', 32) as match_snippet
+              snippet(messages_fts, 0, '>>>', '<<<', '...', 32) as match_snippet,
+              SUBSTR(m.message_text, 1, ${MAX_PREVIEW + 1}) as message_preview_raw
        FROM messages_fts f
-       JOIN messages m ON m.rowid = f.rowid
+       CROSS JOIN messages m ON m.rowid = f.rowid
        WHERE messages_fts MATCH ?
          ${projectClause}
        ORDER BY f.rank
@@ -148,6 +152,8 @@ export function searchMessagesFts(
     );
     return rows.map((r) => {
       const row = r as Record<string, unknown>;
+      const raw = row.message_preview_raw as string;
+      const truncated = raw.length > MAX_PREVIEW;
       return {
         message_id: row.message_id as string,
         session_id: row.session_id as string,
@@ -156,6 +162,8 @@ export function searchMessagesFts(
         created_at: row.created_at as number,
         rank: row.rank as number,
         match_snippet: row.match_snippet as string,
+        message_preview: truncated ? raw.slice(0, MAX_PREVIEW) : raw,
+        truncated,
       };
     });
   } catch {

@@ -369,7 +369,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
   // ------------------------------------------------------------------
   server.tool(
     'search_transcript',
-    'Full-text search over raw conversation content from past sessions. Returns matching messages with session ID, message UUID, and text snippet. Project-scoped by default — searches only sessions from the current workspace. Supports FTS5 syntax: OR for broad searches, "quoted phrases" for exact matches, prefix* for partial terms.',
+    'Full-text search over raw conversation content from past sessions. Returns matching messages with session ID, message UUID, highlighted snippet, AND a message_preview (up to 4000 chars of the actual message — usually the complete text). Project-scoped by default. Supports FTS5 syntax: OR for broad searches, "quoted phrases" for exact matches, prefix* for partial terms. The preview is usually enough to answer without calling read_message.',
     {
       query: z.string().describe('Search query — short keywords work best. Use OR to broaden: "sqlite OR database"'),
       limit: z.number().optional().default(20).describe('Maximum results (default 20)'),
