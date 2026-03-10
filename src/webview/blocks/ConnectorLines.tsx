@@ -130,7 +130,7 @@ function useConnectorPaths(): ConnectorPath[] {
     }
 
     // Fan out vertical segments near the panel edge.
-    // First stop at 5rem from panel, each subsequent stop +1rem further out
+    // First stop at 2rem from panel, each subsequent stop +1rem further out
     // (i.e. closer to transcript). If the gap is too small, use 1rem per step.
     const remPx = parseFloat(
       getComputedStyle(document.documentElement).fontSize,
@@ -140,7 +140,7 @@ function useConnectorPaths(): ConnectorPath[] {
     for (let k = 0; k < count; k++) {
       const { toolId, leftX, leftY, rightX, rightY } = merged[k];
       const gap = rightX - leftX;
-      const baseOffset = 5 * remPx;
+      const baseOffset = 2 * remPx;
       const needed = baseOffset + (count - 1) * remPx;
       // If gap can't fit 5rem base, fall back to 1rem per step from panel
       const midX = gap >= needed
@@ -239,7 +239,7 @@ export function ConnectorLines(): React.JSX.Element | null {
         width: '100vw',
         height: 'calc(100vh - var(--titlebar-height, 36px))',
         pointerEvents: 'none',
-        zIndex: 9999,
+        zIndex: 150,
       }}
     >
       {paths.map(({ toolId, d }) => (
