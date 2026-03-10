@@ -50,6 +50,88 @@ let loading: Promise<void> | null = null;
 const TARGET_SAMPLE_RATE = 16000;
 
 // ---------------------------------------------------------------------------
+// Audio normalization
+// ---------------------------------------------------------------------------
+
+/**
+ * Target RMS amplitude for pre-VAD normalization. 0.1 puts typical speech
+ * comfortably above Silero's 0.5 speech-probability threshold without
+ * risk of clipping.
+ */
+const TARGET_RMS = 0.1;
+
+/**
+ * Maximum gain multiplier (~20 dB). Prevents amplifying the noise floor
+ * into false VAD triggers on near-silent recordings.
+ */
+const MAX_GAIN = 10;
+
+/**
+ * Target peak amplitude for speech segments fed to STT. Moonshine Base
+ * was trained on well-leveled audio — normalizing to 0.9 peak keeps
+ * the signal in the model's sweet spot while leaving headroom.
+ */
+const TARGET_PEAK = 0.9;
+
+/**
+ * RMS-based normalization — scales the entire buffer so its RMS matches
+ * `targetRMS`. This makes VAD thresholds behave consistently regardless
+ * of mic gain / OS input volume.
+ *
+ * Returns the input unchanged when the signal is effectively silent
+ * (RMS < 1e-6) to avoid amplifying the noise floor.
+ */
+function normalizeRMS(
+  audio: Float32Array,
+  targetRMS = TARGET_RMS,
+): Float32Array {
+  let sumSq = 0;
+  for (let i = 0; i < audio.length; i++) sumSq += audio[i] * audio[i];
+  const rms = Math.sqrt(sumSq / audio.length);
+
+  if (rms < 1e-6) return audio; // silence — don't amplify noise floor
+
+  const gain = Math.min(targetRMS / rms, MAX_GAIN);
+
+  // gain ≈ 1 → skip allocation
+  if (Math.abs(gain - 1) < 0.01) return audio;
+
+  const out = new Float32Array(audio.length);
+  for (let i = 0; i < audio.length; i++) {
+    out[i] = Math.max(-1, Math.min(1, audio[i] * gain));
+  }
+  return out;
+}
+
+/**
+ * Peak normalization — scales a buffer so its peak amplitude matches
+ * `targetPeak`. Used on extracted speech segments before STT so Moonshine
+ * always sees well-leveled input.
+ */
+function normalizePeak(
+  audio: Float32Array,
+  targetPeak = TARGET_PEAK,
+): Float32Array {
+  let peak = 0;
+  for (let i = 0; i < audio.length; i++) {
+    const abs = Math.abs(audio[i]);
+    if (abs > peak) peak = abs;
+  }
+
+  if (peak < 1e-6) return audio; // silence
+
+  const gain = Math.min(targetPeak / peak, MAX_GAIN);
+
+  if (Math.abs(gain - 1) < 0.01) return audio;
+
+  const out = new Float32Array(audio.length);
+  for (let i = 0; i < audio.length; i++) {
+    out[i] = Math.max(-1, Math.min(1, audio[i] * gain));
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
 
@@ -190,12 +272,16 @@ export async function transcribeAudio(
     await ensureModels();
 
     // 1. Resample to 16kHz if needed.
-    const audio = resampleTo16kHz(pcmFloat32, sampleRate);
+    const resampled = resampleTo16kHz(pcmFloat32, sampleRate);
+
+    // 2. RMS-normalize so VAD thresholds behave consistently regardless
+    //    of mic gain / OS input volume.
+    const audio = normalizeRMS(resampled);
 
     // voiceModules is guaranteed non-null after ensureModels().
     const { runVAD, runSTT } = voiceModules!;
 
-    // 2. Run VAD to detect speech segments.
+    // 3. Run VAD to detect speech segments.
     const speechSegments = await runVAD(audio);
 
     if (speechSegments.length === 0) {
@@ -208,14 +294,17 @@ export async function transcribeAudio(
       return { text: '', segments: 0, durationMs };
     }
 
-    // 3. Extract and concatenate speech segments.
+    // 4. Extract and concatenate speech segments.
     const speechChunks = speechSegments.map((seg) =>
       audio.slice(seg.start, seg.end),
     );
     const speechAudio = concatFloat32(speechChunks);
 
-    // 4. Transcribe concatenated speech.
-    const text = await runSTT(speechAudio);
+    // 5. Peak-normalize speech so Moonshine sees well-leveled input.
+    const normalizedSpeech = normalizePeak(speechAudio);
+
+    // 6. Transcribe normalized speech.
+    const text = await runSTT(normalizedSpeech);
 
     const durationMs = Math.round(performance.now() - t0);
 
