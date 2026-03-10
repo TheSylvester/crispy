@@ -23,6 +23,7 @@ import { adaptCodexItem } from './codex-entry-adapter.js';
 import { findCodexSessionFile, parseCodexJsonlFile, scanCodexUserMessages } from './codex-jsonl-reader.js';
 import { adaptCodexJsonlRecords } from './codex-jsonl-adapter.js';
 import { CodexRpcClient, type CodexRpcClientOptions } from './codex-rpc-client.js';
+import { CRISPY_VERSION } from '../../version.js';
 import { getLatestRosieMeta } from '../../activity-index.js';
 
 // ============================================================================
@@ -219,7 +220,7 @@ export class CodexDiscovery implements VendorDiscovery {
 
     // Must initialize the protocol before any RPC calls
     await this.client.request('initialize', {
-      clientInfo: { name: 'crispy-discovery', version: '0.1.4-dev.45' },
+      clientInfo: { name: 'crispy-discovery', version: CRISPY_VERSION },
       capabilities: { experimentalApi: true },
     });
 

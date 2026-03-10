@@ -29,6 +29,7 @@ import type {
   MessageContent,
   Vendor,
 } from '../../transcript.js';
+import { CRISPY_VERSION } from '../../version.js';
 import { AsyncIterableQueue } from '../../async-iterable-queue.js';
 import { CodexRpcClient } from './codex-rpc-client.js';
 import { adaptCodexItem } from './codex-entry-adapter.js';
@@ -291,7 +292,7 @@ export class CodexAgentAdapter implements AgentAdapter {
 
     // Initialize protocol
     await this.client.request('initialize', {
-      clientInfo: { name: 'crispy', version: '0.1.4-dev.45' },
+      clientInfo: { name: 'crispy', version: CRISPY_VERSION },
       capabilities: { experimentalApi: true },
     });
 
