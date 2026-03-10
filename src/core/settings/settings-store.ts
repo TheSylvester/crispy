@@ -199,6 +199,9 @@ function sanitizeSettings(data: unknown): CrispySettings {
     if (typeof prefs.toolPanelAutoOpen === 'boolean') {
       result.preferences.toolPanelAutoOpen = prefs.toolPanelAutoOpen;
     }
+    if (typeof prefs.bashBlockInIcons === 'boolean') {
+      result.preferences.bashBlockInIcons = prefs.bashBlockInIcons;
+    }
   }
 
   // Providers
