@@ -677,6 +677,24 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 13,
+    description: 'Persistent event log for recall diagnostics',
+    up: (db: Database) => {
+      db.exec(`
+        CREATE TABLE event_log (
+          id      INTEGER PRIMARY KEY AUTOINCREMENT,
+          ts      INTEGER NOT NULL,
+          source  TEXT NOT NULL,
+          level   TEXT NOT NULL DEFAULT 'info',
+          summary TEXT NOT NULL,
+          data    TEXT
+        );
+        CREATE INDEX idx_event_log_source ON event_log(source);
+        CREATE INDEX idx_event_log_ts ON event_log(ts);
+      `);
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {

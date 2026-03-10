@@ -22,6 +22,7 @@ import { findSession } from '../../core/session-manager.js';
 import { parseModelOption } from '../../core/model-utils.js';
 import { INTERNAL_MCP_SERVER_NAME } from './internal.js';
 import { pushRosieLog } from '../../core/rosie/index.js';
+import { pushEventLog } from '../../core/rosie/event-log.js';
 
 // ============================================================================
 // Recall Agent Prompt
@@ -130,6 +131,7 @@ export function createExternalServer(
 
           console.error(`[recall] Dispatching child for query: "${args.query}" (parent: ${activeSession.sessionId}, vendor: ${activeSession.vendor})`);
           pushRosieLog({ source: 'recall', level: 'info', summary: `Recall: dispatching child (vendor: ${activeSession.vendor})`, data: { parentSessionId: activeSession.sessionId, vendor: activeSession.vendor } });
+          pushEventLog({ source: 'recall', summary: `Dispatching child — query="${args.query.slice(0, 120)}"`, data: { query: args.query, vendor: activeSession.vendor, parentSessionId: activeSession.sessionId } });
           const t0 = Date.now();
 
           try {
@@ -169,16 +171,19 @@ export function createExternalServer(
             if (!result) {
               console.error(`[recall] Child returned null after ${elapsed}ms — timeout or empty response`);
               pushRosieLog({ source: 'recall', level: 'warn', summary: `Recall: no response after ${elapsed}ms`, data: { elapsed } });
+              pushEventLog({ source: 'recall', level: 'warn', summary: `No response after ${elapsed}ms`, data: { query: args.query, elapsed } });
               return textResult('Recall agent timed out or failed to produce a result.');
             }
 
             console.error(`[recall] OK in ${elapsed}ms — ${result.text.length} chars`);
             pushRosieLog({ source: 'recall', level: 'info', summary: `Recall: OK in ${elapsed}ms — ${result.text.length} chars`, data: { elapsed, chars: result.text.length } });
+            pushEventLog({ source: 'recall', summary: `OK in ${elapsed}ms — ${result.text.length} chars`, data: { query: args.query, elapsed, chars: result.text.length } });
             return textResult(result.text);
           } catch (err) {
             const elapsed = Date.now() - t0;
             console.error(`[recall] FAIL after ${elapsed}ms:`, err instanceof Error ? err.message : String(err));
             pushRosieLog({ source: 'recall', level: 'error', summary: `Recall: failed after ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`, data: { elapsed, error: String(err) } });
+            pushEventLog({ source: 'recall', level: 'error', summary: `Failed after ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`, data: { query: args.query, elapsed, error: String(err) } });
             return textResult(`Recall failed: ${err instanceof Error ? err.message : String(err)}`);
           }
         },

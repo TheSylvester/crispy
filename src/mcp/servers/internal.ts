@@ -17,6 +17,7 @@ import { appendFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath, searchTranscript, readMessageTurn } from '../memory-queries.js';
+import { pushEventLog } from '../../core/rosie/event-log.js';
 
 import { writeTrackerResults, recordTrackerOutcome } from '../../core/rosie/tracker/db-writer.js';
 import { VALID_STATUSES } from '../../core/rosie/tracker/types.js';
@@ -85,14 +86,37 @@ function wrapToolHandler<T extends unknown[]>(
   queryFn: (...args: T) => unknown[],
 ): (...args: T) => McpToolResult {
   return (...args: T): McpToolResult => {
+    const t0 = Date.now();
     try {
       const results = queryFn(...args);
+      const elapsed = Date.now() - t0;
       console.error(`[internal-mcp] ${toolName}: ${results.length} ${resultKey}`);
+      pushEventLog({
+        source: `recall:${toolName}`,
+        summary: `${results.length} ${resultKey} in ${elapsed}ms`,
+        data: {
+          args,
+          resultCount: results.length,
+          elapsed,
+          hits: (results as Array<Record<string, unknown>>).slice(0, 10).map((r) => ({
+            ...(r.file ? { file: r.file } : {}),
+            ...(r.title ? { title: (r.title as string).slice(0, 80) } : {}),
+            ...(r.quest ? { quest: (r.quest as string).slice(0, 80) } : {}),
+          })),
+        },
+      }, getDbPath());
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({ [resultKey]: results, count: results.length }, null, 2) }],
       };
     } catch (err) {
+      const elapsed = Date.now() - t0;
       console.error(`[internal-mcp] ${toolName} FAIL:`, err instanceof Error ? err.message : String(err));
+      pushEventLog({
+        source: `recall:${toolName}`,
+        level: 'error',
+        summary: `FAIL in ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
+        data: { args, elapsed, error: String(err) },
+      }, getDbPath());
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({
           [resultKey]: [],
@@ -201,21 +225,43 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
     },
     async (args) => {
       console.error(`[internal-mcp] read_turn: file="${args.file}" offset=${args.offset}`);
+      const t0 = Date.now();
       try {
         const result = readTurnContent(args.file, args.offset);
+        const elapsed = Date.now() - t0;
         if (!result) {
           console.error('[internal-mcp] read_turn: not found');
+          pushEventLog({
+            source: 'recall:read_turn',
+            level: 'warn',
+            summary: `not found in ${elapsed}ms`,
+            data: { file: args.file, offset: args.offset, elapsed },
+          }, getDbPath());
           return {
             content: [{ type: 'text' as const, text: JSON.stringify({ turn: null, found: false }, null, 2) }],
             isError: true,
           };
         }
-        console.error(`[internal-mcp] read_turn: OK (prompt=${result.userPrompt.length} chars, response=${result.assistantResponse?.length ?? 0} chars)`);
+        const promptChars = result.userPrompt.length;
+        const responseChars = result.assistantResponse?.length ?? 0;
+        console.error(`[internal-mcp] read_turn: OK (prompt=${promptChars} chars, response=${responseChars} chars)`);
+        pushEventLog({
+          source: 'recall:read_turn',
+          summary: `OK in ${elapsed}ms — prompt=${promptChars} chars, response=${responseChars} chars`,
+          data: { file: args.file, offset: args.offset, elapsed, promptChars, responseChars },
+        }, getDbPath());
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ turn: result, found: true }, null, 2) }],
         };
       } catch (err) {
+        const elapsed = Date.now() - t0;
         console.error('[internal-mcp] read_turn FAIL:', err instanceof Error ? err.message : String(err));
+        pushEventLog({
+          source: 'recall:read_turn',
+          level: 'error',
+          summary: `FAIL in ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
+          data: { file: args.file, offset: args.offset, elapsed, error: String(err) },
+        }, getDbPath());
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({
             turn: null,
@@ -332,14 +378,34 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
     async (args) => {
       const projectId = args.all_projects ? undefined : serverOptions.projectId;
       console.error(`[internal-mcp] search_transcript: query="${args.query}" limit=${args.limit} project=${projectId ?? 'all'}`);
+      const t0 = Date.now();
       try {
         const results = searchTranscript(args.query, args.limit, projectId);
+        const elapsed = Date.now() - t0;
         console.error(`[internal-mcp] search_transcript: ${results.length} results`);
+        pushEventLog({
+          source: 'recall:search_transcript',
+          summary: `${results.length} results in ${elapsed}ms`,
+          data: {
+            query: args.query, limit: args.limit, projectId, resultCount: results.length, elapsed,
+            hits: results.slice(0, 10).map((r) => ({
+              sessionId: r.session_id,
+              snippet: r.match_snippet?.slice(0, 100),
+            })),
+          },
+        }, getDbPath());
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ results, count: results.length }, null, 2) }],
         };
       } catch (err) {
+        const elapsed = Date.now() - t0;
         console.error(`[internal-mcp] search_transcript FAIL:`, err instanceof Error ? err.message : String(err));
+        pushEventLog({
+          source: 'recall:search_transcript',
+          level: 'error',
+          summary: `FAIL in ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
+          data: { query: args.query, limit: args.limit, projectId, elapsed, error: String(err) },
+        }, getDbPath());
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({
             results: [],
@@ -363,21 +429,43 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
     },
     async (args) => {
       console.error(`[internal-mcp] read_message: session=${args.session_id} message=${args.message_id}`);
+      const t0 = Date.now();
       try {
         const result = readMessageTurn(args.session_id, args.message_id);
+        const elapsed = Date.now() - t0;
         if (!result) {
           console.error('[internal-mcp] read_message: not found');
+          pushEventLog({
+            source: 'recall:read_message',
+            level: 'warn',
+            summary: `not found in ${elapsed}ms`,
+            data: { sessionId: args.session_id, messageId: args.message_id, elapsed },
+          }, getDbPath());
           return {
             content: [{ type: 'text' as const, text: JSON.stringify({ turn: null, found: false }, null, 2) }],
             isError: true,
           };
         }
-        console.error(`[internal-mcp] read_message: OK (user=${result.userText.length} chars, assistant=${result.assistantText.length} chars)`);
+        const userChars = result.userText.length;
+        const assistantChars = result.assistantText.length;
+        console.error(`[internal-mcp] read_message: OK (user=${userChars} chars, assistant=${assistantChars} chars)`);
+        pushEventLog({
+          source: 'recall:read_message',
+          summary: `OK in ${elapsed}ms — user=${userChars} chars, assistant=${assistantChars} chars`,
+          data: { sessionId: args.session_id, messageId: args.message_id, elapsed, userChars, assistantChars },
+        }, getDbPath());
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ turn: result, found: true }, null, 2) }],
         };
       } catch (err) {
+        const elapsed = Date.now() - t0;
         console.error('[internal-mcp] read_message FAIL:', err instanceof Error ? err.message : String(err));
+        pushEventLog({
+          source: 'recall:read_message',
+          level: 'error',
+          summary: `FAIL in ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
+          data: { sessionId: args.session_id, messageId: args.message_id, elapsed, error: String(err) },
+        }, getDbPath());
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({
             turn: null,
