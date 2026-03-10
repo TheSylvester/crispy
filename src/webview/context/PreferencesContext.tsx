@@ -96,13 +96,13 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
   const [condensedToolMode, setCondensedToolMode] = useState(false);
   const [badgeStyle, setBadgeStyle] = useState<BadgeStyle>('frosted');
-  const [bashBlockInIcons, setBashBlockInIcons] = useState(false);
 
   // ============================================================================
   // Persisted preference — toolPanelAutoOpen only
   // ============================================================================
 
   const [toolPanelAutoOpen, setToolPanelAutoOpenLocal] = useState(true);
+  const [bashBlockInIcons, setBashBlockInIconsLocal] = useState(false);
 
   /** Latest known revision from settings RPC or incoming events. */
   const revisionRef = useRef(0);
@@ -116,6 +116,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     transport.getSettings().then((snapshot) => {
       revisionRef.current = snapshot.revision;
       setToolPanelAutoOpenLocal(snapshot.settings.preferences.toolPanelAutoOpen);
+      setBashBlockInIconsLocal(snapshot.settings.preferences.bashBlockInIcons);
     }).catch((err) => {
       console.error('[PreferencesContext] Failed to load settings:', err);
     });
@@ -137,6 +138,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 
       if (changedSections.includes('preferences')) {
         setToolPanelAutoOpenLocal(snapshot.settings.preferences.toolPanelAutoOpen);
+        setBashBlockInIconsLocal(snapshot.settings.preferences.bashBlockInIcons);
       }
     });
   }, [transport]);
@@ -181,6 +183,11 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const setToolPanelAutoOpen = useCallback((enabled: boolean) => {
     setToolPanelAutoOpenLocal(enabled);
     persistPreference({ toolPanelAutoOpen: enabled });
+  }, [persistPreference]);
+
+  const setBashBlockInIcons = useCallback((enabled: boolean) => {
+    setBashBlockInIconsLocal(enabled);
+    persistPreference({ bashBlockInIcons: enabled });
   }, [persistPreference]);
 
   // ============================================================================

@@ -27,6 +27,7 @@ export type SettingsSection =
 
 export interface SettingsPreferences {
   toolPanelAutoOpen: boolean;
+  bashBlockInIcons: boolean;
 }
 
 // ============================================================================
@@ -208,6 +209,7 @@ export type SettingsPatch = Partial<{
 export const DEFAULT_SETTINGS: CrispySettings = {
   preferences: {
     toolPanelAutoOpen: true,
+    bashBlockInIcons: false,
   },
   providers: {},
   hooks: {
