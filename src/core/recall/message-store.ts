@@ -1,9 +1,14 @@
 /**
  * Message Store — Message-level persistence for the recall pipeline
  *
- * SQLite storage for transcript messages (FTS5-indexed), one row per
- * user/assistant entry. Replaces the chunk-based pipeline for search
- * while the old chunks table stays for the disabled embedding path.
+ * SQLite storage for transcript messages (FTS5-indexed) and their embedding
+ * vectors (q8-quantized Nomic Embed Code). One row per user/assistant entry.
+ * Sole persistence layer for the recall pipeline — the old chunk-based
+ * pipeline has been removed.
+ *
+ * FTS5 search provides keyword matching; the message_vectors table stores
+ * q8 embeddings for semantic similarity search. Both paths are orchestrated
+ * by vector-search.ts.
  *
  * DB access goes through crispy-db.ts; path comes from activity-index.ts.
  * Write functions ensure ~/.crispy/ exists (once); read functions assume
@@ -15,6 +20,7 @@
 import { getDb } from '../crispy-db.js';
 import { dbPath, ensureCrispyDir } from '../activity-index.js';
 import { sanitizeFts5Query } from '../../mcp/query-sanitizer.js';
+import { dotProductQ8 } from './quantize.js';
 
 // ============================================================================
 // Types
@@ -447,6 +453,164 @@ export function getSessionMessageCount(sessionId: string): number {
     return row ? (row as Record<string, unknown>).cnt as number : 0;
   } catch {
     return 0;
+  }
+}
+
+// ============================================================================
+// Vector Write Functions
+// ============================================================================
+
+/** A single message vector record for batch insert. */
+export interface MessageVectorRecord {
+  messageId: string;
+  embeddingQ8: Int8Array;
+  norm: number;
+  quantScale: number;
+}
+
+/**
+ * Batch-insert message vectors into the message_vectors table.
+ * Uses INSERT OR REPLACE so re-embedding overwrites previous vectors.
+ */
+export function insertMessageVectors(records: MessageVectorRecord[]): void {
+  if (records.length === 0) return;
+
+  ensureDir();
+  const d = db();
+
+  d.exec('BEGIN');
+  try {
+    const stmt = d.prepare(
+      `INSERT OR REPLACE INTO message_vectors
+       (message_id, embedding_q8, norm, quant_scale)
+       VALUES (?, ?, ?, ?)`,
+    );
+    try {
+      for (const r of records) {
+        stmt.run([
+          r.messageId,
+          Buffer.from(r.embeddingQ8.buffer, r.embeddingQ8.byteOffset, r.embeddingQ8.byteLength),
+          r.norm,
+          r.quantScale,
+        ]);
+      }
+    } finally {
+      stmt.finalize();
+    }
+    d.exec('COMMIT');
+  } catch (e) {
+    d.exec('ROLLBACK');
+    throw e;
+  }
+}
+
+// ============================================================================
+// Vector Read Functions
+// ============================================================================
+
+/**
+ * Check if a session already has vectors in message_vectors.
+ * Used by the backfill CLI to skip already-processed sessions.
+ */
+export function hasSessionVectors(sessionId: string): boolean {
+  try {
+    const row = db().get(
+      `SELECT 1 FROM message_vectors mv
+       JOIN messages m ON m.message_id = mv.message_id
+       WHERE m.session_id = ? LIMIT 1`,
+      [sessionId],
+    );
+    return row != null;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Semantic search over message_vectors using brute-force q8 dot product.
+ *
+ * Scans all vectors, computes approximate cosine similarity via q8 dot
+ * product, and returns the top-N matches joined to messages for metadata.
+ * Optionally scoped by project or session.
+ */
+export function searchMessagesSemantic(
+  queryQ8: Int8Array,
+  queryNorm: number,
+  queryScale: number,
+  opts?: { limit?: number; projectId?: string; sessionId?: string },
+): MessageSearchResult[] {
+  try {
+    const limit = opts?.limit ?? 20;
+
+    // Push project/session filters to SQL to avoid loading unnecessary vectors
+    const params: (string | number)[] = [];
+    let filterClauses = '';
+    if (opts?.projectId) {
+      filterClauses += ' AND m.project_id = ?';
+      params.push(opts.projectId);
+    }
+    if (opts?.sessionId) {
+      filterClauses += ' AND m.session_id = ?';
+      params.push(opts.sessionId);
+    }
+
+    const rows = db().all(
+      `SELECT mv.message_id, mv.embedding_q8, mv.norm, mv.quant_scale,
+              m.session_id, m.message_seq, m.project_id, m.created_at,
+              SUBSTR(m.message_text, 1, 201) as message_preview_raw
+       FROM message_vectors mv
+       JOIN messages m ON m.message_id = mv.message_id
+       WHERE 1=1${filterClauses}`,
+      params,
+    );
+
+    if (rows.length === 0) return [];
+
+    // Brute-force q8 dot product scan over filtered vectors
+    const MAX_PREVIEW = 200;
+    const scored: Array<{ row: Record<string, unknown>; score: number }> = [];
+
+    for (const r of rows) {
+      const row = r as Record<string, unknown>;
+
+      const storedNorm = row.norm as number;
+      if (storedNorm === 0 || queryNorm === 0) continue;
+
+      const storedQ8Buf = row.embedding_q8 as Buffer;
+      const storedQ8 = new Int8Array(
+        storedQ8Buf.buffer,
+        storedQ8Buf.byteOffset,
+        storedQ8Buf.byteLength,
+      );
+      const storedScale = row.quant_scale as number;
+
+      const dotRaw = dotProductQ8(queryQ8, storedQ8);
+      const approxCosine = (dotRaw * queryScale * storedScale) / (queryNorm * storedNorm);
+
+      scored.push({ row, score: approxCosine });
+    }
+
+    // Sort descending by score, take top-N
+    scored.sort((a, b) => b.score - a.score);
+    const topN = scored.slice(0, limit);
+
+    return topN.map(({ row, score }) => {
+      const raw = row.message_preview_raw as string;
+      const truncated = raw.length > MAX_PREVIEW;
+      return {
+        message_id: row.message_id as string,
+        session_id: row.session_id as string,
+        message_seq: row.message_seq as number,
+        project_id: (row.project_id as string) ?? null,
+        created_at: row.created_at as number,
+        rank: -score, // negative so lower = better (matches FTS5 convention)
+        match_snippet: '',
+        message_preview: truncated ? raw.slice(0, MAX_PREVIEW) : raw,
+        truncated,
+      };
+    });
+  } catch {
+    return [];
   }
 }
 

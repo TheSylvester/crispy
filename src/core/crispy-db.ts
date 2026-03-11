@@ -695,6 +695,29 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 14,
+    description: 'Add message_vectors table, drop unused chunk pipeline tables',
+    up: (db: Database) => {
+      db.exec(`
+        -- Drop chunk pipeline tables and triggers (replaced by message-level pipeline)
+        DROP TRIGGER IF EXISTS chunks_fts_ai;
+        DROP TRIGGER IF EXISTS chunks_fts_ad;
+        DROP TRIGGER IF EXISTS chunks_fts_au;
+        DROP TABLE IF EXISTS chunk_vectors;
+        DROP TABLE IF EXISTS chunks_fts;
+        DROP TABLE IF EXISTS chunks;
+
+        -- Message-level embedding vectors (q8-quantized Nomic Embed Code)
+        CREATE TABLE message_vectors (
+          message_id    TEXT PRIMARY KEY REFERENCES messages(message_id),
+          embedding_q8  BLOB NOT NULL,
+          norm          REAL NOT NULL,
+          quant_scale   REAL NOT NULL
+        );
+      `);
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {

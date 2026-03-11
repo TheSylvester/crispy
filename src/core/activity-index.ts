@@ -5,7 +5,7 @@
  * cache, and pruning for ~/.crispy/. The underlying storage is a SQLite
  * database (crispy.db) managed by crispy-db.ts.
  *
- * Chunk/vector storage lives in recall/store.ts (extracted 2026-03).
+ * Message-level recall storage lives in recall/message-store.ts.
  *
  * The activity index is an acceleration structure, not a source of truth.
  * Duplicates are prevented by a UNIQUE(timestamp, file, uuid) constraint

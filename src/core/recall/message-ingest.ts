@@ -5,14 +5,17 @@
  * one row per user/assistant entry in the messages table. FTS5 indexing
  * happens automatically via triggers on insert.
  *
- * Unlike the chunk-based pipeline (ingest.ts), this preserves message
- * boundaries and uses the entry's uuid as the primary key. Sub-agent entries
- * (those with parentToolUseID) are excluded — the parent session's assistant
- * entries already contain sub-agent output via the Task tool result.
+ * Preserves message boundaries and uses the entry's uuid as the primary key.
+ * Sub-agent entries (those with parentToolUseID) are excluded — the parent
+ * session's assistant entries already contain sub-agent output via the Task
+ * tool result.
+ *
+ * Also owns the IngestResult/IngestOptions types used by both this module
+ * and the backfill CLI.
  *
  * Designed for both real-time (single session) and batch (backfill) use.
  *
- * Owns: session-level message ingestion orchestration.
+ * Owns: session-level message ingestion orchestration, ingest types.
  * Does not: discover sessions, manage concurrency, own CLI parsing.
  *
  * @module recall/message-ingest
@@ -26,8 +29,24 @@ import {
 } from './message-store.js';
 import type { MessageRecord } from './message-store.js';
 import { findSession, loadSession } from '../session-manager.js';
-import type { IngestResult, IngestOptions } from './ingest.js';
 import type { TranscriptEntry } from '../transcript.js';
+
+// ============================================================================
+// Types (originally from ingest.ts, moved here after chunk pipeline removal)
+// ============================================================================
+
+export interface IngestResult {
+  sessionId: string;
+  chunksCreated: number;
+  skipped: boolean;
+  error?: string;
+}
+
+export interface IngestOptions {
+  projectId?: string;
+  force?: boolean;
+  verbose?: boolean;
+}
 
 // ============================================================================
 // Public API
