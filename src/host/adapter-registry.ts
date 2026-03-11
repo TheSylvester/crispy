@@ -18,7 +18,7 @@ import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { Vendor } from '../core/transcript.js';
 import { registerAdapter, unregisterAdapter } from '../core/session-manager.js';
 import { getActiveChannels } from '../core/session-channel.js';
-import { getSettingsSnapshotInternal, onSettingsChanged } from '../core/settings/index.js';
+import { getSettingsSnapshotInternal, onSettingsChanged, setMcpFactories } from '../core/settings/index.js';
 import { createExternalServer } from '../mcp/servers/external.js';
 import type { AgentDispatch } from './agent-dispatch.js';
 
@@ -222,6 +222,13 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
   const systemPromptFactory = dispatch
     ? () => mcpEnabled ? RECALL_SYSTEM_PROMPT : undefined
     : undefined;
+
+  // Share MCP factories with dynamic provider adapters (GLM, etc.)
+  // This ensures additional providers get the same MCP tools as native Claude.
+  if (mcpServerFactory || systemPromptFactory) {
+    setMcpFactories(mcpServerFactory, systemPromptFactory);
+    console.error('[adapter-registry] MCP factories registered for dynamic providers');
+  }
 
   const enrichedConfig: HostAdapterConfig = {
     ...config,

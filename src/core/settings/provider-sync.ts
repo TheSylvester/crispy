@@ -38,6 +38,12 @@ const registeredDynamic = new Set<string>();
 /** Current providers snapshot — updated by syncProviderAdapters for getModelGroups(). */
 let currentProviders: Record<string, ProviderConfig> = {};
 
+/** MCP server factory — set by adapter-registry for dynamic providers. */
+let mcpServerFactory: (() => Record<string, McpServerConfig>) | undefined;
+
+/** System prompt factory — set by adapter-registry for dynamic providers. */
+let systemPromptFactory: (() => string | undefined) | undefined;
+
 // ============================================================================
 // Internal Helpers
 // ============================================================================
@@ -46,6 +52,23 @@ let currentProviders: Record<string, ProviderConfig> = {};
 export function maskApiKey(key: string): string {
   if (key.length <= 8) return '***';
   return `${key.slice(0, 3)}...${key.slice(-4)}`;
+}
+
+/**
+ * Set MCP and system prompt factories for dynamic provider adapters.
+ *
+ * Called by adapter-registry after creating the factories for native adapters.
+ * Dynamic providers share the same MCP servers and system prompt as Claude.
+ *
+ * @param mcpFactory - Factory that creates fresh MCP server instances per-query
+ * @param promptFactory - Factory that returns the system prompt (or undefined when disabled)
+ */
+export function setMcpFactories(
+  mcpFactory?: () => Record<string, McpServerConfig>,
+  promptFactory?: () => string | undefined,
+): void {
+  mcpServerFactory = mcpFactory;
+  systemPromptFactory = promptFactory;
 }
 
 /** Build env dict from a ProviderConfig for ClaudeAgentAdapter. */
@@ -119,39 +142,64 @@ export function makeFactory(
 ) {
   const providerEnv = buildEnvDict(config);
   return (spec: SessionOpenSpec) => {
+    // Build base options with MCP factories (same pattern as claude-registration.ts)
+    const getBase = () => {
+      const prompt = systemPromptFactory?.();
+      return {
+        ...(base.pathToClaudeCodeExecutable && {
+          pathToClaudeCodeExecutable: base.pathToClaudeCodeExecutable,
+        }),
+        ...(mcpServerFactory && { mcpServerFactory: mcpServerFactory }),
+        ...(prompt && {
+          systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: prompt },
+        }),
+      };
+    };
+
     switch (spec.mode) {
       case 'resume': {
         const model = getResumeModel(spec.sessionId);
-        return new ClaudeAgentAdapter({ ...base, resume: spec.sessionId, vendor: slug, env: providerEnv, ...(model && { model }) });
+        return new ClaudeAgentAdapter({
+          ...getBase(), cwd: base.cwd, resume: spec.sessionId, vendor: slug, env: providerEnv, ...(model && { model })
+        });
       }
       case 'fresh':
         return new ClaudeAgentAdapter({
-          ...base, cwd: spec.cwd, vendor: slug,
+          ...getBase(), cwd: spec.cwd, vendor: slug,
           env: { ...providerEnv, ...(spec.env ?? {}) },
           ...(spec.model && { model: spec.model }),
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
           ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
           ...(spec.skipPersistSession && { skipPersistSession: true }),
+          ...(spec.systemPrompt && {
+            systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: spec.systemPrompt },
+          }),
           ...buildEphemeralConfig(spec),
         });
       case 'fork':
         return new ClaudeAgentAdapter({
-          ...base, resume: spec.fromSessionId, forkSession: true, vendor: slug,
+          ...getBase(), cwd: base.cwd, resume: spec.fromSessionId, forkSession: true, vendor: slug,
           env: { ...providerEnv, ...(spec.env ?? {}) },
           ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
           ...(spec.skipPersistSession && { skipPersistSession: true }),
           ...(spec.outputFormat && { outputFormat: spec.outputFormat }),
           ...(spec.model && { model: spec.model }),
+          ...(spec.systemPrompt && {
+            systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: spec.systemPrompt },
+          }),
           ...(spec.outputFormat && { maxTurns: 1 }),
           ...buildEphemeralConfig(spec),
         });
       case 'hydrated':
         return new ClaudeAgentAdapter({
-          ...base, cwd: spec.cwd, vendor: slug, env: providerEnv,
+          ...getBase(), cwd: spec.cwd, vendor: slug, env: providerEnv,
           hydratedHistory: spec.history,
           ...(spec.model && { model: spec.model }),
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
           ...(spec.skipPersistSession && { skipPersistSession: true }),
+          ...(spec.systemPrompt && {
+            systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: spec.systemPrompt },
+          }),
         });
     }
   };
