@@ -5,6 +5,9 @@
  * one row per user/assistant entry in the messages table. FTS5 indexing
  * happens automatically via triggers on insert.
  *
+ * Also handles semantic embedding: after messages are indexed, they can be
+ * embedded with Nomic Embed Code and stored as q8 vectors for dual-path search.
+ *
  * Preserves message boundaries and uses the entry's uuid as the primary key.
  * Sub-agent entries (those with parentToolUseID) are excluded — the parent
  * session's assistant entries already contain sub-agent output via the Task
@@ -15,7 +18,7 @@
  *
  * Designed for both real-time (single session) and batch (backfill) use.
  *
- * Owns: session-level message ingestion orchestration, ingest types.
+ * Owns: session-level message ingestion + embedding orchestration, ingest types.
  * Does not: discover sessions, manage concurrency, own CLI parsing.
  *
  * @module recall/message-ingest
@@ -24,10 +27,13 @@
 import { stripToolContent } from './transcript-utils.js';
 import {
   insertMessages,
+  insertMessageVectors,
   hasSessionMessages,
   deleteSessionMessages,
 } from './message-store.js';
-import type { MessageRecord } from './message-store.js';
+import type { MessageRecord, MessageVectorRecord } from './message-store.js';
+import { getDb } from '../crispy-db.js';
+import { dbPath } from '../activity-index.js';
 import { findSession, loadSession } from '../session-manager.js';
 import type { TranscriptEntry } from '../transcript.js';
 
@@ -171,4 +177,86 @@ export async function ingestSessionMessages(
     chunksCreated: records.length,
     skipped: false,
   };
+}
+
+// ============================================================================
+// Semantic Embedding
+// ============================================================================
+
+/** Max characters to embed per message (Nomic has 8192 token limit, ~4 chars/token). */
+const MAX_EMBED_CHARS = 32_000;
+
+/**
+ * Embed a session's indexed messages into q8 vectors for semantic search.
+ *
+ * Reads messages from the DB (must already be FTS5-indexed), embeds each
+ * with Nomic Embed Code, quantizes to q8, and batch-inserts into
+ * message_vectors. Skips messages that already have vectors unless force.
+ *
+ * The embedding model is lazy-loaded on first call (~2-10s). Subsequent
+ * calls reuse the cached model (~200ms/msg on CPU).
+ *
+ * @param sessionId  The session to embed (must already have messages indexed).
+ * @param force      Re-embed even if vectors already exist for this session.
+ * @returns          Number of messages embedded, or 0 if skipped/failed.
+ */
+export async function embedSessionMessages(
+  sessionId: string,
+  force?: boolean,
+): Promise<number> {
+  const d = getDb(dbPath());
+
+  // Skip if already embedded (unless force)
+  if (!force) {
+    const existing = d.get(
+      `SELECT 1 FROM message_vectors mv
+       JOIN messages m ON m.message_id = mv.message_id
+       WHERE m.session_id = ? LIMIT 1`,
+      [sessionId],
+    );
+    if (existing) return 0;
+  }
+
+  // Read messages for this session
+  const rows = d.all(
+    `SELECT message_id, message_text FROM messages WHERE session_id = ? ORDER BY message_seq ASC`,
+    [sessionId],
+  ) as Array<Record<string, unknown>>;
+
+  const validRows: Array<{ messageId: string; text: string }> = [];
+  for (const r of rows) {
+    const text = (r.message_text as string).trim();
+    if (!text) continue;
+    validRows.push({
+      messageId: r.message_id as string,
+      text: text.length > MAX_EMBED_CHARS ? text.slice(0, MAX_EMBED_CHARS) : text,
+    });
+  }
+  if (validRows.length === 0) return 0;
+
+  // Lazy-load embedding modules
+  const { embedBatch } = await import('./embedder.js');
+  const { quantizeToQ8, computeNorm } = await import('./quantize.js');
+
+  // Embed
+  const texts = validRows.map(r => r.text);
+  const vectors = await embedBatch(texts);
+
+  // Quantize and build records
+  const records: MessageVectorRecord[] = [];
+  for (let j = 0; j < validRows.length; j++) {
+    const f32 = vectors[j]!;
+    const { q8, scale } = quantizeToQ8(f32);
+    const norm = computeNorm(f32);
+    records.push({
+      messageId: validRows[j]!.messageId,
+      embeddingQ8: q8,
+      norm,
+      quantScale: scale,
+    });
+  }
+
+  // Insert
+  insertMessageVectors(records);
+  return records.length;
 }
