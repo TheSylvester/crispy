@@ -5151,22 +5151,6 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   margin-left: auto;
 }
 
-.crispy-file-viewer__scroll {
-  flex: 1;
-  overflow: auto;
-  min-height: 0;
-}
-
-.crispy-file-viewer__pre {
-  margin: 0;
-  padding: 12px;
-  font-family: var(--font-mono);
-  font-size: var(--font-xs);
-  line-height: 1.5;
-  tab-size: 2;
-  white-space: pre;
-  color: var(--vscode-editor-foreground, #d4d4d4);
-}
 
 .crispy-file-viewer__loading {
   padding: 24px 12px;
@@ -5188,10 +5172,10 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
  * ============================================================================ */
 
 .crispy-file-modal-backdrop {
-  position: absolute;
+  position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 150;
+  z-index: 300;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5252,7 +5236,34 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
 }
 
+.crispy-file-modal__execute {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  margin-left: auto;
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #fff);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.crispy-file-modal__execute:hover {
+  background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
 .crispy-file-modal__body {
   flex: 1;
-  overflow: hidden;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* CodePreview inside modal — let it fill available space and scroll with the body */
+.crispy-file-modal__body .crispy-code-preview {
+  max-height: none;
+  overflow: visible;
 }

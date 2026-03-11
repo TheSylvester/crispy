@@ -9,6 +9,7 @@
  */
 
 import type { ActiveFileView } from '../../context/FilePanelContext.js';
+import { CodePreview } from '../../renderers/tools/shared/CodePreview.js';
 
 interface FileViewerProps {
   file: ActiveFileView;
@@ -47,13 +48,7 @@ export function FileViewer({ file, error, loading }: FileViewerProps): React.JSX
         <span className="crispy-file-viewer__lang">{file.language}</span>
         <span className="crispy-file-viewer__size">{formatSize(file.size)}</span>
       </div>
-      <div className="crispy-file-viewer__scroll">
-        <pre className="crispy-file-viewer__pre">
-          <code className={`language-${file.language}`}>
-            {file.content}
-          </code>
-        </pre>
-      </div>
+      <CodePreview code={file.content} language={file.language} maxHeight={99999} />
     </div>
   );
 }

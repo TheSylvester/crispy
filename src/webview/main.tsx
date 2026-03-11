@@ -94,3 +94,19 @@ if (forkFrom) {
     setTimeout(() => window.postMessage(forkConfig, '*'), delay);
   }
 }
+
+// ============================================================================
+// Browser Execute: read execute content from sessionStorage (set by opener tab)
+// ============================================================================
+
+const executeKey = params.get('execute');
+if (executeKey) {
+  const content = sessionStorage.getItem(executeKey);
+  sessionStorage.removeItem(executeKey); // one-shot
+  if (content) {
+    const delays = [200, 600, 1500];
+    for (const delay of delays) {
+      setTimeout(() => window.postMessage({ kind: 'executeInCrispy', content }, '*'), delay);
+    }
+  }
+}
