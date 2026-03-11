@@ -1398,6 +1398,23 @@ h2 {
   border: 1px solid var(--border-panel);
 }
 
+/* --- CodePreview line selection --- */
+
+.crispy-code-line-number--selectable {
+  cursor: pointer;
+}
+
+.crispy-code-line-number--selectable:hover {
+  color: var(--vscode-foreground, #ccc) !important;
+}
+
+.crispy-code-line--selected {
+  background: var(--vscode-editor-selectionBackground, rgba(38, 79, 120, 0.6));
+  display: block;
+  margin: 0 -10px;
+  padding: 0 10px;
+}
+
 /* --- TodoWrite checklist --- */
 
 .crispy-todo-list {
@@ -5234,6 +5251,26 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
 .crispy-file-modal__close:hover {
   color: var(--vscode-foreground, #ccc);
   background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+
+.crispy-file-modal__annotate {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  margin-left: auto;
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #fff);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.crispy-file-modal__annotate:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
 }
 
 .crispy-file-modal__execute {
