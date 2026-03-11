@@ -13,7 +13,7 @@ import { usePreferences } from '../context/PreferencesContext.js';
 import type { TranscriptEntry } from '../../core/transcript.js';
 
 export function useToolPanelAutoOpen(entries: TranscriptEntry[]): void {
-  const { toolPanelOpen, toolPanelAutoOpen, setToolPanelOpen } = usePreferences();
+  const { toolPanelOpen, toolPanelAutoOpen, setToolPanelOpen, setSidebarView } = usePreferences();
   const firedRef = useRef(false);
 
   useEffect(() => {
@@ -29,8 +29,9 @@ export function useToolPanelAutoOpen(entries: TranscriptEntry[]): void {
     if (hasToolUse) {
       // Skip on narrow viewports — panel would overlay content
       if (window.innerWidth < 800) return;
+      setSidebarView('tools');
       setToolPanelOpen(true);
       firedRef.current = true;
     }
-  }, [entries, toolPanelAutoOpen, toolPanelOpen, setToolPanelOpen]);
+  }, [entries, toolPanelAutoOpen, toolPanelOpen, setToolPanelOpen, setSidebarView]);
 }

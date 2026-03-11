@@ -16,6 +16,7 @@ import { EnvironmentProvider } from './context/EnvironmentContext.js';
 import { SessionProvider, useSession } from './context/SessionContext.js';
 import { FileIndexProvider } from './context/FileIndexContext.js';
 import { PreferencesProvider, usePreferences } from './context/PreferencesContext.js';
+import { FilePanelProvider } from './context/FilePanelContext.js';
 import { TranscriptViewer } from './components/TranscriptViewer.js';
 import { TitleBar } from './components/TitleBar.js';
 import { SessionStatusProvider, useSessionStatus } from './hooks/useSessionStatus.js';
@@ -33,6 +34,7 @@ export function App({ transport, transportKind }: AppProps): React.JSX.Element {
       <EnvironmentProvider kind={transportKind}>
         <SessionProvider>
           <FileIndexProvider>
+            <FilePanelProvider>
             <PreferencesProvider>
               <SessionStatusProvider>
                 <PerfProfiler id="App">
@@ -41,6 +43,7 @@ export function App({ transport, transportKind }: AppProps): React.JSX.Element {
                 {isPerfMode && <PerfOverlay />}
               </SessionStatusProvider>
             </PreferencesProvider>
+            </FilePanelProvider>
           </FileIndexProvider>
         </SessionProvider>
       </EnvironmentProvider>

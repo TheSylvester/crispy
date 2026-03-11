@@ -14,7 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '../context/SessionContext.js';
-import { usePreferences } from '../context/PreferencesContext.js';
+import { usePreferences, type SidebarView } from '../context/PreferencesContext.js';
 import { useSessionStatus } from '../hooks/useSessionStatus.js';
 import { useTransport } from '../context/TransportContext.js';
 import { useEnvironment } from '../context/EnvironmentContext.js';
@@ -84,6 +84,25 @@ function ThemeToggle(): React.JSX.Element {
         </svg>
       )}
     </button>
+  );
+}
+
+/** File-tree icon for the Files sidebar view */
+function FilePanelIcon(): React.JSX.Element {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+    >
+      <line x1="2" y1="3" x2="14" y2="3" />
+      <line x1="5" y1="8" x2="14" y2="8" />
+      <line x1="5" y1="13" x2="14" y2="13" />
+    </svg>
   );
 }
 
@@ -180,7 +199,7 @@ function truncateLabel(text: string, max: number): string {
 
 export function TitleBar(): React.JSX.Element {
   const { sessions, selectedSessionId, setSelectedSessionId } = useSession();
-  const { sidebarCollapsed, setSidebarCollapsed, toolPanelOpen, setToolPanelOpen } = usePreferences();
+  const { sidebarCollapsed, setSidebarCollapsed, toolPanelOpen, setToolPanelOpen, sidebarView, setSidebarView } = usePreferences();
   const { channelState } = useSessionStatus(selectedSessionId);
   const dropdownContainerRef = useRef<HTMLDivElement>(null);
 
@@ -216,23 +235,32 @@ export function TitleBar(): React.JSX.Element {
     setSelectedSessionId(null);
   }, [setSelectedSessionId]);
 
-  const toggleToolPanel = useCallback(() => {
-    setToolPanelOpen(!toolPanelOpen);
-  }, [toolPanelOpen, setToolPanelOpen]);
+  const handleSidebarButton = useCallback((view: SidebarView) => {
+    if (toolPanelOpen && sidebarView === view) {
+      setToolPanelOpen(false);
+    } else {
+      setSidebarView(view);
+      setToolPanelOpen(true);
+    }
+  }, [toolPanelOpen, sidebarView, setToolPanelOpen, setSidebarView]);
 
-  // Alt+T keyboard shortcut — toggle tool activity panel
+  // Alt+T / Alt+F keyboard shortcuts — toggle sidebar views
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey) {
-        if (e.key.toLowerCase() === 't') {
+        const key = e.key.toLowerCase();
+        if (key === 't') {
           e.preventDefault();
-          setToolPanelOpen(!document.querySelector('[data-tool-panel="open"]'));
+          handleSidebarButton('tools');
+        } else if (key === 'f') {
+          e.preventDefault();
+          handleSidebarButton('files');
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [setToolPanelOpen]);
+  }, [handleSidebarButton]);
 
   // Click-outside to close dropdown
   useEffect(() => {
@@ -270,14 +298,23 @@ export function TitleBar(): React.JSX.Element {
         <ConnectionDot channelState={channelState} sessionId={selectedSessionId} />
       </div>
 
-      {/* Right — Theme toggle (dev server only) + Tool panel toggle + New button */}
+      {/* Right — Theme toggle (dev server only) + Files + Tools + New button */}
       <div className="crispy-titlebar__right">
         {envKind === 'websocket' && <ThemeToggle />}
         <button
-          className={`crispy-titlebar__btn crispy-titlebar__tool-panel-btn${toolPanelOpen ? ' crispy-titlebar__tool-panel-btn--active' : ''}`}
-          onClick={toggleToolPanel}
+          className={`crispy-titlebar__btn crispy-titlebar__sidebar-btn${toolPanelOpen && sidebarView === 'files' ? ' crispy-titlebar__sidebar-btn--active' : ''}`}
+          onClick={() => handleSidebarButton('files')}
+          title="Toggle file panel (Alt+F)"
+          aria-label={toolPanelOpen && sidebarView === 'files' ? 'Close file panel' : 'Open file panel'}
+        >
+          <FilePanelIcon />
+          <span className="crispy-titlebar__btn-label">Files</span>
+        </button>
+        <button
+          className={`crispy-titlebar__btn crispy-titlebar__sidebar-btn${toolPanelOpen && sidebarView === 'tools' ? ' crispy-titlebar__sidebar-btn--active' : ''}`}
+          onClick={() => handleSidebarButton('tools')}
           title="Toggle tool panel (Alt+T)"
-          aria-label={toolPanelOpen ? 'Close tool panel' : 'Open tool panel'}
+          aria-label={toolPanelOpen && sidebarView === 'tools' ? 'Close tool panel' : 'Open tool panel'}
         >
           <ToolPanelIcon />
           <span className="crispy-titlebar__btn-label">Tools</span>

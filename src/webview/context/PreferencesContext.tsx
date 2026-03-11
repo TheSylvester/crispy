@@ -24,6 +24,9 @@ export type ToolPanelMode = 'inspector' | 'viewport';
 /** Badge style for tool name pills. */
 export type BadgeStyle = 'solid' | 'tinted' | 'frosted';
 
+/** Which view is shown in the unified right sidebar. */
+export type SidebarView = 'files' | 'tools';
+
 interface Preferences {
   renderMode: RenderMode;
   settingsPinned: boolean;
@@ -45,6 +48,8 @@ interface Preferences {
   badgeStyle: BadgeStyle;
   /** In Icons mode, render Bash as a full block instead of condensed single-line. */
   bashBlockInIcons: boolean;
+  /** Which view is shown in the unified right sidebar. */
+  sidebarView: SidebarView;
 }
 
 interface PreferencesContextValue extends Preferences {
@@ -60,6 +65,7 @@ interface PreferencesContextValue extends Preferences {
   setCondensedToolMode: (enabled: boolean) => void;
   setBadgeStyle: (style: BadgeStyle) => void;
   setBashBlockInIcons: (enabled: boolean) => void;
+  setSidebarView: (view: SidebarView) => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
@@ -96,6 +102,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
   const [condensedToolMode, setCondensedToolMode] = useState(false);
   const [badgeStyle, setBadgeStyle] = useState<BadgeStyle>('frosted');
+  const [sidebarView, setSidebarView] = useState<SidebarView>('tools');
 
   // ============================================================================
   // Persisted preference — toolPanelAutoOpen only
@@ -207,6 +214,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     condensedToolMode,
     badgeStyle,
     bashBlockInIcons,
+    sidebarView,
     setRenderMode,
     setSettingsPinned,
     setSidebarCollapsed,
@@ -219,6 +227,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setCondensedToolMode,
     setBadgeStyle,
     setBashBlockInIcons,
+    setSidebarView,
   };
 
   return (

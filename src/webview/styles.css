@@ -4052,13 +4052,15 @@ h2 {
 
 /* --- TitleBar tool panel toggle button --- */
 
-.crispy-titlebar__tool-panel-btn--active {
+.crispy-titlebar__tool-panel-btn--active,
+.crispy-titlebar__sidebar-btn--active {
   background: var(--vscode-list-activeSelectionBackground, #094771);
 }
 
 /* --- Disable transitions during drag resize --- */
 
 [data-resizing] .crispy-tool-panel,
+[data-resizing] .crispy-file-panel,
 [data-resizing] .crispy-main,
 [data-resizing] .crispy-scroll-nav,
 [data-resizing] .crispy-cp,
@@ -4860,4 +4862,397 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   border-radius: var(--radius-md);
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
   cursor: default;
+}
+
+/* ============================================================================
+ * File Panel — file explorer view in the unified right sidebar
+ *
+ * Shares the same right-side position and width as the tool panel.
+ * Toggled via TitleBar Files button or Alt+F.
+ * ============================================================================ */
+
+.crispy-file-panel {
+  position: fixed;
+  top: var(--titlebar-height);
+  right: 0;
+  width: var(--tool-panel-actual-width, var(--tool-panel-width, 0px));
+  height: calc(100vh - var(--titlebar-height));
+  background: var(--vscode-sideBar-background, #252526);
+  border-left: 1px solid var(--border-panel);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity var(--sidebar-transition),
+    transform var(--sidebar-transition),
+    width var(--sidebar-transition);
+}
+
+[data-tool-panel="collapsed"] .crispy-file-panel {
+  opacity: 0;
+  transform: translateX(8px);
+  pointer-events: none;
+}
+
+[data-tool-panel="overlay"] .crispy-file-panel {
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+  z-index: 250;
+}
+
+/* --- File panel header --- */
+
+.crispy-file-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-panel);
+}
+
+.crispy-file-panel__title {
+  font-weight: 600;
+  font-size: var(--font-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.7;
+}
+
+.crispy-file-panel__count {
+  font-size: var(--font-xs);
+  opacity: 0.5;
+}
+
+.crispy-file-panel__refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--vscode-descriptionForeground, #858585);
+  cursor: pointer;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.crispy-file-panel__refresh-btn:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+
+/* --- File panel search --- */
+
+.crispy-file-panel__search {
+  padding: 4px 8px;
+  flex-shrink: 0;
+}
+
+.crispy-file-panel__search-input {
+  width: 100%;
+  padding: 3px 8px;
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #ccc);
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  border-radius: 3px;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.crispy-file-panel__search-input:focus {
+  border-color: var(--vscode-focusBorder, #007acc);
+}
+
+.crispy-file-panel__search-input::placeholder {
+  color: var(--vscode-input-placeholderForeground, #888);
+}
+
+/* --- File panel scroll area --- */
+
+.crispy-file-panel__scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+/* --- File panel empty/loading states --- */
+
+.crispy-file-panel__empty,
+.crispy-file-panel__loading {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--vscode-descriptionForeground, #858585);
+  font-size: var(--font-sm);
+  font-style: italic;
+}
+
+/* ============================================================================
+ * File Tree Node — individual file/directory row
+ * ============================================================================ */
+
+.crispy-file-node {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px 1px 0;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--vscode-foreground, #ccc);
+  white-space: nowrap;
+  border-left: 2px solid transparent;
+  user-select: none;
+}
+
+.crispy-file-node:hover {
+  background: var(--vscode-list-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+
+.crispy-file-node--selected {
+  background: var(--vscode-list-activeSelectionBackground, #094771);
+  border-left-color: var(--vscode-focusBorder, #007acc);
+}
+
+.crispy-file-node--selected:hover {
+  background: var(--vscode-list-activeSelectionBackground, #094771);
+}
+
+/* Chevron for directories */
+.crispy-file-node__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+  opacity: 0.7;
+}
+
+.crispy-file-node__chevron--open {
+  transform: rotate(90deg);
+}
+
+/* Spacer for files (same width as chevron) */
+.crispy-file-node__spacer {
+  width: 16px;
+  flex-shrink: 0;
+}
+
+/* File type icon */
+.crispy-file-node__icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.crispy-file-node__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Directory names slightly bolder */
+.crispy-file-node--dir > .crispy-file-node__name {
+  font-weight: 500;
+}
+
+/* ============================================================================
+ * File Context Menu — right-click overlay
+ * ============================================================================ */
+
+.crispy-file-ctx-menu {
+  position: fixed;
+  z-index: 300;
+  background: var(--vscode-menu-background, #252526);
+  border: 1px solid var(--vscode-menu-separatorBackground, #454545);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  min-width: 180px;
+  padding: 4px 0;
+  outline: none;
+}
+
+.crispy-file-ctx-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 4px 12px;
+  background: transparent;
+  border: none;
+  color: var(--vscode-menu-foreground, #ccc);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.crispy-file-ctx-menu__item:hover,
+.crispy-file-ctx-menu__item--focused {
+  background: var(--vscode-menu-selectionBackground, #094771);
+  color: var(--vscode-menu-selectionForeground, #fff);
+}
+
+.crispy-file-ctx-menu__label {
+  flex: 1;
+}
+
+.crispy-file-ctx-menu__shortcut {
+  margin-left: 24px;
+  opacity: 0.6;
+  font-size: var(--font-xs);
+}
+
+.crispy-file-ctx-menu__sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--vscode-menu-separatorBackground, #454545);
+}
+
+/* ============================================================================
+ * File Viewer — code preview in the right panel
+ * ============================================================================ */
+
+.crispy-file-viewer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.crispy-file-viewer__info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-panel);
+  font-size: var(--font-xs);
+  opacity: 0.6;
+}
+
+.crispy-file-viewer__lang {
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.crispy-file-viewer__size {
+  margin-left: auto;
+}
+
+.crispy-file-viewer__scroll {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.crispy-file-viewer__pre {
+  margin: 0;
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  line-height: 1.5;
+  tab-size: 2;
+  white-space: pre;
+  color: var(--vscode-editor-foreground, #d4d4d4);
+}
+
+.crispy-file-viewer__loading {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--vscode-descriptionForeground, #858585);
+  font-size: var(--font-sm);
+  font-style: italic;
+}
+
+.crispy-file-viewer__error {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--vscode-errorForeground, #f48771);
+  font-size: var(--font-sm);
+}
+
+/* ============================================================================
+ * File Viewer Modal — overlay on transcript area
+ * ============================================================================ */
+
+.crispy-file-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.crispy-file-modal {
+  width: 90%;
+  max-width: 800px;
+  max-height: 85%;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.crispy-file-modal__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-panel);
+  background: var(--vscode-sideBar-background, #252526);
+}
+
+.crispy-file-modal__path {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+
+.crispy-file-modal__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--vscode-descriptionForeground, #858585);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.crispy-file-modal__close:hover {
+  color: var(--vscode-foreground, #ccc);
+  background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+
+.crispy-file-modal__body {
+  flex: 1;
+  overflow: hidden;
 }

@@ -50,6 +50,9 @@ import { BlocksVisibilityProvider } from "../blocks/BlocksVisibilityContext.js";
 import { ConnectorLines } from "../blocks/ConnectorLines.js";
 import { PanelStateProvider } from "../blocks/PanelStateContext.js";
 import { BlocksToolPanel } from "../blocks/BlocksToolPanel.js";
+import { FilePanel } from "./file-panel/FilePanel.js";
+import { FileViewerModal } from "./file-panel/FileViewerModal.js";
+import { useFilePanel } from "../context/FilePanelContext.js";
 
 // Debug mode now lives in PreferencesContext (default: on during development).
 
@@ -57,7 +60,8 @@ export function TranscriptViewer(): React.JSX.Element {
   const { selectedSessionId, setSelectedSessionId } = useSession();
   const transport = useTransport();
   const { entries, isLoading, error, addOptimisticEntry, setForkHistory } = useTranscript(selectedSessionId);
-  const { renderMode, toolPanelOpen, debugMode } = usePreferences();
+  const { renderMode, toolPanelOpen, debugMode, sidebarView } = usePreferences();
+  const { registerInsertHandler } = useFilePanel();
   useToolPanelAutoOpen(entries);
   const { approvalRequest, resolve: resolveApproval } = useApprovalRequest(selectedSessionId);
   const streamingContent = useStreamingContent();
@@ -320,6 +324,13 @@ export function TranscriptViewer(): React.JSX.Element {
     setPrefillInput(null);
   }, []);
 
+  // Register insert handler for FilePanelContext (used by context menu "Insert in Chat")
+  useEffect(() => {
+    registerInsertHandler((text: string) => {
+      setPrefillInput({ text });
+    });
+  }, [registerInsertHandler]);
+
   // Callback to clear pendingAgencyMode after ControlPanel consumes it
   const handlePendingAgencyModeConsumed = useCallback(() => setPendingAgencyMode(null), []);
 
@@ -409,8 +420,8 @@ export function TranscriptViewer(): React.JSX.Element {
         <PanelStateProvider>
           <BlocksVisibilityProvider scrollRef={transcriptRef}>
             {transcriptArea}
-            {toolPanelOpen && <BlocksToolPanel />}
-            {toolPanelOpen && <ConnectorLines />}
+            {toolPanelOpen && sidebarView === 'tools' && <BlocksToolPanel />}
+            {toolPanelOpen && sidebarView === 'tools' && <ConnectorLines />}
           </BlocksVisibilityProvider>
         </PanelStateProvider>
       </BlocksToolRegistryProvider>
@@ -420,6 +431,8 @@ export function TranscriptViewer(): React.JSX.Element {
   return (
     <>
       {mainContent}
+      {toolPanelOpen && sidebarView === 'files' && <FilePanel />}
+      <FileViewerModal />
       {selectedSessionId && !error && <StopButton ref={stopButtonRef} />}
       {debugMode && (
         <PlaybackControls
