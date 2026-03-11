@@ -10,12 +10,19 @@
 
 import { useMemo, useEffect } from 'react';
 import type { TranscriptEntry } from '../../core/transcript.js';
-import type { AnchorPoint } from './types.js';
+import type { AnchorPoint, RichBlock } from './types.js';
 import { BlocksToolRegistry } from './blocks-tool-registry.js';
 import { normalizeToRichBlocks } from './normalize.js';
 import { ToolBlockRenderer } from './ToolBlockRenderer.js';
 import { BlocksBlockRenderer } from './BlocksBlockRenderer.js';
 import { MessageActions } from '../components/MessageActions.js';
+import { CopyButton } from '../components/CopyButton.js';
+import { serializeAssistantMessage, serializeUserMessage } from '../utils/copy-markdown.js';
+
+/** True when any block in the list contains displayable text. */
+function hasTextBlock(blocks: RichBlock[]): boolean {
+  return blocks.some(b => b.type === 'text');
+}
 
 interface BlocksEntryProps {
   entry: TranscriptEntry;
@@ -73,9 +80,14 @@ export function BlocksEntry({
   // Get role for message class
   const role = blocks[0]?.context.role ?? 'unknown';
 
-  // Determine if we should show message actions
-  // Only show on user messages (role includes user prompt)
+  // Show fork/rewind on user messages (unchanged from before)
   const showActions = role === 'user' && forkTargetId !== undefined;
+  // Copy overlay on assistant messages with text (user copy lives in MessageActions)
+  const showCopy = role === 'assistant' && hasTextBlock(blocks);
+  // Copy getText for user messages — passed into MessageActions
+  const userCopyGetText = role === 'user' && hasTextBlock(blocks)
+    ? () => serializeUserMessage(blocks)
+    : undefined;
 
   return (
     <div className={`message ${role}`} data-uuid={entry.uuid}>
@@ -103,7 +115,17 @@ export function BlocksEntry({
           />
         );
       })}
-      {showActions && <MessageActions targetAssistantId={forkTargetId || null} />}
+      {/* Fork/rewind + copy — bottom-right of user bubble */}
+      {showActions && <MessageActions targetAssistantId={forkTargetId || null} copygetText={userCopyGetText} />}
+      {/* Copy — bottom-right of assistant messages */}
+      {showCopy && (
+        <div className="crispy-copy-overlay">
+          <CopyButton
+            getText={() => serializeAssistantMessage(blocks)}
+            title="Copy response"
+          />
+        </div>
+      )}
     </div>
   );
 }

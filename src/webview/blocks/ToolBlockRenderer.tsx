@@ -18,6 +18,7 @@ import { ToolCard } from './views/ToolCard.js';
 import { ToolBadge } from '../renderers/tools/shared/ToolBadge.js';
 import { StatusIndicator } from '../renderers/tools/shared/StatusIndicator.js';
 import { extractResultText, formatCount } from '../renderers/tools/shared/tool-utils.js';
+import { CopyButton } from '../components/CopyButton.js';
 import { useBlocksChildEntries, useBlocksToolRegistry, useInjectChildEntries } from './BlocksToolRegistryContext.js';
 import { BlocksEntryWithRegistry } from './BlocksEntryWithRegistry.js';
 import { usePreferences } from '../context/PreferencesContext.js';
@@ -166,6 +167,14 @@ export function ToolBlockRenderer({
       return (
         <Tag className={`crispy-blocks-tool${viewMode === 'inline' ? ' crispy-blocks-tool--inline' : ''}`} data-tool-id={block.id} data-tool-name={block.name} data-panel-active={isPanelActive || undefined} onClick={clickable ? handleClick : undefined} style={panelTintStyle}>
           <ViewComponent {...viewProps} />
+          {result && (
+            <CopyButton
+              getText={() => extractResultText(result?.content)}
+              title="Copy tool output"
+              compact
+              className="crispy-tool-copy-btn"
+            />
+          )}
         </Tag>
       );
     }
@@ -177,6 +186,14 @@ export function ToolBlockRenderer({
   return (
     <div className="crispy-blocks-tool crispy-blocks-tool--unknown" data-tool-id={block.id} data-tool-name={block.name} data-panel-active={isPanelActive || undefined} onClick={clickable ? handleClick : undefined}>
       <FallbackToolView block={block} result={result} status={status} anchor={anchor} data={data} />
+      {result && (
+        <CopyButton
+          getText={() => extractResultText(result?.content)}
+          title="Copy tool output"
+          compact
+          className="crispy-tool-copy-btn"
+        />
+      )}
     </div>
   );
 }

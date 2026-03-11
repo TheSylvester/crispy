@@ -22,8 +22,15 @@ import { normalizeToRichBlocks } from './normalize.js';
 import { ToolBlockRenderer } from './ToolBlockRenderer.js';
 import { BlocksBlockRenderer } from './BlocksBlockRenderer.js';
 import { MessageActions } from '../components/MessageActions.js';
+import { CopyButton } from '../components/CopyButton.js';
+import { serializeAssistantMessage, serializeUserMessage } from '../utils/copy-markdown.js';
 import { usePreferences } from '../context/PreferencesContext.js';
 import { getToolRenderCategory } from './tool-definitions.js';
+
+/** True when any block in the list contains displayable text. */
+function hasTextBlock(blocks: RichBlock[]): boolean {
+  return blocks.some(b => b.type === 'text');
+}
 
 interface BlocksEntryWithRegistryProps {
   entry: TranscriptEntry;
@@ -70,6 +77,12 @@ export function BlocksEntryWithRegistry({
 
   // Fork/rewind only on root-level user messages (no parentToolUseId)
   const showActions = !parentToolUseId && role === 'user' && forkTargetId !== undefined;
+  // Copy overlay on root-level assistant messages with text (user copy lives in MessageActions)
+  const showCopy = !parentToolUseId && role === 'assistant' && hasTextBlock(blocks);
+  // Copy getText for user messages — passed into MessageActions
+  const userCopyGetText = !parentToolUseId && role === 'user' && hasTextBlock(blocks)
+    ? () => serializeUserMessage(blocks)
+    : undefined;
 
   // When Icons mode is active and we're on the main thread, group tool_use blocks
   // that follow text blocks to render them inline.
@@ -138,7 +151,16 @@ export function BlocksEntryWithRegistry({
           );
         })
       }
-      {showActions && <MessageActions targetAssistantId={forkTargetId || null} />}
+      {showActions && <MessageActions targetAssistantId={forkTargetId || null} copygetText={userCopyGetText} />}
+      {/* Copy — bottom-right of assistant messages */}
+      {showCopy && (
+        <div className="crispy-copy-overlay">
+          <CopyButton
+            getText={() => serializeAssistantMessage(blocks)}
+            title="Copy response"
+          />
+        </div>
+      )}
     </div>
   );
 }
