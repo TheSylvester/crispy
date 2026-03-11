@@ -30,8 +30,10 @@ import { opencodeRegistration } from '../core/adapters/opencode/opencode-registr
 /** System prompt injected when MCP memory is enabled — nudges the model to use recall. */
 const RECALL_SYSTEM_PROMPT =
   'You have access to a conversation memory tool: mcp__memory__recall_conversations.' +
-  ' Use it when the user references past conversations, prior decisions, or when context seems missing' +
-  ' — load it via ToolSearch first, then call it with a natural language question.';
+  ' Proactively use it at the start of non-trivial tasks, before architectural decisions,' +
+  ' and whenever prior context could inform your approach — not just when the user explicitly' +
+  ' references past conversations. Load it via ToolSearch first, then call it with a detailed' +
+  ' natural-language question.';
 
 // ============================================================================
 // Types
