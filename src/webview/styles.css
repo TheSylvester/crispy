@@ -1552,15 +1552,12 @@ h2 {
   color: var(--vscode-terminal-ansiGreen, #4ec9b0);
 }
 
-/* Copy overlay — sticky float that tracks scroll within long messages.
-   Rendered as the first child of .message so float:right works before content.
-   height:0 + overflow:visible keeps it zero-height in flow. */
+/* Copy overlay — absolute bottom-right of assistant messages.
+   Sits inside .message.assistant (position: relative). */
 .crispy-copy-overlay {
-  position: sticky;
-  top: 8px;
-  float: right;
-  height: 0;
-  overflow: visible;
+  position: absolute;
+  bottom: 0;
+  right: 0;
   z-index: 10;
   opacity: 0;
   transition: opacity 0.15s;

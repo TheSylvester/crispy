@@ -82,22 +82,15 @@ export function BlocksEntry({
 
   // Show fork/rewind on user messages (unchanged from before)
   const showActions = role === 'user' && forkTargetId !== undefined;
-  // Show copy button on user and assistant messages that have text
-  const showCopy = (role === 'user' || role === 'assistant') && hasTextBlock(blocks);
+  // Copy overlay on assistant messages with text (user copy lives in MessageActions)
+  const showCopy = role === 'assistant' && hasTextBlock(blocks);
+  // Copy getText for user messages — passed into MessageActions
+  const userCopyGetText = role === 'user' && hasTextBlock(blocks)
+    ? () => serializeUserMessage(blocks)
+    : undefined;
 
   return (
     <div className={`message ${role}`} data-uuid={entry.uuid}>
-      {/* Copy — sticky float that tracks scroll position within long messages */}
-      {showCopy && (
-        <div className="crispy-copy-overlay">
-          <CopyButton
-            getText={() => role === 'user'
-              ? serializeUserMessage(blocks)
-              : serializeAssistantMessage(blocks)}
-            title={role === 'user' ? 'Copy message' : 'Copy response'}
-          />
-        </div>
-      )}
       {blocks.map((block, i) => {
         // Auto-collapse thinking blocks when newer substantive content follows
         const autoCollapse = block.type === 'thinking'
@@ -122,8 +115,17 @@ export function BlocksEntry({
           />
         );
       })}
-      {/* Fork/rewind — bottom-right of user bubble (unchanged) */}
-      {showActions && <MessageActions targetAssistantId={forkTargetId || null} />}
+      {/* Fork/rewind + copy — bottom-right of user bubble */}
+      {showActions && <MessageActions targetAssistantId={forkTargetId || null} copygetText={userCopyGetText} />}
+      {/* Copy — bottom-right of assistant messages */}
+      {showCopy && (
+        <div className="crispy-copy-overlay">
+          <CopyButton
+            getText={() => serializeAssistantMessage(blocks)}
+            title="Copy response"
+          />
+        </div>
+      )}
     </div>
   );
 }

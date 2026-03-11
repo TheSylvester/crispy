@@ -14,19 +14,30 @@
 
 import { useFork } from '../context/ForkContext.js';
 import { RewindIcon, ForkIcon } from './control-panel/icons.js';
+import { CopyButton } from './CopyButton.js';
 
 interface MessageActionsProps {
   /** Preceding assistant message UUID, or null for first user message (rewind-only). */
   targetAssistantId: string | null;
+  /** When provided, renders a copy button as the first action. */
+  copygetText?: () => string | null;
 }
 
-export function MessageActions({ targetAssistantId }: MessageActionsProps): React.JSX.Element | null {
+export function MessageActions({ targetAssistantId, copygetText }: MessageActionsProps): React.JSX.Element | null {
   const fork = useFork();
   if (!fork) return null;
   const { onFork, onRewind, onForkPreviewHover, isStreaming } = fork;
 
   return (
     <div className="crispy-message-actions">
+      {copygetText && (
+        <CopyButton
+          getText={copygetText}
+          title="Copy message"
+          compact
+          className="crispy-message-action"
+        />
+      )}
       <button
         className="crispy-message-action"
         title="Rewind to this message"

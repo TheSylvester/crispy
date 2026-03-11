@@ -77,8 +77,12 @@ export function BlocksEntryWithRegistry({
 
   // Fork/rewind only on root-level user messages (no parentToolUseId)
   const showActions = !parentToolUseId && role === 'user' && forkTargetId !== undefined;
-  // Copy button on root-level user and assistant messages with text
-  const showCopy = !parentToolUseId && (role === 'user' || role === 'assistant') && hasTextBlock(blocks);
+  // Copy overlay on root-level assistant messages with text (user copy lives in MessageActions)
+  const showCopy = !parentToolUseId && role === 'assistant' && hasTextBlock(blocks);
+  // Copy getText for user messages — passed into MessageActions
+  const userCopyGetText = !parentToolUseId && role === 'user' && hasTextBlock(blocks)
+    ? () => serializeUserMessage(blocks)
+    : undefined;
 
   // When Icons mode is active and we're on the main thread, group tool_use blocks
   // that follow text blocks to render them inline.
@@ -121,17 +125,6 @@ export function BlocksEntryWithRegistry({
       className={`message ${role}`}
       data-uuid={entry.uuid}
     >
-      {/* Copy — sticky float that tracks scroll within long messages */}
-      {showCopy && (
-        <div className="crispy-copy-overlay">
-          <CopyButton
-            getText={() => role === 'user'
-              ? serializeUserMessage(blocks)
-              : serializeAssistantMessage(blocks)}
-            title={role === 'user' ? 'Copy message' : 'Copy response'}
-          />
-        </div>
-      )}
       {useInline
         ? renderWithInlineGrouping(blocks, anchor, registry, siblingCount, isLastEntry)
         : blocks.map((block, i) => {
@@ -158,7 +151,16 @@ export function BlocksEntryWithRegistry({
           );
         })
       }
-      {showActions && <MessageActions targetAssistantId={forkTargetId || null} />}
+      {showActions && <MessageActions targetAssistantId={forkTargetId || null} copygetText={userCopyGetText} />}
+      {/* Copy — bottom-right of assistant messages */}
+      {showCopy && (
+        <div className="crispy-copy-overlay">
+          <CopyButton
+            getText={() => serializeAssistantMessage(blocks)}
+            title="Copy response"
+          />
+        </div>
+      )}
     </div>
   );
 }
