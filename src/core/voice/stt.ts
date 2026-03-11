@@ -9,18 +9,17 @@
  * @module voice/stt
  */
 
-import {
-  AutoProcessor,
-  MoonshineForConditionalGeneration,
-} from '@huggingface/transformers';
 import { pushRosieLog } from '../rosie/index.js';
+import { importOptionalModule } from './optional-import.js';
 
 // ---------------------------------------------------------------------------
 // Module-level state
 // ---------------------------------------------------------------------------
 
-let processor: Awaited<ReturnType<typeof AutoProcessor.from_pretrained>> | null = null;
-let model: Awaited<ReturnType<typeof MoonshineForConditionalGeneration.from_pretrained>> | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- @huggingface/transformers is optional
+let processor: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let model: any = null;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -35,6 +34,10 @@ const MODEL_ID = 'onnx-community/moonshine-base-ONNX';
 /**
  * Load the Moonshine Base processor and model. Safe to call multiple times —
  * subsequent calls are no-ops.
+ *
+ * Also configures @huggingface/transformers WASM proxy setting. This MUST
+ * run before from_pretrained() calls — relocated here from voice-engine.ts
+ * to keep HF configuration co-located with HF usage.
  */
 export async function initSTT(): Promise<void> {
   if (processor && model) return;
@@ -46,9 +49,18 @@ export async function initSTT(): Promise<void> {
       summary: 'Loading Moonshine Base STT model...',
     });
 
+    const hf = await importOptionalModule<typeof import('@huggingface/transformers')>(
+      '@huggingface/transformers',
+    );
+
+    // Configure WASM proxy BEFORE loading models (safe for Node).
+    if (hf.env?.backends?.onnx?.wasm) {
+      hf.env.backends.onnx.wasm.proxy = false;
+    }
+
     const [p, m] = await Promise.all([
-      AutoProcessor.from_pretrained(MODEL_ID),
-      MoonshineForConditionalGeneration.from_pretrained(MODEL_ID, {
+      hf.AutoProcessor.from_pretrained(MODEL_ID),
+      hf.MoonshineForConditionalGeneration.from_pretrained(MODEL_ID, {
         dtype: 'fp32',
         device: 'cpu',
       }),

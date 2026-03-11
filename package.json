@@ -32,11 +32,9 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.63",
     "@anthropic-ai/sdk": "^0.74.0",
-    "@huggingface/transformers": "^3.8.1",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@opencode-ai/sdk": "^1.2.20",
     "node-sqlite3-wasm": "^0.8.53",
-    "onnxruntime-node": "1.21.0",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -45,6 +43,8 @@
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
+    "@huggingface/transformers": "^3.8.1",
+    "onnxruntime-node": "1.21.0",
     "sharp": "^0.34.2"
   },
   "devDependencies": {

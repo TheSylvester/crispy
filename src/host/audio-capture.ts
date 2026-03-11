@@ -41,6 +41,9 @@ interface ActiveRecording {
 
 let activeRecording: ActiveRecording | null = null;
 
+/** Guard against concurrent startCapture() calls (double-click race). */
+let starting = false;
+
 // ---------------------------------------------------------------------------
 // Startup cleanup
 // ---------------------------------------------------------------------------
@@ -85,49 +88,49 @@ export function cleanupOrphanedVoiceFiles(): void {
  * @throws if recording is already in progress or platform unsupported.
  */
 export async function startCapture(): Promise<void> {
-  if (activeRecording) {
+  if (activeRecording || starting) {
     throw new Error('Recording already in progress');
   }
 
-  const tempWavPath = join(tmpdir(), `crispy-voice-${Date.now()}.wav`);
+  starting = true;
+  try {
+    const tempWavPath = join(tmpdir(), `crispy-voice-${Date.now()}.wav`);
 
-  pushRosieLog({
-    source: 'voice',
-    level: 'info',
-    summary: `Starting host-side audio capture on ${process.platform}...`,
-  });
+    pushRosieLog({
+      source: 'voice',
+      level: 'info',
+      summary: `Starting host-side audio capture on ${process.platform}...`,
+    });
 
-  if (process.platform === 'darwin') {
-    await startMacRecording(tempWavPath);
-  } else if (process.platform === 'win32') {
-    await startWindowsRecording(tempWavPath);
-  } else if (process.platform === 'linux') {
-    await startLinuxRecording(tempWavPath);
-  } else {
-    throw new Error(`Voice recording not supported on ${process.platform}`);
+    if (process.platform === 'darwin') {
+      await startMacRecording(tempWavPath);
+    } else if (process.platform === 'win32') {
+      await startWindowsRecording(tempWavPath);
+    } else if (process.platform === 'linux') {
+      await startLinuxRecording(tempWavPath);
+    } else {
+      throw new Error(`Voice recording not supported on ${process.platform}`);
+    }
+
+    pushRosieLog({
+      source: 'voice',
+      level: 'info',
+      summary: 'Recording started',
+    });
+  } finally {
+    starting = false;
   }
-
-  pushRosieLog({
-    source: 'voice',
-    level: 'info',
-    summary: 'Recording started',
-  });
 }
 
 /**
  * Stop recording and return captured audio as Float32Array at the recorded sample rate.
  *
- * @returns PCM Float32Array (values in -1..1) plus sample rate, or null if
- *          no recording was active or no audio was captured.
+ * @returns PCM Float32Array (values in -1..1) plus sample rate.
+ * @throws if no recording is active or if stop/read fails.
  */
-export async function stopCapture(): Promise<{ pcmFloat32: Float32Array; sampleRate: number } | null> {
+export async function stopCapture(): Promise<{ pcmFloat32: Float32Array; sampleRate: number }> {
   if (!activeRecording) {
-    pushRosieLog({
-      source: 'voice',
-      level: 'warn',
-      summary: 'stopCapture called but no recording active',
-    });
-    return null;
+    throw new Error('No recording active — call startCapture() first');
   }
 
   const { process: proc, tempWavPath, tempScriptPath, startedAt } = activeRecording;
@@ -161,7 +164,7 @@ export async function stopCapture(): Promise<{ pcmFloat32: Float32Array; sampleR
       level: 'error',
       summary: `Failed to stop/read recording: ${err instanceof Error ? err.message : err}`,
     });
-    return null;
+    throw err instanceof Error ? err : new Error(String(err));
   } finally {
     // Cleanup temp files — always runs, even if stopProcess times out
     fsp.unlink(tempWavPath).catch(() => {});
