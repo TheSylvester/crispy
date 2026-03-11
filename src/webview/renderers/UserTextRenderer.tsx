@@ -18,7 +18,7 @@ export function UserTextRenderer({ block }: { block: ContentBlock }): React.JSX.
   const { text } = block as TextBlock;
   return (
     <div className="prose user-text">
-      <CrispyMarkdown>{text}</CrispyMarkdown>
+      <CrispyMarkdown breaks>{text}</CrispyMarkdown>
     </div>
   );
 }

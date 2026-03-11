@@ -15,11 +15,13 @@
 
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import { PreBlock } from './markdown-components.js';
 import { LinkifiedP, LinkifiedLi, LinkifiedTd, LinkifiedCode } from './linkify-components.js';
 import type { Components } from 'react-markdown';
 
 const plugins = [remarkGfm];
+const pluginsWithBreaks = [remarkGfm, remarkBreaks];
 const defaultComponents = {
   code: LinkifiedCode,
   pre: PreBlock,
@@ -31,11 +33,16 @@ const defaultComponents = {
 interface CrispyMarkdownProps {
   children: string;
   components?: Components;
+  /** When true, single newlines become <br> instead of being ignored. */
+  breaks?: boolean;
 }
 
-export function CrispyMarkdown({ children, components }: CrispyMarkdownProps): React.JSX.Element {
+export function CrispyMarkdown({ children, components, breaks }: CrispyMarkdownProps): React.JSX.Element {
   return (
-    <Markdown remarkPlugins={plugins} components={{ ...defaultComponents, ...components }}>
+    <Markdown
+      remarkPlugins={breaks ? pluginsWithBreaks : plugins}
+      components={{ ...defaultComponents, ...components }}
+    >
       {children}
     </Markdown>
   );
