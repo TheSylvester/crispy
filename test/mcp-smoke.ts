@@ -30,7 +30,7 @@ console.log('============================\n');
 console.log('1. Server creation');
 const server = createMemoryServer();
 check('createMemoryServer() returns config', server != null);
-check('name is "crispy"', server.name === 'crispy');
+check('name is "memory"', server.name === 'memory');
 check('type is "sdk"', server.type === 'sdk');
 check('instance exists', server.instance != null);
 

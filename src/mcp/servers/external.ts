@@ -143,11 +143,11 @@ export function createExternalServer(
   getRosieModel?: () => string | undefined,
 ): McpSdkServerConfigWithInstance {
   return createSdkMcpServer({
-    name: "crispy",
+    name: "memory",
     version: "1.0.0",
     tools: [
       tool(
-        "recall",
+        "recall_conversations",
         "Ask a question about your past session history. A dedicated agent searches your sessions, reads conversations, and synthesizes an answer. Use this to remember decisions, find solutions, check what was discussed, or recall context. Works best with detailed natural-language questions — not keyword searches.",
         {
           query: z

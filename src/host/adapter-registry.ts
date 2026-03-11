@@ -204,7 +204,7 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
           { internalServerCommand, internalServerArgs },
           () => getSettingsSnapshotInternal().settings.rosie.summarize.model,
         );
-        return { crispy: server };
+        return { memory: server };
       }
     : undefined;
 

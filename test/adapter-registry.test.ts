@@ -34,7 +34,7 @@ vi.mock('../src/core/settings/index.js', () => ({
 }));
 
 // Mock external MCP server
-const mockExternalServer = { type: 'sdk' as const, name: 'crispy', instance: {} };
+const mockExternalServer = { type: 'sdk' as const, name: 'memory', instance: {} };
 vi.mock('../src/mcp/servers/external.js', () => ({
   createExternalServer: () => mockExternalServer,
 }));

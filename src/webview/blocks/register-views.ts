@@ -215,14 +215,16 @@ for (const toolName of CHROME_TOOL_NAMES) {
 }
 
 // ============================================================================
-// Register Crispy Recall MCP Views
+// Register Recall MCP Views (canonical + backward-compat alias)
 // ============================================================================
 
-registerToolViews('mcp__crispy__recall', {
-  compact: RecallCompactView,
-  expanded: RecallExpandedView,
-  inline: DefaultInlineView,
-});
+for (const name of ['mcp__memory__recall_conversations', 'mcp__crispy__recall']) {
+  registerToolViews(name, {
+    compact: RecallCompactView,
+    expanded: RecallExpandedView,
+    inline: DefaultInlineView,
+  });
+}
 
 // ============================================================================
 // Register ToolSearch Views

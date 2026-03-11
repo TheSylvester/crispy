@@ -1,5 +1,5 @@
 /**
- * Recall Tool Views — custom renderers for mcp__crispy__recall
+ * Recall Tool Views — custom renderers for mcp__memory__recall_conversations
  *
  * - Compact: dot-line with colored "recall" + query + status
  * - Expanded: query in header, cleaned markdown response in body
@@ -17,7 +17,7 @@ import { ToolCard } from './ToolCard.js';
 import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
 import { CompactBlock } from './default-views.js';
 
-const meta = getToolData('mcp__crispy__recall');
+const meta = getToolData('mcp__memory__recall_conversations');
 
 interface RecallInput {
   query?: string;

@@ -55,6 +55,15 @@ interface ToolDefinitionData {
   renderCategory?: RenderCategory;
 }
 
+/** Shared metadata for recall tool entries (canonical + backward-compat alias). */
+const RECALL_TOOL_DATA: ToolDefinitionData = {
+  icon: '\uD83E\uDDE0',
+  color: '#bd93f9',
+  activity: { verb: 'Recalling', pastVerb: 'Recalled' },
+  inspectorDefault: 'compact',
+  renderCategory: 'block',
+};
+
 /**
  * Static metadata for all known tools.
  * Views are registered separately via registerToolViews().
@@ -234,13 +243,8 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
     inspectorDefault: 'compact',
     renderCategory: 'block',
   },
-  'mcp__crispy__recall': {
-    icon: '\uD83E\uDDE0',
-    color: '#bd93f9',
-    activity: { verb: 'Recalling', pastVerb: 'Recalled' },
-    inspectorDefault: 'compact',
-    renderCategory: 'block',
-  },
+  'mcp__memory__recall_conversations': RECALL_TOOL_DATA,
+  'mcp__crispy__recall': RECALL_TOOL_DATA, // backward compat for old transcripts
 
   // Deferred tool loading
   ToolSearch: {

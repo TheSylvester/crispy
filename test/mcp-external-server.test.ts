@@ -18,7 +18,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => {
       for (const t of config.tools) {
         tools.set(t.name, { handler: t.handler });
       }
-      return { type: 'sdk', name: config.name ?? 'crispy' };
+      return { type: 'sdk', name: config.name ?? 'memory' };
     },
     tool: (name: string, _desc: string, _schema: unknown, handler: (args: Record<string, unknown>) => Promise<unknown>) => ({
       name,
@@ -58,7 +58,7 @@ async function getRecallTool() {
   const mod = await import('@anthropic-ai/claude-agent-sdk') as unknown as {
     __getTools: () => Map<string, { handler: (args: Record<string, unknown>) => Promise<unknown> }>;
   };
-  return mod.__getTools().get('recall')!;
+  return mod.__getTools().get('recall_conversations')!;
 }
 
 // ============================================================================
