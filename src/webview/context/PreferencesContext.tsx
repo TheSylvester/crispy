@@ -101,7 +101,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   // Persisted preference — toolPanelAutoOpen only
   // ============================================================================
 
-  const [toolPanelAutoOpen, setToolPanelAutoOpenLocal] = useState(true);
+  const [toolPanelAutoOpen, setToolPanelAutoOpenLocal] = useState(false);
   const [bashBlockInIcons, setBashBlockInIconsLocal] = useState(false);
 
   /** Latest known revision from settings RPC or incoming events. */

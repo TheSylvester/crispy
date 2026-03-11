@@ -208,7 +208,7 @@ export type SettingsPatch = Partial<{
 
 export const DEFAULT_SETTINGS: CrispySettings = {
   preferences: {
-    toolPanelAutoOpen: true,
+    toolPanelAutoOpen: false,
     bashBlockInIcons: false,
   },
   providers: {},
