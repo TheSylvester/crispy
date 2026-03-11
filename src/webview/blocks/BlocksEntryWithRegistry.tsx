@@ -22,8 +22,15 @@ import { normalizeToRichBlocks } from './normalize.js';
 import { ToolBlockRenderer } from './ToolBlockRenderer.js';
 import { BlocksBlockRenderer } from './BlocksBlockRenderer.js';
 import { MessageActions } from '../components/MessageActions.js';
+import { CopyButton } from '../components/CopyButton.js';
+import { serializeAssistantMessage, serializeUserMessage } from '../utils/copy-markdown.js';
 import { usePreferences } from '../context/PreferencesContext.js';
 import { getToolRenderCategory } from './tool-definitions.js';
+
+/** True when any block in the list contains displayable text. */
+function hasTextBlock(blocks: RichBlock[]): boolean {
+  return blocks.some(b => b.type === 'text');
+}
 
 interface BlocksEntryWithRegistryProps {
   entry: TranscriptEntry;
@@ -70,6 +77,8 @@ export function BlocksEntryWithRegistry({
 
   // Fork/rewind only on root-level user messages (no parentToolUseId)
   const showActions = !parentToolUseId && role === 'user' && forkTargetId !== undefined;
+  // Copy button on root-level user and assistant messages with text
+  const showCopy = !parentToolUseId && (role === 'user' || role === 'assistant') && hasTextBlock(blocks);
 
   // When Icons mode is active and we're on the main thread, group tool_use blocks
   // that follow text blocks to render them inline.
@@ -112,6 +121,17 @@ export function BlocksEntryWithRegistry({
       className={`message ${role}`}
       data-uuid={entry.uuid}
     >
+      {/* Copy — sticky float that tracks scroll within long messages */}
+      {showCopy && (
+        <div className="crispy-copy-overlay">
+          <CopyButton
+            getText={() => role === 'user'
+              ? serializeUserMessage(blocks)
+              : serializeAssistantMessage(blocks)}
+            title={role === 'user' ? 'Copy message' : 'Copy response'}
+          />
+        </div>
+      )}
       {useInline
         ? renderWithInlineGrouping(blocks, anchor, registry, siblingCount, isLastEntry)
         : blocks.map((block, i) => {

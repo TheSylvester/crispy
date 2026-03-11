@@ -95,6 +95,24 @@ export function ForkIcon({ className, ...props }: IconProps): React.JSX.Element 
   return <span className={className} {...props}>⑂</span>;
 }
 
+/** Clipboard icon — copy to clipboard action. */
+export function CopyIcon({ className, ...props }: IconProps): React.JSX.Element {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 16 16" fill="currentColor" {...props}>
+      <path d="M4 4v-2a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-2v2a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h1zm1 0h4a1 1 0 0 1 1 1v5h2V2H5v2zm-2 2v7h6V6H3z" />
+    </svg>
+  );
+}
+
+/** Checkmark icon — success/copied feedback. */
+export function CheckIcon({ className, ...props }: IconProps): React.JSX.Element {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 16 16" fill="currentColor" {...props}>
+      <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.75.75 0 0 1 1.06-1.06L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0z" />
+    </svg>
+  );
+}
+
 /** Microphone icon — voice input. */
 export function MicIcon({ className, ...props }: IconProps): React.JSX.Element {
   return (

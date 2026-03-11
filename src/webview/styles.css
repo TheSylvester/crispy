@@ -500,6 +500,7 @@ h2 {
   border-left: none;
   background: transparent;
   margin-bottom: 0;
+  position: relative;
 }
 
 .message.system {
@@ -1520,6 +1521,71 @@ h2 {
 /* Individual action button class — styling inherited from button rules above */
 .crispy-message-action {
   /* styling inherited from .crispy-message-actions button */
+}
+
+/* Copy button base styles */
+.crispy-copy-btn {
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--vscode-descriptionForeground, #858585);
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.crispy-copy-btn:hover {
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-copy-btn--compact {
+  width: 20px;
+  height: 20px;
+}
+
+.crispy-copy-btn--copied {
+  color: var(--vscode-terminal-ansiGreen, #4ec9b0);
+}
+
+/* Copy overlay — sticky float that tracks scroll within long messages.
+   Rendered as the first child of .message so float:right works before content.
+   height:0 + overflow:visible keeps it zero-height in flow. */
+.crispy-copy-overlay {
+  position: sticky;
+  top: 8px;
+  float: right;
+  height: 0;
+  overflow: visible;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.message:hover > .crispy-copy-overlay {
+  opacity: 1;
+}
+
+/* Tool card copy button — hover-reveal on tool wrapper */
+.crispy-blocks-tool {
+  position: relative;
+}
+
+.crispy-tool-copy-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 1;
+}
+
+.crispy-blocks-tool:hover .crispy-tool-copy-btn {
+  opacity: 1;
 }
 
 /* ============================================================================
