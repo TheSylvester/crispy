@@ -27,6 +27,12 @@ import { claudeRegistration } from '../core/adapters/claude/claude-registration.
 import { codexRegistration } from '../core/adapters/codex/codex-registration.js';
 import { opencodeRegistration } from '../core/adapters/opencode/opencode-registration.js';
 
+/** System prompt injected when MCP memory is enabled — nudges the model to use recall. */
+const RECALL_SYSTEM_PROMPT =
+  'You have access to a conversation memory tool: mcp__memory__recall_conversations.' +
+  ' Use it when the user references past conversations, prior decisions, or when context seems missing' +
+  ' — load it via ToolSearch first, then call it with a natural language question.';
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -51,6 +57,8 @@ export interface HostAdapterConfig {
   mcpServerFactory?: () => Record<string, McpServerConfig>;
   /** Agent dispatch for internal consumers (recall agent, Rosie). */
   dispatch?: AgentDispatch;
+  /** Factory that returns the session-level system prompt (or undefined when disabled). */
+  systemPromptFactory?: () => string | undefined;
   /**
    * Absolute path to the extension install directory (VS Code only).
    *
@@ -208,9 +216,15 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
       }
     : undefined;
 
+  // System prompt factory — reads mcpEnabled live (same pattern as mcpServerFactory).
+  const systemPromptFactory = dispatch
+    ? () => mcpEnabled ? RECALL_SYSTEM_PROMPT : undefined
+    : undefined;
+
   const enrichedConfig: HostAdapterConfig = {
     ...config,
     ...(mcpServerFactory && { mcpServerFactory }),
+    ...(systemPromptFactory && { systemPromptFactory }),
   };
 
   if (mcpEnabled && mcpServerFactory) {

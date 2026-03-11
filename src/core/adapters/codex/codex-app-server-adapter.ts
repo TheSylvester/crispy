@@ -317,6 +317,9 @@ export class CodexAgentAdapter implements AgentAdapter {
         if (this.spec.mcpServers && Object.keys(this.spec.mcpServers).length > 0) {
           params.config = { mcp_servers: this.spec.mcpServers };
         }
+        if (this.spec.systemPrompt) {
+          params.developerInstructions = this.spec.systemPrompt;
+        }
 
         response = await this.client.request('thread/start', params);
         break;
@@ -340,6 +343,9 @@ export class CodexAgentAdapter implements AgentAdapter {
         if (this.spec.mcpServers && Object.keys(this.spec.mcpServers).length > 0) {
           forkParams.config = { mcp_servers: this.spec.mcpServers };
         }
+        if (this.spec.systemPrompt) {
+          forkParams.developerInstructions = this.spec.systemPrompt;
+        }
         response = await this.client.request('thread/fork', forkParams);
         break;
       }
@@ -352,6 +358,7 @@ export class CodexAgentAdapter implements AgentAdapter {
           cwd: this.spec.cwd,
           ...(this.spec.model && { model: this.spec.model }),
           ...(this.spec.permissionMode && { approvalPolicy: mapPermissionMode(this.spec.permissionMode) }),
+          ...(this.spec.systemPrompt && { developerInstructions: this.spec.systemPrompt }),
         });
         break;
       }

@@ -528,7 +528,7 @@ export function createSession(
   vendor: Vendor,
   cwd: string,
   subscriber: Subscriber,
-  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string> },
+  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string>; systemPrompt?: string },
   explicitPendingId?: string,
 ): PendingChannelResult {
   if (!adapters.has(vendor)) {
@@ -544,6 +544,7 @@ export function createSession(
     ...(options?.skipPersistSession && { skipPersistSession: true }),
     ...(options?.mcpServers && { mcpServers: options.mcpServers }),
     ...(options?.env && { env: options.env }),
+    ...(options?.systemPrompt && { systemPrompt: options.systemPrompt }),
   };
 
   pushRosieLog({ source: 'session', level: 'info', summary: `Session: creating new (${vendor})`, data: { vendor, cwd } });
@@ -568,6 +569,7 @@ export function createForkSession(
     skipPersistSession?: boolean;
     mcpServers?: Record<string, unknown>;
     env?: Record<string, string>;
+    systemPrompt?: string;
   },
   explicitPendingId?: string,
 ): PendingChannelResult {
@@ -584,6 +586,7 @@ export function createForkSession(
     ...(options?.skipPersistSession && { skipPersistSession: true }),
     ...(options?.mcpServers && { mcpServers: options.mcpServers }),
     ...(options?.env && { env: options.env }),
+    ...(options?.systemPrompt && { systemPrompt: options.systemPrompt }),
   };
 
   pushRosieLog({ source: 'session', level: 'info', summary: `Session: forking from ${fromSessionId} (${vendor})`, data: { vendor, fromSessionId } });
@@ -699,6 +702,7 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
           ...(intent.target.skipPersistSession && { skipPersistSession: true }),
           ...(intent.target.mcpServers && { mcpServers: intent.target.mcpServers }),
           ...(intent.target.env && { env: intent.target.env }),
+          ...(intent.target.systemPrompt && { systemPrompt: intent.target.systemPrompt }),
         },
         pendingId,
       );
@@ -719,6 +723,7 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
           ...(intent.target.skipPersistSession && { skipPersistSession: true }),
           ...(intent.target.mcpServers && { mcpServers: intent.target.mcpServers }),
           ...(intent.target.env && { env: intent.target.env }),
+          ...(intent.target.systemPrompt && { systemPrompt: intent.target.systemPrompt }),
         },
         pendingId,
       );
@@ -738,6 +743,7 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
         ...(intent.settings.model && { model: intent.settings.model }),
         ...(intent.settings.permissionMode && { permissionMode: intent.settings.permissionMode }),
         ...(intent.target.skipPersistSession && { skipPersistSession: true }),
+        ...(intent.target.systemPrompt && { systemPrompt: intent.target.systemPrompt }),
       };
 
       const result = createPendingChannel(intent.target.vendor, spec, subscriber, {

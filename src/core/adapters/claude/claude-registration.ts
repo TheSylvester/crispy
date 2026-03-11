@@ -51,12 +51,18 @@ function buildEphemeralConfig(spec: SessionOpenSpec): Record<string, unknown> {
 function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => AgentAdapter {
   // Build base per-invocation. mcpServerFactory creates fresh MCP server
   // instances each query — avoids the SDK's "already connected" error.
-  const getBase = () => ({
-    ...(config.pathToClaudeCodeExecutable && {
-      pathToClaudeCodeExecutable: config.pathToClaudeCodeExecutable,
-    }),
-    ...(config.mcpServerFactory && { mcpServerFactory: config.mcpServerFactory }),
-  });
+  const getBase = () => {
+    const prompt = config.systemPromptFactory?.();
+    return {
+      ...(config.pathToClaudeCodeExecutable && {
+        pathToClaudeCodeExecutable: config.pathToClaudeCodeExecutable,
+      }),
+      ...(config.mcpServerFactory && { mcpServerFactory: config.mcpServerFactory }),
+      ...(prompt && {
+        systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: prompt },
+      }),
+    };
+  };
 
   return (spec) => {
     switch (spec.mode) {
@@ -75,6 +81,9 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
           ...(spec.skipPersistSession && { skipPersistSession: true }),
           ...(spec.env && { env: spec.env }),
+          ...(spec.systemPrompt && {
+            systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: spec.systemPrompt },
+          }),
           ...buildEphemeralConfig(spec),
         });
       case 'fork':
@@ -85,6 +94,9 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           ...(spec.outputFormat && { outputFormat: spec.outputFormat }),
           ...(spec.model && { model: spec.model }),
           ...(spec.env && { env: spec.env }),
+          ...(spec.systemPrompt && {
+            systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: spec.systemPrompt },
+          }),
           // Structured output forks should complete in a single model response.
           ...(spec.outputFormat && { maxTurns: 1 }),
           ...buildEphemeralConfig(spec),
@@ -96,6 +108,9 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           ...(spec.model && { model: spec.model }),
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
           ...(spec.skipPersistSession && { skipPersistSession: true }),
+          ...(spec.systemPrompt && {
+            systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: spec.systemPrompt },
+          }),
         });
     }
   };
