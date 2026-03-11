@@ -1574,15 +1574,19 @@ h2 {
 
 .crispy-tool-copy-btn {
   position: absolute;
-  top: 2px;
-  right: 2px;
+  bottom: -2px;
+  right: 12px;
+  transform: translateY(100%);
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.15s;
-  z-index: 1;
+  z-index: 10;
 }
 
-.crispy-blocks-tool:hover .crispy-tool-copy-btn {
+.crispy-blocks-tool:hover .crispy-tool-copy-btn,
+.crispy-tool-copy-btn:hover {
   opacity: 1;
+  pointer-events: auto;
 }
 
 /* ============================================================================
@@ -4026,6 +4030,12 @@ h2 {
   max-height: 60vh;
 }
 
+/* Panel: align status checkmark to top of summary row */
+.crispy-tool-panel .crispy-tool-status {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
 /* Panel: first user message in Task children (the prompt echo) — moderate height */
 .crispy-tool-panel .crispy-blocks-task-children > .message.user:first-child .prose {
   max-height: 10em;
@@ -4103,6 +4113,7 @@ h2 {
 .crispy-blocks-tool:hover {
   background: var(--vscode-list-hoverBackground, #2a2d2e);
   border-radius: var(--radius-sm);
+  contain: none;  /* release containment so copy button can overflow below */
 }
 
 /* Panel-active highlight: fuzzy glow on tools currently shown in the tool panel.
