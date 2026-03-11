@@ -191,7 +191,8 @@ const MAX_EMBED_CHARS = 32_000;
  *
  * Reads messages from the DB (must already be FTS5-indexed), embeds each
  * with Nomic Embed Code, quantizes to q8, and batch-inserts into
- * message_vectors. Skips messages that already have vectors unless force.
+ * message_vectors. Only embeds messages that don't have vectors yet
+ * (incremental), unless force is set to re-embed everything.
  *
  * The embedding model is lazy-loaded on first call (~2-10s). Subsequent
  * calls reuse the cached model (~200ms/msg on CPU).
@@ -206,20 +207,14 @@ export async function embedSessionMessages(
 ): Promise<number> {
   const d = getDb(dbPath());
 
-  // Skip if already embedded (unless force)
-  if (!force) {
-    const existing = d.get(
-      `SELECT 1 FROM message_vectors mv
-       JOIN messages m ON m.message_id = mv.message_id
-       WHERE m.session_id = ? LIMIT 1`,
-      [sessionId],
-    );
-    if (existing) return 0;
-  }
-
-  // Read messages for this session
+  // Only fetch messages that don't have vectors yet (unless force)
   const rows = d.all(
-    `SELECT message_id, message_text FROM messages WHERE session_id = ? ORDER BY message_seq ASC`,
+    force
+      ? `SELECT message_id, message_text FROM messages WHERE session_id = ? ORDER BY message_seq ASC`
+      : `SELECT m.message_id, m.message_text FROM messages m
+         WHERE m.session_id = ?
+           AND m.message_id NOT IN (SELECT mv.message_id FROM message_vectors mv)
+         ORDER BY m.message_seq ASC`,
     [sessionId],
   ) as Array<Record<string, unknown>>;
 
