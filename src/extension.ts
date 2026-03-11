@@ -6,7 +6,7 @@
 
 import * as vscode from 'vscode';
 import { initSettings, startWatchingSettings, stopWatchingSettings } from './core/settings/index.js';
-import { openCrispyPanel, getOrCreatePanelForPrefill, getMostRecentPanel } from './host/webview-host.js';
+import { openCrispyPanel, getOrCreatePanelForPrefill, getMostRecentPanel, getActivePanel } from './host/webview-host.js';
 import { startRescan, stopRescan } from './core/session-list-manager.js';
 import { findClaudeBinary } from './core/find-claude-binary.js';
 import { registerAllAdapters, resolveInternalServerPaths } from './host/adapter-registry.js';
@@ -60,7 +60,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }, 100);
     }),
     vscode.commands.registerCommand('crispy.toggleVoiceInput', () => {
-      const panel = getMostRecentPanel();
+      const panel = getActivePanel();
       if (panel) {
         panel.webview.postMessage({ kind: 'toggleVoiceInput' });
       }

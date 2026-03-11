@@ -137,7 +137,7 @@
         "command": "crispy.toggleVoiceInput",
         "key": "ctrl+shift+space",
         "mac": "cmd+shift+space",
-        "when": "activeWebviewPanelId == 'crispy'"
+        "when": "activeWebviewPanelId == 'crispy' && webviewFocus"
       }
     ],
     "menus": {

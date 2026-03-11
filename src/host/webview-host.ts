@@ -39,6 +39,16 @@ export function getMostRecentPanel(): vscode.WebviewPanel | undefined {
 }
 
 /**
+ * Get the currently focused (active) panel, if any.
+ */
+export function getActivePanel(): vscode.WebviewPanel | undefined {
+  for (const panel of panels.values()) {
+    if (panel.active) return panel;
+  }
+  return undefined;
+}
+
+/**
  * Create a new panel for "Execute in Crispy".
  * Always creates a fresh panel so the current session is not overwritten.
  * If a panel already exists, opens beside it; otherwise uses column one.
