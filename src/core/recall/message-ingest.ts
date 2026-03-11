@@ -186,6 +186,11 @@ export async function ingestSessionMessages(
 /** Max characters to embed per message (Nomic has 8192 token limit, ~4 chars/token). */
 const MAX_EMBED_CHARS = 32_000;
 
+/** Max messages to embed per hook invocation. Keeps memory bounded on large
+ *  sessions (e.g. forks that inherit 100+ messages). Remainder catches up
+ *  on subsequent turns. */
+const MAX_EMBED_BATCH = 20;
+
 /**
  * Embed a session's indexed messages into q8 vectors for semantic search.
  *
@@ -228,6 +233,11 @@ export async function embedSessionMessages(
     });
   }
   if (validRows.length === 0) return 0;
+
+  // Cap batch size to avoid memory spikes (rest catches up on next turn)
+  if (validRows.length > MAX_EMBED_BATCH) {
+    validRows.length = MAX_EMBED_BATCH;
+  }
 
   // Lazy-load embedding modules
   const { embedBatch } = await import('./embedder.js');
