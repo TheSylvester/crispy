@@ -57,9 +57,9 @@ describe('sanitizeFts5Query', () => {
     expect(result).not.toContain(']');
   });
 
-  it('falls back to quoted-AND for multiple words without operators', () => {
+  it('falls back to quoted-OR for multiple words without operators', () => {
     const result = sanitizeFts5Query('rosie bot sessions');
-    expect(result).toBe('"rosie" "bot" "sessions"');
+    expect(result).toBe('"rosie" OR "bot" OR "sessions"');
   });
 
   it('handles single word with special chars', () => {

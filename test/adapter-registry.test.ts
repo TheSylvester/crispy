@@ -51,6 +51,9 @@ vi.mock('../src/core/adapters/claude/claude-registration.js', () => ({
 vi.mock('../src/core/adapters/codex/codex-registration.js', () => ({
   codexRegistration: null,  // replaced in tests
 }));
+vi.mock('../src/core/adapters/opencode/opencode-registration.js', () => ({
+  opencodeRegistration: null,  // replaced in tests
+}));
 
 // ============================================================================
 // Helpers
@@ -105,6 +108,9 @@ function applyInfraMocks() {
   vi.doMock('../src/core/adapters/claude/claude-code-adapter.js', () => ({
     ClaudeAgentAdapter: class {},
   }));
+  vi.doMock('../src/core/adapters/opencode/opencode-registration.js', () => ({
+    opencodeRegistration: createMockRegistration('opencode', false),
+  }));
 }
 
 function createMockRegistration(
@@ -142,6 +148,7 @@ describe('registerAllAdapters', () => {
   it('registers adapters where available() returns true', async () => {
     const claude = createMockRegistration('claude', true);
     const codex = createMockRegistration('codex', true);
+    const opencode = createMockRegistration('opencode', true);
 
     vi.resetModules();
     applyInfraMocks();
@@ -150,6 +157,9 @@ describe('registerAllAdapters', () => {
     }));
     vi.doMock('../src/core/adapters/codex/codex-registration.js', () => ({
       codexRegistration: codex,
+    }));
+    vi.doMock('../src/core/adapters/opencode/opencode-registration.js', () => ({
+      opencodeRegistration: opencode,
     }));
 
     const freshMod = await import('../src/host/adapter-registry.js');
@@ -161,7 +171,7 @@ describe('registerAllAdapters', () => {
     expect(codex.available).toHaveBeenCalledWith(expect.objectContaining({ cwd: config.cwd, hostType: config.hostType }));
     expect(claude.createFactory).toHaveBeenCalledWith(expect.objectContaining({ cwd: config.cwd, hostType: config.hostType }));
     expect(codex.createFactory).toHaveBeenCalledWith(expect.objectContaining({ cwd: config.cwd, hostType: config.hostType }));
-    expect(mockRegisterAdapter).toHaveBeenCalledTimes(2);
+    expect(mockRegisterAdapter).toHaveBeenCalledTimes(3);
   });
 
   it('skips adapters where available() returns false', async () => {
@@ -175,6 +185,9 @@ describe('registerAllAdapters', () => {
     }));
     vi.doMock('../src/core/adapters/codex/codex-registration.js', () => ({
       codexRegistration: codex,
+    }));
+    vi.doMock('../src/core/adapters/opencode/opencode-registration.js', () => ({
+      opencodeRegistration: createMockRegistration('opencode', false),
     }));
 
     const freshMod = await import('../src/host/adapter-registry.js');
@@ -207,6 +220,9 @@ describe('registerAllAdapters', () => {
     vi.doMock('../src/core/adapters/codex/codex-registration.js', () => ({
       codexRegistration: createMockRegistration('codex', false),
     }));
+    vi.doMock('../src/core/adapters/opencode/opencode-registration.js', () => ({
+      opencodeRegistration: createMockRegistration('opencode', false),
+    }));
 
     const freshMod = await import('../src/host/adapter-registry.js');
     const config: HostAdapterConfig = {
@@ -225,6 +241,7 @@ describe('registerAllAdapters', () => {
   it('returns dispose function that calls unregisterAdapter for each registered vendor', async () => {
     const claude = createMockRegistration('claude', true);
     const codex = createMockRegistration('codex', true);
+    const opencode = createMockRegistration('opencode', true);
 
     vi.resetModules();
     applyInfraMocks();
@@ -233,6 +250,9 @@ describe('registerAllAdapters', () => {
     }));
     vi.doMock('../src/core/adapters/codex/codex-registration.js', () => ({
       codexRegistration: codex,
+    }));
+    vi.doMock('../src/core/adapters/opencode/opencode-registration.js', () => ({
+      opencodeRegistration: opencode,
     }));
 
     const freshMod = await import('../src/host/adapter-registry.js');
@@ -244,9 +264,10 @@ describe('registerAllAdapters', () => {
 
     dispose();
 
-    expect(mockUnregisterAdapter).toHaveBeenCalledTimes(2);
+    expect(mockUnregisterAdapter).toHaveBeenCalledTimes(3);
     expect(mockUnregisterAdapter).toHaveBeenCalledWith('claude');
     expect(mockUnregisterAdapter).toHaveBeenCalledWith('codex');
+    expect(mockUnregisterAdapter).toHaveBeenCalledWith('opencode');
   });
 
   it('dispose is safe to call twice (no-op on second call)', async () => {
@@ -259,6 +280,9 @@ describe('registerAllAdapters', () => {
     }));
     vi.doMock('../src/core/adapters/codex/codex-registration.js', () => ({
       codexRegistration: createMockRegistration('codex', false),
+    }));
+    vi.doMock('../src/core/adapters/opencode/opencode-registration.js', () => ({
+      opencodeRegistration: createMockRegistration('opencode', false),
     }));
 
     const freshMod = await import('../src/host/adapter-registry.js');
@@ -286,6 +310,9 @@ describe('registerAllAdapters', () => {
     vi.doMock('../src/core/adapters/codex/codex-registration.js', () => ({
       codexRegistration: codex,
     }));
+    vi.doMock('../src/core/adapters/opencode/opencode-registration.js', () => ({
+      opencodeRegistration: createMockRegistration('opencode', true),
+    }));
 
     const freshMod = await import('../src/host/adapter-registry.js');
     const config: HostAdapterConfig = { cwd: '/test', hostType: 'dev-server' as const, dispatch: createMockDispatch() as never };
@@ -311,6 +338,9 @@ describe('registerAllAdapters', () => {
     vi.doMock('../src/core/adapters/codex/codex-registration.js', () => ({
       codexRegistration: codex,
     }));
+    vi.doMock('../src/core/adapters/opencode/opencode-registration.js', () => ({
+      opencodeRegistration: createMockRegistration('opencode', false),
+    }));
 
     const freshMod = await import('../src/host/adapter-registry.js');
     const config: HostAdapterConfig = { cwd: '/test', hostType: 'dev-server' as const, dispatch: createMockDispatch() as never };
@@ -334,6 +364,9 @@ describe('registerAllAdapters', () => {
     }));
     vi.doMock('../src/core/adapters/codex/codex-registration.js', () => ({
       codexRegistration: createMockRegistration('codex', false),
+    }));
+    vi.doMock('../src/core/adapters/opencode/opencode-registration.js', () => ({
+      opencodeRegistration: createMockRegistration('opencode', false),
     }));
 
     const freshMod = await import('../src/host/adapter-registry.js');

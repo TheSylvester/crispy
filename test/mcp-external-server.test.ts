@@ -80,13 +80,13 @@ describe('external MCP server — recall tool (relay pattern)', () => {
     expect(server).toBeDefined();
   });
 
-  it('dispatches child with stdio MCP tools and 120s timeout', async () => {
+  it('dispatches child with stdio MCP tools and 180s timeout', async () => {
     const mockResult: ChildSessionResult = {
       sessionId: 'child-123',
       text: 'You worked on JWT authentication in the Auth System session.',
     };
     const dispatch = createMockDispatch(mockResult);
-    createExternalServer(dispatch, () => 'session-abc', stubServerPaths);
+    createExternalServer(dispatch, () => ({ sessionId: 'session-abc', vendor: 'claude' }), stubServerPaths);
 
     const recallTool = await getRecallTool();
     const result = await recallTool.handler({ query: 'authentication' });
@@ -104,7 +104,7 @@ describe('external MCP server — recall tool (relay pattern)', () => {
     expect(callArgs.forceNew).toBe(true);
     expect(callArgs.skipPersistSession).toBe(true);
     expect(callArgs.autoClose).toBe(true);
-    expect(callArgs.timeoutMs).toBe(120_000);
+    expect(callArgs.timeoutMs).toBe(180_000);
 
     // MCP servers attached — child can call search tools
     expect(callArgs.mcpServers).toBeDefined();
@@ -113,13 +113,13 @@ describe('external MCP server — recall tool (relay pattern)', () => {
 
     // Env: bypass nested guard + extended MCP timeout
     expect(callArgs.env.CLAUDECODE).toBe('');
-    expect(callArgs.env.CLAUDE_CODE_STREAM_CLOSE_TIMEOUT).toBe('120000');
+    expect(callArgs.env.CLAUDE_CODE_STREAM_CLOSE_TIMEOUT).toBe('180000');
 
     // Prompt tells child to use MCP tools (not pre-fetched data)
     const promptText = callArgs.prompt[0].text;
     expect(promptText).toContain('authentication');
-    expect(promptText).toContain('search_sessions');
-    expect(promptText).toContain('session_context');
+    expect(promptText).toContain('search_transcript');
+    expect(promptText).toContain('read_message');
 
     // Result passes through
     const content = (result as { content: Array<{ text: string }> }).content;
@@ -138,7 +138,7 @@ describe('external MCP server — recall tool (relay pattern)', () => {
 
   it('returns timeout message when dispatch returns null', async () => {
     const dispatch = createMockDispatch(null);
-    createExternalServer(dispatch, () => 'session-123', stubServerPaths);
+    createExternalServer(dispatch, () => ({ sessionId: 'session-123', vendor: 'claude' }), stubServerPaths);
 
     const recallTool = await getRecallTool();
     const result = await recallTool.handler({ query: 'anything' });
