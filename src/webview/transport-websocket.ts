@@ -95,13 +95,13 @@ export function createWebSocketTransport(url: string): SessionService {
     }
   }
 
-  function request<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+  function request<T>(method: string, params?: Record<string, unknown>, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const id = nextId();
       const timer = setTimeout(() => {
         pending.delete(id);
-        reject(new Error(`Request "${method}" timed out after ${REQUEST_TIMEOUT_MS}ms`));
-      }, REQUEST_TIMEOUT_MS);
+        reject(new Error(`Request "${method}" timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
 
       pending.set(id, {
         resolve: resolve as (result: unknown) => void,
@@ -187,7 +187,8 @@ export function createWebSocketTransport(url: string): SessionService {
     transcribeAudio: (pcmFloat32, sampleRate) => {
       const audioBase64 = float32ToBase64(pcmFloat32);
       console.log(`[Voice] transport: sending transcribeAudio RPC, ${pcmFloat32.length} samples, base64 length: ${audioBase64.length}`);
-      return request<{ text: string }>('transcribeAudio', { audioBase64, sampleRate });
+      // 120s timeout: first-run model download can take 60s+
+      return request<{ text: string }>('transcribeAudio', { audioBase64, sampleRate }, 120_000);
     },
 
     onEvent(handler) {

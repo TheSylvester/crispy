@@ -10,11 +10,11 @@
  * @module voice/vad
  */
 
-import * as ort from 'onnxruntime-node';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { pushRosieLog } from '../rosie/index.js';
+import { importOptionalModule } from './optional-import.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,7 +31,10 @@ export interface SpeechSegment {
 // Module-level state
 // ---------------------------------------------------------------------------
 
-let session: ort.InferenceSession | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- onnxruntime-node is optional
+let ort: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let session: any = null;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -90,6 +93,7 @@ export async function initVAD(): Promise<void> {
   if (session) return;
 
   try {
+    ort = await importOptionalModule('onnxruntime-node');
     const modelPath = await downloadModel();
     session = await ort.InferenceSession.create(modelPath);
 
@@ -123,7 +127,8 @@ export async function runVAD(audio: Float32Array): Promise<SpeechSegment[]> {
   let silenceSamples = 0;
 
   // Silero VAD internal state: combined h+c tensor [2, 1, 128] and sr tensor.
-  let state: ort.Tensor = new ort.Tensor('float32', new Float32Array(256), [2, 1, 128]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let state: any = new ort.Tensor('float32', new Float32Array(256), [2, 1, 128]);
   const sr = new ort.Tensor('int64', BigInt64Array.from([BigInt(SAMPLE_RATE)]), [1]);
 
   const totalChunks = Math.floor(audio.length / CHUNK_SIZE);
@@ -140,7 +145,7 @@ export async function runVAD(audio: Float32Array): Promise<SpeechSegment[]> {
 
     const inputTensor = new ort.Tensor('float32', chunk, [1, chunk.length]);
 
-    const feeds: Record<string, ort.Tensor> = { input: inputTensor, sr, state };
+    const feeds: Record<string, unknown> = { input: inputTensor, sr, state };
     const result = await session.run(feeds);
 
     const prob = (result.output.data as Float32Array)[0];

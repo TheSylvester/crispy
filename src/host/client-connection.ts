@@ -61,7 +61,7 @@ import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-rea
 // Voice module is lazy-loaded to avoid pulling onnxruntime-node native bindings
 // at extension activation time (crashes VS Code's Electron host).
 // import { transcribeAudio } from '../core/voice/index.js'; // <-- lazy below
-import { startCapture, stopCapture, cleanupOrphanedVoiceFiles } from './audio-capture.js';
+import { startCapture, stopCapture, cancelCapture, cleanupOrphanedVoiceFiles } from './audio-capture.js';
 
 // Clean up any orphaned voice temp files from previous sessions on module load.
 cleanupOrphanedVoiceFiles();
@@ -599,9 +599,6 @@ export function createClientConnection(
 
       case "stopVoiceCapture": {
         const captured = await stopCapture();
-        if (!captured) {
-          return { text: '' };
-        }
 
         pushRosieLog({
           source: 'voice',
@@ -626,6 +623,7 @@ export function createClientConnection(
 
   function dispose(): void {
     disposed = true;
+    cancelCapture(); // idempotent — no-ops if not recording
     settingsUnsub();
     if (sessionListSub) {
       unsubscribeSessionList(sessionListSub);

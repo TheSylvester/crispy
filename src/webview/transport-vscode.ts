@@ -147,7 +147,8 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
 
     transcribeAudio: (pcmFloat32, sampleRate) => {
       const audioBase64 = float32ToBase64(pcmFloat32);
-      return request<{ text: string }>('transcribeAudio', { audioBase64, sampleRate });
+      // 120s timeout: first-run model download can take 60s+
+      return request<{ text: string }>('transcribeAudio', { audioBase64, sampleRate }, 120_000);
     },
 
     startVoiceCapture: () => request<void>('startVoiceCapture'),

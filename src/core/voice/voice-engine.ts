@@ -19,6 +19,7 @@
 // pulling onnxruntime-node native bindings at import time (crashes VS Code's
 // Electron extension host). See ensureModels().
 import { pushRosieLog } from '../rosie/index.js';
+import { VoiceUnavailableError } from './optional-import.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -158,13 +159,8 @@ async function ensureModels(): Promise<void> {
           summary: 'Initialising voice pipeline (VAD + STT)...',
         });
 
-        // Configure @huggingface/transformers WASM proxy (safe for Node).
-        const { env } = await import('@huggingface/transformers');
-        if (env.backends.onnx.wasm) {
-          env.backends.onnx.wasm.proxy = false;
-        }
-
         // Lazy-import sub-modules (pulls onnxruntime-node).
+        // HF env configuration is handled inside stt.ts's initSTT().
         const [vadMod, sttMod] = await Promise.all([
           import('./vad.js'),
           import('./stt.js'),
@@ -190,13 +186,16 @@ async function ensureModels(): Promise<void> {
         loading = null;
 
         const msg = err instanceof Error ? err.message : String(err);
+        const isUnavailable = err instanceof VoiceUnavailableError;
         const isGlibc = msg.includes('GLIBC');
         pushRosieLog({
           source: 'voice',
           level: 'error',
-          summary: isGlibc
-            ? 'Voice requires GLIBC ≥ 2.33. Snap-packaged VS Code ships GLIBC 2.31 — install VS Code via .deb instead (apt install code).'
-            : 'Voice pipeline initialisation failed',
+          summary: isUnavailable
+            ? err.message
+            : isGlibc
+              ? 'Voice requires GLIBC ≥ 2.33. Snap-packaged VS Code ships GLIBC 2.31 — install VS Code via .deb instead (apt install code).'
+              : 'Voice pipeline initialisation failed',
           data: err,
         });
         throw err;

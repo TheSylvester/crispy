@@ -64,6 +64,9 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
   const optionsRef = useRef(options);
   optionsRef.current = options;
 
+  // ---------- Double-click guard ----------
+  const actionInFlightRef = useRef(false);
+
   // ---------- Browser capture refs (unused in host mode) ----------
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -106,6 +109,7 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
     if (!hostCapture) return;
 
     console.log('[Voice] startHostRecording: delegating to extension host...');
+    actionInFlightRef.current = true;
     try {
       await hostCapture.start();
       setState('recording');
@@ -114,6 +118,8 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
       const message = err instanceof Error ? err.message : 'Failed to start host recording';
       console.error('[Voice] startHostRecording error:', err);
       optionsRef.current.onError?.(message);
+    } finally {
+      actionInFlightRef.current = false;
     }
   }, []);
 
@@ -123,6 +129,7 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
 
     console.log('[Voice] stopHostAndTranscribe: stopping host capture...');
     setState('transcribing');
+    actionInFlightRef.current = true;
 
     try {
       const { text } = await hostCapture.stop();
@@ -137,6 +144,7 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
       console.error('[Voice] host transcription error:', err);
       optionsRef.current.onError?.(message);
     } finally {
+      actionInFlightRef.current = false;
       setState('idle');
     }
   }, []);
@@ -150,6 +158,7 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
    */
   const startBrowserRecording = useCallback(async () => {
     console.log('[Voice] startBrowserRecording: requesting getUserMedia...');
+    actionInFlightRef.current = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       console.log('[Voice] getUserMedia granted, tracks:', stream.getAudioTracks().map(t => `${t.label} (${t.readyState})`));
@@ -194,6 +203,8 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
             : 'Failed to start recording';
       console.error('[Voice] startBrowserRecording error:', err);
       optionsRef.current.onError?.(message);
+    } finally {
+      actionInFlightRef.current = false;
     }
   }, []);
 
@@ -218,6 +229,7 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
 
     console.log(`[Voice] sending ${pcm.length} samples (${(pcm.length / sampleRate).toFixed(1)}s) to host for transcription...`);
     setState('transcribing');
+    actionInFlightRef.current = true;
 
     try {
       const { text } = await optionsRef.current.transcribe(pcm, sampleRate);
@@ -232,6 +244,7 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
       console.error('[Voice] transcription error:', err);
       optionsRef.current.onError?.(message);
     } finally {
+      actionInFlightRef.current = false;
       setState('idle');
     }
   }, [teardown]);
@@ -241,6 +254,8 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
   // ================================================================
 
   const toggle = useCallback(() => {
+    if (actionInFlightRef.current) return; // guard against double-click race
+
     const useHost = !!optionsRef.current.hostCapture;
     console.log(`[Voice] toggle called, current state: ${state}, mode: ${useHost ? 'host' : 'browser'}`);
 
