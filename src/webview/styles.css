@@ -1523,6 +1523,15 @@ h2 {
   /* styling inherited from .crispy-message-actions button */
 }
 
+/* Copy button within message actions — align with other action buttons */
+.message.user .crispy-message-actions .crispy-copy-btn {
+  width: auto;
+  height: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Copy button base styles */
 .crispy-copy-btn {
   padding: 0;
@@ -1574,9 +1583,9 @@ h2 {
 
 .crispy-tool-copy-btn {
   position: absolute;
-  bottom: -2px;
+  bottom: 0;
   right: 12px;
-  transform: translateY(100%);
+  transform: translateY(20%);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s;
@@ -4205,6 +4214,7 @@ h2 {
 .crispy-blocks-tool-body {
   padding-left: 20px;
   padding-right: 2px;
+  padding-bottom: 16px;
   min-width: 0;
   overflow: hidden;
 }

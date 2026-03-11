@@ -80,8 +80,8 @@ export function BlocksEntry({
   // Get role for message class
   const role = blocks[0]?.context.role ?? 'unknown';
 
-  // Show fork/rewind on user messages (unchanged from before)
-  const showActions = role === 'user' && forkTargetId !== undefined;
+  // Show fork/rewind on user messages only (not tool_results with role='user')
+  const showActions = role === 'user' && entry.type === 'user' && forkTargetId !== undefined;
   // Copy overlay on assistant messages with text (user copy lives in MessageActions)
   const showCopy = role === 'assistant' && hasTextBlock(blocks);
   // Copy getText for user messages — passed into MessageActions

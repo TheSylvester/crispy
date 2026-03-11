@@ -75,8 +75,8 @@ export function BlocksEntryWithRegistry({
   // Get role for message class
   const role = blocks[0]?.context.role ?? 'unknown';
 
-  // Fork/rewind only on root-level user messages (no parentToolUseId)
-  const showActions = !parentToolUseId && role === 'user' && forkTargetId !== undefined;
+  // Fork/rewind only on root-level user messages (no parentToolUseId, actual user type)
+  const showActions = !parentToolUseId && role === 'user' && entry.type === 'user' && forkTargetId !== undefined;
   // Copy overlay on root-level assistant messages with text (user copy lives in MessageActions)
   const showCopy = !parentToolUseId && role === 'assistant' && hasTextBlock(blocks);
   // Copy getText for user messages — passed into MessageActions
