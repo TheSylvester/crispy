@@ -27,6 +27,7 @@ vi.mock('../src/mcp/memory-queries.js', async (importOriginal) => {
 });
 
 import { createInternalServer } from '../src/mcp/servers/internal.js';
+import type { InternalServerOptions } from '../src/mcp/servers/internal.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 
@@ -68,8 +69,8 @@ function insertEntry(opts: {
   );
 }
 
-async function createConnectedClient() {
-  const server = createInternalServer();
+async function createConnectedClient(options?: InternalServerOptions) {
+  const server = createInternalServer(options);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
   const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -164,5 +165,74 @@ describe('internal MCP server', () => {
     expect(parsed.count).toBe(2);
     expect(parsed.entries[0].kind).toBe('prompt');
     expect(parsed.entries[1].kind).toBe('rosie-meta');
+  });
+});
+
+// ============================================================================
+// Time-aware tool responses
+// ============================================================================
+
+describe('time-aware tool responses', () => {
+  it('no footer during clean search phase (>30s remaining)', async () => {
+    insertEntry({
+      timestamp: '2025-06-01T10:00:00Z',
+      kind: 'rosie-meta',
+      file: '/sessions/a.jsonl',
+      quest: 'test query',
+      title: 'Test',
+    });
+
+    // Deadline 60s from now — clean phase, no footer
+    const { client } = await createConnectedClient({ deadlineMs: Date.now() + 60_000 });
+    const result = await client.callTool({ name: 'search_sessions', arguments: { query: 'test' } });
+
+    const content = result.content as Array<{ type: string; text: string }>;
+    expect(content).toHaveLength(1);
+    expect(() => JSON.parse(content[0]!.text)).not.toThrow();
+  });
+
+  it('returns isError when deadline has passed', async () => {
+    // Deadline in the past
+    const { client } = await createConnectedClient({ deadlineMs: Date.now() - 1000 });
+    const result = await client.callTool({ name: 'search_sessions', arguments: { query: 'test' } });
+
+    expect(result.isError).toBe(true);
+    const content = result.content as Array<{ type: string; text: string }>;
+    expect(content[0]!.text).toContain('TIME\'S UP');
+  });
+
+  it('no footer when deadlineMs is not set', async () => {
+    insertEntry({
+      timestamp: '2025-06-01T10:00:00Z',
+      kind: 'rosie-meta',
+      file: '/sessions/a.jsonl',
+      quest: 'test query',
+      title: 'Test',
+    });
+
+    const { client } = await createConnectedClient();
+    const result = await client.callTool({ name: 'search_sessions', arguments: { query: 'test' } });
+
+    const content = result.content as Array<{ type: string; text: string }>;
+    expect(content).toHaveLength(1);
+    expect(() => JSON.parse(content[0]!.text)).not.toThrow();
+  });
+
+  it('shows time warning when deadline is close', async () => {
+    insertEntry({
+      timestamp: '2025-06-01T10:00:00Z',
+      kind: 'rosie-meta',
+      file: '/sessions/a.jsonl',
+      quest: 'warning test',
+      title: 'Test',
+    });
+
+    // Deadline 20s from now — should show warning
+    const { client } = await createConnectedClient({ deadlineMs: Date.now() + 20_000 });
+    const result = await client.callTool({ name: 'search_sessions', arguments: { query: 'warning' } });
+
+    const content = result.content as Array<{ type: string; text: string }>;
+    expect(content).toHaveLength(2);
+    expect(content[1]!.text).toMatch(/\[TIME WARNING\]/);
   });
 });

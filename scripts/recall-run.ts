@@ -147,6 +147,7 @@ async function main(): Promise<void> {
   const model = modelName || undefined;
   const serverPaths = resolveInternalServerPaths();
   const projectArgs = opts.projectId ? [`--project-id=${opts.projectId}`] : [];
+  const deadlineMs = Date.now() + Math.max(0, Math.floor((opts.timeout * 1000) * 2 / 3));
 
   // Build prompt
   let prompt: string | Array<{ type: 'text'; text: string }>;
@@ -193,7 +194,7 @@ async function main(): Promise<void> {
         allowDangerouslySkipPermissions: true,
       },
       forceNew: true,
-      mcpServers: buildInternalMcpConfig(serverPaths.command, serverPaths.args, projectArgs),
+      mcpServers: buildInternalMcpConfig(serverPaths.command, serverPaths.args, [...projectArgs, `--deadline-ms=${deadlineMs}`]),
       env: {
         CLAUDECODE: '',
         CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: String(opts.timeout * 1000),

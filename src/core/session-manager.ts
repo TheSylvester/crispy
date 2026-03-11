@@ -911,7 +911,12 @@ export async function dispatchChildSession(
         console.warn(`[child-session] Timeout after ${timeoutMs}ms — no idle event received (parent: ${parentSessionId}, vendor: ${vendor}) — ${parts.join(' | ')}`);
         settled = true;
         cleanup();
-        resolve(null);
+        if (text) {
+          console.warn(`[child-session] Timeout with partial text (${text.length} chars) -- returning partial result (parent: ${parentSessionId}, vendor: ${vendor})`);
+          resolve({ sessionId: currentId, text, structured });
+        } else {
+          resolve(null);
+        }
       }
     }, timeoutMs);
 
