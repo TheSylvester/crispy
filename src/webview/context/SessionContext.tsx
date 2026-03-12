@@ -252,7 +252,7 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     return { found: false };
   }, [transport]);
 
-  const value: SessionContextValue = {
+  const value: SessionContextValue = useMemo(() => ({
     sessions,
     selectedSessionId,
     selectedCwd,
@@ -265,7 +265,20 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     availableVendors,
     workspaceCwdPath,
     sessionStatuses,
-  };
+  }), [
+    sessions,
+    selectedSessionId,
+    selectedCwd,
+    isLoading,
+    error,
+    setSelectedSessionId,
+    setSelectedCwd,
+    loadSessions,
+    findAndSelectSession,
+    availableVendors,
+    workspaceCwdPath,
+    sessionStatuses,
+  ]);
 
   return (
     <SessionContext.Provider value={value}>

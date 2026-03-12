@@ -12,10 +12,16 @@
  * BlocksToolRegistryProvider (it doesn't need registry data). PlaybackControls
  * are gated behind the debugMode preference (toggleable in Settings).
  *
+ * Control-panel-specific state (bypassEnabled, prefillInput, pendingAgencyMode,
+ * hasForkHistory, agencyMode) lives in ControlPanelContext — not here. This
+ * prevents transcript entry re-renders when those values change. Only
+ * `hasForkHistory` is read here (for the WelcomePage conditional), and it
+ * changes at most once per fork flow.
+ *
  * @module TranscriptViewer
  */
 
-import { useRef, useState, useEffect, useCallback, useMemo } from "react";
+import { useRef, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "../context/SessionContext.js";
 import { usePreferences } from "../context/PreferencesContext.js";
 import { useTranscript } from "../hooks/useTranscript.js";
@@ -30,7 +36,6 @@ import { ForkProvider } from "../context/ForkContext.js";
 import { ControlPanel } from "./control-panel/index.js";
 import { RenderLocationProvider } from "../context/RenderLocationContext.js";
 import { mapPermissionModeToAgency } from './control-panel/types.js';
-import type { AgencyMode } from './control-panel/types.js';
 import { StopButton } from "./control-panel/StopButton.js";
 import { ThinkingIndicator } from "./ThinkingIndicator.js";
 import { ApprovalContent } from "./approval/index.js";
@@ -39,7 +44,6 @@ import { constructExitPlanHandoffPrompt } from "./approval/approval-utils.js";
 import { useTransport } from "../context/TransportContext.js";
 import { useSessionStatus } from "../hooks/useSessionStatus.js";
 import type { ApprovalExtra } from "./approval/types.js";
-import type { TranscriptEntry } from "../../core/transcript.js";
 import { WelcomePage } from "./WelcomePage.js";
 import { useStreamingContent } from "../hooks/useStreamingContent.js";
 import { StreamingGhost } from "./StreamingGhost.js";
@@ -53,8 +57,31 @@ import { BlocksToolPanel } from "../blocks/BlocksToolPanel.js";
 import { FilePanel } from "./file-panel/FilePanel.js";
 import { FileViewerModal } from "./file-panel/FileViewerModal.js";
 import { useFilePanel } from "../context/FilePanelContext.js";
+import { useControlPanel } from "../context/ControlPanelContext.js";
 
 // Debug mode now lives in PreferencesContext (default: on during development).
+
+/**
+ * ApprovalBridge — reads bypassEnabled from ControlPanelContext so
+ * TranscriptViewer doesn't need to, preventing transcript re-renders
+ * when bypass state changes.
+ */
+function ApprovalBridge({
+  request,
+  onResolve,
+}: {
+  request: NonNullable<ReturnType<typeof useApprovalRequest>['approvalRequest']>;
+  onResolve: (optionId: string, extra?: ApprovalExtra & { clearContext?: boolean; planContent?: string }) => void;
+}): React.JSX.Element {
+  const { bypassEnabled } = useControlPanel();
+  return (
+    <ApprovalContent
+      request={request}
+      onResolve={onResolve}
+      bypassEnabled={bypassEnabled}
+    />
+  );
+}
 
 export function TranscriptViewer(): React.JSX.Element {
   const { selectedSessionId, setSelectedSessionId } = useSession();
@@ -65,9 +92,23 @@ export function TranscriptViewer(): React.JSX.Element {
   useToolPanelAutoOpen(entries);
   const { approvalRequest, resolve: resolveApproval } = useApprovalRequest(selectedSessionId);
   const streamingContent = useStreamingContent();
-  const [bypassEnabled, setBypassEnabled] = useState(false);
-  const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean } | null>(null);
-  const [pendingAgencyMode, setPendingAgencyMode] = useState<{ agencyMode: AgencyMode; bypassEnabled: boolean } | null>(null);
+
+  // Read only hasForkHistory from context — it changes at most once per fork
+  // flow and is needed for the WelcomePage conditional branch. All other
+  // control-panel state is accessed via refs to avoid re-rendering the
+  // transcript when those values change.
+  const cpCtx = useControlPanel();
+  const { hasForkHistory } = cpCtx;
+
+  // Stable ref to context for use in callbacks (no re-render on changes)
+  const cpCtxRef = useRef(cpCtx);
+  cpCtxRef.current = cpCtx;
+
+  // Register setForkHistory with the context so handleForkHistoryLoaded works
+  useEffect(() => {
+    cpCtx.registerForkHistoryHandler(setForkHistory);
+  }, [cpCtx.registerForkHistoryHandler, setForkHistory]);
+
   const {
     visibleCount,
     isPlaying,
@@ -86,23 +127,6 @@ export function TranscriptViewer(): React.JSX.Element {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const controlPanelRef = useRef<HTMLDivElement>(null);
   const stopButtonRef = useRef<HTMLDivElement>(null);
-
-  // Fork history: when in fork mode, we display source session entries before
-  // any session is created (selectedSessionId is still null). This flag tells
-  // the rendering branch to show the transcript area instead of the placeholder.
-  const [hasForkHistory, setHasForkHistory] = useState(false);
-
-  const handleForkHistoryLoaded = useCallback((forkEntries: TranscriptEntry[]) => {
-    setForkHistory(forkEntries);
-    setHasForkHistory(true);
-  }, [setForkHistory]);
-
-  // Clear fork history flag when a real session is selected
-  useEffect(() => {
-    if (selectedSessionId) {
-      setHasForkHistory(false);
-    }
-  }, [selectedSessionId]);
 
   // Filter entries for rendering (used for both display and scroll settle detection).
   // Memoized for reference stability — downstream useMemos (forkTargets) and
@@ -128,24 +152,17 @@ export function TranscriptViewer(): React.JSX.Element {
   }
 
   // --- Per-message fork targets: user UUID → preceding assistant UUID ---
-  // First user message gets '' (empty string) sentinel — no assistant to fork
-  // from, but rewind should still be available (starts a fresh session).
+  // Single forward pass O(n): track the last assistant UUID seen, assign it
+  // to each subsequent user entry. First user message gets '' sentinel —
+  // no assistant to fork from, but rewind should still be available.
   const forkTargets = useMemo(() => {
     const targets = new Map<string, string>();
-    for (let i = 0; i < filteredEntries.length; i++) {
-      const entry = filteredEntries[i];
-      if (entry.type !== 'user' || !entry.uuid) continue;
-      let found = false;
-      for (let j = i - 1; j >= 0; j--) {
-        if (filteredEntries[j].type === 'assistant' && filteredEntries[j].uuid) {
-          targets.set(entry.uuid, filteredEntries[j].uuid!);
-          found = true;
-          break;
-        }
-      }
-      // First user message: no preceding assistant — sentinel for rewind-only
-      if (!found) {
-        targets.set(entry.uuid, '');
+    let lastAssistantUuid = '';
+    for (const entry of filteredEntries) {
+      if (entry.type === 'assistant' && entry.uuid) {
+        lastAssistantUuid = entry.uuid;
+      } else if (entry.type === 'user' && entry.uuid) {
+        targets.set(entry.uuid, lastAssistantUuid);
       }
     }
     return targets;
@@ -246,15 +263,15 @@ export function TranscriptViewer(): React.JSX.Element {
       // First user message sentinel: no fork, just clear session and prefill
       const text = extractUserText();
       setSelectedSessionId(null);
-      if (text) setPrefillInput({ text });
+      if (text) cpCtxRef.current.setPrefillInput({ text });
       return;
     }
 
     // Normal rewind: trigger ControlPanel's executeRewind (loads fork history, sets fork mode)
     rewindHandlerRef.current?.(atMessageId);
     const text = extractUserText();
-    if (text) setPrefillInput({ text });
-  }, [setPrefillInput, setSelectedSessionId]);
+    if (text) cpCtxRef.current.setPrefillInput({ text });
+  }, [setSelectedSessionId]);
 
   // Wrap resolveApproval to intercept ExitPlanMode orchestration fields
   // (clearContext, planContent) before forwarding to transport.
@@ -289,12 +306,12 @@ export function TranscriptViewer(): React.JSX.Element {
         if (targetMode) {
           const agencyMode = mapPermissionModeToAgency(targetMode);
           if (agencyMode) {
-            setPendingAgencyMode({ agencyMode, bypassEnabled: targetMode === 'bypassPermissions' });
+            cpCtxRef.current.setPendingAgencyMode({ agencyMode, bypassEnabled: targetMode === 'bypassPermissions' });
           }
         }
 
         // Prefill ChatInput with the handoff prompt and auto-send
-        setPrefillInput({ text: handoffPrompt, autoSend: true });
+        cpCtxRef.current.setPrefillInput({ text: handoffPrompt, autoSend: true });
         return;
       }
 
@@ -312,31 +329,23 @@ export function TranscriptViewer(): React.JSX.Element {
     const handler = (ev: MessageEvent) => {
       if (ev.data?.kind === 'executeInCrispy' && ev.data.content) {
         setSelectedSessionId(null);
-        setPrefillInput({ text: ev.data.content });
+        cpCtxRef.current.setPrefillInput({ text: ev.data.content });
       }
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
   }, [setSelectedSessionId]);
 
-  // Callback to clear prefillInput after ControlPanel consumes it
-  const handlePrefillConsumed = useCallback(() => {
-    setPrefillInput(null);
-  }, []);
-
   // Register insert handler for FilePanelContext (used by context menu "Insert in Chat")
   useEffect(() => {
     registerInsertHandler((text: string) => {
-      setPrefillInput({ text });
+      cpCtxRef.current.setPrefillInput({ text });
     });
   }, [registerInsertHandler]);
 
-  // Callback to clear pendingAgencyMode after ControlPanel consumes it
-  const handlePendingAgencyModeConsumed = useCallback(() => setPendingAgencyMode(null), []);
-
   // --- Main content area (conditional) ---
   // ControlPanel is rendered once, outside the conditional branches, so it is
-  // never unmounted when selectedSessionId transitions from null → pending.
+  // never unmounted when selectedSessionId transitions from null -> pending.
   // This preserves user-chosen state (agency mode, model, bypass) across the
   // new-session flow instead of resetting to defaults on remount.
 
@@ -361,7 +370,7 @@ export function TranscriptViewer(): React.JSX.Element {
             {lastError && (
               <div className="crispy-channel-error" role="alert">
                 <span>{lastError}</span>
-                <button className="crispy-channel-error-dismiss" onClick={clearError} aria-label="Dismiss error">×</button>
+                <button className="crispy-channel-error-dismiss" onClick={clearError} aria-label="Dismiss error">&times;</button>
               </div>
             )}
             {isLoading ? (
@@ -457,19 +466,12 @@ export function TranscriptViewer(): React.JSX.Element {
         onRegisterRewindHandler={handleRegisterRewindHandler}
         onScrollToBottom={pinToBottom}
         entries={entries}
-        onBypassChange={setBypassEnabled}
-        prefillInput={prefillInput}
-        onPrefillConsumed={handlePrefillConsumed}
-        onForkHistoryLoaded={handleForkHistoryLoaded}
-        pendingAgencyMode={pendingAgencyMode}
-        onPendingAgencyModeConsumed={handlePendingAgencyModeConsumed}
         onOptimisticEntry={addOptimisticEntry}
       >
         {approvalRequest && (
-          <ApprovalContent
+          <ApprovalBridge
             request={approvalRequest}
             onResolve={handleApprovalResolve}
-            bypassEnabled={bypassEnabled}
           />
         )}
       </ControlPanel>

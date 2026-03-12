@@ -46,6 +46,7 @@ import { useContextUsage } from '../../hooks/useContextUsage.js';
 import { useSessionStatus } from '../../hooks/useSessionStatus.js';
 import { useRosieLog } from '../../hooks/useRosieLog.js';
 import { useVoiceInput } from '../../hooks/useVoiceInput.js';
+import { useControlPanel } from '../../context/ControlPanelContext.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent, TurnTarget } from '../../../core/agent-adapter.js';
@@ -64,22 +65,10 @@ interface ControlPanelProps {
   entries?: TranscriptEntry[];
   /** Slot: when provided, replaces AttachmentsRow + ChatInput (approval mode). */
   children?: React.ReactNode;
-  /** Notify parent when bypass state changes (for ExitPlanMode approval). */
-  onBypassChange?: (enabled: boolean) => void;
-  /** Pre-fill the ChatInput with content (for ExitPlanMode handoff). Consumed once. */
-  prefillInput?: { text: string; autoSend?: boolean } | null;
-  /** Called after prefillInput is consumed, allowing the parent to clear it. */
-  onPrefillConsumed?: () => void;
-  /** Called when fork history entries are loaded for pre-display. */
-  onForkHistoryLoaded?: (entries: TranscriptEntry[]) => void;
   /** Register a handler for per-message fork execution (called from ForkContext). */
   onRegisterForkHandler?: (handler: (atMessageId: string) => void) => void;
   /** Register a handler for per-message rewind execution (fork-in-same-panel). */
   onRegisterRewindHandler?: (handler: (atMessageId: string) => void) => void;
-  /** Push agency mode + bypass state from ExitPlanMode handoff. Consumed once. */
-  pendingAgencyMode?: { agencyMode: AgencyMode; bypassEnabled: boolean } | null;
-  /** Called after pendingAgencyMode is consumed. */
-  onPendingAgencyModeConsumed?: () => void;
   /** Inject a synthetic user entry for immediate rendering before backend echo. */
   onOptimisticEntry?: (entry: TranscriptEntry) => void;
 }
@@ -148,8 +137,17 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange, onScrollToBottom, entries, children, onBypassChange, prefillInput, onPrefillConsumed, onForkHistoryLoaded, onRegisterForkHandler, onRegisterRewindHandler, pendingAgencyMode, onPendingAgencyModeConsumed, onOptimisticEntry }, ref) {
+  function ControlPanel({ onForkHoverChange, onScrollToBottom, entries, children, onRegisterForkHandler, onRegisterRewindHandler, onOptimisticEntry }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
+    const {
+      setBypassEnabled: ctxSetBypassEnabled,
+      prefillInput,
+      consumePrefillInput,
+      pendingAgencyMode,
+      consumePendingAgencyMode,
+      handleForkHistoryLoaded: onForkHistoryLoaded,
+      setAgencyMode: ctxSetAgencyMode,
+    } = useControlPanel();
     // Track the DOM element for native drag/drop listeners. A callback ref
     // ensures the useEffect re-runs when the element mounts, unlike a
     // RefObject whose identity never changes.
@@ -386,10 +384,14 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       reader.readAsDataURL(file);
     }, []);
 
-    // --- Notify parent of bypass state changes ---
+    // --- Sync bypass + agency mode to context (for approval flow + CSS data-agency) ---
     useEffect(() => {
-      onBypassChange?.(state.bypassEnabled);
-    }, [state.bypassEnabled, onBypassChange]);
+      ctxSetBypassEnabled(state.bypassEnabled);
+    }, [state.bypassEnabled, ctxSetBypassEnabled]);
+
+    useEffect(() => {
+      ctxSetAgencyMode(state.agencyMode);
+    }, [state.agencyMode, ctxSetAgencyMode]);
 
     // --- Consume prefillInput when provided (ExitPlanMode handoff) ---
     useEffect(() => {
@@ -398,18 +400,18 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         if (prefillInput.autoSend) {
           setTimeout(() => handleSendRef.current(), 50);
         }
-        onPrefillConsumed?.();
+        consumePrefillInput();
       }
-    }, [prefillInput, onPrefillConsumed]);
+    }, [prefillInput, consumePrefillInput]);
 
     // --- Consume pendingAgencyMode when provided (ExitPlanMode handoff) ---
     useEffect(() => {
       if (pendingAgencyMode) {
         dispatch({ type: 'SET_AGENCY_MODE', mode: pendingAgencyMode.agencyMode });
         dispatch({ type: 'SET_BYPASS', enabled: pendingAgencyMode.bypassEnabled });
-        onPendingAgencyModeConsumed?.();
+        consumePendingAgencyMode();
       }
-    }, [pendingAgencyMode, onPendingAgencyModeConsumed]);
+    }, [pendingAgencyMode, consumePendingAgencyMode]);
 
     // --- Context usage tracking ---
     const contextUsage = useContextUsage(selectedSessionId, entries);

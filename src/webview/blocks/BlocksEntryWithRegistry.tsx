@@ -14,7 +14,7 @@
  * @module webview/blocks/BlocksEntryWithRegistry
  */
 
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import type { TranscriptEntry } from '../../core/transcript.js';
 import type { AnchorPoint, RichBlock } from './types.js';
 import { useBlocksToolRegistry } from './BlocksToolRegistryContext.js';
@@ -42,7 +42,7 @@ interface BlocksEntryWithRegistryProps {
   isLastEntry?: boolean;
 }
 
-export function BlocksEntryWithRegistry({
+export const BlocksEntryWithRegistry = memo(function BlocksEntryWithRegistry({
   entry,
   blocksOverride,
   forkTargetId,
@@ -178,7 +178,13 @@ export function BlocksEntryWithRegistry({
       {showActions && <MessageActions targetAssistantId={forkTargetId || null} copygetText={userCopyGetText} />}
     </div>
   );
-}
+},
+(prev, next) =>
+  prev.entry === next.entry &&
+  prev.blocksOverride === next.blocksOverride &&
+  prev.forkTargetId === next.forkTargetId &&
+  prev.isLastEntry === next.isLastEntry,
+);
 
 /**
  * Render blocks with inline grouping: consecutive tool_use blocks after a

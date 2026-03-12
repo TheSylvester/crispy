@@ -11,7 +11,7 @@
  * @module webview/blocks/BlocksToolPanel
  */
 
-import { useRef, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import { useBlocksToolRegistry } from './BlocksToolRegistryContext.js';
 import { useBlocksVisibleToolIds, useBlocksLastArrivedToolId } from './BlocksVisibilityContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
@@ -67,9 +67,9 @@ export function BlocksToolPanel(): React.JSX.Element {
   const prevVisibleRef = useRef<Set<string>>(new Set());
 
   // ---------------------------------------------------------------------------
-  // Inspector mode: compute filtered display list
+  // Inspector mode: compute filtered display list (without DOM queries)
   // ---------------------------------------------------------------------------
-  const displayToolIds = useMemo(() => {
+  const baseDisplayToolIds = useMemo(() => {
     if (toolPanelMode === 'viewport') return visibleToolIds;
 
     const ids: string[] = [];
@@ -100,71 +100,131 @@ export function BlocksToolPanel(): React.JSX.Element {
       seen.add(lastArrivedId);
     }
 
-    // 4. Icons mode Y-grouping: find an anchor tool and include all visible
-    //    inline tools at the same Y position (same row). The anchor is
-    //    lastArrivedId if still visible, otherwise the bottom-most visible
-    //    inline tool (the one the user most recently scrolled to).
-    if (renderMode === 'icons') {
+    return ids;
+  }, [toolPanelMode, visibleToolIds, panelState.userOverrides, lastArrivedId, _pendingGen]);
+
+  // ---------------------------------------------------------------------------
+  // Icons mode Y-grouping: DOM measurement via rAF-backed effect
+  // ---------------------------------------------------------------------------
+  // Cached Y positions for tool elements, updated via requestAnimationFrame
+  const toolYPositionsRef = useRef<Map<string, number>>(new Map());
+  const [iconsGroupIds, setIconsGroupIds] = useState<string[]>([]);
+  const rafIdRef = useRef<number>(0);
+
+  // Determine if icons grouping is needed
+  const needsIconsGrouping = renderMode === 'icons' && toolPanelMode !== 'viewport';
+
+  useEffect(() => {
+    if (!needsIconsGrouping) {
+      if (iconsGroupIds.length > 0) setIconsGroupIds([]);
+      return;
+    }
+
+    // Schedule DOM measurement in rAF to avoid layout thrashing during render
+    rafIdRef.current = requestAnimationFrame(() => {
       const scrollRoot = document.querySelector('.crispy-transcript') as HTMLElement | null;
-      if (scrollRoot) {
-        const visibleSet = new Set(visibleToolIds);
+      if (!scrollRoot) return;
 
-        // Find anchor Y: prefer lastArrivedId if visible, else bottom-most visible inline
-        let anchorY: number | null = null;
+      // Update cached Y positions for all visible tools
+      const yMap = new Map<string, number>();
+      for (const id of visibleToolIds) {
+        const el = scrollRoot.querySelector(`[data-run-id="${id}"]`);
+        if (el) yMap.set(id, Math.round(el.getBoundingClientRect().top));
+      }
+      toolYPositionsRef.current = yMap;
 
-        if (lastArrivedId && visibleSet.has(lastArrivedId)) {
-          const el = scrollRoot.querySelector(`[data-run-id="${lastArrivedId}"]`);
-          if (el) anchorY = Math.round(el.getBoundingClientRect().top);
-        }
+      const baseSet = new Set(baseDisplayToolIds);
+      const visibleSet = new Set(visibleToolIds);
 
-        if (anchorY === null) {
-          // Walk visible tools bottom-up to find the last inline tool
-          for (let i = visibleToolIds.length - 1; i >= 0; i--) {
-            const id = visibleToolIds[i];
-            const block = registry.getBlock(id);
-            if (block && block.type === 'tool_use' && getToolRenderCategory(block.name) === 'inline') {
-              const el = scrollRoot.querySelector(`[data-run-id="${id}"]`);
-              if (el) {
-                anchorY = Math.round(el.getBoundingClientRect().top);
-                break;
-              }
+      // Find anchor Y: prefer lastArrivedId if visible, else bottom-most visible inline
+      let anchorY: number | null = null;
+
+      if (lastArrivedId && visibleSet.has(lastArrivedId)) {
+        anchorY = yMap.get(lastArrivedId) ?? null;
+      }
+
+      if (anchorY === null) {
+        for (let i = visibleToolIds.length - 1; i >= 0; i--) {
+          const id = visibleToolIds[i];
+          const block = registry.getBlock(id);
+          if (block && block.type === 'tool_use' && getToolRenderCategory(block.name) === 'inline') {
+            const y = yMap.get(id);
+            if (y !== undefined) {
+              anchorY = y;
+              break;
             }
           }
         }
+      }
 
-        // Collect all already-selected Y positions + the anchor Y
-        const groupYs = new Set<number>();
-        for (const id of ids) {
-          const el = scrollRoot.querySelector(`[data-run-id="${id}"]`);
-          if (el) groupYs.add(Math.round(el.getBoundingClientRect().top));
-        }
-        if (anchorY !== null) groupYs.add(anchorY);
+      // Collect Y positions of already-selected tools + the anchor
+      const groupYs = new Set<number>();
+      for (const id of baseDisplayToolIds) {
+        const y = yMap.get(id);
+        if (y !== undefined) groupYs.add(y);
+      }
+      if (anchorY !== null) groupYs.add(anchorY);
 
-        // Include visible inline tools at those Y positions
-        for (const id of visibleToolIds) {
-          if (seen.has(id)) continue;
-          const block = registry.getBlock(id);
-          if (!block || block.type !== 'tool_use') continue;
-          if (getToolRenderCategory(block.name) !== 'inline') continue;
+      // Find visible inline tools at those Y positions that aren't already in base
+      const extras: string[] = [];
+      for (const id of visibleToolIds) {
+        if (baseSet.has(id)) continue;
+        const block = registry.getBlock(id);
+        if (!block || block.type !== 'tool_use') continue;
+        if (getToolRenderCategory(block.name) !== 'inline') continue;
 
-          const el = scrollRoot.querySelector(`[data-run-id="${id}"]`);
-          if (el && groupYs.has(Math.round(el.getBoundingClientRect().top))) {
-            ids.push(id);
-            seen.add(id);
-          }
+        const y = yMap.get(id);
+        if (y !== undefined && groupYs.has(y)) {
+          extras.push(id);
         }
       }
+
+      setIconsGroupIds(prev => {
+        if (prev.length === extras.length && prev.every((id, i) => id === extras[i])) return prev;
+        return extras;
+      });
+    });
+
+    return () => cancelAnimationFrame(rafIdRef.current);
+  }, [needsIconsGrouping, visibleToolIds, baseDisplayToolIds, lastArrivedId, registry]);
+
+  // Merge base IDs with icons group IDs
+  const displayToolIds = useMemo(() => {
+    if (!needsIconsGrouping || iconsGroupIds.length === 0) return baseDisplayToolIds;
+    // Append extras that aren't already in base
+    const baseSet = new Set(baseDisplayToolIds);
+    const merged = [...baseDisplayToolIds];
+    for (const id of iconsGroupIds) {
+      if (!baseSet.has(id)) merged.push(id);
     }
+    return merged;
+  }, [baseDisplayToolIds, iconsGroupIds, needsIconsGrouping]);
 
-    return ids;
-  }, [toolPanelMode, visibleToolIds, panelState.userOverrides, lastArrivedId, _pendingGen, renderMode]);
-
-  // Publish display set so transcript-side ToolBlockRenderer can highlight
+  // Publish display set so transcript-side ToolBlockRenderer can highlight.
+  // Only clear on unmount — not on every dependency change — to avoid
+  // double-publish (empty set then populated set) on each update.
   const setPanelDisplayIds = useSetPanelDisplayIds();
+  const publishedSetRef = useRef<ReadonlySet<string>>(new Set());
   useEffect(() => {
-    setPanelDisplayIds(new Set(displayToolIds));
-    return () => setPanelDisplayIds(new Set());
+    const next = new Set(displayToolIds);
+    const prev = publishedSetRef.current;
+    // Shallow set equality check — skip publish if contents are identical
+    if (next.size === prev.size) {
+      let equal = true;
+      for (const id of next) {
+        if (!prev.has(id)) { equal = false; break; }
+      }
+      if (equal) return;
+    }
+    publishedSetRef.current = next;
+    setPanelDisplayIds(next);
   }, [displayToolIds, setPanelDisplayIds]);
+
+  // Clear display set only on unmount
+  useEffect(() => {
+    return () => setPanelDisplayIds(new Set());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Sync visibility changes into reducer

@@ -199,26 +199,20 @@ h2 {
 /* Streaming glow — agency-colored inset glow on both the main content area
    and the tool panel.  --frame-highlight is set on .crispy-main itself (not
    just ::after) so descendants — including the tool panel's ::after — inherit
-   the current agency color.  Reads data-streaming from .crispy-main and
-   agency mode from the ControlPanel's data-agency via :has(). */
+   the current agency color.  Reads data-streaming and data-agency directly
+   from .crispy-main (set by React via ControlPanelContext). */
 
 /* 1. Set --frame-highlight on .crispy-main per agency mode */
-.crispy-main[data-streaming]:has(
-    .crispy-cp[data-agency="ask-before-edits"]
-  ) {
+.crispy-main[data-streaming][data-agency="ask-before-edits"] {
   --frame-highlight: var(--agency-white);
 }
-.crispy-main[data-streaming]:has(
-    .crispy-cp[data-agency="edit-automatically"]
-  ) {
+.crispy-main[data-streaming][data-agency="edit-automatically"] {
   --frame-highlight: var(--agency-blue);
 }
-.crispy-main[data-streaming]:has(.crispy-cp[data-agency="plan-mode"]) {
+.crispy-main[data-streaming][data-agency="plan-mode"] {
   --frame-highlight: var(--agency-teal);
 }
-.crispy-main[data-streaming]:has(
-    .crispy-cp[data-agency="bypass-permissions"]
-  ) {
+.crispy-main[data-streaming][data-agency="bypass-permissions"] {
   --frame-highlight: var(--agency-red);
 }
 
@@ -329,31 +323,31 @@ h2 {
 }
 
 /* plan-mode → "planning" */
-.crispy-main:has(.crispy-cp[data-agency="plan-mode"])
+.crispy-main[data-agency="plan-mode"]
   .crispy-thinking__label--thinking {
   display: none;
 }
-.crispy-main:has(.crispy-cp[data-agency="plan-mode"])
+.crispy-main[data-agency="plan-mode"]
   .crispy-thinking__label--planning {
   display: inline;
 }
 
 /* bypass-permissions → "working" */
-.crispy-main:has(.crispy-cp[data-agency="bypass-permissions"])
+.crispy-main[data-agency="bypass-permissions"]
   .crispy-thinking__label--thinking {
   display: none;
 }
-.crispy-main:has(.crispy-cp[data-agency="bypass-permissions"])
+.crispy-main[data-agency="bypass-permissions"]
   .crispy-thinking__label--working {
   display: inline;
 }
 
 /* edit-automatically → "working" */
-.crispy-main:has(.crispy-cp[data-agency="edit-automatically"])
+.crispy-main[data-agency="edit-automatically"]
   .crispy-thinking__label--thinking {
   display: none;
 }
-.crispy-main:has(.crispy-cp[data-agency="edit-automatically"])
+.crispy-main[data-agency="edit-automatically"]
   .crispy-thinking__label--working {
   display: inline;
 }
@@ -1912,19 +1906,19 @@ h2 {
   transition: background 0.15s;
 }
 
-/* Agency-mode colors — :has() reads data-agency from sibling ControlPanel */
-.crispy-main:has(.crispy-cp[data-agency="edit-automatically"])
+/* Agency-mode colors — data-agency set directly on .crispy-main via React */
+.crispy-main[data-agency="edit-automatically"]
   .crispy-stop {
   --stop-color-dim:    rgba(64, 168, 232, 0.35);
   --stop-color:        rgba(64, 168, 232, 0.5);
   --stop-color-bright: rgba(64, 168, 232, 0.7);
 }
-.crispy-main:has(.crispy-cp[data-agency="plan-mode"]) .crispy-stop {
+.crispy-main[data-agency="plan-mode"] .crispy-stop {
   --stop-color-dim:    rgba(71, 152, 140, 0.35);
   --stop-color:        rgba(71, 152, 140, 0.5);
   --stop-color-bright: rgba(71, 152, 140, 0.7);
 }
-.crispy-main:has(.crispy-cp[data-agency="bypass-permissions"])
+.crispy-main[data-agency="bypass-permissions"]
   .crispy-stop {
   --stop-color-dim:    rgba(232, 64, 64, 0.35);
   --stop-color:        rgba(232, 64, 64, 0.5);

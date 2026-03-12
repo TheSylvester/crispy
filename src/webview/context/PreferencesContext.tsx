@@ -8,7 +8,7 @@
  * @module PreferencesContext
  */
 
-import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo, ReactNode } from 'react';
 import type { RenderMode } from '../types.js';
 import { useTransport } from './TransportContext.js';
 import { SETTINGS_CHANNEL_ID } from '../../core/settings/events.js';
@@ -201,7 +201,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   // Context value
   // ============================================================================
 
-  const value: PreferencesContextValue = {
+  const value: PreferencesContextValue = useMemo(() => ({
     renderMode,
     settingsPinned,
     sidebarCollapsed,
@@ -228,7 +228,34 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setBadgeStyle,
     setBashBlockInIcons,
     setSidebarView,
-  };
+  }), [
+    renderMode,
+    settingsPinned,
+    sidebarCollapsed,
+    toolPanelOpen,
+    toolPanelWidthPx,
+    toolPanelMode,
+    toolViewOverride,
+    debugMode,
+    toolPanelAutoOpen,
+    condensedToolMode,
+    badgeStyle,
+    bashBlockInIcons,
+    sidebarView,
+    setRenderMode,
+    setSettingsPinned,
+    setSidebarCollapsed,
+    setToolPanelOpen,
+    setToolPanelWidthPx,
+    setToolPanelMode,
+    setToolViewOverride,
+    setDebugMode,
+    setToolPanelAutoOpen,
+    setCondensedToolMode,
+    setBadgeStyle,
+    setBashBlockInIcons,
+    setSidebarView,
+  ]);
 
   return (
     <PreferencesContext.Provider value={value}>

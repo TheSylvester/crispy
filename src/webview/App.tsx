@@ -22,6 +22,7 @@ import { TitleBar } from './components/TitleBar.js';
 import { SessionStatusProvider, useSessionStatus } from './hooks/useSessionStatus.js';
 import { ContentErrorBoundary } from './components/ErrorBoundary.js';
 import { isPerfMode, PerfOverlay, PerfProfiler } from './perf/index.js';
+import { ControlPanelProvider, useControlPanel } from './context/ControlPanelContext.js';
 
 interface AppProps {
   transport: Transport;
@@ -97,24 +98,51 @@ function AppLayout(): React.JSX.Element {
   const toolPanelWidth = toolPanelOpen && !isOverlay ? panelPx : 0;
 
   return (
-    <div
-      ref={layoutRef}
-      className="crispy-layout"
-      data-tool-panel={toolPanelOpen ? (isOverlay ? 'overlay' : 'open') : 'collapsed'}
-      style={{
-        '--tool-panel-width': `${toolPanelWidth}px`,
-        '--tool-panel-actual-width': `${toolPanelOpen ? panelPx : 0}px`,
-        '--right-panels-width': `${toolPanelWidth}px`,
-        '--container-width': `${containerWidth}px`,
-      } as React.CSSProperties}
-    >
-      <TitleBar />
+    <ControlPanelProvider selectedSessionId={selectedSessionId}>
+      <div
+        ref={layoutRef}
+        className="crispy-layout"
+        data-tool-panel={toolPanelOpen ? (isOverlay ? 'overlay' : 'open') : 'collapsed'}
+        style={{
+          '--tool-panel-width': `${toolPanelWidth}px`,
+          '--tool-panel-actual-width': `${toolPanelOpen ? panelPx : 0}px`,
+          '--right-panels-width': `${toolPanelWidth}px`,
+          '--container-width': `${containerWidth}px`,
+        } as React.CSSProperties}
+      >
+        <TitleBar />
 
-      <main className="crispy-main" data-streaming={isStreaming || undefined}>
-        <ContentErrorBoundary>
-          <TranscriptViewer />
-        </ContentErrorBoundary>
-      </main>
-    </div>
+        <AgencyMain isStreaming={isStreaming}>
+          <ContentErrorBoundary>
+            <TranscriptViewer />
+          </ContentErrorBoundary>
+        </AgencyMain>
+      </div>
+    </ControlPanelProvider>
+  );
+}
+
+/**
+ * AgencyMain — reads agencyMode from ControlPanelContext and sets
+ * data-agency on .crispy-main directly, replacing the CSS :has() selectors.
+ * Isolated in its own component so agencyMode changes only re-render this
+ * thin wrapper, not the entire AppLayout.
+ */
+function AgencyMain({
+  isStreaming,
+  children,
+}: {
+  isStreaming: boolean;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  const { agencyMode } = useControlPanel();
+  return (
+    <main
+      className="crispy-main"
+      data-streaming={isStreaming || undefined}
+      data-agency={agencyMode}
+    >
+      {children}
+    </main>
   );
 }

@@ -7,7 +7,7 @@
  * @module webview/blocks/ToolBlockRenderer
  */
 
-import { useCallback, useRef, useEffect, memo } from 'react';
+import { useCallback, useRef, useEffect } from 'react';
 import type { RichBlock, AnchorPoint, ToolViewProps } from './types.js';
 import type { BlocksToolRegistry } from './blocks-tool-registry.js';
 import type { TranscriptEntry, ToolResultBlock } from '../../core/transcript.js';
@@ -322,10 +322,11 @@ function TaskChildrenRenderer({ toolId, anchor, result }: TaskChildrenRendererPr
  * entry reference identity — stable for existing entries since the provider
  * reuses the same TranscriptEntry objects.
  */
-const MemoizedBlocksEntry = memo(
-  BlocksEntryWithRegistry,
-  (prev, next) => prev.entry === next.entry,
-);
+// BlocksEntryWithRegistry is already wrapped in React.memo with a custom
+// comparator — no extra memo layer needed. Using it directly also avoids
+// the circular-import issue where esbuild resolves the binding as undefined
+// at module-init time (ToolBlockRenderer ↔ BlocksEntryWithRegistry cycle).
+const MemoizedBlocksEntry = BlocksEntryWithRegistry;
 
 // ============================================================================
 // Fallback View for Tools Without Definition

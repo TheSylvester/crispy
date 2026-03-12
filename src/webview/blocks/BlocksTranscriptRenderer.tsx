@@ -10,6 +10,7 @@
  * @module webview/blocks/BlocksTranscriptRenderer
  */
 
+import { useMemo } from 'react';
 import type { TranscriptEntry } from '../../core/transcript.js';
 import type { RichBlock } from './types.js';
 import { BlocksEntryWithRegistry } from './BlocksEntryWithRegistry.js';
@@ -103,7 +104,7 @@ export function BlocksTranscriptRenderer({
   entries,
   forkTargets,
 }: BlocksTranscriptRendererProps): React.JSX.Element {
-  const renderEntries = buildRenderEntries(entries);
+  const renderEntries = useMemo(() => buildRenderEntries(entries), [entries]);
 
   return (
     <>
