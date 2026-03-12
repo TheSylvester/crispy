@@ -1878,8 +1878,8 @@ h2 {
 .crispy-stop::before {
   content: '';
   position: absolute;
-  inset: -1.15px;
-  border-radius: calc(var(--radius-sm) + 1.15px);
+  inset: -1px;
+  border-radius: calc(var(--radius-sm) + 1px);
   background: conic-gradient(
     from var(--stop-angle),
     var(--stop-color-dim) 0deg,

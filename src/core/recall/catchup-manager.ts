@@ -50,7 +50,7 @@ export interface CatchupSubscriber {
 const SILENT_EMBED_THRESHOLD = 200;
 
 /** System free memory threshold (MB) — stop embedding if free RAM drops below this. */
-const FREE_MEM_FLOOR_MB = 512;
+const FREE_MEM_FLOOR_MB = 1024;
 
 /** Rough estimate: seconds per message for embedding on CPU ONNX. */
 const SECONDS_PER_MESSAGE = 3;
