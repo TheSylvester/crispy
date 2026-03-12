@@ -15,6 +15,7 @@ import type { ApprovalExtra } from './components/approval/types.js';
 import type { WireProviderConfig, ProviderConfig, WireSettingsSnapshot, SettingsPatch } from '../core/settings/types.js';
 import type { VendorModelGroup } from './components/control-panel/types.js';
 import type { ActivityIndexEntry } from '../core/activity-index.js';
+import type { CatchupStatus } from '../core/recall/catchup-types.js';
 
 /** Client-side session info — modifiedAt is a string after JSON serialization. */
 export interface WireSessionInfo extends Omit<SessionInfo, 'modifiedAt'> {
@@ -90,6 +91,13 @@ export interface SessionService {
   /** Host-side voice capture (VS Code only — bypasses webview getUserMedia restriction) */
   startVoiceCapture?(): Promise<void>;
   stopVoiceCapture?(): Promise<{ text: string }>;
+
+  /** Recall catch-up — embedding backfill management */
+  subscribeRecallCatchup(): Promise<{ subscribed: boolean }>;
+  unsubscribeRecallCatchup(): Promise<{ unsubscribed: boolean }>;
+  startEmbeddingBackfill(): Promise<{ ok: boolean }>;
+  stopEmbeddingBackfill(): Promise<{ ok: boolean }>;
+  getCatchupStatus(): Promise<CatchupStatus>;
 
   dispose(): void;
 

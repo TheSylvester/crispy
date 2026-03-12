@@ -54,6 +54,16 @@ import {
   pushRosieLog,
 } from "../core/rosie/debug-log.js";
 import type { RosieLogEvent, RosieLogSubscriber } from "../core/rosie/debug-log.js";
+import type { RecallCatchupEvent } from "../core/channel-events.js";
+import {
+  RECALL_CATCHUP_CHANNEL_ID,
+  subscribeCatchup,
+  unsubscribeCatchup,
+  startEmbeddingBackfill,
+  stopEmbeddingBackfill,
+  getCatchupStatus,
+  type CatchupSubscriber,
+} from '../core/recall/catchup-manager.js';
 import { getGitFiles, fileExists, readImage, readTextFile } from "../core/file-service.js";
 import { queryActivity, getLineage, getChildSessions, getLineageGraph } from '../core/activity-index.js';
 import { readResponsePreview } from '../core/adapters/claude/jsonl-reader.js';
@@ -96,7 +106,7 @@ export type ClientMessage = {
 };
 
 /** Union of all events that can be pushed over the wire. */
-export type HostEvent = SubscriberMessage | SessionListEvent | SettingsChangedGlobalEvent | RosieLogEvent;
+export type HostEvent = SubscriberMessage | SessionListEvent | SettingsChangedGlobalEvent | RosieLogEvent | RecallCatchupEvent;
 
 /** Host → Client response or push event. */
 export type HostMessage =
@@ -140,6 +150,9 @@ export function createClientConnection(
 
   /** Global rosie-log subscription for this client. */
   let rosieLogSub: RosieLogSubscriber | null = null;
+
+  /** Global recall catch-up subscription for this client. */
+  let catchupSub: CatchupSubscriber | null = null;
 
   /** Flag set on dispose() to prevent re-keying after client disconnect. */
   let disposed = false;
@@ -443,6 +456,41 @@ export function createClientConnection(
         return { unsubscribed: true };
       }
 
+      // --- Recall catch-up subscription (follows subscribeRosieLog pattern) ---
+      case "subscribeRecallCatchup": {
+        if (catchupSub) return { subscribed: true };
+        catchupSub = {
+          id: clientId,
+          send(event) {
+            sendFn({ kind: "event", sessionId: RECALL_CATCHUP_CHANNEL_ID, event });
+          },
+        };
+        subscribeCatchup(catchupSub);
+        return { subscribed: true };
+      }
+
+      case "unsubscribeRecallCatchup": {
+        if (catchupSub) {
+          unsubscribeCatchup(catchupSub.id);
+          catchupSub = null;
+        }
+        return { unsubscribed: true };
+      }
+
+      case "startEmbeddingBackfill": {
+        startEmbeddingBackfill();
+        return { ok: true };
+      }
+
+      case "stopEmbeddingBackfill": {
+        stopEmbeddingBackfill();
+        return { ok: true };
+      }
+
+      case "getCatchupStatus": {
+        return getCatchupStatus();
+      }
+
       case "getGitFiles": {
         const cwd = params.cwd as string;
         return getGitFiles(cwd);
@@ -632,6 +680,10 @@ export function createClientConnection(
     if (rosieLogSub) {
       unsubscribeRosieLog(rosieLogSub);
       rosieLogSub = null;
+    }
+    if (catchupSub) {
+      unsubscribeCatchup(catchupSub.id);
+      catchupSub = null;
     }
     for (const [, sub] of subscriptions) {
       try {

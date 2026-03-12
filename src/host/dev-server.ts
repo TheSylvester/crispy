@@ -29,6 +29,7 @@ import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
 import { initRosieSummarize, shutdownRosieSummarize, initRosieTracker, shutdownRosieTracker } from '../core/rosie/index.js';
 import { initRecallIngest, shutdownRecallIngest } from '../core/recall/ingest-hook.js';
+import { startRecallCatchup, stopEmbeddingBackfill } from '../core/recall/catchup-manager.js';
 import { resolveInternalServerPaths } from './adapter-registry.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
@@ -176,6 +177,7 @@ done();
 
 done = phase('init recall ingest');
 initRecallIngest();
+startRecallCatchup('devServer');
 done();
 
 done = phase('init rosie summarize');
@@ -222,6 +224,7 @@ process.on('SIGINT', () => {
   shutdownRosieTracker();
   shutdownRosieSummarize();
   shutdownRecallIngest();
+  stopEmbeddingBackfill();
   dispatch.dispose();
   process.exit(0);
 });
@@ -229,6 +232,7 @@ process.on('SIGTERM', () => {
   shutdownRosieTracker();
   shutdownRosieSummarize();
   shutdownRecallIngest();
+  stopEmbeddingBackfill();
   dispatch.dispose();
   process.exit(0);
 });

@@ -98,12 +98,19 @@ export interface SettingsChangedEvent {
   settings: import('./agent-adapter.js').AdapterSettings;
 }
 
+export interface RecallCatchupEvent {
+  type: 'notification';
+  kind: 'recall-catchup';
+  status: import('./recall/catchup-types.js').CatchupStatus;
+}
+
 export type NotificationEvent =
   | ErrorEvent
   | CompactingEvent
   | PermissionModeChangedEvent
   | SessionChangedEvent
-  | SettingsChangedEvent;
+  | SettingsChangedEvent
+  | RecallCatchupEvent;
 
 // ============================================================================
 // Channel Event (union)

@@ -13,6 +13,7 @@ import type { TranscriptEntry } from '../core/transcript.js';
 import type { TurnReceipt } from '../core/agent-adapter.js';
 import type { WireProviderConfig, WireSettingsSnapshot, SettingsPatch } from '../core/settings/types.js';
 import type { VendorModelGroup } from './components/control-panel/types.js';
+import type { CatchupStatus } from '../core/recall/catchup-types.js';
 import { float32ToBase64 } from './utils/encoding.js';
 
 interface VSCodeAPI {
@@ -119,6 +120,11 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     unsubscribeSessionList: () => request<void>('unsubscribeSessionList'),
     subscribeRosieLog: () => request<void>('subscribeRosieLog'),
     unsubscribeRosieLog: () => request<void>('unsubscribeRosieLog'),
+    subscribeRecallCatchup: () => request<{ subscribed: boolean }>('subscribeRecallCatchup'),
+    unsubscribeRecallCatchup: () => request<{ unsubscribed: boolean }>('unsubscribeRecallCatchup'),
+    startEmbeddingBackfill: () => request<{ ok: boolean }>('startEmbeddingBackfill'),
+    stopEmbeddingBackfill: () => request<{ ok: boolean }>('stopEmbeddingBackfill'),
+    getCatchupStatus: () => request<CatchupStatus>('getCatchupStatus'),
 
     getGitFiles: (cwd) => request<string[]>('getGitFiles', { cwd }),
     fileExists: (path) => request<boolean>('fileExists', { path }),
