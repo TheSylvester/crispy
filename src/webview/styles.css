@@ -1864,9 +1864,9 @@ h2 {
     transform 0.15s ease-out;
 
   /* Agency color — default white, overridden per mode */
-  --stop-color-dim:    rgba(255, 255, 255, 0.3);
-  --stop-color:        rgba(255, 255, 255, 0.45);
-  --stop-color-bright: rgba(255, 255, 255, 0.6);
+  --stop-color-dim:    rgba(255, 255, 255, 0.45);
+  --stop-color:        rgba(255, 255, 255, 0.65);
+  --stop-color-bright: rgba(255, 255, 255, 0.85);
 }
 
 .crispy-stop--visible {
@@ -1878,8 +1878,8 @@ h2 {
 .crispy-stop::before {
   content: '';
   position: absolute;
-  inset: -1.5px;
-  border-radius: calc(var(--radius-sm) + 1.5px);
+  inset: -1.15px;
+  border-radius: calc(var(--radius-sm) + 1.15px);
   background: conic-gradient(
     from var(--stop-angle),
     var(--stop-color-dim) 0deg,
@@ -1901,28 +1901,27 @@ h2 {
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: var(--font-xs);
-  font-family: var(--font-mono);
-  font-weight: 600;
+  font-weight: 700;
   transition: background 0.15s;
 }
 
 /* Agency-mode colors — data-agency set directly on .crispy-main via React */
 .crispy-main[data-agency="edit-automatically"]
   .crispy-stop {
-  --stop-color-dim:    rgba(64, 168, 232, 0.35);
-  --stop-color:        rgba(64, 168, 232, 0.5);
-  --stop-color-bright: rgba(64, 168, 232, 0.7);
+  --stop-color-dim:    rgba(64, 168, 232, 0.5);
+  --stop-color:        rgba(64, 168, 232, 0.7);
+  --stop-color-bright: rgba(64, 168, 232, 0.9);
 }
 .crispy-main[data-agency="plan-mode"] .crispy-stop {
-  --stop-color-dim:    rgba(71, 152, 140, 0.35);
-  --stop-color:        rgba(71, 152, 140, 0.5);
-  --stop-color-bright: rgba(71, 152, 140, 0.7);
+  --stop-color-dim:    rgba(71, 152, 140, 0.5);
+  --stop-color:        rgba(71, 152, 140, 0.7);
+  --stop-color-bright: rgba(71, 152, 140, 0.9);
 }
 .crispy-main[data-agency="bypass-permissions"]
   .crispy-stop {
-  --stop-color-dim:    rgba(232, 64, 64, 0.35);
-  --stop-color:        rgba(232, 64, 64, 0.5);
-  --stop-color-bright: rgba(232, 64, 64, 0.7);
+  --stop-color-dim:    rgba(232, 64, 64, 0.5);
+  --stop-color:        rgba(232, 64, 64, 0.7);
+  --stop-color-bright: rgba(232, 64, 64, 0.9);
 }
 
 .crispy-stop__btn:hover {
