@@ -79,6 +79,8 @@
     "package:win32-arm64": "npm run build && node scripts/package-vsix.mjs win32-arm64",
     "test": "./scripts/check-claude-fixture.sh",
     "test:unit": "vitest run",
+    "smoke": "npx tsx scripts/smoke.ts",
+    "smoke:quick": "npx tsx scripts/smoke.ts --skip-embed",
     "dev": "npm run build:webview && node --import tsx src/host/dev-server.ts"
   },
   "categories": [
