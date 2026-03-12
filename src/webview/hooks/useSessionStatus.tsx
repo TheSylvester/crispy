@@ -55,37 +55,11 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
   // can preserve it through session-ID changes caused by sendTurn
   // (new/fork/vendor-switch/pending→real re-keying).
   const optimisticRef = useRef(false);
-  const optimisticTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  /** Cancel the optimistic safety-net timer (idempotent). */
-  const clearOptimisticTimer = useCallback(() => {
-    if (optimisticTimerRef.current) {
-      clearTimeout(optimisticTimerRef.current);
-      optimisticTimerRef.current = null;
-    }
-  }, []);
 
   const setOptimistic = useCallback((state: SessionChannelState) => {
     optimisticRef.current = true;
     setChannelState(state);
-
-    // Safety net: if no real status event (e.g. 'active') or entry arrives
-    // within 8s, the send was a local command that won't trigger a model turn
-    // (e.g. unknown skill). Clear optimistic so the UI isn't stuck in
-    // 'streaming'. Real status events clear optimisticRef first, so the
-    // timeout is a no-op in the normal case. Entry arrivals reset this timer
-    // (see onEvent handler below) so active streams never hit the timeout.
-    clearOptimisticTimer();
-    optimisticTimerRef.current = setTimeout(() => {
-      optimisticTimerRef.current = null;
-      if (optimisticRef.current) {
-        optimisticRef.current = false;
-        // Fall back to 'idle' — if the real state was 'background', the next
-        // background task heartbeat will correct it.
-        setChannelState('idle');
-      }
-    }, 8000);
-  }, [clearOptimisticTimer]);
+  }, []);
 
   // Clear error on session switch
   useEffect(() => {
@@ -102,7 +76,6 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
 
     if (!selectedSessionId) {
       optimisticRef.current = false;
-      clearOptimisticTimer();
       setChannelState(null);
       return;
     }
@@ -115,7 +88,6 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
     const isToPending = selectedSessionId.startsWith('pending:');
     if (!isPendingToReal && !isToPending) {
       optimisticRef.current = false;
-      clearOptimisticTimer();
     }
 
     if (!optimisticRef.current) {
@@ -142,24 +114,10 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
         return;
       }
 
-      // Entries arriving while optimistic means the session is clearly active.
-      // Reset the safety-net timer so it doesn't fire mid-stream.
-      if (event.type === 'entry' && optimisticRef.current) {
-        clearOptimisticTimer();
-        optimisticTimerRef.current = setTimeout(() => {
-          optimisticTimerRef.current = null;
-          if (optimisticRef.current) {
-            optimisticRef.current = false;
-            setChannelState('idle');
-          }
-        }, 8000);
-      }
-
       // Handle status events for state transitions — these are
-      // authoritative, so clear the optimistic flag and safety-net timer.
+      // authoritative, so clear the optimistic flag.
       if (event.type === 'event' && event.event.type === 'status') {
         optimisticRef.current = false;
-        clearOptimisticTimer();
         switch (event.event.status) {
           case 'active':
             setChannelState('streaming');
@@ -183,8 +141,8 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
       }
     });
 
-    return () => { clearOptimisticTimer(); off(); };
-  }, [selectedSessionId, transport, clearOptimisticTimer]);
+    return off;
+  }, [selectedSessionId, transport]);
 
   return (
     <SessionStatusContext.Provider value={{ channelState, setOptimistic, lastError, clearError }}>

@@ -1365,7 +1365,15 @@ export class ClaudeAgentAdapter implements AgentAdapter {
 
       // SDK 0.2.63+ system subtypes — pass through as entries
       case 'task_progress':       // Background agent progress with usage
-      case 'local_command_output': // Slash command output
+        this.emitEntry(msg);
+        break;
+      case 'local_command_output': // Slash command output — no model turn started
+        this.emitEntry(msg);
+        // The SDK processed this locally (e.g. unknown /skill, /model, /usage).
+        // No model turn will follow, so emit idle to clear the UI's optimistic
+        // 'streaming' state. This is the authoritative signal — no timer needed.
+        this.emitStatus('idle');
+        break;
       case 'elicitation_complete': // MCP elicitation done
         this.emitEntry(msg);
         break;
