@@ -30,7 +30,7 @@ import { registerAllAdapters } from './adapter-registry.js';
 import { initRosieBot, shutdownRosieBot } from '../core/rosie/index.js';
 import { initRecallIngest, shutdownRecallIngest } from '../core/recall/ingest-hook.js';
 import { startRecallCatchup, stopEmbeddingBackfill } from '../core/recall/catchup-manager.js';
-import { initEmbedWorker, shutdownEmbedWorker } from '../core/recall/embedder.js';
+import { shutdownEmbedWorker } from '../core/recall/embedder.js';
 import { resolveInternalServerPaths } from './adapter-registry.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
@@ -178,8 +178,10 @@ done();
 
 done = phase('init recall ingest');
 initRecallIngest();
-initEmbedWorker(resolve(process.cwd(), 'src', 'core', 'recall', 'embed-worker.ts'), true);
-startRecallCatchup('devServer');
+startRecallCatchup('devServer', {
+  scriptPath: resolve(process.cwd(), 'src', 'core', 'recall', 'embed-worker.ts'),
+  tsx: true,
+});
 done();
 
 done = phase('init rosie bot');

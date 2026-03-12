@@ -14,6 +14,7 @@
 
 import { onResponseComplete } from '../lifecycle-hooks.js';
 import { ingestSessionMessages, embedSessionMessages } from './message-ingest.js';
+import { disposeEmbedder } from './embedder.js';
 import { pushRosieLog } from '../rosie/debug-log.js';
 
 // ============================================================================
@@ -32,7 +33,7 @@ export function initRecallIngest(): void {
     if (sessionId.startsWith('pending:')) return;
 
     try {
-      const result = await ingestSessionMessages(sessionId, { force: true });
+      const result = await ingestSessionMessages(sessionId);
 
       if (result.error) {
         pushRosieLog({
@@ -49,24 +50,34 @@ export function initRecallIngest(): void {
           data: { sessionId, messages: result.chunksCreated },
         });
 
-        // Embed after successful FTS5 ingest — fire-and-forget
-        embedSessionMessages(sessionId).then(count => {
-          if (count > 0) {
+        // Embed after successful FTS5 ingest — fire-and-forget.
+        // Uses in-process ONNX (no worker) for the small per-turn batches.
+        // Always disposes the model afterward to prevent ONNX memory leaks
+        // from accumulating in the main process.
+        embedSessionMessages(sessionId)
+          .then(count => {
+            if (count > 0) {
+              pushRosieLog({
+                source: 'recall-ingest',
+                level: 'info',
+                summary: `Embed: ${count} messages vectorized`,
+                data: { sessionId, embedded: count },
+              });
+            }
+          })
+          .catch(err => {
             pushRosieLog({
               source: 'recall-ingest',
-              level: 'info',
-              summary: `Embed: ${count} messages vectorized`,
-              data: { sessionId, embedded: count },
+              level: 'warn',
+              summary: `Embed failed: ${err instanceof Error ? err.message : String(err)}`,
+              data: { sessionId },
             });
-          }
-        }).catch(err => {
-          pushRosieLog({
-            source: 'recall-ingest',
-            level: 'warn',
-            summary: `Embed failed: ${err instanceof Error ? err.message : String(err)}`,
-            data: { sessionId },
+          })
+          .finally(() => {
+            // Free ONNX model memory on both success and failure.
+            // Next turn will reload (~2-10s, non-blocking fire-and-forget).
+            disposeEmbedder().catch(() => {});
           });
-        });
       }
     } catch (err) {
       // Fire-and-forget — never crash the lifecycle pipeline

@@ -28,7 +28,6 @@ import { stripToolContent } from './transcript-utils.js';
 import {
   insertMessages,
   insertMessageVectors,
-  hasSessionMessages,
   deleteSessionMessages,
 } from './message-store.js';
 import type { MessageRecord, MessageVectorRecord } from './message-store.js';
@@ -98,10 +97,8 @@ export async function ingestSessionMessages(
   sessionId: string,
   options?: IngestOptions,
 ): Promise<IngestResult> {
-  // 1. Check if already processed
-  if (!options?.force && hasSessionMessages(sessionId)) {
-    return { sessionId, chunksCreated: 0, skipped: true };
-  }
+  // 1. Check if already processed (batch/backfill only — real-time always appends)
+  //    When force is not set, we still proceed to INSERT OR IGNORE new messages.
 
   // 2. Resolve session info for project_id
   const sessionInfo = findSession(sessionId);
@@ -186,10 +183,12 @@ export async function ingestSessionMessages(
 /** Max characters to embed per message (Nomic has 8192 token limit, ~4 chars/token). */
 const MAX_EMBED_CHARS = 32_000;
 
-/** Max messages to embed per hook invocation. Keeps memory bounded on large
- *  sessions (e.g. forks that inherit 100+ messages). Remainder catches up
- *  on subsequent turns. */
-const MAX_EMBED_BATCH = 20;
+/** Max messages to embed per call. Caps in-process ONNX inference to avoid
+ *  blocking the event loop too long (~200ms/msg × 50 = 10s worst case).
+ *  Backfill calls embedSessionMessages in a loop, so this doesn't limit
+ *  total throughput — just per-call work. In practice, incremental
+ *  ingestion means only 1-5 new messages per turn. */
+const MAX_EMBED_BATCH = 50;
 
 /**
  * Embed a session's indexed messages into q8 vectors for semantic search.
