@@ -17,6 +17,7 @@
  */
 
 import { existsSync } from 'node:fs';
+import os from 'node:os';
 import { listAllSessions } from '../session-manager.js';
 import {
   getIndexedSessionIds,
@@ -47,8 +48,13 @@ export interface CatchupSubscriber {
 /** Gap threshold: embed silently below this, prompt above. */
 const SILENT_EMBED_THRESHOLD = 200;
 
-/** RSS threshold (MB) at which we stop embedding to avoid OOM. */
-const RSS_LIMIT_MB = 1280;
+/**
+ * Minimum free system memory (MB) required to continue embedding.
+ * The ONNX model needs ~300-400 MB headroom. We use 512 MB as a safety margin.
+ * This replaces a fixed RSS threshold which was unreliable because the extension
+ * host's baseline RSS varies widely depending on other installed extensions.
+ */
+const MIN_FREE_MEMORY_MB = 512;
 
 /** Rough estimate: seconds per message for embedding on CPU ONNX. */
 const SECONDS_PER_MESSAGE = 3;
@@ -169,10 +175,10 @@ async function runFts5Catchup(): Promise<void> {
 // Embedding Backfill
 // ============================================================================
 
-/** Check RSS and return true if we should stop to avoid OOM. */
+/** Check system free memory and return true if we should stop to avoid OOM. */
 function memoryPressure(): boolean {
-  const rss = Math.round(process.memoryUsage.rss() / 1024 / 1024);
-  return rss > RSS_LIMIT_MB;
+  const freeMB = Math.round(os.freemem() / 1024 / 1024);
+  return freeMB < MIN_FREE_MEMORY_MB;
 }
 
 /**
@@ -180,7 +186,7 @@ function memoryPressure(): boolean {
  * Disposes the embedder after each session to keep RSS bounded.
  */
 async function runEmbedding(): Promise<void> {
-  broadcast({ phase: 'embedding', embeddedSoFar: 0 });
+  broadcast({ phase: 'embedding', embeddedSoFar: 0, stoppedByMemoryPressure: false });
 
   const sessions = getSessionsWithEmbeddingGap();
   if (sessions.length === 0) {
@@ -189,6 +195,7 @@ async function runEmbedding(): Promise<void> {
   }
 
   let totalEmbedded = 0;
+  let hitMemoryPressure = false;
   const embedStartTime = Date.now();
 
   for (const sessionId of sessions) {
@@ -196,10 +203,11 @@ async function runEmbedding(): Promise<void> {
 
     // RSS watchdog — stop gracefully if memory is high
     if (memoryPressure()) {
+      hitMemoryPressure = true;
       pushRosieLog({
         source: 'recall-catchup',
         level: 'warn',
-        summary: 'Embedding stopped due to memory pressure — will resume on next activation',
+        summary: `Embedding stopped — system free memory below ${MIN_FREE_MEMORY_MB} MB — will resume on next activation`,
       });
       break;
     }
@@ -208,7 +216,16 @@ async function runEmbedding(): Promise<void> {
       // Loop until the session is fully embedded (MAX_EMBED_BATCH caps each call)
       // eslint-disable-next-line no-constant-condition
       while (true) {
-        if (cancelRequested || memoryPressure()) break;
+        if (cancelRequested) break;
+        if (memoryPressure()) {
+          hitMemoryPressure = true;
+          pushRosieLog({
+            source: 'recall-catchup',
+            level: 'warn',
+            summary: `Embedding stopped — system free memory below ${MIN_FREE_MEMORY_MB} MB — will resume on next activation`,
+          });
+          break;
+        }
 
         const count = await embedSessionMessages(sessionId);
         if (count === 0) break; // fully embedded
@@ -225,6 +242,8 @@ async function runEmbedding(): Promise<void> {
           estimatedSecondsRemaining: Math.max(0, estSeconds),
         });
       }
+
+      if (hitMemoryPressure) break;
 
       // Dispose embedder after each session to prevent ONNX memory leaks
       const { disposeEmbedder } = await import('./embedder.js');
@@ -250,7 +269,13 @@ async function runEmbedding(): Promise<void> {
 
   // Re-detect gap after backfill
   const { gapCount, totalMessages } = getEmbeddingGapStats();
-  broadcast({ phase: 'done', gapCount, totalMessages, estimatedSecondsRemaining: 0 });
+  broadcast({
+    phase: 'done',
+    gapCount,
+    totalMessages,
+    estimatedSecondsRemaining: 0,
+    stoppedByMemoryPressure: hitMemoryPressure,
+  });
 }
 
 // ============================================================================
