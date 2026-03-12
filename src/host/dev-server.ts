@@ -19,7 +19,7 @@ delete process.env.CLAUDECODE;
 
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { join, extname } from 'node:path';
+import { join, resolve, extname } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 
 import { initSettings, startWatchingSettings } from '../core/settings/index.js';
@@ -30,6 +30,7 @@ import { registerAllAdapters } from './adapter-registry.js';
 import { initRosieSummarize, shutdownRosieSummarize, initRosieTracker, shutdownRosieTracker } from '../core/rosie/index.js';
 import { initRecallIngest, shutdownRecallIngest } from '../core/recall/ingest-hook.js';
 import { startRecallCatchup, stopEmbeddingBackfill } from '../core/recall/catchup-manager.js';
+import { initEmbedWorker, shutdownEmbedWorker } from '../core/recall/embedder.js';
 import { resolveInternalServerPaths } from './adapter-registry.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
@@ -177,6 +178,7 @@ done();
 
 done = phase('init recall ingest');
 initRecallIngest();
+initEmbedWorker(resolve(process.cwd(), 'src', 'core', 'recall', 'embed-worker.ts'), true);
 startRecallCatchup('devServer');
 done();
 
@@ -225,6 +227,7 @@ process.on('SIGINT', () => {
   shutdownRosieSummarize();
   shutdownRecallIngest();
   stopEmbeddingBackfill();
+  shutdownEmbedWorker();
   dispatch.dispose();
   process.exit(0);
 });
@@ -233,6 +236,7 @@ process.on('SIGTERM', () => {
   shutdownRosieSummarize();
   shutdownRecallIngest();
   stopEmbeddingBackfill();
+  shutdownEmbedWorker();
   dispatch.dispose();
   process.exit(0);
 });

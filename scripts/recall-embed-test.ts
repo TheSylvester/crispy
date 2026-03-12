@@ -34,6 +34,7 @@ import {
 } from '../src/core/recall/message-store.js';
 import type { MessageSearchResult, MessageVectorRecord } from '../src/core/recall/message-store.js';
 import { dualPathSearch } from '../src/core/recall/vector-search.js';
+import { initEmbedWorker, shutdownEmbedWorker } from '../src/core/recall/embedder.js';
 
 // ============================================================================
 // CLI
@@ -54,6 +55,7 @@ Options:
   --search-limit <n>    Max search results (default: 10)
   --project-id <path>   Scope search to a project path
   --force               Re-embed already-vectorized sessions
+  --no-worker           Use in-process embedding (skip worker thread)
   --verbose, -v         Print extra debug info
   --help, -h            Show this help
 
@@ -81,6 +83,7 @@ interface CliOptions {
   backfillOnly: boolean;
   compare: boolean;
   force: boolean;
+  noWorker: boolean;
   verbose: boolean;
 }
 
@@ -95,6 +98,7 @@ function parseCli(): CliOptions | null {
       'backfill-only': { type: 'boolean', default: false },
       compare: { type: 'boolean', default: false },
       force: { type: 'boolean', default: false },
+      'no-worker': { type: 'boolean', default: false },
       verbose: { type: 'boolean', short: 'v', default: false },
       help: { type: 'boolean', short: 'h', default: false },
     },
@@ -124,6 +128,7 @@ function parseCli(): CliOptions | null {
     backfillOnly,
     compare: values.compare as boolean,
     force: values.force as boolean,
+    noWorker: values['no-worker'] as boolean,
     verbose: values.verbose as boolean,
   };
 }
@@ -450,7 +455,17 @@ async function main(): Promise<void> {
   await initSettings({ cwd });
   log(`[recall-embed-test] Bootstrap: ${fmtMs(stopBootstrap())}`);
 
+  // Initialize worker-based embedding (default) or in-process (--no-worker)
+  if (!opts.noWorker) {
+    const { resolve } = await import('node:path');
+    initEmbedWorker(resolve(process.cwd(), 'src', 'core', 'recall', 'embed-worker.ts'), true);
+    log('[recall-embed-test] Using worker thread embedding');
+  } else {
+    log('[recall-embed-test] Using in-process embedding (--no-worker)');
+  }
+
   const shutdown = () => {
+    shutdownEmbedWorker();
     dispatch.dispose();
     unregister();
   };

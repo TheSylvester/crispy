@@ -201,6 +201,9 @@ async function runEmbedding(): Promise<void> {
         level: 'warn',
         summary: 'Embedding stopped due to memory pressure — will resume on next activation',
       });
+      // Free ONNX model memory in the worker before stopping
+      const { disposeEmbedder } = await import('./embedder.js');
+      await disposeEmbedder();
       break;
     }
 
@@ -226,9 +229,6 @@ async function runEmbedding(): Promise<void> {
         });
       }
 
-      // Dispose embedder after each session to prevent ONNX memory leaks
-      const { disposeEmbedder } = await import('./embedder.js');
-      await disposeEmbedder();
     } catch (err) {
       pushRosieLog({
         source: 'recall-catchup',

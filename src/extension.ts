@@ -5,6 +5,7 @@
  */
 
 import * as vscode from 'vscode';
+import * as path from 'node:path';
 import { initSettings, startWatchingSettings, stopWatchingSettings } from './core/settings/index.js';
 import { openCrispyPanel, getOrCreatePanelForPrefill, getMostRecentPanel, getActivePanel } from './host/webview-host.js';
 import { startRescan, stopRescan } from './core/session-list-manager.js';
@@ -14,6 +15,7 @@ import { createAgentDispatch } from './host/agent-dispatch.js';
 import { initRosieSummarize, shutdownRosieSummarize, initRosieTracker, shutdownRosieTracker } from './core/rosie/index.js';
 import { initRecallIngest, shutdownRecallIngest } from './core/recall/ingest-hook.js';
 import { startRecallCatchup, stopEmbeddingBackfill } from './core/recall/catchup-manager.js';
+import { initEmbedWorker, shutdownEmbedWorker } from './core/recall/embedder.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
@@ -80,6 +82,7 @@ export function activate(context: vscode.ExtensionContext): void {
   //   Phase 1: Rosie summarize (LLM-based analysis)
   //   Phase 2 (after): Rosie tracker (depends on summarize output)
   initRecallIngest();
+  initEmbedWorker(path.join(context.extensionPath, 'dist', 'embed-worker.js'));
   startRecallCatchup('vscode');
   initRosieSummarize(dispatch);
   initRosieTracker(dispatch, resolveInternalServerPaths(context.extensionPath));
@@ -89,6 +92,7 @@ export function activate(context: vscode.ExtensionContext): void {
       shutdownRosieSummarize();
       shutdownRecallIngest();
       stopEmbeddingBackfill();
+      shutdownEmbedWorker();
       dispatch.dispose();
     },
   });
