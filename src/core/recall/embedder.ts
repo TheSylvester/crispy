@@ -71,6 +71,18 @@ async function getEmbedder(): Promise<any> {
   return embedder;
 }
 
+/**
+ * Dispose the cached ONNX pipeline to release native memory.
+ * Next embed call will re-load the model (~2-10s).
+ */
+export async function disposeEmbedder(): Promise<void> {
+  if (embedder) {
+    if (typeof embedder.dispose === 'function') await embedder.dispose();
+    embedder = null;
+    loading = null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -87,16 +99,21 @@ async function getEmbedder(): Promise<any> {
 export async function embed(text: string): Promise<Float32Array> {
   const model = await getEmbedder();
   const result = await model(text, { pooling: 'mean', normalize: true });
-  return result.data as Float32Array;
+  const vec = (result.data as Float32Array).slice();
+  if (typeof result.dispose === 'function') result.dispose();
+  return vec;
 }
 
 /**
- * Embed multiple texts in a single batch call.
+ * Embed multiple texts sequentially, disposing each ONNX tensor immediately.
  *
- * More efficient than calling embed() in a loop when processing many chunks.
+ * True batch inference (passing an array) causes memory spikes proportional
+ * to batch_size × seq_len² for attention matrices — crashes WSL2 even at
+ * batch_size=8. Sequential with dispose keeps memory flat: only one tensor
+ * is alive at any time.
  *
  * @param texts  Array of text strings to embed.
- * @returns      Array of normalized float32 embedding vectors.
+ * @returns      Array of normalized float32 embedding vectors (768-dim each).
  */
 export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
   if (texts.length === 0) return [];
@@ -105,7 +122,8 @@ export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
   const results: Float32Array[] = [];
   for (const text of texts) {
     const result = await model(text, { pooling: 'mean', normalize: true });
-    results.push(result.data as Float32Array);
+    results.push((result.data as Float32Array).slice());
+    if (typeof result.dispose === 'function') result.dispose();
   }
   return results;
 }

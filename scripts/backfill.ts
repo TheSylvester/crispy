@@ -626,6 +626,23 @@ function findEmbedMessagesCandidates(
   }));
 }
 
+/** RSS threshold (in MB) at which we stop gracefully and let the wrapper
+ *  restart us. The command is incremental so progress is preserved.
+ *  Set above the typical post-dispose baseline (~800MB) but below the
+ *  --max-old-space-size cap (1536MB) used by embed-robust.sh. */
+const RSS_LIMIT_MB = 1280;
+
+/** Check RSS and return true if we should stop to avoid OOM. */
+function memoryPressure(): { rss: number; stop: boolean } {
+  const rss = Math.round(process.memoryUsage.rss() / 1024 / 1024);
+  return { rss, stop: rss > RSS_LIMIT_MB };
+}
+
+/** Try to trigger GC if --expose-gc was passed. */
+function tryGc(): void {
+  if (typeof globalThis.gc === 'function') globalThis.gc();
+}
+
 async function runEmbedMessages(opts: CliOptions): Promise<void> {
   const candidates = findEmbedMessagesCandidates(opts);
 
@@ -639,13 +656,15 @@ async function runEmbedMessages(opts: CliOptions): Promise<void> {
 
   // Lazy-load embedding modules
   let embedBatchFn: ((texts: string[]) => Promise<Float32Array[]>) | null = null;
+  let disposeFn: (() => Promise<void>) | null = null;
   let quantizeFn: ((f32: Float32Array) => { q8: Int8Array; scale: number }) | null = null;
   let normFn: ((f32: Float32Array) => number) | null = null;
 
   try {
-    const { embedBatch } = await import('../src/core/recall/embedder.js');
+    const { embedBatch, disposeEmbedder } = await import('../src/core/recall/embedder.js');
     const { quantizeToQ8, computeNorm } = await import('../src/core/recall/quantize.js');
     embedBatchFn = embedBatch;
+    disposeFn = disposeEmbedder;
     quantizeFn = quantizeToQ8;
     normFn = computeNorm;
   } catch (err) {
@@ -662,9 +681,18 @@ async function runEmbedMessages(opts: CliOptions): Promise<void> {
   const db = getDb(dbPath());
 
   for (let i = 0; i < candidates.length; i++) {
+    // Memory watchdog — exit gracefully if RSS is too high.
+    // Progress is preserved (incremental), so re-running picks up here.
+    const mem = memoryPressure();
+    if (mem.stop) {
+      log(`\n⚠ RSS ${mem.rss}MB exceeds ${RSS_LIMIT_MB}MB limit — stopping to avoid OOM.`);
+      log(`  Progress is saved. Re-run to continue from where we left off.`);
+      break;
+    }
+
     const c = candidates[i]!;
     const label = `[${i + 1}/${candidates.length}]`;
-    log(`\n${label} ${c.sessionId} (${c.messageCount} messages)`);
+    log(`\n${label} ${c.sessionId} (${c.messageCount} msgs, RSS: ${mem.rss}MB)`);
 
     if (opts.dryRun) {
       result(JSON.stringify({
@@ -707,7 +735,7 @@ async function runEmbedMessages(opts: CliOptions): Promise<void> {
         continue;
       }
 
-      // Embed in batch
+      // Embed in batch (embedBatch internally sub-batches to MAX_BATCH_SIZE)
       const texts = validRows.map(r => r.text);
       const vectors = await embedBatchFn!(texts);
 
@@ -739,6 +767,13 @@ async function runEmbedMessages(opts: CliOptions): Promise<void> {
         embedded: records.length,
         elapsed: parseFloat(elapsed),
       }));
+
+      // ONNX Runtime leaks internal state beyond what tensor.dispose()
+      // can reclaim. Release the entire pipeline after each session to
+      // keep RSS bounded. The ~2-5s reload cost per session is the price
+      // of stability on memory-constrained environments (WSL2).
+      await disposeFn!();
+      tryGc();
     } catch (err) {
       failCount++;
       log(`  ERROR — ${err instanceof Error ? err.message : String(err)}`);
