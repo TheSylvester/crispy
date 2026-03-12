@@ -193,14 +193,36 @@ async function runEmbedding(): Promise<void> {
   broadcast({ phase: 'embedding', embeddedSoFar: 0 });
 
   const sessions = getSessionsWithEmbeddingGap();
+  pushRosieLog({
+    source: 'recall-catchup',
+    level: 'info',
+    summary: `runEmbedding called — ${sessions.length} sessions with gap`,
+  });
   if (sessions.length === 0) {
+    pushRosieLog({
+      source: 'recall-catchup',
+      level: 'info',
+      summary: 'No sessions need embedding — done',
+    });
     broadcast({ phase: 'done', gapCount: 0 });
     return;
   }
 
   // Spin up the worker for the backfill run
   if (embedWorkerConfig) {
+    pushRosieLog({
+      source: 'recall-catchup',
+      level: 'info',
+      summary: 'Initializing embed worker for backfill',
+      data: { scriptPath: embedWorkerConfig.scriptPath, tsx: embedWorkerConfig.tsx },
+    });
     initEmbedWorker(embedWorkerConfig.scriptPath, embedWorkerConfig.tsx);
+  } else {
+    pushRosieLog({
+      source: 'recall-catchup',
+      level: 'warn',
+      summary: 'No embedWorkerConfig — using in-process embedding',
+    });
   }
 
   let totalEmbedded = 0;
@@ -257,13 +279,12 @@ async function runEmbedding(): Promise<void> {
     shutdownEmbedWorker();
   }
 
-  if (totalEmbedded > 0) {
-    pushRosieLog({
-      source: 'recall-catchup',
-      level: 'info',
-      summary: `Embedding backfill: ${totalEmbedded} messages vectorized`,
-    });
-  }
+  pushRosieLog({
+    source: 'recall-catchup',
+    level: 'info',
+    summary: `runEmbedding complete — ${totalEmbedded} messages vectorized`,
+    data: { totalEmbedded, cancelled: cancelRequested },
+  });
 
   // Re-detect gap after backfill
   const { gapCount, totalMessages } = getEmbeddingGapStats();
@@ -286,6 +307,12 @@ export async function startRecallCatchup(
   host?: 'vscode' | 'devServer',
   workerConfig?: { scriptPath: string; tsx: boolean },
 ): Promise<void> {
+  pushRosieLog({
+    source: 'recall-catchup',
+    level: 'info',
+    summary: 'startRecallCatchup called',
+    data: { host: host ?? 'devServer', hasWorkerConfig: !!workerConfig },
+  });
   if (host) hostType = host;
   if (workerConfig) embedWorkerConfig = workerConfig;
   // Subscribe to settings changes to detect recall toggle
@@ -308,14 +335,34 @@ export async function startRecallCatchup(
   }
 
   // Don't start if recall is disabled
-  if (!isRecallEnabled()) return;
+  if (!isRecallEnabled()) {
+    pushRosieLog({
+      source: 'recall-catchup',
+      level: 'warn',
+      summary: 'Recall disabled — skipping catch-up',
+      data: { hostType },
+    });
+    return;
+  }
 
   await runCatchup();
 }
 
 /** Internal: run the full catch-up pipeline. */
 async function runCatchup(): Promise<void> {
-  if (running) return;
+  pushRosieLog({
+    source: 'recall-catchup',
+    level: 'info',
+    summary: 'runCatchup called',
+  });
+  if (running) {
+    pushRosieLog({
+      source: 'recall-catchup',
+      level: 'warn',
+      summary: 'runCatchup blocked — already running',
+    });
+    return;
+  }
   running = true;
   cancelRequested = false;
 
@@ -327,6 +374,12 @@ async function runCatchup(): Promise<void> {
 
     // Phase 2: Gap detection
     const { gapCount, totalMessages } = getEmbeddingGapStats();
+    pushRosieLog({
+      source: 'recall-catchup',
+      level: 'info',
+      summary: 'Gap detection complete',
+      data: { gapCount, totalMessages },
+    });
     broadcast({
       phase: 'detecting-gap',
       gapCount,
@@ -335,15 +388,30 @@ async function runCatchup(): Promise<void> {
     });
 
     if (gapCount === 0) {
+      pushRosieLog({
+        source: 'recall-catchup',
+        level: 'info',
+        summary: 'No embedding gap — nothing to do',
+      });
       broadcast({ phase: 'done' });
       return;
     }
 
     // Phase 3: Decision — silent embed or prompt
     if (gapCount <= SILENT_EMBED_THRESHOLD) {
+      pushRosieLog({
+        source: 'recall-catchup',
+        level: 'info',
+        summary: `Small gap (${gapCount}) — embedding silently`,
+      });
       // Small gap — embed silently
       await runEmbedding();
     } else {
+      pushRosieLog({
+        source: 'recall-catchup',
+        level: 'info',
+        summary: `Large gap (${gapCount}) — prompting user`,
+      });
       // Large gap — broadcast status and wait for user action.
       // The webview will show the lightbox prompt.
       // phase stays at 'detecting-gap' with the gapCount set.
@@ -361,7 +429,24 @@ async function runCatchup(): Promise<void> {
 
 /** User clicked "Start Embedding" — begin background backfill. */
 export async function startEmbeddingBackfill(): Promise<void> {
-  if (running) return;
+  pushRosieLog({
+    source: 'recall-catchup',
+    level: 'info',
+    summary: 'startEmbeddingBackfill called',
+  });
+  if (running) {
+    pushRosieLog({
+      source: 'recall-catchup',
+      level: 'warn',
+      summary: 'startEmbeddingBackfill blocked — already running',
+    });
+    return;
+  }
+  pushRosieLog({
+    source: 'recall-catchup',
+    level: 'info',
+    summary: 'Embedding backfill starting',
+  });
   running = true;
   cancelRequested = false;
 
@@ -383,6 +468,11 @@ export async function startEmbeddingBackfill(): Promise<void> {
 
 /** User clicked "Stop" — cancel in-progress backfill. */
 export function stopEmbeddingBackfill(): void {
+  pushRosieLog({
+    source: 'recall-catchup',
+    level: 'info',
+    summary: 'stopEmbeddingBackfill called — cancel requested',
+  });
   cancelRequested = true;
 }
 
