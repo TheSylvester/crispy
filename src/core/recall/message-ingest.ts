@@ -218,7 +218,7 @@ export async function embedSessionMessages(
       ? `SELECT message_id, message_text FROM messages WHERE session_id = ? ORDER BY message_seq ASC`
       : `SELECT m.message_id, m.message_text FROM messages m
          WHERE m.session_id = ?
-           AND m.message_id NOT IN (SELECT mv.message_id FROM message_vectors mv)
+           AND NOT EXISTS (SELECT 1 FROM message_vectors mv WHERE mv.message_id = m.message_id)
          ORDER BY m.message_seq ASC`,
     [sessionId],
   ) as Array<Record<string, unknown>>;

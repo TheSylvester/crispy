@@ -50,6 +50,9 @@ export function getDb(dbPath: string): Database {
   // back to delete anyway, but be clear about intent)
   db.exec('PRAGMA journal_mode = DELETE');
 
+  // Enable foreign key enforcement (OFF by default in SQLite)
+  db.exec('PRAGMA foreign_keys = ON');
+
   runMigrations(db, dbPath);
   pushRosieLog({ source: 'db', level: 'info', summary: `DB: initialized at ${dbPath}` });
 
@@ -715,6 +718,27 @@ const migrations: Migration[] = [
           norm          REAL NOT NULL,
           quant_scale   REAL NOT NULL
         );
+      `);
+    },
+  },
+  {
+    version: 15,
+    description: 'Recreate message_vectors with ON DELETE CASCADE',
+    up: (db: Database) => {
+      db.exec(`
+        -- Purge orphaned vectors (FK was unenforced before this migration)
+        DELETE FROM message_vectors
+          WHERE NOT EXISTS (SELECT 1 FROM messages m WHERE m.message_id = message_vectors.message_id);
+
+        CREATE TABLE message_vectors_new (
+          message_id    TEXT PRIMARY KEY REFERENCES messages(message_id) ON DELETE CASCADE,
+          embedding_q8  BLOB NOT NULL,
+          norm          REAL NOT NULL,
+          quant_scale   REAL NOT NULL
+        );
+        INSERT INTO message_vectors_new SELECT * FROM message_vectors;
+        DROP TABLE message_vectors;
+        ALTER TABLE message_vectors_new RENAME TO message_vectors;
       `);
     },
   },

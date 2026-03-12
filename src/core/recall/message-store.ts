@@ -102,7 +102,14 @@ export function insertMessages(messages: MessageRecord[]): void {
  */
 export function deleteSessionMessages(sessionId: string): void {
   try {
-    db().run('DELETE FROM messages WHERE session_id = ?', [sessionId]);
+    const d = db();
+    // Delete vectors explicitly — belt-and-suspenders with v15 CASCADE constraint
+    d.run(
+      `DELETE FROM message_vectors WHERE message_id IN
+       (SELECT message_id FROM messages WHERE session_id = ?)`,
+      [sessionId],
+    );
+    d.run('DELETE FROM messages WHERE session_id = ?', [sessionId]);
   } catch {
     // Non-fatal — recall is an optimization layer
   }
@@ -609,6 +616,65 @@ export function searchMessagesSemantic(
         truncated,
       };
     });
+  } catch {
+    return [];
+  }
+}
+
+// ============================================================================
+// Catch-up / Gap Detection
+// ============================================================================
+
+/**
+ * Return all session IDs that already have messages in the FTS5 index.
+ * Used for batch checking during catch-up (avoids N+1 hasSessionMessages calls).
+ */
+export function getIndexedSessionIds(): Set<string> {
+  try {
+    const rows = db().all(
+      'SELECT DISTINCT session_id FROM messages',
+    ) as Array<Record<string, unknown>>;
+    return new Set(rows.map(r => r.session_id as string));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Count total indexed messages and messages without embedding vectors.
+ * Returns { totalMessages, gapCount } where gapCount is the number of
+ * messages that need embedding.
+ */
+export function getEmbeddingGapStats(): { totalMessages: number; gapCount: number } {
+  try {
+    const row = db().get(
+      `SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM message_vectors mv WHERE mv.message_id = m.message_id) THEN 1 ELSE 0 END) as gap
+       FROM messages m WHERE m.message_text != ''`,
+    ) as Record<string, unknown> | undefined;
+    return {
+      totalMessages: row ? (row.total as number) : 0,
+      gapCount: row ? (row.gap as number) : 0,
+    };
+  } catch {
+    return { totalMessages: 0, gapCount: 0 };
+  }
+}
+
+/**
+ * Return session IDs that have messages without embedding vectors.
+ * Ordered by most recent messages first.
+ */
+export function getSessionsWithEmbeddingGap(): string[] {
+  try {
+    const rows = db().all(
+      `SELECT DISTINCT m.session_id FROM messages m
+       WHERE m.message_text != ''
+         AND NOT EXISTS (SELECT 1 FROM message_vectors mv WHERE mv.message_id = m.message_id)
+       ORDER BY m.created_at DESC`,
+    ) as Array<Record<string, unknown>>;
+    return rows.map(r => r.session_id as string);
   } catch {
     return [];
   }
