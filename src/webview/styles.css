@@ -1398,21 +1398,105 @@ h2 {
   border: 1px solid var(--border-panel);
 }
 
-/* --- CodePreview line selection --- */
+/* --- Annotation popover (text-selection based) --- */
 
-.crispy-code-line-number--selectable {
+.crispy-annotation-popover {
+  position: fixed;
+  transform: translate(-50%, -100%);
+  z-index: 400;
+  background: var(--vscode-editorWidget-background, #252526);
+  border: 1px solid var(--vscode-editorWidget-border, #454545);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  padding: 4px;
+  min-width: 100px;
+}
+
+.crispy-annotation-popover__btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--vscode-foreground, #ccc);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.crispy-annotation-popover__btn:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+
+.crispy-annotation-popover__input {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 280px;
+  padding: 4px;
+}
+
+.crispy-annotation-popover__textarea {
+  width: 100%;
+  min-height: 60px;
+  max-height: 150px;
+  padding: 6px 8px;
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #ccc);
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  font-family: inherit;
+  line-height: 1.4;
+  resize: vertical;
+  outline: none;
+}
+
+.crispy-annotation-popover__textarea:focus {
+  border-color: var(--vscode-focusBorder, #007fd4);
+}
+
+.crispy-annotation-popover__textarea::placeholder {
+  color: var(--vscode-input-placeholderForeground, #888);
+}
+
+.crispy-annotation-popover__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.crispy-annotation-popover__cancel {
+  padding: 3px 10px;
+  background: transparent;
+  color: var(--vscode-foreground, #ccc);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  font-family: inherit;
   cursor: pointer;
 }
 
-.crispy-code-line-number--selectable:hover {
-  color: var(--vscode-foreground, #ccc) !important;
+.crispy-annotation-popover__cancel:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
 }
 
-.crispy-code-line--selected {
-  background: var(--vscode-editor-selectionBackground, rgba(38, 79, 120, 0.6));
-  display: block;
-  margin: 0 -10px;
-  padding: 0 10px;
+.crispy-annotation-popover__submit {
+  padding: 3px 10px;
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #fff);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.crispy-annotation-popover__submit:hover {
+  background: var(--vscode-button-hoverBackground, #1177bb);
 }
 
 /* --- TodoWrite checklist --- */
@@ -5251,26 +5335,6 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
 .crispy-file-modal__close:hover {
   color: var(--vscode-foreground, #ccc);
   background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
-}
-
-.crispy-file-modal__annotate {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  margin-left: auto;
-  background: var(--vscode-button-secondaryBackground, #3a3d41);
-  color: var(--vscode-button-secondaryForeground, #fff);
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-xs);
-  font-family: inherit;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.crispy-file-modal__annotate:hover {
-  background: var(--vscode-button-secondaryHoverBackground, #45494e);
 }
 
 .crispy-file-modal__execute {

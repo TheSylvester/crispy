@@ -9,16 +9,12 @@
  */
 
 import type { ActiveFileView } from '../../context/FilePanelContext.js';
-import { CodePreview, type LineRange } from '../../renderers/tools/shared/CodePreview.js';
+import { CodePreview } from '../../renderers/tools/shared/CodePreview.js';
 
 interface FileViewerProps {
   file: ActiveFileView;
   error?: string | null;
   loading?: boolean;
-  /** Enable line selection for annotation */
-  selectable?: boolean;
-  selectedLines?: LineRange | null;
-  onLineSelect?: (range: LineRange | null) => void;
 }
 
 function formatSize(bytes: number): string {
@@ -27,7 +23,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function FileViewer({ file, error, loading, selectable, selectedLines, onLineSelect }: FileViewerProps): React.JSX.Element {
+export function FileViewer({ file, error, loading }: FileViewerProps): React.JSX.Element {
   if (loading) {
     return (
       <div className="crispy-file-viewer">
@@ -56,9 +52,6 @@ export function FileViewer({ file, error, loading, selectable, selectedLines, on
         code={file.content}
         language={file.language}
         maxHeight={99999}
-        selectable={selectable}
-        selectedLines={selectedLines}
-        onLineSelect={onLineSelect}
       />
     </div>
   );
