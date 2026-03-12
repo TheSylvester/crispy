@@ -21,4 +21,6 @@ export interface CatchupStatus {
   embeddedSoFar: number;
   /** Estimated time remaining in seconds (rough) */
   estimatedSecondsRemaining: number;
+  /** True when last run stopped due to memory pressure */
+  stoppedByMemoryPressure?: boolean;
 }

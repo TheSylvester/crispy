@@ -315,12 +315,17 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               {(catchupStatus.phase === 'detecting-gap' || (catchupStatus.phase === 'done' && catchupStatus.gapCount > 0)) && (
                 <span className="crispy-cp-settings__recall-gap">
                   <span>Semantic search: {catchupStatus.gapCount} messages to embed</span>
+                  {catchupStatus.stoppedByMemoryPressure && (
+                    <span className="crispy-cp-settings__recall-warn">
+                      Stopped — not enough memory. Try closing other tabs or restarting.
+                    </span>
+                  )}
                   {onStartEmbedding && (
                     <button
                       className="crispy-cp-settings__recall-btn"
                       onClick={onStartEmbedding}
                     >
-                      Start
+                      {catchupStatus.stoppedByMemoryPressure ? 'Retry' : 'Start'}
                     </button>
                   )}
                 </span>

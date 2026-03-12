@@ -2937,6 +2937,12 @@ h2 {
   gap: 4px;
 }
 
+.crispy-cp-settings__recall-warn {
+  font-size: 0.85em;
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  opacity: 0.9;
+}
+
 .crispy-cp-settings__recall-btn {
   align-self: flex-start;
   padding: 2px 10px;
