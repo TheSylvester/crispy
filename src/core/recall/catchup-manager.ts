@@ -17,6 +17,7 @@
  */
 
 import { existsSync } from 'node:fs';
+import { freemem } from 'node:os';
 import { listAllSessions } from '../session-manager.js';
 import {
   getIndexedSessionIds,
@@ -48,8 +49,8 @@ export interface CatchupSubscriber {
 /** Gap threshold: embed silently below this, prompt above. */
 const SILENT_EMBED_THRESHOLD = 200;
 
-/** RSS threshold (MB) at which we stop embedding to avoid OOM. */
-const RSS_LIMIT_MB = 1280;
+/** System free memory threshold (MB) — stop embedding if free RAM drops below this. */
+const FREE_MEM_FLOOR_MB = 512;
 
 /** Rough estimate: seconds per message for embedding on CPU ONNX. */
 const SECONDS_PER_MESSAGE = 3;
@@ -173,10 +174,18 @@ async function runFts5Catchup(): Promise<void> {
 // Embedding Backfill
 // ============================================================================
 
-/** Check RSS and return true if we should stop to avoid OOM. */
+/** Check system free memory and return true if we should stop. */
 function memoryPressure(): boolean {
-  const rss = Math.round(process.memoryUsage.rss() / 1024 / 1024);
-  return rss > RSS_LIMIT_MB;
+  const freeMB = Math.round(freemem() / 1024 / 1024);
+  const under = freeMB < FREE_MEM_FLOOR_MB;
+  if (under) {
+    pushRosieLog({
+      source: 'recall-catchup',
+      level: 'warn',
+      summary: `Memory pressure: ${freeMB} MB free < ${FREE_MEM_FLOOR_MB} MB floor`,
+    });
+  }
+  return under;
 }
 
 /**
@@ -232,7 +241,7 @@ async function runEmbedding(): Promise<void> {
     for (const sessionId of sessions) {
       if (cancelRequested) break;
 
-      // RSS watchdog — stop gracefully if memory is high
+      // Stop gracefully if system is running low on free memory.
       if (memoryPressure()) {
         pushRosieLog({
           source: 'recall-catchup',
@@ -246,7 +255,8 @@ async function runEmbedding(): Promise<void> {
         // Loop until the session is fully embedded (MAX_EMBED_BATCH caps each call)
         // eslint-disable-next-line no-constant-condition
         while (true) {
-          if (cancelRequested || memoryPressure()) break;
+          if (cancelRequested) break;
+          if (memoryPressure()) break;
 
           const count = await embedSessionMessages(sessionId);
           if (count === 0) break; // fully embedded
