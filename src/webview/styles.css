@@ -1845,6 +1845,16 @@ h2 {
    Stop Button — floating interrupt button above control panel
    -------------------------------------------------------------------------- */
 
+@property --stop-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes crispy-stop-rotate {
+  to { --stop-angle: 360deg; }
+}
+
 .crispy-stop {
   position: fixed;
   bottom: calc(var(--cp-height, 80) * 1px + 2rem);
@@ -1858,6 +1868,11 @@ h2 {
   transition:
     opacity 0.15s ease-out,
     transform 0.15s ease-out;
+
+  /* Agency color — default white, overridden per mode */
+  --stop-color-dim:    rgba(255, 255, 255, 0.3);
+  --stop-color:        rgba(255, 255, 255, 0.45);
+  --stop-color-bright: rgba(255, 255, 255, 0.6);
 }
 
 .crispy-stop--visible {
@@ -1866,33 +1881,54 @@ h2 {
   transform: translateX(-50%) translateY(0);
 }
 
-.crispy-stop__btn {
-  padding: 4px 24px;
-  background: var(--glass-bg);
-  -webkit-backdrop-filter: blur(40px) saturate(170%);
-  backdrop-filter: blur(40px) saturate(170%);
-  color: var(--vscode-button-secondaryForeground, #d4d4d4);
-  border: 1px solid var(--agency-white);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: var(--font-base);
-  font-family: inherit;
-  transition:
-    background 0.15s,
-    border-color 0.15s;
+.crispy-stop::before {
+  content: '';
+  position: absolute;
+  inset: -1.5px;
+  border-radius: calc(var(--radius-sm) + 1.5px);
+  background: conic-gradient(
+    from var(--stop-angle),
+    var(--stop-color-dim) 0deg,
+    var(--stop-color) 90deg,
+    var(--stop-color-bright) 140deg,
+    var(--stop-color) 190deg,
+    var(--stop-color-dim) 260deg,
+    var(--stop-color-dim) 360deg
+  );
+  animation: crispy-stop-rotate 2s linear infinite;
 }
 
-/* Agency-mode border colors — :has() reads data-agency from sibling ControlPanel */
-.crispy-main:has(.crispy-cp[data-agency="edit-automatically"])
-  .crispy-stop__btn {
-  border-color: var(--agency-blue);
+.crispy-stop__btn {
+  position: relative;
+  padding: 4px 24px;
+  background: var(--glass-bg-solid);
+  color: var(--vscode-button-secondaryForeground, #d4d4d4);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  transition: background 0.15s;
 }
-.crispy-main:has(.crispy-cp[data-agency="plan-mode"]) .crispy-stop__btn {
-  border-color: var(--agency-teal);
+
+/* Agency-mode colors — :has() reads data-agency from sibling ControlPanel */
+.crispy-main:has(.crispy-cp[data-agency="edit-automatically"])
+  .crispy-stop {
+  --stop-color-dim:    rgba(64, 168, 232, 0.35);
+  --stop-color:        rgba(64, 168, 232, 0.5);
+  --stop-color-bright: rgba(64, 168, 232, 0.7);
+}
+.crispy-main:has(.crispy-cp[data-agency="plan-mode"]) .crispy-stop {
+  --stop-color-dim:    rgba(71, 152, 140, 0.35);
+  --stop-color:        rgba(71, 152, 140, 0.5);
+  --stop-color-bright: rgba(71, 152, 140, 0.7);
 }
 .crispy-main:has(.crispy-cp[data-agency="bypass-permissions"])
-  .crispy-stop__btn {
-  border-color: var(--agency-red);
+  .crispy-stop {
+  --stop-color-dim:    rgba(232, 64, 64, 0.35);
+  --stop-color:        rgba(232, 64, 64, 0.5);
+  --stop-color-bright: rgba(232, 64, 64, 0.7);
 }
 
 .crispy-stop__btn:hover {
