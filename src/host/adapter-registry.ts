@@ -212,7 +212,7 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
           dispatch,
           getActiveSession,
           { internalServerCommand, internalServerArgs },
-          () => getSettingsSnapshotInternal().settings.rosie.summarize.model,
+          () => getSettingsSnapshotInternal().settings.rosie.bot.model,
         );
         return { memory: server };
       }

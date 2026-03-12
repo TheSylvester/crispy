@@ -244,8 +244,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         if (sessionId === SETTINGS_CHANNEL_ID && event.type === 'settings_snapshot') {
           const settingsEvent = event as SettingsChangedGlobalEvent;
           setProviders(settingsEvent.snapshot.settings.providers);
-          setRosieEnabled(settingsEvent.snapshot.settings.rosie?.summarize?.enabled ?? false);
-          setRosieModel(settingsEvent.snapshot.settings.rosie?.summarize?.model);
+          setRosieEnabled(settingsEvent.snapshot.settings.rosie?.bot?.enabled ?? false);
+          setRosieModel(settingsEvent.snapshot.settings.rosie?.bot?.model);
           const mcpMem = settingsEvent.snapshot.settings.mcp?.memory;
           if (mcpMem) {
             setMcpMemoryEnabled(mcpMem[mcpSettingsKey] ?? true);
@@ -274,23 +274,16 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // --- Rosie Bot settings state ---
     const [rosieEnabled, setRosieEnabled] = useState(false);
     const [rosieModel, setRosieModel] = useState<string | undefined>(undefined);
-    const [trackerEnabled, setTrackerEnabled] = useState(false);
 
     useEffect(() => {
       transport.getSettings().then((snapshot) => {
-        setRosieEnabled(snapshot.settings.rosie?.summarize?.enabled ?? false);
-        setRosieModel(snapshot.settings.rosie?.summarize?.model);
-        setTrackerEnabled(snapshot.settings.rosie?.tracker?.enabled ?? false);
+        setRosieEnabled(snapshot.settings.rosie?.bot?.enabled ?? false);
+        setRosieModel(snapshot.settings.rosie?.bot?.model);
       }).catch(console.error);
     }, [transport]);
 
     const handleUpdateRosie = useCallback(async (patch: { enabled?: boolean; model?: string }) => {
-      await transport.updateSettings({ rosie: { summarize: patch } });
-    }, [transport]);
-
-    const handleUpdateTracker = useCallback(async (enabled: boolean) => {
-      setTrackerEnabled(enabled);
-      await transport.updateSettings({ rosie: { tracker: { enabled } } });
+      await transport.updateSettings({ rosie: { bot: patch } });
     }, [transport]);
 
     // --- MCP Memory settings state ---
@@ -1048,8 +1041,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               rosieEnabled={rosieEnabled}
               rosieModel={rosieModel}
               onUpdateRosie={handleUpdateRosie}
-              trackerEnabled={trackerEnabled}
-              onUpdateTracker={handleUpdateTracker}
               mcpMemoryEnabled={mcpMemoryEnabled}
               onUpdateMcpMemory={handleUpdateMcpMemory}
               catchupStatus={catchupStatus}

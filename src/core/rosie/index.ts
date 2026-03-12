@@ -1,6 +1,5 @@
-export { initRosieSummarize, shutdownRosieSummarize } from './summarize-hook.js';
-export { initRosieTracker, shutdownRosieTracker } from './tracker/index.js';
-export type { InternalServerPaths } from './tracker/index.js';
+export { initRosieBot, shutdownRosieBot } from './rosie-bot-hook.js';
+export type { InternalServerPaths } from './tracker/types.js';
 export {
   pushRosieLog,
   getRosieLogSnapshot,

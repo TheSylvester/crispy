@@ -164,14 +164,11 @@ function applyPatch(current: CrispySettings, patch: SettingsPatch): CrispySettin
     result.turnDefaults = { ...current.turnDefaults, ...patch.turnDefaults };
   }
 
-  if (patch.rosie) {
-    result.rosie = { ...current.rosie };
-    if (patch.rosie.summarize) {
-      result.rosie.summarize = { ...current.rosie.summarize, ...patch.rosie.summarize };
-    }
-    if (patch.rosie.tracker) {
-      result.rosie.tracker = { ...current.rosie.tracker, ...patch.rosie.tracker };
-    }
+  if (patch.rosie?.bot) {
+    result.rosie = {
+      ...current.rosie,
+      bot: { ...current.rosie.bot, ...patch.rosie.bot },
+    };
   }
 
   if (patch.mcp) {
@@ -229,33 +226,37 @@ function sanitizeSettings(data: unknown): CrispySettings {
     result.turnDefaults = settings.turnDefaults as typeof result.turnDefaults;
   }
 
-  // Rosie Bot — handle both old flat { enabled, model } and new nested { summarize: { enabled, model } }
+  // Rosie Bot — handle current { bot: { enabled, model? } } and legacy shapes
   if (settings.rosie && typeof settings.rosie === 'object') {
     const rosie = settings.rosie as Record<string, unknown>;
-    if (rosie.summarize && typeof rosie.summarize === 'object') {
-      // New nested shape
-      const summarize = rosie.summarize as Record<string, unknown>;
-      if (typeof summarize.enabled === 'boolean') {
-        result.rosie = { ...result.rosie, summarize: { enabled: summarize.enabled } };
-        if (typeof summarize.model === 'string' && summarize.model.trim()) {
-          result.rosie.summarize.model = summarize.model.trim();
+
+    if (rosie.bot && typeof rosie.bot === 'object') {
+      // Current shape — pass through
+      const bot = rosie.bot as Record<string, unknown>;
+      if (typeof bot.enabled === 'boolean') {
+        result.rosie = { bot: { enabled: bot.enabled } };
+        if (typeof bot.model === 'string' && bot.model.trim()) {
+          result.rosie.bot.model = bot.model.trim();
         }
       }
+    } else if ((rosie.summarize && typeof rosie.summarize === 'object')
+      || (rosie.tracker && typeof rosie.tracker === 'object')) {
+      // Old nested shape: { summarize?: {...}, tracker?: {...} }
+      const summarize = (rosie.summarize && typeof rosie.summarize === 'object'
+        ? rosie.summarize : {}) as Record<string, unknown>;
+      const tracker = (rosie.tracker && typeof rosie.tracker === 'object'
+        ? rosie.tracker : {}) as Record<string, unknown>;
+      const enabled = (typeof summarize.enabled === 'boolean' && summarize.enabled)
+        || (typeof tracker.enabled === 'boolean' && tracker.enabled);
+      const model = (typeof summarize.model === 'string' && summarize.model.trim())
+        || (typeof tracker.model === 'string' && (tracker.model as string).trim())
+        || undefined;
+      result.rosie = { bot: { enabled, ...(model && { model }) } };
     } else if (typeof rosie.enabled === 'boolean') {
-      // Old flat shape — migrate in-memory to nested form
-      result.rosie = { ...result.rosie, summarize: { enabled: rosie.enabled } };
+      // Old flat shape: { enabled, model? }
+      result.rosie = { bot: { enabled: rosie.enabled } };
       if (typeof rosie.model === 'string' && (rosie.model as string).trim()) {
-        result.rosie.summarize.model = (rosie.model as string).trim();
-      }
-    }
-    // Tracker settings
-    if (rosie.tracker && typeof rosie.tracker === 'object') {
-      const tracker = rosie.tracker as Record<string, unknown>;
-      if (typeof tracker.enabled === 'boolean') {
-        result.rosie = { ...result.rosie, tracker: { enabled: tracker.enabled } };
-        if (typeof tracker.model === 'string' && tracker.model.trim()) {
-          result.rosie.tracker.model = tracker.model.trim();
-        }
+        result.rosie.bot.model = (rosie.model as string).trim();
       }
     }
   }

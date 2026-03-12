@@ -34,7 +34,7 @@ export const StopButton = forwardRef<HTMLDivElement>(
     return (
       <div ref={ref} className={`crispy-stop ${visible ? 'crispy-stop--visible' : ''}`}>
         <button className="crispy-stop__btn" onClick={handleClick}>
-          Stop
+          stop
         </button>
       </div>
     );

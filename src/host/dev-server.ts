@@ -27,7 +27,7 @@ import { createClientConnection } from './client-connection.js';
 import { createAgentDispatch } from './agent-dispatch.js';
 import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
-import { initRosieSummarize, shutdownRosieSummarize, initRosieTracker, shutdownRosieTracker } from '../core/rosie/index.js';
+import { initRosieBot, shutdownRosieBot } from '../core/rosie/index.js';
 import { initRecallIngest, shutdownRecallIngest } from '../core/recall/ingest-hook.js';
 import { startRecallCatchup, stopEmbeddingBackfill } from '../core/recall/catchup-manager.js';
 import { initEmbedWorker, shutdownEmbedWorker } from '../core/recall/embedder.js';
@@ -182,12 +182,8 @@ initEmbedWorker(resolve(process.cwd(), 'src', 'core', 'recall', 'embed-worker.ts
 startRecallCatchup('devServer');
 done();
 
-done = phase('init rosie summarize');
-initRosieSummarize(dispatch);
-done();
-
-done = phase('init rosie tracker');
-initRosieTracker(dispatch, resolveInternalServerPaths());
+done = phase('init rosie bot');
+initRosieBot(dispatch, resolveInternalServerPaths());
 done();
 
 const settingsDone = phase('init settings');
@@ -223,8 +219,7 @@ process.on('unhandledRejection', (reason) => {
 
 // Cleanup on shutdown
 process.on('SIGINT', () => {
-  shutdownRosieTracker();
-  shutdownRosieSummarize();
+  shutdownRosieBot();
   shutdownRecallIngest();
   stopEmbeddingBackfill();
   shutdownEmbedWorker();
@@ -232,8 +227,7 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 process.on('SIGTERM', () => {
-  shutdownRosieTracker();
-  shutdownRosieSummarize();
+  shutdownRosieBot();
   shutdownRecallIngest();
   stopEmbeddingBackfill();
   shutdownEmbedWorker();

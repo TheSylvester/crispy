@@ -12,7 +12,7 @@ import { startRescan, stopRescan } from './core/session-list-manager.js';
 import { findClaudeBinary } from './core/find-claude-binary.js';
 import { registerAllAdapters, resolveInternalServerPaths } from './host/adapter-registry.js';
 import { createAgentDispatch } from './host/agent-dispatch.js';
-import { initRosieSummarize, shutdownRosieSummarize, initRosieTracker, shutdownRosieTracker } from './core/rosie/index.js';
+import { initRosieBot, shutdownRosieBot } from './core/rosie/index.js';
 import { initRecallIngest, shutdownRecallIngest } from './core/recall/ingest-hook.js';
 import { startRecallCatchup, stopEmbeddingBackfill } from './core/recall/catchup-manager.js';
 import { initEmbedWorker, shutdownEmbedWorker } from './core/recall/embedder.js';
@@ -79,17 +79,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Wire up lifecycle hooks:
   //   Phase 0 (before): recall message ingest (lightweight SQLite indexing)
-  //   Phase 1: Rosie summarize (LLM-based analysis)
-  //   Phase 2 (after): Rosie tracker (depends on summarize output)
+  //   Phase 2 (after): Rosie bot (summarize + tracker in two-turn child session)
   initRecallIngest();
   initEmbedWorker(path.join(context.extensionPath, 'dist', 'embed-worker.js'));
   startRecallCatchup('vscode');
-  initRosieSummarize(dispatch);
-  initRosieTracker(dispatch, resolveInternalServerPaths(context.extensionPath));
+  initRosieBot(dispatch, resolveInternalServerPaths(context.extensionPath));
   context.subscriptions.push({
     dispose: () => {
-      shutdownRosieTracker();
-      shutdownRosieSummarize();
+      shutdownRosieBot();
       shutdownRecallIngest();
       stopEmbeddingBackfill();
       shutdownEmbedWorker();

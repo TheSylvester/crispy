@@ -30,8 +30,7 @@ import { parseModelOption } from '../src/core/model-utils.js';
 import { appendActivityEntries, dbPath } from '../src/core/activity-index.js';
 import { listAllSessions, loadSession } from '../src/core/session-manager.js';
 import { extractTag, normalizeEntitiesJson } from '../src/core/rosie/xml-utils.js';
-import { SUMMARIZE_PROMPT } from '../src/core/rosie/summarize-hook.js';
-import { buildTrackerPrompt } from '../src/core/rosie/tracker/tracker-hook.js';
+import { SUMMARIZE_PROMPT, buildTrackerPrompt } from '../src/core/rosie/rosie-bot-hook.js';
 import { getExistingProjects } from '../src/core/rosie/tracker/db-writer.js';
 import { buildInternalMcpConfig } from '../src/mcp/servers/external.js';
 import { getDb } from '../src/core/crispy-db.js';
@@ -481,7 +480,7 @@ async function runTrack(dispatch: ReturnType<typeof createAgentDispatch>, opts: 
     const model = modelName;
 
     const prompt = buildTrackerPrompt(
-      { quest: c.quest, title: c.title, summary: c.summary, status: c.status, entities: c.entities },
+      { quest: c.quest, title: c.title, summary: c.summary, status: c.status },
       cachedProjects,
     );
 

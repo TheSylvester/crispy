@@ -805,6 +805,10 @@ export function closeSession(sessionId: string): void {
   pushRosieLog({ source: 'session', level: 'info', summary: `Session: destroyed ${sessionId.slice(0, 12)}…` });
   destroyChannel(sessionId);
   sessions.delete(sessionId);
+  // Clean up child session tracking to prevent unbounded map growth.
+  // closeSession() can be called directly (e.g. rosie-bot cleanup) outside
+  // the normal dispatch/resume cleanup paths that gate on autoClose.
+  childSessions.delete(sessionId);
 }
 
 // ============================================================================
@@ -906,6 +910,8 @@ export async function dispatchChildSession(
     let settled = false;
     // Track the current session ID — starts as the pending ID, may be rekeyed.
     let currentId: string = pendingId;
+    // Captured from sendTurn result — used by idle handler for autoClose:false
+    let rekeyPromise: Promise<string> | undefined;
 
     const timer = setTimeout(() => {
       if (!settled) {
@@ -916,29 +922,40 @@ export async function dispatchChildSession(
         parts.push(`text: ${text.length} chars`);
         console.warn(`[child-session] Timeout after ${timeoutMs}ms — no idle event received (parent: ${parentSessionId}, vendor: ${vendor}) — ${parts.join(' | ')}`);
         settled = true;
-        cleanup();
         if (text) {
+          cleanup();
           console.warn(`[child-session] Timeout with partial text (${text.length} chars) -- returning partial result (parent: ${parentSessionId}, vendor: ${vendor})`);
           resolve({ sessionId: currentId, text, structured });
         } else {
+          // No text → caller gets null and has no session ID to clean up.
+          // Force-close to prevent leaking channel+adapter+MCP subprocesses.
+          cleanup(/* force */ true);
           resolve(null);
         }
       }
     }, timeoutMs);
 
-    const cleanup = () => {
+    // force=true tears down even when autoClose:false — used when the dispatch
+    // resolves null (no session ID returned to caller → unreachable channel).
+    const cleanup = (force = false) => {
       clearTimeout(timer);
+      const shouldClose = autoClose || force;
       // Clean up both pendingId and currentId to handle the rekey race —
       // if timeout fires mid-rekey, currentId may differ from pendingId.
       for (const id of new Set([pendingId, currentId])) {
         const ch = getChannel(id);
         if (ch) {
           unsubscribe(ch, internalSubscriber);
-          if (autoClose) {
+          if (shouldClose) {
             closeSession(id);
           }
         }
-        childSessions.delete(id);
+        // Only remove child tracking when closing. For autoClose: false (no force),
+        // the child stays alive for resumeChildSession — isChildSession() must
+        // still recognize it to prevent lifecycle hooks from firing on it.
+        if (shouldClose) {
+          childSessions.delete(id);
+        }
       }
     };
 
@@ -1018,20 +1035,36 @@ export async function dispatchChildSession(
         // Turn complete — resolve with collected result
         if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'idle') {
           settled = true;
-          cleanup();
-          // A completed turn is a success — even with empty text. Tool-call-only
-          // workflows (e.g. tracker) produce side effects via MCP tools without
-          // a final text response. Only return null when idle fires with no
-          // assistant entries and an error, which signals the turn never ran.
-          if (text || structured !== undefined || entryTypes.length > 1) {
-            resolve({ sessionId: currentId, text, structured });
+
+          // For autoClose:false children, ensure we return the real (rekeyed) ID
+          // so resumeChildSession can find the channel. Idle can fire before the
+          // rekey promise resolves, leaving currentId as the stale pending ID.
+          const finalize = (resolvedId: string) => {
+            if (text || structured !== undefined || entryTypes.length > 1) {
+              cleanup();
+              resolve({ sessionId: resolvedId, text, structured });
+            } else {
+              const parts: string[] = [];
+              if (lastError) parts.push(`error: ${lastError}`);
+              parts.push(`entries: [${entryTypes.join(', ')}]`);
+              if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
+              console.warn(`[child-session] Turn completed with empty response (parent: ${parentSessionId}) — ${parts.join(' | ')}`);
+              // No result → caller gets null and has no session ID to clean up.
+              // Force-close to prevent leaking channel+adapter+MCP subprocesses.
+              cleanup(/* force */ true);
+              resolve(null);
+            }
+          };
+
+          if (!autoClose && rekeyPromise) {
+            // Must return the real ID so resumeChildSession can find the channel
+            rekeyPromise.then((realId) => {
+              childSessions.delete(pendingId);
+              childSessions.set(realId, { parentSessionId, autoClose });
+              finalize(realId);
+            }).catch(() => finalize(currentId));
           } else {
-            const parts: string[] = [];
-            if (lastError) parts.push(`error: ${lastError}`);
-            parts.push(`entries: [${entryTypes.join(', ')}]`);
-            if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
-            console.warn(`[child-session] Turn completed with empty response (parent: ${parentSessionId}) — ${parts.join(' | ')}`);
-            resolve(null);
+            finalize(currentId);
           }
         }
       },
@@ -1054,6 +1087,7 @@ export async function dispatchChildSession(
 
         // Handle pending->real ID re-keying
         if (result.rekeyPromise) {
+          rekeyPromise = result.rekeyPromise;
           result.rekeyPromise.then((realId) => {
             if (settled) return;
             childSessions.delete(currentId);
@@ -1066,6 +1100,169 @@ export async function dispatchChildSession(
         if (!settled) {
           console.warn(`[child-session] sendTurn failed (parent: ${parentSessionId}, vendor: ${vendor}):`, err instanceof Error ? err.message : String(err));
           pushRosieLog({ source: 'session', level: 'error', summary: `Session: child dispatch failed (${vendor})`, data: { parentSessionId, vendor, error: err instanceof Error ? err.message : String(err) } });
+          settled = true;
+          // Force-close: caller gets null, no way to clean up the child.
+          cleanup(/* force */ true);
+          resolve(null);
+        }
+      });
+  });
+}
+
+// ============================================================================
+// Resume Child Session
+// ============================================================================
+
+export interface ResumeChildOptions {
+  /** The session ID returned by dispatchChildSession (the resolved real ID). */
+  sessionId: string;
+  /** Message content for the follow-up turn. */
+  prompt: MessageContent;
+  /** Turn settings for this turn (model, permissionMode, etc.). */
+  settings?: TurnSettings;
+  /** Auto-close the channel after this turn completes (default: true). */
+  autoClose?: boolean;
+  /** Timeout in ms (default: 60000). */
+  timeoutMs?: number;
+}
+
+/**
+ * Send a follow-up turn to an existing child session that was dispatched with
+ * `autoClose: false`. Reuses the open channel — no session creation or rekey.
+ *
+ * Returns the collected result (text + structured), or null on failure/timeout.
+ */
+export async function resumeChildSession(
+  options: ResumeChildOptions,
+): Promise<ChildSessionResult | null> {
+  const {
+    sessionId,
+    prompt,
+    settings = {},
+    autoClose = true,
+    timeoutMs = 60_000,
+  } = options;
+
+  const ch = getChannel(sessionId);
+  if (!ch) {
+    console.warn(`[resume-child] No channel found for session ${sessionId}`);
+    return null;
+  }
+
+  // Defensive: ensure childSessions tracks this session to prevent lifecycle
+  // hooks from firing on it during turn 2.
+  if (!childSessions.has(sessionId)) {
+    childSessions.set(sessionId, { parentSessionId: '', autoClose });
+  }
+
+  const intent: TurnIntent = {
+    target: { kind: 'existing', sessionId },
+    content: prompt,
+    clientMessageId: crypto.randomUUID(),
+    settings,
+  };
+
+  pushRosieLog({ source: 'session', level: 'info', summary: `Session: resuming child ${sessionId.slice(0, 12)}…`, data: { sessionId, timeoutMs } });
+
+  return new Promise<ChildSessionResult | null>((resolve) => {
+    let text = '';
+    let structured: unknown;
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        console.warn(`[resume-child] Timeout after ${timeoutMs}ms — session ${sessionId}`);
+        settled = true;
+        cleanup();
+        if (text) {
+          resolve({ sessionId, text, structured });
+        } else {
+          resolve(null);
+        }
+      }
+    }, timeoutMs);
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      const ch = getChannel(sessionId);
+      if (ch) {
+        unsubscribe(ch, internalSubscriber);
+        if (autoClose) {
+          closeSession(sessionId);
+        }
+      }
+      if (autoClose) {
+        childSessions.delete(sessionId);
+      } else {
+        // Update autoClose tracking for the next resume
+        const entry = childSessions.get(sessionId);
+        if (entry) {
+          childSessions.set(sessionId, { ...entry, autoClose });
+        }
+      }
+    };
+
+    const entryTypes: string[] = [];
+    let lastError: string | undefined;
+
+    const internalSubscriber: Subscriber = {
+      id: `resume-${crypto.randomUUID()}`,
+      send(msg) {
+        if (settled) return;
+        if (msg.type === 'catchup') return;
+
+        // Track errors
+        if (msg.type === 'event' && msg.event.type === 'notification' && msg.event.kind === 'error') {
+          lastError = (msg.event as { error?: string }).error ?? 'unknown error';
+        }
+
+        // Collect response text and structured output
+        if (msg.type === 'entry') {
+          const entry = msg.entry;
+          entryTypes.push(entry.type);
+          if ((entry.type === 'assistant' || entry.type === 'result') && entry.message) {
+            const content = entry.message.content;
+            if (Array.isArray(content)) {
+              for (const block of content) {
+                if (block.type === 'text' && block.text) {
+                  text += block.text;
+                }
+              }
+            } else if (typeof content === 'string') {
+              text += content;
+            }
+          }
+          if (entry.metadata?.structured_output !== undefined) {
+            structured = entry.metadata.structured_output;
+          }
+        }
+
+        // Turn complete
+        if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'idle') {
+          settled = true;
+          cleanup();
+          if (text || structured !== undefined || entryTypes.length > 1) {
+            resolve({ sessionId, text, structured });
+          } else {
+            if (lastError) console.warn(`[resume-child] Empty response with error: ${lastError}`);
+            resolve(null);
+          }
+        }
+      },
+    };
+
+    // Subscribe to the existing channel
+    subscribe(ch, internalSubscriber);
+
+    // Send the turn — no pending ID needed, session already exists
+    sendTurn(intent, internalSubscriber)
+      .then(() => {
+        if (settled) return;
+        console.error(`[resume-child] sendTurn resolved for ${sessionId}`);
+      })
+      .catch((err) => {
+        if (!settled) {
+          console.warn(`[resume-child] sendTurn failed:`, err instanceof Error ? err.message : String(err));
           settled = true;
           cleanup();
           resolve(null);

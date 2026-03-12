@@ -12,7 +12,7 @@
 import { randomUUID } from 'node:crypto';
 import type { SessionInfo, TurnIntent, TurnReceipt } from '../core/agent-adapter.js';
 import type { TranscriptEntry } from '../core/transcript.js';
-import type { ChildSessionOptions, ChildSessionResult } from '../core/session-manager.js';
+import type { ChildSessionOptions, ChildSessionResult, ResumeChildOptions } from '../core/session-manager.js';
 import type { HostEvent, HostMessage } from './client-connection.js';
 import { createClientConnection } from './client-connection.js';
 
@@ -36,6 +36,9 @@ export interface AgentDispatch {
 
   /** Dispatch an ephemeral child session — fork or new — collect result, auto-close. */
   dispatchChild(options: ChildSessionOptions): Promise<ChildSessionResult | null>;
+
+  /** Resume an existing child session with a follow-up turn. */
+  resumeChild(options: ResumeChildOptions): Promise<ChildSessionResult | null>;
 
   // Event delivery
   onEvent(handler: (sessionId: string, event: HostEvent) => void): () => void;
@@ -69,6 +72,7 @@ export function createAgentDispatch(): AgentDispatch {
     interrupt: (id) => connection.call('interrupt', { sessionId: id }).then(() => {}),
     close: (id) => connection.call('close', { sessionId: id }).then(() => {}),
     dispatchChild: (options) => connection.call('dispatchChild', options as unknown as Record<string, unknown>) as Promise<ChildSessionResult | null>,
+    resumeChild: (options) => connection.call('resumeChild', options as unknown as Record<string, unknown>) as Promise<ChildSessionResult | null>,
 
     onEvent(handler) {
       eventHandlers.add(handler);

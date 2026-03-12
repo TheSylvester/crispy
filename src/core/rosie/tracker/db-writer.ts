@@ -562,7 +562,7 @@ Nothing else. No commentary.`;
 
   try {
     const snap = getSettingsSnapshotInternal();
-    const rosieModel = snap.settings.rosie.tracker.model;
+    const rosieModel = snap.settings.rosie.bot.model;
     const parsed = rosieModel ? parseModelOption(rosieModel) : undefined;
 
     const result = await dispatchChild({

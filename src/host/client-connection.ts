@@ -39,8 +39,9 @@ import {
   readSubagentEntries,
   getRegisteredVendors,
   dispatchChildSession,
+  resumeChildSession,
 } from "../core/session-manager.js";
-import type { ChildSessionOptions } from "../core/session-manager.js";
+import type { ChildSessionOptions, ResumeChildOptions } from "../core/session-manager.js";
 import {
   subscribeSessionList,
   unsubscribeSessionList,
@@ -414,6 +415,11 @@ export function createClientConnection(
       case "dispatchChild": {
         const options = params as unknown as ChildSessionOptions;
         return dispatchChildSession(options);
+      }
+
+      case "resumeChild": {
+        const options = params as unknown as ResumeChildOptions;
+        return resumeChildSession(options);
       }
 
       case "subscribeSessionList": {

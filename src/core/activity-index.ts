@@ -348,6 +348,29 @@ export function getLatestRosieMeta(filePath?: string): ActivityIndexEntry | unde
   return latest;
 }
 
+/**
+ * Get all rosie-meta entries for a session file, ordered chronologically.
+ * Used by rosie-bot-hook to build the "middle" section of bookend transcripts.
+ */
+export function getAllRosieMetas(filePath: string): Pick<ActivityIndexEntry, 'timestamp' | 'quest' | 'title' | 'summary' | 'status'>[] {
+  ensureCrispyDir();
+  const db = getDb(dbPath());
+  const rows = db.all(`
+    SELECT timestamp, quest, title, summary, status
+    FROM activity_entries
+    WHERE kind = 'rosie-meta' AND file = ?
+    ORDER BY timestamp ASC
+  `, [filePath]) as Array<Record<string, unknown>>;
+
+  return rows.map((r) => ({
+    timestamp: (r.timestamp as string) ?? '',
+    quest: (r.quest as string) ?? '',
+    title: (r.title as string) ?? '',
+    summary: (r.summary as string) ?? '',
+    status: (r.status as string) ?? '',
+  }));
+}
+
 // ============================================================================
 // Session Lineage
 // ============================================================================

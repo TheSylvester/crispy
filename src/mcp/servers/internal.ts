@@ -425,7 +425,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       console.error(`[internal-mcp] mark_trivial: "${args.reason}"`);
       appendDecision({ tool: 'mark_trivial', reason: args.reason });
       // Persist trivial outcome to DB
-      const sessionFile = process.env.CRISPY_TRACKER_SESSION_FILE;
+      const sessionFile = serverOptions.sessionFile ?? process.env.CRISPY_TRACKER_SESSION_FILE;
       if (sessionFile) {
         recordTrackerOutcome(sessionFile, 'trivial', 1, args.reason);
       }

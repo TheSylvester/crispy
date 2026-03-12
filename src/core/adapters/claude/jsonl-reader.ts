@@ -1280,7 +1280,9 @@ export function isTrivialSession(
   if (firstQueueOp) {
     const content = String((firstQueueOp as Record<string, unknown>).content);
     if (
-      content.startsWith("Consider this entire conversation so far.") || // Rosie summarize
+      content.startsWith("Consider this entire conversation so far.") || // Rosie summarize (legacy)
+      content.startsWith("## Opening turns") || // Rosie bot summarize (bookend format)
+      content.startsWith("You are a project tracker.") || // Rosie bot tracker
       content.startsWith("You are a memory recall agent.") // Recall agent
     ) {
       return true;

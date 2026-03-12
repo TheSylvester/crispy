@@ -78,21 +78,14 @@ export interface SettingsHooks {
 // Rosie Bot
 // ============================================================================
 
-export interface RosieSummarizeSettings {
+export interface RosieBotSettings {
   enabled: boolean;
-  /** Model override — omit to use system default model. Format: "vendor:model" (e.g. "claude:haiku", "my-provider:glm-4.7"). */
-  model?: string;
-}
-
-export interface RosieTrackerSettings {
-  enabled: boolean;
-  /** Model override — omit to use system default model. Format: "vendor:model" (e.g. "claude:haiku"). */
+  /** Model override. Format: "vendor:model" (e.g. "claude:haiku"). */
   model?: string;
 }
 
 export interface RosieSettings {
-  summarize: RosieSummarizeSettings;
-  tracker: RosieTrackerSettings;
+  bot: RosieBotSettings;
 }
 
 // ============================================================================
@@ -198,7 +191,7 @@ export type SettingsPatch = Partial<{
   envPresets: Partial<SettingsEnvPresets>;
   cliProfiles: Partial<SettingsCliProfiles>;
   turnDefaults: Partial<SettingsTurnDefaults>;
-  rosie: { summarize?: Partial<RosieSummarizeSettings>; tracker?: Partial<RosieTrackerSettings> };
+  rosie: { bot?: Partial<RosieBotSettings> };
   mcp: { memory?: Partial<McpMemorySettings> };
 }>;
 
@@ -231,8 +224,7 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     extraArgs: {},
   },
   rosie: {
-    summarize: { enabled: false },
-    tracker: { enabled: false },
+    bot: { enabled: false },
   },
   mcp: {
     memory: { vscode: true, devServer: true },
