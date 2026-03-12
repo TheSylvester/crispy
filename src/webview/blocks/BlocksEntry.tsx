@@ -84,6 +84,15 @@ export function BlocksEntry({
   const showActions = role === 'user' && entry.type === 'user' && forkTargetId !== undefined;
   // Copy overlay on assistant messages with text (user copy lives in MessageActions)
   const showCopy = role === 'assistant' && hasTextBlock(blocks);
+  const lastTextIdx = showCopy ? blocks.reduce((acc, b, idx) => b.type === 'text' ? idx : acc, -1) : -1;
+  const copyOverlay = showCopy ? (
+    <div className="crispy-copy-overlay">
+      <CopyButton
+        getText={() => serializeAssistantMessage(blocks)}
+        title="Copy response"
+      />
+    </div>
+  ) : null;
   // Copy getText for user messages — passed into MessageActions
   const userCopyGetText = role === 'user' && hasTextBlock(blocks)
     ? () => serializeUserMessage(blocks)
@@ -98,16 +107,30 @@ export function BlocksEntry({
               b.type === 'text' || b.type === 'tool_use' || b.type === 'image')
           : undefined;
 
-        return block.type === 'tool_use' ? (
-          <div key={`tool-${block.id}`} data-run-id={block.id}>
-            <ToolBlockRenderer
-              block={block}
-              anchor={anchor}
-              registry={registry}
-              siblingCount={siblingCount}
-            />
-          </div>
-        ) : (
+        if (block.type === 'tool_use') {
+          return (
+            <div key={`tool-${block.id}`} data-run-id={block.id}>
+              <ToolBlockRenderer
+                block={block}
+                anchor={anchor}
+                registry={registry}
+                siblingCount={siblingCount}
+              />
+            </div>
+          );
+        }
+
+        // Wrap the last text block with the copy overlay — hover on text reveals the button
+        if (i === lastTextIdx) {
+          return (
+            <div key={`block-${block.context.entryUuid}-${i}`} className="crispy-copy-anchor">
+              <BlocksBlockRenderer block={block} autoCollapse={autoCollapse} />
+              {copyOverlay}
+            </div>
+          );
+        }
+
+        return (
           <BlocksBlockRenderer
             key={`block-${block.context.entryUuid}-${i}`}
             block={block}
@@ -117,15 +140,6 @@ export function BlocksEntry({
       })}
       {/* Fork/rewind + copy — bottom-right of user bubble */}
       {showActions && <MessageActions targetAssistantId={forkTargetId || null} copygetText={userCopyGetText} />}
-      {/* Copy — bottom-right of assistant messages */}
-      {showCopy && (
-        <div className="crispy-copy-overlay">
-          <CopyButton
-            getText={() => serializeAssistantMessage(blocks)}
-            title="Copy response"
-          />
-        </div>
-      )}
     </div>
   );
 }

@@ -79,6 +79,16 @@ export function BlocksEntryWithRegistry({
   const showActions = !parentToolUseId && role === 'user' && entry.type === 'user' && forkTargetId !== undefined;
   // Copy overlay on root-level assistant messages with text (user copy lives in MessageActions)
   const showCopy = !parentToolUseId && role === 'assistant' && hasTextBlock(blocks);
+  // Index of the last text block — copy overlay anchors to it so it doesn't occlude tool icons
+  const lastTextIdx = showCopy ? blocks.reduce((acc, b, idx) => b.type === 'text' ? idx : acc, -1) : -1;
+  const copyOverlay = showCopy ? (
+    <div className="crispy-copy-overlay">
+      <CopyButton
+        getText={() => serializeAssistantMessage(blocks)}
+        title="Copy response"
+      />
+    </div>
+  ) : null;
   // Copy getText for user messages — passed into MessageActions
   const userCopyGetText = !parentToolUseId && role === 'user' && hasTextBlock(blocks)
     ? () => serializeUserMessage(blocks)
@@ -126,23 +136,37 @@ export function BlocksEntryWithRegistry({
       data-uuid={entry.uuid}
     >
       {useInline
-        ? renderWithInlineGrouping(blocks, anchor, registry, siblingCount, isLastEntry)
+        ? renderWithInlineGrouping(blocks, anchor, registry, siblingCount, isLastEntry, copyOverlay)
         : blocks.map((block, i) => {
           const autoCollapse = block.type === 'thinking'
             ? !isLastEntry || blocks.slice(i + 1).some(b =>
                 b.type === 'text' || b.type === 'tool_use' || b.type === 'image')
             : undefined;
 
-          return block.type === 'tool_use' ? (
-            <div key={`tool-${block.id}`} {...(!parentToolUseId ? { 'data-run-id': block.id } : undefined)}>
-              <ToolBlockRenderer
-                block={block}
-                anchor={anchor}
-                registry={registry}
-                siblingCount={siblingCount}
-              />
-            </div>
-          ) : (
+          if (block.type === 'tool_use') {
+            return (
+              <div key={`tool-${block.id}`} {...(!parentToolUseId ? { 'data-run-id': block.id } : undefined)}>
+                <ToolBlockRenderer
+                  block={block}
+                  anchor={anchor}
+                  registry={registry}
+                  siblingCount={siblingCount}
+                />
+              </div>
+            );
+          }
+
+          // Wrap the last text block with the copy overlay — hover on text reveals the button
+          if (i === lastTextIdx) {
+            return (
+              <div key={`block-${block.context.entryUuid}-${i}`} className="crispy-copy-anchor">
+                <BlocksBlockRenderer block={block} autoCollapse={autoCollapse} />
+                {copyOverlay}
+              </div>
+            );
+          }
+
+          return (
             <BlocksBlockRenderer
               key={`block-${block.context.entryUuid}-${i}`}
               block={block}
@@ -152,15 +176,6 @@ export function BlocksEntryWithRegistry({
         })
       }
       {showActions && <MessageActions targetAssistantId={forkTargetId || null} copygetText={userCopyGetText} />}
-      {/* Copy — bottom-right of assistant messages */}
-      {showCopy && (
-        <div className="crispy-copy-overlay">
-          <CopyButton
-            getText={() => serializeAssistantMessage(blocks)}
-            title="Copy response"
-          />
-        </div>
-      )}
     </div>
   );
 }
@@ -176,8 +191,10 @@ function renderWithInlineGrouping(
   registry: ReturnType<typeof useBlocksToolRegistry>,
   siblingCount: number,
   isLastEntry: boolean,
+  copyOverlay: React.JSX.Element | null,
 ): React.JSX.Element[] {
   const elements: React.JSX.Element[] = [];
+  const lastTextIdx = copyOverlay ? blocks.reduce((acc, b, idx) => b.type === 'text' ? idx : acc, -1) : -1;
   let i = 0;
 
   while (i < blocks.length) {
@@ -263,25 +280,37 @@ function renderWithInlineGrouping(
       );
 
       // Render text block with inline tool icons appended
+      const isLastText = i === lastTextIdx;
+      const wrapClass = isLastText ? 'crispy-blocks-text-with-inline crispy-copy-anchor' : 'crispy-blocks-text-with-inline';
       elements.push(
-        <div key={`block-${block.context.entryUuid}-${i}`} className="crispy-blocks-text-with-inline">
+        <div key={`block-${block.context.entryUuid}-${i}`} className={wrapClass}>
           <BlocksBlockRenderer
             block={block}
             autoCollapse={autoCollapse}
             trailingInlineContent={trailingInlineIcons}
           />
+          {isLastText && copyOverlay}
         </div>
       );
       i = j;
     } else {
       // Regular non-text block or text without following tools
-      elements.push(
-        <BlocksBlockRenderer
-          key={`block-${block.context.entryUuid}-${i}`}
-          block={block}
-          autoCollapse={autoCollapse}
-        />
-      );
+      if (i === lastTextIdx) {
+        elements.push(
+          <div key={`block-${block.context.entryUuid}-${i}`} className="crispy-copy-anchor">
+            <BlocksBlockRenderer block={block} autoCollapse={autoCollapse} />
+            {copyOverlay}
+          </div>
+        );
+      } else {
+        elements.push(
+          <BlocksBlockRenderer
+            key={`block-${block.context.entryUuid}-${i}`}
+            block={block}
+            autoCollapse={autoCollapse}
+          />
+        );
+      }
       i++;
     }
   }
