@@ -33,7 +33,7 @@ interface TodoWriteInput {
 
 export function TodoWriteCompactView({ block, result, status }: ToolViewProps): ReactNode {
   const input = block.input as TodoWriteInput;
-  const todos = input.todos ?? [];
+  const todos = Array.isArray(input.todos) ? input.todos : [];
 
   // Find the most relevant item to display
   const inProgress = todos.find(t => t.status === 'in_progress');
@@ -65,7 +65,7 @@ export function TodoWriteCompactView({ block, result, status }: ToolViewProps): 
 
 export function TodoWriteExpandedView({ block, result, status, anchor }: ToolViewProps): ReactNode {
   const input = block.input as TodoWriteInput;
-  const todos = input.todos ?? [];
+  const todos = Array.isArray(input.todos) ? input.todos : [];
 
   const itemCount = todos.length;
   const resultSummary = result

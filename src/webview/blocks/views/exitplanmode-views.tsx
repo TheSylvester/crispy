@@ -29,7 +29,8 @@ interface ExitPlanInput {
 
 export function ExitPlanModeCompactView({ block, result, status }: ToolViewProps): ReactNode {
   const input = block.input as ExitPlanInput;
-  const permCount = input.allowedPrompts?.length ?? 0;
+  const allowedPrompts = Array.isArray(input.allowedPrompts) ? input.allowedPrompts : [];
+  const permCount = allowedPrompts.length;
 
   const description = permCount > 0
     ? `Plan Ready (${permCount} permission${permCount !== 1 ? 's' : ''})`
@@ -53,8 +54,8 @@ export function ExitPlanModeCompactView({ block, result, status }: ToolViewProps
 export function ExitPlanModeExpandedView({ block, result, status, anchor }: ToolViewProps): ReactNode {
   const input = block.input as ExitPlanInput;
   const plan = input.plan ?? null;
-  const allowedPrompts = input.allowedPrompts ?? null;
-  const permCount = allowedPrompts?.length ?? 0;
+  const allowedPrompts = Array.isArray(input.allowedPrompts) ? input.allowedPrompts : [];
+  const permCount = allowedPrompts.length;
 
   const resultSummary = result
     ? result.is_error
@@ -84,7 +85,7 @@ export function ExitPlanModeExpandedView({ block, result, status, anchor }: Tool
             </div>
           </details>
         )}
-        {allowedPrompts && allowedPrompts.length > 0 && (
+        {allowedPrompts.length > 0 && (
           <div className="crispy-plan-permissions">
             <div className="crispy-plan-permissions__title">Requested permissions:</div>
             <ul className="crispy-plan-permissions-list">

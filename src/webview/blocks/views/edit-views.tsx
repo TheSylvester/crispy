@@ -34,8 +34,8 @@ interface EditInput {
 export function EditCompactView({ block, result, status }: ToolViewProps): ReactNode {
   const input = block.input as EditInput;
   const filePath = input.file_path ?? extractSubject(block);
-  const oldLines = (input.old_string ?? '').split('\n').length;
-  const newLines = (input.new_string ?? '').split('\n').length;
+  const oldLines = String(input.old_string ?? '').split('\n').length;
+  const newLines = String(input.new_string ?? '').split('\n').length;
 
   return (
     <CompactBlock
@@ -60,8 +60,8 @@ export function EditCompactView({ block, result, status }: ToolViewProps): React
 export function EditExpandedView({ block, result, status, anchor }: ToolViewProps): ReactNode {
   const input = block.input as EditInput;
   const filePath = input.file_path ?? '(unknown)';
-  const oldString = input.old_string ?? '';
-  const newString = input.new_string ?? '';
+  const oldString = String(input.old_string ?? '');
+  const newString = String(input.new_string ?? '');
   const oldLines = oldString.split('\n').length;
   const newLines = newString.split('\n').length;
 

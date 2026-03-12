@@ -51,7 +51,7 @@ export function WriteCompactView({ block, result, status }: ToolViewProps): Reac
 export function WriteExpandedView({ block, result, status, anchor }: ToolViewProps): ReactNode {
   const input = block.input as WriteInput;
   const filePath = input.file_path ?? '(unknown)';
-  const content = input.content ?? '';
+  const content = String(input.content ?? '');
   const lineCount = content.split('\n').length;
   const lang = inferLanguage(filePath);
 

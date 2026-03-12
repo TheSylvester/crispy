@@ -38,7 +38,7 @@ function formatTimeout(ms: number): string {
 
 export function BashCompactView({ block, result, status }: ToolViewProps): ReactNode {
   const input = block.input as BashInput;
-  const command = input.command ?? '';
+  const command = typeof input.command === 'string' ? input.command : '';
 
   return (
     <CompactBlock
@@ -67,7 +67,7 @@ export function BashCompactView({ block, result, status }: ToolViewProps): React
 export function BashCondensedView({ block, result, status }: ToolViewProps): ReactNode {
   const input = block.input as BashInput;
   const description = input.description
-    ?? (input.command ? truncateCommand(input.command, 60) : undefined);
+    ?? (typeof input.command === 'string' ? truncateCommand(input.command, 60) : undefined);
 
   return (
     <CompactBlock
@@ -92,7 +92,7 @@ function truncateCommand(cmd: string, max: number): string {
 
 export function BashExpandedView({ block, result, status, anchor }: ToolViewProps): ReactNode {
   const input = block.input as BashInput;
-  const command = input.command ?? '';
+  const command = typeof input.command === 'string' ? input.command : '';
 
   const resultText = extractResultText(result?.content);
   const resultSummary = result

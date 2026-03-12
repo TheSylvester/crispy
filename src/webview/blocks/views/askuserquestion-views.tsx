@@ -35,7 +35,7 @@ interface AskUserQuestionInput {
 
 export function AskUserQuestionCompactView({ block, result, status }: ToolViewProps): ReactNode {
   const input = block.input as AskUserQuestionInput;
-  const questions = input.questions ?? [];
+  const questions = Array.isArray(input.questions) ? input.questions : [];
   const firstHeader = questions[0]?.header ?? 'Question';
 
   return (
@@ -55,7 +55,7 @@ export function AskUserQuestionCompactView({ block, result, status }: ToolViewPr
 
 export function AskUserQuestionExpandedView({ block, result, status, anchor }: ToolViewProps): ReactNode {
   const input = block.input as AskUserQuestionInput;
-  const questions = input.questions ?? [];
+  const questions = Array.isArray(input.questions) ? input.questions : [];
   const firstHeader = questions[0]?.header ?? 'Question';
 
   const count = questions.length;
@@ -79,7 +79,7 @@ export function AskUserQuestionExpandedView({ block, result, status, anchor }: T
           {questions.map((q, i) => (
             <div key={i} className="crispy-askuser-question">
               <strong className="crispy-askuser-question__text">{q.question}</strong>
-              {q.options && q.options.length > 0 && (
+              {Array.isArray(q.options) && q.options.length > 0 && (
                 <ul className="crispy-askuser-options">
                   {q.options.map((opt, j) => (
                     <li key={j} className="crispy-askuser-option">
