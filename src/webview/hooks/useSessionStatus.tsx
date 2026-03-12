@@ -69,11 +69,12 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
     optimisticRef.current = true;
     setChannelState(state);
 
-    // Safety net: if no real status event (e.g. 'active') arrives within 3s,
-    // the send was a local command that won't trigger a model turn (e.g.
-    // unknown skill). Clear optimistic so the UI isn't stuck in 'streaming'.
-    // Real status events clear optimisticRef first, so the timeout is a no-op
-    // in the normal case.
+    // Safety net: if no real status event (e.g. 'active') or entry arrives
+    // within 8s, the send was a local command that won't trigger a model turn
+    // (e.g. unknown skill). Clear optimistic so the UI isn't stuck in
+    // 'streaming'. Real status events clear optimisticRef first, so the
+    // timeout is a no-op in the normal case. Entry arrivals reset this timer
+    // (see onEvent handler below) so active streams never hit the timeout.
     clearOptimisticTimer();
     optimisticTimerRef.current = setTimeout(() => {
       optimisticTimerRef.current = null;
@@ -83,7 +84,7 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
         // background task heartbeat will correct it.
         setChannelState('idle');
       }
-    }, 3000);
+    }, 8000);
   }, [clearOptimisticTimer]);
 
   // Clear error on session switch
@@ -139,6 +140,19 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
           return mapped;
         });
         return;
+      }
+
+      // Entries arriving while optimistic means the session is clearly active.
+      // Reset the safety-net timer so it doesn't fire mid-stream.
+      if (event.type === 'entry' && optimisticRef.current) {
+        clearOptimisticTimer();
+        optimisticTimerRef.current = setTimeout(() => {
+          optimisticTimerRef.current = null;
+          if (optimisticRef.current) {
+            optimisticRef.current = false;
+            setChannelState('idle');
+          }
+        }, 8000);
       }
 
       // Handle status events for state transitions — these are
