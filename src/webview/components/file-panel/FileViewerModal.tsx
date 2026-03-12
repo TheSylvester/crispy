@@ -133,14 +133,14 @@ export function FileViewerModal(): React.JSX.Element | null {
     const lineRange = getLineRange(selection.text, activeFileView.content);
     const lineRef = lineRange
       ? lineRange.start === lineRange.end
-        ? `:L${lineRange.start}`
-        : `:L${lineRange.start}-L${lineRange.end}`
+        ? `:${lineRange.start}`
+        : `:${lineRange.start}-${lineRange.end}`
       : '';
 
     const comment = annotationText.trim();
-    let annotation = `\`${activeFileView.relativePath}${lineRef}\`:\n\`\`\`${activeFileView.language}\n${selection.text}\n\`\`\`\n`;
+    let annotation = `From \`${activeFileView.relativePath}${lineRef}\`:\n\`\`\`${activeFileView.language}\n${selection.text}\n\`\`\`\n`;
     if (comment) {
-      annotation += `\n${comment}\n`;
+      annotation += `${comment}\n`;
     }
 
     insertIntoChat(annotation);
