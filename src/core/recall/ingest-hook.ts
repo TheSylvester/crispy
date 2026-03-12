@@ -13,7 +13,7 @@
  */
 
 import { onResponseComplete } from '../lifecycle-hooks.js';
-import { ingestSessionMessages } from './message-ingest.js';
+import { ingestSessionMessages, embedSessionMessages } from './message-ingest.js';
 import { pushRosieLog } from '../rosie/debug-log.js';
 
 // ============================================================================
@@ -47,6 +47,25 @@ export function initRecallIngest(): void {
           level: 'info',
           summary: `Ingest: ${result.chunksCreated} messages indexed`,
           data: { sessionId, messages: result.chunksCreated },
+        });
+
+        // Embed after successful FTS5 ingest — fire-and-forget
+        embedSessionMessages(sessionId).then(count => {
+          if (count > 0) {
+            pushRosieLog({
+              source: 'recall-ingest',
+              level: 'info',
+              summary: `Embed: ${count} messages vectorized`,
+              data: { sessionId, embedded: count },
+            });
+          }
+        }).catch(err => {
+          pushRosieLog({
+            source: 'recall-ingest',
+            level: 'warn',
+            summary: `Embed failed: ${err instanceof Error ? err.message : String(err)}`,
+            data: { sessionId },
+          });
         });
       }
     } catch (err) {

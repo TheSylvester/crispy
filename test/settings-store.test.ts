@@ -95,7 +95,7 @@ describe('initSettings', () => {
     await initSettings(testBase);
 
     const snapshot = getSettingsSnapshot();
-    expect(snapshot.settings.preferences.toolPanelAutoOpen).toBe(true);
+    expect(snapshot.settings.preferences.toolPanelAutoOpen).toBe(false);
     expect(snapshot.settings.providers).toEqual({});
     expect(snapshot.revision).toBe(0);
   });

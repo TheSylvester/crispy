@@ -36,6 +36,7 @@ import { ChromeToggle } from './ChromeToggle.js';
 import { SettingsPopup } from './SettingsPopup.js';
 import { RosiePanel } from './RosiePanel.js';
 import { ForkButton } from './ForkButton.js';
+import { EmbeddingPrompt } from '../EmbeddingPrompt.js';
 import { usePreferences } from '../../context/PreferencesContext.js';
 import { useTransport } from '../../context/TransportContext.js';
 import { useSession } from '../../context/SessionContext.js';
@@ -51,6 +52,9 @@ import type { TurnIntent, TurnTarget } from '../../../core/agent-adapter.js';
 import type { WireProviderConfig } from '../../../core/settings/types.js';
 import type { SettingsChangedGlobalEvent } from '../../../core/settings/events.js';
 import { SETTINGS_CHANNEL_ID } from '../../../core/settings/events.js';
+import { RECALL_CATCHUP_CHANNEL_ID } from '../../../core/recall/catchup-types.js';
+import type { CatchupStatus } from '../../../core/recall/catchup-types.js';
+import type { RecallCatchupEvent } from '../../../core/channel-events.js';
 
 interface ControlPanelProps {
   onForkHoverChange?: (hovering: boolean) => void;
@@ -307,6 +311,32 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       setMcpMemoryEnabled(enabled);
       await transport.updateSettings({ mcp: { memory: { [mcpSettingsKey]: enabled } } });
     }, [transport, mcpSettingsKey]);
+
+    // --- Recall catch-up state ---
+    const [catchupStatus, setCatchupStatus] = useState<CatchupStatus | null>(null);
+
+    useEffect(() => {
+      transport.subscribeRecallCatchup().catch(() => {});
+      return () => { transport.unsubscribeRecallCatchup().catch(() => {}); };
+    }, [transport]);
+
+    useEffect(() => {
+      return transport.onEvent((sessionId, event) => {
+        if (sessionId !== RECALL_CATCHUP_CHANNEL_ID) return;
+        const e = event as RecallCatchupEvent;
+        if (e.type === 'notification' && e.kind === 'recall-catchup') {
+          setCatchupStatus(e.status);
+        }
+      });
+    }, [transport]);
+
+    const handleStartEmbedding = useCallback(async () => {
+      await transport.startEmbeddingBackfill();
+    }, [transport]);
+
+    const handleStopEmbedding = useCallback(async () => {
+      await transport.stopEmbeddingBackfill();
+    }, [transport]);
 
     // Clear forkMode when switching sessions
     useEffect(() => {
@@ -933,6 +963,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     );
 
     return (
+      <>
       <div
         ref={panelRefCallback}
         className="crispy-cp"
@@ -1015,6 +1046,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onUpdateTracker={handleUpdateTracker}
               mcpMemoryEnabled={mcpMemoryEnabled}
               onUpdateMcpMemory={handleUpdateMcpMemory}
+              catchupStatus={catchupStatus}
+              onStartEmbedding={handleStartEmbedding}
+              onStopEmbedding={handleStopEmbedding}
               modelGroups={modelGroups}
               providers={providers}
               onSaveProvider={async (slug, config) => { await transport.saveProvider(slug, config); }}
@@ -1028,6 +1062,13 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           </span>
         </div>
       </div>
+      {catchupStatus && (
+        <EmbeddingPrompt
+          status={catchupStatus}
+          onStart={handleStartEmbedding}
+        />
+      )}
+      </>
     );
   },
 );

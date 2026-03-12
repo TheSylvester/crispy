@@ -62,6 +62,13 @@ describe('getDb', () => {
     // WASM SQLite cannot do WAL — file-based DBs use 'delete' (rollback journal)
     expect(row.journal_mode).toBe('delete');
   });
+
+  it('enables foreign key enforcement', () => {
+    const dbPath = join(testDir, 'crispy.db');
+    const db = getDb(dbPath);
+    const row = db.get('PRAGMA foreign_keys') as Record<string, unknown>;
+    expect(row.foreign_keys).toBe(1);
+  });
 });
 
 // ============================================================================
@@ -99,21 +106,10 @@ describe('migrations', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
-    const rows = db.all('SELECT version, description FROM _migrations ORDER BY version');
-    expect(rows.length).toBe(13);
-    expect((rows[0] as Record<string, unknown>).version).toBe(1);
-    expect((rows[1] as Record<string, unknown>).version).toBe(2);
-    expect((rows[2] as Record<string, unknown>).version).toBe(3);
-    expect((rows[3] as Record<string, unknown>).version).toBe(4);
-    expect((rows[4] as Record<string, unknown>).version).toBe(5);
-    expect((rows[5] as Record<string, unknown>).version).toBe(6);
-    expect((rows[6] as Record<string, unknown>).version).toBe(7);
-    expect((rows[7] as Record<string, unknown>).version).toBe(8);
-    expect((rows[8] as Record<string, unknown>).version).toBe(9);
-    expect((rows[9] as Record<string, unknown>).version).toBe(10);
-    expect((rows[10] as Record<string, unknown>).version).toBe(11);
-    expect((rows[11] as Record<string, unknown>).version).toBe(12);
-    expect((rows[12] as Record<string, unknown>).version).toBe(13);
+    const rows = db.all('SELECT version FROM _migrations ORDER BY version') as Array<Record<string, unknown>>;
+    expect(rows.length).toBe(15);
+    const versions = rows.map(r => r.version);
+    expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
   });
 
   it('runs migrations idempotently', () => {
@@ -126,7 +122,7 @@ describe('migrations', () => {
 
     const db = getDb(dbPath);
     const rows = db.all('SELECT version FROM _migrations ORDER BY version');
-    expect(rows.length).toBe(13);
+    expect(rows.length).toBe(15);
   });
 });
 
@@ -336,5 +332,71 @@ describe('closeDb', () => {
     const db2 = getDb(dbPath);
     expect(db2.isOpen).toBe(true);
     expect(db2).not.toBe(db);
+  });
+});
+
+// ============================================================================
+// message_vectors CASCADE (migration v15)
+// ============================================================================
+
+describe('message_vectors ON DELETE CASCADE', () => {
+  function seedSession(db: import('node-sqlite3-wasm').Database, sessionId: string, count: number) {
+    for (let i = 0; i < count; i++) {
+      const mid = `${sessionId}-msg-${i}`;
+      db.run(
+        `INSERT INTO messages (message_id, session_id, message_seq, message_text, project_id, created_at)
+         VALUES (?, ?, ?, ?, NULL, ?)`,
+        [mid, sessionId, i, `text ${i}`, Date.now()],
+      );
+      db.run(
+        `INSERT INTO message_vectors (message_id, embedding_q8, norm, quant_scale)
+         VALUES (?, ?, ?, ?)`,
+        [mid, Buffer.alloc(8), 1.0, 0.5],
+      );
+    }
+  }
+
+  it('cascades vector deletes when parent messages are deleted', () => {
+    const dbPath = join(testDir, 'crispy.db');
+    const db = getDb(dbPath);
+
+    seedSession(db, 'sess-a', 3);
+
+    // Verify vectors exist
+    const before = db.get('SELECT COUNT(*) as cnt FROM message_vectors') as Record<string, unknown>;
+    expect(before.cnt).toBe(3);
+
+    // Delete messages — CASCADE should remove vectors
+    db.run("DELETE FROM messages WHERE session_id = 'sess-a'");
+
+    const after = db.get('SELECT COUNT(*) as cnt FROM message_vectors') as Record<string, unknown>;
+    expect(after.cnt).toBe(0);
+  });
+
+  it('migration v15 would fail with orphaned vectors (regression proof)', () => {
+    const dbPath = join(testDir, 'crispy.db');
+    const db = getDb(dbPath);
+
+    // With FK ON, inserting a vector with no parent message fails
+    expect(() => {
+      db.run(
+        `INSERT INTO message_vectors (message_id, embedding_q8, norm, quant_scale)
+         VALUES (?, ?, ?, ?)`,
+        ['orphan-no-parent', Buffer.alloc(8), 1.0, 0.5],
+      );
+    }).toThrow();
+  });
+
+  it('only cascades vectors for the deleted session', () => {
+    const dbPath = join(testDir, 'crispy.db');
+    const db = getDb(dbPath);
+
+    seedSession(db, 'sess-a', 2);
+    seedSession(db, 'sess-b', 3);
+
+    db.run("DELETE FROM messages WHERE session_id = 'sess-a'");
+
+    const remaining = db.get('SELECT COUNT(*) as cnt FROM message_vectors') as Record<string, unknown>;
+    expect(remaining.cnt).toBe(3);
   });
 });

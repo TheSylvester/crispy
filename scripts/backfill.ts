@@ -11,7 +11,8 @@
  * Usage:
  *   npx tsx scripts/backfill.ts summarize [options]
  *   npx tsx scripts/backfill.ts track [options]
- *   npx tsx scripts/backfill.ts embed [options]
+ *   npx tsx scripts/backfill.ts index [options]
+ *   npx tsx scripts/backfill.ts embed-messages [options]
  *
  * @module scripts/backfill
  */
@@ -35,10 +36,9 @@ import { getExistingProjects } from '../src/core/rosie/tracker/db-writer.js';
 import { buildInternalMcpConfig } from '../src/mcp/servers/external.js';
 import { getDb } from '../src/core/crispy-db.js';
 import { stripToolContent } from '../src/core/recall/transcript-utils.js';
-import { ingestSession } from '../src/core/recall/ingest.js';
-import { hasSessionChunks } from '../src/core/recall/store.js';
 import { ingestSessionMessages } from '../src/core/recall/message-ingest.js';
-import { hasSessionMessages } from '../src/core/recall/message-store.js';
+import { hasSessionMessages, insertMessageVectors } from '../src/core/recall/message-store.js';
+import type { MessageVectorRecord } from '../src/core/recall/message-store.js';
 
 // ============================================================================
 // Constants
@@ -56,57 +56,52 @@ function printUsage(): void {
 Usage: npx tsx scripts/backfill.ts <command> [options]
 
 Commands:
-  summarize    Generate rosie-meta for sessions (paused for rework)
-  track        Run tracker on rosie-meta entries (paused for rework)
-  index        Populate the message-level FTS5 recall index
-  embed        Chunk and embed session transcripts for semantic recall
+  summarize       Generate rosie-meta for sessions (paused for rework)
+  track           Run tracker on rosie-meta entries (paused for rework)
+  index           Populate the message-level FTS5 recall index
+  embed-messages  Generate q8 embedding vectors for indexed messages
 
 Options:
   --model, -m <vendor:model>   Model to use (default: ${DEFAULT_MODEL})
   --concurrency, -c <n>        Parallel dispatches (default: ${DEFAULT_CONCURRENCY})
   --workspace, -w <name>       Filter by workspace path substring
   --session, -s <id>           Target a specific session by ID or file path substring
-  --limit, -l <n>              Process at most N entries (default: 1)
+  --limit, -l <n>              Process at most N sessions (default: 1)
+  --days, -d <n>               Limit to sessions from the last N days (default: 3, embed-messages only)
   --dry-run                    Show what would happen without writing
   --verbose                    Print extra debug info
-  --force                      Re-process sessions that already have chunks (embed only)
+  --force                      Re-process already-processed sessions
   --help, -h                   Show this help
 
 Examples:
-  # Summarize 100 sessions, 8 at a time
-  npx tsx scripts/backfill.ts summarize -l 100 -c 8
+  # Index 500 sessions into FTS5
+  npx tsx scripts/backfill.ts index -l 500
 
-  # Summarize all crispy sessions with max parallelism
-  npx tsx scripts/backfill.ts summarize -w crispy -l 9999 -c 10
+  # Embed messages from the last 3 days (default)
+  npx tsx scripts/backfill.ts embed-messages -l 50
 
-  # Track 50 entries sequentially (tracker needs sequential for project context)
-  npx tsx scripts/backfill.ts track -l 50
-
-  # Track with moderate parallelism (refreshes projects between waves)
-  npx tsx scripts/backfill.ts track -l 200 -c 4
-
-  # Embed 500 sessions, 4 at a time
-  npx tsx scripts/backfill.ts embed -l 500 -c 4
+  # Embed messages from the last 7 days
+  npx tsx scripts/backfill.ts embed-messages -l 100 --days 7
 
   # Re-embed a specific session
-  npx tsx scripts/backfill.ts embed -s abc123 --force
+  npx tsx scripts/backfill.ts embed-messages -s abc123 --force
 
   # Dry-run: see what would be processed
-  npx tsx scripts/backfill.ts summarize -w crispy -l 10 --dry-run
+  npx tsx scripts/backfill.ts embed-messages -l 10 --dry-run
 `);
 }
 
 interface CliOptions {
-  command: 'summarize' | 'track' | 'embed' | 'index';
+  command: 'summarize' | 'track' | 'index' | 'embed-messages';
   model: string;
   concurrency: number;
   workspace: string | undefined;
   session: string | undefined;
   limit: number;
+  days: number;
   dryRun: boolean;
   verbose: boolean;
   force: boolean;
-  withEmbeddings: boolean;
 }
 
 function parseCli(): CliOptions | null {
@@ -118,7 +113,7 @@ function parseCli(): CliOptions | null {
     return null;
   }
 
-  if (command !== 'summarize' && command !== 'track' && command !== 'embed' && command !== 'index') {
+  if (command !== 'summarize' && command !== 'track' && command !== 'index' && command !== 'embed-messages') {
     console.error(`Unknown command: ${command}`);
     printUsage();
     return null;
@@ -134,8 +129,8 @@ function parseCli(): CliOptions | null {
       limit: { type: 'string', short: 'l', default: '1' },
       'dry-run': { type: 'boolean', default: false },
       verbose: { type: 'boolean', default: false },
+      days: { type: 'string', short: 'd', default: '3' },
       force: { type: 'boolean', default: false },
-      'with-embeddings': { type: 'boolean', default: false },
       help: { type: 'boolean', short: 'h', default: false },
     },
     allowPositionals: true,
@@ -147,16 +142,16 @@ function parseCli(): CliOptions | null {
   }
 
   return {
-    command: command as 'summarize' | 'track' | 'embed' | 'index',
+    command: command as CliOptions['command'],
     model: values.model as string,
     concurrency: Math.max(1, parseInt(values.concurrency as string, 10) || DEFAULT_CONCURRENCY),
     workspace: values.workspace as string | undefined,
     session: values.session as string | undefined,
     limit: parseInt(values.limit as string, 10) || 1,
+    days: Math.max(1, parseInt(values.days as string, 10) || 3),
     dryRun: values['dry-run'] as boolean,
     verbose: values.verbose as boolean,
     force: values.force as boolean,
-    withEmbeddings: values['with-embeddings'] as boolean,
   };
 }
 
@@ -570,127 +565,223 @@ async function runTrack(dispatch: ReturnType<typeof createAgentDispatch>, opts: 
 }
 
 // ============================================================================
-// Embed Command
+// Embed Messages Command
 // ============================================================================
 
-interface EmbedCandidate {
-  file: string;
+/** Max characters to embed per message (Nomic has 8192 token limit, ~4 chars/token). */
+const MAX_EMBED_CHARS = 32_000;
+
+interface EmbedMessagesCandidate {
   sessionId: string;
-  size: number;
+  messageCount: number;
 }
 
 /**
- * Find session JSONL files eligible for embedding. Uses the adapter registry
- * to discover sessions (same as summarize/track), then filters out sessions
- * that already have chunks in the DB (unless --force).
+ * Find sessions that have messages indexed but no vectors yet.
+ * Filtered by --days (created_at), ordered reverse-chronologically.
  */
-function findEmbedCandidates(
-  workspace: string | undefined,
-  session: string | undefined,
-  limit: number,
-  force: boolean,
-): EmbedCandidate[] {
-  const allSessions = listAllSessions();
-  const candidates: EmbedCandidate[] = [];
+function findEmbedMessagesCandidates(
+  opts: CliOptions,
+): EmbedMessagesCandidate[] {
+  const db = getDb(dbPath());
+  const cutoff = Date.now() - opts.days * 24 * 60 * 60 * 1000;
 
-  for (const s of allSessions) {
-    if (workspace && !s.path.includes(workspace)) continue;
-    if (session && !s.path.includes(session) && !s.sessionId.includes(session)) continue;
-    if (!s.path.endsWith('.jsonl')) continue;
-    if (!existsSync(s.path)) continue;
+  const params: (string | number)[] = [cutoff];
+  let extraClauses = '';
 
-    // Skip already-processed sessions unless --force
-    if (!force && hasSessionChunks(s.sessionId)) continue;
-
-    candidates.push({
-      file: s.path,
-      sessionId: s.sessionId,
-      size: s.size,
-    });
-
-    if (candidates.length >= limit) break;
+  if (opts.workspace) {
+    // Join to activity_entries or session path — filter by session_id containing workspace
+    extraClauses += 'AND m.session_id LIKE ? ';
+    params.push(`%${opts.workspace}%`);
+  }
+  if (opts.session) {
+    extraClauses += 'AND m.session_id LIKE ? ';
+    params.push(`%${opts.session}%`);
   }
 
-  return candidates;
+  params.push(opts.limit);
+
+  // Find sessions with messages but no vectors (unless --force)
+  const skipClause = opts.force
+    ? ''
+    : `AND m.session_id NOT IN (
+         SELECT DISTINCT m2.session_id FROM messages m2
+         JOIN message_vectors mv ON mv.message_id = m2.message_id
+       )`;
+
+  const rows = db.all(`
+    SELECT m.session_id, COUNT(*) as msg_count
+    FROM messages m
+    WHERE m.created_at >= ?
+      ${extraClauses}
+      ${skipClause}
+    GROUP BY m.session_id
+    ORDER BY MAX(m.created_at) DESC
+    LIMIT ?
+  `, params) as Array<Record<string, unknown>>;
+
+  return rows.map(r => ({
+    sessionId: r.session_id as string,
+    messageCount: r.msg_count as number,
+  }));
 }
 
-async function runEmbed(opts: CliOptions): Promise<void> {
-  const candidates = findEmbedCandidates(opts.workspace, opts.session, opts.limit, opts.force);
+/** RSS threshold (in MB) at which we stop gracefully and let the wrapper
+ *  restart us. The command is incremental so progress is preserved.
+ *  Set above the typical post-dispose baseline (~800MB) but below the
+ *  --max-old-space-size cap (1536MB) used by embed-robust.sh. */
+const RSS_LIMIT_MB = 1280;
+
+/** Check RSS and return true if we should stop to avoid OOM. */
+function memoryPressure(): { rss: number; stop: boolean } {
+  const rss = Math.round(process.memoryUsage.rss() / 1024 / 1024);
+  return { rss, stop: rss > RSS_LIMIT_MB };
+}
+
+/** Try to trigger GC if --expose-gc was passed. */
+function tryGc(): void {
+  if (typeof globalThis.gc === 'function') globalThis.gc();
+}
+
+async function runEmbedMessages(opts: CliOptions): Promise<void> {
+  const candidates = findEmbedMessagesCandidates(opts);
 
   if (candidates.length === 0) {
-    log('No sessions found to embed');
+    log('No sessions found to embed (all already vectorized or no messages in range)');
     return;
   }
 
-  log(`Found ${candidates.length} session(s) to embed (concurrency: ${opts.concurrency}${opts.force ? ', force' : ''})`);
+  const totalMessages = candidates.reduce((sum, c) => sum + c.messageCount, 0);
+  log(`Found ${candidates.length} session(s) with ${totalMessages} messages to embed (days: ${opts.days}${opts.force ? ', force' : ''})`);
+
+  // Lazy-load embedding modules
+  let embedBatchFn: ((texts: string[]) => Promise<Float32Array[]>) | null = null;
+  let disposeFn: (() => Promise<void>) | null = null;
+  let quantizeFn: ((f32: Float32Array) => { q8: Int8Array; scale: number }) | null = null;
+  let normFn: ((f32: Float32Array) => number) | null = null;
+
+  try {
+    const { embedBatch, disposeEmbedder } = await import('../src/core/recall/embedder.js');
+    const { quantizeToQ8, computeNorm } = await import('../src/core/recall/quantize.js');
+    embedBatchFn = embedBatch;
+    disposeFn = disposeEmbedder;
+    quantizeFn = quantizeToQ8;
+    normFn = computeNorm;
+  } catch (err) {
+    log(`FATAL — Failed to load embedding model: ${err instanceof Error ? err.message : String(err)}`);
+    log('Ensure @huggingface/transformers is installed and network access is available for model download.');
+    return;
+  }
 
   let okCount = 0;
   let failCount = 0;
   let skipCount = 0;
-  let totalChunks = 0;
+  let totalEmbedded = 0;
   const startTime = Date.now();
+  const db = getDb(dbPath());
 
-  await pooled(candidates, opts.concurrency, async (c, i) => {
+  for (let i = 0; i < candidates.length; i++) {
+    // Memory watchdog — exit gracefully if RSS is too high.
+    // Progress is preserved (incremental), so re-running picks up here.
+    const mem = memoryPressure();
+    if (mem.stop) {
+      log(`\n⚠ RSS ${mem.rss}MB exceeds ${RSS_LIMIT_MB}MB limit — stopping to avoid OOM.`);
+      log(`  Progress is saved. Re-run to continue from where we left off.`);
+      break;
+    }
+
+    const c = candidates[i]!;
     const label = `[${i + 1}/${candidates.length}]`;
-    const sizeKb = (c.size / 1024).toFixed(0);
-    log(`\n${label} ${c.file} (${sizeKb} KB)`);
+    log(`\n${label} ${c.sessionId} (${c.messageCount} msgs, RSS: ${mem.rss}MB)`);
 
     if (opts.dryRun) {
       result(JSON.stringify({
-        action: 'embed',
+        action: 'embed-messages',
         dryRun: true,
-        file: c.file,
         sessionId: c.sessionId,
-        sizeBytes: c.size,
+        messageCount: c.messageCount,
       }));
-      return;
+      continue;
     }
 
     try {
       const t0 = Date.now();
 
-      const ingestResult = await ingestSession(c.file, {
-        force: opts.force,
-        verbose: opts.verbose,
-        withEmbeddings: opts.withEmbeddings,
-      });
+      // Read all messages for this session
+      const rows = db.all(
+        `SELECT message_id, message_text FROM messages
+         WHERE session_id = ? ORDER BY message_seq ASC`,
+        [c.sessionId],
+      ) as Array<Record<string, unknown>>;
+
+      // Filter out empty messages and prepare texts
+      const validRows: Array<{ messageId: string; text: string }> = [];
+      for (const r of rows) {
+        const text = (r.message_text as string).trim();
+        if (!text) continue;
+        const truncated = text.length > MAX_EMBED_CHARS;
+        if (truncated && opts.verbose) {
+          log(`  WARN — message ${r.message_id} truncated (${text.length} chars → ${MAX_EMBED_CHARS})`);
+        }
+        validRows.push({
+          messageId: r.message_id as string,
+          text: truncated ? text.slice(0, MAX_EMBED_CHARS) : text,
+        });
+      }
+
+      if (validRows.length === 0) {
+        log('  SKIP — no embeddable messages');
+        skipCount++;
+        continue;
+      }
+
+      // Embed in batch (embedBatch internally sub-batches to MAX_BATCH_SIZE)
+      const texts = validRows.map(r => r.text);
+      const vectors = await embedBatchFn!(texts);
+
+      // Quantize and build records
+      const records: MessageVectorRecord[] = [];
+      for (let j = 0; j < validRows.length; j++) {
+        const f32 = vectors[j]!;
+        const { q8, scale } = quantizeFn!(f32);
+        const norm = normFn!(f32);
+        records.push({
+          messageId: validRows[j]!.messageId,
+          embeddingQ8: q8,
+          norm,
+          quantScale: scale,
+        });
+      }
+
+      // Batch insert
+      insertMessageVectors(records);
 
       const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-
-      if (ingestResult.error) {
-        log(`  FAIL — ${ingestResult.error} (${elapsed}s)`);
-        failCount++;
-        return;
-      }
-
-      if (ingestResult.skipped) {
-        log(`  SKIP — already processed or no content`);
-        skipCount++;
-        return;
-      }
-
-      totalChunks += ingestResult.chunksCreated;
+      totalEmbedded += records.length;
       okCount++;
-      log(`  OK (${elapsed}s) — ${ingestResult.chunksCreated} chunks`);
+      log(`  OK (${elapsed}s) — ${records.length} messages embedded`);
 
       result(JSON.stringify({
-        action: 'embed',
-        file: c.file,
+        action: 'embed-messages',
         sessionId: c.sessionId,
-        chunks: ingestResult.chunksCreated,
+        embedded: records.length,
+        elapsed: parseFloat(elapsed),
       }));
+
+      // ONNX Runtime leaks internal state beyond what tensor.dispose()
+      // can reclaim. Release the entire pipeline after each session to
+      // keep RSS bounded. The ~2-5s reload cost per session is the price
+      // of stability on memory-constrained environments (WSL2).
+      await disposeFn!();
+      tryGc();
     } catch (err) {
       failCount++;
       log(`  ERROR — ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, (waveEnd) => {
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
-    const rate = okCount > 0 ? (okCount / (Date.now() - startTime) * 1000 * 60).toFixed(1) : '0';
-    log(`\n--- Wave complete (${waveEnd}/${candidates.length}) | OK: ${okCount} | Fail: ${failCount} | Skip: ${skipCount} | Chunks: ${totalChunks} | ${elapsed}s elapsed | ~${rate}/min ---`);
-  });
+  }
 
   const totalElapsed = ((Date.now() - startTime) / 1000).toFixed(0);
-  log(`\n=== Embed complete: ${okCount} OK, ${failCount} failed, ${skipCount} skipped, ${totalChunks} chunks in ${totalElapsed}s ===`);
+  log(`\n=== Embed-messages complete: ${okCount} OK, ${failCount} failed, ${skipCount} skipped, ${totalEmbedded} messages embedded in ${totalElapsed}s ===`);
 }
 
 // ============================================================================
@@ -848,8 +939,8 @@ async function main(): Promise<void> {
       log(`Track is paused for rework. Use 'index' to populate the message-level FTS5 index.`);
     } else if (opts.command === 'index') {
       await runIndex(opts);
-    } else {
-      await runEmbed(opts);
+    } else if (opts.command === 'embed-messages') {
+      await runEmbedMessages(opts);
     }
   } finally {
     shutdown();

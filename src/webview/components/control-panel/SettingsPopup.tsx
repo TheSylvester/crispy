@@ -16,6 +16,8 @@ import type { VendorModelGroup } from './types.js';
 import type { RenderMode } from '../../types.js';
 import type { ToolViewOverride, BadgeStyle } from '../../context/PreferencesContext.js';
 import type { WireProviderConfig, ProviderConfig } from '../../../core/settings/types.js';
+import type { CatchupStatus } from '../../../core/recall/catchup-types.js';
+import { formatDuration } from '../../utils/format.js';
 
 interface SettingsPopupProps {
   pinned: boolean;
@@ -39,6 +41,9 @@ interface SettingsPopupProps {
   onUpdateTracker: (enabled: boolean) => void;
   mcpMemoryEnabled: boolean;
   onUpdateMcpMemory: (enabled: boolean) => void;
+  catchupStatus?: CatchupStatus | null;
+  onStartEmbedding?: () => void;
+  onStopEmbedding?: () => void;
   modelGroups: VendorModelGroup[];
   providers?: Record<string, WireProviderConfig>;
   onSaveProvider?: (slug: string, config: ProviderConfig) => Promise<void>;
@@ -128,7 +133,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, rosieEnabled, rosieModel, onUpdateRosie, trackerEnabled, onUpdateTracker, mcpMemoryEnabled, onUpdateMcpMemory, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, rosieEnabled, rosieModel, onUpdateRosie, trackerEnabled, onUpdateTracker, mcpMemoryEnabled, onUpdateMcpMemory, catchupStatus, onStartEmbedding, onStopEmbedding, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -305,6 +310,58 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               onChange={(e) => onUpdateMcpMemory(e.target.checked)}
             />
           </label>
+          {mcpMemoryEnabled && catchupStatus && (
+            <div className="crispy-cp-settings__recall-status">
+              {catchupStatus.phase === 'done' && catchupStatus.gapCount === 0 && (
+                <span className="crispy-cp-settings__recall-ok">
+                  Semantic search: up to date
+                </span>
+              )}
+              {catchupStatus.phase === 'fts5-indexing' && (
+                <span className="crispy-cp-settings__recall-progress">
+                  Indexing messages…
+                </span>
+              )}
+              {(catchupStatus.phase === 'detecting-gap' || (catchupStatus.phase === 'done' && catchupStatus.gapCount > 0)) && (
+                <span className="crispy-cp-settings__recall-gap">
+                  <span>Semantic search: {catchupStatus.gapCount} messages to embed</span>
+                  {onStartEmbedding && (
+                    <button
+                      className="crispy-cp-settings__recall-btn"
+                      onClick={onStartEmbedding}
+                    >
+                      Start
+                    </button>
+                  )}
+                </span>
+              )}
+              {catchupStatus.phase === 'embedding' && (
+                <span className="crispy-cp-settings__recall-embedding">
+                  <span>
+                    Embedding: {catchupStatus.embeddedSoFar} / {catchupStatus.gapCount}
+                  </span>
+                  <progress
+                    value={catchupStatus.embeddedSoFar}
+                    max={catchupStatus.gapCount}
+                    className="crispy-cp-settings__recall-progress-bar"
+                  />
+                  {catchupStatus.estimatedSecondsRemaining > 0 && (
+                    <span style={{ opacity: 0.6, fontSize: '0.85em' }}>
+                      ~{formatDuration(catchupStatus.estimatedSecondsRemaining)} remaining
+                    </span>
+                  )}
+                  {onStopEmbedding && (
+                    <button
+                      className="crispy-cp-settings__recall-btn"
+                      onClick={onStopEmbedding}
+                    >
+                      Stop
+                    </button>
+                  )}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* --- Providers Section --- */}
           {providers && onSaveProvider && onDeleteProvider && (

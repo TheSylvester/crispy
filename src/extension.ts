@@ -13,6 +13,7 @@ import { registerAllAdapters, resolveInternalServerPaths } from './host/adapter-
 import { createAgentDispatch } from './host/agent-dispatch.js';
 import { initRosieSummarize, shutdownRosieSummarize, initRosieTracker, shutdownRosieTracker } from './core/rosie/index.js';
 import { initRecallIngest, shutdownRecallIngest } from './core/recall/ingest-hook.js';
+import { startRecallCatchup, stopEmbeddingBackfill } from './core/recall/catchup-manager.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
@@ -79,6 +80,7 @@ export function activate(context: vscode.ExtensionContext): void {
   //   Phase 1: Rosie summarize (LLM-based analysis)
   //   Phase 2 (after): Rosie tracker (depends on summarize output)
   initRecallIngest();
+  startRecallCatchup('vscode');
   initRosieSummarize(dispatch);
   initRosieTracker(dispatch, resolveInternalServerPaths(context.extensionPath));
   context.subscriptions.push({
@@ -86,6 +88,7 @@ export function activate(context: vscode.ExtensionContext): void {
       shutdownRosieTracker();
       shutdownRosieSummarize();
       shutdownRecallIngest();
+      stopEmbeddingBackfill();
       dispatch.dispose();
     },
   });

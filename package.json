@@ -3,7 +3,7 @@
   "displayName": "Crispy",
   "icon": "media/crispy-icon.png",
   "description": "A zero-compromise UI for Claude Code, Codex, and more — with controls you can't get in a terminal",
-  "version": "0.1.4-dev.54",
+  "version": "0.1.4-dev.57",
   "publisher": "the-sylvester",
   "private": true,
   "license": "MIT",
@@ -66,7 +66,7 @@
     "build:extension": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --external:onnxruntime-node --external:@huggingface/transformers --format=cjs --platform=node --sourcemap && cp node_modules/node-sqlite3-wasm/dist/node-sqlite3-wasm.wasm dist/",
     "build:webview": "esbuild src/webview/main.tsx --bundle --outfile=dist/webview/main.js --format=esm --platform=browser --sourcemap --jsx=automatic --loader:.svg=text && cp src/webview/index.html dist/webview/ && cp src/webview/theme-defaults.css dist/webview/ && cp src/webview/styles.css dist/webview/",
     "build:dev-server": "esbuild src/host/dev-server.ts --bundle --outfile=dist/dev-server.js --external:@anthropic-ai/* --external:ws --external:onnxruntime-node --external:@huggingface/transformers --format=esm --platform=node --sourcemap",
-    "build:internal-mcp": "esbuild src/mcp/servers/internal-main.ts --bundle --outfile=dist/internal-mcp.js --format=cjs --platform=node --sourcemap",
+    "build:internal-mcp": "esbuild src/mcp/servers/internal-main.ts --bundle --outfile=dist/internal-mcp.js --external:onnxruntime-node --external:@huggingface/transformers --format=cjs --platform=node --sourcemap",
     "build": "npm run build:extension && npm run build:webview && npm run build:dev-server && npm run build:internal-mcp",
     "watch": "npm run build:extension -- --watch",
     "typecheck": "tsc --noEmit",
@@ -79,6 +79,8 @@
     "package:win32-arm64": "npm run build && node scripts/package-vsix.mjs win32-arm64",
     "test": "./scripts/check-claude-fixture.sh",
     "test:unit": "vitest run",
+    "smoke": "npx tsx scripts/smoke.ts",
+    "smoke:quick": "npx tsx scripts/smoke.ts --skip-embed",
     "dev": "npm run build:webview && node --import tsx src/host/dev-server.ts"
   },
   "categories": [

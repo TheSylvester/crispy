@@ -455,7 +455,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       console.error(`[internal-mcp] search_transcript: query="${query}" limit=${limit} project=${projectId ?? 'all'} session=${sessionId ?? 'all'}`);
       const t0 = Date.now();
       try {
-        const results = searchTranscript(query, limit, projectId, sessionId);
+        const results = await searchTranscript(query, limit, projectId, sessionId);
         const meta = searchTranscriptMeta(query, projectId, sessionId);
         const elapsed = Date.now() - t0;
         console.error(`[internal-mcp] search_transcript: ${results.length} of ${meta.total_matches} results (${Object.keys(meta.session_hits).length} sessions)`);

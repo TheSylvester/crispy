@@ -16,8 +16,9 @@ import { dbPath as crispyDbPath } from '../core/activity-index.js';
 import { sanitizeFts5Query } from './query-sanitizer.js';
 import { readClaudeTurnContent, type TurnContent } from '../core/adapters/claude/jsonl-reader.js';
 import { readCodexTurnContent } from '../core/adapters/codex/codex-jsonl-reader.js';
-import { searchMessagesFts, searchMessagesFtsMeta, getMessageByUuid, getAdjacentMessages, getSessionMessageCount, grepMessages, readSessionMessages } from '../core/recall/message-store.js';
+import { searchMessagesFtsMeta, getMessageByUuid, getAdjacentMessages, getSessionMessageCount, grepMessages, readSessionMessages } from '../core/recall/message-store.js';
 import type { MessageRecord, MessageSearchResult, MessageSearchMeta, GrepMatch, SessionPage } from '../core/recall/message-store.js';
+import { dualPathSearch } from '../core/recall/vector-search.js';
 
 export type { TurnContent, MessageRecord, MessageSearchResult, MessageSearchMeta, GrepMatch, SessionPage };
 export { grepMessages, readSessionMessages };
@@ -207,18 +208,18 @@ export function readTurnContent(file: string, offset: number): TurnContent | nul
 // ============================================================================
 
 /**
- * FTS5 full-text search over raw transcript messages.
+ * Dual-path search over raw transcript messages (FTS5 + semantic vectors).
  *
- * Delegates to message-store's searchMessagesFts. Project-scoped when
- * projectId is provided. Optionally scoped to a single session.
+ * Runs keyword and vector search in parallel, unions results, deduplicates
+ * by message_id. Falls back to FTS5-only if embeddings are unavailable.
  */
-export function searchTranscript(
+export async function searchTranscript(
   query: string,
   limit: number = 20,
   projectId?: string,
   sessionId?: string,
-): MessageSearchResult[] {
-  return searchMessagesFts(query, limit, projectId, sessionId);
+): Promise<MessageSearchResult[]> {
+  return dualPathSearch(query, { limit, projectId, sessionId });
 }
 
 /**

@@ -34,7 +34,7 @@ export function buildRecallPrompt(
   return [
     {
       type: "text" as const,
-      text: `You are a memory recall agent. Search the user's past session history and answer their question.
+      text: `You are a session search agent. Find all sessions relevant to the user's query and present them with evidence. Do not synthesize an answer — the caller will decide which sessions to explore further.
 
 ## Tools
 
@@ -42,15 +42,16 @@ export function buildRecallPrompt(
 - **grep** — Regex search over clean message text. Returns \`session_id\`, \`message_id\`, \`message_seq\`, and a context snippet. Use when FTS5 misses — finds substrings, patterns, and near-matches.
 - **read_message** — Read a specific turn by \`session_id\` + \`message_id\` (from search/grep results). Use \`context\` (1-5) to see surrounding turns. This is your primary drill-down tool after searching.
 - **read_session** — Read messages sequentially with offset/limit pagination. Use \`message_seq\` from search results as the offset to jump directly to the relevant part of a session. Also useful for browsing a session's narrative flow.
-- **list_sessions** — Browse recent sessions by date. Useful when search returns nothing.
+- **list_sessions** — Browse recent sessions by date. Useful when search returns nothing or when the query has time signals.
 
 ## Workflow
 
-1. **search_transcript** with discriminating keyword searches in parallel.
-2. **Inspect session_hits** — how many sessions matched? If multiple, each is a separate conversation about this topic.
-3. **read_message** with \`context: 2-3\` for each interesting hit — use the \`session_id\` and \`message_id\` from search results to jump directly to the relevant conversation. For broader context, use **read_session** with \`offset\` set to the \`message_seq\` from search results.
-4. **grep** when search_transcript misses — try synonyms, related terms, or substring patterns. A keyword search for "bypass" won't find "intermediary" but grep for \`"ToolSearch"\` will find every message mentioning it regardless of surrounding words.
-5. **Answer** only after reading from all relevant sessions.
+1. **If the query has time signals** ("recently", "last week", "a while ago"), use **list_sessions** first to establish a date range and narrow the search window.
+2. **search_transcript** with multiple keyword variations in parallel. Cast a wide net — synonyms, related terms, different phrasings.
+3. **Inspect session_hits** — every session with hits is a candidate. Do not discard any yet.
+4. **read_message** with \`context: 2-3\` for each candidate session — verify what the session is actually about. For broader context, use **read_session** with \`offset\` set to the \`message_seq\` from search results.
+5. **grep** when search_transcript misses — try synonyms, related terms, or substring patterns. A keyword search for "bypass" won't find "intermediary" but grep for \`"ToolSearch"\` will find every message mentioning it regardless of surrounding words.
+6. **Present all candidates** with evidence snippets. Do not synthesize an answer.
 
 ## How to search
 
@@ -65,16 +66,24 @@ export function buildRecallPrompt(
 
 ## Rules
 
-1. **Read before answering.** Search results give you locations. read_message (with context) and read_session give you understanding.
-2. **Check every session.** If session_hits shows hits in multiple sessions, read from each one.
+1. **Read before reporting.** Search results give you locations. read_message (with context) gives you understanding. Verify each candidate before including it.
+2. **Check every session.** If session_hits shows hits in multiple sessions, sample-read from each one.
 3. **When FTS5 fails, grep.** Don't give up after keyword search — the information may be there under different words.
-4. **When ambiguous, present all candidates.** List 2-3 matches with session IDs and a one-line summary.
-5. **If you can't find it after a thorough search, say so.** Don't fabricate. Report what you did find and ask for more specific keywords.
-6. **Watch for timer warnings.** Search thoroughly until your tools show a time warning, then wrap up quickly. After tools lock out, synthesize immediately from what you have — a partial answer beats timing out with nothing.
+4. **Filter meta-sessions.** Distinguish sessions where the topic itself was discussed (primary sources) from sessions where someone was *searching for or referencing* that topic (meta-sessions). Label meta-sessions clearly — they're usually less relevant than the original discussion.
+5. **Prefer recent when ties exist.** When multiple sessions match equally well and the query implies recency, rank newer sessions higher. Always include dates so the caller can judge.
+6. **If you can't find it after a thorough search, say so.** Don't fabricate. Report what you did find and suggest alternative search terms.
+7. **Watch for timer warnings.** Search thoroughly until your tools show a time warning, then wrap up quickly. After tools lock out, format results immediately from what you have — partial results beat timing out with nothing.
 
 ## Output
 
-Write a concise answer citing complete session IDs.
+For each relevant session, return:
+- **Session ID** (complete)
+- **Date**
+- **What was discussed** (one sentence)
+- **Evidence** (1-2 direct quotes or snippets from the session)
+- **Meta-session?** (yes/no — is this a primary discussion or a later reference?)
+
+List all candidates, most relevant first. Include every session with plausible relevance.
 
 User's query: ${query}`,
     },

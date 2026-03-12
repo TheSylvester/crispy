@@ -5,14 +5,20 @@
  * one row per user/assistant entry in the messages table. FTS5 indexing
  * happens automatically via triggers on insert.
  *
- * Unlike the chunk-based pipeline (ingest.ts), this preserves message
- * boundaries and uses the entry's uuid as the primary key. Sub-agent entries
- * (those with parentToolUseID) are excluded — the parent session's assistant
- * entries already contain sub-agent output via the Task tool result.
+ * Also handles semantic embedding: after messages are indexed, they can be
+ * embedded with Nomic Embed Code and stored as q8 vectors for dual-path search.
+ *
+ * Preserves message boundaries and uses the entry's uuid as the primary key.
+ * Sub-agent entries (those with parentToolUseID) are excluded — the parent
+ * session's assistant entries already contain sub-agent output via the Task
+ * tool result.
+ *
+ * Also owns the IngestResult/IngestOptions types used by both this module
+ * and the backfill CLI.
  *
  * Designed for both real-time (single session) and batch (backfill) use.
  *
- * Owns: session-level message ingestion orchestration.
+ * Owns: session-level message ingestion + embedding orchestration, ingest types.
  * Does not: discover sessions, manage concurrency, own CLI parsing.
  *
  * @module recall/message-ingest
@@ -21,13 +27,32 @@
 import { stripToolContent } from './transcript-utils.js';
 import {
   insertMessages,
+  insertMessageVectors,
   hasSessionMessages,
   deleteSessionMessages,
 } from './message-store.js';
-import type { MessageRecord } from './message-store.js';
+import type { MessageRecord, MessageVectorRecord } from './message-store.js';
+import { getDb } from '../crispy-db.js';
+import { dbPath } from '../activity-index.js';
 import { findSession, loadSession } from '../session-manager.js';
-import type { IngestResult, IngestOptions } from './ingest.js';
 import type { TranscriptEntry } from '../transcript.js';
+
+// ============================================================================
+// Types (originally from ingest.ts, moved here after chunk pipeline removal)
+// ============================================================================
+
+export interface IngestResult {
+  sessionId: string;
+  chunksCreated: number;
+  skipped: boolean;
+  error?: string;
+}
+
+export interface IngestOptions {
+  projectId?: string;
+  force?: boolean;
+  verbose?: boolean;
+}
 
 // ============================================================================
 // Public API
@@ -152,4 +177,91 @@ export async function ingestSessionMessages(
     chunksCreated: records.length,
     skipped: false,
   };
+}
+
+// ============================================================================
+// Semantic Embedding
+// ============================================================================
+
+/** Max characters to embed per message (Nomic has 8192 token limit, ~4 chars/token). */
+const MAX_EMBED_CHARS = 32_000;
+
+/** Max messages to embed per hook invocation. Keeps memory bounded on large
+ *  sessions (e.g. forks that inherit 100+ messages). Remainder catches up
+ *  on subsequent turns. */
+const MAX_EMBED_BATCH = 20;
+
+/**
+ * Embed a session's indexed messages into q8 vectors for semantic search.
+ *
+ * Reads messages from the DB (must already be FTS5-indexed), embeds each
+ * with Nomic Embed Code, quantizes to q8, and batch-inserts into
+ * message_vectors. Only embeds messages that don't have vectors yet
+ * (incremental), unless force is set to re-embed everything.
+ *
+ * The embedding model is lazy-loaded on first call (~2-10s). Subsequent
+ * calls reuse the cached model (~200ms/msg on CPU).
+ *
+ * @param sessionId  The session to embed (must already have messages indexed).
+ * @param force      Re-embed even if vectors already exist for this session.
+ * @returns          Number of messages embedded, or 0 if skipped/failed.
+ */
+export async function embedSessionMessages(
+  sessionId: string,
+  force?: boolean,
+): Promise<number> {
+  const d = getDb(dbPath());
+
+  // Only fetch messages that don't have vectors yet (unless force)
+  const rows = d.all(
+    force
+      ? `SELECT message_id, message_text FROM messages WHERE session_id = ? ORDER BY message_seq ASC`
+      : `SELECT m.message_id, m.message_text FROM messages m
+         WHERE m.session_id = ?
+           AND NOT EXISTS (SELECT 1 FROM message_vectors mv WHERE mv.message_id = m.message_id)
+         ORDER BY m.message_seq ASC`,
+    [sessionId],
+  ) as Array<Record<string, unknown>>;
+
+  const validRows: Array<{ messageId: string; text: string }> = [];
+  for (const r of rows) {
+    const text = (r.message_text as string).trim();
+    if (!text) continue;
+    validRows.push({
+      messageId: r.message_id as string,
+      text: text.length > MAX_EMBED_CHARS ? text.slice(0, MAX_EMBED_CHARS) : text,
+    });
+  }
+  if (validRows.length === 0) return 0;
+
+  // Cap batch size to avoid memory spikes (rest catches up on next turn)
+  if (validRows.length > MAX_EMBED_BATCH) {
+    validRows.length = MAX_EMBED_BATCH;
+  }
+
+  // Lazy-load embedding modules
+  const { embedBatch } = await import('./embedder.js');
+  const { quantizeToQ8, computeNorm } = await import('./quantize.js');
+
+  // Embed
+  const texts = validRows.map(r => r.text);
+  const vectors = await embedBatch(texts);
+
+  // Quantize and build records
+  const records: MessageVectorRecord[] = [];
+  for (let j = 0; j < validRows.length; j++) {
+    const f32 = vectors[j]!;
+    const { q8, scale } = quantizeToQ8(f32);
+    const norm = computeNorm(f32);
+    records.push({
+      messageId: validRows[j]!.messageId,
+      embeddingQ8: q8,
+      norm,
+      quantScale: scale,
+    });
+  }
+
+  // Insert
+  insertMessageVectors(records);
+  return records.length;
 }

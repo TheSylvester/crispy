@@ -143,6 +143,14 @@ When dispatching child sessions or referencing models in tests/scripts:
 - **Cross-vendor format**: `vendor:model` (e.g. `codex:gpt-5.3-instant`).
   Parsed by `parseModelOption()` in `model-utils.ts`.
 
+## Packaging
+
+**Cursor caches extensions by version directory name.** You cannot rebuild the
+same version and expect Cursor to pick up changes — it serves the cached copy.
+Every rebuild that needs testing requires a version bump. Always use
+`/package-cursor` (which auto-bumps) instead of manually running
+`npm run package:linux-x64` + install.
+
 ## Commands
 
 - `npm run typecheck` — strict TypeScript check

@@ -78,7 +78,7 @@ export function ToolBadge({ color, textColor, label }: ToolBadgeProps): React.JS
           background: solidBg,
         }}
       >
-        {label}
+        {label.toLowerCase()}
       </span>
     );
   }
