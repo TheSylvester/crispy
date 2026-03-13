@@ -20,6 +20,7 @@ import type {
   TurnSettings,
   SessionInfo as AgentSessionInfo,
 } from '../../agent-adapter.js';
+import { pushRosieLog } from '../../rosie/index.js';
 import type { ChannelStatus } from '../../channel-events.js';
 import type { ApprovalOption } from '../../channel-events.js';
 
@@ -1028,6 +1029,12 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       }
     } catch (err) {
       if (!this._closed) {
+        pushRosieLog({
+          source: 'session',
+          level: 'error',
+          summary: `Adapter: query error (${this._sessionId?.slice(0, 12) ?? 'unknown'}…)`,
+          data: { sessionId: this._sessionId, error: err instanceof Error ? err.message : String(err) },
+        });
         this.outputQueue.enqueue({
           type: 'event',
           event: {

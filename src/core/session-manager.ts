@@ -568,7 +568,6 @@ export function createSession(
     ...(options?.systemPrompt && { systemPrompt: options.systemPrompt }),
   };
 
-  pushRosieLog({ source: 'session', level: 'info', summary: `Session: creating new (${vendor})`, data: { vendor, cwd } });
   return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
 }
 
@@ -610,7 +609,6 @@ export function createForkSession(
     ...(options?.systemPrompt && { systemPrompt: options.systemPrompt }),
   };
 
-  pushRosieLog({ source: 'session', level: 'info', summary: `Session: forking from ${fromSessionId} (${vendor})`, data: { vendor, fromSessionId } });
   return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
 }
 
@@ -668,6 +666,7 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
   let sessionId: string;
   let rekeyPromise: Promise<string> | undefined;
 
+  try {
   switch (intent.target.kind) {
     case 'existing': {
       channel = requireChannel(intent.target.sessionId);
@@ -778,6 +777,23 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
     }
   }
 
+  pushRosieLog({
+    source: 'session',
+    level: 'info',
+    summary: `Turn: ${intent.target.kind} (${intent.target.kind === 'existing' ? intent.target.sessionId.slice(0, 12) : intent.target.kind === 'fork' ? intent.target.fromSessionId.slice(0, 12) : 'new'}…)`,
+    data: {
+      kind: intent.target.kind,
+      vendor: 'vendor' in intent.target ? intent.target.vendor : undefined,
+      sessionId,
+      ...(intent.target.kind === 'fork' && {
+        fromSessionId: intent.target.fromSessionId,
+        atMessageId: intent.target.atMessageId,
+      }),
+      model: intent.settings?.model,
+      pendingId: sessionId.startsWith('pending:') ? sessionId : undefined,
+    },
+  });
+
   // Broadcast user entry to all subscribers before adapter sees it
   const userEntry = buildUserEntry(intent);
   channelBroadcastUserEntry(channel, userEntry);
@@ -800,6 +816,16 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
   }
 
   return { sessionId, channel, rekeyPromise };
+
+  } catch (err) {
+    pushRosieLog({
+      source: 'session',
+      level: 'error',
+      summary: `Turn: failed (${intent.target.kind})`,
+      data: { kind: intent.target.kind, error: err instanceof Error ? err.message : String(err) },
+    });
+    throw err;
+  }
 }
 
 /**

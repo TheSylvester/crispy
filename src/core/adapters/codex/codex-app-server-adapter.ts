@@ -22,6 +22,7 @@ import type {
   AdapterSettings,
   TurnSettings,
 } from '../../agent-adapter.js';
+import { pushRosieLog } from '../../rosie/index.js';
 import type { ChannelEvent, ChannelStatus } from '../../channel-events.js';
 import type {
   ContentBlock,
@@ -748,6 +749,12 @@ export class CodexAgentAdapter implements AgentAdapter {
 
   private emitError(error: Error | string): void {
     if (this._closed) return;
+    pushRosieLog({
+      source: 'session',
+      level: 'error',
+      summary: `Adapter: error (${this._sessionId?.slice(0, 12) ?? 'unknown'}…)`,
+      data: { sessionId: this._sessionId, error: typeof error === 'string' ? error : error.message },
+    });
     this.outputQueue.enqueue({
       type: 'event',
       event: {
