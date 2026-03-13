@@ -6,17 +6,20 @@
  * single fresh process via child_process.execFile() with batch separator —
  * no persistent state, no memory leak.
  *
- * Owns: binary path resolution, model download, text-to-embedding conversion.
- * Does not: persist embeddings, manage chunks, touch ~/.crispy/ (except models/).
+ * Binary and model are auto-downloaded on first use to ~/.crispy/bin/ and
+ * ~/.crispy/models/ respectively. No manual setup required.
+ *
+ * Owns: binary + model download, text-to-embedding conversion.
+ * Does not: persist embeddings, manage chunks, touch ~/.crispy/ (except bin/ and models/).
  *
  * @module recall/embedder
  */
 
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, statSync, createWriteStream, renameSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, createWriteStream, renameSync, unlinkSync, chmodSync } from 'node:fs';
 import { writeFile, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { tmpdir, homedir } from 'node:os';
+import { tmpdir, homedir, platform, arch } from 'node:os';
 import { promisify } from 'node:util';
 import { pushRosieLog } from '../rosie/debug-log.js';
 
@@ -35,6 +38,26 @@ const BATCH_SEPARATOR = '<#sep#>';
 /** Max bytes for -p argument before switching to -f file input. */
 const MAX_ARG_BYTES = 100_000;
 
+// --- Binary download config ---
+
+/** Last llama.cpp release that includes llama-embedding in prebuilt archives. */
+const LLAMA_RELEASE_TAG = 'b5300';
+
+const BIN_DIR = join(homedir(), '.crispy', 'bin');
+const BIN_NAME = platform() === 'win32' ? 'llama-embedding.exe' : 'llama-embedding';
+
+/** Map (platform, arch) → release asset filename. All assets are .zip. */
+function getBinaryAssetName(): string {
+  const p = platform();
+  const a = arch();
+  if (p === 'linux' && a === 'x64') return `llama-${LLAMA_RELEASE_TAG}-bin-ubuntu-x64.zip`;
+  if (p === 'linux' && a === 'arm64') return `llama-${LLAMA_RELEASE_TAG}-bin-ubuntu-arm64.zip`;
+  if (p === 'darwin' && a === 'arm64') return `llama-${LLAMA_RELEASE_TAG}-bin-macos-arm64.zip`;
+  if (p === 'darwin' && a === 'x64') return `llama-${LLAMA_RELEASE_TAG}-bin-macos-x64.zip`;
+  if (p === 'win32' && a === 'x64') return `llama-${LLAMA_RELEASE_TAG}-bin-win-cpu-x64.zip`;
+  throw new Error(`Unsupported platform for llama-embedding: ${p}/${a}`);
+}
+
 // ---------------------------------------------------------------------------
 // Module State
 // ---------------------------------------------------------------------------
@@ -44,15 +67,115 @@ let binaryPath: string | null = null;
 /** Shared promise for in-flight model download — prevents concurrent downloads. */
 let downloadPromise: Promise<string> | null = null;
 
-// ---------------------------------------------------------------------------
-// Initialization
-// ---------------------------------------------------------------------------
+/** Shared promise for in-flight binary download. */
+let binaryDownloadPromise: Promise<string> | null = null;
 
 /**
- * Set the path to the llama-embedding binary. Call once at startup.
+ * Override the llama-embedding binary path. Optional — if not called,
+ * ensureBinary() auto-downloads on first embedBatch() call.
  */
 export function initEmbedder(binPath: string): void {
   binaryPath = binPath;
+}
+
+// ---------------------------------------------------------------------------
+// Binary Management — auto-download llama-embedding
+// ---------------------------------------------------------------------------
+
+/** Returns the expected binary path. */
+export function getBinaryPath(): string {
+  return join(BIN_DIR, BIN_NAME);
+}
+
+/**
+ * Ensure the llama-embedding binary exists on disk. Downloads from the
+ * llama.cpp GitHub release if missing. Concurrent callers share the same
+ * download promise.
+ */
+export async function ensureBinary(): Promise<string> {
+  const binPath = getBinaryPath();
+
+  if (existsSync(binPath)) {
+    // Already downloaded — use it
+    binaryPath = binPath;
+    return binPath;
+  }
+
+  if (binaryDownloadPromise) return binaryDownloadPromise;
+
+  binaryDownloadPromise = performBinaryDownload(binPath);
+  try {
+    const result = await binaryDownloadPromise;
+    binaryPath = result;
+    return result;
+  } finally {
+    binaryDownloadPromise = null;
+  }
+}
+
+async function performBinaryDownload(binPath: string): Promise<string> {
+  const assetName = getBinaryAssetName();
+  const url = `https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_RELEASE_TAG}/${assetName}`;
+
+  mkdirSync(BIN_DIR, { recursive: true });
+
+  const archivePath = join(BIN_DIR, assetName);
+  const tmpPath = archivePath + '.tmp';
+
+  pushRosieLog({
+    source: 'recall-catchup',
+    level: 'info',
+    summary: `Downloading llama-embedding binary: ${assetName}`,
+    data: { url, dest: binPath },
+  });
+
+  try {
+    // Clean up stale .tmp
+    if (existsSync(tmpPath)) unlinkSync(tmpPath);
+
+    // Download archive
+    await downloadFile(url, tmpPath);
+    renameSync(tmpPath, archivePath);
+
+    // Extract binary + required shared libraries from the zip.
+    // -j junk paths (flatten), -o overwrite.
+    const extractTargets = [
+      `build/bin/${BIN_NAME}`,
+      'build/bin/libllama*',
+      'build/bin/libggml*',
+    ];
+    await execFileAsync('unzip', [
+      '-o', '-j', archivePath,
+      ...extractTargets,
+      '-d', BIN_DIR,
+    ]);
+
+    // Clean up archive
+    if (existsSync(archivePath)) {
+      try { unlinkSync(archivePath); } catch { /* ignore */ }
+    }
+
+    // Ensure executable
+    if (platform() !== 'win32') {
+      chmodSync(binPath, 0o755);
+    }
+
+    pushRosieLog({
+      source: 'recall-catchup',
+      level: 'info',
+      summary: 'llama-embedding binary download complete',
+    });
+
+    return binPath;
+  } catch (err) {
+    // Clean up on failure
+    for (const p of [tmpPath, archivePath]) {
+      if (existsSync(p)) {
+        try { unlinkSync(p); } catch { /* ignore */ }
+      }
+    }
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -106,34 +229,7 @@ async function performModelDownload(modelPath: string): Promise<string> {
       data: { url: MODEL_URL, dest: modelPath },
     });
 
-    // Download to temp file, then atomic rename
-    await new Promise<void>((resolve, reject) => {
-      // Dynamic import avoids bundler issues with node:https
-      import('node:https').then(({ default: https }) => {
-        const file = createWriteStream(tmpPath);
-        const pipeResponse = (response: import('node:http').IncomingMessage) => {
-          if (response.statusCode !== 200) {
-            reject(new Error(`Download failed: HTTP ${response.statusCode}`));
-            return;
-          }
-          response.pipe(file);
-          file.on('finish', () => { file.close(); resolve(); });
-          file.on('error', reject);
-        };
-
-        https.get(MODEL_URL, { headers: { 'User-Agent': 'crispy' } }, (response) => {
-          // Follow redirects (HuggingFace uses 302)
-          if (response.statusCode === 301 || response.statusCode === 302) {
-            const location = response.headers.location;
-            if (!location) { reject(new Error('Redirect without location')); return; }
-            https.get(location, pipeResponse).on('error', reject);
-            return;
-          }
-          pipeResponse(response);
-        }).on('error', reject);
-      }).catch(reject);
-    });
-
+    await downloadFile(MODEL_URL, tmpPath);
     renameSync(tmpPath, modelPath);
 
     pushRosieLog({
@@ -150,6 +246,39 @@ async function performModelDownload(modelPath: string): Promise<string> {
     }
     throw err;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Shared download helper
+// ---------------------------------------------------------------------------
+
+/** Download a URL to a local file, following one redirect (GitHub/HuggingFace pattern). */
+async function downloadFile(url: string, destPath: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    import('node:https').then(({ default: https }) => {
+      const file = createWriteStream(destPath);
+      const pipeResponse = (response: import('node:http').IncomingMessage) => {
+        if (response.statusCode !== 200) {
+          reject(new Error(`Download failed: HTTP ${response.statusCode}`));
+          return;
+        }
+        response.pipe(file);
+        file.on('finish', () => { file.close(); resolve(); });
+        file.on('error', reject);
+      };
+
+      https.get(url, { headers: { 'User-Agent': 'crispy' } }, (response) => {
+        // Follow redirects (GitHub uses 302, HuggingFace uses 302)
+        if (response.statusCode === 301 || response.statusCode === 302) {
+          const location = response.headers.location;
+          if (!location) { reject(new Error('Redirect without location')); return; }
+          https.get(location, { headers: { 'User-Agent': 'crispy' } }, pipeResponse).on('error', reject);
+          return;
+        }
+        pipeResponse(response);
+      }).on('error', reject);
+    }).catch(reject);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -173,7 +302,12 @@ export async function embed(text: string): Promise<Float32Array> {
  */
 export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
   if (texts.length === 0) return [];
-  if (!binaryPath) throw new Error('Embedder not initialized — call initEmbedder() first');
+
+  // Lazy-resolve binary: download on first use if not already present
+  if (!binaryPath) {
+    await ensureBinary();
+  }
+  if (!binaryPath) throw new Error('llama-embedding binary not available');
 
   const modelPath = await ensureModel();
   const joined = texts.join(BATCH_SEPARATOR);
@@ -186,7 +320,6 @@ export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
       '-m', modelPath,
       '--embd-output-format', 'array',
       '-c', '8192',
-      '--log-disable',
     ];
 
     if (texts.length > 1) {
@@ -201,8 +334,12 @@ export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
       args.push('-p', joined);
     }
 
+    // Shared libs (libllama.so, libggml*.so/dylib) live alongside the binary
+    const libDir = join(binaryPath, '..');
+    const envKey = platform() === 'darwin' ? 'DYLD_LIBRARY_PATH' : 'LD_LIBRARY_PATH';
     const { stdout, stderr } = await execFileAsync(binaryPath, args, {
       maxBuffer: 1024 * 1024,
+      env: { ...process.env, [envKey]: libDir },
     });
 
     if (stderr) {

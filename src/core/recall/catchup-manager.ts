@@ -26,7 +26,7 @@ import {
   getSessionsWithEmbeddingGap,
 } from './message-store.js';
 import { ingestSessionMessages, embedSessionMessages } from './message-ingest.js';
-import { ensureModel } from './embedder.js';
+import { ensureModel, ensureBinary } from './embedder.js';
 import { pushRosieLog } from '../rosie/debug-log.js';
 import { getSettingsSnapshot, onSettingsChanged } from '../settings/index.js';
 import type { RecallCatchupEvent } from '../channel-events.js';
@@ -201,8 +201,19 @@ function memoryPressure(): boolean {
  * using llama-embedding (one-shot process per batch, no persistent state).
  */
 async function runEmbedding(): Promise<void> {
-  // Download model if needed
+  // Download binary + model if needed
   broadcast({ phase: 'downloading-model' });
+  try {
+    await ensureBinary();
+  } catch (err) {
+    pushRosieLog({
+      source: 'recall-catchup',
+      level: 'warn',
+      summary: `Binary download failed: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    broadcast({ phase: 'done', gapCount: status.gapCount });
+    return;
+  }
   try {
     await ensureModel();
   } catch (err) {

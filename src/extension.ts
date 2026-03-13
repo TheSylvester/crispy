@@ -5,7 +5,7 @@
  */
 
 import * as vscode from 'vscode';
-import * as path from 'node:path';
+
 import { initSettings, startWatchingSettings, stopWatchingSettings } from './core/settings/index.js';
 import { openCrispyPanel, getOrCreatePanelForPrefill, getMostRecentPanel, getActivePanel } from './host/webview-host.js';
 import { startRescan, stopRescan } from './core/session-list-manager.js';
@@ -15,7 +15,7 @@ import { createAgentDispatch } from './host/agent-dispatch.js';
 import { initRosieBot, shutdownRosieBot } from './core/rosie/index.js';
 import { initRecallIngest, shutdownRecallIngest } from './core/recall/ingest-hook.js';
 import { startRecallCatchup, stopEmbeddingBackfill } from './core/recall/catchup-manager.js';
-import { disposeEmbedder, initEmbedder } from './core/recall/embedder.js';
+import { disposeEmbedder } from './core/recall/embedder.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const bootStart = performance.now();
@@ -94,8 +94,7 @@ export function activate(context: vscode.ExtensionContext): void {
   done = phase('initRecallIngest');
   initRecallIngest();
   done();
-  const binaryName = process.platform === 'win32' ? 'llama-embedding.exe' : 'llama-embedding';
-  initEmbedder(path.join(context.extensionPath, 'dist', binaryName));
+  // llama-embedding binary auto-downloads on first use (ensureBinary in embedder.ts)
   startRecallCatchup('vscode');
   done = phase('initRosieBot');
   initRosieBot(dispatch, resolveInternalServerPaths(context.extensionPath));

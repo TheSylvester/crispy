@@ -19,7 +19,7 @@ delete process.env.CLAUDECODE;
 
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { join, resolve, extname } from 'node:path';
+import { join, extname } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 
 import { initSettings, startWatchingSettings } from '../core/settings/index.js';
@@ -30,7 +30,7 @@ import { registerAllAdapters } from './adapter-registry.js';
 import { initRosieBot, shutdownRosieBot } from '../core/rosie/index.js';
 import { initRecallIngest, shutdownRecallIngest } from '../core/recall/ingest-hook.js';
 import { startRecallCatchup, stopEmbeddingBackfill } from '../core/recall/catchup-manager.js';
-import { disposeEmbedder, initEmbedder } from '../core/recall/embedder.js';
+import { disposeEmbedder } from '../core/recall/embedder.js';
 import { resolveInternalServerPaths } from './adapter-registry.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
@@ -178,8 +178,7 @@ done();
 
 done = phase('init recall ingest');
 initRecallIngest();
-const binaryName = process.platform === 'win32' ? 'llama-embedding.exe' : 'llama-embedding';
-initEmbedder(resolve(process.cwd(), 'bin', binaryName));
+// llama-embedding binary auto-downloads on first use (ensureBinary in embedder.ts)
 startRecallCatchup('devServer');
 done();
 
