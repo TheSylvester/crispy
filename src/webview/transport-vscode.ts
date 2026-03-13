@@ -8,7 +8,7 @@
  */
 
 import type { HostEvent } from '../host/client-connection.js';
-import type { SessionService, WireSessionInfo } from './transport.js';
+import type { SessionService, WireSessionInfo, WireProject } from './transport.js';
 import type { TranscriptEntry } from '../core/transcript.js';
 import type { TurnReceipt } from '../core/agent-adapter.js';
 import type { WireProviderConfig, WireSettingsSnapshot, SettingsPatch } from '../core/settings/types.js';
@@ -125,6 +125,8 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     startEmbeddingBackfill: () => request<{ ok: boolean }>('startEmbeddingBackfill'),
     stopEmbeddingBackfill: () => request<{ ok: boolean }>('stopEmbeddingBackfill'),
     getCatchupStatus: () => request<CatchupStatus>('getCatchupStatus'),
+
+    getProjects: () => request<WireProject[]>('getProjects'),
 
     getGitFiles: (cwd) => request<string[]>('getGitFiles', { cwd }),
     fileExists: (path) => request<boolean>('fileExists', { path }),

@@ -67,6 +67,7 @@ import {
 } from '../core/recall/catchup-manager.js';
 import { getGitFiles, fileExists, readImage, readTextFile } from "../core/file-service.js";
 import { queryActivity, getLineage, getChildSessions, getLineageGraph } from '../core/activity-index.js';
+import { getProjectsWithDetails } from '../core/rosie/tracker/index.js';
 import { readResponsePreview } from '../core/adapters/claude/jsonl-reader.js';
 import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-reader.js';
 // Voice module is lazy-loaded to avoid pulling onnxruntime-node native bindings
@@ -668,6 +669,43 @@ export function createClientConnection(
           summary: `Host capture transcription: ${txResult.segments} segments, ${txResult.durationMs}ms, text="${txResult.text.slice(0, 80)}"`,
         });
         return { text: txResult.text };
+      }
+
+      case "getProjects": {
+        const rawProjects = getProjectsWithDetails();
+        // Enrich session file paths with display data from the session list cache
+        const allSessions = listAllSessions();
+        const sessionMap = new Map(allSessions.map(s => [s.path, s]));
+
+        return rawProjects.map(p => {
+            const sessions = p.sessionFiles
+              .map(file => {
+                const info = sessionMap.get(file);
+                if (!info) return null;
+                return {
+                  sessionId: info.sessionId,
+                  sessionFile: file,
+                  // NOTE: duplicates getSessionDisplayName() logic from webview — can't import across layer boundary
+                  title: info.title?.trim() || info.quest?.trim() || info.label?.trim() || info.sessionId.slice(0, 8) + '\u2026',
+                  preview: info.botSummary || info.lastMessage || undefined,
+                  modifiedAt: info.modifiedAt instanceof Date ? info.modifiedAt.toISOString() : String(info.modifiedAt),
+                };
+              })
+              .filter((s): s is NonNullable<typeof s> => s !== null);
+
+            return {
+              id: p.id,
+              title: p.title,
+              status: p.status,
+              blockedBy: p.blockedBy || undefined,
+              summary: p.summary || undefined,
+              branch: p.branch || undefined,
+              lastActivityAt: p.lastActivityAt || new Date().toISOString(),
+              sessionCount: sessions.length,
+              files: p.files.map(f => ({ path: f.path, note: f.note || undefined })),
+              sessions,
+            };
+          });
       }
 
       default:

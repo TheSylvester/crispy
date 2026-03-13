@@ -14,6 +14,8 @@ import type { KeyboardEvent, ChangeEvent, RefObject } from 'react';
 import type { AvailableCwd } from '../../hooks/useAvailableCwds.js';
 import { VendorChips } from './VendorChips.js';
 
+export type ViewMode = 'sessions' | 'projects';
+
 interface FilterBarProps {
   /** Available project CWDs for the project selector. */
   availableCwds: AvailableCwd[];
@@ -45,6 +47,10 @@ interface FilterBarProps {
   sessionIdError?: string;
   /** Disable input during lookup. */
   sessionIdLoading?: boolean;
+  /** Active view mode — sessions or projects. */
+  viewMode?: ViewMode;
+  /** Callback when the view mode tab changes. */
+  onViewModeChange?: (mode: ViewMode) => void;
 }
 
 export function FilterBar({
@@ -63,6 +69,8 @@ export function FilterBar({
   onSessionIdSubmit,
   sessionIdError = '',
   sessionIdLoading = false,
+  viewMode = 'sessions',
+  onViewModeChange,
 }: FilterBarProps): React.JSX.Element {
   const handleCwdChange = (e: ChangeEvent<HTMLSelectElement>) => {
     onCwdChange(e.target.value || null);
@@ -93,24 +101,42 @@ export function FilterBar({
         </select>
       )}
       <div className="crispy-filter-bar__tabs">
+        {onViewModeChange && (
+          <>
+            <button
+              className={`crispy-filter-bar__tab${viewMode === 'sessions' ? ' crispy-filter-bar__tab--active' : ''}`}
+              onClick={() => onViewModeChange('sessions')}
+            >
+              Sessions
+            </button>
+            <button
+              className={`crispy-filter-bar__tab${viewMode === 'projects' ? ' crispy-filter-bar__tab--active' : ''}`}
+              onClick={() => onViewModeChange('projects')}
+            >
+              Projects
+            </button>
+          </>
+        )}
         <div className="crispy-filter-bar__tab-spacer" />
-        <VendorChips
-          availableVendors={availableVendors}
-          activeVendors={activeVendors}
-          onToggle={onVendorToggle}
-        />
+        {viewMode === 'sessions' && (
+          <VendorChips
+            availableVendors={availableVendors}
+            activeVendors={activeVendors}
+            onToggle={onVendorToggle}
+          />
+        )}
       </div>
       <div className="crispy-filter-bar__search-row">
         <input
           ref={searchInputRef}
           className="crispy-filter-bar__search"
           type="text"
-          placeholder="Search conversations…"
+          placeholder={viewMode === 'projects' ? 'Search projects…' : 'Search conversations…'}
           value={searchQuery}
           onChange={e => onSearchChange(e.target.value)}
           onKeyDown={onSearchKeyDown}
         />
-        {onSessionIdChange && (
+        {viewMode === 'sessions' && onSessionIdChange && (
           <>
             <input
               className="crispy-filter-bar__id-input"

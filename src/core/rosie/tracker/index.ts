@@ -1,4 +1,4 @@
-export { getExistingProjects, writeTrackerResults, recordTrackerOutcome, runDedupSweep } from './db-writer.js';
+export { getExistingProjects, getProjectsWithDetails, writeTrackerResults, recordTrackerOutcome, runDedupSweep } from './db-writer.js';
 export type { InternalServerPaths } from './types.js';
 export type {
   TrackerBlock,

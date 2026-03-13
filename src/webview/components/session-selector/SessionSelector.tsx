@@ -23,9 +23,10 @@ import { useAvailableCwds } from '../../hooks/useAvailableCwds.js';
 import { useSessionGrouping } from '../../hooks/useSessionGrouping.js';
 import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation.js';
 import type { WireSessionInfo } from '../../transport.js';
-import { FilterBar } from './FilterBar.js';
+import { FilterBar, type ViewMode } from './FilterBar.js';
 import { SessionGroupHeader } from './SessionGroupHeader.js';
 import { SessionItem } from './SessionItem.js';
+import { ProjectsView } from './ProjectsView.js';
 import './session-selector.css';
 
 /** Number of sessions to render initially before "Show more" */
@@ -42,6 +43,7 @@ export function SessionSelector(): React.JSX.Element {
   const allCwds = useAvailableCwds();
 
   // ---- Local UI state ----
+  const [viewMode, setViewMode] = useState<ViewMode>('sessions');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeVendors, setActiveVendors] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
@@ -248,8 +250,13 @@ export function SessionSelector(): React.JSX.Element {
           onSessionIdSubmit={handleSessionIdSubmit}
           sessionIdError={sessionIdError}
           sessionIdLoading={sessionIdLoading}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
         />
-        <div className="crispy-session-empty">No conversations found</div>
+        {viewMode === 'projects'
+          ? <ProjectsView searchQuery={deferredQuery} onSelectSession={handleSelect} />
+          : <div className="crispy-session-empty">No conversations found</div>
+        }
       </div>
     );
   }
@@ -275,9 +282,14 @@ export function SessionSelector(): React.JSX.Element {
         onSessionIdSubmit={handleSessionIdSubmit}
         sessionIdError={sessionIdError}
         sessionIdLoading={sessionIdLoading}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
       />
 
-      <ul className="crispy-session-list" ref={listRef}>
+      {viewMode === 'projects' ? (
+        <ProjectsView searchQuery={deferredQuery} onSelectSession={handleSelect} />
+      ) : (
+        <ul className="crispy-session-list" ref={listRef}>
           {visibleGroups.map(group => (
             <li key={group.key} className="crispy-session-group">
               <SessionGroupHeader label={group.label} />
@@ -323,6 +335,7 @@ export function SessionSelector(): React.JSX.Element {
             </li>
           )}
         </ul>
+      )}
     </div>
   );
 }

@@ -22,6 +22,27 @@ export interface WireSessionInfo extends Omit<SessionInfo, 'modifiedAt'> {
   modifiedAt: string;
 }
 
+/** Project data from the tracker DB, enriched with linked session display info. */
+export interface WireProject {
+  id: string;
+  title: string;
+  status: 'active' | 'done' | 'blocked' | 'planned';
+  blockedBy?: string;
+  summary?: string;
+  branch?: string;
+  entities?: string[];
+  lastActivityAt: string;
+  sessionCount: number;
+  files: Array<{ path: string; note?: string }>;
+  sessions: Array<{
+    sessionId: string;
+    sessionFile: string;
+    title: string;
+    preview?: string;
+    modifiedAt: string;
+  }>;
+}
+
 export interface SessionService {
   listSessions(): Promise<WireSessionInfo[]>;
   findSession(sessionId: string): Promise<WireSessionInfo | null>;
@@ -91,6 +112,9 @@ export interface SessionService {
   /** Host-side voice capture (VS Code only — bypasses webview getUserMedia restriction) */
   startVoiceCapture?(): Promise<void>;
   stopVoiceCapture?(): Promise<{ text: string }>;
+
+  /** Rosie-tracked projects with linked sessions and files */
+  getProjects(): Promise<WireProject[]>;
 
   /** Recall catch-up — embedding backfill management */
   subscribeRecallCatchup(): Promise<{ subscribed: boolean }>;

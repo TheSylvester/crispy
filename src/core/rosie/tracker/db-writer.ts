@@ -176,6 +176,73 @@ export function getExistingProjects(): { id: string; title: string; status: stri
   }
 }
 
+/**
+ * Get all non-abandoned projects with linked sessions and files for the UI.
+ *
+ * Returns projects with session file paths and resource files.
+ * Session enrichment (title, preview, modifiedAt) happens in the RPC handler
+ * where the session list cache is available.
+ */
+export function getProjectsWithDetails(): Array<{
+  id: string;
+  title: string;
+  status: string;
+  blockedBy: string | null;
+  summary: string | null;
+  branch: string | null;
+  entities: string;
+  lastActivityAt: string | null;
+  sessionFiles: string[];
+  files: Array<{ path: string; note: string | null }>;
+}> {
+  try {
+    const db = getTrackerDb();
+
+    const projects = db.all(
+      `SELECT id, title, status, blocked_by, summary, branch, entities, last_activity_at
+       FROM projects WHERE status != 'abandoned' ORDER BY last_activity_at DESC`,
+    );
+
+    const sessionStmt = db.prepare(
+      `SELECT session_file FROM project_sessions WHERE project_id = ?`,
+    );
+    const fileStmt = db.prepare(
+      `SELECT file_path, note FROM project_files WHERE project_id = ?`,
+    );
+
+    try {
+      return projects.map((r) => {
+        const row = r as Record<string, unknown>;
+        const id = row.id as string;
+
+        const sessionRows = sessionStmt.all([id]) as Array<Record<string, unknown>>;
+        const fileRows = fileStmt.all([id]) as Array<Record<string, unknown>>;
+
+        return {
+          id,
+          title: row.title as string,
+          status: row.status as string,
+          blockedBy: (row.blocked_by as string) ?? null,
+          summary: (row.summary as string) ?? null,
+          branch: (row.branch as string) ?? null,
+          entities: (row.entities as string) ?? '[]',
+          lastActivityAt: (row.last_activity_at as string) ?? null,
+          sessionFiles: sessionRows.map((s) => s.session_file as string),
+          files: fileRows.map((f) => ({
+            path: f.file_path as string,
+            note: (f.note as string) ?? null,
+          })),
+        };
+      });
+    } finally {
+      sessionStmt.finalize();
+      fileStmt.finalize();
+    }
+  } catch {
+    return [];
+  }
+}
+
 // ============================================================================
 // Dedup — Two-stage duplicate project detection and merging
 // ============================================================================
