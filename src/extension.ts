@@ -18,13 +18,22 @@ import { startRecallCatchup, stopEmbeddingBackfill } from './core/recall/catchup
 import { disposeEmbedder, initEmbedder } from './core/recall/embedder.js';
 
 export function activate(context: vscode.ExtensionContext): void {
+  const bootStart = performance.now();
+  function phase(name: string): () => void {
+    const t0 = performance.now();
+    console.log(`[crispy] > ${name}...`);
+    return () => console.log(`[crispy] \u2713 ${name} (${(performance.now() - t0).toFixed(0)}ms)`);
+  }
+
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
 
   // The extension build bundles the SDK into dist/extension.js, which breaks
   // the SDK's import.meta.url-based resolution of its bundled cli.js.
   // Instead of pointing at the SDK's cli.js (which causes `node cli.js`
   // spawning), find the native `claude` binary so the SDK runs it directly.
+  let done = phase('findClaudeBinary');
   const pathToClaudeCodeExecutable = findClaudeBinary();
+  done();
   if (!pathToClaudeCodeExecutable) {
     vscode.window.showWarningMessage(
       'Crispy: Claude Code not found. Claude sessions will be unavailable. Install Claude Code (https://docs.anthropic.com/en/docs/claude-code) and ensure `claude` is on your PATH.',
@@ -35,6 +44,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const dispatch = createAgentDispatch();
 
   // Register all available adapters (passes dispatch for recall tool)
+  done = phase('registerAllAdapters');
   const disposeAdapters = registerAllAdapters({
     cwd,
     hostType: 'vscode',
@@ -42,6 +52,7 @@ export function activate(context: vscode.ExtensionContext): void {
     extensionPath: context.extensionPath,
     ...(pathToClaudeCodeExecutable && { pathToClaudeCodeExecutable }),
   });
+  done();
   context.subscriptions.push({ dispose: disposeAdapters });
 
   const workspaceOpts = { workspaceCwd: cwd };
@@ -80,11 +91,15 @@ export function activate(context: vscode.ExtensionContext): void {
   // Wire up lifecycle hooks:
   //   Phase 0 (before): recall message ingest (lightweight SQLite indexing)
   //   Phase 2 (after): Rosie bot (summarize + tracker in two-turn child session)
+  done = phase('initRecallIngest');
   initRecallIngest();
+  done();
   const binaryName = process.platform === 'win32' ? 'llama-embedding.exe' : 'llama-embedding';
   initEmbedder(path.join(context.extensionPath, 'dist', binaryName));
   startRecallCatchup('vscode');
+  done = phase('initRosieBot');
   initRosieBot(dispatch, resolveInternalServerPaths(context.extensionPath));
+  done();
   context.subscriptions.push({
     dispose: () => {
       shutdownRosieBot();
@@ -95,10 +110,13 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   });
 
-  startRescan();
+  // Defer session list scan to next tick so the webview can initialize first
+  setTimeout(startRescan, 0);
   context.subscriptions.push({ dispose: () => stopRescan() });
 
   context.subscriptions.push({ dispose: () => stopWatchingSettings() });
+
+  console.log(`[crispy] activate() done (${(performance.now() - bootStart).toFixed(0)}ms)`);
 }
 
 export function deactivate(): void {}

@@ -111,12 +111,15 @@ export function refreshAndNotify(sessionId: string): void {
  * Start the periodic rescan. Seeds the cache from listAllSessions(),
  * then rescans every RESCAN_INTERVAL_MS and emits upserts for
  * new or changed sessions.
+ *
+ * seedCache is async and yields every 100 sessions to avoid blocking
+ * the event loop during initial scan of large session directories.
  */
-export function startRescan(): void {
+export async function startRescan(): Promise<void> {
   if (rescanTimer) return; // Already running
 
-  // Seed the cache
-  seedCache();
+  // Seed the cache (async — yields periodically)
+  await seedCacheAsync();
 
   rescanTimer = setInterval(() => {
     rescan();
@@ -131,12 +134,17 @@ export function stopRescan(): void {
   }
 }
 
-/** Seed the cache from current sessions without emitting events. */
-function seedCache(): void {
+/** Seed the cache from current sessions, yielding every 100 sessions. */
+async function seedCacheAsync(): Promise<void> {
   try {
     const all = listAllSessions();
-    for (const session of all) {
+    for (let i = 0; i < all.length; i++) {
+      const session = all[i];
       knownSessions.set(session.sessionId, { modifiedAt: session.modifiedAt.getTime() });
+      // Yield every 100 sessions to avoid blocking the event loop
+      if (i % 100 === 99) {
+        await new Promise<void>(r => setTimeout(r, 0));
+      }
     }
   } catch {
     // Discovery may not be ready yet — no-op, rescan will catch up

@@ -135,6 +135,7 @@ export function registerAdapter(
     );
   }
   adapters.set(discovery.vendor, { discovery, createAdapter });
+  invalidateSessionCache();
 }
 
 /**
@@ -157,6 +158,7 @@ export function unregisterAdapter(vendor: Vendor): void {
   }
 
   adapters.delete(vendor);
+  invalidateSessionCache();
 }
 
 /** Get the discovery object for a specific vendor. */
@@ -185,6 +187,7 @@ export function _resetRegistry(): void {
   sessions.clear();
   pending.clear();
   adapters.clear();
+  invalidateSessionCache();
 }
 
 // ============================================================================
@@ -257,14 +260,32 @@ export function readSubagentEntries(
  * Aggregate all sessions from all registered adapters.
  * Sorted by modifiedAt descending (most recent first).
  */
+/** Short-lived cache for listAllSessions() — avoids duplicate I/O during startup. */
+let cachedSessions: SessionInfo[] | null = null;
+let cacheTime = 0;
+const SESSION_CACHE_TTL_MS = 5_000;
+
+/** Invalidate the listAllSessions() cache (called when adapters change). */
+function invalidateSessionCache(): void {
+  cachedSessions = null;
+  cacheTime = 0;
+}
+
 export function listAllSessions(): SessionInfo[] {
+  const now = Date.now();
+  if (cachedSessions && now - cacheTime < SESSION_CACHE_TTL_MS) {
+    return cachedSessions;
+  }
   const all: SessionInfo[] = [];
   for (const { discovery } of adapters.values()) {
     all.push(...discovery.listSessions());
   }
-  return all
+  const result = all
     .filter(s => !s.isSidechain)
     .sort((a, b) => b.modifiedAt.getTime() - a.modifiedAt.getTime());
+  cachedSessions = result;
+  cacheTime = now;
+  return result;
 }
 
 // ============================================================================
