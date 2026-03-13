@@ -12,6 +12,7 @@ import { useState, useCallback } from 'react';
 import { useFileTree } from '../../hooks/useFileTree.js';
 import { useFilePanel } from '../../context/FilePanelContext.js';
 import { useRefreshGitFiles } from '../../context/FileIndexContext.js';
+import { usePreferences } from '../../context/PreferencesContext.js';
 import { FileTree } from './FileTree.js';
 import { FileContextMenu } from './FileContextMenu.js';
 import type { FileNode } from '../../hooks/useFileTree.js';
@@ -30,8 +31,37 @@ function RefreshIcon(): React.JSX.Element {
 export function FilePanel(): React.JSX.Element {
   const { cwd } = useFilePanel();
   const refreshGitFiles = useRefreshGitFiles();
+  const { setToolPanelWidthPx } = usePreferences();
   const { tree, expanded, toggleExpand, filter, setFilter, fileCount, loading } = useFileTree();
   const [contextMenu, setContextMenu] = useState<{ node: FileNode; x: number; y: number } | null>(null);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const panel = (e.target as HTMLElement).closest('.crispy-file-panel');
+    const startWidth = panel?.clientWidth ?? 350;
+    const layout = document.querySelector('.crispy-layout');
+
+    layout?.setAttribute('data-resizing', '');
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaPx = startX - moveEvent.clientX;
+      setToolPanelWidthPx(Math.round(startWidth + deltaPx));
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      layout?.removeAttribute('data-resizing');
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [setToolPanelWidthPx]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, node: FileNode) => {
     e.preventDefault();
@@ -45,6 +75,10 @@ export function FilePanel(): React.JSX.Element {
   if (!cwd) {
     return (
       <div className="crispy-file-panel">
+        <div
+          className="crispy-tool-panel__resize-handle"
+          onMouseDown={handleResizeStart}
+        />
         <div className="crispy-file-panel__header">
           <span className="crispy-file-panel__title">FILES</span>
         </div>
@@ -60,6 +94,10 @@ export function FilePanel(): React.JSX.Element {
 
   return (
     <div className="crispy-file-panel">
+      <div
+        className="crispy-tool-panel__resize-handle"
+        onMouseDown={handleResizeStart}
+      />
       <div className="crispy-file-panel__header">
         <span className="crispy-file-panel__title" title={cwd}>{cwdLabel}</span>
         <span className="crispy-file-panel__count">{fileCount}</span>
