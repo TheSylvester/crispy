@@ -16,7 +16,7 @@ import { dbPath as crispyDbPath } from '../core/activity-index.js';
 import { sanitizeFts5Query } from './query-sanitizer.js';
 import { readClaudeTurnContent, type TurnContent } from '../core/adapters/claude/jsonl-reader.js';
 import { readCodexTurnContent } from '../core/adapters/codex/codex-jsonl-reader.js';
-import { searchMessagesFtsMeta, getMessageByUuid, getAdjacentMessages, getSessionMessageCount, grepMessages, readSessionMessages } from '../core/recall/message-store.js';
+import { searchMessagesFtsMeta, getMessageByUuid, getAdjacentMessages, getSessionMessageCount, grepMessages, readSessionMessages, inferRole } from '../core/recall/message-store.js';
 import type { MessageRecord, MessageSearchResult, MessageSearchMeta, GrepMatch, SessionPage } from '../core/recall/message-store.js';
 import { dualPathSearch } from '../core/recall/vector-search.js';
 
@@ -239,6 +239,7 @@ export interface MessageTurnEntry {
   message_id: string;
   text: string;
   is_target: boolean;
+  role?: string;
 }
 
 /** Result of reading a message turn with optional context window. */
@@ -258,9 +259,8 @@ export interface ReadMessageResult {
  * Read a full conversation turn (user prompt + assistant response) by message UUID.
  *
  * Uses the messages table directly — queries adjacent rows by message_seq
- * instead of loading the full transcript from disk. The target message's
- * seq determines the user/assistant pairing: even seqs are user prompts,
- * odd seqs are assistant responses (but we match by actual position).
+ * instead of loading the full transcript from disk. Role comes from
+ * `message_role` with seq-parity fallback for pre-v16 rows.
  *
  * @param context — number of extra turns on each side (0 = just the pair, max 5)
  */
@@ -286,10 +286,11 @@ export function readMessageTurn(
   const prev = adjacent.find(m => m.message_seq === target.message_seq - 1);
   const next = adjacent.find(m => m.message_seq === target.message_seq + 1);
 
-  // Heuristic: even seq = user, odd seq = assistant (matches ingest ordering)
+  // Use message_role when available, fall back to seq-parity heuristic for pre-v16 rows
+  const targetRole = inferRole(target.message_role, target.message_seq);
   let userText: string;
   let assistantText: string;
-  if (target.message_seq % 2 === 0) {
+  if (targetRole === 'user') {
     userText = target.message_text;
     assistantText = next?.message_text ?? '';
   } else {
@@ -307,6 +308,7 @@ export function readMessageTurn(
       message_id: m.message_id,
       text: m.message_text,
       is_target: m.message_id === messageId,
+      role: m.message_role ?? undefined,
     }));
     if (windowMessages.length > 0) {
       result.showing_seq_range = [

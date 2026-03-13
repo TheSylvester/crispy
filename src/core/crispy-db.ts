@@ -742,6 +742,13 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 16,
+    description: 'Add message_role column to messages',
+    up: (db: Database) => {
+      db.exec(`ALTER TABLE messages ADD COLUMN message_role TEXT;`);
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {

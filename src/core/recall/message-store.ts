@@ -34,6 +34,7 @@ export interface MessageRecord {
   message_text: string;
   project_id: string | null;
   created_at: number;         // unix timestamp ms
+  message_role: string | null;
 }
 
 // ============================================================================
@@ -72,8 +73,8 @@ export function insertMessages(messages: MessageRecord[]): void {
   try {
     const stmt = d.prepare(
       `INSERT OR IGNORE INTO messages
-       (message_id, session_id, message_seq, message_text, project_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+       (message_id, session_id, message_seq, message_text, project_id, created_at, message_role)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
     try {
       for (const m of messages) {
@@ -84,6 +85,7 @@ export function insertMessages(messages: MessageRecord[]): void {
           m.message_text,
           m.project_id,
           m.created_at,
+          m.message_role,
         ]);
       }
     } finally {
@@ -125,7 +127,7 @@ export function deleteSessionMessages(sessionId: string): void {
  * Returns matching messages with relevance rank and match snippets.
  */
 /** Search result: core message fields plus FTS5 rank and snippet. */
-export type MessageSearchResult = Pick<MessageRecord, 'message_id' | 'session_id' | 'message_seq' | 'project_id' | 'created_at'> & {
+export type MessageSearchResult = Pick<MessageRecord, 'message_id' | 'session_id' | 'message_seq' | 'project_id' | 'created_at' | 'message_role'> & {
   rank: number;
   match_snippet: string;
   message_preview: string;
@@ -164,7 +166,7 @@ export function searchMessagesFts(
     const MAX_PREVIEW = 200;
     const rows = db().all(
       `SELECT m.message_id, m.session_id, m.message_seq,
-              m.project_id, m.created_at, f.rank,
+              m.project_id, m.created_at, m.message_role, f.rank,
               snippet(messages_fts, 0, '>>>', '<<<', '...', 32) as match_snippet,
               SUBSTR(m.message_text, 1, ${MAX_PREVIEW + 1}) as message_preview_raw
        FROM messages_fts f
@@ -185,6 +187,7 @@ export function searchMessagesFts(
         message_seq: row.message_seq as number,
         project_id: (row.project_id as string) ?? null,
         created_at: row.created_at as number,
+        message_role: (row.message_role as string) ?? null,
         rank: row.rank as number,
         match_snippet: row.match_snippet as string,
         message_preview: truncated ? raw.slice(0, MAX_PREVIEW) : raw,
@@ -267,7 +270,7 @@ export function hasSessionMessages(sessionId: string): boolean {
 export function getMessageByUuid(sessionId: string, messageId: string): MessageRecord | null {
   try {
     const row = db().get(
-      `SELECT message_id, session_id, message_seq, message_text, project_id, created_at
+      `SELECT message_id, session_id, message_seq, message_text, project_id, created_at, message_role
        FROM messages WHERE session_id = ? AND message_id = ?`,
       [sessionId, messageId],
     );
@@ -290,7 +293,7 @@ export function getAdjacentMessages(
 ): MessageRecord[] {
   try {
     const rows = db().all(
-      `SELECT message_id, session_id, message_seq, message_text, project_id, created_at
+      `SELECT message_id, session_id, message_seq, message_text, project_id, created_at, message_role
        FROM messages
        WHERE session_id = ? AND message_seq BETWEEN ? AND ?
        ORDER BY message_seq ASC`,
@@ -317,6 +320,7 @@ export interface GrepMatch {
   /** The matched substring plus ~80 chars of surrounding context. */
   match_context: string;
   created_at: number;
+  message_role: string | null;
 }
 
 export function grepMessages(
@@ -351,7 +355,7 @@ export function grepMessages(
     params.push(scanLimit);
 
     const rows = db().all(
-      `SELECT message_id, session_id, message_seq, message_text, created_at
+      `SELECT message_id, session_id, message_seq, message_text, created_at, message_role
        FROM messages ${where}
        ORDER BY created_at DESC
        LIMIT ?`,
@@ -379,6 +383,7 @@ export function grepMessages(
         message_seq: row.message_seq as number,
         match_context: context,
         created_at: row.created_at as number,
+        message_role: (row.message_role as string) ?? null,
       });
     }
     return results;
@@ -396,6 +401,7 @@ export interface SessionPage {
     message_seq: number;
     message_id: string;
     text: string;
+    role?: string;
   }>;
   session_id: string;
   total_messages: number;
@@ -418,7 +424,7 @@ export function readSessionMessages(
     if (total === 0) return null;
 
     const rows = db().all(
-      `SELECT message_id, message_seq, message_text
+      `SELECT message_id, message_seq, message_text, message_role
        FROM messages
        WHERE session_id = ?
        ORDER BY message_seq ASC
@@ -432,6 +438,7 @@ export function readSessionMessages(
         message_seq: row.message_seq as number,
         message_id: row.message_id as string,
         text: row.message_text as string,
+        role: (row.message_role as string) ?? undefined,
       };
     });
 
@@ -563,7 +570,7 @@ export function searchMessagesSemantic(
 
     const rows = db().all(
       `SELECT mv.message_id, mv.embedding_q8, mv.norm, mv.quant_scale,
-              m.session_id, m.message_seq, m.project_id, m.created_at,
+              m.session_id, m.message_seq, m.project_id, m.created_at, m.message_role,
               SUBSTR(m.message_text, 1, 201) as message_preview_raw
        FROM message_vectors mv
        JOIN messages m ON m.message_id = mv.message_id
@@ -610,6 +617,7 @@ export function searchMessagesSemantic(
         message_seq: row.message_seq as number,
         project_id: (row.project_id as string) ?? null,
         created_at: row.created_at as number,
+        message_role: (row.message_role as string) ?? null,
         rank: -score, // negative so lower = better (matches FTS5 convention)
         match_snippet: '',
         message_preview: truncated ? raw.slice(0, MAX_PREVIEW) : raw,
@@ -684,6 +692,15 @@ export function getSessionsWithEmbeddingGap(): string[] {
 // Helpers
 // ============================================================================
 
+/**
+ * Infer message role from stored `message_role` with seq-parity fallback
+ * for pre-v16 rows that haven't been backfilled yet.
+ */
+export function inferRole(role: string | null | undefined, seq: number): 'user' | 'assistant' {
+  if (role === 'user' || role === 'assistant') return role;
+  return seq % 2 === 0 ? 'user' : 'assistant';
+}
+
 function rowToMessage(row: Record<string, unknown>): MessageRecord {
   return {
     message_id: row.message_id as string,
@@ -692,5 +709,6 @@ function rowToMessage(row: Record<string, unknown>): MessageRecord {
     message_text: row.message_text as string,
     project_id: (row.project_id as string) ?? null,
     created_at: row.created_at as number,
+    message_role: (row.message_role as string) ?? null,
   };
 }

@@ -145,6 +145,7 @@ export async function ingestSessionMessages(
       message_text: text,
       project_id: projectId,
       created_at: now,
+      message_role: entry.message?.role ?? entry.type ?? null,
     });
   }
 

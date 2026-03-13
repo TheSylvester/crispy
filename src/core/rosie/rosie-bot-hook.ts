@@ -32,7 +32,7 @@ import { getExistingProjects, recordTrackerOutcome, runDedupSweep } from './trac
 import { buildInternalMcpConfig } from '../../mcp/servers/external.js';
 import type { TrackerDecision } from '../../mcp/servers/internal.js';
 import type { InternalServerPaths } from './tracker/types.js';
-import { readSessionMessages, getSessionMessageCount } from '../recall/message-store.js';
+import { readSessionMessages, getSessionMessageCount, inferRole } from '../recall/message-store.js';
 
 // ============================================================================
 // Module State
@@ -169,7 +169,7 @@ function assembleBookendTranscript(sessionId: string, sessionPath: string): stri
 
   let context = '## Opening turns (verbatim)\n\n';
   for (const m of first) {
-    const role = m.message_seq % 2 === 0 ? 'user' : 'assistant';
+    const role = inferRole(m.role, m.message_seq);
     const text = (m.text || '').slice(0, MAX_TURN_CHARS);
     context += `**${role}:** ${text}\n\n`;
   }
@@ -184,7 +184,7 @@ function assembleBookendTranscript(sessionId: string, sessionPath: string): stri
   if (last.length > 0) {
     context += '## Final turns (verbatim)\n\n';
     for (const m of last) {
-      const role = m.message_seq % 2 === 0 ? 'user' : 'assistant';
+      const role = inferRole(m.role, m.message_seq);
       const text = (m.text || '').slice(0, MAX_TURN_CHARS);
       context += `**${role}:** ${text}\n\n`;
     }
