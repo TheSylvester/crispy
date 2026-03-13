@@ -17,6 +17,9 @@ import { useSession } from './SessionContext.js';
 
 const FileIndexContext = createContext<FileIndex | null>(null);
 
+/** Tools that create or modify files on disk. */
+const FILE_WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+
 /** Raw git file list — used by the file tree panel (not the match index). */
 const GitFilesContext = createContext<string[] | null>(null);
 
@@ -57,7 +60,9 @@ export function FileIndexProvider({ children }: { children: React.ReactNode }): 
 
   const refresh = useCallback(() => setRefreshCounter(c => c + 1), []);
 
-  // Re-fetch file index when agent goes idle (end of turn)
+  // Re-fetch file index on idle transitions and after file-writing tool calls.
+  // The idle refresh catches end-of-turn changes. The tool_use refresh catches
+  // files created mid-turn so linkify resolves them before the turn ends.
   useEffect(() => {
     if (!selectedSessionId || !fullPath) return;
 
@@ -71,6 +76,20 @@ export function FileIndexProvider({ children }: { children: React.ReactNode }): 
       ) {
         if (debounceRef.current) clearTimeout(debounceRef.current);
         debounceRef.current = setTimeout(refresh, 300);
+      }
+
+      // Refresh after file-writing tools so newly created files are linkifiable
+      if (event.type === 'entry' && event.entry.message) {
+        const content = event.entry.message.content;
+        if (Array.isArray(content)) {
+          const hasFileWrite = content.some(
+            (b) => b.type === 'tool_use' && FILE_WRITE_TOOLS.has(b.name),
+          );
+          if (hasFileWrite) {
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+            debounceRef.current = setTimeout(refresh, 500);
+          }
+        }
       }
     });
 
