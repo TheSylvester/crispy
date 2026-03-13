@@ -322,11 +322,13 @@ function TaskChildrenRenderer({ toolId, anchor, result }: TaskChildrenRendererPr
  * entry reference identity — stable for existing entries since the provider
  * reuses the same TranscriptEntry objects.
  */
-// BlocksEntryWithRegistry is already wrapped in React.memo with a custom
-// comparator — no extra memo layer needed. Using it directly also avoids
-// the circular-import issue where esbuild resolves the binding as undefined
-// at module-init time (ToolBlockRenderer ↔ BlocksEntryWithRegistry cycle).
-const MemoizedBlocksEntry = BlocksEntryWithRegistry;
+// Lazy wrapper to break the circular-import initialisation order between
+// ToolBlockRenderer ↔ BlocksEntryWithRegistry.  At module-init time the
+// imported binding may still be undefined; deferring to render time ensures
+// the cycle has fully resolved.
+function MemoizedBlocksEntry(props: { entry: TranscriptEntry }): React.JSX.Element | null {
+  return <BlocksEntryWithRegistry {...props} />;
+}
 
 // ============================================================================
 // Fallback View for Tools Without Definition
