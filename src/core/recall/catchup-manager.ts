@@ -145,6 +145,7 @@ async function runFts5Catchup(): Promise<void> {
   const alreadyIndexed = getIndexedSessionIds();
   let indexed = 0;
 
+  let processed = 0;
   for (const s of sessions) {
     if (cancelRequested) return;
     if (s.isSidechain) continue;
@@ -158,6 +159,13 @@ async function runFts5Catchup(): Promise<void> {
       }
     } catch {
       // Non-fatal — skip and continue
+    }
+
+    // Yield to the event loop every 10 sessions to avoid starving Cursor's
+    // extension host — without this, ingesting 1,900+ sessions on a fresh DB
+    // blocks the main thread long enough to trigger a crash.
+    if (++processed % 10 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
     }
   }
 
