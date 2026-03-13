@@ -36,6 +36,23 @@ export interface RosieLogSubscriber {
 export const ROSIE_LOG_CHANNEL_ID = '__rosie_log__';
 
 // ============================================================================
+// Persistence callback (late-binding to avoid circular imports)
+// ============================================================================
+
+/**
+ * Optional callback that persists a log entry to durable storage (SQLite).
+ * Registered by activity-index.ts at startup to break the circular dependency
+ * (activity-index → rosie/index → debug-log).
+ */
+type PersistLogFn = (entry: RosieLogEntry) => void;
+let _persistLog: PersistLogFn | null = null;
+
+/** Register the persistence callback. Called once from activity-index.ts. */
+export function registerLogPersister(fn: PersistLogFn): void {
+  _persistLog = fn;
+}
+
+// ============================================================================
 // Module State
 // ============================================================================
 
@@ -61,6 +78,16 @@ export function pushRosieLog(
   if (buffer.length > BUFFER_CAP) {
     buffer.splice(0, buffer.length - BUFFER_CAP);
   }
+
+  // Persist to SQLite for crash-survivable diagnostics
+  if (_persistLog) {
+    try {
+      _persistLog(full);
+    } catch {
+      // Never let a DB error break the in-memory log path
+    }
+  }
+
   for (const sub of subscribers.values()) {
     sub.send({ type: 'rosie_log_entry', entry: full });
   }

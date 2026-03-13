@@ -22,12 +22,21 @@
  */
 
 import { fork, type ChildProcess } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
 const MODEL_ID = 'Xenova/nomic-embed-text-v1';
+
+/** Kill and restart the worker if its RSS exceeds this (MB). Generous ceiling
+ *  that catches the ~100 MB/s ONNX native memory leak well before OOM. */
+const RSS_LIMIT_MB = 2048;
+
+/** Proactively recycle the worker every N sessions to keep the ONNX leak from
+ *  ever reaching the RSS limit under normal conditions. */
+const RECYCLE_EVERY_N_SESSIONS = 50;
 
 // ---------------------------------------------------------------------------
 // Child Process State
@@ -221,6 +230,48 @@ function getChild(): ChildProcess {
     child = spawnChild();
   }
   return child;
+}
+
+// ---------------------------------------------------------------------------
+// Child Process RSS Monitoring
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the resident set size (RSS) of the embed worker child process in MB.
+ *
+ * Uses `/proc/<pid>/status` on Linux/WSL2 — a synchronous fs read from the
+ * parent process, no IPC round-trip needed. Returns 0 if the child isn't
+ * running, the platform doesn't expose /proc, or the read fails.
+ */
+export function getWorkerRssMb(): number {
+  if (!child || !child.pid) return 0;
+  try {
+    const status = readFileSync(`/proc/${child.pid}/status`, 'utf-8');
+    const match = status.match(/^VmRSS:\s+(\d+)\s+kB$/m);
+    if (!match) return 0;
+    return Math.round(parseInt(match[1]!, 10) / 1024);
+  } catch {
+    // /proc not available (macOS), process already exited, etc.
+    return 0;
+  }
+}
+
+/**
+ * Check whether the embed worker's RSS exceeds the safety limit.
+ * Returns false if the worker isn't running or RSS can't be read.
+ */
+export function isWorkerOverRssLimit(): boolean {
+  const rss = getWorkerRssMb();
+  return rss > 0 && rss > RSS_LIMIT_MB;
+}
+
+/** Counter for proactive recycling (tracked externally by catchup-manager). */
+export function getRssLimitMb(): number {
+  return RSS_LIMIT_MB;
+}
+
+export function getRecycleInterval(): number {
+  return RECYCLE_EVERY_N_SESSIONS;
 }
 
 // ---------------------------------------------------------------------------

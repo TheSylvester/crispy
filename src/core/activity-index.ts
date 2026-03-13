@@ -20,7 +20,8 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { getDb, _resetDb } from './crispy-db.js';
-import { pushRosieLog } from './rosie/index.js';
+import { pushRosieLog, registerLogPersister } from './rosie/index.js';
+import type { RosieLogEntry } from './rosie/index.js';
 
 // ============================================================================
 // Types
@@ -125,6 +126,40 @@ export function ensureCrispyDir(): void {
   fs.mkdirSync(crispyDir, { recursive: true });
   getDb(dbPath());
 }
+
+// ============================================================================
+// Event Log Persistence
+// ============================================================================
+
+/**
+ * Persist a Rosie log entry to the event_log table.
+ *
+ * Registered as a late-binding callback into debug-log.ts to break the
+ * circular import chain (activity-index → rosie/index → debug-log).
+ * Silently swallows errors — the in-memory ring buffer is always the
+ * primary path; this is a best-effort crash-survivable supplement.
+ */
+function persistLogEntry(entry: RosieLogEntry): void {
+  try {
+    const db = getDb(dbPath());
+    db.run(
+      `INSERT INTO event_log (ts, source, level, summary, data)
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        entry.ts,
+        entry.source,
+        entry.level,
+        entry.summary,
+        entry.data != null ? JSON.stringify(entry.data) : null,
+      ],
+    );
+  } catch {
+    // Non-fatal — never break the hot log path for a persistence failure
+  }
+}
+
+// Wire up persistence so pushRosieLog() writes to SQLite automatically.
+registerLogPersister(persistLogEntry);
 
 // ============================================================================
 // Scan State CRUD

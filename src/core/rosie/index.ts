@@ -5,6 +5,7 @@ export {
   getRosieLogSnapshot,
   subscribeRosieLog,
   unsubscribeRosieLog,
+  registerLogPersister,
   ROSIE_LOG_CHANNEL_ID,
 } from './debug-log.js';
 export type { RosieLogEntry, RosieLogEvent, RosieLogSubscriber } from './debug-log.js';

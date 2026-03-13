@@ -25,7 +25,14 @@ import {
   getSessionsWithEmbeddingGap,
 } from './message-store.js';
 import { ingestSessionMessages, embedSessionMessages } from './message-ingest.js';
-import { initEmbedWorker, shutdownEmbedWorker } from './embedder.js';
+import {
+  initEmbedWorker,
+  shutdownEmbedWorker,
+  getWorkerRssMb,
+  isWorkerOverRssLimit,
+  getRssLimitMb,
+  getRecycleInterval,
+} from './embedder.js';
 import { pushRosieLog } from '../rosie/debug-log.js';
 import { getSettingsSnapshot, onSettingsChanged } from '../settings/index.js';
 import type { RecallCatchupEvent } from '../channel-events.js';
@@ -243,7 +250,24 @@ async function runEmbedding(): Promise<void> {
   }
 
   let totalEmbedded = 0;
+  let sessionsSinceRecycle = 0;
   const embedStartTime = Date.now();
+  const recycleInterval = getRecycleInterval();
+
+  /** Kill the current worker and spawn a fresh one (frees leaked ONNX memory). */
+  const recycleWorker = (reason: string): void => {
+    const rssBefore = getWorkerRssMb();
+    pushRosieLog({
+      source: 'recall-catchup',
+      level: 'warn',
+      summary: `Recycling embed worker: ${reason} (RSS ${rssBefore} MB)`,
+    });
+    shutdownEmbedWorker();
+    if (embedWorkerConfig) {
+      initEmbedWorker(embedWorkerConfig.scriptPath, embedWorkerConfig.tsx);
+    }
+    sessionsSinceRecycle = 0;
+  };
 
   try {
     for (const sessionId of sessions) {
@@ -257,6 +281,11 @@ async function runEmbedding(): Promise<void> {
           summary: 'Embedding stopped due to memory pressure — will resume on next activation',
         });
         break;
+      }
+
+      // Check child process RSS — kill and restart if the ONNX leak is too large.
+      if (isWorkerOverRssLimit()) {
+        recycleWorker(`RSS exceeded ${getRssLimitMb()} MB limit`);
       }
 
       try {
@@ -280,6 +309,11 @@ async function runEmbedding(): Promise<void> {
             embeddedSoFar: totalEmbedded,
             estimatedSecondsRemaining: Math.max(0, estSeconds),
           });
+
+          // Mid-session RSS check (long sessions may have many batches)
+          if (isWorkerOverRssLimit()) {
+            recycleWorker(`RSS exceeded ${getRssLimitMb()} MB limit mid-session`);
+          }
         }
 
       } catch (err) {
@@ -290,6 +324,13 @@ async function runEmbedding(): Promise<void> {
           data: { sessionId },
         });
         // Continue with next session — error recovery is incremental
+      }
+
+      // Proactive recycle: restart the worker every N sessions to prevent
+      // the ONNX native memory leak from ever reaching dangerous levels.
+      sessionsSinceRecycle++;
+      if (sessionsSinceRecycle >= recycleInterval && embedWorkerConfig) {
+        recycleWorker(`proactive recycle after ${recycleInterval} sessions`);
       }
     }
   } finally {
