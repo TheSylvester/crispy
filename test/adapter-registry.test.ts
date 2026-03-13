@@ -31,6 +31,7 @@ vi.mock('../src/core/settings/index.js', () => ({
     updatedAt: new Date().toISOString(),
   }),
   onSettingsChanged: () => () => {},
+  setMcpFactories: () => {},
 }));
 
 // Mock external MCP server
@@ -101,6 +102,7 @@ function applyInfraMocks() {
       updatedAt: new Date().toISOString(),
     }),
     onSettingsChanged: () => () => {},
+    setMcpFactories: () => {},
   }));
   vi.doMock('../src/mcp/servers/external.js', () => ({
     createExternalServer: () => mockExternalServer,

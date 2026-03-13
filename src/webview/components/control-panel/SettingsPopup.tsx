@@ -312,6 +312,11 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
                   Indexing messages…
                 </span>
               )}
+              {catchupStatus.phase === 'downloading-model' && (
+                <span className="crispy-cp-settings__recall-progress">
+                  Downloading embedding model…
+                </span>
+              )}
               {(catchupStatus.phase === 'detecting-gap' || (catchupStatus.phase === 'done' && catchupStatus.gapCount > 0)) && (
                 <span className="crispy-cp-settings__recall-gap">
                   <span>Semantic search: {catchupStatus.gapCount} messages to embed</span>

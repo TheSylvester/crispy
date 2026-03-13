@@ -5,10 +5,22 @@
  * MCP SDK's Client, without stdio. Verifies results against a temp DB.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { join } from 'node:path';
+
+// Mock the rosie debug-log module to prevent the log persister from
+// triggering a re-entrant getDb() call with the production DB path,
+// which would close the test DB mid-migration.
+vi.mock('../src/core/rosie/debug-log.js', () => ({
+  pushRosieLog: () => {},
+  getRosieLogSnapshot: () => [],
+  subscribeRosieLog: () => () => {},
+  unsubscribeRosieLog: () => {},
+  registerLogPersister: () => {},
+  ROSIE_LOG_CHANNEL_ID: 'rosie-log',
+}));
 
 import { getDb, _resetDb } from '../src/core/crispy-db.js';
 
@@ -17,7 +29,6 @@ let testDir: string;
 let dbPath: string;
 
 // Mock getDbPath to return our test DB path
-import { vi } from 'vitest';
 vi.mock('../src/mcp/memory-queries.js', async (importOriginal) => {
   const actual = await importOriginal() as Record<string, unknown>;
   return {

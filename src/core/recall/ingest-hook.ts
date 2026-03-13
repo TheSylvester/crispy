@@ -51,9 +51,7 @@ export function initRecallIngest(): void {
         });
 
         // Embed after successful FTS5 ingest — fire-and-forget.
-        // Uses in-process ONNX (no worker) for the small per-turn batches.
-        // Always disposes the model afterward to prevent ONNX memory leaks
-        // from accumulating in the main process.
+        // Uses llama.cpp binary for the small per-turn batches.
         embedSessionMessages(sessionId)
           .then(count => {
             if (count > 0) {
@@ -74,8 +72,7 @@ export function initRecallIngest(): void {
             });
           })
           .finally(() => {
-            // Free ONNX model memory on both success and failure.
-            // Next turn will reload (~2-10s, non-blocking fire-and-forget).
+            // disposeEmbedder is a no-op with llama.cpp (one-shot process model).
             disposeEmbedder().catch(() => {});
           });
       }

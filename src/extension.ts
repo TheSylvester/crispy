@@ -15,7 +15,7 @@ import { createAgentDispatch } from './host/agent-dispatch.js';
 import { initRosieBot, shutdownRosieBot } from './core/rosie/index.js';
 import { initRecallIngest, shutdownRecallIngest } from './core/recall/ingest-hook.js';
 import { startRecallCatchup, stopEmbeddingBackfill } from './core/recall/catchup-manager.js';
-import { shutdownEmbedWorker } from './core/recall/embedder.js';
+import { disposeEmbedder, initEmbedder } from './core/recall/embedder.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
@@ -81,17 +81,16 @@ export function activate(context: vscode.ExtensionContext): void {
   //   Phase 0 (before): recall message ingest (lightweight SQLite indexing)
   //   Phase 2 (after): Rosie bot (summarize + tracker in two-turn child session)
   initRecallIngest();
-  startRecallCatchup('vscode', {
-    scriptPath: path.join(context.extensionPath, 'dist', 'embed-worker.js'),
-    tsx: false,
-  });
+  const binaryName = process.platform === 'win32' ? 'llama-embedding.exe' : 'llama-embedding';
+  initEmbedder(path.join(context.extensionPath, 'dist', binaryName));
+  startRecallCatchup('vscode');
   initRosieBot(dispatch, resolveInternalServerPaths(context.extensionPath));
   context.subscriptions.push({
     dispose: () => {
       shutdownRosieBot();
       shutdownRecallIngest();
       stopEmbeddingBackfill();
-      shutdownEmbedWorker();
+      disposeEmbedder();
       dispatch.dispose();
     },
   });

@@ -4,7 +4,8 @@
  * Runs on activation to bring the recall index up to date:
  *   1. FTS5 catch-up: silently indexes all unindexed sessions (fast)
  *   2. Gap detection: counts messages without embedding vectors
- *   3. Embedding backfill: embeds unvectorized messages (slow, user-prompted if >200)
+ *   3. Model download: ensures the GGUF model exists on disk
+ *   4. Embedding backfill: embeds unvectorized messages via llama-embedding
  *
  * Uses a dedicated pub/sub channel (not session-channel) for status events,
  * following the pattern established by debug-log.ts.
@@ -25,14 +26,7 @@ import {
   getSessionsWithEmbeddingGap,
 } from './message-store.js';
 import { ingestSessionMessages, embedSessionMessages } from './message-ingest.js';
-import {
-  initEmbedWorker,
-  shutdownEmbedWorker,
-  getWorkerRssMb,
-  isWorkerOverRssLimit,
-  getRssLimitMb,
-  getRecycleInterval,
-} from './embedder.js';
+import { ensureModel } from './embedder.js';
 import { pushRosieLog } from '../rosie/debug-log.js';
 import { getSettingsSnapshot, onSettingsChanged } from '../settings/index.js';
 import type { RecallCatchupEvent } from '../channel-events.js';
@@ -59,8 +53,8 @@ const SILENT_EMBED_THRESHOLD = 200;
 /** System free memory threshold (MB) — stop embedding if free RAM drops below this. */
 const FREE_MEM_FLOOR_MB = 1024;
 
-/** Rough estimate: seconds per message for embedding on CPU ONNX. */
-const SECONDS_PER_MESSAGE = 3;
+/** Rough estimate: seconds per message for embedding with llama.cpp. */
+const SECONDS_PER_MESSAGE = 1;
 
 // ============================================================================
 // Module State
@@ -87,9 +81,6 @@ let running = false;
 
 /** Unsubscribe from settings changes. */
 let settingsUnsub: (() => void) | null = null;
-
-/** Embed worker config — set by startRecallCatchup, used to init worker on-demand for backfill. */
-let embedWorkerConfig: { scriptPath: string; tsx: boolean } | null = null;
 
 // ============================================================================
 // Pub/Sub (follows debug-log.ts pattern)
@@ -206,14 +197,24 @@ function memoryPressure(): boolean {
 /**
  * Run embedding backfill on sessions with unvectorized messages.
  *
- * Spins up the embed worker child process for the duration of the backfill
- * (isolates ONNX memory leaks), then shuts it down when done so the child
- * process doesn't linger and consume RAM.
- *
- * Real-time per-turn embedding (ingest-hook) uses in-process inference
- * instead — it never touches the worker.
+ * Ensures the GGUF model is downloaded, then embeds all unvectorized messages
+ * using llama-embedding (one-shot process per batch, no persistent state).
  */
 async function runEmbedding(): Promise<void> {
+  // Download model if needed
+  broadcast({ phase: 'downloading-model' });
+  try {
+    await ensureModel();
+  } catch (err) {
+    pushRosieLog({
+      source: 'recall-catchup',
+      level: 'warn',
+      summary: `Model download failed: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    broadcast({ phase: 'done', gapCount: status.gapCount });
+    return;
+  }
+
   broadcast({ phase: 'embedding', embeddedSoFar: 0 });
 
   const sessions = getSessionsWithEmbeddingGap();
@@ -232,110 +233,54 @@ async function runEmbedding(): Promise<void> {
     return;
   }
 
-  // Spin up the worker for the backfill run
-  if (embedWorkerConfig) {
-    pushRosieLog({
-      source: 'recall-catchup',
-      level: 'info',
-      summary: 'Initializing embed worker for backfill',
-      data: { scriptPath: embedWorkerConfig.scriptPath, tsx: embedWorkerConfig.tsx },
-    });
-    initEmbedWorker(embedWorkerConfig.scriptPath, embedWorkerConfig.tsx);
-  } else {
-    pushRosieLog({
-      source: 'recall-catchup',
-      level: 'warn',
-      summary: 'No embedWorkerConfig — using in-process embedding',
-    });
-  }
-
   let totalEmbedded = 0;
-  let sessionsSinceRecycle = 0;
   const embedStartTime = Date.now();
-  const recycleInterval = getRecycleInterval();
 
-  /** Kill the current worker and spawn a fresh one (frees leaked ONNX memory). */
-  const recycleWorker = (reason: string): void => {
-    const rssBefore = getWorkerRssMb();
-    pushRosieLog({
-      source: 'recall-catchup',
-      level: 'warn',
-      summary: `Recycling embed worker: ${reason} (RSS ${rssBefore} MB)`,
-    });
-    shutdownEmbedWorker();
-    if (embedWorkerConfig) {
-      initEmbedWorker(embedWorkerConfig.scriptPath, embedWorkerConfig.tsx);
+  for (const sessionId of sessions) {
+    if (cancelRequested) break;
+
+    // Stop gracefully if system is running low on free memory.
+    if (memoryPressure()) {
+      pushRosieLog({
+        source: 'recall-catchup',
+        level: 'warn',
+        summary: 'Embedding stopped due to memory pressure — will resume on next activation',
+      });
+      break;
     }
-    sessionsSinceRecycle = 0;
-  };
 
-  try {
-    for (const sessionId of sessions) {
-      if (cancelRequested) break;
+    try {
+      // Loop until the session is fully embedded (MAX_EMBED_BATCH caps each call)
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        if (cancelRequested) break;
+        if (memoryPressure()) break;
 
-      // Stop gracefully if system is running low on free memory.
-      if (memoryPressure()) {
-        pushRosieLog({
-          source: 'recall-catchup',
-          level: 'warn',
-          summary: 'Embedding stopped due to memory pressure — will resume on next activation',
+        const count = await embedSessionMessages(sessionId);
+        if (count === 0) break; // fully embedded
+
+        totalEmbedded += count;
+
+        // Update progress
+        const elapsed = (Date.now() - embedStartTime) / 1000;
+        const rate = totalEmbedded / elapsed; // messages per second
+        const remaining = status.gapCount - totalEmbedded;
+        const estSeconds = rate > 0 ? Math.round(remaining / rate) : 0;
+        broadcast({
+          embeddedSoFar: totalEmbedded,
+          estimatedSecondsRemaining: Math.max(0, estSeconds),
         });
-        break;
       }
 
-      // Check child process RSS — kill and restart if the ONNX leak is too large.
-      if (isWorkerOverRssLimit()) {
-        recycleWorker(`RSS exceeded ${getRssLimitMb()} MB limit`);
-      }
-
-      try {
-        // Loop until the session is fully embedded (MAX_EMBED_BATCH caps each call)
-        // eslint-disable-next-line no-constant-condition
-        while (true) {
-          if (cancelRequested) break;
-          if (memoryPressure()) break;
-
-          const count = await embedSessionMessages(sessionId);
-          if (count === 0) break; // fully embedded
-
-          totalEmbedded += count;
-
-          // Update progress
-          const elapsed = (Date.now() - embedStartTime) / 1000;
-          const rate = totalEmbedded / elapsed; // messages per second
-          const remaining = status.gapCount - totalEmbedded;
-          const estSeconds = rate > 0 ? Math.round(remaining / rate) : 0;
-          broadcast({
-            embeddedSoFar: totalEmbedded,
-            estimatedSecondsRemaining: Math.max(0, estSeconds),
-          });
-
-          // Mid-session RSS check (long sessions may have many batches)
-          if (isWorkerOverRssLimit()) {
-            recycleWorker(`RSS exceeded ${getRssLimitMb()} MB limit mid-session`);
-          }
-        }
-
-      } catch (err) {
-        pushRosieLog({
-          source: 'recall-catchup',
-          level: 'warn',
-          summary: `Embed failed for session: ${err instanceof Error ? err.message : String(err)}`,
-          data: { sessionId },
-        });
-        // Continue with next session — error recovery is incremental
-      }
-
-      // Proactive recycle: restart the worker every N sessions to prevent
-      // the ONNX native memory leak from ever reaching dangerous levels.
-      sessionsSinceRecycle++;
-      if (sessionsSinceRecycle >= recycleInterval && embedWorkerConfig) {
-        recycleWorker(`proactive recycle after ${recycleInterval} sessions`);
-      }
+    } catch (err) {
+      pushRosieLog({
+        source: 'recall-catchup',
+        level: 'warn',
+        summary: `Embed failed for session: ${err instanceof Error ? err.message : String(err)}`,
+        data: { sessionId },
+      });
+      // Continue with next session — error recovery is incremental
     }
-  } finally {
-    // Always shut down the worker after backfill — frees child process + all ONNX memory
-    shutdownEmbedWorker();
   }
 
   pushRosieLog({
@@ -359,21 +304,17 @@ async function runEmbedding(): Promise<void> {
  * Internally checks recall setting before doing any work.
  *
  * @param host  Which host environment ('vscode' | 'devServer'). Defaults to 'devServer'.
- * @param workerConfig  Path + tsx flag for the embed worker child process.
- *                      The worker is only spawned during backfill, not at startup.
  */
 export async function startRecallCatchup(
   host?: 'vscode' | 'devServer',
-  workerConfig?: { scriptPath: string; tsx: boolean },
 ): Promise<void> {
   pushRosieLog({
     source: 'recall-catchup',
     level: 'info',
     summary: 'startRecallCatchup called',
-    data: { host: host ?? 'devServer', hasWorkerConfig: !!workerConfig },
+    data: { host: host ?? 'devServer' },
   });
   if (host) hostType = host;
-  if (workerConfig) embedWorkerConfig = workerConfig;
   // Subscribe to settings changes to detect recall toggle
   if (!settingsUnsub) {
     settingsUnsub = onSettingsChanged(({ changedSections }) => {

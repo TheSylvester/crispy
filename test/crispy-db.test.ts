@@ -5,10 +5,22 @@
  * and legacy data import.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { join } from 'node:path';
+
+// Mock the rosie debug-log module to prevent the log persister (registered
+// as a module-level side effect in activity-index.ts) from triggering a
+// re-entrant getDb() call with the production DB path during migrations.
+vi.mock('../src/core/rosie/debug-log.js', () => ({
+  pushRosieLog: () => {},
+  getRosieLogSnapshot: () => [],
+  subscribeRosieLog: () => () => {},
+  unsubscribeRosieLog: () => {},
+  registerLogPersister: () => {},
+  ROSIE_LOG_CHANNEL_ID: 'rosie-log',
+}));
 
 import { getDb, closeDb, _resetDb } from '../src/core/crispy-db.js';
 
@@ -107,9 +119,9 @@ describe('migrations', () => {
     const db = getDb(dbPath);
 
     const rows = db.all('SELECT version FROM _migrations ORDER BY version') as Array<Record<string, unknown>>;
-    expect(rows.length).toBe(16);
+    expect(rows.length).toBe(17);
     const versions = rows.map(r => r.version);
-    expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+    expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
   });
 
   it('runs migrations idempotently', () => {
@@ -122,7 +134,7 @@ describe('migrations', () => {
 
     const db = getDb(dbPath);
     const rows = db.all('SELECT version FROM _migrations ORDER BY version');
-    expect(rows.length).toBe(16);
+    expect(rows.length).toBe(17);
   });
 });
 

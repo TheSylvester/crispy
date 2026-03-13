@@ -20,7 +20,11 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { getDb, _resetDb } from './crispy-db.js';
-import { pushRosieLog, registerLogPersister } from './rosie/index.js';
+import { pushRosieLog } from './rosie/index.js';
+// Import registerLogPersister directly from debug-log to avoid the circular
+// dependency through rosie/index.ts → rosie-bot-hook.ts → activity-index.ts.
+// The barrel re-export triggers ESM cycle resolution issues in vitest.
+import { registerLogPersister } from './rosie/debug-log.js';
 import type { RosieLogEntry } from './rosie/index.js';
 
 // ============================================================================

@@ -5,10 +5,22 @@
  * a temporary SQLite database with known test data.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { join } from 'node:path';
+
+// Mock the rosie debug-log module to prevent the log persister from
+// triggering a re-entrant getDb() call with the production DB path,
+// which would close the test DB mid-migration.
+vi.mock('../src/core/rosie/debug-log.js', () => ({
+  pushRosieLog: () => {},
+  getRosieLogSnapshot: () => [],
+  subscribeRosieLog: () => () => {},
+  unsubscribeRosieLog: () => {},
+  registerLogPersister: () => {},
+  ROSIE_LOG_CHANNEL_ID: 'rosie-log',
+}));
 
 import { getDb, _resetDb } from '../src/core/crispy-db.js';
 import { searchSessions, listSessions, sessionContext } from '../src/mcp/memory-queries.js';

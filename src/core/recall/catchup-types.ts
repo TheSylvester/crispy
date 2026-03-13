@@ -12,7 +12,7 @@ export const RECALL_CATCHUP_CHANNEL_ID = '__recall_catchup__';
 
 export interface CatchupStatus {
   /** Phase of catch-up */
-  phase: 'idle' | 'fts5-indexing' | 'detecting-gap' | 'embedding' | 'done';
+  phase: 'idle' | 'fts5-indexing' | 'detecting-gap' | 'downloading-model' | 'embedding' | 'done';
   /** Messages without vectors (0 = caught up) */
   gapCount: number;
   /** Total messages in FTS5 index */

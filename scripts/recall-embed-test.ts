@@ -34,7 +34,7 @@ import {
 } from '../src/core/recall/message-store.js';
 import type { MessageSearchResult, MessageVectorRecord } from '../src/core/recall/message-store.js';
 import { dualPathSearch } from '../src/core/recall/vector-search.js';
-import { initEmbedWorker, shutdownEmbedWorker } from '../src/core/recall/embedder.js';
+import { initEmbedder, disposeEmbedder } from '../src/core/recall/embedder.js';
 
 // ============================================================================
 // CLI
@@ -455,17 +455,18 @@ async function main(): Promise<void> {
   await initSettings({ cwd });
   log(`[recall-embed-test] Bootstrap: ${fmtMs(stopBootstrap())}`);
 
-  // Initialize worker-based embedding (default) or in-process (--no-worker)
+  // Initialize llama.cpp embedding binary
   if (!opts.noWorker) {
     const { resolve } = await import('node:path');
-    initEmbedWorker(resolve(process.cwd(), 'src', 'core', 'recall', 'embed-worker.ts'), true);
-    log('[recall-embed-test] Using worker thread embedding');
+    const binName = process.platform === 'win32' ? 'llama-embedding.exe' : 'llama-embedding';
+    initEmbedder(resolve(process.cwd(), 'bin', binName));
+    log('[recall-embed-test] Using llama-embedding binary');
   } else {
-    log('[recall-embed-test] Using in-process embedding (--no-worker)');
+    log('[recall-embed-test] Skipping embedder init (--no-worker)');
   }
 
   const shutdown = () => {
-    shutdownEmbedWorker();
+    disposeEmbedder();
     dispatch.dispose();
     unregister();
   };

@@ -229,7 +229,7 @@ const migrations: Migration[] = [
           parent_file       TEXT,
           fork_point_uuid   TEXT,
           fork_point_offset INTEGER NOT NULL DEFAULT 0,
-          created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+          created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE INDEX IF NOT EXISTS idx_lineage_parent
@@ -486,7 +486,7 @@ const migrations: Migration[] = [
           outcome      TEXT NOT NULL CHECK (outcome IN ('tracked', 'trivial', 'failed')),
           reason       TEXT,
           attempts     INTEGER NOT NULL DEFAULT 1,
-          created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+          created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
       `);
     },
@@ -529,7 +529,7 @@ const migrations: Migration[] = [
           session_id       TEXT,
           message_uuid     TEXT,
           match_confidence REAL NOT NULL DEFAULT 0.0,
-          matched_at       TEXT NOT NULL DEFAULT (datetime('now'))
+          matched_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE INDEX idx_ci_session ON commit_index(session_file);
@@ -575,7 +575,7 @@ const migrations: Migration[] = [
         CREATE TABLE provenance_repo_state (
           repo_path   TEXT PRIMARY KEY,
           head_sha    TEXT NOT NULL,
-          scanned_at  TEXT NOT NULL DEFAULT (datetime('now'))
+          scanned_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
       `);
     },
@@ -749,6 +749,13 @@ const migrations: Migration[] = [
       db.exec(`ALTER TABLE messages ADD COLUMN message_role TEXT;`);
     },
   },
+  {
+    version: 17,
+    description: 'Clear v1 vectors for nomic-embed-text-v1.5 re-embed',
+    up: (db: Database) => {
+      db.exec(`DELETE FROM message_vectors;`);
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {
@@ -757,7 +764,7 @@ function runMigrations(db: Database, dbPath: string): void {
     CREATE TABLE IF NOT EXISTS _migrations (
       version     INTEGER PRIMARY KEY,
       description TEXT NOT NULL,
-      applied_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      applied_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
 

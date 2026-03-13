@@ -1,307 +1,155 @@
 /**
- * Embedder — Lazy-loading Nomic Embed Code embedding pipeline
+ * Embedder — llama.cpp-based embedding pipeline
  *
- * Generates dense vector embeddings for text using Nomic Embed Code via
- * @huggingface/transformers. The model downloads on first use (~270 MB)
- * and is cached by HuggingFace's default cache mechanism.
+ * Generates dense vector embeddings using llama.cpp's llama-embedding binary
+ * with a nomic-embed-text-v1.5 GGUF model. Each embedBatch() call spawns a
+ * single fresh process via child_process.execFile() with batch separator —
+ * no persistent state, no memory leak.
  *
- * Routes inference through a child process when initialized via
- * initEmbedWorker(). The child process provides true process-level isolation
- * — a native ONNX crash (segfault) kills only the child, not the extension
- * host. The model stays loaded across sessions, avoiding the 2.5s reload
- * penalty per session.
- *
- * Falls back to in-process inference if initEmbedWorker() was never called
- * (e.g. test scripts with --no-worker). All callers use the same public
- * API: embed(), embedBatch(), disposeEmbedder().
- *
- * Owns: model lifecycle (via child process or in-process), text-to-embedding conversion.
- * Does not: persist embeddings, manage chunks, touch ~/.crispy/.
+ * Owns: binary path resolution, model download, text-to-embedding conversion.
+ * Does not: persist embeddings, manage chunks, touch ~/.crispy/ (except models/).
  *
  * @module recall/embedder
  */
 
-import { fork, type ChildProcess } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { existsSync, mkdirSync, statSync, createWriteStream, renameSync, unlinkSync } from 'node:fs';
+import { writeFile, unlink } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir, homedir } from 'node:os';
+import { promisify } from 'node:util';
+import { pushRosieLog } from '../rosie/debug-log.js';
+
+const execFileAsync = promisify(execFile);
 
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
-const MODEL_ID = 'Xenova/nomic-embed-text-v1';
+const MODEL_FILENAME = 'nomic-embed-text-v1.5.Q8_0.gguf';
+const MODEL_URL = 'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf';
+const MODEL_DIR = join(homedir(), '.crispy', 'models');
+const EXPECTED_DIMS = 768;
+const BATCH_SEPARATOR = '<#sep#>';
 
-/** Kill and restart the worker if its RSS exceeds this (MB). Generous ceiling
- *  that catches the ~100 MB/s ONNX native memory leak well before OOM. */
-const RSS_LIMIT_MB = 2048;
-
-/** Proactively recycle the worker every N sessions to keep the ONNX leak from
- *  ever reaching the RSS limit under normal conditions. */
-const RECYCLE_EVERY_N_SESSIONS = 50;
-
-// ---------------------------------------------------------------------------
-// Child Process State
-// ---------------------------------------------------------------------------
-
-/** Path to the worker script (set by initEmbedWorker). */
-let workerPath: string | null = null;
-
-/** Whether to spawn the worker via tsx (dev mode) or node (bundled). */
-let useTsx = false;
-
-/** Live child process — spawned lazily on first embed call. */
-let child: ChildProcess | null = null;
-
-/** Auto-incrementing request ID for correlating responses. */
-let nextRequestId = 0;
-
-/** Pending promises keyed by request ID. */
-const pending = new Map<number, {
-  resolve: (value: any) => void;
-  reject: (reason: any) => void;
-}>();
-
-/** Current batch size for worker inference. Drops to 1 on crash. */
-let batchSize = 2;
-
-/** Whether the worker has been intentionally shut down (prevents auto-respawn). */
-let shutdownRequested = false;
-
-/** Per-request timeout (ms). Generous — covers model load (~4s) + longest message (~800ms). */
-const REQUEST_TIMEOUT_MS = 60_000;
+/** Max bytes for -p argument before switching to -f file input. */
+const MAX_ARG_BYTES = 100_000;
 
 // ---------------------------------------------------------------------------
-// In-process Fallback State
+// Module State
 // ---------------------------------------------------------------------------
 
-let inProcessEmbedder: any = null;
-let inProcessLoading: Promise<any> | null = null;
+let binaryPath: string | null = null;
+
+/** Shared promise for in-flight model download — prevents concurrent downloads. */
+let downloadPromise: Promise<string> | null = null;
 
 // ---------------------------------------------------------------------------
-// Child Process Lifecycle
+// Initialization
 // ---------------------------------------------------------------------------
 
 /**
- * Initialize the child-process-based embedding pipeline.
- *
- * Call once at startup (extension activate or dev-server boot). Subsequent
- * embed() / embedBatch() calls route through the child process automatically.
- *
- * @param scriptPath  Absolute path to the embed-worker script.
- * @param tsx         If true, spawn via tsx (dev mode with TypeScript source).
+ * Set the path to the llama-embedding binary. Call once at startup.
  */
-export function initEmbedWorker(scriptPath: string, tsx?: boolean): void {
-  workerPath = scriptPath;
-  useTsx = tsx ?? false;
-  shutdownRequested = false;
+export function initEmbedder(binPath: string): void {
+  binaryPath = binPath;
+}
+
+// ---------------------------------------------------------------------------
+// Model Management
+// ---------------------------------------------------------------------------
+
+/** Returns the expected model file path. */
+export function getModelPath(): string {
+  return join(MODEL_DIR, MODEL_FILENAME);
 }
 
 /**
- * Terminate the child process. Call on extension deactivation.
- * Safe to call multiple times or when no child is running.
+ * Ensure the GGUF model exists on disk. Downloads from HuggingFace if missing.
+ * Uses atomic download (write to .tmp, then rename). Concurrent callers share
+ * the same download promise — no polling, no duplicate downloads.
  */
-export function shutdownEmbedWorker(): void {
-  shutdownRequested = true;
-  if (child) {
-    child.send({ type: 'shutdown' });
-    child = null;
+export async function ensureModel(): Promise<string> {
+  const modelPath = getModelPath();
+
+  // Check if model already exists and is large enough to be valid
+  if (existsSync(modelPath)) {
+    const stat = statSync(modelPath);
+    if (stat.size > 100_000_000) return modelPath;
   }
-  rejectAllPending('Worker shut down');
-}
 
-function rejectAllPending(reason: string): void {
-  for (const [id, p] of pending) {
-    p.reject(new Error(reason));
-    pending.delete(id);
+  // Share a single download promise across concurrent callers
+  if (downloadPromise) return downloadPromise;
+
+  downloadPromise = performModelDownload(modelPath);
+  try {
+    return await downloadPromise;
+  } finally {
+    downloadPromise = null;
   }
 }
 
-/**
- * Send a message to the child and return a promise that rejects on timeout.
- * Cleans up the pending entry and kills the child on timeout so it doesn't
- * linger in a deadlocked state.
- */
-function sendWithTimeout<T>(cp: ChildProcess, msg: any): Promise<T> {
-  const id = nextRequestId++;
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      pending.delete(id);
-      reject(new Error(`Embed request ${id} timed out after ${REQUEST_TIMEOUT_MS}ms`));
-      // Kill the hung child — next embed call will auto-spawn a fresh one
-      if (child === cp) {
-        console.error('[embedder] Killing hung child process');
-        cp.kill();
-        child = null;
-      }
-    }, REQUEST_TIMEOUT_MS);
+async function performModelDownload(modelPath: string): Promise<string> {
+  const tmpPath = modelPath + '.tmp';
+  try {
+    mkdirSync(MODEL_DIR, { recursive: true });
 
-    pending.set(id, {
-      resolve: (value: T) => { clearTimeout(timer); resolve(value); },
-      reject: (reason: any) => { clearTimeout(timer); reject(reason); },
+    // Clean up stale .tmp from interrupted download
+    if (existsSync(tmpPath)) {
+      unlinkSync(tmpPath);
+    }
+
+    pushRosieLog({
+      source: 'recall-catchup',
+      level: 'info',
+      summary: `Downloading embedding model: ${MODEL_FILENAME}`,
+      data: { url: MODEL_URL, dest: modelPath },
     });
 
-    cp.send({ ...msg, id });
-  });
-}
+    // Download to temp file, then atomic rename
+    await new Promise<void>((resolve, reject) => {
+      // Dynamic import avoids bundler issues with node:https
+      import('node:https').then(({ default: https }) => {
+        const file = createWriteStream(tmpPath);
+        const pipeResponse = (response: import('node:http').IncomingMessage) => {
+          if (response.statusCode !== 200) {
+            reject(new Error(`Download failed: HTTP ${response.statusCode}`));
+            return;
+          }
+          response.pipe(file);
+          file.on('finish', () => { file.close(); resolve(); });
+          file.on('error', reject);
+        };
 
-function spawnChild(): ChildProcess {
-  // For dev mode (tsx), fork with tsx as the execPath
-  // For bundled mode, fork directly with node
-  const execArgv = useTsx ? ['--import', 'tsx'] : [];
+        https.get(MODEL_URL, { headers: { 'User-Agent': 'crispy' } }, (response) => {
+          // Follow redirects (HuggingFace uses 302)
+          if (response.statusCode === 301 || response.statusCode === 302) {
+            const location = response.headers.location;
+            if (!location) { reject(new Error('Redirect without location')); return; }
+            https.get(location, pipeResponse).on('error', reject);
+            return;
+          }
+          pipeResponse(response);
+        }).on('error', reject);
+      }).catch(reject);
+    });
 
-  const cp = fork(workerPath!, [], {
-    execArgv,
-    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
-    // Prevent child from inheriting CLAUDECODE which blocks nested Claude sessions
-    env: { ...process.env, CLAUDECODE: undefined },
-  });
+    renameSync(tmpPath, modelPath);
 
-  cp.on('message', (msg: any) => {
-    switch (msg.type) {
-      case 'ready':
-        // Child is up — nothing to do, first embed call triggers model load.
-        break;
+    pushRosieLog({
+      source: 'recall-catchup',
+      level: 'info',
+      summary: 'Embedding model download complete',
+    });
 
-      case 'result': {
-        const p = pending.get(msg.id);
-        if (p) {
-          pending.delete(msg.id);
-          // Vectors arrive as number[][] over IPC — reconstruct Float32Arrays
-          const vectors = (msg.vectors as number[][]).map(
-            (arr: number[]) => new Float32Array(arr),
-          );
-          p.resolve(vectors);
-        }
-        break;
-      }
-
-      case 'resultOne': {
-        const p = pending.get(msg.id);
-        if (p) {
-          pending.delete(msg.id);
-          p.resolve(new Float32Array(msg.vector as number[]));
-        }
-        break;
-      }
-
-      case 'error': {
-        const p = pending.get(msg.id);
-        if (p) {
-          pending.delete(msg.id);
-          p.reject(new Error(msg.message));
-        }
-        break;
-      }
-
-      case 'progress':
-        // Could be surfaced to callers in the future; currently ignored.
-        break;
+    return modelPath;
+  } catch (err) {
+    // Clean up failed download
+    if (existsSync(tmpPath)) {
+      try { unlinkSync(tmpPath); } catch { /* ignore */ }
     }
-  });
-
-  cp.on('error', (err) => {
-    console.error('[embedder] Child process error:', err.message);
-  });
-
-  cp.on('exit', (code, signal) => {
-    // Child exited — clean up
-    child = null;
-    if (code !== 0 && !shutdownRequested) {
-      console.error(`[embedder] Child process exited with code ${code}, signal ${signal}`);
-
-      // Auto-fallback: reduce batch size on crash
-      if (batchSize > 1) {
-        console.error(`[embedder] Reducing batch size from ${batchSize} to 1`);
-        batchSize = 1;
-      }
-
-      // Reject all pending requests — callers will retry (triggering respawn)
-      rejectAllPending(`Child process exited with code ${code}`);
-    }
-  });
-
-  // Send init message with current batch size
-  cp.send({ type: 'init', batchSize });
-
-  return cp;
-}
-
-function getChild(): ChildProcess {
-  if (!child) {
-    child = spawnChild();
+    throw err;
   }
-  return child;
-}
-
-// ---------------------------------------------------------------------------
-// Child Process RSS Monitoring
-// ---------------------------------------------------------------------------
-
-/**
- * Read the resident set size (RSS) of the embed worker child process in MB.
- *
- * Uses `/proc/<pid>/status` on Linux/WSL2 — a synchronous fs read from the
- * parent process, no IPC round-trip needed. Returns 0 if the child isn't
- * running, the platform doesn't expose /proc, or the read fails.
- */
-export function getWorkerRssMb(): number {
-  if (!child || !child.pid) return 0;
-  try {
-    const status = readFileSync(`/proc/${child.pid}/status`, 'utf-8');
-    const match = status.match(/^VmRSS:\s+(\d+)\s+kB$/m);
-    if (!match) return 0;
-    return Math.round(parseInt(match[1]!, 10) / 1024);
-  } catch {
-    // /proc not available (macOS), process already exited, etc.
-    return 0;
-  }
-}
-
-/**
- * Check whether the embed worker's RSS exceeds the safety limit.
- * Returns false if the worker isn't running or RSS can't be read.
- */
-export function isWorkerOverRssLimit(): boolean {
-  const rss = getWorkerRssMb();
-  return rss > 0 && rss > RSS_LIMIT_MB;
-}
-
-/** Counter for proactive recycling (tracked externally by catchup-manager). */
-export function getRssLimitMb(): number {
-  return RSS_LIMIT_MB;
-}
-
-export function getRecycleInterval(): number {
-  return RECYCLE_EVERY_N_SESSIONS;
-}
-
-// ---------------------------------------------------------------------------
-// In-process Fallback
-// ---------------------------------------------------------------------------
-
-async function getInProcessEmbedder(): Promise<any> {
-  if (inProcessEmbedder) return inProcessEmbedder;
-
-  if (!inProcessLoading) {
-    inProcessLoading = (async () => {
-      try {
-        const { pipeline, env } = await import('@huggingface/transformers');
-
-        if (env.backends.onnx.wasm) {
-          env.backends.onnx.wasm.proxy = false;
-        }
-
-        const model = await pipeline('feature-extraction', MODEL_ID);
-        inProcessEmbedder = model;
-        return model;
-      } catch (err) {
-        inProcessLoading = null;
-        throw err;
-      }
-    })();
-  }
-
-  inProcessEmbedder = await inProcessLoading;
-  return inProcessEmbedder;
 }
 
 // ---------------------------------------------------------------------------
@@ -310,75 +158,91 @@ async function getInProcessEmbedder(): Promise<any> {
 
 /**
  * Embed a single text string into a normalized 768-dimensional vector.
- *
- * Routes through the child process if initialized, otherwise falls back
- * to in-process inference.
- *
- * @param text  The text to embed (code snippet, markdown chunk, query, etc.)
- * @returns     Normalized float32 embedding vector (768 dimensions).
  */
 export async function embed(text: string): Promise<Float32Array> {
-  // Child process path
-  if (workerPath && !shutdownRequested) {
-    return sendWithTimeout<Float32Array>(getChild(), { type: 'embedOne', text });
-  }
-
-  // In-process fallback
-  const model = await getInProcessEmbedder();
-  const result = await model(text, { pooling: 'mean', normalize: true });
-  const vec = (result.data as Float32Array).slice();
-  if (typeof result.dispose === 'function') result.dispose();
-  return vec;
+  const [result] = await embedBatch([text]);
+  return result;
 }
 
 /**
- * Embed multiple texts, returning one vector per text.
+ * Embed multiple texts in a single llama-embedding invocation.
  *
- * Routes through the child process if initialized (supports batch inference),
- * otherwise falls back to sequential in-process inference.
- *
- * @param texts  Array of text strings to embed.
- * @returns      Array of normalized float32 embedding vectors (768-dim each).
+ * Joins texts with the batch separator and spawns ONE process. For texts
+ * containing the separator or exceeding OS arg limits, falls back to file
+ * input via -f flag.
  */
 export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
   if (texts.length === 0) return [];
+  if (!binaryPath) throw new Error('Embedder not initialized — call initEmbedder() first');
 
-  // Child process path
-  if (workerPath && !shutdownRequested) {
-    return sendWithTimeout<Float32Array[]>(getChild(), { type: 'embed', texts });
-  }
+  const modelPath = await ensureModel();
+  const joined = texts.join(BATCH_SEPARATOR);
+  const useFile = Buffer.byteLength(joined, 'utf-8') > MAX_ARG_BYTES ||
+                  texts.some(t => t.includes(BATCH_SEPARATOR));
 
-  // In-process fallback
-  const model = await getInProcessEmbedder();
-  const results: Float32Array[] = [];
-  for (const text of texts) {
-    const result = await model(text, { pooling: 'mean', normalize: true });
-    results.push((result.data as Float32Array).slice());
-    if (typeof result.dispose === 'function') result.dispose();
+  let tmpFile: string | null = null;
+  try {
+    const args = [
+      '-m', modelPath,
+      '--embd-output-format', 'array',
+      '-c', '8192',
+      '--log-disable',
+    ];
+
+    if (texts.length > 1) {
+      args.push('--embd-separator', BATCH_SEPARATOR);
+    }
+
+    if (useFile) {
+      tmpFile = join(tmpdir(), `crispy-embed-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
+      await writeFile(tmpFile, joined, 'utf-8');
+      args.push('-f', tmpFile);
+    } else {
+      args.push('-p', joined);
+    }
+
+    const { stdout, stderr } = await execFileAsync(binaryPath, args, {
+      maxBuffer: 1024 * 1024,
+    });
+
+    if (stderr) {
+      pushRosieLog({
+        source: 'recall-catchup',
+        level: 'warn',
+        summary: 'llama-embedding stderr',
+        data: { stderr: stderr.slice(0, 500) },
+      });
+    }
+
+    // Parse [[x1,...,xn],[x1,...,xn],...]
+    const trimmed = stdout.trim();
+    let parsed: number[][];
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      throw new Error(`Failed to parse llama-embedding output: ${trimmed.slice(0, 200)}`);
+    }
+
+    if (!Array.isArray(parsed) || parsed.length !== texts.length) {
+      throw new Error(`Expected ${texts.length} vectors, got ${Array.isArray(parsed) ? parsed.length : 'non-array'}`);
+    }
+
+    return parsed.map((vec, i) => {
+      if (!Array.isArray(vec) || vec.length !== EXPECTED_DIMS) {
+        throw new Error(`Vector ${i}: expected ${EXPECTED_DIMS} dims, got ${Array.isArray(vec) ? vec.length : 'non-array'}`);
+      }
+      return new Float32Array(vec);
+    });
+  } finally {
+    if (tmpFile) {
+      await unlink(tmpFile).catch(() => {});
+    }
   }
-  return results;
 }
 
 /**
- * Dispose the embedding model to release native memory.
- *
- * In child process mode: sends a dispose message (frees ONNX memory in child,
- * process stays alive for next activation). In-process: disposes the cached
- * pipeline directly.
- *
- * Next embed call will re-load the model (~2-10s).
+ * Dispose the embedder. No-op with one-shot process model — nothing to dispose.
  */
 export async function disposeEmbedder(): Promise<void> {
-  // Child process path
-  if (child) {
-    child.send({ type: 'dispose' });
-    return;
-  }
-
-  // In-process fallback
-  if (inProcessEmbedder) {
-    if (typeof inProcessEmbedder.dispose === 'function') await inProcessEmbedder.dispose();
-    inProcessEmbedder = null;
-    inProcessLoading = null;
-  }
+  // No-op: each embedBatch() spawns a fresh process, no persistent state
 }
