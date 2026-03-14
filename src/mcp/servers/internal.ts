@@ -19,8 +19,8 @@ import { z } from 'zod/v4';
 import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath, searchTranscript, searchTranscriptMeta, readMessageTurn, grepMessages, readSessionMessages } from '../memory-queries.js';
 import { pushEventLog } from '../../core/rosie/event-log.js';
 
-import { writeTrackerResults, recordTrackerOutcome } from '../../core/rosie/tracker/db-writer.js';
-import { VALID_STATUSES } from '../../core/rosie/tracker/types.js';
+import { writeTrackerResults, recordTrackerOutcome, getProjectTitle } from '../../core/rosie/tracker/db-writer.js';
+import { VALID_STAGES } from '../../core/rosie/tracker/types.js';
 import type { TrackerBlock } from '../../core/rosie/tracker/types.js';
 
 // ============================================================================
@@ -38,10 +38,12 @@ type McpToolResult = { content: Array<{ type: 'text'; text: string }>; isError?:
 
 /** Decision record appended to the sidecar file for parent-process observability. */
 export interface TrackerDecision {
-  tool: 'upsert_project' | 'mark_trivial';
+  tool: 'create_project' | 'track_project' | 'mark_trivial';
   action?: 'created' | 'updated';
   title?: string;
+  stage?: string;
   status?: string;
+  icon?: string;
   reason?: string;
 }
 
@@ -346,43 +348,41 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
   );
 
   // ------------------------------------------------------------------
-  // upsert_project — Create or update a tracked project
-  // ------------------------------------------------------------------
-  // Only available when CRISPY_TRACKER_SESSION_FILE is set (tracker child
-  // sessions). The env var provides the session file path for DB writes.
+  // create_project — Create a new tracked project
   // ------------------------------------------------------------------
   server.tool(
-    'upsert_project',
-    'Create a new project or update an existing one based on this session\'s work. Call this once per project this session touches. For existing projects, provide the id from the project list. For new projects, omit the id or leave it empty.',
+    'create_project',
+    'Create a new project based on this session\'s work. Use for NEW work that doesn\'t match any existing project.',
     {
-      id: z.string().optional().describe('UUID of an existing project to update. Must match an id from the existing projects list. Leave empty or omit to create a new project.'),
-      title: z.string().describe('Short, stable project title. Keep consistent across sessions — don\'t rename unless scope fundamentally changed.'),
-      status: z.enum(VALID_STATUSES).describe('Current project status.'),
-      summary: z.string().describe('1-2 sentence summary of current project state. Reflect what\'s true RIGHT NOW, not history.'),
-      blocked_by: z.string().optional().describe('Why it\'s blocked (only if status is \'blocked\', otherwise omit).'),
-      branch: z.string().optional().describe('Git branch name if applicable, otherwise omit.'),
-      entities: z.array(z.string()).describe('Top 5-10 key entities: file paths, branch names, function names, concepts. Used for matching future sessions to this project.'),
+      title: z.string().describe('Short, stable project title. Keep consistent across sessions.'),
+      stage: z.enum(VALID_STAGES).describe('Project stage: active (in progress), planning (designing), ready (ready to start), committed (scheduled), paused (on hold), archived (done/abandoned).'),
+      status: z.string().describe('Freeform status line — what is true RIGHT NOW in 1-2 sentences.'),
+      icon: z.string().describe('Single emoji representing the project domain (e.g. 🔧, 📊, 🎨).'),
+      summary: z.string().describe('Stable description of what this project IS. Set once, rarely changed.'),
+      blocked_by: z.string().optional().describe('Why it\'s blocked (only if stage is \'paused\', otherwise omit).'),
+      branch: z.string().optional().describe('Git branch name if applicable.'),
+      entities: z.array(z.string()).describe('Top 5-10 key entities: file paths, branch names, function names, concepts. Used for matching future sessions.'),
       files: z.array(z.object({
         path: z.string().describe('File path to a non-code artifact.'),
         note: z.string().describe('Why this file is relevant.'),
-      })).optional().describe('Non-code artifacts only: plans, specs, design docs. NOT source code — source files belong in entities. Omit if none.'),
+      })).optional().describe('Non-code artifacts only: plans, specs, design docs. NOT source code. Omit if none.'),
     },
     async (args) => {
       const sessionFile = serverOptions.sessionFile ?? process.env.CRISPY_TRACKER_SESSION_FILE;
       if (!sessionFile) {
-        console.error('[internal-mcp] upsert_project: session file not configured (no --session-file arg or CRISPY_TRACKER_SESSION_FILE env)');
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: 'Session file not configured — this tool is only available in tracker child sessions' }) }],
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: 'Session file not configured' }) }],
           isError: true,
         };
       }
 
       const block: TrackerBlock = {
         project: {
-          action: 'upsert',
-          id: args.id ?? '',
+          action: 'create',
           title: args.title,
+          stage: args.stage,
           status: args.status,
+          icon: args.icon,
           blocked_by: args.blocked_by ?? '',
           summary: args.summary,
           branch: args.branch ?? '',
@@ -394,18 +394,77 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
 
       try {
         writeTrackerResults([block], sessionFile);
-        const action = args.id ? 'updated' : 'created';
-        console.error(`[internal-mcp] upsert_project: ${action} "${args.title}" (${args.status})`);
-        appendDecision({ tool: 'upsert_project', action, title: args.title, status: args.status });
-        // Persist tracked outcome to DB
+        console.error(`[internal-mcp] create_project: created "${args.title}" [${args.stage}]`);
+        appendDecision({ tool: 'create_project', action: 'created', title: args.title, stage: args.stage, status: args.status, icon: args.icon });
         recordTrackerOutcome(sessionFile, 'tracked', 1, args.title);
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action, project: args.title }) }],
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action: 'created', project: args.title }) }],
         };
       } catch (err) {
-        console.error('[internal-mcp] upsert_project FAIL:', err instanceof Error ? err.message : String(err));
+        console.error('[internal-mcp] create_project FAIL:', err instanceof Error ? err.message : String(err));
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: `upsert_project failed: ${err instanceof Error ? err.message : String(err)}` }) }],
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: `create_project failed: ${err instanceof Error ? err.message : String(err)}` }) }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // track_project — Update an existing tracked project
+  // ------------------------------------------------------------------
+  server.tool(
+    'track_project',
+    'Update an existing project with this session\'s work. Provide only fields that changed. Always auto-links the current session.',
+    {
+      project_id: z.string().describe('UUID of the existing project. Must match an id from the existing projects list.'),
+      status: z.string().optional().describe('Updated freeform status line — only if changed.'),
+      stage: z.enum(VALID_STAGES).optional().describe('Updated stage — only if changed.'),
+      blocked_by: z.string().optional().describe('Why it\'s blocked (only if stage is \'paused\').'),
+      branch: z.string().optional().describe('Git branch name if applicable.'),
+      entities: z.array(z.string()).optional().describe('Additional entities to add (merged with existing). Only new ones.'),
+      files: z.array(z.object({
+        path: z.string().describe('File path to a non-code artifact.'),
+        note: z.string().describe('Why this file is relevant.'),
+      })).optional().describe('Non-code artifacts only. Omit if none.'),
+    },
+    async (args) => {
+      const sessionFile = serverOptions.sessionFile ?? process.env.CRISPY_TRACKER_SESSION_FILE;
+      if (!sessionFile) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: 'Session file not configured' }) }],
+          isError: true,
+        };
+      }
+
+      const block: TrackerBlock = {
+        project: {
+          action: 'track',
+          id: args.project_id,
+          ...(args.status !== undefined && { status: args.status }),
+          ...(args.stage !== undefined && { stage: args.stage }),
+          ...(args.blocked_by !== undefined && { blocked_by: args.blocked_by }),
+          ...(args.branch !== undefined && { branch: args.branch }),
+          ...(args.entities && { entities: JSON.stringify(args.entities) }),
+        },
+        sessionRef: { detected_in: '' },
+        files: (args.files ?? []).map((f) => ({ path: f.path, note: f.note })),
+      };
+
+      try {
+        writeTrackerResults([block], sessionFile);
+        // Look up the project title for decision logging (UUID is not user-friendly)
+        const projectTitle = getProjectTitle(args.project_id) ?? args.project_id;
+        console.error(`[internal-mcp] track_project: updated "${projectTitle}"`);
+        appendDecision({ tool: 'track_project', action: 'updated', title: projectTitle, stage: args.stage, status: args.status });
+        recordTrackerOutcome(sessionFile, 'tracked', 1, projectTitle);
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action: 'updated', projectId: args.project_id }) }],
+        };
+      } catch (err) {
+        console.error('[internal-mcp] track_project FAIL:', err instanceof Error ? err.message : String(err));
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: `track_project failed: ${err instanceof Error ? err.message : String(err)}` }) }],
           isError: true,
         };
       }

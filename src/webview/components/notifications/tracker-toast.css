@@ -1,0 +1,71 @@
+/* --- Tracker Toast Notifications --- */
+
+.crispy-tracker-toast-container {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.crispy-tracker-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--vscode-editorWidget-background, #252526);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  animation: crispy-toast-in 0.25s ease-out, crispy-toast-out 0.3s ease-in 3.7s forwards;
+  max-width: 320px;
+}
+
+.crispy-tracker-toast--stage_change {
+  border-left: 3px solid #d4a574;
+}
+
+.crispy-tracker-toast--project_created {
+  border-left: 3px solid #5cb870;
+}
+
+.crispy-tracker-toast__icon {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.crispy-tracker-toast__text {
+  font-size: 12px;
+  color: var(--vscode-foreground, #d4d4d4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes crispy-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes crispy-toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+}

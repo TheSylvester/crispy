@@ -756,6 +756,108 @@ const migrations: Migration[] = [
       db.exec(`DELETE FROM message_vectors;`);
     },
   },
+  {
+    version: 18,
+    description: 'Projects: add stage/icon/sort_order columns, create project_activity table',
+    up: (db: Database) => {
+      // PRAGMA foreign_keys is a no-op inside a transaction (the migration
+      // runner wraps up() in BEGIN/COMMIT). Instead, we back up child table
+      // data, drop FKs by recreating child tables after the projects table
+      // rename, then restore the data.
+
+      db.exec(`
+        -- Back up child tables that FK-reference projects(id)
+        CREATE TABLE _ps_backup AS SELECT * FROM project_sessions;
+        CREATE TABLE _pf_backup AS SELECT * FROM project_files;
+        DROP TABLE project_sessions;
+        DROP TABLE project_files;
+
+        -- Now safe to drop projects (no FK references remain)
+        CREATE TABLE projects_new (
+          id               TEXT PRIMARY KEY,
+          title            TEXT NOT NULL,
+          stage            TEXT NOT NULL CHECK (stage IN ('active','planning','ready','committed','paused','archived')),
+          status           TEXT,
+          icon             TEXT,
+          sort_order       INTEGER,
+          blocked_by       TEXT,
+          summary          TEXT,
+          category         TEXT,
+          branch           TEXT,
+          entities         TEXT,
+          created_at       TEXT NOT NULL,
+          updated_at       TEXT NOT NULL,
+          last_activity_at TEXT,
+          closed_at        TEXT,
+          parent_id        TEXT
+        );
+
+        INSERT INTO projects_new (id, title, stage, status, icon, sort_order, blocked_by, summary, category, branch, entities, created_at, updated_at, last_activity_at, closed_at, parent_id)
+          SELECT id, title,
+            CASE status
+              WHEN 'active' THEN 'active'
+              WHEN 'planned' THEN 'planning'
+              WHEN 'blocked' THEN 'paused'
+              WHEN 'done' THEN 'archived'
+              WHEN 'abandoned' THEN 'archived'
+              ELSE 'active'
+            END,
+            summary,
+            NULL, NULL,
+            blocked_by, summary, category, branch, entities,
+            created_at, updated_at, last_activity_at, closed_at, parent_id
+          FROM projects;
+
+        DROP TABLE projects;
+        ALTER TABLE projects_new RENAME TO projects;
+
+        CREATE INDEX idx_projects_stage ON projects(stage);
+        CREATE INDEX idx_projects_parent ON projects(parent_id);
+
+        -- Recreate child tables with FK references to the new projects table
+        CREATE TABLE project_sessions (
+          project_id   TEXT NOT NULL REFERENCES projects(id),
+          session_file TEXT NOT NULL,
+          detected_in  TEXT,
+          linked_at    TEXT NOT NULL,
+          PRIMARY KEY (project_id, session_file)
+        );
+        INSERT INTO project_sessions SELECT * FROM _ps_backup;
+        DROP TABLE _ps_backup;
+
+        CREATE TABLE project_files (
+          project_id   TEXT NOT NULL REFERENCES projects(id),
+          file_path    TEXT NOT NULL,
+          session_file TEXT,
+          message_id   TEXT,
+          note         TEXT,
+          added_at     TEXT NOT NULL,
+          UNIQUE (project_id, file_path)
+        );
+        INSERT INTO project_files SELECT * FROM _pf_backup;
+        DROP TABLE _pf_backup;
+
+        -- Activity log table
+        CREATE TABLE project_activity (
+          id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          project_id   TEXT NOT NULL REFERENCES projects(id),
+          session_file TEXT,
+          ts           INTEGER NOT NULL,
+          kind         TEXT NOT NULL CHECK (kind IN (
+            'created','stage_change','status_update','session_linked','file_linked','entity_added'
+          )),
+          old_stage    TEXT,
+          new_stage    TEXT,
+          old_status   TEXT,
+          new_status   TEXT,
+          narrative    TEXT,
+          actor        TEXT NOT NULL DEFAULT 'rosie'
+        );
+        CREATE INDEX idx_project_activity_project ON project_activity(project_id);
+        CREATE INDEX idx_project_activity_ts ON project_activity(ts);
+      `);
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {

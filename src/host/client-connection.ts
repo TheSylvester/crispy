@@ -67,7 +67,13 @@ import {
 } from '../core/recall/catchup-manager.js';
 import { getGitFiles, fileExists, readImage, readTextFile } from "../core/file-service.js";
 import { queryActivity, getLineage, getChildSessions, getLineageGraph } from '../core/activity-index.js';
-import { getProjectsWithDetails } from '../core/rosie/tracker/index.js';
+import { getProjectsWithDetails, getProjectActivity, updateProjectStage, updateProjectSortOrder, reorderProjectsInStage, VALID_STAGES } from '../core/rosie/tracker/index.js';
+import {
+  subscribeTrackerNotify,
+  unsubscribeTrackerNotify,
+  TRACKER_NOTIFY_CHANNEL_ID,
+} from '../core/rosie/tracker/tracker-notifications.js';
+import type { TrackerNotifyEvent, TrackerNotifySubscriber } from '../core/rosie/tracker/tracker-notifications.js';
 import { readResponsePreview } from '../core/adapters/claude/jsonl-reader.js';
 import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-reader.js';
 // Voice module is lazy-loaded to avoid pulling onnxruntime-node native bindings
@@ -108,7 +114,7 @@ export type ClientMessage = {
 };
 
 /** Union of all events that can be pushed over the wire. */
-export type HostEvent = SubscriberMessage | SessionListEvent | SettingsChangedGlobalEvent | RosieLogEvent | RecallCatchupEvent;
+export type HostEvent = SubscriberMessage | SessionListEvent | SettingsChangedGlobalEvent | RosieLogEvent | RecallCatchupEvent | TrackerNotifyEvent;
 
 /** Host → Client response or push event. */
 export type HostMessage =
@@ -157,6 +163,9 @@ export function createClientConnection(
 
   /** Global recall catch-up subscription for this client. */
   let catchupSub: CatchupSubscriber | null = null;
+
+  /** Tracker notification subscription for this client. */
+  let trackerNotifySub: TrackerNotifySubscriber | null = null;
 
   /** Flag set on dispose() to prevent re-keying after client disconnect. */
   let disposed = false;
@@ -473,6 +482,27 @@ export function createClientConnection(
         return { unsubscribed: true };
       }
 
+      // --- Tracker notification subscription ---
+      case "subscribeTrackerNotify": {
+        if (trackerNotifySub) return { subscribed: true };
+        trackerNotifySub = {
+          id: clientId,
+          send(event) {
+            sendFn({ kind: "event", sessionId: TRACKER_NOTIFY_CHANNEL_ID, event });
+          },
+        };
+        subscribeTrackerNotify(trackerNotifySub);
+        return { subscribed: true };
+      }
+
+      case "unsubscribeTrackerNotify": {
+        if (trackerNotifySub) {
+          unsubscribeTrackerNotify(trackerNotifySub);
+          trackerNotifySub = null;
+        }
+        return { unsubscribed: true };
+      }
+
       // --- Recall catch-up subscription (follows subscribeRosieLog pattern) ---
       case "subscribeRecallCatchup": {
         if (catchupSub) return { subscribed: true };
@@ -703,19 +733,56 @@ export function createClientConnection(
               })
               .filter((s): s is NonNullable<typeof s> => s !== null);
 
+            // Origin session = first session (sessions are ordered by linked_at ASC)
+            const originSessionTitle = sessions.length > 0 ? sessions[0]!.title : undefined;
+
+            // Parse entities
+            let entities: string[] | undefined;
+            try {
+              const parsed = JSON.parse(p.entities);
+              if (Array.isArray(parsed) && parsed.length > 0) entities = parsed;
+            } catch { /* leave undefined */ }
+
             return {
               id: p.id,
               title: p.title,
-              status: p.status,
+              stage: p.stage,
+              status: p.status || undefined,
+              icon: p.icon || undefined,
+              sortOrder: p.sortOrder ?? undefined,
               blockedBy: p.blockedBy || undefined,
               summary: p.summary || undefined,
               branch: p.branch || undefined,
+              entities,
+              createdAt: p.createdAt,
+              closedAt: p.closedAt || undefined,
               lastActivityAt: p.lastActivityAt || new Date().toISOString(),
               sessionCount: sessions.length,
+              originSessionTitle,
               files: p.files.map(f => ({ path: f.path, note: f.note || undefined })),
               sessions,
             };
           });
+      }
+
+      case "getProjectActivity": {
+        const { projectId, kind } = params as { projectId: string; kind?: string };
+        return getProjectActivity(projectId, kind ? { kind } : undefined);
+      }
+
+      case "updateProjectStage": {
+        const { projectId: stageProjectId, stage } = params as { projectId: string; stage: string };
+        if (!(VALID_STAGES as readonly string[]).includes(stage)) throw new Error(`Invalid stage: ${stage}`);
+        updateProjectStage(stageProjectId, stage as 'active' | 'planning' | 'ready' | 'committed' | 'paused' | 'archived');
+        return { ok: true };
+      }
+
+      case "updateProjectSortOrder": {
+        const { updates } = params as { updates: Array<{ id: string; sortOrder: number }> };
+        for (const u of updates) {
+          updateProjectSortOrder(u.id, u.sortOrder);
+        }
+        return { ok: true };
       }
 
       default:
@@ -734,6 +801,10 @@ export function createClientConnection(
     if (rosieLogSub) {
       unsubscribeRosieLog(rosieLogSub);
       rosieLogSub = null;
+    }
+    if (trackerNotifySub) {
+      unsubscribeTrackerNotify(trackerNotifySub);
+      trackerNotifySub = null;
     }
     if (catchupSub) {
       unsubscribeCatchup(catchupSub.id);

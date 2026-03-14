@@ -1,38 +1,63 @@
 /**
- * ProjectsView — Rosie-tracked projects grouped by status
+ * ProjectsView — Rosie-tracked projects grouped by stage
  *
  * Fetches projects via transport.getProjects() and renders them grouped
- * by status (Active → Blocked → Planned → Done). Reuses session-item
- * CSS classes for card layout. Click expands inline to show resource
- * files and linked sessions.
+ * by stage (Active → Paused → Planning → Ready → Committed → Archived).
+ * Supports drag-and-drop between stage groups and within-group reordering.
  *
  * @module ProjectsView
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTransport } from '../../context/TransportContext.js';
 import type { WireProject } from '../../transport.js';
-import { formatRelativeTime } from '../../utils/format.js';
+import { ProjectCard } from './ProjectCard.js';
 
 interface ProjectsViewProps {
   searchQuery: string;
   onSelectSession: (sessionId: string) => void;
 }
 
-const STATUS_ORDER = ['active', 'blocked', 'planned', 'done'] as const;
-const STATUS_LABELS: Record<string, string> = {
+const STAGE_ORDER = ['active', 'paused', 'planning', 'ready', 'committed', 'archived'] as const;
+const STAGE_LABELS: Record<string, string> = {
   active: 'Active',
-  blocked: 'Blocked',
-  planned: 'Planned',
-  done: 'Done',
+  paused: 'Paused',
+  planning: 'Planning',
+  ready: 'Ready',
+  committed: 'Committed',
+  archived: 'Archived',
 };
+
+const FILTER_STAGES = [
+  { label: 'All', value: null },
+  { label: 'Active', value: 'active' },
+  { label: 'Paused', value: 'paused' },
+  { label: 'Planning', value: 'planning' },
+  { label: 'Ready', value: 'ready' },
+] as const;
+
+function sortProjects(projects: WireProject[]): WireProject[] {
+  return [...projects].sort((a, b) => {
+    // Projects with sort_order come first
+    const aHasOrder = a.sortOrder != null;
+    const bHasOrder = b.sortOrder != null;
+    if (aHasOrder && bHasOrder) return a.sortOrder! - b.sortOrder!;
+    if (aHasOrder && !bHasOrder) return -1;
+    if (!aHasOrder && bHasOrder) return 1;
+    // Fall back to recency
+    return new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime();
+  });
+}
 
 export function ProjectsView({ searchQuery, onSelectSession }: ProjectsViewProps): React.JSX.Element {
   const transport = useTransport();
   const [projects, setProjects] = useState<WireProject[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set(['done']));
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set(['archived']));
+  const [stageFilter, setStageFilter] = useState<string | null>(null);
+  const [dragOverStage, setDragOverStage] = useState<string | null>(null);
+  const draggedIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,32 +75,76 @@ export function ProjectsView({ searchQuery, onSelectSession }: ProjectsViewProps
     });
   }, []);
 
-  const toggleGroup = useCallback((status: string) => {
+  const toggleGroup = useCallback((stage: string) => {
     setCollapsedGroups(prev => {
       const next = new Set(prev);
-      if (next.has(status)) next.delete(status); else next.add(status);
+      if (next.has(stage)) next.delete(stage); else next.add(stage);
       return next;
     });
   }, []);
 
-  const handleSessionClick = useCallback((e: React.MouseEvent, sessionId: string) => {
-    e.stopPropagation();
-    onSelectSession(sessionId);
-  }, [onSelectSession]);
-
-  const handleResourceClick = useCallback((e: React.MouseEvent, path: string) => {
-    e.stopPropagation();
+  const handleOpenFile = useCallback((path: string) => {
     transport.openFile(path);
   }, [transport]);
 
-  // Filter by search query
-  const filtered = searchQuery
-    ? projects.filter(p => {
-        const q = searchQuery.toLowerCase();
-        return p.title.toLowerCase().includes(q)
-          || (p.summary?.toLowerCase().includes(q) ?? false);
-      })
-    : projects;
+  // Drag-and-drop handlers
+  const handleDragStart = useCallback((e: React.DragEvent, projectId: string) => {
+    draggedIdRef.current = projectId;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', projectId);
+    (e.currentTarget as HTMLElement).classList.add('crispy-project-dragging');
+  }, []);
+
+  const handleDragEnd = useCallback((e: React.DragEvent) => {
+    draggedIdRef.current = null;
+    setDragOverStage(null);
+    (e.currentTarget as HTMLElement).classList.remove('crispy-project-dragging');
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, stage: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverStage(stage);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setDragOverStage(null);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, targetStage: string) => {
+    e.preventDefault();
+    setDragOverStage(null);
+    const projectId = draggedIdRef.current;
+    if (!projectId) return;
+
+    const project = projects.find(p => p.id === projectId);
+    if (!project || project.stage === targetStage) return;
+
+    // Optimistically update UI
+    setProjects(prev => prev.map(p =>
+      p.id === projectId ? { ...p, stage: targetStage as WireProject['stage'], sortOrder: undefined } : p
+    ));
+
+    // Persist to server
+    transport.updateProjectStage(projectId, targetStage).catch(() => {
+      // Revert on failure — refetch current state
+      transport.getProjects().then(setProjects).catch(() => {});
+    });
+  }, [projects, transport]);
+
+  // Filter by search query and stage filter
+  let filtered = projects;
+  if (stageFilter) {
+    filtered = filtered.filter(p => p.stage === stageFilter);
+  }
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    filtered = filtered.filter(p =>
+      p.title.toLowerCase().includes(q)
+      || (p.summary?.toLowerCase().includes(q) ?? false)
+      || (p.status?.toLowerCase().includes(q) ?? false)
+    );
+  }
 
   // Empty state
   if (loaded && projects.length === 0) {
@@ -90,123 +159,92 @@ export function ProjectsView({ searchQuery, onSelectSession }: ProjectsViewProps
   }
 
   // Search with no matches
-  if (loaded && filtered.length === 0 && searchQuery) {
+  if (loaded && filtered.length === 0 && (searchQuery || stageFilter)) {
     return (
-      <ul className="crispy-session-list">
-        <li className="crispy-session-empty">No matches</li>
-      </ul>
+      <div className="crispy-projects-container">
+        <div className="crispy-project-filter-bar">
+          {FILTER_STAGES.map(f => (
+            <button
+              key={f.label}
+              className={`crispy-project-filter-pill${stageFilter === f.value ? ' crispy-project-filter-pill--active' : ''}`}
+              onClick={() => setStageFilter(f.value)}
+            >
+              {f.value && <span className={`crispy-project-filter-dot crispy-stage-dot--${f.value}`} />}
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <ul className="crispy-session-list">
+          <li className="crispy-session-empty">No matches</li>
+        </ul>
+      </div>
     );
   }
 
   return (
-    <ul className="crispy-session-list">
-      {STATUS_ORDER.map(status => {
-        const items = filtered.filter(p => p.status === status);
-        if (items.length === 0) return null;
-
-        const collapsed = collapsedGroups.has(status);
-
-        return (
-          <li
-            key={status}
-            className={`crispy-session-group${status === 'done' ? ' crispy-session-group--done' : ''}`}
+    <div className="crispy-projects-container">
+      {/* Filter pills */}
+      <div className="crispy-project-filter-bar">
+        {FILTER_STAGES.map(f => (
+          <button
+            key={f.label}
+            className={`crispy-project-filter-pill${stageFilter === f.value ? ' crispy-project-filter-pill--active' : ''}`}
+            onClick={() => setStageFilter(f.value)}
           >
-            <div
-              className="crispy-session-group-header"
-              onClick={() => toggleGroup(status)}
+            {f.value && <span className={`crispy-project-filter-dot crispy-stage-dot--${f.value}`} />}
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      <ul className="crispy-session-list">
+        {STAGE_ORDER.map(stage => {
+          const items = sortProjects(filtered.filter(p => p.stage === stage));
+          if (items.length === 0) return null;
+
+          const collapsed = collapsedGroups.has(stage);
+          const isDropTarget = dragOverStage === stage;
+
+          return (
+            <li
+              key={stage}
+              className={`crispy-session-group${stage === 'archived' ? ' crispy-session-group--archived' : ''}${isDropTarget ? ' crispy-project-drop-target' : ''}`}
+              onDragOver={(e) => handleDragOver(e, stage)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, stage)}
             >
-              <span className={`crispy-session-group-header__chevron${collapsed ? ' crispy-session-group-header__chevron--collapsed' : ''}`}>
-                &#9660;
-              </span>
-              <span className={`crispy-status-dot crispy-status-dot--${status}`} />
-              {STATUS_LABELS[status]}
-              <span className="crispy-session-group-header__count">{items.length}</span>
-            </div>
+              <div
+                className="crispy-session-group-header"
+                onClick={() => toggleGroup(stage)}
+              >
+                <span className={`crispy-session-group-header__chevron${collapsed ? ' crispy-session-group-header__chevron--collapsed' : ''}`}>
+                  &#9660;
+                </span>
+                <span className={`crispy-stage-dot crispy-stage-dot--${stage}`} />
+                {STAGE_LABELS[stage]}
+                <span className="crispy-session-group-header__count">{items.length}</span>
+              </div>
 
-            {!collapsed && (
-              <ul className="crispy-session-group__list">
-                {items.map(project => {
-                  const isExpanded = expandedIds.has(project.id);
-                  return (
-                    <li
+              {!collapsed && (
+                <ul className="crispy-session-group__list">
+                  {items.map(project => (
+                    <ProjectCard
                       key={project.id}
-                      className={`crispy-session-item${isExpanded ? ' crispy-session-item--expanded' : ''}`}
-                      onClick={() => toggleProject(project.id)}
-                    >
-                      <div className="crispy-session-item__header">
-                        <span className="crispy-session-item__label">{project.title}</span>
-                        <div className="crispy-session-item__meta">
-                          <span className="crispy-session-item__time">
-                            {formatRelativeTime(project.lastActivityAt)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {project.summary && (
-                        <div className="crispy-session-item__preview">{project.summary}</div>
-                      )}
-
-                      {project.blockedBy && (
-                        <div className="crispy-project-blocked">Blocked on: {project.blockedBy}</div>
-                      )}
-
-                      <div className="crispy-project-meta">
-                        {project.branch && (
-                          <span className="crispy-project-branch">{project.branch}</span>
-                        )}
-                        <span>{project.sessionCount} session{project.sessionCount !== 1 ? 's' : ''}</span>
-                      </div>
-
-                      {isExpanded && (
-                        <>
-                          {project.files.length > 0 && (
-                            <ul className="crispy-project-resources">
-                              {project.files.map(f => {
-                                const filename = f.path.split('/').pop() ?? f.path;
-                                return (
-                                  <li
-                                    key={f.path}
-                                    className="crispy-project-resource"
-                                    title={f.note ?? f.path}
-                                    onClick={e => handleResourceClick(e, f.path)}
-                                  >
-                                    <span className="crispy-project-resource__icon">&#128196;</span>
-                                    {filename}
-                                  </li>
-                                );
-                              })}
-                            </ul>
-                          )}
-
-                          {project.sessions.length > 0 && (
-                            <ul className="crispy-project-sessions">
-                              {project.sessions.map(s => (
-                                <li
-                                  key={s.sessionFile}
-                                  className="crispy-project-session-item"
-                                  onClick={e => handleSessionClick(e, s.sessionId)}
-                                >
-                                  <span className="crispy-project-session-item__title">{s.title}</span>
-                                  <span className="crispy-project-session-item__time">
-                                    {formatRelativeTime(s.modifiedAt)}
-                                  </span>
-                                  {s.preview && (
-                                    <span className="crispy-project-session-item__preview">{s.preview}</span>
-                                  )}
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </li>
-        );
-      })}
-    </ul>
+                      project={project}
+                      isExpanded={expandedIds.has(project.id)}
+                      onToggle={toggleProject}
+                      onSelectSession={onSelectSession}
+                      onOpenFile={handleOpenFile}
+                      onDragStart={handleDragStart}
+                      onDragEnd={handleDragEnd}
+                    />
+                  ))}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }

@@ -1,0 +1,1562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Projects View — Redesign</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-deep: #0e0e14;
+    --bg-base: #141418;
+    --bg-surface: #1a1a20;
+    --bg-raised: #222228;
+    --bg-hover: #28282f;
+    --border: #2a2a32;
+    --text-primary: #d0d0d8;
+    --text-secondary: #8888a0;
+    --text-muted: #555568;
+    --accent: #d4a574;
+    --accent-dim: #a07850;
+    --stage-active: #5cb870;
+    --stage-active-soft: rgba(92,184,112,0.12);
+    --stage-paused: #d4a030;
+    --stage-paused-soft: rgba(212,160,48,0.10);
+    --stage-planning: #6878a0;
+    --stage-planning-soft: rgba(104,120,160,0.10);
+    --stage-ready: #50a0d0;
+    --stage-ready-soft: rgba(80,160,208,0.10);
+    --stage-committed: #a070c0;
+    --stage-committed-soft: rgba(160,112,192,0.10);
+    --stage-archived: #555568;
+    --stage-archived-soft: rgba(85,85,104,0.08);
+    --font-sans: system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg-deep);
+    color: var(--text-primary);
+    line-height: 1.45;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Filter bar ── */
+  .filter-bar {
+    background: var(--bg-base);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .filter-pill {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 150ms ease-out;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .filter-pill:hover { border-color: var(--text-muted); color: var(--text-primary); }
+  .filter-pill.active { border-color: var(--accent-dim); color: var(--accent); background: rgba(212,165,116,0.06); }
+  .filter-pill .pill-dot { width: 6px; height: 6px; border-radius: 50%; }
+
+  .filter-search {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    width: 200px;
+    outline: none;
+    margin-left: auto;
+  }
+  .filter-search::placeholder { color: var(--text-muted); }
+  .filter-search:focus { border-color: var(--accent-dim); }
+
+  /* ── Project list ── */
+  .project-list { flex: 1; overflow-y: auto; }
+
+  /* ── Stage group headers ── */
+  .group-header {
+    padding: 10px 16px 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .group-chevron {
+    font-size: 10px;
+    color: var(--text-muted);
+    transition: transform 150ms ease-out;
+    width: 12px;
+  }
+  .group-header.collapsed .group-chevron { transform: rotate(-90deg); }
+  .group-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .group-label {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+  .group-count { font-size: 11px; color: var(--text-muted); }
+
+  .group-items { overflow: hidden; }
+  .group-header.collapsed + .group-items { display: none; }
+
+  /* ── Project rows ── */
+  .project-row {
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    align-items: start;
+    padding: 8px 16px 8px 16px;
+    gap: 0 8px;
+    cursor: pointer;
+    transition: background 120ms ease-out;
+  }
+  .project-row:hover { background: var(--bg-surface); }
+  .project-row + .project-row { border-top: 1px solid var(--bg-surface); }
+
+  /* Project icon (emoji) */
+  .icon-col {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-top: 2px;
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  /* Content */
+  .project-content { min-width: 0; }
+
+  .project-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .project-row:hover .project-title { color: #fff; }
+  .project-row.archived-row .project-title {
+    color: var(--text-secondary);
+    text-decoration: line-through;
+    text-decoration-color: var(--text-muted);
+  }
+
+  /* Status line — the freeform text from Rosie */
+  .project-status-line {
+    font-size: 12px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 1px;
+  }
+
+  /* Meta row */
+  .project-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+  }
+
+  .meta-branch {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .meta-item {
+    font-size: 10px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .meta-tag {
+    font-size: 10px;
+    padding: 0 5px;
+    border-radius: 3px;
+    background: var(--bg-raised);
+    color: var(--text-muted);
+  }
+
+  .meta-blocker-tag {
+    font-size: 10px;
+    padding: 0 5px;
+    border-radius: 3px;
+    background: var(--stage-paused-soft);
+    color: var(--stage-paused);
+  }
+
+  /* Time column */
+  .project-time {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    padding-top: 3px;
+    text-align: right;
+  }
+  .time-fresh { color: var(--stage-active); }
+  .time-warm { color: var(--text-secondary); }
+  .time-stale { color: var(--stage-paused); }
+  .time-cold { color: var(--text-muted); }
+
+  /* ── Expanded detail ── */
+  .project-detail {
+    grid-column: 2 / 3;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition: max-height 250ms ease-out, opacity 150ms ease-out;
+  }
+  .project-row.expanded .project-detail {
+    max-height: 500px;
+    opacity: 1;
+    margin-top: 8px;
+  }
+
+  .detail-description {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    line-height: 1.5;
+    padding-left: 0;
+  }
+  .detail-description-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+
+  .detail-blocker {
+    border-left: 2px solid var(--stage-paused);
+    padding: 4px 10px;
+    margin-bottom: 8px;
+    font-size: 11px;
+    color: var(--stage-paused);
+    background: var(--stage-paused-soft);
+    border-radius: 0 3px 3px 0;
+  }
+
+  .detail-section-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin: 8px 0 4px;
+    font-weight: 600;
+  }
+
+  .detail-sessions { list-style: none; }
+  .detail-sessions li {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 0 8px;
+    padding: 4px 0;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 3px;
+    margin: 0 -4px;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .detail-sessions li:hover { background: var(--bg-hover); }
+  .detail-sessions .s-time {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    padding-top: 2px;
+  }
+  .detail-sessions .s-content {
+    min-width: 0;
+  }
+  .detail-sessions .s-title {
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+  .detail-sessions li:hover .s-title { color: var(--text-primary); }
+  .detail-sessions .s-preview {
+    color: var(--text-muted);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 1px;
+  }
+
+  .detail-files { list-style: none; }
+  .detail-files li {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 1px 0;
+    display: flex;
+    gap: 6px;
+  }
+  .detail-files li:hover { color: var(--text-secondary); }
+  .detail-files .f-note { font-family: var(--font-sans); font-size: 10px; }
+
+  .detail-origin {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 6px;
+  }
+  .detail-origin .origin-link { color: var(--accent-dim); cursor: pointer; }
+  .detail-origin .origin-link:hover { color: var(--accent); }
+
+  /* ── Project history toggle ── */
+  .history-toggle {
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    margin-top: 10px;
+    padding: 4px 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    user-select: none;
+  }
+  .history-toggle:hover { color: var(--text-secondary); }
+  .history-toggle .chevron {
+    font-size: 9px;
+    transition: transform 150ms ease-out;
+    display: inline-block;
+  }
+  .history-toggle.open .chevron { transform: rotate(90deg); }
+
+  /* ── History controls bar ── */
+  .history-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+    margin-bottom: 2px;
+  }
+  .history-filter-btn {
+    font-size: 9px;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 2px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-family: var(--font-sans);
+  }
+  .history-filter-btn:hover { color: var(--text-secondary); border-color: var(--text-muted); }
+  .history-filter-btn.active { color: var(--accent); border-color: var(--accent-dim); background: rgba(212,165,116,0.06); }
+
+  .history-sort-btn {
+    font-size: 9px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px 4px;
+    margin-left: auto;
+    font-family: var(--font-sans);
+  }
+  .history-sort-btn:hover { color: var(--text-secondary); }
+
+  /* ── Project activity timeline ── */
+  .project-timeline {
+    margin-top: 6px;
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: max-height 250ms ease-out, opacity 200ms ease-out;
+  }
+  .project-timeline.open {
+    max-height: 400px;
+    opacity: 1;
+    overflow-y: auto;
+  }
+
+  .timeline-entry {
+    display: flex;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 11px;
+    align-items: baseline;
+  }
+  .timeline-entry + .timeline-entry {
+    border-top: 1px solid var(--bg-raised);
+  }
+  .timeline-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+  .timeline-dot.rosie { background: var(--stage-active); }
+  .timeline-dot.user { background: var(--accent); }
+  .timeline-dot.system { background: var(--text-muted); }
+
+  .timeline-source {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 1px 4px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .timeline-source.rosie { color: var(--stage-active); background: rgba(92,184,112,0.1); }
+  .timeline-source.user { color: var(--accent); background: rgba(212,165,116,0.1); }
+
+  .timeline-text {
+    color: var(--text-secondary);
+    flex: 1;
+  }
+  .timeline-text .hl { color: var(--text-primary); }
+  .timeline-text .arrow { color: var(--accent); margin: 0 3px; }
+
+  .timeline-time {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  /* ── Inline project chat ── */
+  .project-chat {
+    margin-top: 8px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .project-chat-input {
+    flex: 1;
+    background: var(--bg-deep);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    outline: none;
+  }
+  .project-chat-input::placeholder { color: var(--text-muted); }
+  .project-chat-input:focus { border-color: var(--accent-dim); }
+
+  .project-chat-send {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 11px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-family: var(--font-sans);
+  }
+  .project-chat-send:hover { color: var(--text-primary); border-color: var(--text-muted); }
+
+  .chat-response {
+    font-size: 11px;
+    color: var(--stage-active);
+    margin-top: 4px;
+    opacity: 0;
+    transition: opacity 200ms ease-out;
+  }
+  .chat-response.visible { opacity: 1; }
+
+  /* ── Prompt bar ── */
+  .prompt-bar {
+    background: var(--bg-base);
+    border-top: 1px solid var(--border);
+    padding: 10px 16px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .prompt-text {
+    flex: 1;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    max-height: 100px;
+    overflow-y: auto;
+  }
+  .copy-btn {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 11px;
+    padding: 5px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .copy-btn:hover { color: var(--text-primary); border-color: var(--text-muted); }
+
+  /* ── Activity log panel ── */
+  .activity-log {
+    position: fixed;
+    bottom: 60px;
+    right: 20px;
+    width: 360px;
+    max-height: 300px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    display: none;
+    z-index: 200;
+    flex-direction: column;
+  }
+  .activity-log.visible { display: flex; }
+  .activity-log-header {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .activity-log-close {
+    background: none; border: none; color: var(--text-muted);
+    cursor: pointer; font-size: 14px; padding: 0 4px;
+  }
+  .activity-log-close:hover { color: var(--text-primary); }
+  .activity-log-body {
+    overflow-y: auto;
+    flex: 1;
+    padding: 4px 0;
+  }
+  .activity-entry {
+    padding: 6px 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+  }
+  .activity-entry + .activity-entry { border-top: 1px solid var(--bg-raised); }
+  .activity-entry .a-source {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 1px 4px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  .activity-entry .a-source.user { color: var(--accent); background: rgba(212,165,116,0.1); }
+  .activity-entry .a-source.rosie { color: var(--stage-active); background: rgba(92,184,112,0.1); }
+  .activity-entry .a-text { flex: 1; }
+  .activity-entry .a-arrow { color: var(--accent); margin: 0 2px; }
+
+  .activity-toggle {
+    position: fixed;
+    bottom: 66px;
+    right: 20px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    z-index: 190;
+  }
+  .activity-toggle:hover { color: var(--text-primary); border-color: var(--text-muted); }
+  .activity-toggle .badge {
+    background: var(--accent);
+    color: var(--bg-base);
+    font-size: 9px;
+    padding: 0 4px;
+    border-radius: 3px;
+    margin-left: 4px;
+    font-weight: 600;
+  }
+
+  /* ── Drag and drop ── */
+  .project-row[draggable="true"] {
+    cursor: grab;
+  }
+  .project-row.dragging {
+    opacity: 0.6;
+    cursor: grabbing;
+    background: var(--bg-raised);
+  }
+
+  .group-header.drop-target {
+    background: var(--bg-hover);
+    border-radius: 4px;
+  }
+  .group-header.drop-target .group-label {
+    color: var(--accent);
+  }
+  .group-header.drop-target .group-dot {
+    box-shadow: 0 0 6px currentColor;
+  }
+
+  .group-items.drop-zone {
+    min-height: 8px;
+  }
+  .group-items.drop-active {
+    background: rgba(212,165,116,0.04);
+    border-radius: 4px;
+    outline: 1px dashed var(--accent-dim);
+    outline-offset: -1px;
+  }
+
+  /* Drop indicator line between rows */
+  .drop-indicator {
+    height: 2px;
+    background: var(--accent);
+    border-radius: 1px;
+    margin: 0 16px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 100ms ease-out;
+  }
+  .drop-indicator.visible { opacity: 1; }
+
+  /* ── Activity log (toast) ── */
+  .activity-toast {
+    position: fixed;
+    bottom: 60px;
+    right: 20px;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    z-index: 200;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 200ms ease-out, transform 200ms ease-out;
+    pointer-events: none;
+    max-width: 400px;
+  }
+  .activity-toast.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .activity-toast .toast-source {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 2px;
+  }
+  .activity-toast .toast-arrow {
+    color: var(--accent);
+    margin: 0 4px;
+  }
+
+</style>
+</head>
+<body>
+
+<div class="filter-bar">
+  <button class="filter-pill active" data-filter="all">All Projects</button>
+  <button class="filter-pill" data-filter="active"><span class="pill-dot" style="background:var(--stage-active)"></span> Active</button>
+  <button class="filter-pill" data-filter="paused"><span class="pill-dot" style="background:var(--stage-paused)"></span> Paused</button>
+  <button class="filter-pill" data-filter="planning"><span class="pill-dot" style="background:var(--stage-planning)"></span> Planning</button>
+  <button class="filter-pill" data-filter="ready"><span class="pill-dot" style="background:var(--stage-ready)"></span> Ready</button>
+  <input type="text" class="filter-search" id="searchInput" placeholder="Filter by keyword or tag...">
+</div>
+
+<div class="project-list" id="projectList"></div>
+
+<div class="activity-toast" id="activityToast">
+  <div class="toast-source"></div>
+  <div class="toast-text"></div>
+</div>
+
+<button class="activity-toggle" id="activityToggle">Activity <span class="badge" id="activityBadge">0</span></button>
+
+<div class="activity-log" id="activityLog">
+  <div class="activity-log-header">
+    Stage Changes
+    <button class="activity-log-close" id="activityLogClose">×</button>
+  </div>
+  <div class="activity-log-body" id="activityLogBody"></div>
+</div>
+
+<div class="prompt-bar">
+  <div class="prompt-text" id="promptOutput"></div>
+  <button class="copy-btn" id="copyBtn">Copy Prompt</button>
+</div>
+
+<script>
+const NOW = new Date('2026-03-13T13:00:00Z');
+
+// New data model: stage (enum for grouping) + status (freeform text from Rosie)
+const projects = [
+  {
+    id: 'p1',
+    icon: '🦙',
+    title: 'Replace ONNX embeddings with llama.cpp',
+    stage: 'active', sortOrder: null,
+    status: 'Auto-download binary working. Analyzing catch-up pipeline optimizations for batch size and concurrency.',
+    history: [
+      { source: 'rosie', type: 'status_update', text: 'Status → "Auto-download binary working. Analyzing catch-up pipeline optimizations..."', time: '2026-03-13T12:17:00Z' },
+      { source: 'rosie', type: 'session_linked', text: 'Linked session: Fix catch-up embeddings backfill with auto-download binary', time: '2026-03-13T12:17:00Z' },
+      { source: 'rosie', type: 'status_update', text: 'Status → "Debugging binary path resolution on Linux vs macOS"', time: '2026-03-13T07:55:00Z' },
+      { source: 'rosie', type: 'session_linked', text: 'Linked session: Debug and fix embeddings backfill crash', time: '2026-03-13T07:55:00Z' },
+      { source: 'rosie', type: 'entity_added', text: 'Added entity: binary-download', time: '2026-03-12T20:00:00Z' },
+      { source: 'rosie', type: 'file_linked', text: 'Linked file: src/core/embeddings/binary-manager.ts', time: '2026-03-12T16:00:00Z' },
+      { source: 'rosie', type: 'session_linked', text: 'Linked session: ONNX embeddings replacement spec design', time: '2026-03-11T14:00:00Z' },
+      { source: 'rosie', type: 'file_linked', text: 'Linked file: src/core/embeddings/llama-embed.ts', time: '2026-03-11T14:00:00Z' },
+      { source: 'rosie', type: 'created', text: 'Project created', time: '2026-03-11T08:00:00Z' },
+    ],
+    summary: 'Replace ONNX runtime with llama.cpp for local embeddings generation, including binary management and catch-up backfill pipeline.',
+    branch: 'feat/backfill-embeddings-refinements',
+    sessionCount: 6,
+    lastActivityAt: '2026-03-13T12:17:00Z',
+    createdAt: '2026-03-11T08:00:00Z',
+    entities: ['embeddings', 'llama.cpp'],
+    originSession: 'Embeddings architecture review',
+    sessions: [
+      { title: 'Fix catch-up embeddings backfill with auto-download binary', preview: 'feat: auto-download llama-embedding binary on first use', modifiedAt: '2026-03-13T12:17:00Z' },
+      { title: 'Debug and fix embeddings backfill crash in catchup UI', preview: 'Interrupted tool use — debugging path resolution on Linux', modifiedAt: '2026-03-13T07:55:00Z' },
+      { title: 'Embeddings pipeline efficiency analysis & regression assessment', preview: 'Review existing catch-up embeddings pipeline for efficiency improvements', modifiedAt: '2026-03-13T12:17:00Z' },
+      { title: 'Validate architecture, execute startup optimizations', preview: 'Review outstanding changes, determine their origin, build new package', modifiedAt: '2026-03-13T10:30:00Z' },
+      { title: 'ONNX embeddings replacement: spec design, adversarial review', preview: 'Apply the 9 adversarial review findings to spec and handoff prompt', modifiedAt: '2026-03-13T07:55:00Z' },
+      { title: 'Fix message_role attribution bugs and stabilize embedder', preview: 'Fix 4 failing test files for mock issues in embedder tests', modifiedAt: '2026-03-12T20:00:00Z' }
+    ],
+    files: [
+      { path: 'src/core/embeddings/llama-embed.ts', note: 'Main embedding module' },
+      { path: 'src/core/embeddings/binary-manager.ts', note: 'Binary download logic' }
+    ]
+  },
+  {
+    id: 'p2',
+    icon: '🔀',
+    title: 'Fix Control Panel Fork button',
+    stage: 'active', sortOrder: null,
+    status: 'Root cause found: missing CLAUDECODE env var. Logging design complete, implementation next.',
+    history: [
+      { source: 'rosie', type: 'status_update', text: 'Status → "Root cause found: missing CLAUDECODE env var..."', time: '2026-03-13T10:00:00Z' },
+      { source: 'rosie', type: 'session_linked', text: 'Linked session: Diagnose fork button failure', time: '2026-03-13T10:00:00Z' },
+      { source: 'rosie', type: 'file_linked', text: 'Linked file: src/core/session-manager.ts', time: '2026-03-13T08:00:00Z' },
+      { source: 'rosie', type: 'created', text: 'Project created', time: '2026-03-13T08:00:00Z' },
+    ],
+    summary: 'Fork button fails silently due to missing CLAUDECODE environment variable or adapter drain failures.',
+    branch: 'fix/fork-button-env',
+    sessionCount: 1,
+    lastActivityAt: '2026-03-13T10:00:00Z',
+    createdAt: '2026-03-13T08:00:00Z',
+    entities: ['control-panel', 'debugging'],
+    originSession: 'Diagnose fork button failure',
+    sessions: [
+      { title: 'Diagnose fork button failure', preview: 'Three log points in sendTurn() and drainOutput() to trace the issue', modifiedAt: '2026-03-13T10:00:00Z' }
+    ],
+    files: [{ path: 'src/core/session-manager.ts', note: 'Fork logic' }]
+  },
+  {
+    id: 'p3',
+    icon: '📊',
+    title: 'Redesign Project Tracker: status + stages',
+    stage: 'active', sortOrder: null,
+    status: 'Exploring Projects View redesign in playground. Two-tool API design (create_project + track_project) agreed.',
+    history: [
+      { source: 'rosie', type: 'status_update', text: 'Status → "Exploring Projects View redesign in playground..."', time: '2026-03-13T12:58:00Z' },
+      { source: 'rosie', type: 'session_linked', text: 'Linked session: Projects View redesign exploration', time: '2026-03-13T12:58:00Z' },
+      { source: 'rosie', type: 'status_update', text: 'Status → "Design phase complete. Separated status into two systems."', time: '2026-03-12T20:00:00Z' },
+      { source: 'rosie', type: 'created', text: 'Project created', time: '2026-03-12T14:00:00Z' },
+    ],
+    summary: 'Separate freeform status from user-owned stage grouping. Replace upsert_project with create_project + track_project tools.',
+    branch: 'feat/tracker-status-redesign',
+    sessionCount: 2,
+    lastActivityAt: '2026-03-13T12:58:00Z',
+    createdAt: '2026-03-12T14:00:00Z',
+    entities: ['tracker', 'UX'],
+    originSession: 'Status system design',
+    sessions: [
+      { title: 'Projects View redesign exploration', preview: 'Building interactive playground, analyzing Linear/GitHub Projects patterns', modifiedAt: '2026-03-13T12:58:00Z' },
+      { title: 'Status system design', preview: 'Renamed categorization from status to stages, designed two-tool API', modifiedAt: '2026-03-12T20:00:00Z' }
+    ],
+    files: []
+  },
+  {
+    id: 'p4',
+    icon: '🔍',
+    title: 'Add semantic search to session browser',
+    stage: 'paused', sortOrder: null,
+    status: 'Design complete. Blocked on llama.cpp embeddings pipeline landing first.',
+    history: [
+      { source: 'user', type: 'stage_change', text: 'Stage: active → paused', time: '2026-03-10T19:00:00Z' },
+      { source: 'rosie', type: 'status_update', text: 'Status → "Design complete. Blocked on llama.cpp embeddings."', time: '2026-03-10T18:00:00Z' },
+      { source: 'rosie', type: 'session_linked', text: 'Linked session: Semantic search design', time: '2026-03-10T18:00:00Z' },
+      { source: 'rosie', type: 'session_linked', text: 'Linked session: Search UX exploration', time: '2026-03-09T12:00:00Z' },
+      { source: 'rosie', type: 'created', text: 'Project created', time: '2026-03-08T10:00:00Z' },
+    ],
+    blockedBy: 'Replace ONNX embeddings with llama.cpp',
+    blockedByRef: 'p1',
+    summary: 'Semantic search over session transcripts using local embeddings and cosine similarity.',
+    branch: 'feat/semantic-search',
+    sessionCount: 2,
+    lastActivityAt: '2026-03-10T18:00:00Z',
+    createdAt: '2026-03-08T10:00:00Z',
+    entities: ['search', 'embeddings'],
+    originSession: 'Search UX exploration',
+    sessions: [
+      { title: 'Semantic search design', preview: 'Query embedding → cosine similarity → ranked results', modifiedAt: '2026-03-10T18:00:00Z' },
+      { title: 'Search UX exploration', preview: 'Inline search with progressive refinement and fuzzy matching', modifiedAt: '2026-03-09T12:00:00Z' }
+    ],
+    files: [{ path: 'src/webview/components/search/SemanticSearch.tsx' }]
+  },
+  {
+    id: 'p5',
+    icon: '♊',
+    title: 'Implement Gemini CLI adapter',
+    stage: 'planning', sortOrder: null,
+    status: 'Spec available in .ai-reference. Waiting for Codex adapter to stabilize.',
+    history: [
+      { source: 'rosie', type: 'created', text: 'Project created', time: '2026-03-07T12:00:00Z' },
+    ],
+    summary: 'Add Gemini CLI as a new adapter, following the same contract as Claude and Codex.',
+    sessionCount: 0,
+    lastActivityAt: '2026-03-07T12:00:00Z',
+    createdAt: '2026-03-07T12:00:00Z',
+    entities: ['adapter', 'gemini'],
+    sessions: [],
+    files: [{ path: '.ai-reference/reference/gemini-json-spec.md' }]
+  },
+  {
+    id: 'p6',
+    icon: '🔌',
+    title: 'Claude adapter WebSocket reconnection',
+    stage: 'archived', sortOrder: null,
+    status: 'Shipped. Exponential backoff with jitter, tested under network throttling.',
+    history: [
+      { source: 'rosie', type: 'stage_change', text: 'Stage: active → archived', time: '2026-03-06T15:00:00Z' },
+      { source: 'rosie', type: 'status_update', text: 'Status → "Shipped. Exponential backoff with jitter."', time: '2026-03-06T15:00:00Z' },
+      { source: 'rosie', type: 'session_linked', text: 'Linked session: Final testing and merge', time: '2026-03-06T15:00:00Z' },
+      { source: 'rosie', type: 'session_linked', text: 'Linked session: Implement backoff logic', time: '2026-03-05T14:00:00Z' },
+      { source: 'rosie', type: 'created', text: 'Project created', time: '2026-03-04T09:00:00Z' },
+    ],
+    summary: 'Implement reconnection logic for WebSocket drops in the Claude adapter.',
+    branch: 'fix/ws-reconnect',
+    sessionCount: 3,
+    lastActivityAt: '2026-03-06T15:00:00Z',
+    createdAt: '2026-03-04T09:00:00Z',
+    closedAt: '2026-03-06T15:00:00Z',
+    entities: ['claude-adapter', 'reliability'],
+    originSession: 'Diagnose WebSocket drops',
+    sessions: [
+      { title: 'Final testing and merge', preview: 'All reconnection scenarios pass under network throttling', modifiedAt: '2026-03-06T15:00:00Z' },
+      { title: 'Implement backoff logic', preview: 'Exponential backoff with jitter for reconnect intervals', modifiedAt: '2026-03-05T14:00:00Z' },
+      { title: 'Diagnose WebSocket drops', preview: 'Network throttle reveals missing reconnect handling', modifiedAt: '2026-03-04T09:00:00Z' }
+    ],
+    files: []
+  }
+];
+
+const state = {
+  filter: 'all', search: '', expanded: new Set(), collapsedGroups: new Set(['archived']),
+  historyOpen: new Set(),
+  historySort: {},    // projectId → 'newest' | 'oldest'
+  historyFilter: {},  // projectId → 'all' | 'status_update' | 'stage_change' | 'session_linked' | 'file_linked'
+  dragProjectId: null,
+  activityLog: [],
+  showLog: false
+};
+
+function relativeTime(dateStr) {
+  const diff = NOW - new Date(dateStr);
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d`;
+  return `${Math.floor(days / 7)}w`;
+}
+
+function timeClass(dateStr) {
+  const hrs = (NOW - new Date(dateStr)) / 3600000;
+  if (hrs < 4) return 'time-fresh';
+  if (hrs < 24) return 'time-warm';
+  if (hrs < 72) return 'time-stale';
+  return 'time-cold';
+}
+
+function durationStr(from, to) {
+  const hrs = (new Date(to) - new Date(from)) / 3600000;
+  if (hrs < 24) return `${Math.round(hrs)}h`;
+  return `${Math.round(hrs / 24)}d`;
+}
+
+function escHtml(s) {
+  return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : '';
+}
+
+function filterProjects() {
+  let list = projects;
+  if (state.filter !== 'all') list = list.filter(p => p.stage === state.filter);
+  if (state.search) {
+    const q = state.search.toLowerCase();
+    list = list.filter(p =>
+      p.title.toLowerCase().includes(q) ||
+      (p.status && p.status.toLowerCase().includes(q)) ||
+      (p.summary && p.summary.toLowerCase().includes(q)) ||
+      (p.entities && p.entities.some(e => e.toLowerCase().includes(q))) ||
+      (p.branch && p.branch.toLowerCase().includes(q))
+    );
+  }
+  return list;
+}
+
+// Sort: manual sortOrder first, then recency fallback
+function sortGroupItems(items) {
+  return [...items].sort((a, b) => {
+    const aHas = a.sortOrder !== null && a.sortOrder !== undefined;
+    const bHas = b.sortOrder !== null && b.sortOrder !== undefined;
+    if (aHas && bHas) return a.sortOrder - b.sortOrder;
+    if (aHas && !bHas) return -1;
+    if (!aHas && bHas) return 1;
+    // Both null: sort by recency (newest first)
+    return new Date(b.lastActivityAt) - new Date(a.lastActivityAt);
+  });
+}
+
+// Reassign sortOrder for all projects in a stage after a reorder
+function reindexStage(stage) {
+  const inStage = projects.filter(p => p.stage === stage);
+  const sorted = sortGroupItems(inStage);
+  sorted.forEach((p, i) => { p.sortOrder = i; });
+}
+
+const stageConfig = [
+  { key: 'active', label: 'Active', color: 'var(--stage-active)' },
+  { key: 'paused', label: 'Paused', color: 'var(--stage-paused)' },
+  { key: 'ready', label: 'Ready', color: 'var(--stage-ready)' },
+  { key: 'committed', label: 'Committed', color: 'var(--stage-committed)' },
+  { key: 'planning', label: 'Planning', color: 'var(--stage-planning)' },
+  { key: 'archived', label: 'Archived', color: 'var(--stage-archived)' }
+];
+
+function render() {
+  const filtered = filterProjects();
+  let html = '';
+
+  for (const g of stageConfig) {
+    const items = sortGroupItems(filtered.filter(p => p.stage === g.key));
+    if (items.length === 0 && state.filter === 'all') continue;
+    if (state.filter !== 'all' && state.filter !== g.key) continue;
+
+    const collapsed = state.collapsedGroups.has(g.key);
+    html += `<div class="group-header${collapsed ? ' collapsed' : ''}" data-group="${g.key}">
+      <span class="group-chevron">▼</span>
+      <span class="group-dot" style="background:${g.color}"></span>
+      <span class="group-label">${g.label}</span>
+      <span class="group-count">${items.length}</span>
+    </div>`;
+
+    html += `<div class="group-items drop-zone" data-stage="${g.key}">`;
+    html += `<div class="drop-indicator"></div>`;
+    items.forEach((p, idx) => {
+      const expanded = state.expanded.has(p.id);
+      const isArchived = p.stage === 'archived';
+
+      // Meta tags
+      let tags = (p.entities || []).map(e => `<span class="meta-tag">${escHtml(e)}</span>`).join('');
+      if (p.blockedBy) tags += `<span class="meta-blocker-tag">blocked</span>`;
+
+      html += `<div class="project-row${expanded ? ' expanded' : ''}${isArchived ? ' archived-row' : ''}" data-id="${p.id}">
+        <div class="icon-col">${p.icon || '📁'}</div>
+        <div class="project-content">
+          <div class="project-title">${escHtml(p.title)}</div>
+          <div class="project-status-line">${escHtml(p.status)}</div>
+          <div class="project-meta">
+            ${p.branch ? `<span class="meta-branch">${escHtml(p.branch)}</span>` : ''}
+            <span class="meta-item">${p.sessionCount} session${p.sessionCount !== 1 ? 's' : ''}</span>
+            ${p.files.length ? `<span class="meta-item">${p.files.length} file${p.files.length !== 1 ? 's' : ''}</span>` : ''}
+            ${tags}
+          </div>
+          <div class="project-detail">
+            ${renderDetail(p)}
+          </div>
+        </div>
+        <div class="project-time ${timeClass(p.lastActivityAt)}">${relativeTime(p.lastActivityAt)}</div>
+      </div>`;
+      html += `<div class="drop-indicator"></div>`;
+    });
+    html += '</div>';
+  }
+
+  document.getElementById('projectList').innerHTML = html;
+  updatePrompt();
+  bindEvents();
+}
+
+function renderDetail(p) {
+  let html = '';
+
+  html += `<div class="detail-description-label">Description</div>`;
+  html += `<div class="detail-description">${escHtml(p.summary)}</div>`;
+
+  if (p.blockedBy) {
+    html += `<div class="detail-blocker">Blocked by: ${escHtml(p.blockedBy)}</div>`;
+  }
+
+  if (p.sessions.length) {
+    html += `<div class="detail-section-label">Sessions</div><ul class="detail-sessions">`;
+    p.sessions.forEach(s => {
+      html += `<li>
+        <span class="s-time">${relativeTime(s.modifiedAt)}</span>
+        <div class="s-content">
+          <div class="s-title">${escHtml(s.title)}</div>
+          ${s.preview ? `<div class="s-preview">${escHtml(s.preview)}</div>` : ''}
+        </div>
+      </li>`;
+    });
+    html += '</ul>';
+  }
+
+  if (p.files.length) {
+    html += `<div class="detail-section-label">Files</div><ul class="detail-files">`;
+    p.files.forEach(f => {
+      html += `<li>
+        <span>${escHtml(f.path)}</span>
+        ${f.note ? `<span class="f-note">— ${escHtml(f.note)}</span>` : ''}
+      </li>`;
+    });
+    html += '</ul>';
+  }
+
+  if (p.originSession) {
+    html += `<div class="detail-origin">Created from: <span class="origin-link">${escHtml(p.originSession)}</span></div>`;
+  }
+
+  if (p.closedAt) {
+    html += `<div class="detail-origin">Completed ${relativeTime(p.closedAt)} ago — took ${durationStr(p.createdAt, p.closedAt)}</div>`;
+  }
+
+  // History timeline
+  const history = p.history || [];
+  if (history.length > 0) {
+    const histOpen = state.historyOpen?.has(p.id);
+    const sortDir = state.historySort[p.id] || 'newest';
+    const filterType = state.historyFilter[p.id] || 'all';
+
+    // Filter
+    let filtered = filterType === 'all' ? history : history.filter(h => h.type === filterType);
+
+    // Sort
+    filtered = [...filtered].sort((a, b) => {
+      const diff = new Date(b.time) - new Date(a.time);
+      return sortDir === 'newest' ? diff : -diff;
+    });
+
+    const filterTypes = [
+      { key: 'all', label: 'All' },
+      { key: 'status_update', label: 'Status' },
+      { key: 'stage_change', label: 'Stage' },
+      { key: 'session_linked', label: 'Sessions' },
+      { key: 'file_linked', label: 'Files' },
+    ];
+    // Only show filter buttons for types that exist in this project's history
+    const existingTypes = new Set(history.map(h => h.type));
+    const relevantFilters = filterTypes.filter(f => f.key === 'all' || existingTypes.has(f.key));
+
+    html += `<div class="history-toggle${histOpen ? ' open' : ''}" data-history-toggle="${p.id}">
+      <span class="chevron">▶</span> History (${history.length})
+    </div>`;
+    html += `<div class="project-timeline${histOpen ? ' open' : ''}" data-history="${p.id}">`;
+
+    // Controls
+    html += `<div class="history-controls">`;
+    relevantFilters.forEach(f => {
+      html += `<button class="history-filter-btn${filterType === f.key ? ' active' : ''}"
+        data-hfilter="${p.id}" data-hfilter-type="${f.key}"
+        onclick="event.stopPropagation()">${f.label}</button>`;
+    });
+    html += `<button class="history-sort-btn" data-hsort="${p.id}" onclick="event.stopPropagation()">
+      ${sortDir === 'newest' ? '↓ Newest' : '↑ Oldest'}
+    </button>`;
+    html += `</div>`;
+
+    filtered.forEach(h => {
+      html += `<div class="timeline-entry">
+        <span class="timeline-dot ${h.source}"></span>
+        <span class="timeline-source ${h.source}">${h.source}</span>
+        <span class="timeline-text">${escHtml(h.text)}</span>
+        <span class="timeline-time">${relativeTime(h.time)}</span>
+      </div>`;
+    });
+
+    if (filtered.length === 0) {
+      html += `<div style="padding:6px 0;font-size:11px;color:var(--text-muted)">No ${filterType.replace('_', ' ')} entries</div>`;
+    }
+
+    html += '</div>';
+  }
+
+  // Chat input
+  html += `<div class="project-chat">
+    <input type="text" class="project-chat-input" data-chat-input="${p.id}"
+      placeholder="Update this project... e.g. &quot;change status to testing on macOS&quot;"
+      onclick="event.stopPropagation()">
+    <button class="project-chat-send" data-chat-send="${p.id}" onclick="event.stopPropagation()">Send</button>
+  </div>`;
+  html += `<div class="chat-response" data-chat-response="${p.id}"></div>`;
+
+  return html;
+}
+
+function updatePrompt() {
+  const parts = [
+    `Projects View data model:`,
+    `• stage (enum, user-owned): active | paused | ready | committed | planning | archived — controls grouping, user can drag between groups`,
+    `• status (freeform text, Rosie-written): plain-text line updated each session via track_project — shown as subtitle under title`,
+    `• summary (stable description): what the project IS — set on create, rarely changed — shown in expanded detail`,
+    ``,
+    `Two MCP tools replace upsert_project:`,
+    `• create_project(title, summary, stage, status, branch?, entities?, files?) — new project, all validated`,
+    `• track_project(project_id, status?, stage?, entities?) — link session + optional updates, only changed fields`,
+    ``,
+    `• sort_order (INTEGER, user-owned): null = sort by recency. Set when user drags to reorder within a group.`,
+    `• icon (TEXT, Rosie-chosen): emoji representing the project, set on create`,
+    ``,
+    `UI: icon | title + status line + meta row | relative time`,
+    `Grouped by stage. Archived collapsed by default. Filter pills + search.`,
+    `Drag between groups = stage change (writes project_activity with source:user).`,
+    `Drag within group = reorder (updates sort_order for all items in that stage).`
+  ];
+  document.getElementById('promptOutput').textContent = parts.join('\n');
+}
+
+// ── Activity log ──
+
+function recordStageChange(projectId, fromStage, toStage, source) {
+  const p = projects.find(x => x.id === projectId);
+  if (!p) return;
+  const entry = {
+    source,
+    projectTitle: p.title,
+    projectIcon: p.icon || '📁',
+    fromStage,
+    toStage,
+    time: new Date().toISOString()
+  };
+  state.activityLog.unshift(entry);
+  showToast(entry);
+  renderActivityLog();
+}
+
+function showToast(entry) {
+  const toast = document.getElementById('activityToast');
+  const stageLabels = Object.fromEntries(stageConfig.map(s => [s.key, s.label]));
+  toast.querySelector('.toast-source').textContent = entry.source === 'user' ? 'USER' : 'ROSIE';
+  toast.querySelector('.toast-text').innerHTML =
+    `${entry.projectIcon} ${escHtml(entry.projectTitle)}: ${stageLabels[entry.fromStage]}<span class="toast-arrow">→</span>${stageLabels[entry.toStage]}`;
+  toast.classList.add('visible');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => toast.classList.remove('visible'), 3000);
+}
+
+function renderActivityLog() {
+  const badge = document.getElementById('activityBadge');
+  badge.textContent = state.activityLog.length;
+
+  const body = document.getElementById('activityLogBody');
+  const stageLabels = Object.fromEntries(stageConfig.map(s => [s.key, s.label]));
+
+  body.innerHTML = state.activityLog.length === 0
+    ? '<div style="padding:12px;color:var(--text-muted);font-size:11px">No stage changes yet. Drag a project to another group.</div>'
+    : state.activityLog.map(e => `
+      <div class="activity-entry">
+        <span class="a-source ${e.source}">${e.source}</span>
+        <span class="a-text">${e.projectIcon} ${escHtml(e.projectTitle)}: ${stageLabels[e.fromStage]}<span class="a-arrow">→</span>${stageLabels[e.toStage]}</span>
+      </div>
+    `).join('');
+}
+
+// ── Drag and drop ──
+
+let dropIndicatorEl = null;
+
+function onDragStart(e) {
+  const row = e.target.closest('.project-row');
+  if (!row) return;
+  state.dragProjectId = row.dataset.id;
+  row.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', row.dataset.id);
+}
+
+function onDragEnd(e) {
+  state.dragProjectId = null;
+  document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+  document.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target'));
+  document.querySelectorAll('.drop-active').forEach(el => el.classList.remove('drop-active'));
+  clearDropIndicator();
+}
+
+function clearDropIndicator() {
+  document.querySelectorAll('.drop-indicator.visible').forEach(el => el.classList.remove('visible'));
+}
+
+function onDragOverGroup(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+
+  // Show drop indicator between rows
+  const groupItems = e.target.closest('.group-items');
+  if (!groupItems) { clearDropIndicator(); return; }
+
+  const rows = [...groupItems.querySelectorAll('.project-row')];
+  if (rows.length === 0) return;
+
+  clearDropIndicator();
+
+  // Find closest row boundary
+  let closestRow = null;
+  let insertBefore = true;
+  let minDist = Infinity;
+
+  for (const row of rows) {
+    if (row.dataset.id === state.dragProjectId) continue;
+    const rect = row.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    const dist = Math.abs(e.clientY - midY);
+    if (dist < minDist) {
+      minDist = dist;
+      closestRow = row;
+      insertBefore = e.clientY < midY;
+    }
+  }
+
+  if (closestRow) {
+    // Find or create indicator
+    const indicatorId = insertBefore ? `ind-before-${closestRow.dataset.id}` : `ind-after-${closestRow.dataset.id}`;
+    let ind = document.getElementById(indicatorId);
+    if (!ind) {
+      // Use existing indicators placed in render
+      const allIndicators = groupItems.querySelectorAll('.drop-indicator');
+      const rowIndex = rows.indexOf(closestRow);
+      const targetIndex = insertBefore ? rowIndex : rowIndex + 1;
+      if (targetIndex < allIndicators.length) {
+        allIndicators[targetIndex].classList.add('visible');
+      }
+    }
+  }
+}
+
+function onDragEnterGroup(e) {
+  const header = e.target.closest('.group-header');
+  if (header) header.classList.add('drop-target');
+  const items = e.target.closest('.group-items');
+  if (items) items.classList.add('drop-active');
+}
+
+function onDragLeaveGroup(e) {
+  const header = e.target.closest('.group-header');
+  if (header && !header.contains(e.relatedTarget)) header.classList.remove('drop-target');
+  const items = e.target.closest('.group-items');
+  if (items && !items.contains(e.relatedTarget)) {
+    items.classList.remove('drop-active');
+    clearDropIndicator();
+  }
+}
+
+function onDropOnGroup(e) {
+  e.preventDefault();
+  clearDropIndicator();
+
+  const targetStage = e.target.closest('.group-header')?.dataset.group
+    || e.target.closest('.group-items')?.dataset.stage;
+  if (!targetStage || !state.dragProjectId) return;
+
+  const p = projects.find(x => x.id === state.dragProjectId);
+  if (!p) return;
+
+  const fromStage = p.stage;
+  const stageChanged = p.stage !== targetStage;
+
+  // Determine drop position within the group
+  const groupItems = e.target.closest('.group-items') ||
+    document.querySelector(`.group-items[data-stage="${targetStage}"]`);
+
+  let dropIndex = -1;
+  if (groupItems) {
+    const rows = [...groupItems.querySelectorAll('.project-row')];
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].dataset.id === state.dragProjectId) continue;
+      const rect = rows[i].getBoundingClientRect();
+      if (e.clientY < rect.top + rect.height / 2) {
+        dropIndex = i;
+        break;
+      }
+    }
+  }
+
+  // Move to new stage if needed
+  if (stageChanged) {
+    p.stage = targetStage;
+    recordStageChange(p.id, fromStage, targetStage, 'user');
+  }
+
+  // Reindex the target stage with the project in its new position
+  const stageProjects = sortGroupItems(projects.filter(x => x.stage === targetStage && x.id !== p.id));
+  if (dropIndex >= 0 && dropIndex <= stageProjects.length) {
+    stageProjects.splice(dropIndex, 0, p);
+  } else {
+    stageProjects.push(p);
+  }
+  stageProjects.forEach((proj, i) => { proj.sortOrder = i; });
+
+  // If we moved between stages, also reindex the old stage
+  if (stageChanged) {
+    reindexStage(fromStage);
+  }
+
+  render();
+}
+
+// ── Event binding ──
+
+function bindEvents() {
+  // Click to expand
+  document.querySelectorAll('.project-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      // Don't expand if we just finished a drag
+      if (e.detail === 0) return;
+      const id = row.dataset.id;
+      if (state.expanded.has(id)) state.expanded.delete(id);
+      else state.expanded.add(id);
+      render();
+    });
+
+    // Drag events on rows
+    row.setAttribute('draggable', 'true');
+    row.addEventListener('dragstart', onDragStart);
+    row.addEventListener('dragend', onDragEnd);
+  });
+
+  // Group headers and items as drop targets
+  document.querySelectorAll('.group-header').forEach(hdr => {
+    hdr.addEventListener('click', () => {
+      if (state.dragProjectId) return; // don't toggle during drag
+      const g = hdr.dataset.group;
+      if (state.collapsedGroups.has(g)) state.collapsedGroups.delete(g);
+      else state.collapsedGroups.add(g);
+      render();
+    });
+    hdr.addEventListener('dragover', onDragOverGroup);
+    hdr.addEventListener('dragenter', onDragEnterGroup);
+    hdr.addEventListener('dragleave', onDragLeaveGroup);
+    hdr.addEventListener('drop', onDropOnGroup);
+  });
+
+  document.querySelectorAll('.group-items').forEach(gi => {
+    gi.addEventListener('dragover', onDragOverGroup);
+    gi.addEventListener('dragenter', onDragEnterGroup);
+    gi.addEventListener('dragleave', onDragLeaveGroup);
+    gi.addEventListener('drop', onDropOnGroup);
+  });
+
+  // History toggles
+  document.querySelectorAll('[data-history-toggle]').forEach(toggle => {
+    toggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = toggle.dataset.historyToggle;
+      if (state.historyOpen.has(id)) state.historyOpen.delete(id);
+      else state.historyOpen.add(id);
+      render();
+    });
+  });
+
+  // History filter buttons
+  document.querySelectorAll('[data-hfilter]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.hfilter;
+      state.historyFilter[id] = btn.dataset.hfilterType;
+      render();
+    });
+  });
+
+  // History sort toggle
+  document.querySelectorAll('[data-hsort]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.hsort;
+      state.historySort[id] = (state.historySort[id] || 'newest') === 'newest' ? 'oldest' : 'newest';
+      render();
+    });
+  });
+
+  // Chat inputs
+  document.querySelectorAll('[data-chat-send]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.chatSend;
+      handleChatSend(id);
+    });
+  });
+
+  document.querySelectorAll('[data-chat-input]').forEach(input => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.stopPropagation();
+        handleChatSend(input.dataset.chatInput);
+      }
+    });
+    // Prevent row click when clicking/typing in input
+    input.addEventListener('click', (e) => e.stopPropagation());
+  });
+}
+
+// ── Chat simulation ──
+
+function handleChatSend(projectId) {
+  const input = document.querySelector(`[data-chat-input="${projectId}"]`);
+  const response = document.querySelector(`[data-chat-response="${projectId}"]`);
+  if (!input || !input.value.trim()) return;
+
+  const text = input.value.trim();
+  const p = projects.find(x => x.id === projectId);
+  if (!p) return;
+
+  // Simulate Rosie interpreting the command
+  const result = simulateRosieCommand(p, text);
+
+  // Add to project history
+  if (!p.history) p.history = [];
+  p.history.unshift({
+    source: 'user',
+    type: result.type,
+    text: result.historyText,
+    time: new Date().toISOString()
+  });
+
+  // Show response
+  response.textContent = result.response;
+  response.classList.add('visible');
+  setTimeout(() => response.classList.remove('visible'), 3000);
+
+  input.value = '';
+  render();
+}
+
+function simulateRosieCommand(p, text) {
+  const lower = text.toLowerCase();
+
+  // Status update
+  if (lower.startsWith('status') || lower.startsWith('change status') || lower.startsWith('set status') || lower.startsWith('update status')) {
+    const newStatus = text.replace(/^(change |set |update )?status( to)?:?\s*/i, '');
+    p.status = newStatus;
+    return {
+      type: 'status_update',
+      historyText: `Status → "${newStatus}"`,
+      response: `✓ Status updated`
+    };
+  }
+
+  // Stage change
+  const stageMatch = lower.match(/(?:move to|stage|set stage to?)\s+(active|paused|planning|ready|committed|archived)/);
+  if (stageMatch) {
+    const fromStage = p.stage;
+    const toStage = stageMatch[1];
+    p.stage = toStage;
+    recordStageChange(p.id, fromStage, toStage, 'user');
+    return {
+      type: 'stage_change',
+      historyText: `Stage: ${fromStage} → ${toStage}`,
+      response: `✓ Moved to ${toStage}`
+    };
+  }
+
+  // Add entity
+  const entityMatch = text.match(/add (?:entity|tag):?\s+(.+)/i);
+  if (entityMatch) {
+    const entity = entityMatch[1].trim();
+    if (!p.entities) p.entities = [];
+    if (!p.entities.includes(entity)) p.entities.push(entity);
+    return {
+      type: 'entity_added',
+      historyText: `Added entity: ${entity}`,
+      response: `✓ Added entity: ${entity}`
+    };
+  }
+
+  // Fallback: treat as status update
+  p.status = text;
+  return {
+    type: 'status_update',
+    historyText: `Status → "${text}"`,
+    response: `✓ Status updated`
+  };
+}
+
+document.querySelectorAll('.filter-pill').forEach(pill => {
+  pill.addEventListener('click', () => {
+    document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+    state.filter = pill.dataset.filter;
+    render();
+  });
+});
+
+document.getElementById('searchInput').addEventListener('input', function() {
+  state.search = this.value;
+  render();
+});
+
+document.getElementById('copyBtn').addEventListener('click', function() {
+  navigator.clipboard.writeText(document.getElementById('promptOutput').textContent);
+  this.textContent = 'Copied!';
+  setTimeout(() => this.textContent = 'Copy Prompt', 1500);
+});
+
+document.getElementById('activityToggle').addEventListener('click', () => {
+  state.showLog = !state.showLog;
+  document.getElementById('activityLog').classList.toggle('visible', state.showLog);
+});
+
+document.getElementById('activityLogClose').addEventListener('click', () => {
+  state.showLog = false;
+  document.getElementById('activityLog').classList.remove('visible');
+});
+
+renderActivityLog();
+render();
+</script>
+</body>
+</html>

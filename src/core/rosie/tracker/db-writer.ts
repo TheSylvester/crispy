@@ -18,7 +18,7 @@ import { pushRosieLog } from '../debug-log.js';
 import { parseModelOption } from '../../model-utils.js';
 import { getSettingsSnapshotInternal } from '../../settings/index.js';
 import type { AgentDispatch } from '../../../host/agent-dispatch.js';
-import type { TrackerBlock } from './types.js';
+import type { TrackerBlock, ProjectStage } from './types.js';
 
 // ============================================================================
 // Helpers
@@ -56,18 +56,23 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
 
   const db = getTrackerDb();
   const now = new Date().toISOString();
+  const tsNow = Date.now();
 
   db.exec('BEGIN');
   try {
     const insertProject = db.prepare(
-      `INSERT INTO projects (id, title, status, blocked_by, summary, branch, entities, created_at, updated_at, last_activity_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO projects (id, title, stage, status, icon, blocked_by, summary, branch, entities, created_at, updated_at, last_activity_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const readProject = db.prepare(
+      `SELECT stage, status, entities FROM projects WHERE id = ?`,
     );
     const updateProject = db.prepare(
       `UPDATE projects SET
-         title = ?, status = ?, blocked_by = ?, summary = ?,
-         branch = ?, entities = ?, updated_at = ?, last_activity_at = ?,
-         closed_at = CASE WHEN ? IN ('done', 'abandoned') THEN ? ELSE closed_at END
+         title = COALESCE(?, title), stage = ?, status = ?, icon = COALESCE(?, icon),
+         blocked_by = ?, summary = COALESCE(?, summary),
+         branch = COALESCE(?, branch), entities = ?, updated_at = ?, last_activity_at = ?,
+         closed_at = CASE WHEN ? IN ('archived') THEN ? ELSE closed_at END
        WHERE id = ?`,
     );
     const upsertSession = db.prepare(
@@ -78,46 +83,89 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
       `INSERT OR REPLACE INTO project_files (project_id, file_path, session_file, note, added_at)
        VALUES (?, ?, ?, ?, ?)`,
     );
+    const insertActivity = db.prepare(
+      `INSERT INTO project_activity (project_id, session_file, ts, kind, old_stage, new_stage, old_status, new_status, narrative, actor)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
 
     try {
       for (const block of blocks) {
         const p = block.project;
         let projectId: string;
 
-        if (!p.id) {
+        if (p.action === 'create') {
           // New project
           projectId = randomUUID();
           insertProject.run([
-            projectId, p.title, p.status, p.blocked_by || null, p.summary || null,
+            projectId, p.title, p.stage, p.status || null, p.icon || null,
+            p.blocked_by || null, p.summary || null,
             p.branch || null, p.entities || '[]',
             now, now, now,
           ]);
+          // Record 'created' activity
+          insertActivity.run([projectId, sessionFile, tsNow, 'created', null, p.stage, null, p.status || null, null, 'rosie']);
         } else {
-          // Update existing project
+          // Track existing project — read current state, merge
           projectId = p.id;
+          const existing = readProject.get([projectId]) as Record<string, unknown> | undefined;
+          if (!existing) {
+            pushRosieLog({ source: 'db', level: 'warn', summary: `Tracker DB: track skipped — project ${projectId} not found` });
+            continue;
+          }
+          const oldStage = (existing.stage as string) ?? 'active';
+          const oldStatus = (existing?.status as string) ?? null;
+          const oldEntities = (existing?.entities as string) ?? '[]';
+
+          // Merge entities additively
+          let mergedEntities = oldEntities;
+          if (p.entities) {
+            try {
+              const existingArr: string[] = JSON.parse(oldEntities);
+              const newArr: string[] = JSON.parse(p.entities);
+              mergedEntities = JSON.stringify([...new Set([...existingArr, ...newArr])]);
+            } catch {
+              mergedEntities = p.entities;
+            }
+          }
+
+          const newStage = p.stage ?? oldStage;
+          const newStatus = p.status ?? oldStatus;
+
           updateProject.run([
-            p.title, p.status, p.blocked_by || null, p.summary || null,
-            p.branch || null, p.entities || '[]', now, now,
-            p.status, now, // for the CASE WHEN closed_at
+            null, // title — keep existing for track (no title field)
+            newStage, newStatus, null, // icon — keep existing for track
+            p.blocked_by ?? null, null, // summary — keep existing
+            p.branch ?? null, mergedEntities, now, now,
+            newStage, now, // for the CASE WHEN closed_at
             projectId,
           ]);
+
+          // Record stage/status change activities
+          if (p.stage && p.stage !== oldStage) {
+            insertActivity.run([projectId, sessionFile, tsNow, 'stage_change', oldStage, newStage, null, null, null, 'rosie']);
+          }
+          if (p.status && p.status !== oldStatus) {
+            insertActivity.run([projectId, sessionFile, tsNow, 'status_update', null, null, oldStatus, newStatus, null, 'rosie']);
+          }
         }
 
-        // Link session
+        // Link session (INSERT OR IGNORE handles duplicates)
         upsertSession.run([
           projectId, sessionFile, block.sessionRef.detected_in || null, now,
         ]);
 
-        // Link files
+        // Link files (INSERT OR REPLACE handles duplicates)
         for (const f of block.files) {
           upsertFile.run([projectId, f.path, sessionFile, f.note || null, now]);
         }
       }
     } finally {
       insertProject.finalize();
+      readProject.finalize();
       updateProject.finalize();
       upsertSession.finalize();
       upsertFile.finalize();
+      insertActivity.finalize();
     }
 
     db.exec('COMMIT');
@@ -127,6 +175,120 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
     pushRosieLog({ source: 'db', level: 'error', summary: `Tracker DB: rollback — ${e instanceof Error ? e.message : String(e)}`, data: { error: String(e) } });
     throw e;
   }
+}
+
+// ============================================================================
+// Activity & Stage Management
+// ============================================================================
+
+/** Record a single activity entry for a project. */
+export function recordProjectActivity(entry: {
+  projectId: string;
+  sessionFile?: string;
+  kind: string;
+  oldStage?: string;
+  newStage?: string;
+  oldStatus?: string;
+  newStatus?: string;
+  narrative?: string;
+  actor?: string;
+}): void {
+  const db = getTrackerDb();
+  db.run(
+    `INSERT INTO project_activity (project_id, session_file, ts, kind, old_stage, new_stage, old_status, new_status, narrative, actor)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [entry.projectId, entry.sessionFile ?? null, Date.now(), entry.kind,
+     entry.oldStage ?? null, entry.newStage ?? null, entry.oldStatus ?? null, entry.newStatus ?? null,
+     entry.narrative ?? null, entry.actor ?? 'rosie'],
+  );
+}
+
+/** Look up a single project's title by ID. Returns undefined if not found. */
+export function getProjectTitle(projectId: string): string | undefined {
+  try {
+    const db = getTrackerDb();
+    const row = db.get(`SELECT title FROM projects WHERE id = ?`, [projectId]) as Record<string, unknown> | undefined;
+    return row?.title as string | undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Update a project's stage (user-initiated drag-and-drop). Records activity. */
+export function updateProjectStage(projectId: string, newStage: ProjectStage, actor = 'user'): void {
+  const db = getTrackerDb();
+  const row = db.get(`SELECT stage FROM projects WHERE id = ?`, [projectId]) as Record<string, unknown> | undefined;
+  if (!row) return;
+  const oldStage = row.stage as string;
+  if (oldStage === newStage) return;
+
+  const now = new Date().toISOString();
+  db.run(
+    `UPDATE projects SET stage = ?, sort_order = NULL, updated_at = ?, last_activity_at = ?,
+       closed_at = CASE WHEN ? = 'archived' THEN ? ELSE closed_at END
+     WHERE id = ?`,
+    [newStage, now, now, newStage, now, projectId],
+  );
+  recordProjectActivity({
+    projectId, kind: 'stage_change', oldStage, newStage: newStage, actor,
+  });
+}
+
+/** Update sort_order for a single project. */
+export function updateProjectSortOrder(projectId: string, sortOrder: number): void {
+  const db = getTrackerDb();
+  db.run(`UPDATE projects SET sort_order = ? WHERE id = ?`, [sortOrder, projectId]);
+}
+
+/** Bulk-set sort_order for all projects in a stage group. */
+export function reorderProjectsInStage(stage: string, orderedIds: string[]): void {
+  const db = getTrackerDb();
+  db.exec('BEGIN');
+  try {
+    const stmt = db.prepare(`UPDATE projects SET sort_order = ? WHERE id = ? AND stage = ?`);
+    try {
+      for (let i = 0; i < orderedIds.length; i++) {
+        stmt.run([i, orderedIds[i]!, stage]);
+      }
+    } finally {
+      stmt.finalize();
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
+
+/** Get activity history for a project, optionally filtered by kind. */
+export function getProjectActivity(
+  projectId: string,
+  opts?: { kind?: string },
+): Array<{
+  id: number; projectId: string; sessionFile: string | null; ts: number;
+  kind: string; oldStage: string | null; newStage: string | null;
+  oldStatus: string | null; newStatus: string | null;
+  narrative: string | null; actor: string;
+}> {
+  const db = getTrackerDb();
+  const sql = opts?.kind
+    ? `SELECT * FROM project_activity WHERE project_id = ? AND kind = ? ORDER BY ts DESC LIMIT 200`
+    : `SELECT * FROM project_activity WHERE project_id = ? ORDER BY ts DESC LIMIT 200`;
+  const params = opts?.kind ? [projectId, opts.kind] : [projectId];
+  const rows = db.all(sql, params) as Array<Record<string, unknown>>;
+  return rows.map((r) => ({
+    id: r.id as number,
+    projectId: r.project_id as string,
+    sessionFile: (r.session_file as string) ?? null,
+    ts: r.ts as number,
+    kind: r.kind as string,
+    oldStage: (r.old_stage as string) ?? null,
+    newStage: (r.new_stage as string) ?? null,
+    oldStatus: (r.old_status as string) ?? null,
+    newStatus: (r.new_status as string) ?? null,
+    narrative: (r.narrative as string) ?? null,
+    actor: r.actor as string,
+  }));
 }
 
 /**
@@ -156,18 +318,20 @@ export function recordTrackerOutcome(
 /**
  * Get all non-abandoned projects for prompt context and validation.
  */
-export function getExistingProjects(): { id: string; title: string; status: string; entities: string }[] {
+export function getExistingProjects(): { id: string; title: string; stage: string; status: string | null; icon: string | null; entities: string }[] {
   try {
     const db = getTrackerDb();
     const rows = db.all(
-      `SELECT id, title, status, entities FROM projects WHERE status != 'abandoned' ORDER BY updated_at DESC`,
+      `SELECT id, title, stage, status, icon, entities FROM projects WHERE stage != 'archived' ORDER BY updated_at DESC`,
     );
     return rows.map((r) => {
       const row = r as Record<string, unknown>;
       return {
         id: row.id as string,
         title: row.title as string,
-        status: row.status as string,
+        stage: row.stage as string,
+        status: (row.status as string) ?? null,
+        icon: (row.icon as string) ?? null,
         entities: (row.entities as string) ?? '[]',
       };
     });
@@ -186,11 +350,16 @@ export function getExistingProjects(): { id: string; title: string; status: stri
 export function getProjectsWithDetails(): Array<{
   id: string;
   title: string;
-  status: string;
+  stage: string;
+  status: string | null;
+  icon: string | null;
+  sortOrder: number | null;
   blockedBy: string | null;
   summary: string | null;
   branch: string | null;
   entities: string;
+  createdAt: string;
+  closedAt: string | null;
   lastActivityAt: string | null;
   sessionFiles: string[];
   files: Array<{ path: string; note: string | null }>;
@@ -199,12 +368,12 @@ export function getProjectsWithDetails(): Array<{
     const db = getTrackerDb();
 
     const projects = db.all(
-      `SELECT id, title, status, blocked_by, summary, branch, entities, last_activity_at
-       FROM projects WHERE status != 'abandoned' ORDER BY last_activity_at DESC`,
+      `SELECT id, title, stage, status, icon, sort_order, blocked_by, summary, branch, entities, created_at, closed_at, last_activity_at
+       FROM projects ORDER BY last_activity_at DESC`,
     );
 
     const sessionStmt = db.prepare(
-      `SELECT session_file FROM project_sessions WHERE project_id = ?`,
+      `SELECT session_file FROM project_sessions WHERE project_id = ? ORDER BY linked_at ASC`,
     );
     const fileStmt = db.prepare(
       `SELECT file_path, note FROM project_files WHERE project_id = ?`,
@@ -221,11 +390,16 @@ export function getProjectsWithDetails(): Array<{
         return {
           id,
           title: row.title as string,
-          status: row.status as string,
+          stage: row.stage as string,
+          status: (row.status as string) ?? null,
+          icon: (row.icon as string) ?? null,
+          sortOrder: (row.sort_order as number) ?? null,
           blockedBy: (row.blocked_by as string) ?? null,
           summary: (row.summary as string) ?? null,
           branch: (row.branch as string) ?? null,
           entities: (row.entities as string) ?? '[]',
+          createdAt: row.created_at as string,
+          closedAt: (row.closed_at as string) ?? null,
           lastActivityAt: (row.last_activity_at as string) ?? null,
           sessionFiles: sessionRows.map((s) => s.session_file as string),
           files: fileRows.map((f) => ({
@@ -251,7 +425,7 @@ export function getProjectsWithDetails(): Array<{
 interface ProjectRow {
   id: string;
   title: string;
-  status: string;
+  stage: string;
   summary: string | null;
   entities: string;
   created_at: string;
@@ -447,23 +621,31 @@ export function mergeProjects(
       `INSERT OR IGNORE INTO project_files (project_id, file_path, session_file, note, added_at)
        SELECT ?, file_path, session_file, note, added_at FROM project_files WHERE project_id = ?`,
     );
+    const migrateActivity = db.prepare(
+      `UPDATE project_activity SET project_id = ? WHERE project_id = ?`,
+    );
     const deleteSessions = db.prepare(`DELETE FROM project_sessions WHERE project_id = ?`);
     const deleteFiles = db.prepare(`DELETE FROM project_files WHERE project_id = ?`);
+    const deleteActivity = db.prepare(`DELETE FROM project_activity WHERE project_id = ?`);
     const deleteProject = db.prepare(`DELETE FROM projects WHERE id = ?`);
 
     try {
       updateSurvivor.run([title, summary, JSON.stringify(unionedEntities), earlierCreated, new Date().toISOString(), keepId]);
       migrateSessions.run([keepId, removeId]);
       migrateFiles.run([keepId, removeId]);
+      migrateActivity.run([keepId, removeId]);
       deleteSessions.run([removeId]);
       deleteFiles.run([removeId]);
+      deleteActivity.run([removeId]);  // cleanup any remaining (shouldn't be any after migrate)
       deleteProject.run([removeId]);
     } finally {
       updateSurvivor.finalize();
       migrateSessions.finalize();
       migrateFiles.finalize();
+      migrateActivity.finalize();
       deleteSessions.finalize();
       deleteFiles.finalize();
+      deleteActivity.finalize();
       deleteProject.finalize();
     }
 
@@ -506,18 +688,18 @@ export async function runDedupSweep(
   dedupInFlight = true;
 
   try {
-    // Load all non-abandoned projects with full data for comparison
+    // Load all non-archived projects with full data for comparison
     const db = getTrackerDb();
     const rows = db.all(
-      `SELECT id, title, status, summary, entities, created_at, updated_at
-       FROM projects WHERE status != 'abandoned' ORDER BY updated_at DESC`,
+      `SELECT id, title, stage, summary, entities, created_at, updated_at
+       FROM projects WHERE stage != 'archived' ORDER BY updated_at DESC`,
     );
     const projects: ProjectRow[] = rows.map((r) => {
       const row = r as Record<string, unknown>;
       return {
         id: row.id as string,
         title: row.title as string,
-        status: row.status as string,
+        stage: row.stage as string,
         summary: (row.summary as string) ?? null,
         entities: (row.entities as string) ?? '[]',
         created_at: row.created_at as string,

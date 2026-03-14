@@ -29,6 +29,7 @@ import { closeSession } from '../session-manager.js';
 import { pushRosieLog } from './debug-log.js';
 import { extractTag } from './xml-utils.js';
 import { getExistingProjects, recordTrackerOutcome, runDedupSweep } from './tracker/db-writer.js';
+import { pushTrackerNotification } from './tracker/tracker-notifications.js';
 import { buildInternalMcpConfig } from '../../mcp/servers/external.js';
 import type { TrackerDecision } from '../../mcp/servers/internal.js';
 import type { InternalServerPaths } from './tracker/types.js';
@@ -328,25 +329,44 @@ async function runSummarizeTurn(
 const TRACKER_SYSTEM_PROMPT = `You are a project tracker. You receive a session summary and a list of existing projects. \
 Your job is to identify EVERY distinct project this session touched and file each one.
 
-You have two tools:
-- **upsert_project** — Create or update a project. Call once PER DISTINCT PROJECT this session touches. Most sessions touch 1 project, but some touch 2-3.
+You have three tools:
+- **create_project** — Create a NEW project. Use when this session's work doesn't match any existing project.
+- **track_project** — Update an EXISTING project. Provide only fields that changed. Always auto-links the session.
 - **mark_trivial** — Mark the session as not warranting any project (quick recall, empty session, false start).
 
 ## Task
 
 Analyze the session summary. Identify each distinct workstream:
-- Does it match an existing project? → call upsert_project with that project's id
-- Is it new work? → call upsert_project without an id
+- Does it match an existing project? → call track_project with that project's id and only the fields that changed
+- Is it new work? → call create_project with all required fields
 - Is the entire session trivial? → call mark_trivial
 
-**Look for multiple projects.** Sessions often contain a primary quest plus secondary work — a sidequest, a tangential fix, a plan saved for a different feature, or a skill/tool created alongside the main work. If the session title contains "+", "&", or describes two unrelated topics, there are almost certainly multiple projects. Call upsert_project once for each.
+**Look for multiple projects.** Sessions often contain a primary quest plus secondary work — a sidequest, a tangential fix, a plan saved for a different feature, or a skill/tool created alongside the main work. If the session title contains "+", "&", or describes two unrelated topics, there are almost certainly multiple projects.
+
+## Stage Values
+
+- **active** — work in progress right now
+- **planning** — designing, speccing, not yet building
+- **ready** — spec'd and ready to start, waiting for bandwidth
+- **committed** — scheduled, will start soon
+- **paused** — on hold (use blocked_by to explain why)
+- **archived** — completed or abandoned
+
+## Field Guidance
+
+- **icon**: Pick a single emoji that represents the project domain (🔧 tooling, 📊 data, 🎨 UI, etc.)
+- **status**: What is true RIGHT NOW — 1-2 sentences of freeform narrative
+- **summary**: Stable description of what this project IS — set once on create, rarely changed
+- **stage**: The organizational phase. For track_project, only include if it actually changed
+- **entities**: Top 5-10. Include files, branches, key concepts. **Ignore stable infrastructure** — don't include foundational files that appear in many sessions unless the session specifically modified them.
+- **files**: Non-code artifacts only — plans, specs, design docs. Source code belongs in entities. Omit if none.
 
 ## Matching Rules (priority order)
 
 1. **Title similarity** — if the topic closely matches an existing project title, it's the same project
 2. **Entity overlap** — shared files, branches, or function names confirm a match when titles differ
-3. **Quest continuity** — if the topic continues an existing project's goal (e.g. one planned it, this one built it), same project
-4. **Status progression** — if the topic picks up where an existing project left off (planned → active, active → done), that reinforces a match
+3. **Quest continuity** — if the topic continues an existing project's goal, same project
+4. **Stage progression** — if the topic picks up where an existing project left off, that reinforces a match
 
 Only create a new project when no existing project is a reasonable match.
 
@@ -359,29 +379,21 @@ If this session and prior sessions form one arc (diagnosis → root cause → fi
 If the session's primary activity was looking up, recapping, or checking the status of prior work — it is **trivial**. The recalled content belongs to the original sessions, not this one.
 
 **Trivial signals** (any of these → strongly consider mark_trivial):
-- Quest mentions: "recall", "did we discuss", "status check", "refresh understanding", "recap", "what was", "check on", "review plans"
+- Quest mentions: "recall", "did we discuss", "status check", "refresh understanding", "recap"
 - Session is a brief conversation with no code changes or design decisions
 - Session rehashes or summarizes prior work without advancing it
-- Session is an audit, inventory check, or portfolio review with no new deliverables
 - Session asks about or retrieves information but produces no artifacts
 
-Only create a project if the session performed **NEW work** beyond retrieval — code written, design decisions made, plans created, or bugs fixed.
+Only create a project if the session performed **NEW work** beyond retrieval.
 
-## Rules
-
-- **title**: Keep stable across sessions. Don't rename unless scope fundamentally changed.
-- **summary**: Reflect the CURRENT state, not history. What's true right now?
-- **entities**: Top 5-10. Include files, branches, key concepts. These are used for future matching. **Ignore stable infrastructure** — don't include foundational files that appear in many sessions (e.g. transcript.ts, channel-events.ts, session-manager.ts, activity-index.ts, CLAUDE.md) unless the session specifically modified them. Focus on files and concepts unique to THIS work.
-- **files**: Non-code artifacts only — plans (.ai-reference/), specs, design docs, skill definitions. Source code belongs in entities, not files. Omit if none exist.
-
-**You MUST call your tools.** Do not emit JSON, markdown, or commentary. Call upsert_project or mark_trivial directly.`;
+**You MUST call your tools.** Do not emit JSON, markdown, or commentary. Call create_project, track_project, or mark_trivial directly.`;
 
 export function buildTrackerPrompt(
   meta: { quest?: string; title?: string; summary?: string; status?: string },
-  projects: { id: string; title: string; status: string; entities: string }[],
+  projects: { id: string; title: string; stage: string; status: string | null; icon: string | null; entities: string }[],
 ): string {
   const projectList = projects.length > 0
-    ? projects.map((p) => `[${p.id}] ${p.title} (${p.status}) — entities: ${p.entities}`).join('\n')
+    ? projects.map((p) => `[${p.id}] ${p.icon ?? ''} ${p.title} [${p.stage}] ${p.status ?? ''} — entities: ${p.entities}`).join('\n')
     : 'No existing projects yet.';
 
   const summaryLine = meta.summary ? `Summary: ${meta.summary}\n` : '';
@@ -481,15 +493,36 @@ function readDecisions(file: string): TrackerDecision[] {
   }
 }
 
-/** Push individual rosie log entries for each tracker decision. */
+/** Push individual rosie log entries and tracker notifications for each decision. */
 function logDecisions(decisions: TrackerDecision[], sessionId: string): void {
   for (const d of decisions) {
-    if (d.tool === 'upsert_project') {
+    if (d.tool === 'create_project') {
       pushRosieLog({
         source: 'rosie-bot:tracker',
         level: 'info',
-        summary: `Tracker: ${d.action} "${d.title}" → ${d.status}`,
+        summary: `Tracker: created "${d.title}" [${d.stage}] ${d.status ?? ''}`,
         data: { sessionId, ...d },
+      });
+      pushTrackerNotification({
+        kind: 'project_created',
+        projectTitle: d.title,
+        icon: d.icon,
+        newStage: d.stage,
+        status: d.status,
+      });
+    } else if (d.tool === 'track_project') {
+      pushRosieLog({
+        source: 'rosie-bot:tracker',
+        level: 'info',
+        summary: `Tracker: updated "${d.title}" ${d.stage ? `[${d.stage}]` : ''} ${d.status ?? ''}`,
+        data: { sessionId, ...d },
+      });
+      pushTrackerNotification({
+        kind: d.stage ? 'stage_change' : 'project_matched',
+        projectTitle: d.title,
+        icon: d.icon,
+        newStage: d.stage,
+        status: d.status,
       });
     } else if (d.tool === 'mark_trivial') {
       pushRosieLog({
@@ -498,9 +531,14 @@ function logDecisions(decisions: TrackerDecision[], sessionId: string): void {
         summary: `Tracker: marked trivial — ${d.reason}`,
         data: { sessionId, ...d },
       });
+      pushTrackerNotification({
+        kind: 'trivial',
+        status: d.reason,
+      });
     }
   }
-  const upserts = decisions.filter(d => d.tool === 'upsert_project').length;
+  const creates = decisions.filter(d => d.tool === 'create_project').length;
+  const tracks = decisions.filter(d => d.tool === 'track_project').length;
   const trivials = decisions.filter(d => d.tool === 'mark_trivial').length;
-  pushRosieLog({ source: 'rosie-bot:tracker', level: 'info', summary: `Tracker: ${decisions.length} decisions (${upserts} upsert, ${trivials} trivial)`, data: { sessionId, total: decisions.length, upserts, trivials } });
+  pushRosieLog({ source: 'rosie-bot:tracker', level: 'info', summary: `Tracker: ${decisions.length} decisions (${creates} create, ${tracks} track, ${trivials} trivial)`, data: { sessionId, total: decisions.length, creates, tracks, trivials } });
 }

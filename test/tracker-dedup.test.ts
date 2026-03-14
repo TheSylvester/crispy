@@ -54,7 +54,7 @@ describe('normalizedLevenshtein', () => {
 // ============================================================================
 
 describe('findDupeCandidates', () => {
-  const base = { status: 'active', summary: null, created_at: '2026-03-01T00:00:00Z', updated_at: '2026-03-08T00:00:00Z' };
+  const base = { stage: 'active', summary: null, created_at: '2026-03-01T00:00:00Z', updated_at: '2026-03-08T00:00:00Z' };
 
   it('flags entity overlap, title similarity, or both', () => {
     const projects = [
@@ -132,7 +132,7 @@ describe('mergeProjects', () => {
     const db = getDb(dbPath());
     const now = new Date().toISOString();
     db.run(
-      `INSERT INTO projects (id, title, status, summary, entities, created_at, updated_at, last_activity_at)
+      `INSERT INTO projects (id, title, stage, summary, entities, created_at, updated_at, last_activity_at)
        VALUES (?, ?, 'active', ?, ?, ?, ?, ?)`,
       [id, title, `Summary for ${title}`, JSON.stringify(entities), now, now, now],
     );

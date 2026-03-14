@@ -23,6 +23,7 @@ import { SessionStatusProvider, useSessionStatus } from './hooks/useSessionStatu
 import { ContentErrorBoundary } from './components/ErrorBoundary.js';
 import { isPerfMode, PerfOverlay, PerfProfiler } from './perf/index.js';
 import { ControlPanelProvider, useControlPanel } from './context/ControlPanelContext.js';
+import { TrackerToast } from './components/notifications/TrackerToast.js';
 
 interface AppProps {
   transport: Transport;
@@ -42,6 +43,7 @@ export function App({ transport, transportKind }: AppProps): React.JSX.Element {
                   <AppLayout />
                 </PerfProfiler>
                 {isPerfMode && <PerfOverlay />}
+                <TrackerToast />
               </SessionStatusProvider>
             </PreferencesProvider>
             </FilePanelProvider>

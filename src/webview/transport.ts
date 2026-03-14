@@ -26,13 +26,19 @@ export interface WireSessionInfo extends Omit<SessionInfo, 'modifiedAt'> {
 export interface WireProject {
   id: string;
   title: string;
-  status: 'active' | 'done' | 'blocked' | 'planned';
+  stage: 'active' | 'planning' | 'ready' | 'committed' | 'paused' | 'archived';
+  status?: string;          // freeform narrative
+  icon?: string;            // emoji
+  sortOrder?: number;
   blockedBy?: string;
   summary?: string;
   branch?: string;
   entities?: string[];
+  createdAt: string;
+  closedAt?: string;
   lastActivityAt: string;
   sessionCount: number;
+  originSessionTitle?: string;  // title of first linked session
   files: Array<{ path: string; note?: string }>;
   sessions: Array<{
     sessionId: string;
@@ -41,6 +47,20 @@ export interface WireProject {
     preview?: string;
     modifiedAt: string;
   }>;
+}
+
+/** Activity log entry for project history timeline. */
+export interface WireProjectActivity {
+  id: number;
+  projectId: string;
+  ts: number;
+  kind: string;
+  oldStage?: string;
+  newStage?: string;
+  oldStatus?: string;
+  newStatus?: string;
+  narrative?: string;
+  actor: string;
 }
 
 export interface SessionService {
@@ -113,8 +133,21 @@ export interface SessionService {
   startVoiceCapture?(): Promise<void>;
   stopVoiceCapture?(): Promise<{ text: string }>;
 
+  /** Tracker notification subscription */
+  subscribeTrackerNotify(): Promise<void>;
+  unsubscribeTrackerNotify(): Promise<void>;
+
   /** Rosie-tracked projects with linked sessions and files */
   getProjects(): Promise<WireProject[]>;
+
+  /** Get activity history for a project */
+  getProjectActivity(projectId: string, opts?: { kind?: string }): Promise<WireProjectActivity[]>;
+
+  /** Update a project's stage (user drag-and-drop) */
+  updateProjectStage(projectId: string, stage: string): Promise<{ ok: boolean }>;
+
+  /** Update sort order for projects */
+  updateProjectSortOrder(updates: Array<{ id: string; sortOrder: number }>): Promise<{ ok: boolean }>;
 
   /** Recall catch-up — embedding backfill management */
   subscribeRecallCatchup(): Promise<{ subscribed: boolean }>;
