@@ -53,8 +53,11 @@ const SILENT_EMBED_THRESHOLD = 200;
 /** System free memory threshold (MB) — stop embedding if free RAM drops below this. */
 const FREE_MEM_FLOOR_MB = 1024;
 
-/** Rough estimate: seconds per message for embedding with llama.cpp. */
-const SECONDS_PER_MESSAGE = 1;
+/** Rough estimate: seconds per message for embedding with llama.cpp.
+ * Server mode processes ~300-350 msg/min (~0.2s each); one-shot is ~3-5x
+ * slower but only used for tiny batches. Use server-mode rate for initial
+ * estimates since any large backfill triggers the server. */
+const SECONDS_PER_MESSAGE = 0.2;
 
 // ============================================================================
 // Module State
