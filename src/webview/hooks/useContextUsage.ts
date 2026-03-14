@@ -118,6 +118,7 @@ export function useContextUsage(
     return computeContextFromEntries(entries);
   }, [entries]);
 
-  // Prefer entries-based (updates per assistant message) over catchup snapshot
-  return entriesUsage ?? liveUsage;
+  // Prefer live usage (adapter has authoritative contextWindow from SDK) over
+  // entries-based (which can't extract contextWindow from entry metadata).
+  return liveUsage ?? entriesUsage;
 }
