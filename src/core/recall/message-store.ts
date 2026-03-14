@@ -648,6 +648,10 @@ export function getIndexedSessionIds(): Set<string> {
   }
 }
 
+/** Messages shorter than this are skipped for embedding — trivial messages
+ *  like "yes", "ok", "do it" add noise to semantic search. FTS5 still indexes them. */
+const MIN_EMBED_CHARS = 50;
+
 /**
  * Count total indexed messages and messages without embedding vectors.
  * Returns { totalMessages, gapCount } where gapCount is the number of
@@ -658,7 +662,8 @@ export function getEmbeddingGapStats(): { totalMessages: number; gapCount: numbe
     const row = db().get(
       `SELECT
         COUNT(*) as total,
-        SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM message_vectors mv WHERE mv.message_id = m.message_id) THEN 1 ELSE 0 END) as gap
+        SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM message_vectors mv WHERE mv.message_id = m.message_id)
+                       AND LENGTH(m.message_text) >= ${MIN_EMBED_CHARS} THEN 1 ELSE 0 END) as gap
        FROM messages m WHERE m.message_text != ''`,
     ) as Record<string, unknown> | undefined;
     return {
@@ -679,10 +684,42 @@ export function getSessionsWithEmbeddingGap(): string[] {
     const rows = db().all(
       `SELECT DISTINCT m.session_id FROM messages m
        WHERE m.message_text != ''
+         AND LENGTH(m.message_text) >= ${MIN_EMBED_CHARS}
          AND NOT EXISTS (SELECT 1 FROM message_vectors mv WHERE mv.message_id = m.message_id)
        ORDER BY m.created_at DESC`,
     ) as Array<Record<string, unknown>>;
     return rows.map(r => r.session_id as string);
+  } catch {
+    return [];
+  }
+}
+
+export interface UnembeddedMessage {
+  message_id: string;
+  session_id: string;
+  message_text: string;
+}
+
+/**
+ * Fetch unembedded messages across all sessions, most recent first.
+ * Skips trivial messages (< MIN_EMBED_CHARS) so they never enter the pipeline.
+ */
+export function getUnembeddedMessages(limit: number): UnembeddedMessage[] {
+  try {
+    const rows = db().all(
+      `SELECT m.message_id, m.session_id, m.message_text FROM messages m
+       WHERE m.message_text != ''
+         AND LENGTH(m.message_text) >= ${MIN_EMBED_CHARS}
+         AND NOT EXISTS (SELECT 1 FROM message_vectors mv WHERE mv.message_id = m.message_id)
+       ORDER BY m.created_at DESC
+       LIMIT ?`,
+      [limit],
+    ) as Array<Record<string, unknown>>;
+    return rows.map(r => ({
+      message_id: r.message_id as string,
+      session_id: r.session_id as string,
+      message_text: r.message_text as string,
+    }));
   } catch {
     return [];
   }

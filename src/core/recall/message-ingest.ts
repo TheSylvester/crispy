@@ -265,3 +265,49 @@ export async function embedSessionMessages(
   insertMessageVectors(records);
   return records.length;
 }
+
+/**
+ * Embed a pre-fetched batch of messages (cross-session).
+ *
+ * Used by catch-up embedding to process messages from multiple sessions in a
+ * single llama-embedding process spawn. Callers are responsible for fetching
+ * messages (via getUnembeddedMessages) and managing concurrency.
+ *
+ * @param messages  Array of { message_id, message_text } to embed.
+ * @returns         Number of messages successfully embedded.
+ */
+export async function embedMessageBatch(
+  messages: Array<{ message_id: string; message_text: string }>,
+): Promise<number> {
+  if (messages.length === 0) return 0;
+
+  const truncated = messages.map(m => {
+    const text = m.message_text.trim();
+    return {
+      messageId: m.message_id,
+      text: text.length > MAX_EMBED_CHARS ? text.slice(0, MAX_EMBED_CHARS) : text,
+    };
+  });
+
+  const { embedBatch } = await import('./embedder.js');
+  const { quantizeToQ8, computeNorm } = await import('./quantize.js');
+
+  const texts = truncated.map(r => r.text);
+  const vectors = await embedBatch(texts);
+
+  const records: MessageVectorRecord[] = [];
+  for (let j = 0; j < truncated.length; j++) {
+    const f32 = vectors[j]!;
+    const { q8, scale } = quantizeToQ8(f32);
+    const norm = computeNorm(f32);
+    records.push({
+      messageId: truncated[j]!.messageId,
+      embeddingQ8: q8,
+      norm,
+      quantScale: scale,
+    });
+  }
+
+  insertMessageVectors(records);
+  return records.length;
+}
