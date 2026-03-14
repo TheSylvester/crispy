@@ -23,9 +23,9 @@ import { listAllSessions } from '../session-manager.js';
 import {
   getIndexedSessionIds,
   getEmbeddingGapStats,
-  getSessionsWithEmbeddingGap,
+  getUnembeddedMessages,
 } from './message-store.js';
-import { ingestSessionMessages, embedSessionMessages } from './message-ingest.js';
+import { ingestSessionMessages, embedMessageBatch } from './message-ingest.js';
 import { ensureModel, ensureBinary } from './embedder.js';
 import { pushRosieLog } from '../rosie/debug-log.js';
 import { getSettingsSnapshot, onSettingsChanged } from '../settings/index.js';
@@ -180,6 +180,19 @@ async function runFts5Catchup(): Promise<void> {
 // Embedding Backfill
 // ============================================================================
 
+/** Batch size for catch-up embedding. Larger than per-session batch because
+ *  catch-up processes messages across sessions to maximize per-spawn work. */
+const CATCHUP_BATCH_SIZE = 80;
+
+/** Pick concurrency based on available memory. Each llama-embedding process
+ *  needs ~200-300MB (146MB model + working memory). */
+function embeddingConcurrency(): number {
+  const freeMB = Math.round(freemem() / 1024 / 1024);
+  if (freeMB > 3072 + FREE_MEM_FLOOR_MB) return 3;
+  if (freeMB > 2048 + FREE_MEM_FLOOR_MB) return 2;
+  return 1;
+}
+
 /** Check system free memory and return true if we should stop. */
 function memoryPressure(): boolean {
   const freeMB = Math.round(freemem() / 1024 / 1024);
@@ -228,69 +241,49 @@ async function runEmbedding(): Promise<void> {
 
   broadcast({ phase: 'embedding', embeddedSoFar: 0 });
 
-  const sessions = getSessionsWithEmbeddingGap();
-  pushRosieLog({
-    source: 'recall-catchup',
-    level: 'info',
-    summary: `runEmbedding called — ${sessions.length} sessions with gap`,
-  });
-  if (sessions.length === 0) {
-    pushRosieLog({
-      source: 'recall-catchup',
-      level: 'info',
-      summary: 'No sessions need embedding — done',
-    });
-    broadcast({ phase: 'done', gapCount: 0 });
-    return;
-  }
-
   let totalEmbedded = 0;
   const embedStartTime = Date.now();
 
-  for (const sessionId of sessions) {
-    if (cancelRequested) break;
+  while (!cancelRequested && !memoryPressure()) {
+    const N = embeddingConcurrency();
+    const allMessages = getUnembeddedMessages(N * CATCHUP_BATCH_SIZE);
+    if (allMessages.length === 0) break;
 
-    // Stop gracefully if system is running low on free memory.
-    if (memoryPressure()) {
-      pushRosieLog({
-        source: 'recall-catchup',
-        level: 'warn',
-        summary: 'Embedding stopped due to memory pressure — will resume on next activation',
-      });
-      break;
+    // Split into N batches
+    const batches: Array<typeof allMessages> = [];
+    for (let i = 0; i < allMessages.length; i += CATCHUP_BATCH_SIZE) {
+      batches.push(allMessages.slice(i, i + CATCHUP_BATCH_SIZE));
     }
 
     try {
-      // Loop until the session is fully embedded (MAX_EMBED_BATCH caps each call)
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        if (cancelRequested) break;
-        if (memoryPressure()) break;
+      const results = await Promise.all(batches.map(b => embedMessageBatch(b)));
+      const batchTotal = results.reduce((sum, n) => sum + n, 0);
+      totalEmbedded += batchTotal;
 
-        const count = await embedSessionMessages(sessionId);
-        if (count === 0) break; // fully embedded
-
-        totalEmbedded += count;
-
-        // Update progress
-        const elapsed = (Date.now() - embedStartTime) / 1000;
-        const rate = totalEmbedded / elapsed; // messages per second
-        const remaining = status.gapCount - totalEmbedded;
-        const estSeconds = rate > 0 ? Math.round(remaining / rate) : 0;
-        broadcast({
-          embeddedSoFar: totalEmbedded,
-          estimatedSecondsRemaining: Math.max(0, estSeconds),
-        });
-      }
-
+      // Update progress
+      const elapsed = (Date.now() - embedStartTime) / 1000;
+      const rate = totalEmbedded / elapsed;
+      const remaining = status.gapCount - totalEmbedded;
+      const estSeconds = rate > 0 ? Math.round(remaining / rate) : 0;
+      broadcast({
+        embeddedSoFar: totalEmbedded,
+        estimatedSecondsRemaining: Math.max(0, estSeconds),
+      });
     } catch (err) {
       pushRosieLog({
         source: 'recall-catchup',
         level: 'warn',
-        summary: `Embed failed for session: ${err instanceof Error ? err.message : String(err)}`,
-        data: { sessionId },
+        summary: `Embed batch failed: ${err instanceof Error ? err.message : String(err)}`,
       });
-      // Continue with next session — error recovery is incremental
+      // Continue — next iteration fetches remaining unembedded messages
+    }
+  }
+
+  // If we exited due to memory pressure (not cancel, not empty queue), flag it
+  if (!cancelRequested && totalEmbedded === 0) {
+    const freeMB = Math.round(freemem() / 1024 / 1024);
+    if (freeMB < FREE_MEM_FLOOR_MB) {
+      broadcast({ stoppedByMemoryPressure: true });
     }
   }
 

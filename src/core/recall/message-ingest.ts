@@ -184,12 +184,57 @@ export async function ingestSessionMessages(
 /** Max characters to embed per message (Nomic has 8192 token limit, ~4 chars/token). */
 const MAX_EMBED_CHARS = 32_000;
 
-/** Max messages to embed per call. Smaller batches give the parent more
- *  opportunities to check RSS between calls, limiting ONNX memory leak
- *  damage per IPC round-trip (~200ms/msg × 10 = 2s worst case).
- *  Backfill calls embedSessionMessages in a loop, so this doesn't limit
- *  total throughput — just per-call work. */
-const MAX_EMBED_BATCH = 10;
+/** Max messages to embed per call. With llama.cpp one-shot process model,
+ *  larger batches amortize the ~2-5s model load overhead across more messages.
+ *  80 messages × 768 dims × ~12 chars/float = ~700KB JSON output, well under
+ *  the 2MB maxBuffer. */
+const MAX_EMBED_BATCH = 80;
+
+/**
+ * Embed a pre-fetched batch of messages (cross-session).
+ *
+ * Used by catch-up embedding to process messages from multiple sessions in a
+ * single llama-embedding process spawn. Callers are responsible for fetching
+ * messages (via getUnembeddedMessages) and managing concurrency.
+ *
+ * @param messages  Array of { message_id, message_text } to embed.
+ * @returns         Number of messages successfully embedded.
+ */
+export async function embedMessageBatch(
+  messages: Array<{ message_id: string; message_text: string }>,
+): Promise<number> {
+  if (messages.length === 0) return 0;
+
+  const truncated = messages.map(m => {
+    const text = m.message_text.trim();
+    return {
+      messageId: m.message_id,
+      text: text.length > MAX_EMBED_CHARS ? text.slice(0, MAX_EMBED_CHARS) : text,
+    };
+  });
+
+  const { embedBatch } = await import('./embedder.js');
+  const { quantizeToQ8, computeNorm } = await import('./quantize.js');
+
+  const texts = truncated.map(r => r.text);
+  const vectors = await embedBatch(texts);
+
+  const records: MessageVectorRecord[] = [];
+  for (let j = 0; j < truncated.length; j++) {
+    const f32 = vectors[j]!;
+    const { q8, scale } = quantizeToQ8(f32);
+    const norm = computeNorm(f32);
+    records.push({
+      messageId: truncated[j]!.messageId,
+      embeddingQ8: q8,
+      norm,
+      quantScale: scale,
+    });
+  }
+
+  insertMessageVectors(records);
+  return records.length;
+}
 
 /**
  * Embed a session's indexed messages into q8 vectors for semantic search.
