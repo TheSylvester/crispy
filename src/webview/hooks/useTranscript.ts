@@ -92,8 +92,11 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
         // History is now included in the catchup message.
         // Preserve any optimistic entries already in state.
         setEntries((prev) => {
+          // Don't filter optimistic entries by sessionId — during fork,
+          // the optimistic entry carries the source session's ID before
+          // the fork receipt updates it, causing a mismatch.
           const optimistic = prev.filter(
-            (e) => e.uuid?.startsWith('optimistic-') && e.sessionId === sessionId
+            (e) => e.uuid?.startsWith('optimistic-')
           );
           if (optimistic.length === 0) return event.entries;
           return [...event.entries, ...optimistic];

@@ -158,6 +158,7 @@ export function adaptClaudeEntry(raw: Record<string, unknown>): TranscriptEntry 
         sessionId: _sessionId,
         timestamp: _timestamp,
         parentToolUseID: _parentToolUseID,
+        parent_tool_use_id: _parent_tool_use_id,
         ...progressOverflow
       } = raw;
 
@@ -169,7 +170,7 @@ export function adaptClaudeEntry(raw: Record<string, unknown>): TranscriptEntry 
         timestamp: raw.timestamp as string | undefined,
         message: sanitizeMessage(actualMessage)!,
         agentId: data?.agentId as string | undefined,
-        parentToolUseID: raw.parentToolUseID as string | undefined,
+        parentToolUseID: (raw.parentToolUseID ?? raw.parent_tool_use_id) as string | undefined,
         vendor: 'claude',
         ...(Object.keys(progressOverflow).length > 0 && { metadata: progressOverflow }),
       };
