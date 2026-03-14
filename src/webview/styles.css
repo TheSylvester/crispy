@@ -1519,9 +1519,17 @@ h2 {
   flex: 1;
 }
 
+.crispy-todo--completed .crispy-todo-icon {
+  color: #50fa7b;
+}
+
 .crispy-todo--completed .crispy-todo-content {
   text-decoration: line-through;
   opacity: 0.7;
+}
+
+.crispy-todo--in-progress .crispy-todo-icon {
+  color: var(--vscode-charts-yellow, #cca700);
 }
 
 .crispy-todo--in-progress .crispy-todo-content {

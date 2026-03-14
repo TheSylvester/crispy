@@ -87,7 +87,7 @@ export function TodoWriteExpandedView({ block, result, status, anchor }: ToolVie
         <ul className="crispy-todo-list">
           {todos.map((todo, i) => {
             const s = todo.status || 'pending';
-            const icon = s === 'completed' ? '\u2611' : s === 'in_progress' ? '\u25B6' : '\u2610';
+            const icon = s === 'completed' ? '\u2713' : s === 'in_progress' ? '\u25B6' : '\u2610';
             const cls = s === 'completed'
               ? 'crispy-todo--completed'
               : s === 'in_progress'

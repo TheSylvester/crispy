@@ -87,7 +87,7 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
   },
   Write: {
     icon: '\u270E',
-    color: '#ffb86c',
+    color: '#ff79c6',
     activity: { verb: 'Writing', pastVerb: 'Wrote' },
     inspectorDefault: 'expanded',
     renderCategory: 'block',
@@ -186,7 +186,7 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
 
   // Utility tools
   TodoWrite: {
-    icon: '\u2611\uFE0F',
+    icon: '\u2705',
     color: '#50fa7b',
     activity: { verb: 'Updating todos', pastVerb: 'Updated todos' },
     inspectorDefault: 'expanded',
