@@ -272,6 +272,9 @@ export function createCrispyPanel(
   // Send workspace CWD hint so the webview defaults to the VS Code workspace
   // project instead of MRU. Retry pattern matches forkConfig delivery above.
   if (options?.workspaceCwd) {
+    // Allow file reads from the workspace CWD even before any session is subscribed
+    handler.addAllowedRoot(options.workspaceCwd);
+
     const msg = { kind: 'workspaceCwd', cwd: options.workspaceCwd };
     const delays = [100, 500, 1500];
     for (const delay of delays) {

@@ -125,6 +125,8 @@ export type SendFn = (message: HostMessage) => void;
 export interface ClientConnection {
   handleMessage(raw: unknown): Promise<void>;
   call(method: string, params: Record<string, unknown>): Promise<unknown>;
+  /** Register an extra directory root that file reads are allowed from. */
+  addAllowedRoot(absolutePath: string): void;
   dispose(): void;
 }
 
@@ -159,6 +161,9 @@ export function createClientConnection(
   /** Flag set on dispose() to prevent re-keying after client disconnect. */
   let disposed = false;
 
+  /** Extra allowed roots (e.g. VS Code workspace CWD before any session exists). */
+  const extraAllowedRoots = new Set<string>();
+
   /**
    * Validate that `filePath` is inside an allowed directory before performing
    * any file-system read. Allowed roots:
@@ -172,6 +177,11 @@ export function createClientConnection(
 
     // Always allow ~/.claude/
     if (isWithin(resolved, CLAUDE_CONFIG_DIR)) return;
+
+    // Allow extra roots (e.g. VS Code workspace CWD)
+    for (const root of extraAllowedRoots) {
+      if (isWithin(resolved, root)) return;
+    }
 
     // Allow any subscribed session's project directory
     for (const [sessionId] of subscriptions) {
@@ -739,5 +749,12 @@ export function createClientConnection(
     subscriptions.clear();
   }
 
-  return { handleMessage, call, dispose };
+  return {
+    handleMessage,
+    call,
+    addAllowedRoot(absolutePath: string) {
+      extraAllowedRoots.add(resolve(absolutePath));
+    },
+    dispose,
+  };
 }
