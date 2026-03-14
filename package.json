@@ -3,7 +3,7 @@
   "displayName": "Crispy",
   "icon": "media/crispy-icon.png",
   "description": "A zero-compromise UI for Claude Code, Codex, and more — with controls you can't get in a terminal",
-  "version": "0.1.4-dev.77",
+  "version": "0.1.4-dev.78",
   "publisher": "the-sylvester",
   "private": true,
   "license": "MIT",
@@ -30,7 +30,7 @@
   },
   "main": "./dist/extension.js",
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.63",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.76",
     "@anthropic-ai/sdk": "^0.74.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@opencode-ai/sdk": "^1.2.20",
