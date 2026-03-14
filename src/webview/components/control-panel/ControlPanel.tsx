@@ -244,6 +244,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           setProviders(settingsEvent.snapshot.settings.providers);
           setRosieEnabled(settingsEvent.snapshot.settings.rosie?.bot?.enabled ?? false);
           setRosieModel(settingsEvent.snapshot.settings.rosie?.bot?.model);
+          setDefaultModel(settingsEvent.snapshot.settings.turnDefaults?.model ?? '');
           const mcpMem = settingsEvent.snapshot.settings.mcp?.memory;
           if (mcpMem) {
             setMcpMemoryEnabled(mcpMem[mcpSettingsKey] ?? true);
@@ -255,12 +256,11 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     }, [transport]);
 
     /** Model options for keyboard cycling — dynamic from provider groups (skip unavailable). */
-    const allCyclable = useMemo<ModelOption[]>(() => [
-      '',
-      ...modelGroups
+    const allCyclable = useMemo<ModelOption[]>(() =>
+      modelGroups
         .filter(g => g.available !== false)
         .flatMap(g => g.models.map(m => m.value)),
-    ], [modelGroups]);
+    [modelGroups]);
 
     // --- Provider management state ---
     const [providers, setProviders] = useState<Record<string, WireProviderConfig>>({});
@@ -268,6 +268,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     useEffect(() => {
       transport.listProviders().then(setProviders).catch(console.error);
     }, [transport]);
+
+    // --- Default Model setting ---
+    const [defaultModel, setDefaultModel] = useState<string>('');
 
     // --- Rosie Bot settings state ---
     const [rosieEnabled, setRosieEnabled] = useState(false);
@@ -277,7 +280,16 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       transport.getSettings().then((snapshot) => {
         setRosieEnabled(snapshot.settings.rosie?.bot?.enabled ?? false);
         setRosieModel(snapshot.settings.rosie?.bot?.model);
+        const savedDefault = snapshot.settings.turnDefaults?.model ?? '';
+        setDefaultModel(savedDefault);
+        // Apply persisted default model on initial load (before any session overrides it)
+        if (savedDefault) dispatch({ type: 'SET_MODEL', model: savedDefault });
       }).catch(console.error);
+    }, [transport]);
+
+    const handleUpdateDefaultModel = useCallback(async (model: string) => {
+      setDefaultModel(model);
+      await transport.updateSettings({ turnDefaults: { model: model || null } });
     }, [transport]);
 
     const handleUpdateRosie = useCallback(async (patch: { enabled?: boolean; model?: string }) => {
@@ -329,10 +341,13 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       await transport.stopEmbeddingBackfill();
     }, [transport]);
 
-    // Clear forkMode when switching sessions
+    // Clear forkMode when switching sessions; reset model to default for new conversations
     useEffect(() => {
       dispatch({ type: 'SET_FORK_MODE', forkMode: null });
-    }, [selectedSessionId]);
+      if (!selectedSessionId) {
+        dispatch({ type: 'SET_MODEL', model: defaultModel });
+      }
+    }, [selectedSessionId, defaultModel]);
 
     // Ref to always call the latest handleSend (avoids stale closure in forkConfig auto-send)
     const handleSendRef = useRef<() => void>(() => {});
@@ -1046,6 +1061,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               catchupStatus={catchupStatus}
               onStartEmbedding={handleStartEmbedding}
               onStopEmbedding={handleStopEmbedding}
+              defaultModel={defaultModel}
+              onUpdateDefaultModel={handleUpdateDefaultModel}
               modelGroups={modelGroups}
               providers={providers}
               onSaveProvider={async (slug, config) => { await transport.saveProvider(slug, config); }}

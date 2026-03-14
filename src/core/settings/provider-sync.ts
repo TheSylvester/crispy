@@ -274,6 +274,7 @@ export function getModelGroups(registeredVendors?: Set<string>): VendorModelGrou
     vendor: 'claude',
     label: 'Claude',
     models: [
+      { value: '', label: 'Default' },
       { value: 'claude:opus', label: 'Opus' },
       { value: 'claude:sonnet', label: 'Sonnet' },
       { value: 'claude:haiku', label: 'Haiku' },

@@ -42,6 +42,8 @@ interface SettingsPopupProps {
   catchupStatus?: CatchupStatus | null;
   onStartEmbedding?: () => void;
   onStopEmbedding?: () => void;
+  defaultModel: string;
+  onUpdateDefaultModel: (model: string) => void;
   modelGroups: VendorModelGroup[];
   providers?: Record<string, WireProviderConfig>;
   onSaveProvider?: (slug: string, config: ProviderConfig) => Promise<void>;
@@ -131,7 +133,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, rosieEnabled, rosieModel, onUpdateRosie, mcpMemoryEnabled, onUpdateMcpMemory, catchupStatus, onStartEmbedding, onStopEmbedding, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, rosieEnabled, rosieModel, onUpdateRosie, mcpMemoryEnabled, onUpdateMcpMemory, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -271,6 +273,17 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               type="checkbox"
               checked={toolPanelAutoOpen}
               onChange={(e) => onToolPanelAutoOpenChange(e.target.checked)}
+            />
+          </label>
+
+          {/* --- Defaults Section --- */}
+          <div className="crispy-cp-settings__section-header">Defaults</div>
+          <label className="crispy-cp-settings__row">
+            <span>Model</span>
+            <ModelSelect
+              value={defaultModel}
+              onChange={onUpdateDefaultModel}
+              groups={modelGroups}
             />
           </label>
 

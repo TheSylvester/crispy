@@ -1,7 +1,7 @@
 /**
  * Model Select — vendor-aware dropdown with optgroups
  *
- * Options: Default (empty) + per-vendor model groups.
+ * Options: per-vendor model groups (Claude includes Default as first entry).
  * Value format: "vendor:model" (e.g. "claude:opus").
  * Groups passed as prop from ControlPanel (fetched dynamically).
  *
@@ -24,7 +24,6 @@ export function ModelSelect({ value, onChange, groups }: ModelSelectProps): Reac
       data-shortcut="Alt+M"
       onChange={(e) => onChange(e.target.value as ModelOption)}
     >
-      <option value="">Default</option>
       {groups.map((group) => (
         <optgroup
           key={group.vendor}
