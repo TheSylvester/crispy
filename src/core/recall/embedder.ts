@@ -46,15 +46,36 @@ const LLAMA_RELEASE_TAG = 'b5300';
 const BIN_DIR = join(homedir(), '.crispy', 'bin');
 const BIN_NAME = platform() === 'win32' ? 'llama-embedding.exe' : 'llama-embedding';
 
-/** Map (platform, arch) → release asset filename. All assets are .zip. */
-function getBinaryAssetName(): string {
+/** Detect NVIDIA GPU by checking if nvidia-smi exits successfully. */
+async function hasNvidiaGpu(): Promise<boolean> {
+  try {
+    await execFileAsync('nvidia-smi', [], { timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Map (platform, arch, gpu) → release asset filename. All assets are .zip.
+ *  CUDA builds are selected when an NVIDIA GPU is detected on Linux/Windows x64.
+ *  macOS ARM64 includes Metal acceleration in the standard build. */
+async function getBinaryAssetName(): Promise<string> {
   const p = platform();
   const a = arch();
-  if (p === 'linux' && a === 'x64') return `llama-${LLAMA_RELEASE_TAG}-bin-ubuntu-x64.zip`;
-  if (p === 'linux' && a === 'arm64') return `llama-${LLAMA_RELEASE_TAG}-bin-ubuntu-arm64.zip`;
-  if (p === 'darwin' && a === 'arm64') return `llama-${LLAMA_RELEASE_TAG}-bin-macos-arm64.zip`;
-  if (p === 'darwin' && a === 'x64') return `llama-${LLAMA_RELEASE_TAG}-bin-macos-x64.zip`;
-  if (p === 'win32' && a === 'x64') return `llama-${LLAMA_RELEASE_TAG}-bin-win-cpu-x64.zip`;
+  const tag = LLAMA_RELEASE_TAG;
+
+  // Linux: no CUDA build available from llama.cpp releases. Vulkan build
+  // exists but fails on WSL2 (ErrorOutOfDeviceMemory for KV cache allocation).
+  // Use CPU build for now — GPU acceleration requires building from source.
+  if (p === 'linux' && a === 'x64') return `llama-${tag}-bin-ubuntu-x64.zip`;
+
+  if (p === 'linux' && a === 'arm64') return `llama-${tag}-bin-ubuntu-arm64.zip`;
+  if (p === 'darwin' && a === 'arm64') return `llama-${tag}-bin-macos-arm64.zip`;
+  if (p === 'darwin' && a === 'x64') return `llama-${tag}-bin-macos-x64.zip`;
+  if (p === 'win32' && a === 'x64') {
+    if (await hasNvidiaGpu()) return `llama-${tag}-bin-win-cuda-cu12.4-x64.zip`;
+    return `llama-${tag}-bin-win-cpu-x64.zip`;
+  }
   throw new Error(`Unsupported platform for llama-embedding: ${p}/${a}`);
 }
 
@@ -114,7 +135,7 @@ export async function ensureBinary(): Promise<string> {
 }
 
 async function performBinaryDownload(binPath: string): Promise<string> {
-  const assetName = getBinaryAssetName();
+  const assetName = await getBinaryAssetName();
   const url = `https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_RELEASE_TAG}/${assetName}`;
 
   mkdirSync(BIN_DIR, { recursive: true });
@@ -125,7 +146,7 @@ async function performBinaryDownload(binPath: string): Promise<string> {
   pushRosieLog({
     source: 'recall-catchup',
     level: 'info',
-    summary: `Downloading llama-embedding binary: ${assetName}`,
+    summary: `Downloading llama-embedding binary: ${assetName}${assetName.includes('cuda') || assetName.includes('vulkan') ? ' (GPU accelerated)' : ''}`,
     data: { url, dest: binPath },
   });
 
@@ -139,11 +160,15 @@ async function performBinaryDownload(binPath: string): Promise<string> {
 
     // Extract binary + required shared libraries from the zip.
     // -j junk paths (flatten), -o overwrite.
+    // CUDA builds also include libcublas*, libcudart*; Vulkan includes libvulkan*.
     const extractTargets = [
       `build/bin/${BIN_NAME}`,
       'build/bin/libllama*',
       'build/bin/libggml*',
     ];
+    if (assetName.includes('cuda')) {
+      extractTargets.push('build/bin/libcublas*', 'build/bin/libcudart*');
+    }
     await execFileAsync('unzip', [
       '-o', '-j', archivePath,
       ...extractTargets,
