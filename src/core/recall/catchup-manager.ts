@@ -23,9 +23,9 @@ import { listAllSessions } from '../session-manager.js';
 import {
   getIndexedSessionIds,
   getEmbeddingGapStats,
-  getSessionsWithEmbeddingGap,
+  getUnembeddedMessages,
 } from './message-store.js';
-import { ingestSessionMessages, embedSessionMessages } from './message-ingest.js';
+import { ingestSessionMessages, embedMessageBatch } from './message-ingest.js';
 import { ensureModel, ensureBinary } from './embedder.js';
 import { pushRosieLog } from '../rosie/debug-log.js';
 import { getSettingsSnapshot, onSettingsChanged } from '../settings/index.js';
@@ -180,6 +180,15 @@ async function runFts5Catchup(): Promise<void> {
 // Embedding Backfill
 // ============================================================================
 
+/** Batch size for cross-session catch-up embedding. Each batch spawns one
+ *  llama-embedding process, amortizing the ~2-5s model load across more messages.
+ *  Safe at 80 because MAX_EMBED_CHARS (14K) caps each message to ~7,400 tokens
+ *  worst case, well under llama-embedding's 8192 per-text context limit. */
+const CATCHUP_BATCH_SIZE = 80;
+
+/** Stop embedding after this many consecutive batch failures. */
+const MAX_CONSECUTIVE_FAILURES = 3;
+
 /** Check system free memory and return true if we should stop. */
 function memoryPressure(): boolean {
   const freeMB = Math.round(freemem() / 1024 / 1024);
@@ -195,14 +204,15 @@ function memoryPressure(): boolean {
 }
 
 /**
- * Run embedding backfill on sessions with unvectorized messages.
+ * Run embedding backfill on unvectorized messages across all sessions.
  *
- * Ensures the GGUF model is downloaded, then embeds all unvectorized messages
- * using llama-embedding (one-shot process per batch, no persistent state).
+ * Fetches messages cross-session (newest first) in batches of CATCHUP_BATCH_SIZE,
+ * embedding each batch in a single llama-embedding process spawn. Stops on
+ * cancellation, memory pressure, or MAX_CONSECUTIVE_FAILURES repeated failures.
  */
 async function runEmbedding(): Promise<void> {
   // Download binary + model if needed
-  broadcast({ phase: 'downloading-model' });
+  broadcast({ phase: 'downloading-model', stoppedByMemoryPressure: false, stoppedByError: undefined });
   try {
     await ensureBinary();
   } catch (err) {
@@ -228,70 +238,59 @@ async function runEmbedding(): Promise<void> {
 
   broadcast({ phase: 'embedding', embeddedSoFar: 0 });
 
-  const sessions = getSessionsWithEmbeddingGap();
-  pushRosieLog({
-    source: 'recall-catchup',
-    level: 'info',
-    summary: `runEmbedding called — ${sessions.length} sessions with gap`,
-  });
-  if (sessions.length === 0) {
-    pushRosieLog({
-      source: 'recall-catchup',
-      level: 'info',
-      summary: 'No sessions need embedding — done',
-    });
-    broadcast({ phase: 'done', gapCount: 0 });
-    return;
-  }
-
   let totalEmbedded = 0;
+  let consecutiveFailures = 0;
   const embedStartTime = Date.now();
 
-  for (const sessionId of sessions) {
-    if (cancelRequested) break;
+  while (!cancelRequested && !memoryPressure()) {
+    // Fetch 2 batches worth of messages, split into concurrent work
+    const allMessages = getUnembeddedMessages(CATCHUP_BATCH_SIZE * 2);
+    if (allMessages.length === 0) break;
 
-    // Stop gracefully if system is running low on free memory.
-    if (memoryPressure()) {
-      pushRosieLog({
-        source: 'recall-catchup',
-        level: 'warn',
-        summary: 'Embedding stopped due to memory pressure — will resume on next activation',
-      });
-      break;
+    // Split into up to 2 batches for concurrent processing
+    const batches: Array<typeof allMessages> = [];
+    for (let i = 0; i < allMessages.length; i += CATCHUP_BATCH_SIZE) {
+      batches.push(allMessages.slice(i, i + CATCHUP_BATCH_SIZE));
     }
 
     try {
-      // Loop until the session is fully embedded (MAX_EMBED_BATCH caps each call)
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        if (cancelRequested) break;
-        if (memoryPressure()) break;
+      const results = await Promise.all(batches.map(b => embedMessageBatch(b)));
+      const batchTotal = results.reduce((sum, n) => sum + n, 0);
+      totalEmbedded += batchTotal;
+      consecutiveFailures = 0;
 
-        const count = await embedSessionMessages(sessionId);
-        if (count === 0) break; // fully embedded
-
-        totalEmbedded += count;
-
-        // Update progress
-        const elapsed = (Date.now() - embedStartTime) / 1000;
-        const rate = totalEmbedded / elapsed; // messages per second
-        const remaining = status.gapCount - totalEmbedded;
-        const estSeconds = rate > 0 ? Math.round(remaining / rate) : 0;
-        broadcast({
-          embeddedSoFar: totalEmbedded,
-          estimatedSecondsRemaining: Math.max(0, estSeconds),
-        });
-      }
-
+      // Update progress
+      const elapsed = (Date.now() - embedStartTime) / 1000;
+      const rate = totalEmbedded / elapsed;
+      const remaining = status.gapCount - totalEmbedded;
+      const estSeconds = rate > 0 ? Math.round(remaining / rate) : 0;
+      broadcast({
+        embeddedSoFar: totalEmbedded,
+        estimatedSecondsRemaining: Math.max(0, estSeconds),
+      });
     } catch (err) {
+      consecutiveFailures++;
+      const msg = err instanceof Error ? err.message : String(err);
       pushRosieLog({
         source: 'recall-catchup',
         level: 'warn',
-        summary: `Embed failed for session: ${err instanceof Error ? err.message : String(err)}`,
-        data: { sessionId },
+        summary: `Embed batch failed (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}): ${msg}`,
       });
-      // Continue with next session — error recovery is incremental
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        pushRosieLog({
+          source: 'recall-catchup',
+          level: 'warn',
+          summary: `Embedding stopped after ${MAX_CONSECUTIVE_FAILURES} consecutive failures`,
+        });
+        broadcast({ stoppedByError: 'Embedding failed repeatedly — check logs for details' });
+        break;
+      }
     }
+  }
+
+  // Flag memory pressure if that's why we stopped
+  if (!cancelRequested && memoryPressure()) {
+    broadcast({ stoppedByMemoryPressure: true });
   }
 
   pushRosieLog({

@@ -310,9 +310,11 @@ export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
   if (!binaryPath) throw new Error('llama-embedding binary not available');
 
   const modelPath = await ensureModel();
-  const joined = texts.join(BATCH_SEPARATOR);
-  const useFile = Buffer.byteLength(joined, 'utf-8') > MAX_ARG_BYTES ||
-                  texts.some(t => t.includes(BATCH_SEPARATOR));
+  // Strip the batch separator from input texts so it can't collide with the
+  // delimiter llama-embedding uses to split multiple texts.
+  const sanitized = texts.map(t => t.replaceAll(BATCH_SEPARATOR, ' '));
+  const joined = sanitized.join(BATCH_SEPARATOR);
+  const useFile = Buffer.byteLength(joined, 'utf-8') > MAX_ARG_BYTES;
 
   let tmpFile: string | null = null;
   try {

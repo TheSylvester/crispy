@@ -181,8 +181,10 @@ export async function ingestSessionMessages(
 // Semantic Embedding
 // ============================================================================
 
-/** Max characters to embed per message (Nomic has 8192 token limit, ~4 chars/token). */
-const MAX_EMBED_CHARS = 32_000;
+/** Max characters to embed per message. Nomic's 8192 token context at ~1.9
+ *  chars/token (worst case for dense code) = ~15,500 chars. 14,000 gives
+ *  comfortable headroom (~7,400 tokens worst case). */
+const MAX_EMBED_CHARS = 14_000;
 
 /** Max messages to embed per call. Smaller batches give the parent more
  *  opportunities to check RSS between calls, limiting ONNX memory leak
@@ -281,13 +283,16 @@ export async function embedMessageBatch(
 ): Promise<number> {
   if (messages.length === 0) return 0;
 
-  const truncated = messages.map(m => {
+  const truncated: Array<{ messageId: string; text: string }> = [];
+  for (const m of messages) {
     const text = m.message_text.trim();
-    return {
+    if (!text) continue;
+    truncated.push({
       messageId: m.message_id,
       text: text.length > MAX_EMBED_CHARS ? text.slice(0, MAX_EMBED_CHARS) : text,
-    };
-  });
+    });
+  }
+  if (truncated.length === 0) return 0;
 
   const { embedBatch } = await import('./embedder.js');
   const { quantizeToQ8, computeNorm } = await import('./quantize.js');

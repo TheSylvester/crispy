@@ -23,4 +23,6 @@ export interface CatchupStatus {
   estimatedSecondsRemaining: number;
   /** True when last run stopped due to memory pressure */
   stoppedByMemoryPressure?: boolean;
+  /** Set when embedding stopped after repeated failures */
+  stoppedByError?: string;
 }

@@ -325,12 +325,17 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
                       Stopped — not enough memory. Try closing other tabs or restarting.
                     </span>
                   )}
+                  {catchupStatus.stoppedByError && (
+                    <span className="crispy-cp-settings__recall-warn">
+                      {catchupStatus.stoppedByError}
+                    </span>
+                  )}
                   {onStartEmbedding && (
                     <button
                       className="crispy-cp-settings__recall-btn"
                       onClick={onStartEmbedding}
                     >
-                      {catchupStatus.stoppedByMemoryPressure ? 'Retry' : 'Start'}
+                      {(catchupStatus.stoppedByMemoryPressure || catchupStatus.stoppedByError) ? 'Retry' : 'Start'}
                     </button>
                   )}
                 </span>
