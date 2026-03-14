@@ -14,7 +14,6 @@
 
 import { onResponseComplete } from '../lifecycle-hooks.js';
 import { ingestSessionMessages, embedSessionMessages } from './message-ingest.js';
-import { disposeEmbedder } from './embedder.js';
 import { pushRosieLog } from '../rosie/debug-log.js';
 
 // ============================================================================
@@ -52,6 +51,7 @@ export function initRecallIngest(): void {
 
         // Embed after successful FTS5 ingest — fire-and-forget.
         // Uses llama.cpp binary for the small per-turn batches.
+        // Server lifecycle (if active) is managed by idle timer in embedder.
         embedSessionMessages(sessionId)
           .then(count => {
             if (count > 0) {
@@ -70,10 +70,6 @@ export function initRecallIngest(): void {
               summary: `Embed failed: ${err instanceof Error ? err.message : String(err)}`,
               data: { sessionId },
             });
-          })
-          .finally(() => {
-            // disposeEmbedder is a no-op with llama.cpp (one-shot process model).
-            disposeEmbedder().catch(() => {});
           });
       }
     } catch (err) {

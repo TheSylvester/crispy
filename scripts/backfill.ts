@@ -767,17 +767,15 @@ async function runEmbedMessages(opts: CliOptions): Promise<void> {
         elapsed: parseFloat(elapsed),
       }));
 
-      // ONNX Runtime leaks internal state beyond what tensor.dispose()
-      // can reclaim. Release the entire pipeline after each session to
-      // keep RSS bounded. The ~2-5s reload cost per session is the price
-      // of stability on memory-constrained environments (WSL2).
-      await disposeFn!();
       tryGc();
     } catch (err) {
       failCount++;
       log(`  ERROR — ${err instanceof Error ? err.message : String(err)}`);
     }
   }
+
+  // Clean up server if running — don't rely on idle timer since process is about to exit
+  await disposeFn?.();
 
   const totalElapsed = ((Date.now() - startTime) / 1000).toFixed(0);
   log(`\n=== Embed-messages complete: ${okCount} OK, ${failCount} failed, ${skipCount} skipped, ${totalEmbedded} messages embedded in ${totalElapsed}s ===`);
