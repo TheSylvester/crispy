@@ -95,9 +95,7 @@ events. No direct file I/O or process spawning. **State ownership:** UI-only
   type union — search for an existing one. Canonical singles:
   `BlocksToolRegistry` (tool pairing), `session-manager.ts` (adapter
   orchestration), `activity-index.ts` (`~/.crispy/` I/O).
-- **React to TypeScript LSP diagnostics after edits.** They're often stale —
-  the language server can't keep up with rapid edits. If you need type
-  validation, run `npm run typecheck`.
+
 
 ## Key rules
 

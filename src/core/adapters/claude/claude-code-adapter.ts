@@ -48,7 +48,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources';
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { query, forkSession } from '@anthropic-ai/claude-agent-sdk';
 import type { SpawnOptions as SDKSpawnOptions } from '@anthropic-ai/claude-agent-sdk';
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
@@ -1900,6 +1900,14 @@ export const claudeDiscovery: VendorDiscovery = {
 
   scanUserActivity(sessionPath, fromOffset = 0) {
     return scanUserMessages(sessionPath, fromOffset);
+  },
+
+  async preFork(sessionId, options) {
+    const result = await forkSession(sessionId, {
+      upToMessageId: options?.atMessageId,
+      dir: options?.dir,
+    });
+    return { sessionId: result.sessionId };
   },
 };
 

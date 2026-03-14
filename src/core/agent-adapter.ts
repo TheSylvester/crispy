@@ -121,6 +121,15 @@ export interface VendorDiscovery {
   ): SubagentEntriesResult;
 
   /**
+   * Pre-materialize a fork on disk, returning a real session ID.
+   *
+   * Optional — vendors that support SDK-level forking (e.g. Claude 0.2.76+)
+   * implement this so session-manager can skip the pending→real ID re-key dance.
+   * The returned sessionId is immediately usable as a resume target.
+   */
+  preFork?(sessionId: string, options?: { atMessageId?: string; dir?: string }): Promise<{ sessionId: string }>;
+
+  /**
    * Scan user activity (prompts) in a session file incrementally.
    *
    * Optional — vendors that don't support activity scanning omit this.

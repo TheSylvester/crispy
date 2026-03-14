@@ -195,6 +195,17 @@ export function createCrispyPanel(
       if (msg.kind === 'request' && msg.method === 'forkToNewPanel') {
         const { fromSessionId, atMessageId, initialPrompt, model, agencyMode, bypassEnabled, chromeEnabled } = msg.params ?? {};
 
+        if (!fromSessionId) {
+          if (!disposed) {
+            panel.webview.postMessage({
+              kind: 'response',
+              id: msg.id,
+              result: { ok: false, error: 'Missing fromSessionId' },
+            } satisfies HostMessage);
+          }
+          return;
+        }
+
         // Create new panel beside the current one
         const newPanel = createCrispyPanel(context, vscode.ViewColumn.Beside);
 

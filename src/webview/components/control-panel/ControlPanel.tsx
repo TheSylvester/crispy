@@ -937,19 +937,17 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     // --- Latched fork target — freezes during streaming, updates only when idle ---
     useEffect(() => {
+      // Clear stale target when switching sessions
+      forkTargetRef.current = undefined;
       if (channelState !== 'idle' && channelState !== null) return;
-      if (!entries || entries.length === 0) {
-        forkTargetRef.current = undefined;
-        return;
-      }
+      if (!entries || entries.length === 0) return;
       for (let i = entries.length - 1; i >= 0; i--) {
         if (entries[i].type === 'assistant' && entries[i].uuid) {
           forkTargetRef.current = entries[i].uuid!;
           return;
         }
       }
-      forkTargetRef.current = undefined;
-    }, [channelState, entries]);
+    }, [channelState, entries, selectedSessionId]);
 
     const handleFork = useCallback(() => {
       if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;

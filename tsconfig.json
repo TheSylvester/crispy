@@ -17,15 +17,7 @@
     "jsx": "react-jsx",
     "jsxImportSource": "react",
     "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "paths": {
-      // WORKAROUND: SDK 0.2.71 added an exports map that omits ./sdk-tools.
-      // This alias bypasses the restriction. Remove once the SDK ships a fix.
-      // Check: npm view @anthropic-ai/claude-agent-sdk exports
-      "@anthropic-ai/claude-agent-sdk/sdk-tools.js": [
-        "./node_modules/@anthropic-ai/claude-agent-sdk/sdk-tools.d.ts"
-      ]
-    }
+    "noUnusedParameters": false
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

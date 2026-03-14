@@ -428,11 +428,14 @@ function createPendingChannel(
 
   // One-shot re-key subscriber: swaps pending → real ID on session_changed
   // Also resolves the rekeyPromise with the real session ID.
-  const rekeyPromise = new Promise<string>((resolve) => {
+  // Wrapped with a 15s timeout safety net to prevent indefinite hangs.
+  const rekeyPromise = new Promise<string>((resolve, reject) => {
+    let settled = false;
     const rekeySubscriber: Subscriber = {
       id: `__rekey__${pendingId}`,
       send(msg) {
         if (isSessionChangedEvent(msg)) {
+          settled = true;
           const realId = msg.event.sessionId;
           rekeyChannel(pendingId, realId);
           pushRosieLog({ source: 'session', level: 'info', summary: `Session: re-keyed ${pendingId.slice(0, 20)}… → ${realId.slice(0, 12)}…`, data: { pendingId, realId } });
@@ -444,6 +447,16 @@ function createPendingChannel(
       },
     };
     subscribe(channel, rekeySubscriber);
+
+    // Timeout safety net: reject if re-key never fires
+    setTimeout(() => {
+      if (settled) return;
+      unsubscribe(channel, rekeySubscriber);
+      pushRosieLog({ source: 'session', level: 'error', summary: `Re-key timeout: ${pendingId.slice(0, 20)}… (15s)`, data: { pendingId } });
+      destroyChannel(pendingId);
+      sessions.delete(pendingId);
+      reject(new Error(`Fork timed out: session re-key did not complete within 15 seconds (${pendingId})`));
+    }, 15_000);
   });
 
   return { pendingId, channel, rekeyPromise };
@@ -511,7 +524,11 @@ export async function subscribeSession(
         // Apply truncation if specified
         if (until) {
           const cutIdx = entries.findIndex(e => e.uuid === until);
-          if (cutIdx !== -1) entries = entries.slice(0, cutIdx + 1);
+          if (cutIdx !== -1) {
+            entries = entries.slice(0, cutIdx + 1);
+          } else {
+            pushRosieLog({ source: 'session', level: 'warn', summary: 'Fork truncation UUID not found, loading full history', data: { sessionId, until } });
+          }
         }
       } catch (err) {
         destroyChannel(sessionId);
@@ -574,12 +591,17 @@ export function createSession(
 /**
  * Create a forked session from an existing session.
  *
- * Delegates to createPendingChannel() with mode 'fork' so the adapter
- * resumes the source session and truncates at the specified message ID.
+ * If the vendor supports SDK-level pre-forking (preFork), the fork JSONL is
+ * materialized on disk first, yielding a real session ID immediately. The
+ * channel is opened with mode 'resume' using that real ID — no pending→real
+ * re-key dance needed.
  *
- * Returns the pendingId and channel so the caller can track the transition.
+ * Otherwise falls through to createPendingChannel() with mode 'fork' and the
+ * standard re-key flow (plus timeout safety net).
+ *
+ * Returns the pendingId (or realId) and channel so the caller can track the transition.
  */
-export function createForkSession(
+export async function createForkSession(
   vendor: Vendor,
   fromSessionId: string,
   subscriber: Subscriber,
@@ -592,11 +614,50 @@ export function createForkSession(
     systemPrompt?: string;
   },
   explicitPendingId?: string,
-): PendingChannelResult {
-  if (!adapters.has(vendor)) {
+): Promise<PendingChannelResult> {
+  const reg = adapters.get(vendor);
+  if (!reg) {
     throw new Error(`No adapter registered for vendor "${vendor}".`);
   }
 
+  // Validate that the source session actually exists before creating any channels
+  if (!reg.discovery.findSession(fromSessionId)) {
+    throw new Error(`Cannot fork: source session "${fromSessionId}" not found.`);
+  }
+
+  // Pre-fork path: materialize fork on disk, get real ID, open as resume
+  if (reg.discovery.preFork) {
+    try {
+      const sourceInfo = findSession(fromSessionId);
+      const dir = sourceInfo?.projectPath;
+      const { sessionId: realId } = await reg.discovery.preFork(fromSessionId, {
+        atMessageId: options?.atMessageId,
+        dir,
+      });
+
+      pushRosieLog({ source: 'session', level: 'info', summary: `Pre-fork materialized: ${realId.slice(0, 12)}…`, data: { fromSessionId, realId } });
+
+      // Open channel with real ID directly — no pending prefix, no re-key
+      const spec: SessionOpenSpec = {
+        mode: 'resume',
+        sessionId: realId,
+      };
+      const channel = openChannel(realId, vendor, spec);
+      sessions.set(realId, channel);
+      subscribe(channel, subscriber);
+
+      // Notify session list of the new session
+      refreshAndNotify(realId);
+
+      // Return a resolved rekeyPromise since the ID is already real
+      return { pendingId: realId, channel, rekeyPromise: Promise.resolve(realId) };
+    } catch (err) {
+      pushRosieLog({ source: 'session', level: 'warn', summary: `Pre-fork failed, falling back to pending channel`, data: { fromSessionId, error: String(err) } });
+      // Fall through to legacy fork path
+    }
+  }
+
+  // Legacy fork path: pending channel with re-key
   const spec: SessionOpenSpec = {
     mode: 'fork',
     fromSessionId,
@@ -733,7 +794,7 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
     }
 
     case 'fork': {
-      const forked = createForkSession(
+      const forked = await createForkSession(
         intent.target.vendor as Vendor,
         intent.target.fromSessionId,
         subscriber,
