@@ -70,6 +70,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { homedir } from 'os';
 import { getLatestRosieMeta } from '../../activity-index.js';
+import { getContextWindowTokens } from '../../model-utils.js';
 
 // ============================================================================
 // Configuration — Full SDK Options Surface
@@ -1159,7 +1160,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         cacheRead: betaUsage.cache_read_input_tokens ?? 0,
       };
       const totalTokens = tokens.input + tokens.output + tokens.cacheCreation + tokens.cacheRead;
-      const cw = this._contextUsage?.contextWindow ?? 200_000;
+      const cw = this._contextUsage?.contextWindow ?? getContextWindowTokens('claude', this.options.model);
       this._contextUsage = {
         tokens,
         totalTokens,

@@ -29,11 +29,14 @@ export function parseModelOption(opt: string): { vendor: Vendor; model: string }
  * Conservative: when unknown, falls back to the smallest known window.
  */
 const CONTEXT_WINDOWS: Record<string, number> = {
-  // Claude
+  // Claude (full model strings + short aliases used by UI/adapter)
   'claude:claude-haiku-4-5':  200_000,
   'claude:claude-sonnet-4-5': 200_000,
   'claude:claude-sonnet-4-6': 200_000,
   'claude:claude-opus-4-6':   1_000_000,
+  'claude:haiku':              200_000,
+  'claude:sonnet':             200_000,
+  'claude:opus':               1_000_000,
   'claude:':                   200_000,  // default Claude
   // Codex (OpenAI)
   'codex:gpt-5.3-instant':    200_000,

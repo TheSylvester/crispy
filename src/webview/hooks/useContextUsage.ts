@@ -12,11 +12,25 @@
  * @module useContextUsage
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import type { ContextUsage, TranscriptEntry } from '../../core/transcript.js';
 import { useTransport } from '../context/TransportContext.js';
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
+
+/**
+ * useState variant that resets to initialValue synchronously when key changes,
+ * preventing a stale-render frame between the key change and the useEffect cleanup.
+ */
+function useKeyedState<T>(key: string | null, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
+  const [state, setState] = useState<T>(initialValue);
+  const prevKeyRef = useRef(key);
+  if (key !== prevKeyRef.current) {
+    prevKeyRef.current = key;
+    setState(initialValue);
+  }
+  return [state, setState];
+}
 
 /**
  * Extract the model's context window size from transcript entries.
@@ -86,12 +100,9 @@ export function useContextUsage(
   entries?: TranscriptEntry[],
 ): ContextUsage | null {
   const transport = useTransport();
-  const [liveUsage, setLiveUsage] = useState<ContextUsage | null>(null);
-
-  // Reset when session changes
-  useEffect(() => {
-    setLiveUsage(null);
-  }, [sessionId]);
+  // Keyed by sessionId — resets synchronously on session switch to prevent
+  // a stale render frame showing the previous session's context data.
+  const [liveUsage, setLiveUsage] = useKeyedState<ContextUsage | null>(sessionId, null);
 
   // Subscribe to live catchup events
   useEffect(() => {
