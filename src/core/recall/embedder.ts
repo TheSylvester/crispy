@@ -338,7 +338,7 @@ export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
     const libDir = join(binaryPath, '..');
     const envKey = platform() === 'darwin' ? 'DYLD_LIBRARY_PATH' : 'LD_LIBRARY_PATH';
     const { stdout, stderr } = await execFileAsync(binaryPath, args, {
-      maxBuffer: 2 * 1024 * 1024,
+      maxBuffer: 1024 * 1024,
       env: { ...process.env, [envKey]: libDir },
     });
 
