@@ -4,7 +4,8 @@
  * Two data sources, in priority order:
  * 1. Live `state_changed` events from the transport (adapter → channel → snapshot)
  * 2. Historical fallback: walk `entries` backwards for the last assistant turn's
- *    `message.usage` and compute ContextUsage with 200k default window.
+ *    `message.usage` and compute ContextUsage using the model's actual context
+ *    window from result entries (falls back to 200k default).
  *
  * Returns null when no usage data is available yet.
  *
@@ -18,10 +19,34 @@ import { useTransport } from '../context/TransportContext.js';
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 
 /**
+ * Extract the model's context window size from transcript entries.
+ *
+ * Scans backwards for a `result` entry whose `metadata.modelUsage` contains
+ * a `contextWindow` field (populated by the Claude SDK's ModelUsage).
+ * Falls back to DEFAULT_CONTEXT_WINDOW if none found.
+ */
+function extractContextWindow(entries: TranscriptEntry[]): number {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry.type === 'result' && entry.metadata) {
+      const modelUsage = entry.metadata.modelUsage as Record<string, Record<string, number>> | undefined;
+      if (modelUsage) {
+        for (const mu of Object.values(modelUsage)) {
+          if (mu.contextWindow && mu.contextWindow > 0) return mu.contextWindow;
+        }
+      }
+    }
+  }
+  return DEFAULT_CONTEXT_WINDOW;
+}
+
+/**
  * Compute ContextUsage from historical transcript entries.
  *
  * Walks entries backwards to find the last assistant message with `message.usage`,
- * then converts SDK Usage fields into our ContextUsage shape.
+ * then converts SDK Usage fields into our ContextUsage shape. Uses the model's
+ * actual context window from result entries when available, falling back to
+ * DEFAULT_CONTEXT_WINDOW.
  */
 export function computeContextFromEntries(entries: TranscriptEntry[]): ContextUsage | null {
   for (let i = entries.length - 1; i >= 0; i--) {
@@ -33,7 +58,7 @@ export function computeContextFromEntries(entries: TranscriptEntry[]): ContextUs
       const cacheCreation = u.cache_creation_input_tokens ?? 0;
       const cacheRead = u.cache_read_input_tokens ?? 0;
       const totalTokens = input + output + cacheCreation + cacheRead;
-      const contextWindow = DEFAULT_CONTEXT_WINDOW;
+      const contextWindow = extractContextWindow(entries);
       const percent = Math.min(Math.round((totalTokens / contextWindow) * 100), 100);
 
       return {
