@@ -28,6 +28,8 @@ export type SettingsSection =
 export interface SettingsPreferences {
   toolPanelAutoOpen: boolean;
   bashBlockInIcons: boolean;
+  renderMode: string;
+  badgeStyle: string;
 }
 
 // ============================================================================
@@ -203,6 +205,8 @@ export const DEFAULT_SETTINGS: CrispySettings = {
   preferences: {
     toolPanelAutoOpen: false,
     bashBlockInIcons: false,
+    renderMode: 'icons',
+    badgeStyle: 'frosted',
   },
   providers: {},
   hooks: {

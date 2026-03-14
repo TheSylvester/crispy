@@ -1,9 +1,9 @@
 /**
  * Preferences Context — persisted + ephemeral UI state
  *
- * Only toolPanelAutoOpen is persisted via the settings RPC.
- * All other preferences (renderMode, debugMode, panel state) are per-window
- * ephemeral state managed with plain useState.
+ * Persisted prefs (renderMode, badgeStyle, toolPanelAutoOpen, bashBlockInIcons)
+ * are synced to settings.json via debounced RPC.
+ * All other preferences (debugMode, panel state) are per-window ephemeral state.
  *
  * @module PreferencesContext
  */
@@ -92,7 +92,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   // Ephemeral preferences — per-window transient UI state
   // ============================================================================
 
-  const [renderMode, setRenderMode] = useState<RenderMode>(getInitialRenderMode);
   const [debugMode, setDebugMode] = useState(false);
   const [settingsPinned, setSettingsPinned] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
@@ -101,13 +100,14 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [toolPanelMode, setToolPanelMode] = useState<ToolPanelMode>('inspector');
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
   const [condensedToolMode, setCondensedToolMode] = useState(false);
-  const [badgeStyle, setBadgeStyle] = useState<BadgeStyle>('frosted');
   const [sidebarView, setSidebarView] = useState<SidebarView>('tools');
 
   // ============================================================================
-  // Persisted preference — toolPanelAutoOpen only
+  // Persisted preferences — synced to settings.json
   // ============================================================================
 
+  const [renderMode, setRenderModeLocal] = useState<RenderMode>(getInitialRenderMode);
+  const [badgeStyle, setBadgeStyleLocal] = useState<BadgeStyle>('frosted');
   const [toolPanelAutoOpen, setToolPanelAutoOpenLocal] = useState(false);
   const [bashBlockInIcons, setBashBlockInIconsLocal] = useState(false);
 
@@ -118,12 +118,17 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   /** Timer for debounced persist calls. */
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  // Seed toolPanelAutoOpen from settings on mount
+  // Seed persisted preferences from settings on mount
   useEffect(() => {
     transport.getSettings().then((snapshot) => {
       revisionRef.current = snapshot.revision;
-      setToolPanelAutoOpenLocal(snapshot.settings.preferences.toolPanelAutoOpen);
-      setBashBlockInIconsLocal(snapshot.settings.preferences.bashBlockInIcons);
+      const prefs = snapshot.settings.preferences;
+      // URL ?mode= param takes priority over persisted setting (dev override)
+      const urlMode = new URLSearchParams(window.location.search).get('mode');
+      if (!urlMode && prefs.renderMode) setRenderModeLocal(prefs.renderMode as RenderMode);
+      if (prefs.badgeStyle) setBadgeStyleLocal(prefs.badgeStyle as BadgeStyle);
+      setToolPanelAutoOpenLocal(prefs.toolPanelAutoOpen);
+      setBashBlockInIconsLocal(prefs.bashBlockInIcons);
     }).catch((err) => {
       console.error('[PreferencesContext] Failed to load settings:', err);
     });
@@ -144,8 +149,12 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       revisionRef.current = snapshot.revision;
 
       if (changedSections.includes('preferences')) {
-        setToolPanelAutoOpenLocal(snapshot.settings.preferences.toolPanelAutoOpen);
-        setBashBlockInIconsLocal(snapshot.settings.preferences.bashBlockInIcons);
+        const prefs = snapshot.settings.preferences;
+        const urlMode = new URLSearchParams(window.location.search).get('mode');
+        if (!urlMode && prefs.renderMode) setRenderModeLocal(prefs.renderMode as RenderMode);
+        if (prefs.badgeStyle) setBadgeStyleLocal(prefs.badgeStyle as BadgeStyle);
+        setToolPanelAutoOpenLocal(prefs.toolPanelAutoOpen);
+        setBashBlockInIconsLocal(prefs.bashBlockInIcons);
       }
     });
   }, [transport]);
@@ -186,6 +195,16 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       });
     }, PERSIST_DEBOUNCE_MS);
   }, [transport]);
+
+  const setRenderMode = useCallback((mode: RenderMode) => {
+    setRenderModeLocal(mode);
+    persistPreference({ renderMode: mode });
+  }, [persistPreference]);
+
+  const setBadgeStyle = useCallback((style: BadgeStyle) => {
+    setBadgeStyleLocal(style);
+    persistPreference({ badgeStyle: style });
+  }, [persistPreference]);
 
   const setToolPanelAutoOpen = useCallback((enabled: boolean) => {
     setToolPanelAutoOpenLocal(enabled);

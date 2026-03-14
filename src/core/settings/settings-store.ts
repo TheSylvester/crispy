@@ -199,6 +199,12 @@ function sanitizeSettings(data: unknown): CrispySettings {
     if (typeof prefs.bashBlockInIcons === 'boolean') {
       result.preferences.bashBlockInIcons = prefs.bashBlockInIcons;
     }
+    if (typeof prefs.renderMode === 'string') {
+      result.preferences.renderMode = prefs.renderMode;
+    }
+    if (typeof prefs.badgeStyle === 'string') {
+      result.preferences.badgeStyle = prefs.badgeStyle;
+    }
   }
 
   // Providers
