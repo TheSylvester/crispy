@@ -957,7 +957,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       if (channelState !== 'idle' && channelState !== null) return;
       if (!entries || entries.length === 0) return;
       for (let i = entries.length - 1; i >= 0; i--) {
-        if (entries[i].type === 'assistant' && entries[i].uuid) {
+        if (entries[i].type === 'assistant' && entries[i].uuid && !entries[i].isSidechain) {
           forkTargetRef.current = entries[i].uuid!;
           return;
         }

@@ -64,8 +64,10 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
 
     // Clear stale entries immediately so optimistic messages from a
     // previous session never bleed into the newly selected one.
-    // Skip the clear for pending→real transitions (entries are already correct).
-    if (!prevSessionId?.startsWith('pending:') && !sessionId.startsWith('pending:')) {
+    // Skip the clear for:
+    // - pending→real transitions (entries are already correct)
+    // - null→real transitions (fork-to-new-panel preloads history via setForkHistory)
+    if (prevSessionId !== null && !prevSessionId?.startsWith('pending:') && !sessionId.startsWith('pending:')) {
       setEntries([]);
     }
 
