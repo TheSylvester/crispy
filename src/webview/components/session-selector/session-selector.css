@@ -375,6 +375,9 @@
 .crispy-vendor-icon[data-vendor="codex"] {
   color: var(--vscode-charts-green, #89d185);
 }
+.crispy-vendor-icon[data-vendor="opencode"] {
+  color: var(--vscode-charts-blue, #6cb6ff);
+}
 
 /* Vendor text badge fallback (unknown vendors) */
 .crispy-vendor-badge {
@@ -457,150 +460,478 @@
   opacity: 0.6;
 }
 
-/* --- Project-specific additions --- */
+/* --- Stage dots (group headers) --- */
 
+.crispy-stage-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.crispy-stage-dot--active { background: #5cb870; }
+.crispy-stage-dot--paused { background: #d4a030; }
+.crispy-stage-dot--planning { background: #6878a0; }
+.crispy-stage-dot--ready { background: #50a0d0; }
+.crispy-stage-dot--committed { background: #a070c0; }
+.crispy-stage-dot--archived { background: #555568; }
+
+/* Archived group items are muted */
+.crispy-session-group--archived .crispy-project-row {
+  opacity: 0.55;
+}
+.crispy-session-group--archived .crispy-project-row:hover {
+  opacity: 0.8;
+}
+
+/* --- Filter bar --- */
+
+.crispy-projects-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.crispy-project-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.crispy-project-filter-pill {
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--vscode-descriptionForeground, #858585);
+  font-family: inherit;
+  font-size: var(--font-2xs);
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+.crispy-project-filter-pill:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--vscode-foreground, #d4d4d4);
+}
+.crispy-project-filter-pill--active {
+  border-color: #a07850;
+  color: #d4a574;
+  background: rgba(212, 165, 116, 0.06);
+}
+.crispy-project-filter-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+/* --- Project rows (card layout) --- */
+
+.crispy-project-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: start;
+  padding: 8px 12px;
+  gap: 0 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.crispy-project-row:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+.crispy-project-row + .crispy-project-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+.crispy-project-row--expanded {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+.crispy-project-row--archived .crispy-project-title {
+  color: var(--vscode-descriptionForeground, #858585);
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Icon column */
+.crispy-project-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 2px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* Content column */
+.crispy-project-content { min-width: 0; }
+
+.crispy-project-title {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--vscode-foreground, #d4d4d4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crispy-project-row:hover .crispy-project-title {
+  color: #fff;
+}
+
+/* Status line — freeform text from Rosie */
+.crispy-project-status-text {
+  font-size: var(--font-xs);
+  color: var(--vscode-descriptionForeground, #858585);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+}
+
+/* Meta row */
 .crispy-project-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: var(--font-xs);
+  gap: 6px;
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
+
+.crispy-project-meta-item {
+  font-size: var(--font-2xs);
   color: var(--vscode-descriptionForeground, #858585);
   opacity: 0.6;
-  margin-top: 1px;
+  white-space: nowrap;
 }
 
 .crispy-project-branch {
   font-family: var(--font-mono);
   font-size: var(--font-2xs);
-  background: rgba(255, 255, 255, 0.06);
-  padding: 1px 5px;
-  border-radius: var(--radius-xs);
+  color: var(--vscode-descriptionForeground, #858585);
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.crispy-project-blocked {
+.crispy-project-entity-tag {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--vscode-descriptionForeground, #858585);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crispy-project-blocker-tag {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: rgba(212, 160, 48, 0.1);
+  color: #d4a030;
+}
+
+/* Time column */
+.crispy-project-time {
   font-size: var(--font-2xs);
-  color: #cca752;
-  opacity: 0.8;
+  color: var(--vscode-descriptionForeground, #858585);
+  white-space: nowrap;
+  padding-top: 3px;
+  text-align: right;
+}
+.crispy-project-time--fresh { color: #5cb870; }
+.crispy-project-time--warm { color: var(--vscode-descriptionForeground, #858585); }
+.crispy-project-time--stale { color: #d4a030; }
+.crispy-project-time--cold { color: var(--vscode-descriptionForeground, #858585); opacity: 0.5; }
+
+/* --- Expanded project detail --- */
+
+.crispy-project-detail {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+}
+
+.crispy-project-detail-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--vscode-descriptionForeground, #858585);
+  opacity: 0.7;
+  margin: 8px 0 4px;
+  font-weight: 600;
+}
+
+.crispy-project-detail-description {
+  font-size: var(--font-xs);
+  color: var(--vscode-descriptionForeground, #858585);
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.crispy-project-detail-blocker {
+  border-left: 2px solid #d4a030;
+  padding: 4px 10px;
+  margin-bottom: 8px;
+  font-size: var(--font-2xs);
+  color: #d4a030;
+  background: rgba(212, 160, 48, 0.1);
+  border-radius: 0 3px 3px 0;
+}
+
+/* Sessions in expanded detail */
+.crispy-project-detail-sessions {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.crispy-project-detail-sessions li {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 0 8px;
+  padding: 4px 0;
+  font-size: var(--font-xs);
+  cursor: pointer;
+  border-radius: 3px;
+  margin: 0 -4px;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+.crispy-project-detail-sessions li:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.crispy-project-detail-session-time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground, #858585);
+  opacity: 0.6;
+  padding-top: 2px;
+}
+.crispy-project-detail-session-content { min-width: 0; }
+.crispy-project-detail-session-title {
+  color: var(--vscode-descriptionForeground, #858585);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-xs);
+}
+.crispy-project-detail-sessions li:hover .crispy-project-detail-session-title {
+  color: var(--vscode-foreground, #d4d4d4);
+}
+.crispy-project-detail-session-preview {
+  color: var(--vscode-descriptionForeground, #858585);
+  opacity: 0.5;
+  font-size: var(--font-2xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
   margin-top: 1px;
 }
 
-/* Status dot for group headers */
-.crispy-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.crispy-status-dot--active { background: #89d185; }
-.crispy-status-dot--blocked { background: #cca752; }
-.crispy-status-dot--planned { background: #60a5fa; }
-.crispy-status-dot--done { background: #6c6c6c; }
-
-/* Done group items are muted */
-.crispy-session-group--done .crispy-session-item {
-  opacity: 0.55;
-}
-.crispy-session-group--done .crispy-session-item:hover {
-  opacity: 0.8;
-}
-
-/* --- Expanded project --- */
-
-.crispy-session-item--expanded {
-  background: var(--vscode-list-hoverBackground, #2a2d2e);
-}
-
-/* --- Linked sessions drawer --- */
-
-.crispy-project-sessions {
+/* Files in expanded detail */
+.crispy-project-detail-files {
   list-style: none;
-  padding: 4px 0 2px 0;
+  padding: 0;
   margin: 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.crispy-project-detail-files li {
+  font-family: var(--font-mono);
+  font-size: var(--font-2xs);
+  color: var(--vscode-descriptionForeground, #858585);
+  padding: 1px 0;
+  display: flex;
+  gap: 6px;
+  cursor: pointer;
+}
+.crispy-project-detail-files li:hover {
+  color: var(--vscode-foreground, #d4d4d4);
+}
+.crispy-project-detail-file-note {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+.crispy-project-detail-origin {
+  font-size: var(--font-2xs);
+  color: var(--vscode-descriptionForeground, #858585);
+  margin-top: 6px;
+}
+.crispy-project-detail-origin-link {
+  color: #a07850;
+  cursor: pointer;
+}
+.crispy-project-detail-origin-link:hover {
+  color: #d4a574;
+}
+
+.crispy-project-detail-duration {
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground, #858585);
+  opacity: 0.6;
   margin-top: 4px;
 }
 
-.crispy-project-session-item {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: baseline;
-  gap: 2px 8px;
-  padding: 5px 8px 5px 12px;
+/* --- Project history --- */
+
+.crispy-project-history {
+  margin-top: 10px;
+}
+
+.crispy-project-history-toggle {
+  font-size: var(--font-2xs);
+  color: var(--vscode-descriptionForeground, #858585);
   cursor: pointer;
-  transition: background 0.1s;
-  border-radius: var(--radius-xs);
-  margin: 0 4px;
+  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  user-select: none;
 }
-
-.crispy-project-session-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.crispy-project-session-item__title {
-  font-size: var(--font-xs);
+.crispy-project-history-toggle:hover {
   color: var(--vscode-foreground, #d4d4d4);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
+}
+.crispy-project-history-toggle__chevron {
+  font-size: 9px;
+  transition: transform 0.15s;
+  display: inline-block;
+}
+.crispy-project-history-toggle--open .crispy-project-history-toggle__chevron {
+  transform: rotate(90deg);
 }
 
-.crispy-project-session-item__time {
+.crispy-project-history-controls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 4px;
+  margin-bottom: 2px;
+}
+
+.crispy-project-history-filter {
+  font-size: 9px;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--vscode-descriptionForeground, #858585);
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.crispy-project-history-filter:hover {
+  color: var(--vscode-foreground, #d4d4d4);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+.crispy-project-history-filter--active {
+  color: #d4a574;
+  border-color: #a07850;
+  background: rgba(212, 165, 116, 0.06);
+}
+
+.crispy-project-history-sort {
+  font-size: 9px;
+  background: none;
+  border: none;
+  color: var(--vscode-descriptionForeground, #858585);
+  cursor: pointer;
+  padding: 2px 4px;
+  margin-left: auto;
+  font-family: inherit;
+}
+.crispy-project-history-sort:hover {
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+/* Timeline */
+.crispy-project-timeline {
+  margin-top: 6px;
+}
+.crispy-project-timeline--open {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.crispy-project-timeline-loading,
+.crispy-project-timeline-empty {
   font-size: var(--font-2xs);
   color: var(--vscode-descriptionForeground, #858585);
   opacity: 0.5;
+  padding: 4px 0;
 }
 
-.crispy-project-session-item__preview {
-  font-size: var(--font-2xs);
-  color: var(--vscode-descriptionForeground, #858585);
-  opacity: 0.6;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  grid-column: 1;
-}
-
-/* --- Project resources (plans, specs, docs) --- */
-
-.crispy-project-resources {
-  list-style: none;
-  padding: 0;
-  margin: 2px 0 0 0;
+.crispy-project-timeline-entry {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.crispy-project-resource {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
+  gap: 6px;
+  padding: 3px 0;
   font-size: var(--font-2xs);
-  color: #7dafff;
-  background: rgba(125, 175, 255, 0.08);
-  padding: 1px 6px;
-  border-radius: var(--radius-xs);
-  cursor: pointer;
-  transition: background 0.15s;
-  text-decoration: none;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  align-items: baseline;
+}
+.crispy-project-timeline-entry + .crispy-project-timeline-entry {
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-.crispy-project-resource:hover {
-  background: rgba(125, 175, 255, 0.15);
-}
-
-.crispy-project-resource__icon {
-  opacity: 0.7;
+.crispy-project-timeline-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
   flex-shrink: 0;
+  margin-top: 4px;
+}
+.crispy-project-timeline-dot--rosie { background: #5cb870; }
+.crispy-project-timeline-dot--user { background: #d4a574; }
+
+.crispy-project-timeline-source {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 4px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.crispy-project-timeline-source--rosie {
+  color: #5cb870;
+  background: rgba(92, 184, 112, 0.1);
+}
+.crispy-project-timeline-source--user {
+  color: #d4a574;
+  background: rgba(212, 165, 116, 0.1);
+}
+
+.crispy-project-timeline-text {
+  color: var(--vscode-descriptionForeground, #858585);
+  flex: 1;
+  min-width: 0;
+}
+.crispy-project-timeline-text .hl {
+  color: var(--vscode-foreground, #d4d4d4);
+}
+.crispy-project-timeline-text .arrow {
+  color: #d4a574;
+  margin: 0 3px;
+}
+
+.crispy-project-timeline-time {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--vscode-descriptionForeground, #858585);
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+/* --- Drag-and-drop --- */
+
+.crispy-project-dragging {
+  opacity: 0.4;
+}
+
+.crispy-project-drop-target {
+  outline: 1px dashed #d4a574;
+  outline-offset: -1px;
+  background: rgba(212, 165, 116, 0.04);
 }
 
