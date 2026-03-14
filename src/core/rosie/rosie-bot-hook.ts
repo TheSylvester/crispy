@@ -22,7 +22,8 @@ import { tmpdir } from 'node:os';
 import { onResponseCompleteAfter } from '../lifecycle-hooks.js';
 import type { AgentDispatch } from '../../host/agent-dispatch.js';
 import { getSettingsSnapshotInternal } from '../settings/index.js';
-import { parseModelOption } from '../model-utils.js';
+import { parseModelOption, getContextWindowTokens } from '../model-utils.js';
+import type { Vendor } from '../transcript.js';
 import { appendActivityEntries, getLatestRosieMeta, getAllRosieMetas } from '../activity-index.js';
 import { refreshAndNotify } from '../session-list-manager.js';
 import { closeSession } from '../session-manager.js';
@@ -121,7 +122,7 @@ async function runRosieBot(
   pushRosieLog({ source: 'rosie-bot', level: 'info', summary: `Rosie-bot: using ${vendor}/${model || 'default'}`, data: { vendor, model } });
 
   // 1. Assemble bookend transcript from messages table
-  const transcript = assembleBookendTranscript(sessionId, sessionPath);
+  const transcript = assembleBookendTranscript(sessionId, sessionPath, vendor as Vendor, model);
   if (!transcript) {
     pushRosieLog({ source: 'rosie-bot', level: 'info', summary: 'Rosie-bot: skipped (no messages indexed yet)' });
     return;
@@ -145,9 +146,13 @@ async function runRosieBot(
 // Bookend Transcript Assembly
 // ============================================================================
 
-const MAX_TURN_CHARS = 4000;
+/** 30% of model context window, ~3 chars per token. */
+function transcriptBudget(vendor: Vendor, model?: string): number {
+  return Math.floor(getContextWindowTokens(vendor, model) * 0.3 * 3);
+}
 
-function assembleBookendTranscript(sessionId: string, sessionPath: string): string | null {
+function assembleBookendTranscript(sessionId: string, sessionPath: string, vendor?: Vendor, model?: string): string | null {
+  const budget = transcriptBudget((vendor ?? 'claude') as Vendor, model);
   // Fetch only the bookend messages we need (first 2 + last 3), not the full session
   const total = getSessionMessageCount(sessionId);
   if (total === 0) return null;
@@ -168,30 +173,49 @@ function assembleBookendTranscript(sessionId: string, sessionPath: string): stri
   // Fetch existing rosie-metas for the middle section
   const metas = getAllRosieMetas(sessionPath);
 
-  let context = '## Opening turns (verbatim)\n\n';
-  for (const m of first) {
-    const role = inferRole(m.role, m.message_seq);
-    const text = (m.text || '').slice(0, MAX_TURN_CHARS);
-    context += `**${role}:** ${text}\n\n`;
-  }
-
+  // Build payload sections first (last 3 + rosie-metas) — these are sacred
+  let metasSection = '';
   if (metas.length > 0) {
-    context += '## Intermediate turn summaries (from prior analysis)\n\n';
+    metasSection += '## Intermediate turn summaries (from prior analysis)\n\n';
     for (const m of metas) {
-      context += `- **${m.title}** — ${m.quest}\n  Status: ${m.status}\n\n`;
+      metasSection += `- **${m.title}** — ${m.quest}\n  Status: ${m.status}\n\n`;
     }
   }
 
+  let lastSection = '';
   if (last.length > 0) {
-    context += '## Final turns (verbatim)\n\n';
+    lastSection += '## Final turns (verbatim)\n\n';
     for (const m of last) {
       const role = inferRole(m.role, m.message_seq);
-      const text = (m.text || '').slice(0, MAX_TURN_CHARS);
-      context += `**${role}:** ${text}\n\n`;
+      lastSection += `**${role}:** ${m.text || ''}\n\n`;
     }
   }
 
-  return context;
+  // Budget remaining for the opening turns (context, compressible)
+  const sacredLen = metasSection.length + lastSection.length;
+  const openingBudget = Math.max(0, budget - sacredLen);
+
+  let openingSection = '## Opening turns (verbatim)\n\n';
+  let openingUsed = openingSection.length;
+  for (const m of first) {
+    const role = inferRole(m.role, m.message_seq);
+    const text = m.text || '';
+    const entry = `**${role}:** ${text}\n\n`;
+    if (openingUsed + entry.length <= openingBudget) {
+      openingSection += entry;
+      openingUsed += entry.length;
+    } else {
+      // Fit what we can from this message, then stop
+      const remaining = openingBudget - openingUsed;
+      if (remaining > 50) {
+        const truncated = text.slice(0, remaining - `**${role}:** \n\n…\n\n`.length);
+        openingSection += `**${role}:** ${truncated}\n\n…\n\n`;
+      }
+      break;
+    }
+  }
+
+  return openingSection + metasSection + lastSection;
 }
 
 // ============================================================================
