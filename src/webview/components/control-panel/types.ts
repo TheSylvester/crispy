@@ -109,12 +109,12 @@ export const AGENCY_MODE_LABELS_SHORT: Record<AgencyMode, string> = {
   'bypass-permissions': '>> bypass',
 };
 
-/** Agency mode colors — matches CSS --frame-highlight values. */
+/** Agency mode colors — references CSS --agency-* tokens so light/dark themes cascade. */
 export const AGENCY_MODE_COLORS: Record<AgencyMode, string> = {
-  'ask-before-edits': '#FFFFFF',
-  'edit-automatically': '#40A8E8',
-  'plan-mode': '#47988c',
-  'bypass-permissions': '#E84040',
+  'ask-before-edits': 'var(--agency-white)',
+  'edit-automatically': 'var(--agency-blue)',
+  'plan-mode': 'var(--agency-teal)',
+  'bypass-permissions': 'var(--agency-red)',
 };
 
 /** Map local agency mode to the transport's permission mode string. */

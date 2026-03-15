@@ -10,7 +10,7 @@
  */
 
 import type { AgencyMode } from './types.js';
-import { AGENCY_MODE_LABELS, AGENCY_MODE_LABELS_SHORT } from './types.js';
+import { AGENCY_MODE_LABELS, AGENCY_MODE_LABELS_SHORT, AGENCY_MODE_COLORS } from './types.js';
 
 interface AgencyModeSelectProps {
   value: AgencyMode;
@@ -18,6 +18,8 @@ interface AgencyModeSelectProps {
   onChange: (mode: AgencyMode) => void;
   /** Use short labels for narrow layouts. */
   compact?: boolean;
+  /** Set --frame-highlight inline to reflect the selected mode's own color. */
+  selfColored?: boolean;
 }
 
 const MODES: AgencyMode[] = [
@@ -27,13 +29,14 @@ const MODES: AgencyMode[] = [
   'bypass-permissions',
 ];
 
-export function AgencyModeSelect({ value, showBypassOption, onChange, compact }: AgencyModeSelectProps): React.JSX.Element {
+export function AgencyModeSelect({ value, showBypassOption, onChange, compact, selfColored }: AgencyModeSelectProps): React.JSX.Element {
   const labels = compact ? AGENCY_MODE_LABELS_SHORT : AGENCY_MODE_LABELS;
   return (
     <select
       className="crispy-cp-agency"
       value={value}
       onChange={(e) => onChange(e.target.value as AgencyMode)}
+      style={selfColored ? { '--frame-highlight': AGENCY_MODE_COLORS[value] } as React.CSSProperties : undefined}
     >
       {MODES.map((mode) => (
         <option

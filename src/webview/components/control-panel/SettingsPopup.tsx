@@ -295,6 +295,7 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               value={defaultPermissionMode}
               showBypassOption={true}
               onChange={onUpdateDefaultPermissionMode}
+              selfColored
             />
           </label>
 
