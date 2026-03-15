@@ -474,10 +474,11 @@ function createPendingChannel(
 ): PendingChannelResult {
   const pendingId = options?.explicitPendingId ?? `pending:${crypto.randomUUID()}`;
 
-  // Inject CRISPY_SESSION_ID so LLMs in managed sessions can self-identify
-  if (spec.mode === 'fresh' || spec.mode === 'fork') {
-    spec = { ...spec, env: { ...spec.env, CRISPY_SESSION_ID: pendingId } };
-  }
+  // Inject CRISPY_SESSION_ID so LLMs in managed sessions can self-identify.
+  // For resume, the real session ID is already known; for fresh/fork, use the
+  // pending ID (resolved later via resolveSessionId()).
+  const envSessionId = spec.mode === 'resume' ? spec.sessionId! : pendingId;
+  spec = { ...spec, env: { ...spec.env, CRISPY_SESSION_ID: envSessionId } };
 
   const channel = openChannel(pendingId, vendor, spec);
   sessions.set(pendingId, channel);
