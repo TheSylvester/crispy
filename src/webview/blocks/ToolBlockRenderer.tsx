@@ -66,9 +66,11 @@ export function ToolBlockRenderer({
   const panelState = usePanelState();
 
   // Click-to-panel: dispatch USER_CLICKED to pin/expand the tool.
-  // Active on main-thread, task-tool, AND tool-panel (so compact panel tools can be clicked to expand).
+  // Active on main-thread and tool-panel only — task-tool children use native
+  // <details> toggling and must NOT dispatch here (exclusive selection would
+  // collapse their parent task).
   const panelDispatch = usePanelDispatch();
-  const clickable = anchor.type === 'main-thread' || anchor.type === 'task-tool' || anchor.type === 'tool-panel';
+  const clickable = anchor.type === 'main-thread' || anchor.type === 'tool-panel';
   const handleClick = useCallback((e: React.MouseEvent) => {
     // Bail out if clicking an interactive element (link, button, input) —
     // let the element handle its own click instead of activating the card.
