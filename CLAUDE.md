@@ -175,6 +175,8 @@ interact, and screenshot. Kill the server when done (`lsof -i :3456`).
   behavior. **Read before modifying UI behavior.**
 - `plans/` — implementation plans and feature designs.
 - `prompts/` — orchestration chains for multi-phase implementations.
+- `playgrounds/` — interactive HTML/TS playground tools (search explorers,
+  visualizers, etc.). All playground artifacts go here, not in the repo root.
 
 ## Skills (`.claude/skills/`)
 
