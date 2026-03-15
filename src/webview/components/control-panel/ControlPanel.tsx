@@ -371,13 +371,15 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       await transport.stopEmbeddingBackfill();
     }, [transport]);
 
-    // Clear forkMode when switching sessions; reset model to default for new conversations
+    // Clear forkMode when switching sessions; reset model + agency to defaults for new conversations
     useEffect(() => {
       dispatch({ type: 'SET_FORK_MODE', forkMode: null });
       if (!selectedSessionId) {
         dispatch({ type: 'SET_MODEL', model: defaultModel });
+        dispatch({ type: 'SET_AGENCY_MODE', mode: defaultPermissionMode });
+        dispatch({ type: 'SET_BYPASS', enabled: defaultPermissionMode === 'bypass-permissions' });
       }
-    }, [selectedSessionId, defaultModel]);
+    }, [selectedSessionId, defaultModel, defaultPermissionMode]);
 
     // Ref to always call the latest handleSend (avoids stale closure in forkConfig auto-send)
     const handleSendRef = useRef<() => void>(() => {});
@@ -532,12 +534,14 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             ? ''
             : `${settings.vendor}:${rawModel}`;
           dispatch({ type: 'SET_MODEL', model: modelValue });
-          // Sync permission mode → agency mode
+          // Sync permission mode → agency mode (fall back to user default when session has none)
           if (settings.permissionMode) {
             const agencyMode = mapPermissionModeToAgency(settings.permissionMode);
             if (agencyMode) {
               dispatch({ type: 'SET_AGENCY_MODE', mode: agencyMode });
             }
+          } else {
+            dispatch({ type: 'SET_AGENCY_MODE', mode: defaultPermissionMode });
           }
           // Sync bypass
           dispatch({ type: 'SET_BYPASS', enabled: settings.allowDangerouslySkipPermissions });
@@ -566,7 +570,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         }
       });
       return off;
-    }, [selectedSessionId, transport]);
+    }, [selectedSessionId, transport, defaultPermissionMode]);
 
     // --- Send handler ---
     const handleSend = useCallback(() => {
