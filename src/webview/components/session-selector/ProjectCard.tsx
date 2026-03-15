@@ -92,7 +92,7 @@ export function ProjectCard({
 
         {/* Expanded detail */}
         {isExpanded && (
-          <div className="crispy-project-detail">
+          <div className="crispy-project-detail" onClick={e => e.stopPropagation()}>
             {p.summary && (
               <>
                 <div className="crispy-project-detail-label">Description</div>
