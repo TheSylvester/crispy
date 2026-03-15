@@ -95,7 +95,7 @@ function parseArgs(argv: string[]): CliArgs {
   const approvalEnv = process.env.CRISPY_DISPATCH_APPROVAL as ApprovalMode | undefined;
   const args: CliArgs = {
     vendor: 'claude',
-    timeoutMs: 60_000,
+    timeoutMs: 300_000,
     autoClose: true,
     visible: false,
     fork: false,
@@ -230,7 +230,7 @@ Vendor & Model:
 Behavior:
   --visible                 Show session in editor UI (uses sendTurn instead of dispatchChild)
   --parent-session <id>     Parent session ID (or set CRISPY_PARENT_SESSION)
-  --timeout <ms>            Timeout in milliseconds (default: 60000)
+  --timeout <ms>            Timeout in milliseconds (default: 300000)
   --persist                 Save session to disk (default: ephemeral)
   --no-auto-close           Keep session alive after completion
   --approval <mode>         Approval handling: fail (default), bypass, manual
@@ -626,14 +626,13 @@ async function runDispatchMode(
     autoClose: args.autoClose,
     skipPersistSession: !args.persist,
     forceNew: !args.resume,
+    cwd: process.cwd(),
   };
 
   if (Object.keys(settings).length > 0) {
     dispatchParams.settings = settings;
   }
-  if (args.timeoutMs !== 60_000) {
-    dispatchParams.timeoutMs = args.timeoutMs;
-  }
+  dispatchParams.timeoutMs = args.timeoutMs;
 
   // Fork mode with dispatchChild
   if (args.resume && args.fork) {

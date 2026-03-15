@@ -85,7 +85,7 @@ cat task.md | .claude/skills/crispy-agent/scripts/crispy-agent
 | `--vendor <v>` | Vendor to dispatch through (default: `claude`) |
 | `-m, --model <model>` | Model override |
 | `-r, --resume <UUID>` | Resume session by ID |
-| `--timeout <ms>` | Per-dispatch timeout (default: crispy-dispatch default 60s) |
+| `--timeout <ms>` | Per-dispatch timeout (default: 300s) |
 | `--no-auto-close` | Keep session alive after completion (default) |
 | `--auto-close` | Close session on completion |
 | `--visible` | Show session in Crispy editor UI |

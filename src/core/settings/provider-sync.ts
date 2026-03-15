@@ -107,7 +107,7 @@ export function buildEnvDict(config: ProviderConfig): Record<string, string> {
  * skipPersistSession + mcpServers → MCP tools available (tracker, recall)
  * skipPersistSession without mcpServers → single-turn, no tools (summarize)
  */
-function buildEphemeralConfig(spec: SessionOpenSpec & { skipPersistSession?: boolean; mcpServers?: Record<string, unknown> }): Record<string, unknown> {
+function buildEphemeralConfig(spec: SessionOpenSpec & { skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; permissionMode?: string }): Record<string, unknown> {
   if (!('skipPersistSession' in spec) || !spec.skipPersistSession) return {};
   if (spec.mcpServers) {
     return {
@@ -116,6 +116,9 @@ function buildEphemeralConfig(spec: SessionOpenSpec & { skipPersistSession?: boo
       allowedTools: ['mcp__crispy-memory__*'],
     };
   }
+  // If permissionMode is set, this is a CLI dispatch (full agent), not a
+  // Rosie summarize session. Don't restrict tools or turns.
+  if (spec.permissionMode) return {};
   return {
     maxTurns: 1,
     settingSources: [] as SettingSource[],

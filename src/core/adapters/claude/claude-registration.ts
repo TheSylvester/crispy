@@ -33,6 +33,9 @@ function buildEphemeralConfig(spec: SessionOpenSpec): Record<string, unknown> {
       allowedTools: ['mcp__crispy-memory__*'],
     };
   }
+  // If permissionMode is set, this is a CLI dispatch (full agent), not a
+  // Rosie summarize session. Don't restrict tools or turns.
+  if ('permissionMode' in spec && spec.permissionMode) return {};
   return {
     maxTurns: 1,
     settingSources: [] as SettingSource[],
