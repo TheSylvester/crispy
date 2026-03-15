@@ -245,6 +245,11 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           setRosieEnabled(settingsEvent.snapshot.settings.rosie?.bot?.enabled ?? false);
           setRosieModel(settingsEvent.snapshot.settings.rosie?.bot?.model);
           setDefaultModel(settingsEvent.snapshot.settings.turnDefaults?.model ?? '');
+          const savedMode = settingsEvent.snapshot.settings.turnDefaults?.permissionMode;
+          if (savedMode) {
+            const agencyMode = mapPermissionModeToAgency(savedMode);
+            if (agencyMode) setDefaultPermissionMode(agencyMode);
+          }
           const mcpMem = settingsEvent.snapshot.settings.mcp?.memory;
           if (mcpMem) {
             setMcpMemoryEnabled(mcpMem[mcpSettingsKey] ?? true);
@@ -272,6 +277,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // --- Default Model setting ---
     const [defaultModel, setDefaultModel] = useState<string>('');
 
+    // --- Default Permission Mode setting ---
+    const [defaultPermissionMode, setDefaultPermissionMode] = useState<AgencyMode>('ask-before-edits');
+
     // --- Rosie Bot settings state ---
     const [rosieEnabled, setRosieEnabled] = useState(false);
     const [rosieModel, setRosieModel] = useState<string | undefined>(undefined);
@@ -284,12 +292,34 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         setDefaultModel(savedDefault);
         // Apply persisted default model on initial load (before any session overrides it)
         if (savedDefault) dispatch({ type: 'SET_MODEL', model: savedDefault });
+        // Apply persisted permission mode + bypass on initial load
+        const savedMode = snapshot.settings.turnDefaults?.permissionMode;
+        if (savedMode) {
+          const agencyMode = mapPermissionModeToAgency(savedMode);
+          if (agencyMode) {
+            dispatch({ type: 'SET_AGENCY_MODE', mode: agencyMode });
+            setDefaultPermissionMode(agencyMode);
+            if (agencyMode === 'bypass-permissions') {
+              dispatch({ type: 'SET_BYPASS', enabled: true });
+            }
+          }
+        }
       }).catch(console.error);
     }, [transport]);
 
     const handleUpdateDefaultModel = useCallback(async (model: string) => {
       setDefaultModel(model);
       await transport.updateSettings({ turnDefaults: { model: model || null } });
+    }, [transport]);
+
+    const handleUpdateDefaultPermissionMode = useCallback(async (mode: AgencyMode) => {
+      setDefaultPermissionMode(mode);
+      await transport.updateSettings({
+        turnDefaults: {
+          permissionMode: mapAgencyToPermissionMode(mode),
+          allowDangerouslySkipPermissions: mode === 'bypass-permissions',
+        },
+      });
     }, [transport]);
 
     const handleUpdateRosie = useCallback(async (patch: { enabled?: boolean; model?: string }) => {
@@ -1063,6 +1093,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onStopEmbedding={handleStopEmbedding}
               defaultModel={defaultModel}
               onUpdateDefaultModel={handleUpdateDefaultModel}
+              defaultPermissionMode={defaultPermissionMode}
+              onUpdateDefaultPermissionMode={handleUpdateDefaultPermissionMode}
               modelGroups={modelGroups}
               providers={providers}
               onSaveProvider={async (slug, config) => { await transport.saveProvider(slug, config); }}

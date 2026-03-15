@@ -12,7 +12,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { SettingsIcon } from './icons.js';
 import { ModelSelect } from './ModelSelect.js';
-import type { VendorModelGroup } from './types.js';
+import type { VendorModelGroup, AgencyMode } from './types.js';
+import { AgencyModeSelect } from './AgencyModeSelect.js';
 import type { RenderMode } from '../../types.js';
 import type { ToolViewOverride, BadgeStyle } from '../../context/PreferencesContext.js';
 import type { WireProviderConfig, ProviderConfig } from '../../../core/settings/types.js';
@@ -44,6 +45,8 @@ interface SettingsPopupProps {
   onStopEmbedding?: () => void;
   defaultModel: string;
   onUpdateDefaultModel: (model: string) => void;
+  defaultPermissionMode: AgencyMode;
+  onUpdateDefaultPermissionMode: (mode: AgencyMode) => void;
   modelGroups: VendorModelGroup[];
   providers?: Record<string, WireProviderConfig>;
   onSaveProvider?: (slug: string, config: ProviderConfig) => Promise<void>;
@@ -133,7 +136,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, rosieEnabled, rosieModel, onUpdateRosie, mcpMemoryEnabled, onUpdateMcpMemory, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, rosieEnabled, rosieModel, onUpdateRosie, mcpMemoryEnabled, onUpdateMcpMemory, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -284,6 +287,14 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               value={defaultModel}
               onChange={onUpdateDefaultModel}
               groups={modelGroups}
+            />
+          </label>
+          <label className="crispy-cp-settings__row">
+            <span>Permission Mode</span>
+            <AgencyModeSelect
+              value={defaultPermissionMode}
+              showBypassOption={true}
+              onChange={onUpdateDefaultPermissionMode}
             />
           </label>
 
