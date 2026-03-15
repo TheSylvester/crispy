@@ -17,7 +17,6 @@ import type { AgentAdapter, VendorDiscovery, SessionOpenSpec } from '../core/age
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { Vendor } from '../core/transcript.js';
 import { registerAdapter, unregisterAdapter } from '../core/session-manager.js';
-import { getActiveChannels } from '../core/session-channel.js';
 import { getSettingsSnapshotInternal, onSettingsChanged, setMcpFactories } from '../core/settings/index.js';
 import { createExternalServer } from '../mcp/servers/external.js';
 import type { AgentDispatch } from './agent-dispatch.js';
@@ -55,8 +54,8 @@ export interface HostAdapterConfig {
   hostType: 'vscode' | 'dev-server';
   /** MCP servers to inject into adapter sessions (set by registerAllAdapters). */
   mcpServers?: Record<string, McpServerConfig>;
-  /** Factory that creates fresh MCP server instances per-query. */
-  mcpServerFactory?: () => Record<string, McpServerConfig>;
+  /** Factory that creates fresh MCP server instances per-query. Receives the calling session's identity for provenance. */
+  mcpServerFactory?: (callerSessionId: string, callerVendor: string) => Record<string, McpServerConfig>;
   /** Agent dispatch for internal consumers (recall agent, Rosie). */
   dispatch?: AgentDispatch;
   /** Factory that returns the session-level system prompt (or undefined when disabled). */
@@ -123,21 +122,9 @@ const allRegistrations: AdapterRegistration[] = [
  * Get the ID and vendor of the most recently active session.
  *
  * Used by the external MCP server's recall tool to anchor child sessions.
- * Returns the first active session's ID and vendor, or undefined if none.
- * Vendor-agnostic — works with Claude, Codex, or any future adapter.
- */
-function getActiveSession(): { sessionId: string; vendor: string } | undefined {
-  for (const channel of getActiveChannels()) {
-    if (channel.adapter?.sessionId) {
-      return { sessionId: channel.adapter.sessionId, vendor: channel.adapter.vendor };
-    }
-  }
-  return undefined;
-}
-
-// ============================================================================
-// Internal Server Path Resolution
-// ============================================================================
+ * ============================================================================
+ * Internal Server Path Resolution
+ * ============================================================================
 
 /**
  * Resolve paths for spawning the internal MCP server subprocess.
@@ -206,11 +193,11 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
   // Build factory that creates fresh MCP server instances per-query.
   // Returns undefined when MCP is disabled or dispatch isn't available.
   const mcpServerFactory = dispatch
-    ? (): Record<string, McpServerConfig> => {
+    ? (callerSessionId: string, callerVendor: string): Record<string, McpServerConfig> => {
         if (!mcpEnabled) return {};
         const server = createExternalServer(
           dispatch,
-          getActiveSession,
+          { sessionId: callerSessionId, vendor: callerVendor },
           { internalServerCommand, internalServerArgs },
           () => getSettingsSnapshotInternal().settings.rosie.bot.model,
         );

@@ -232,8 +232,8 @@ export interface ClaudeSessionOptions {
 
   /** MCP server configurations (static — used by ephemeral child sessions). */
   mcpServers?: Record<string, McpServerConfig>;
-  /** Factory that creates fresh MCP server instances per-query. */
-  mcpServerFactory?: () => Record<string, McpServerConfig>;
+  /** Factory that creates fresh MCP server instances per-query. Receives the calling session's identity for provenance. */
+  mcpServerFactory?: (callerSessionId: string, callerVendor: string) => Record<string, McpServerConfig>;
   /** Enforce strict MCP validation */
   strictMcpConfig?: boolean;
 
@@ -831,7 +831,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       this.activeMcpServers = opts.mcpServers;
     } else if (opts.mcpServerFactory) {
       try {
-        const servers = opts.mcpServerFactory();
+        const servers = opts.mcpServerFactory(this.sessionId ?? '', this.vendor);
         this.activeMcpServers = Object.keys(servers).length ? servers : null;
       } catch (err) {
         console.error('[claude-adapter] Failed to create MCP servers:', err);

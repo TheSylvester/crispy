@@ -147,13 +147,13 @@ function textResult(data: string): {
  * result. The child gets 120s and access to the query tools.
  *
  * @param dispatch - AgentDispatch for spawning child sessions
- * @param getActiveSession - Returns the current active session's ID and vendor (for parent anchoring)
+ * @param callerSession - The session that owns this MCP server instance (for parent anchoring and self-filtering)
  * @param serverPaths - Command and args for the internal MCP server subprocess (resolved by adapter-registry based on host type)
  * @param getRosieModel - Returns the Rosie model setting ("vendor:model" or undefined for default)
  */
 export function createExternalServer(
   dispatch: AgentDispatch,
-  getActiveSession: () => { sessionId: string; vendor: string } | undefined,
+  callerSession: { sessionId: string; vendor: string },
   serverPaths: { internalServerCommand: string; internalServerArgs: string[] },
   getRosieModel?: () => string | undefined,
 ): McpSdkServerConfigWithInstance {
@@ -181,7 +181,7 @@ export function createExternalServer(
             summary: `Recall: query "${args.query.slice(0, 80)}"`,
             data: { query: args.query },
           });
-          const activeSession = getActiveSession?.();
+          const activeSession = callerSession;
           if (!activeSession) {
             console.error("[recall] No active session — cannot dispatch child");
             pushRosieLog({

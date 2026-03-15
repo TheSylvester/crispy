@@ -39,7 +39,7 @@ const registeredDynamic = new Set<string>();
 let currentProviders: Record<string, ProviderConfig> = {};
 
 /** MCP server factory — set by adapter-registry for dynamic providers. */
-let mcpServerFactory: (() => Record<string, McpServerConfig>) | undefined;
+let mcpServerFactory: ((callerSessionId: string, callerVendor: string) => Record<string, McpServerConfig>) | undefined;
 
 /** System prompt factory — set by adapter-registry for dynamic providers. */
 let systemPromptFactory: (() => string | undefined) | undefined;
@@ -64,7 +64,7 @@ export function maskApiKey(key: string): string {
  * @param promptFactory - Factory that returns the system prompt (or undefined when disabled)
  */
 export function setMcpFactories(
-  mcpFactory?: () => Record<string, McpServerConfig>,
+  mcpFactory?: (callerSessionId: string, callerVendor: string) => Record<string, McpServerConfig>,
   promptFactory?: () => string | undefined,
 ): void {
   mcpServerFactory = mcpFactory;
