@@ -33,6 +33,8 @@ export interface DualPathSearchOptions {
   limit?: number;
   projectId?: string;
   sessionId?: string;
+  /** Session ID to exclude from results (caller's own session). */
+  excludeSessionId?: string;
   /** Recency decay rate. Higher = stronger preference for recent results.
    *  0 = no decay. Default 0.005 (~50% penalty at 200 days). */
   recencyDecay?: number;
@@ -84,13 +86,14 @@ export async function dualPathSearch(
   }
 
   // Run both paths (both are synchronous SQLite operations)
-  const ftsResults = searchMessagesFts(query, fetchLimit, opts?.projectId, opts?.sessionId);
+  const ftsResults = searchMessagesFts(query, fetchLimit, opts?.projectId, opts?.sessionId, opts?.excludeSessionId);
 
   const semanticResults = queryQ8 && queryNorm > 0
     ? searchMessagesSemantic(queryQ8, queryNorm, queryScale, {
         limit: fetchLimit,
         projectId: opts?.projectId,
         sessionId: opts?.sessionId,
+        excludeSessionId: opts?.excludeSessionId,
       })
     : [];
 

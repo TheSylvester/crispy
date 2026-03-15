@@ -55,7 +55,13 @@ export function buildRecallPrompt(
 
 ## How to search
 
-**search_transcript** is fast but keyword-exact. Use 1-2 technical terms, proper nouns, or unique identifiers.
+**search_transcript** uses dual-path search (FTS5 keywords + semantic embeddings). It handles vocabulary mismatches better than pure keyword search, but explicit synonym expansion still helps. Use 1-2 technical terms, proper nouns, or unique identifiers.
+
+**Query expansion:** Always search with multiple phrasings. If your first query returns few results, think about what OTHER words the user might have used for the same concept:
+- Technical synonyms: "preview" → "snippet", "excerpt", "truncate"
+- Abstraction levels: "RRF" → "reciprocal rank fusion" → "merge search results"
+- Related concepts: "authentication" → "auth", "login", "credentials", "session token"
+- Run 2-3 parallel search_transcript calls with different keyword variations in a single step.
 
 **grep** is slower but flexible. Use when:
 - FTS5 returned nothing or wrong results — try different vocabulary
@@ -222,6 +228,14 @@ export function createExternalServer(
             const projectId = sessionInfo?.projectPath ?? "";
             const projectArgs = projectId ? [`--project-id=${projectId}`] : [];
 
+            // Self-filtering: exclude the calling session from search results
+            // so the recall agent doesn't find its own conversation.
+            // Skip pending:* IDs — they never appear in the messages table.
+            const callerSessionId = process.env.CRISPY_SESSION_ID;
+            const excludeArgs = callerSessionId && !callerSessionId.startsWith('pending:')
+              ? [`--exclude-session-id=${callerSessionId}`]
+              : [];
+
             const deadlineMs = Date.now() + 120_000; // last third of 180s reserved for synthesis
 
             const options: ChildSessionOptions = {
@@ -238,7 +252,7 @@ export function createExternalServer(
               mcpServers: buildInternalMcpConfig(
                 serverPaths.internalServerCommand,
                 serverPaths.internalServerArgs,
-                [...projectArgs, `--deadline-ms=${deadlineMs}`],
+                [...projectArgs, ...excludeArgs, `--deadline-ms=${deadlineMs}`],
               ),
               env: {
                 CLAUDECODE: "", // Bypass nested Claude Code guard

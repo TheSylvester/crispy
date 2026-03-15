@@ -146,6 +146,7 @@ export function searchMessagesFts(
   limit: number = 20,
   projectId?: string,
   sessionId?: string,
+  excludeSessionId?: string,
 ): MessageSearchResult[] {
   try {
     const sanitized = sanitizeFts5Query(query);
@@ -160,6 +161,10 @@ export function searchMessagesFts(
     if (sessionId) {
       extraClauses += 'AND m.session_id = ? ';
       params.push(sessionId);
+    }
+    if (excludeSessionId) {
+      extraClauses += 'AND m.session_id != ? ';
+      params.push(excludeSessionId);
     }
     params.push(limit);
 
@@ -207,6 +212,7 @@ export function searchMessagesFtsMeta(
   query: string,
   projectId?: string,
   sessionId?: string,
+  excludeSessionId?: string,
 ): MessageSearchMeta {
   try {
     const sanitized = sanitizeFts5Query(query);
@@ -221,6 +227,10 @@ export function searchMessagesFtsMeta(
     if (sessionId) {
       extraClauses += 'AND m.session_id = ? ';
       params.push(sessionId);
+    }
+    if (excludeSessionId) {
+      extraClauses += 'AND m.session_id != ? ';
+      params.push(excludeSessionId);
     }
 
     const rows = db().all(
@@ -328,6 +338,7 @@ export function grepMessages(
   limit: number = 20,
   sessionId?: string,
   projectId?: string,
+  excludeSessionId?: string,
 ): GrepMatch[] {
   try {
     let re: RegExp;
@@ -348,6 +359,10 @@ export function grepMessages(
     if (projectId) {
       where += ' AND project_id = ?';
       params.push(projectId);
+    }
+    if (excludeSessionId) {
+      where += ' AND session_id != ?';
+      params.push(excludeSessionId);
     }
     // When scanning cross-session, cap the scan set to avoid reading the entire DB.
     // Ordered by created_at DESC so we search recent messages first.
@@ -551,7 +566,7 @@ export function searchMessagesSemantic(
   queryQ8: Int8Array,
   queryNorm: number,
   queryScale: number,
-  opts?: { limit?: number; projectId?: string; sessionId?: string },
+  opts?: { limit?: number; projectId?: string; sessionId?: string; excludeSessionId?: string },
 ): MessageSearchResult[] {
   try {
     const limit = opts?.limit ?? 20;
@@ -566,6 +581,10 @@ export function searchMessagesSemantic(
     if (opts?.sessionId) {
       filterClauses += ' AND m.session_id = ?';
       params.push(opts.sessionId);
+    }
+    if (opts?.excludeSessionId) {
+      filterClauses += ' AND m.session_id != ?';
+      params.push(opts.excludeSessionId);
     }
 
     const rows = db().all(

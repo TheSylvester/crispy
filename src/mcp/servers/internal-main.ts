@@ -29,13 +29,14 @@ process.on('unhandledRejection', (err) => {
  * Parse --key=value CLI args into an options object.
  * Supports: --session-file, --decisions-file
  */
-function parseCliArgs(): { sessionFile?: string; decisionsFile?: string; projectId?: string; deadlineMs?: number } {
-  const opts: { sessionFile?: string; decisionsFile?: string; projectId?: string; deadlineMs?: number } = {};
+function parseCliArgs(): { sessionFile?: string; decisionsFile?: string; projectId?: string; deadlineMs?: number; excludeSessionId?: string } {
+  const opts: { sessionFile?: string; decisionsFile?: string; projectId?: string; deadlineMs?: number; excludeSessionId?: string } = {};
   for (const arg of process.argv.slice(2)) {
     if (arg.startsWith('--session-file=')) opts.sessionFile = arg.slice('--session-file='.length);
     else if (arg.startsWith('--decisions-file=')) opts.decisionsFile = arg.slice('--decisions-file='.length);
     else if (arg.startsWith('--project-id=')) opts.projectId = arg.slice('--project-id='.length);
     else if (arg.startsWith('--deadline-ms=')) opts.deadlineMs = parseInt(arg.slice('--deadline-ms='.length), 10) || undefined;
+    else if (arg.startsWith('--exclude-session-id=')) opts.excludeSessionId = arg.slice('--exclude-session-id='.length);
   }
   return opts;
 }

@@ -218,8 +218,9 @@ export async function searchTranscript(
   limit: number = 20,
   projectId?: string,
   sessionId?: string,
+  excludeSessionId?: string,
 ): Promise<MessageSearchResult[]> {
-  return dualPathSearch(query, { limit, projectId, sessionId });
+  return dualPathSearch(query, { limit, projectId, sessionId, excludeSessionId });
 }
 
 /**
@@ -229,8 +230,9 @@ export function searchTranscriptMeta(
   query: string,
   projectId?: string,
   sessionId?: string,
+  excludeSessionId?: string,
 ): MessageSearchMeta {
-  return searchMessagesFtsMeta(query, projectId, sessionId);
+  return searchMessagesFtsMeta(query, projectId, sessionId, excludeSessionId);
 }
 
 /** Single turn in a context window. */

@@ -17,6 +17,7 @@ import { appendFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath, searchTranscript, searchTranscriptMeta, readMessageTurn, grepMessages, readSessionMessages } from '../memory-queries.js';
+import type { MessageSearchResult } from '../memory-queries.js';
 import { pushEventLog } from '../../core/rosie/event-log.js';
 
 import { writeTrackerResults, recordTrackerOutcome, getProjectTitle } from '../../core/rosie/tracker/db-writer.js';
@@ -63,6 +64,8 @@ export interface InternalServerOptions {
   projectId?: string;
   /** Wall-clock deadline (epoch ms) after which tool calls are refused. */
   deadlineMs?: number;
+  /** Session ID to exclude from search results (caller's own session). */
+  excludeSessionId?: string;
 }
 
 /** Module-level options — set by createInternalServer(), read by tool handlers. */
@@ -197,6 +200,62 @@ function timedTool(
     const result = await handler(args as Record<string, unknown>);
     return withTimeFooter(result);
   });
+}
+
+// ============================================================================
+// Session Grouping
+// ============================================================================
+
+interface GroupedResult {
+  /** Best-scoring result for this session (use its message_id/session_id to drill down). */
+  session_id: string;
+  message_id: string;
+  message_seq: number;
+  project_id: string | null;
+  created_at: number;
+  message_role: string | null;
+  rank: number;
+  match_snippet: string;
+  message_preview: string;
+  truncated: boolean;
+  /** How many additional matches exist in this session beyond the primary. */
+  additional_matches: number;
+  /** Snippets from other matching messages in this session (deduped, up to 3). */
+  other_snippets: string[];
+}
+
+/**
+ * Group search results by session_id. Each session appears once with its
+ * best-scoring result as the primary entry, plus snippets from other matches.
+ * This ensures the agent sees maximum session diversity instead of 5 results
+ * from the same session eating top-20 slots.
+ */
+function groupBySession(results: MessageSearchResult[]): GroupedResult[] {
+  const groups = new Map<string, { primary: MessageSearchResult; others: MessageSearchResult[] }>();
+
+  for (const r of results) {
+    const existing = groups.get(r.session_id);
+    if (!existing) {
+      groups.set(r.session_id, { primary: r, others: [] });
+    } else {
+      existing.others.push(r);
+    }
+  }
+
+  return [...groups.values()].map(({ primary, others }) => ({
+    session_id: primary.session_id,
+    message_id: primary.message_id,
+    message_seq: primary.message_seq,
+    project_id: primary.project_id,
+    created_at: primary.created_at,
+    message_role: primary.message_role,
+    rank: primary.rank,
+    match_snippet: primary.match_snippet,
+    message_preview: primary.message_preview,
+    truncated: primary.truncated,
+    additional_matches: others.length,
+    other_snippets: others.slice(0, 3).map(o => o.match_snippet).filter(Boolean),
+  }));
 }
 
 // ============================================================================
@@ -499,7 +558,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
   // ------------------------------------------------------------------
   timedTool(server,
     'search_transcript',
-    'Full-text search over raw conversation content from past sessions. Returns matching messages with session ID, message UUID, highlighted snippet, and a short preview (up to 200 chars). Also returns total_matches and session_hits (per-session hit counts) so you can see how many sessions discuss a topic. Project-scoped by default. Supports FTS5 syntax: OR for broad searches, "quoted phrases" for exact matches, prefix* for partial terms. Use read_message to get the full conversation turn. Use session_id to search within a specific session.',
+    'Dual-path search (FTS5 keywords + semantic embeddings, falls back to FTS5-only if embeddings unavailable) over raw conversation content. Results are grouped by session — each session appears once with its best match plus additional snippets, so you see maximum session diversity. Returns session ID, message UUID, highlighted snippet, short preview (up to 200 chars), additional_matches count, and other_snippets. Also returns total_matches and session_hits. Project-scoped by default. Supports FTS5 syntax: OR for broad searches, "quoted phrases" for exact matches, prefix* for partial terms. Use read_message to drill into a specific result.',
     {
       query: z.string().describe('Search query — short keywords work best. Use OR to broaden: "sqlite OR database"'),
       limit: z.number().optional().default(20).describe('Maximum results (default 20)'),
@@ -514,8 +573,8 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       console.error(`[internal-mcp] search_transcript: query="${query}" limit=${limit} project=${projectId ?? 'all'} session=${sessionId ?? 'all'}`);
       const t0 = Date.now();
       try {
-        const results = await searchTranscript(query, limit, projectId, sessionId);
-        const meta = searchTranscriptMeta(query, projectId, sessionId);
+        const results = await searchTranscript(query, limit, projectId, sessionId, serverOptions.excludeSessionId);
+        const meta = searchTranscriptMeta(query, projectId, sessionId, serverOptions.excludeSessionId);
         const elapsed = Date.now() - t0;
         console.error(`[internal-mcp] search_transcript: ${results.length} of ${meta.total_matches} results (${Object.keys(meta.session_hits).length} sessions)`);
         pushEventLog({
@@ -531,10 +590,14 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
             })),
           },
         }, getDbPath());
+        // Group results by session — each session appears once with all its
+        // unique snippets, so the agent sees more diverse sessions.
+        const grouped = groupBySession(results);
+
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({
-            results,
-            count: results.length,
+            results: grouped,
+            count: grouped.length,
             total_matches: meta.total_matches,
             session_hits: meta.session_hits,
           }, null, 2) }],
@@ -645,7 +708,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       console.error(`[internal-mcp] grep: pattern="${pattern}" session=${sessionId ?? 'all'} limit=${limit}`);
       const t0 = Date.now();
       try {
-        const results = grepMessages(pattern, limit, sessionId, projectId);
+        const results = grepMessages(pattern, limit, sessionId, projectId, serverOptions.excludeSessionId);
         const elapsed = Date.now() - t0;
         const sessionCount = new Set(results.map(r => r.session_id)).size;
         console.error(`[internal-mcp] grep: ${results.length} matches across ${sessionCount} sessions in ${elapsed}ms`);
