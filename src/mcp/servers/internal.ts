@@ -66,10 +66,17 @@ export interface InternalServerOptions {
   deadlineMs?: number;
   /** Session ID to exclude from search results (caller's own session). */
   excludeSessionId?: string;
+  /** Parent session ID for tracker provenance (which session spawned the tracker). */
+  parentSessionId?: string;
 }
 
 /** Module-level options — set by createInternalServer(), read by tool handlers. */
 let serverOptions: InternalServerOptions = {};
+
+/** Build a SessionRef with the parent session's ID for provenance tracking. */
+function buildSessionRef(): { detected_in: string } {
+  return { detected_in: serverOptions.parentSessionId ?? '' };
+}
 
 /**
  * Append a decision record to the sidecar file.
@@ -447,7 +454,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
           branch: args.branch ?? '',
           entities: JSON.stringify(args.entities),
         },
-        sessionRef: { detected_in: '' },
+        sessionRef: buildSessionRef(),
         files: (args.files ?? []).map((f) => ({ path: f.path, note: f.note })),
       };
 
@@ -506,7 +513,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
           ...(args.branch !== undefined && { branch: args.branch }),
           ...(args.entities && { entities: JSON.stringify(args.entities) }),
         },
-        sessionRef: { detected_in: '' },
+        sessionRef: buildSessionRef(),
         files: (args.files ?? []).map((f) => ({ path: f.path, note: f.note })),
       };
 

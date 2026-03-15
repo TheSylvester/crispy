@@ -230,11 +230,7 @@ export function createExternalServer(
 
             // Self-filtering: exclude the calling session from search results
             // so the recall agent doesn't find its own conversation.
-            // Skip pending:* IDs — they never appear in the messages table.
-            const callerSessionId = process.env.CRISPY_SESSION_ID;
-            const excludeArgs = callerSessionId && !callerSessionId.startsWith('pending:')
-              ? [`--exclude-session-id=${callerSessionId}`]
-              : [];
+            const excludeArgs = [`--exclude-session-id=${activeSession.sessionId}`];
 
             const deadlineMs = Date.now() + 120_000; // last third of 180s reserved for synthesis
 

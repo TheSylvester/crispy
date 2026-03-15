@@ -287,6 +287,7 @@ async function runSummarizeTurn(
         mcpServers: buildInternalMcpConfig(paths.command, paths.args, [
           `--session-file=${sessionPath}`,
           `--decisions-file=${decisionsFile}`,
+          `--parent-session-id=${sessionId}`,
         ]),
         env: {
           CLAUDECODE: '',
