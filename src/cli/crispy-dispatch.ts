@@ -353,6 +353,26 @@ async function main(): Promise<void> {
 
   const router = new MessageRouter(conn);
 
+  // Silently resolve truncated session ID prefixes to full UUIDs
+  if (args.resume && args.resume.length < 36) {
+    try {
+      const resolved = await router.sendRpc('resolveSessionPrefix', { sessionId: args.resume }) as { sessionId: string };
+      args.resume = resolved.sessionId;
+    } catch (err) {
+      console.error(`Error resolving session prefix: ${(err as Error).message}`);
+      process.exit(EXIT_USAGE);
+    }
+  }
+  if (args.parentSessionId && args.parentSessionId.length < 36) {
+    try {
+      const resolved = await router.sendRpc('resolveSessionPrefix', { sessionId: args.parentSessionId }) as { sessionId: string };
+      args.parentSessionId = resolved.sessionId;
+    } catch (err) {
+      console.error(`Error resolving session prefix: ${(err as Error).message}`);
+      process.exit(EXIT_USAGE);
+    }
+  }
+
   try {
     if (args.visible) {
       await runVisibleMode(router, args, prompt!, settings, outputFile);

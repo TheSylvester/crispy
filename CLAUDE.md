@@ -110,6 +110,8 @@ events. No direct file I/O or process spawning. **State ownership:** UI-only
 - **File headers are contracts.** Every module header declares scope and
   boundaries. Respect them. To expand scope, update the header first. If the
   header feels contradictory, that usually means a split — not an expansion.
+- **Session IDs from external input** (CLI args, UI, env vars) must pass
+  through `resolveSessionPrefix()` in `session-manager.ts` before use.
 
 ### Stable layer boundaries — modify with care
 

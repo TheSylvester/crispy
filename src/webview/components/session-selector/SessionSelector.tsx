@@ -161,8 +161,8 @@ export function SessionSelector(): React.JSX.Element {
       } else {
         setSessionIdError('Session not found');
       }
-    } catch {
-      setSessionIdError('Lookup failed');
+    } catch (err) {
+      setSessionIdError(err instanceof Error ? err.message : 'Lookup failed');
     } finally {
       setSessionIdLoading(false);
     }

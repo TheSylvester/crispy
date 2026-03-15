@@ -43,6 +43,7 @@ import {
   registerChildSession,
   rekeyChildSession,
   resolveSessionId,
+  resolveSessionPrefix,
 } from "../core/session-manager.js";
 import type { ChildSessionOptions, ResumeChildOptions } from "../core/session-manager.js";
 import {
@@ -834,6 +835,11 @@ export function createClientConnection(
       case "resolveSessionId": {
         const { sessionId } = params as { sessionId: string };
         return { sessionId: resolveSessionId(sessionId) };
+      }
+
+      case "resolveSessionPrefix": {
+        const { sessionId } = params as { sessionId: string };
+        return { sessionId: resolveSessionPrefix(sessionId) };
       }
 
       default:

@@ -30,6 +30,7 @@ import {
   getDiscovery,
   getDiscoveries,
   findSession,
+  resolveSessionPrefix,
   loadSession,
   listAllSessions,
   subscribeSession,
@@ -312,6 +313,69 @@ describe('findSession', () => {
     expect(found!.vendor).toBe('claude');
     // codex discovery was called but returned undefined
     expect(codexDiscovery.findSession).toHaveBeenCalledWith('sess-1');
+  });
+});
+
+// ========== 2b. Session ID Prefix Resolution ==========
+
+describe('resolveSessionPrefix', () => {
+  const UUID_A = 'aaaaaaaa-1111-2222-3333-444444444444';
+  const UUID_B = 'bbbbbbbb-1111-2222-3333-444444444444';
+  const UUID_A2 = 'aaaaaaaa-5555-6666-7777-888888888888';
+
+  it('passes through full-length UUIDs unchanged', () => {
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    expect(resolveSessionPrefix(UUID_A)).toBe(UUID_A);
+  });
+
+  it('passes through empty string unchanged', () => {
+    expect(resolveSessionPrefix('')).toBe('');
+  });
+
+  it('resolves a unique prefix to the full session ID', () => {
+    const sessionA = makeSessionInfo({ sessionId: UUID_A, vendor: 'claude' });
+    const sessionB = makeSessionInfo({ sessionId: UUID_B, vendor: 'codex' });
+
+    const claudeDiscovery = createMockDiscovery({ vendor: 'claude', sessions: [sessionA] });
+    const codexDiscovery = createMockDiscovery({ vendor: 'codex', sessions: [sessionB] });
+
+    registerAdapter(claudeDiscovery, () => createMockAdapter({ vendor: 'claude' }));
+    registerAdapter(codexDiscovery, () => createMockAdapter({ vendor: 'codex' }));
+
+    expect(resolveSessionPrefix('aaaaaaaa')).toBe(UUID_A);
+    expect(resolveSessionPrefix('bbbbbbbb')).toBe(UUID_B);
+  });
+
+  it('throws on ambiguous prefix with matching IDs listed', () => {
+    const sessionA = makeSessionInfo({ sessionId: UUID_A, vendor: 'claude' });
+    const sessionA2 = makeSessionInfo({ sessionId: UUID_A2, vendor: 'claude' });
+
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [sessionA, sessionA2] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    expect(() => resolveSessionPrefix('aaaaaaaa')).toThrow('Ambiguous');
+    expect(() => resolveSessionPrefix('aaaaaaaa')).toThrow(UUID_A);
+    expect(() => resolveSessionPrefix('aaaaaaaa')).toThrow(UUID_A2);
+  });
+
+  it('returns input unchanged when no sessions match the prefix', () => {
+    const sessionA = makeSessionInfo({ sessionId: UUID_A, vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [sessionA] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    expect(resolveSessionPrefix('zzzzzzzz')).toBe('zzzzzzzz');
+  });
+
+  it('findSession uses prefix resolution transparently', () => {
+    const sessionA = makeSessionInfo({ sessionId: UUID_A, vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [sessionA] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    const found = findSession('aaaaaaaa');
+    expect(found).toBeDefined();
+    expect(found!.sessionId).toBe(UUID_A);
   });
 });
 

@@ -11,6 +11,10 @@
  *
  * Design matches session-channel.ts: functional API with module-level state.
  *
+ * Session ID input contract: external session IDs (CLI args, UI input, env
+ * vars) must pass through resolveSessionPrefix() before use. This silently
+ * expands truncated prefixes to full UUIDs when unambiguous.
+ *
  * Ownership model: each vendor registers a VendorDiscovery object for
  * stateless ops (listSessions, findSession, loadHistory) and a factory
  * that creates a fresh AgentAdapter per live session. Each channel owns
@@ -77,7 +81,7 @@ const pendingToReal = new Map<string, string>();
 /** Idle debounce window (ms). After an idle event, wait this long before
  *  resolving. If 'active' fires within the window, the timer resets.
  *  Prevents spurious early resolution in multi-step agent work. */
-const IDLE_SETTLE_MS = 500;
+const IDLE_SETTLE_MS = 2000;
 
 export interface ChildSessionOptions {
   /** Session that's spawning this child. */
@@ -104,6 +108,8 @@ export interface ChildSessionOptions {
   mcpServers?: Record<string, unknown>;
   /** Environment overrides for the child session. */
   env?: Record<string, string>;
+  /** Explicit working directory — overrides parent session's projectPath. */
+  cwd?: string;
 }
 
 export interface ChildSessionResult {
@@ -239,13 +245,47 @@ export function _resetRegistry(): void {
 // Cross-Vendor Discovery
 // ============================================================================
 
+/** Standard UUID length (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx). */
+const UUID_FULL_LENGTH = 36;
+
+/**
+ * Resolve a possibly-truncated session ID to its full UUID.
+ * - Full-length IDs pass through unchanged (no scan).
+ * - Shorter strings scan listAllSessions() for unique startsWith match.
+ * - Throws on ambiguous prefix (multiple matches).
+ * - Returns the input unchanged if no prefix match found (let callers
+ *   handle "not found" in their own way).
+ *
+ * Call this at any input boundary that accepts a session ID from external
+ * sources (user input, CLI args, env vars) before passing it downstream.
+ */
+export function resolveSessionPrefix(sessionId: string): string {
+  if (sessionId.length >= UUID_FULL_LENGTH) return sessionId;
+  if (sessionId.length === 0) return sessionId;
+
+  const matches = listAllSessions().filter(
+    (s) => s.sessionId.startsWith(sessionId),
+  );
+  if (matches.length === 1) return matches[0].sessionId;
+  if (matches.length > 1) {
+    const ids = matches.slice(0, 5).map((s) => s.sessionId);
+    const suffix = matches.length > 5 ? ` (and ${matches.length - 5} more)` : '';
+    throw new Error(
+      `Ambiguous session prefix "${sessionId}" matches ${matches.length} sessions: ${ids.join(', ')}${suffix}`,
+    );
+  }
+  return sessionId;
+}
+
 /**
  * Find a session by ID across all registered adapters.
- * Iterates adapters until one claims the session.
+ * Supports prefix matching: short IDs are silently resolved via
+ * resolveSessionPrefix() before lookup.
  */
 export function findSession(sessionId: string): SessionInfo | undefined {
+  const resolved = resolveSessionPrefix(sessionId);
   for (const { discovery } of adapters.values()) {
-    const info = discovery.findSession(sessionId);
+    const info = discovery.findSession(resolved);
     if (info) return info;
   }
   return undefined;
@@ -1026,7 +1066,7 @@ export async function dispatchChildSession(
 
   // Get parent's project path for cross-vendor cwd
   const parentInfo = findSession(parentSessionId);
-  const cwd = parentInfo?.projectPath ?? process.cwd();
+  const cwd = options.cwd ?? parentInfo?.projectPath ?? process.cwd();
 
   // Common ephemeral options shared by all target kinds
   const ephemeral: EphemeralTargetOptions = {

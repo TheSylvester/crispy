@@ -86,6 +86,10 @@ export async function runRpcPipe(argv: string[]): Promise<void> {
     if (sessionId?.startsWith('pending:')) {
       const resolved = await router.sendRpc('resolveSessionId', { sessionId }) as { sessionId: string };
       sessionId = resolved.sessionId;
+    } else if (sessionId && sessionId.length < 36) {
+      // Silently resolve truncated session ID prefixes to full UUIDs
+      const resolved = await router.sendRpc('resolveSessionPrefix', { sessionId }) as { sessionId: string };
+      sessionId = resolved.sessionId;
     }
 
     // Auto-inject sessionId into params if not already present
