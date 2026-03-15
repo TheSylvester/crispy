@@ -67,6 +67,9 @@ const sessions = new Map<string, SessionChannel>();
 /** In-flight channel initialization promises — guards concurrent subscribeSession(). */
 const pending = new Map<string, Promise<SessionChannel>>();
 
+/** Maps pending IDs to their resolved real IDs for CLI session resolution. */
+const pendingToReal = new Map<string, string>();
+
 // ============================================================================
 // Child Session Dispatch
 // ============================================================================
@@ -147,6 +150,15 @@ export function rekeyChildSession(oldId: string, newId: string): void {
     childSessions.delete(oldId);
     childSessions.set(newId, entry);
   }
+}
+
+/**
+ * Resolve a pending session ID to its real ID, or return as-is if not pending.
+ * Used by the CLI rpc pipe so LLMs holding a $CRISPY_SESSION_ID can resolve it.
+ */
+export function resolveSessionId(sessionId: string): string {
+  if (!sessionId.startsWith('pending:')) return sessionId;
+  return pendingToReal.get(sessionId) ?? sessionId;
 }
 
 // ============================================================================
@@ -461,6 +473,12 @@ function createPendingChannel(
   },
 ): PendingChannelResult {
   const pendingId = options?.explicitPendingId ?? `pending:${crypto.randomUUID()}`;
+
+  // Inject CRISPY_SESSION_ID so LLMs in managed sessions can self-identify
+  if (spec.mode === 'fresh' || spec.mode === 'fork') {
+    spec = { ...spec, env: { ...spec.env, CRISPY_SESSION_ID: pendingId } };
+  }
+
   const channel = openChannel(pendingId, vendor, spec);
   sessions.set(pendingId, channel);
 
@@ -494,6 +512,7 @@ function createPendingChannel(
           pushRosieLog({ source: 'session', level: 'info', summary: `Session: re-keyed ${pendingId.slice(0, 20)}… → ${realId.slice(0, 12)}…`, data: { pendingId, realId } });
           sessions.delete(pendingId);
           sessions.set(realId, channel);
+          pendingToReal.set(pendingId, realId);
           unsubscribe(channel, rekeySubscriber);
           resolve(realId);
         }

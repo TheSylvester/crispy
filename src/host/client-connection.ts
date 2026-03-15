@@ -42,6 +42,7 @@ import {
   resumeChildSession,
   registerChildSession,
   rekeyChildSession,
+  resolveSessionId,
 } from "../core/session-manager.js";
 import type { ChildSessionOptions, ResumeChildOptions } from "../core/session-manager.js";
 import {
@@ -828,6 +829,11 @@ export function createClientConnection(
           updateProjectSortOrder(u.id, u.sortOrder);
         }
         return { ok: true };
+      }
+
+      case "resolveSessionId": {
+        const { sessionId } = params as { sessionId: string };
+        return { sessionId: resolveSessionId(sessionId) };
       }
 
       default:

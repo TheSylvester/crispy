@@ -21,192 +21,14 @@
  */
 
 import { connect, type Socket } from 'node:net';
-import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { StringDecoder } from 'node:string_decoder';
 
-// ============================================================================
-// Exit Codes
-// ============================================================================
-
-const EXIT_OK = 0;
-const EXIT_APPROVAL = 10;
-const EXIT_TIMEOUT = 11;
-const EXIT_TRANSPORT = 12;
-const EXIT_USAGE = 13;
-
-// ============================================================================
-// Server Discovery (fix #4: path-boundary check)
-// ============================================================================
-
-interface ServerEntry {
-  pid: number;
-  socket: string;
-  cwd: string;
-  startedAt: string;
-}
-
-function isPidAlive(pid: number): boolean {
-  try { process.kill(pid, 0); return true; } catch { return false; }
-}
-
-function isWithinDir(child: string, parent: string): boolean {
-  if (child === parent) return true;
-  const prefix = parent.endsWith('/') ? parent : parent + '/';
-  return child.startsWith(prefix);
-}
-
-function discoverSocket(): string {
-  if (process.env.CRISPY_SOCK) return process.env.CRISPY_SOCK;
-
-  const serversFile = join(homedir(), '.crispy', 'ipc', 'servers.json');
-  let entries: ServerEntry[];
-  try {
-    entries = JSON.parse(readFileSync(serversFile, 'utf8'));
-  } catch {
-    throw new Error('No Crispy IPC servers found. Is VS Code/Cursor running with Crispy?');
-  }
-
-  entries = entries.filter(e => isPidAlive(e.pid));
-
-  if (entries.length === 0) throw new Error('No Crispy IPC servers running.');
-  if (entries.length === 1) return entries[0]!.socket;
-
-  // Multiple servers — match by longest CWD prefix with path-boundary check
-  const pwd = process.cwd();
-  const sorted = entries
-    .filter(e => isWithinDir(pwd, e.cwd))
-    .sort((a, b) => b.cwd.length - a.cwd.length);
-
-  if (sorted.length > 0) return sorted[0]!.socket;
-  throw new Error(
-    `Multiple Crispy servers running but none match CWD "${pwd}". Use CRISPY_SOCK to specify.\n` +
-    `Active servers:\n${entries.map(e => `  PID ${e.pid}: ${e.cwd}`).join('\n')}`,
-  );
-}
-
-// ============================================================================
-// MessageRouter (fix #1: single socket reader, no event gaps)
-// ============================================================================
-
-let nextId = 1;
-
-interface RpcResponse {
-  kind: 'response';
-  id: string;
-  result: unknown;
-}
-
-interface RpcError {
-  kind: 'error';
-  id: string;
-  error: string;
-}
-
-interface RpcEvent {
-  kind: 'event';
-  sessionId: string;
-  event: {
-    type: string;
-    [key: string]: unknown;
-  };
-}
-
-type RpcMessage = RpcResponse | RpcError | RpcEvent;
-
-/**
- * Single socket reader that demuxes RPC responses from pushed events.
- * Events are buffered until a handler is registered, eliminating the
- * gap between sendRpc() and event streaming that caused Bug #1.
- */
-class MessageRouter {
-  private pending = new Map<string, {
-    resolve: (value: unknown) => void;
-    reject: (reason: Error) => void;
-  }>();
-  private eventHandler: ((evt: RpcEvent) => void) | null = null;
-  private eventBuffer: RpcEvent[] = [];
-  private buffer = '';
-  private decoder = new StringDecoder('utf8');
-  private closed = false;
-
-  constructor(private conn: Socket) {
-    conn.on('data', (chunk: Buffer) => this.onData(chunk));
-    conn.on('close', () => {
-      this.closed = true;
-      this.rejectAll('Connection closed');
-    });
-    conn.on('error', (err: Error) => {
-      this.closed = true;
-      this.rejectAll(`Connection error: ${err.message}`);
-    });
-  }
-
-  /** Install event handler. Flushes any buffered events immediately. */
-  setEventHandler(handler: (evt: RpcEvent) => void): void {
-    this.eventHandler = handler;
-    for (const evt of this.eventBuffer) handler(evt);
-    this.eventBuffer = [];
-  }
-
-  /** Send an RPC request and wait for the matching response. */
-  sendRpc(method: string, params: Record<string, unknown>): Promise<unknown> {
-    if (this.closed) return Promise.reject(new Error('Connection closed'));
-    const id = String(nextId++);
-    const msg = JSON.stringify({ kind: 'request', id, method, params });
-    return new Promise<unknown>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.conn.write(msg + '\n');
-    });
-  }
-
-  /** Send an RPC request without waiting for a response. */
-  sendFireAndForget(method: string, params: Record<string, unknown>): void {
-    if (this.closed) return;
-    const id = String(nextId++);
-    const msg = JSON.stringify({ kind: 'request', id, method, params });
-    this.conn.write(msg + '\n');
-  }
-
-  end(): void {
-    this.conn.end();
-  }
-
-  private onData(chunk: Buffer): void {
-    this.buffer += this.decoder.write(chunk);
-    const lines = this.buffer.split('\n');
-    this.buffer = lines.pop()!;
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      let parsed: RpcMessage;
-      try { parsed = JSON.parse(line); } catch { continue; }
-
-      if (parsed.kind === 'response') {
-        const resp = parsed as RpcResponse;
-        const p = this.pending.get(resp.id);
-        if (p) { this.pending.delete(resp.id); p.resolve(resp.result); }
-      } else if (parsed.kind === 'error') {
-        const err = parsed as RpcError;
-        const p = this.pending.get(err.id);
-        if (p) { this.pending.delete(err.id); p.reject(new Error(err.error)); }
-      } else if (parsed.kind === 'event') {
-        const evt = parsed as RpcEvent;
-        if (this.eventHandler) {
-          this.eventHandler(evt);
-        } else {
-          this.eventBuffer.push(evt);
-        }
-      }
-    }
-  }
-
-  private rejectAll(reason: string): void {
-    for (const [, p] of this.pending) p.reject(new Error(reason));
-    this.pending.clear();
-  }
-}
+import {
+  EXIT_OK, EXIT_APPROVAL, EXIT_TIMEOUT, EXIT_TRANSPORT, EXIT_USAGE,
+  discoverSocket, MessageRouter,
+  type RpcEvent,
+} from './ipc-client.js';
 
 // ============================================================================
 // Structured Output
@@ -383,6 +205,11 @@ function parseArgs(argv: string[]): CliArgs {
 
 function printUsage(): void {
   console.log(`Usage: crispy-dispatch [options] [prompt...]
+       crispy-dispatch rpc <method> [json-params] [--session <id>]
+
+Subcommands:
+  rpc <method> [params]     Send a single RPC and print JSON result on stdout.
+                            Auto-injects $CRISPY_SESSION_ID as params.sessionId.
 
 Prompt Input:
   [prompt...]               Prompt text (positional args joined with spaces)
@@ -455,6 +282,13 @@ function getPrompt(args: CliArgs): string | undefined {
 }
 
 async function main(): Promise<void> {
+  // Route to rpc pipe before parsing dispatch-specific args
+  if (process.argv[2] === 'rpc') {
+    const { runRpcPipe } = await import('./rpc-pipe.js');
+    await runRpcPipe(process.argv.slice(3));
+    return;
+  }
+
   const args = parseArgs(process.argv);
 
   // Validate flag combinations
