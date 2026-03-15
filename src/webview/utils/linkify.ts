@@ -29,6 +29,8 @@ export interface FileLinkSegment {
   matches: FileMatch[];
   /** Line number (1-based) */
   line?: number;
+  /** End line number for ranges like :10-20 (1-based) */
+  endLine?: number;
   /** Column number (1-based) */
   col?: number;
 }
@@ -41,8 +43,8 @@ const URL_SCHEMES = /^(https?|ftp|wss?|file|mailto|data|blob):\/?\/?/i;
 /** Structural path: starts with ./ ../ ~/ / followed by at least one non-separator char */
 const STRUCTURAL_PATH_RE = /^([.~]?\.?\/[^\s:,;'")\]]+)/;
 
-/** :line:col suffix */
-const LINE_COL_RE = /^(.+?):(\d+)(?::(\d+))?$/;
+/** :line[-endLine][:col] suffix */
+const LINE_COL_RE = /^(.+?):(\d+)(?:-(\d+))?(?::(\d+))?$/;
 
 /** Check if a string looks like it has a file extension */
 function hasExtension(s: string): boolean {
@@ -154,7 +156,8 @@ function tryLinkify(token: string, index: FileIndex | null): FileLinkSegment | n
     if (lineColMatch && isPathLike(lineColMatch[1])) {
       const path = lineColMatch[1];
       const line = parseInt(lineColMatch[2], 10);
-      const col = lineColMatch[3] ? parseInt(lineColMatch[3], 10) : undefined;
+      const endLine = lineColMatch[3] ? parseInt(lineColMatch[3], 10) : undefined;
+      const col = lineColMatch[4] ? parseInt(lineColMatch[4], 10) : undefined;
       const matches = index ? index.match(path.replace(/^\.\//, '')) : [];
       return {
         type: 'file-link',
@@ -162,6 +165,7 @@ function tryLinkify(token: string, index: FileIndex | null): FileLinkSegment | n
         token: path,
         matches,
         line,
+        endLine,
         col,
       };
     }
@@ -181,7 +185,8 @@ function tryLinkify(token: string, index: FileIndex | null): FileLinkSegment | n
   if (lineColMatch) {
     const prefix = lineColMatch[1];
     const line = parseInt(lineColMatch[2], 10);
-    const col = lineColMatch[3] ? parseInt(lineColMatch[3], 10) : undefined;
+    const endLine = lineColMatch[3] ? parseInt(lineColMatch[3], 10) : undefined;
+    const col = lineColMatch[4] ? parseInt(lineColMatch[4], 10) : undefined;
 
     // Skip all-numeric prefixes (timestamps like 12:34:56)
     if (/^\d+$/.test(prefix)) return null;
@@ -195,6 +200,7 @@ function tryLinkify(token: string, index: FileIndex | null): FileLinkSegment | n
         token: prefix,
         matches: indexHits,
         line,
+        endLine,
         col,
       };
     }
