@@ -68,7 +68,13 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
     // - pending→real transitions (entries are already correct)
     // - null→real transitions (fork-to-new-panel preloads history via setForkHistory)
     if (prevSessionId !== null && !prevSessionId?.startsWith('pending:') && !sessionId.startsWith('pending:')) {
-      setEntries([]);
+      // Preserve optimistic entries through session transitions (fork/rewind).
+      // When a fork resolves to a real ID, the session switch would otherwise
+      // wipe the optimistic user message before catchup can re-merge it.
+      setEntries((prev) => {
+        const optimistic = prev.filter((e) => e.uuid?.startsWith('optimistic-'));
+        return optimistic;
+      });
     }
 
     // Listen for live events
