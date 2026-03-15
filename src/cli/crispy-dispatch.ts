@@ -1,0 +1,815 @@
+#!/usr/bin/env node
+/**
+ * crispy-dispatch — CLI client for Crispy IPC
+ *
+ * Connects to the running Crispy extension host over a Unix domain socket
+ * (or Windows named pipe) and dispatches sessions via JSON-RPC.
+ *
+ * Three modes:
+ *   1. dispatchChild (default) — hidden child session, collects text, exits
+ *   2. sendTurn (--visible)    — real session visible in editor, streams events
+ *   3. resumeChild (--resume)  — follow-up turn on existing child session
+ *
+ * Exit codes:
+ *   0   completed
+ *   10  approval_required (session paused, can resume)
+ *   11  timeout (may have partial text on stdout)
+ *   12  transport_error (socket not found, connection dropped)
+ *   13  invalid_usage (bad flags, no prompt)
+ *
+ * @module crispy-dispatch
+ */
+
+import { connect, type Socket } from 'node:net';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { StringDecoder } from 'node:string_decoder';
+
+// ============================================================================
+// Exit Codes
+// ============================================================================
+
+const EXIT_OK = 0;
+const EXIT_APPROVAL = 10;
+const EXIT_TIMEOUT = 11;
+const EXIT_TRANSPORT = 12;
+const EXIT_USAGE = 13;
+
+// ============================================================================
+// Server Discovery (fix #4: path-boundary check)
+// ============================================================================
+
+interface ServerEntry {
+  pid: number;
+  socket: string;
+  cwd: string;
+  startedAt: string;
+}
+
+function isPidAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+function isWithinDir(child: string, parent: string): boolean {
+  if (child === parent) return true;
+  const prefix = parent.endsWith('/') ? parent : parent + '/';
+  return child.startsWith(prefix);
+}
+
+function discoverSocket(): string {
+  if (process.env.CRISPY_SOCK) return process.env.CRISPY_SOCK;
+
+  const serversFile = join(homedir(), '.crispy', 'ipc', 'servers.json');
+  let entries: ServerEntry[];
+  try {
+    entries = JSON.parse(readFileSync(serversFile, 'utf8'));
+  } catch {
+    throw new Error('No Crispy IPC servers found. Is VS Code/Cursor running with Crispy?');
+  }
+
+  entries = entries.filter(e => isPidAlive(e.pid));
+
+  if (entries.length === 0) throw new Error('No Crispy IPC servers running.');
+  if (entries.length === 1) return entries[0]!.socket;
+
+  // Multiple servers — match by longest CWD prefix with path-boundary check
+  const pwd = process.cwd();
+  const sorted = entries
+    .filter(e => isWithinDir(pwd, e.cwd))
+    .sort((a, b) => b.cwd.length - a.cwd.length);
+
+  if (sorted.length > 0) return sorted[0]!.socket;
+  throw new Error(
+    `Multiple Crispy servers running but none match CWD "${pwd}". Use CRISPY_SOCK to specify.\n` +
+    `Active servers:\n${entries.map(e => `  PID ${e.pid}: ${e.cwd}`).join('\n')}`,
+  );
+}
+
+// ============================================================================
+// MessageRouter (fix #1: single socket reader, no event gaps)
+// ============================================================================
+
+let nextId = 1;
+
+interface RpcResponse {
+  kind: 'response';
+  id: string;
+  result: unknown;
+}
+
+interface RpcError {
+  kind: 'error';
+  id: string;
+  error: string;
+}
+
+interface RpcEvent {
+  kind: 'event';
+  sessionId: string;
+  event: {
+    type: string;
+    [key: string]: unknown;
+  };
+}
+
+type RpcMessage = RpcResponse | RpcError | RpcEvent;
+
+/**
+ * Single socket reader that demuxes RPC responses from pushed events.
+ * Events are buffered until a handler is registered, eliminating the
+ * gap between sendRpc() and event streaming that caused Bug #1.
+ */
+class MessageRouter {
+  private pending = new Map<string, {
+    resolve: (value: unknown) => void;
+    reject: (reason: Error) => void;
+  }>();
+  private eventHandler: ((evt: RpcEvent) => void) | null = null;
+  private eventBuffer: RpcEvent[] = [];
+  private buffer = '';
+  private decoder = new StringDecoder('utf8');
+  private closed = false;
+
+  constructor(private conn: Socket) {
+    conn.on('data', (chunk: Buffer) => this.onData(chunk));
+    conn.on('close', () => {
+      this.closed = true;
+      this.rejectAll('Connection closed');
+    });
+    conn.on('error', (err: Error) => {
+      this.closed = true;
+      this.rejectAll(`Connection error: ${err.message}`);
+    });
+  }
+
+  /** Install event handler. Flushes any buffered events immediately. */
+  setEventHandler(handler: (evt: RpcEvent) => void): void {
+    this.eventHandler = handler;
+    for (const evt of this.eventBuffer) handler(evt);
+    this.eventBuffer = [];
+  }
+
+  /** Send an RPC request and wait for the matching response. */
+  sendRpc(method: string, params: Record<string, unknown>): Promise<unknown> {
+    if (this.closed) return Promise.reject(new Error('Connection closed'));
+    const id = String(nextId++);
+    const msg = JSON.stringify({ kind: 'request', id, method, params });
+    return new Promise<unknown>((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      this.conn.write(msg + '\n');
+    });
+  }
+
+  /** Send an RPC request without waiting for a response. */
+  sendFireAndForget(method: string, params: Record<string, unknown>): void {
+    if (this.closed) return;
+    const id = String(nextId++);
+    const msg = JSON.stringify({ kind: 'request', id, method, params });
+    this.conn.write(msg + '\n');
+  }
+
+  end(): void {
+    this.conn.end();
+  }
+
+  private onData(chunk: Buffer): void {
+    this.buffer += this.decoder.write(chunk);
+    const lines = this.buffer.split('\n');
+    this.buffer = lines.pop()!;
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let parsed: RpcMessage;
+      try { parsed = JSON.parse(line); } catch { continue; }
+
+      if (parsed.kind === 'response') {
+        const resp = parsed as RpcResponse;
+        const p = this.pending.get(resp.id);
+        if (p) { this.pending.delete(resp.id); p.resolve(resp.result); }
+      } else if (parsed.kind === 'error') {
+        const err = parsed as RpcError;
+        const p = this.pending.get(err.id);
+        if (p) { this.pending.delete(err.id); p.reject(new Error(err.error)); }
+      } else if (parsed.kind === 'event') {
+        const evt = parsed as RpcEvent;
+        if (this.eventHandler) {
+          this.eventHandler(evt);
+        } else {
+          this.eventBuffer.push(evt);
+        }
+      }
+    }
+  }
+
+  private rejectAll(reason: string): void {
+    for (const [, p] of this.pending) p.reject(new Error(reason));
+    this.pending.clear();
+  }
+}
+
+// ============================================================================
+// Structured Output
+// ============================================================================
+
+type ResultStatus = 'completed' | 'approval_required' | 'timeout' | 'error';
+
+interface ResultMetadata {
+  status: ResultStatus;
+  sessionId: string;
+  textLength: number;
+  partial?: boolean;
+  toolName?: string;
+  toolUseId?: string;
+  error?: string;
+}
+
+function emitResult(meta: ResultMetadata): void {
+  process.stderr.write(JSON.stringify(meta) + '\n');
+}
+
+function exitForStatus(status: ResultStatus): number {
+  switch (status) {
+    case 'completed': return EXIT_OK;
+    case 'approval_required': return EXIT_APPROVAL;
+    case 'timeout': return EXIT_TIMEOUT;
+    case 'error': return EXIT_TRANSPORT;
+  }
+}
+
+// ============================================================================
+// Argument Parsing
+// ============================================================================
+
+type ApprovalMode = 'fail' | 'bypass' | 'manual';
+
+interface CliArgs {
+  vendor: string;
+  parentVendor?: string;
+  prompt?: string;
+  parentSessionId?: string;
+  model?: string;
+  timeoutMs: number;
+  autoClose: boolean;
+  visible: boolean;
+  resume?: string;
+  fork: boolean;
+  resumeAt?: string;
+  persist: boolean;
+  approval: ApprovalMode;
+  debug: boolean;
+}
+
+function requireValue(flag: string, argv: string[], i: number): string {
+  const val = argv[i + 1];
+  if (val === undefined || val.startsWith('-')) {
+    console.error(`Error: ${flag} requires a value`);
+    process.exit(EXIT_USAGE);
+  }
+  return val;
+}
+
+function parseArgs(argv: string[]): CliArgs {
+  const approvalEnv = process.env.CRISPY_DISPATCH_APPROVAL as ApprovalMode | undefined;
+  const args: CliArgs = {
+    vendor: 'claude',
+    timeoutMs: 60_000,
+    autoClose: true,
+    visible: false,
+    fork: false,
+    persist: false,
+    approval: approvalEnv && ['fail', 'bypass', 'manual'].includes(approvalEnv)
+      ? approvalEnv : 'fail',
+    debug: process.env.CRISPY_DISPATCH_DEBUG === '1',
+  };
+
+  // BYPASS_PERMISSIONS=1 is a shorthand for --approval bypass
+  if (process.env.BYPASS_PERMISSIONS === '1') {
+    args.approval = 'bypass';
+  }
+
+  const positionalParts: string[] = [];
+  let i = 2; // skip node + script
+
+  while (i < argv.length) {
+    const arg = argv[i]!;
+    switch (arg) {
+      case '--vendor':
+        args.vendor = requireValue('--vendor', argv, i);
+        i++;
+        break;
+      case '--parent-vendor':
+        args.parentVendor = requireValue('--parent-vendor', argv, i);
+        i++;
+        break;
+      case '--prompt':
+      case '-p':
+        args.prompt = requireValue(arg, argv, i);
+        i++;
+        break;
+      case '--parent-session':
+        args.parentSessionId = requireValue('--parent-session', argv, i);
+        i++;
+        break;
+      case '--model':
+      case '-m':
+        args.model = requireValue(arg, argv, i);
+        i++;
+        break;
+      case '--timeout':
+        args.timeoutMs = parseInt(requireValue('--timeout', argv, i), 10);
+        i++;
+        break;
+      case '--no-auto-close':
+        args.autoClose = false;
+        break;
+      case '--visible':
+        args.visible = true;
+        break;
+      case '--resume':
+      case '-r':
+        args.resume = requireValue(arg, argv, i);
+        i++;
+        break;
+      case '--fork':
+      case '-f':
+        args.fork = true;
+        break;
+      case '--resume-at':
+        args.resumeAt = requireValue('--resume-at', argv, i);
+        i++;
+        break;
+      case '--persist':
+        args.persist = true;
+        break;
+      case '--no-persist':
+        // Deprecated alias — default is already ephemeral
+        if (args.debug) console.error('[crispy-dispatch] --no-persist is deprecated (ephemeral is the default). Use --persist to opt-in to persistence.');
+        break;
+      case '--approval': {
+        const val = requireValue('--approval', argv, i) as ApprovalMode;
+        i++;
+        if (!['fail', 'bypass', 'manual'].includes(val)) {
+          console.error(`Error: --approval must be fail, bypass, or manual (got "${val}")`);
+          process.exit(EXIT_USAGE);
+        }
+        args.approval = val;
+        break;
+      }
+      case '--debug':
+        args.debug = true;
+        break;
+      case '--help':
+      case '-h':
+        printUsage();
+        process.exit(EXIT_OK);
+        break;
+      default:
+        if (arg.startsWith('-')) {
+          console.error(`Unknown flag: ${arg}`);
+          process.exit(EXIT_USAGE);
+        }
+        positionalParts.push(arg);
+    }
+    i++;
+  }
+
+  if (!args.prompt && positionalParts.length > 0) {
+    args.prompt = positionalParts.join(' ');
+  }
+
+  return args;
+}
+
+function printUsage(): void {
+  console.log(`Usage: crispy-dispatch [options] [prompt...]
+
+Prompt Input:
+  [prompt...]               Prompt text (positional args joined with spaces)
+  -p, --prompt <text>       Prompt text (explicit flag)
+  PROMPT_FILE=<path>        Read prompt from file (env var)
+  stdin                     Pipe prompt via stdin
+
+Session Control:
+  --resume, -r <id>         Resume or fork from this session ID
+  --fork, -f                Fork from session (requires --resume)
+  --resume-at <msg-id>      Fork at specific message UUID (requires --fork)
+
+Vendor & Model:
+  --vendor <vendor>         Vendor to use (default: claude)
+  --parent-vendor <vendor>  Parent vendor (default: same as --vendor)
+  -m, --model <model>       Model override
+
+Behavior:
+  --visible                 Show session in editor UI (uses sendTurn instead of dispatchChild)
+  --parent-session <id>     Parent session ID (or set CRISPY_PARENT_SESSION)
+  --timeout <ms>            Timeout in milliseconds (default: 60000)
+  --persist                 Save session to disk (default: ephemeral)
+  --no-auto-close           Keep session alive after completion
+  --approval <mode>         Approval handling: fail (default), bypass, manual
+  --debug                   Print diagnostics to stderr
+
+Exit Codes:
+  0                         Completed successfully
+  10                        Approval required (session paused, can resume)
+  11                        Timeout (may have partial text on stdout)
+  12                        Transport error
+  13                        Invalid usage
+
+Environment:
+  CRISPY_SOCK               Override socket path (skip discovery)
+  CRISPY_PARENT_SESSION     Default parent session ID
+  PROMPT_FILE               Read prompt from file
+  BYPASS_PERMISSIONS=1      Shorthand for --approval bypass
+  CRISPY_DISPATCH_APPROVAL  Default approval mode (fail|bypass|manual)
+  CRISPY_DISPATCH_DEBUG=1   Enable diagnostics`);
+}
+
+// ============================================================================
+// Main
+// ============================================================================
+
+const OUTPUT_DIR = join('/tmp', 'crispy-agents');
+
+async function readStdin(): Promise<string> {
+  if (process.stdin.isTTY) return '';
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks).toString('utf8').trim();
+}
+
+function getPrompt(args: CliArgs): string | undefined {
+  if (args.prompt) return args.prompt;
+  const pf = process.env.PROMPT_FILE;
+  if (pf) {
+    try {
+      return readFileSync(resolve(pf), 'utf8').trim();
+    } catch (err) {
+      console.error(`Error reading PROMPT_FILE "${pf}": ${(err as Error).message}`);
+      process.exit(EXIT_USAGE);
+    }
+  }
+  return undefined;
+}
+
+async function main(): Promise<void> {
+  const args = parseArgs(process.argv);
+
+  // Validate flag combinations
+  if (args.fork && !args.resume) {
+    console.error('Error: --fork requires --resume <session-id>');
+    process.exit(EXIT_USAGE);
+  }
+  if (args.resumeAt && !args.fork) {
+    console.error('Error: --resume-at requires --fork');
+    process.exit(EXIT_USAGE);
+  }
+
+  // Resolve prompt
+  let prompt = getPrompt(args);
+  if (!prompt) {
+    const stdinContent = await readStdin();
+    if (stdinContent) {
+      prompt = stdinContent;
+    } else {
+      console.error('Error: No prompt provided. Use --prompt, positional args, PROMPT_FILE, or pipe via stdin.');
+      process.exit(EXIT_USAGE);
+    }
+  }
+
+  // Set up output file
+  let outputFile: string | null = null;
+  try {
+    mkdirSync(OUTPUT_DIR, { recursive: true });
+    outputFile = join(OUTPUT_DIR, `crispy-dispatch-${Date.now()}-${process.pid}.log`);
+    if (args.debug) console.error(`[output_file: ${outputFile}]`);
+  } catch { /* best-effort */ }
+
+  // Build settings
+  const settings: Record<string, unknown> = {};
+  if (args.model) settings.model = args.model;
+  if (args.approval === 'bypass') {
+    settings.permissionMode = 'bypassPermissions';
+  }
+
+  // Connect to the IPC server
+  let socketPath: string;
+  try {
+    socketPath = discoverSocket();
+  } catch (err) {
+    console.error((err as Error).message);
+    process.exit(EXIT_TRANSPORT);
+  }
+
+  let conn: Socket;
+  try {
+    conn = connect(socketPath);
+    await new Promise<void>((resolve, reject) => {
+      conn.once('connect', resolve);
+      conn.once('error', reject);
+    });
+  } catch (err) {
+    console.error(`Connection failed: ${(err as Error).message}`);
+    process.exit(EXIT_TRANSPORT);
+  }
+
+  if (args.debug) console.error(`[crispy-dispatch] Connected to ${socketPath}`);
+
+  const router = new MessageRouter(conn);
+
+  try {
+    if (args.visible) {
+      await runVisibleMode(router, args, prompt!, settings, outputFile);
+    } else if (args.resume && !args.fork) {
+      await runResumeMode(router, args, prompt!, settings, outputFile);
+    } else {
+      await runDispatchMode(router, args, prompt!, settings, outputFile);
+    }
+  } catch (err) {
+    emitResult({
+      status: 'error',
+      sessionId: '',
+      textLength: 0,
+      error: (err as Error).message,
+    });
+    process.exit(EXIT_TRANSPORT);
+  }
+
+  router.end();
+}
+
+// ============================================================================
+// Mode: Visible (sendTurn — fix #1: event handler installed before RPC)
+// ============================================================================
+
+async function runVisibleMode(
+  router: MessageRouter,
+  args: CliArgs,
+  prompt: string,
+  settings: Record<string, unknown>,
+  outputFile: string | null,
+): Promise<void> {
+  const skipPersistSession = !args.persist;
+  const cwd = process.cwd();
+
+  // Build TurnTarget
+  let target: Record<string, unknown>;
+  if (args.resume && args.fork) {
+    target = {
+      kind: 'fork',
+      vendor: args.vendor,
+      fromSessionId: args.resume,
+      ...(args.resumeAt && { atMessageId: args.resumeAt }),
+      ...(skipPersistSession && { skipPersistSession }),
+    };
+  } else if (args.resume) {
+    target = { kind: 'existing', sessionId: args.resume };
+  } else {
+    target = {
+      kind: 'new',
+      vendor: args.vendor,
+      cwd,
+      ...(skipPersistSession && { skipPersistSession }),
+    };
+  }
+
+  const intent = {
+    target,
+    content: prompt,
+    clientMessageId: crypto.randomUUID(),
+    settings,
+  };
+
+  const parentSessionId = args.parentSessionId
+    || process.env.CRISPY_PARENT_SESSION
+    || `cli-${Date.now()}`;
+  const provenance = {
+    parentSessionId,
+    autoClose: args.autoClose,
+    visible: true,
+  };
+
+  // State for event collection
+  let sessionId = '';
+  let text = '';
+  let settled = false;
+  let approvalInfo: { toolName: string; toolUseId: string } | null = null;
+
+  // Install event handler BEFORE any RPCs — no event gap (fix #1)
+  const done = new Promise<ResultStatus>((resolve) => {
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve('timeout');
+      }
+    }, args.timeoutMs);
+
+    router.setEventHandler((evt) => {
+      if (settled) return;
+      const event = evt.event;
+
+      // Track session ID rekey (pending → real)
+      if (event.type === 'notification' && event.kind === 'session_changed' && event.sessionId) {
+        const newId = event.sessionId as string;
+        if (args.debug) console.error(`[crispy-dispatch] Session rekey: ${sessionId} → ${newId}`);
+        sessionId = newId;
+      }
+
+      // Collect assistant text from entry messages
+      if (event.type === 'entry' && event.entry) {
+        const entry = event.entry as { type?: string; message?: { content?: unknown } };
+        if ((entry.type === 'assistant' || entry.type === 'result') && entry.message) {
+          const content = entry.message.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === 'text' && block.text) {
+                process.stdout.write(block.text);
+                text += block.text;
+              }
+            }
+          } else if (typeof content === 'string') {
+            process.stdout.write(content);
+            text += content;
+          }
+        }
+      }
+
+      // Turn complete
+      if (event.type === 'status' && event.status === 'idle') {
+        if (args.debug) console.error(`[crispy-dispatch] Session idle — turn complete`);
+        settled = true;
+        clearTimeout(timer);
+        resolve('completed');
+      }
+
+      // Approval required (fix #5)
+      if (event.type === 'status' && event.status === 'awaiting_approval') {
+        if (args.approval === 'fail') {
+          approvalInfo = {
+            toolName: (event.toolName as string) ?? 'unknown',
+            toolUseId: (event.toolUseId as string) ?? '',
+          };
+          settled = true;
+          clearTimeout(timer);
+          resolve('approval_required');
+        } else if (args.approval === 'manual') {
+          if (args.debug) console.error(
+            `[crispy-dispatch] Awaiting approval for "${event.toolName}". Approve in Crispy UI.`,
+          );
+          // Don't resolve — wait for idle or timeout
+        }
+        // bypass: never reaches here (permissionMode=bypassPermissions)
+      }
+
+      // Error notification
+      if (event.type === 'notification' && event.kind === 'error') {
+        console.error(`[crispy-dispatch] Error: ${(event as { error?: string }).error ?? 'unknown'}`);
+      }
+    });
+  });
+
+  // For existing sessions, subscribe first
+  if (target.kind === 'existing') {
+    await router.sendRpc('subscribe', { sessionId: target.sessionId });
+    sessionId = target.sessionId as string;
+  }
+
+  // Send the turn
+  const turnResult = await router.sendRpc('sendTurn', { intent, provenance }) as { sessionId: string };
+  if (!sessionId) sessionId = turnResult.sessionId;
+  if (args.debug) console.error(`[crispy-dispatch] Turn sent, sessionId: ${sessionId}`);
+
+  // Subscribe to the session for events (existing sessions already subscribed)
+  if (target.kind !== 'existing') {
+    await router.sendRpc('subscribe', { sessionId });
+  }
+
+  // Wait for completion
+  const status = await done;
+
+  // Write output file
+  if (outputFile && text) {
+    try { writeFileSync(outputFile, text, 'utf8'); } catch { /* best-effort */ }
+  }
+
+  // Auto-close
+  if (args.autoClose && status === 'completed') {
+    router.sendFireAndForget('close', { sessionId });
+  }
+
+  // Final newline
+  if (text && !text.endsWith('\n')) process.stdout.write('\n');
+
+  // Emit structured metadata
+  const meta: ResultMetadata = { status, sessionId, textLength: text.length };
+  if (status === 'timeout') meta.partial = text.length > 0;
+  if (approvalInfo !== null) {
+    meta.toolName = (approvalInfo as { toolName: string; toolUseId: string }).toolName;
+    meta.toolUseId = (approvalInfo as { toolName: string; toolUseId: string }).toolUseId;
+  }
+  emitResult(meta);
+
+  process.exit(exitForStatus(status));
+}
+
+// ============================================================================
+// Mode: Resume (resumeChild)
+// ============================================================================
+
+async function runResumeMode(
+  router: MessageRouter,
+  args: CliArgs,
+  prompt: string,
+  settings: Record<string, unknown>,
+  outputFile: string | null,
+): Promise<void> {
+  const result = await router.sendRpc('resumeChild', {
+    sessionId: args.resume,
+    prompt,
+    settings,
+    autoClose: args.autoClose,
+    timeoutMs: args.timeoutMs,
+  }) as { sessionId: string; text: string; structured?: unknown } | null;
+
+  if (result) {
+    if (result.text) {
+      process.stdout.write(result.text);
+      if (!result.text.endsWith('\n')) process.stdout.write('\n');
+    }
+    if (outputFile && result.text) {
+      try { writeFileSync(outputFile, result.text, 'utf8'); } catch { /* best-effort */ }
+    }
+    emitResult({ status: 'completed', sessionId: result.sessionId, textLength: result.text.length });
+    process.exit(EXIT_OK);
+  } else {
+    emitResult({ status: 'timeout', sessionId: args.resume!, textLength: 0 });
+    process.exit(EXIT_TIMEOUT);
+  }
+}
+
+// ============================================================================
+// Mode: Dispatch (dispatchChild — default)
+// ============================================================================
+
+async function runDispatchMode(
+  router: MessageRouter,
+  args: CliArgs,
+  prompt: string,
+  settings: Record<string, unknown>,
+  outputFile: string | null,
+): Promise<void> {
+  const parentSessionId = args.parentSessionId
+    || process.env.CRISPY_PARENT_SESSION
+    || `cli-${Date.now()}`;
+
+  const dispatchParams: Record<string, unknown> = {
+    parentSessionId,
+    vendor: args.vendor,
+    parentVendor: args.parentVendor ?? args.vendor,
+    prompt,
+    autoClose: args.autoClose,
+    skipPersistSession: !args.persist,
+    forceNew: !args.resume,
+  };
+
+  if (Object.keys(settings).length > 0) {
+    dispatchParams.settings = settings;
+  }
+  if (args.timeoutMs !== 60_000) {
+    dispatchParams.timeoutMs = args.timeoutMs;
+  }
+
+  // Fork mode with dispatchChild
+  if (args.resume && args.fork) {
+    dispatchParams.parentSessionId = args.resume;
+    dispatchParams.forceNew = false;
+  }
+
+  const result = await router.sendRpc('dispatchChild', dispatchParams) as {
+    sessionId: string;
+    text: string;
+    structured?: unknown;
+  } | null;
+
+  if (result) {
+    if (result.text) {
+      process.stdout.write(result.text);
+      if (!result.text.endsWith('\n')) process.stdout.write('\n');
+    }
+    if (outputFile && result.text) {
+      try { writeFileSync(outputFile, result.text, 'utf8'); } catch { /* best-effort */ }
+    }
+    emitResult({ status: 'completed', sessionId: result.sessionId, textLength: result.text.length });
+    process.exit(EXIT_OK);
+  } else {
+    emitResult({ status: 'timeout', sessionId: '', textLength: 0 });
+    process.exit(EXIT_TIMEOUT);
+  }
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(EXIT_TRANSPORT);
+});

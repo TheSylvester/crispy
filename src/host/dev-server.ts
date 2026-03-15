@@ -32,6 +32,7 @@ import { initRecallIngest, shutdownRecallIngest } from '../core/recall/ingest-ho
 import { startRecallCatchup, stopEmbeddingBackfill } from '../core/recall/catchup-manager.js';
 import { disposeEmbedder } from '../core/recall/embedder.js';
 import { resolveInternalServerPaths } from './adapter-registry.js';
+import { startIpcServer } from './ipc-server.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
 
@@ -212,25 +213,26 @@ server.listen(PORT, () => {
   console.log(`[dev-server] ★ ready — accepting connections (${(performance.now() - bootStart).toFixed(0)}ms)`);
 });
 
+// Start IPC server for CLI dispatch (Unix socket / Windows named pipe)
+let ipcHandle: { close(): void } | null = null;
+startIpcServer(cwd)
+  .then((h) => { ipcHandle = h; })
+  .catch((err) => console.error('[dev-server] IPC server failed:', err));
+
 // Crash guard — prevent unhandled MCP/SDK rejections from killing the process
 process.on('unhandledRejection', (reason) => {
   console.error('[dev-server] Unhandled rejection:', reason);
 });
 
 // Cleanup on shutdown
-process.on('SIGINT', () => {
+function shutdown() {
+  ipcHandle?.close();
   shutdownRosieBot();
   shutdownRecallIngest();
   stopEmbeddingBackfill();
   disposeEmbedder();
   dispatch.dispose();
   process.exit(0);
-});
-process.on('SIGTERM', () => {
-  shutdownRosieBot();
-  shutdownRecallIngest();
-  stopEmbeddingBackfill();
-  disposeEmbedder();
-  dispatch.dispose();
-  process.exit(0);
-});
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

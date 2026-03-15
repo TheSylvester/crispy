@@ -71,6 +71,11 @@ const pending = new Map<string, Promise<SessionChannel>>();
 // Child Session Dispatch
 // ============================================================================
 
+/** Idle debounce window (ms). After an idle event, wait this long before
+ *  resolving. If 'active' fires within the window, the timer resets.
+ *  Prevents spurious early resolution in multi-step agent work. */
+const IDLE_SETTLE_MS = 500;
+
 export interface ChildSessionOptions {
   /** Session that's spawning this child. */
   parentSessionId: string;
@@ -104,16 +109,44 @@ export interface ChildSessionResult {
   structured?: unknown;
 }
 
-/** Parent->child relationship tracking. Used by dispatchChildSession for lifecycle management. */
+/** Parent->child relationship tracking. Used by dispatchChildSession for lifecycle management.
+ *  `visible` sessions get session-list notifications (appear in editor UI) but still
+ *  skip lifecycle hooks (Rosie won't process them). */
 const childSessions = new Map<string, {
   parentSessionId: string;
   autoClose: boolean;
+  visible: boolean;
 }>();
 
-/** Check if a session was spawned by dispatchChildSession. Used by lifecycle-hooks
- *  to prevent recursive hook chains (e.g. Rosie analyzing its own child sessions). */
+/** Check if a session was spawned by dispatchChildSession or registered as a child
+ *  via registerChildSession. Used by lifecycle-hooks to prevent recursive hook chains
+ *  (e.g. Rosie analyzing its own child sessions). */
 export function isChildSession(sessionId: string): boolean {
   return childSessions.has(sessionId);
+}
+
+/**
+ * Register a session as a child for provenance tracking.
+ * Used by IPC dispatch (--visible mode) to mark sendTurn-created sessions
+ * so Rosie skips them while still allowing session-list notifications.
+ */
+export function registerChildSession(
+  sessionId: string,
+  meta: { parentSessionId: string; autoClose: boolean; visible: boolean },
+): void {
+  childSessions.set(sessionId, meta);
+}
+
+/**
+ * Re-key a child session registration (pending → real ID).
+ * No-op if the old ID isn't tracked.
+ */
+export function rekeyChildSession(oldId: string, newId: string): void {
+  const entry = childSessions.get(oldId);
+  if (entry) {
+    childSessions.delete(oldId);
+    childSessions.set(newId, entry);
+  }
 }
 
 // ============================================================================
@@ -348,7 +381,24 @@ function openChannel(channelId: string, vendor: Vendor, spec: SessionOpenSpec): 
     // Check here — before broadcast delivers the idle event to subscribers
     // whose cleanup() would delete the childSessions entry. The existing
     // guard in fireResponseComplete is defense-in-depth but races with cleanup.
-    if (isChildSession(sessionId)) return;
+    const childMeta = childSessions.get(sessionId);
+    if (childMeta && !childMeta.visible) return; // hidden child: skip everything
+    if (childMeta?.visible) {
+      // Visible child: notify session list (appears in editor UI) but
+      // still skip lifecycle hooks (Rosie won't process it).
+      // Re-resolve sessionId inside setTimeout to handle pending→real rekey
+      // that may have happened since idle fired (fix #3: stale-ID race).
+      setTimeout(() => {
+        const currentId = channel.adapter?.sessionId ?? sessionId;
+        refreshAndNotify(currentId);
+        if (childMeta.autoClose) {
+          closeSession(currentId);
+          childSessions.delete(currentId);
+          if (currentId !== sessionId) childSessions.delete(sessionId);
+        }
+      }, 150);
+      return;
+    }
     // Small grace period: the adapter emits idle synchronously when the SDK
     // yields the result message, but the SDK may not have flushed the JSONL
     // file to disk yet. 150ms is enough for the OS write buffer to flush.
@@ -364,7 +414,10 @@ function openChannel(channelId: string, vendor: Vendor, spec: SessionOpenSpec): 
   channel.onStatusChange = (state) => {
     const sessionId = channel.adapter?.sessionId;
     if (!sessionId) return;
-    if (isChildSession(sessionId)) return;
+    const childMeta = childSessions.get(sessionId);
+    // Hidden children skip status notifications entirely.
+    // Visible children broadcast status so the editor UI can show live state.
+    if (childMeta && !childMeta.visible) return;
     notifyStatusChange(sessionId, state);
   };
 
@@ -1020,9 +1073,12 @@ export async function dispatchChildSession(
     let currentId: string = pendingId;
     // Captured from sendTurn result — used by idle handler for autoClose:false
     let rekeyPromise: Promise<string> | undefined;
+    // Idle debounce timer — prevents spurious early resolution (fix #8)
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
     const timer = setTimeout(() => {
       if (!settled) {
+        if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
         const parts: string[] = [];
         if (lastError) parts.push(`error: ${lastError}`);
         parts.push(`entries: [${entryTypes.join(', ')}]`);
@@ -1047,6 +1103,7 @@ export async function dispatchChildSession(
     // resolves null (no session ID returned to caller → unreachable channel).
     const cleanup = (force = false) => {
       clearTimeout(timer);
+      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
       const shouldClose = autoClose || force;
       // Clean up both pendingId and currentId to handle the rekey race —
       // if timeout fires mid-rekey, currentId may differ from pendingId.
@@ -1140,47 +1197,56 @@ export async function dispatchChildSession(
           }
         }
 
-        // Turn complete — resolve with collected result
+        // Idle debounce: wait IDLE_SETTLE_MS after idle before resolving.
+        // Cancels if 'active' fires (agent starting another tool round).
+        // Prevents spurious early resolution in multi-step agent work (fix #8).
+        if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'active') {
+          if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+        }
+
+        // Turn complete — debounced idle resolution
         if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'idle') {
-          settled = true;
+          if (idleTimer) clearTimeout(idleTimer);
+          idleTimer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
 
-          // For autoClose:false children, ensure we return the real (rekeyed) ID
-          // so resumeChildSession can find the channel. Idle can fire before the
-          // rekey promise resolves, leaving currentId as the stale pending ID.
-          const finalize = (resolvedId: string) => {
-            if (text || structured !== undefined || entryTypes.length > 1) {
-              cleanup();
-              resolve({ sessionId: resolvedId, text, structured });
+            // For autoClose:false children, ensure we return the real (rekeyed) ID
+            // so resumeChildSession can find the channel. Idle can fire before the
+            // rekey promise resolves, leaving currentId as the stale pending ID.
+            const finalize = (resolvedId: string) => {
+              if (text || structured !== undefined || entryTypes.length > 1) {
+                cleanup();
+                resolve({ sessionId: resolvedId, text, structured });
+              } else {
+                const parts: string[] = [];
+                if (lastError) parts.push(`error: ${lastError}`);
+                parts.push(`entries: [${entryTypes.join(', ')}]`);
+                if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
+                console.warn(`[child-session] Turn completed with empty response (parent: ${parentSessionId}) — ${parts.join(' | ')}`);
+                cleanup(/* force */ true);
+                resolve(null);
+              }
+            };
+
+            if (!autoClose && rekeyPromise) {
+              rekeyPromise.then((realId) => {
+                childSessions.delete(pendingId);
+                childSessions.set(realId, { parentSessionId, autoClose, visible: false });
+                finalize(realId);
+              }).catch(() => finalize(currentId));
             } else {
-              const parts: string[] = [];
-              if (lastError) parts.push(`error: ${lastError}`);
-              parts.push(`entries: [${entryTypes.join(', ')}]`);
-              if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
-              console.warn(`[child-session] Turn completed with empty response (parent: ${parentSessionId}) — ${parts.join(' | ')}`);
-              // No result → caller gets null and has no session ID to clean up.
-              // Force-close to prevent leaking channel+adapter+MCP subprocesses.
-              cleanup(/* force */ true);
-              resolve(null);
+              finalize(currentId);
             }
-          };
-
-          if (!autoClose && rekeyPromise) {
-            // Must return the real ID so resumeChildSession can find the channel
-            rekeyPromise.then((realId) => {
-              childSessions.delete(pendingId);
-              childSessions.set(realId, { parentSessionId, autoClose });
-              finalize(realId);
-            }).catch(() => finalize(currentId));
-          } else {
-            finalize(currentId);
-          }
+          }, IDLE_SETTLE_MS);
         }
       },
     };
 
     // Register the pending ID as a child session before sendTurn so cleanup
     // always has something to work with.
-    childSessions.set(pendingId, { parentSessionId, autoClose });
+    childSessions.set(pendingId, { parentSessionId, autoClose, visible: false });
 
     // Fire the turn with the explicit pending ID
     console.error(`[child-session] Sending turn (parent: ${parentSessionId}, vendor: ${vendor}, pending: ${pendingId})`);
@@ -1191,7 +1257,7 @@ export async function dispatchChildSession(
         currentId = result.sessionId;
         // Migrate child tracking from pending to real ID
         childSessions.delete(pendingId);
-        childSessions.set(currentId, { parentSessionId, autoClose });
+        childSessions.set(currentId, { parentSessionId, autoClose, visible: false });
 
         // Handle pending->real ID re-keying
         if (result.rekeyPromise) {
@@ -1199,7 +1265,7 @@ export async function dispatchChildSession(
           result.rekeyPromise.then((realId) => {
             if (settled) return;
             childSessions.delete(currentId);
-            childSessions.set(realId, { parentSessionId, autoClose });
+            childSessions.set(realId, { parentSessionId, autoClose, visible: false });
             currentId = realId;
           }).catch(() => {});
         }
@@ -1260,7 +1326,7 @@ export async function resumeChildSession(
   // Defensive: ensure childSessions tracks this session to prevent lifecycle
   // hooks from firing on it during turn 2.
   if (!childSessions.has(sessionId)) {
-    childSessions.set(sessionId, { parentSessionId: '', autoClose });
+    childSessions.set(sessionId, { parentSessionId: '', autoClose, visible: false });
   }
 
   const intent: TurnIntent = {
@@ -1276,9 +1342,11 @@ export async function resumeChildSession(
     let text = '';
     let structured: unknown;
     let settled = false;
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
     const timer = setTimeout(() => {
       if (!settled) {
+        if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
         console.warn(`[resume-child] Timeout after ${timeoutMs}ms — session ${sessionId}`);
         settled = true;
         cleanup();
@@ -1292,6 +1360,7 @@ export async function resumeChildSession(
 
     const cleanup = () => {
       clearTimeout(timer);
+      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
       const ch = getChannel(sessionId);
       if (ch) {
         unsubscribe(ch, internalSubscriber);
@@ -1345,16 +1414,25 @@ export async function resumeChildSession(
           }
         }
 
-        // Turn complete
+        // Idle debounce (fix #8)
+        if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'active') {
+          if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+        }
+
+        // Turn complete — debounced
         if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'idle') {
-          settled = true;
-          cleanup();
-          if (text || structured !== undefined || entryTypes.length > 1) {
-            resolve({ sessionId, text, structured });
-          } else {
-            if (lastError) console.warn(`[resume-child] Empty response with error: ${lastError}`);
-            resolve(null);
-          }
+          if (idleTimer) clearTimeout(idleTimer);
+          idleTimer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            if (text || structured !== undefined || entryTypes.length > 1) {
+              resolve({ sessionId, text, structured });
+            } else {
+              if (lastError) console.warn(`[resume-child] Empty response with error: ${lastError}`);
+              resolve(null);
+            }
+          }, IDLE_SETTLE_MS);
         }
       },
     };

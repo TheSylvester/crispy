@@ -16,6 +16,7 @@ import { initRosieBot, shutdownRosieBot } from './core/rosie/index.js';
 import { initRecallIngest, shutdownRecallIngest } from './core/recall/ingest-hook.js';
 import { startRecallCatchup, stopEmbeddingBackfill } from './core/recall/catchup-manager.js';
 import { disposeEmbedder } from './core/recall/embedder.js';
+import { startIpcServer } from './host/ipc-server.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const bootStart = performance.now();
@@ -114,6 +115,13 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push({ dispose: () => stopRescan() });
 
   context.subscriptions.push({ dispose: () => stopWatchingSettings() });
+
+  // Start IPC server for CLI dispatch (Unix socket / Windows named pipe)
+  startIpcServer(cwd)
+    .then((ipc) => {
+      context.subscriptions.push({ dispose: () => ipc.close() });
+    })
+    .catch((err) => console.error('[crispy] IPC server failed to start:', err));
 
   console.log(`[crispy] activate() done (${(performance.now() - bootStart).toFixed(0)}ms)`);
 }

@@ -81,7 +81,9 @@
     "test:unit": "vitest run",
     "smoke": "npx tsx scripts/smoke.ts",
     "smoke:quick": "npx tsx scripts/smoke.ts --skip-embed",
-    "dev": "npm run build:webview && node --import tsx src/host/dev-server.ts"
+    "dev": "npm run build:webview && node --import tsx src/host/dev-server.ts",
+    "build:cli": "esbuild src/cli/crispy-dispatch.ts --bundle --outfile=dist/crispy-dispatch.js --format=esm --platform=node --sourcemap --banner:js='#!/usr/bin/env node'",
+    "dispatch": "node --import tsx src/cli/crispy-dispatch.ts"
   },
   "categories": [
     "AI",
