@@ -13,7 +13,8 @@
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import type { ContextUsage, TranscriptEntry } from '../../core/transcript.js';
+import type { ContextUsage, TranscriptEntry, Vendor } from '../../core/transcript.js';
+import { getContextWindowTokens } from '../../core/model-utils.js';
 import { useTransport } from '../context/TransportContext.js';
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
@@ -35,9 +36,14 @@ function useKeyedState<T>(key: string | null, initialValue: T): [T, React.Dispat
 /**
  * Extract the model's context window size from transcript entries.
  *
- * Scans backwards for a `result` entry whose `metadata.modelUsage` contains
- * a `contextWindow` field (populated by the Claude SDK's ModelUsage).
- * Falls back to DEFAULT_CONTEXT_WINDOW if none found.
+ * Priority:
+ * 1. Authoritative `modelUsage.contextWindow` from SDK result entries
+ * 2. Model name from last assistant message → CONTEXT_WINDOWS lookup
+ * 3. DEFAULT_CONTEXT_WINDOW (200k)
+ *
+ * The model-name fallback is critical for forked sessions: before the first
+ * turn the adapter hasn't received a result yet, so modelUsage is absent,
+ * but assistant entries carry the model string from the parent session.
  */
 function extractContextWindow(entries: TranscriptEntry[]): number {
   for (let i = entries.length - 1; i >= 0; i--) {
@@ -51,6 +57,16 @@ function extractContextWindow(entries: TranscriptEntry[]): number {
       }
     }
   }
+
+  // Fallback: extract model from last assistant message and look up known window
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry.type === 'assistant' && entry.message?.model !== undefined) {
+      const vendor = (entry.vendor ?? 'claude') as Vendor;
+      return getContextWindowTokens(vendor, entry.message.model);
+    }
+  }
+
   return DEFAULT_CONTEXT_WINDOW;
 }
 
