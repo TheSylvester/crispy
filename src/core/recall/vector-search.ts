@@ -2,15 +2,17 @@
  * Vector Search — Dual-path retrieval combining FTS5 keyword and semantic search
  *
  * Runs FTS5 BM25 keyword search and q8 semantic brute-force scan as
- * CO-EQUAL retrieval paths on every query. Results are unioned and
- * deduplicated by message_id.
+ * CO-EQUAL retrieval paths on every query. Results are merged via
+ * Reciprocal Rank Fusion (RRF) with time-decayed recency weighting —
+ * scale-invariant, boosts results found by both paths, and gently
+ * favors recent messages.
  *
  * Query pipeline:
  *   1. Embed query with Nomic (~50ms)
  *   2. Quantize query vector to q8
  *   3. Path A — BM25: FTS5 MATCH on messages_fts
  *   4. Path B — Semantic: full table scan of message_vectors, q8 dot product
- *   5. Union results, deduplicate by message_id, take top-K
+ *   5. RRF merge with recency decay — fuse ranked lists, deduplicate, take top-K
  *
  * Owns: search orchestration, result merging.
  * Does not: persist data, manage models.
@@ -31,6 +33,9 @@ export interface DualPathSearchOptions {
   limit?: number;
   projectId?: string;
   sessionId?: string;
+  /** Recency decay rate. Higher = stronger preference for recent results.
+   *  0 = no decay. Default 0.005 (~50% penalty at 200 days). */
+  recencyDecay?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -39,6 +44,8 @@ export interface DualPathSearchOptions {
 
 const DEFAULT_LIMIT = 20;
 const FETCH_MULTIPLIER = 3; // fetch more from each path to improve union quality
+const RRF_K = 60; // Reciprocal Rank Fusion constant — dampens top-rank dominance
+const DEFAULT_RECENCY_DECAY = 0.005; // ~50% penalty at 200 days old
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -87,22 +94,33 @@ export async function dualPathSearch(
       })
     : [];
 
-  // Union + dedup by message_id (FTS5 results take priority for rank/snippet)
-  const seen = new Map<string, MessageSearchResult>();
+  // RRF merge with recency decay — scale-invariant fusion of ranked lists
+  const decay = opts?.recencyDecay ?? DEFAULT_RECENCY_DECAY;
+  const now = Date.now();
+  const rrfScores = new Map<string, { result: MessageSearchResult; score: number }>();
 
-  for (const r of ftsResults) {
-    seen.set(r.message_id, r);
+  for (let i = 0; i < ftsResults.length; i++) {
+    const r = ftsResults[i]!;
+    const ageDays = (now - r.created_at) / 86_400_000;
+    const recency = 1 / (1 + ageDays * decay);
+    rrfScores.set(r.message_id, { result: r, score: (1 / (RRF_K + i)) * recency });
   }
 
-  for (const r of semanticResults) {
-    if (!seen.has(r.message_id)) {
-      seen.set(r.message_id, r);
+  for (let i = 0; i < semanticResults.length; i++) {
+    const r = semanticResults[i]!;
+    const ageDays = (now - r.created_at) / 86_400_000;
+    const recency = 1 / (1 + ageDays * decay);
+    const rrfScore = (1 / (RRF_K + i)) * recency;
+    const existing = rrfScores.get(r.message_id);
+    if (existing) {
+      existing.score += rrfScore;
+    } else {
+      rrfScores.set(r.message_id, { result: r, score: rrfScore });
     }
   }
 
-  // Sort by rank (lower = better for FTS5; semantic uses negative cosine)
-  const merged = [...seen.values()];
-  merged.sort((a, b) => a.rank - b.rank);
+  const merged = [...rrfScores.values()];
+  merged.sort((a, b) => b.score - a.score);
 
-  return merged.slice(0, limit);
+  return merged.slice(0, limit).map(m => m.result);
 }

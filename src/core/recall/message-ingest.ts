@@ -126,7 +126,6 @@ export async function ingestSessionMessages(
   const topLevel = filtered.filter(e => !e.parentToolUseID);
 
   // 5. Extract text per entry, build MessageRecords
-  const now = Date.now();
   const records: MessageRecord[] = [];
 
   for (let i = 0; i < topLevel.length; i++) {
@@ -138,13 +137,18 @@ export async function ingestSessionMessages(
     const text = extractEntryText(entry);
     if (!text) continue;
 
+    // Use conversation time from the entry when available, fall back to ingest time
+    const createdAt = entry.timestamp
+      ? new Date(entry.timestamp).getTime()
+      : Date.now();
+
     records.push({
       message_id: entry.uuid,
       session_id: sessionId,
       message_seq: i,
       message_text: text,
       project_id: projectId,
-      created_at: now,
+      created_at: createdAt,
       message_role: entry.message?.role ?? entry.type ?? null,
     });
   }
