@@ -337,7 +337,7 @@ export async function startRecallCatchup(
         // Recall toggled ON — trigger catch-up if not already running
         if (!running) {
           runCatchup().catch(err => {
-            console.warn('[recall-catchup] catch-up failed:', err);
+            pushRosieLog({ level: 'warn', source: 'recall-catchup', summary: `catch-up failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
           });
         }
       } else {

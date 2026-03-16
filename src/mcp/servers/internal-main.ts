@@ -19,9 +19,10 @@
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createInternalServer } from './internal.js';
+import { pushRosieLog } from '../../core/rosie/debug-log.js';
 
 process.on('unhandledRejection', (err) => {
-  console.error('[internal-mcp] Unhandled rejection:', err instanceof Error ? err.message : String(err));
+  pushRosieLog({ level: 'error', source: 'internal-mcp', summary: `Unhandled rejection: ${err instanceof Error ? err.message : String(err)}`, data: { error: err instanceof Error ? err.message : String(err) } });
   process.exit(1);
 });
 
@@ -43,14 +44,14 @@ function parseCliArgs(): { sessionFile?: string; decisionsFile?: string; project
 
 async function main() {
   const cliOpts = parseCliArgs();
-  console.error('[internal-mcp] Starting stdio server...', cliOpts.sessionFile ? `session=${cliOpts.sessionFile}` : '');
+  pushRosieLog({ level: 'info', source: 'internal-mcp', summary: `Starting stdio server${cliOpts.sessionFile ? ` session=${cliOpts.sessionFile}` : ''}` });
   const server = createInternalServer(cliOpts);
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('[internal-mcp] Connected — ready for tool calls');
+  pushRosieLog({ level: 'info', source: 'internal-mcp', summary: 'Connected — ready for tool calls' });
 }
 
 main().catch((err) => {
-  console.error('[internal-mcp] Fatal:', err instanceof Error ? err.message : String(err));
+  pushRosieLog({ level: 'error', source: 'internal-mcp', summary: `Fatal: ${err instanceof Error ? err.message : String(err)}`, data: { error: err instanceof Error ? err.message : String(err) } });
   process.exit(1);
 });

@@ -1104,7 +1104,7 @@ export async function dispatchChildSession(
       };
     } else {
       // Parent vendor not registered — fall back to blank new session
-      console.warn(`[child-session] No adapter for parent vendor "${parentVendor}" — falling back to blank new session`);
+      pushRosieLog({ level: 'warn', source: 'child-session', summary: `No adapter for parent vendor "${parentVendor}" — falling back to blank new session` });
       target = { kind: 'new', vendor: vendor as Vendor, cwd, ...ephemeral };
     }
   } else {
@@ -1144,11 +1144,11 @@ export async function dispatchChildSession(
         parts.push(`entries: [${entryTypes.join(', ')}]`);
         if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
         parts.push(`text: ${text.length} chars`);
-        console.warn(`[child-session] Timeout after ${timeoutMs}ms — no idle event received (parent: ${parentSessionId}, vendor: ${vendor}) — ${parts.join(' | ')}`);
+        pushRosieLog({ level: 'warn', source: 'child-session', summary: `Timeout after ${timeoutMs}ms — no idle event received (parent: ${parentSessionId}, vendor: ${vendor}) — ${parts.join(' | ')}` });
         settled = true;
         if (text) {
           cleanup();
-          console.warn(`[child-session] Timeout with partial text (${text.length} chars) -- returning partial result (parent: ${parentSessionId}, vendor: ${vendor})`);
+          pushRosieLog({ level: 'warn', source: 'child-session', summary: `Timeout with partial text (${text.length} chars) -- returning partial result (parent: ${parentSessionId}, vendor: ${vendor})` });
           resolve({ sessionId: currentId, text, structured });
         } else {
           // No text → caller gets null and has no session ID to clean up.
@@ -1212,17 +1212,17 @@ export async function dispatchChildSession(
             process.stderr.write('.');
           } else {
             if (streamingDots) { process.stderr.write('\n'); streamingDots = false; }
-            console.error(`[child-session] Event: ${evt.type}${evt.type === 'status' ? `=${(evt as { status?: string }).status}` : evt.type === 'notification' ? `/${(evt as { kind?: string }).kind}` : ''} (parent: ${parentSessionId})`);
+            pushRosieLog({ level: 'debug', source: 'child-session', summary: `Event: ${evt.type}${evt.type === 'status' ? `=${(evt as { status?: string }).status}` : evt.type === 'notification' ? `/${(evt as { kind?: string }).kind}` : ''} (parent: ${parentSessionId})` });
           }
         } else if (msg.type === 'entry') {
           if (streamingDots) { process.stderr.write('\n'); streamingDots = false; }
-          console.error(`[child-session] Entry: ${msg.entry.type} (parent: ${parentSessionId})`);
+          pushRosieLog({ level: 'debug', source: 'child-session', summary: `Entry: ${msg.entry.type} (parent: ${parentSessionId})` });
         }
 
         // Track error notifications from the adapter (SDK failures, auth errors, etc.)
         if (msg.type === 'event' && msg.event.type === 'notification' && msg.event.kind === 'error') {
           lastError = (msg.event as { error?: string }).error ?? 'unknown error';
-          console.error(`[child-session] Error notification: ${lastError} (parent: ${parentSessionId})`);
+          pushRosieLog({ level: 'error', source: 'child-session', summary: `Error notification: ${lastError} (parent: ${parentSessionId})` });
         }
 
         // Collect response text and structured output from entry messages.
@@ -1284,7 +1284,7 @@ export async function dispatchChildSession(
                 if (lastError) parts.push(`error: ${lastError}`);
                 parts.push(`entries: [${entryTypes.join(', ')}]`);
                 if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
-                console.warn(`[child-session] Turn completed with empty response (parent: ${parentSessionId}) — ${parts.join(' | ')}`);
+                pushRosieLog({ level: 'warn', source: 'child-session', summary: `Turn completed with empty response (parent: ${parentSessionId}) — ${parts.join(' | ')}` });
                 cleanup(/* force */ true);
                 resolve(null);
               }
@@ -1309,11 +1309,11 @@ export async function dispatchChildSession(
     childSessions.set(pendingId, { parentSessionId, autoClose, visible: false });
 
     // Fire the turn with the explicit pending ID
-    console.error(`[child-session] Sending turn (parent: ${parentSessionId}, vendor: ${vendor}, pending: ${pendingId})`);
+    pushRosieLog({ level: 'debug', source: 'child-session', summary: `Sending turn (parent: ${parentSessionId}, vendor: ${vendor}, pending: ${pendingId})` });
     sendTurn(intent, internalSubscriber, pendingId)
       .then((result) => {
         if (settled) return;
-        console.error(`[child-session] sendTurn resolved — sessionId: ${result.sessionId} (parent: ${parentSessionId})`);
+        pushRosieLog({ level: 'debug', source: 'child-session', summary: `sendTurn resolved — sessionId: ${result.sessionId} (parent: ${parentSessionId})` });
         currentId = result.sessionId;
         // Migrate child tracking from pending to real ID
         childSessions.delete(pendingId);
@@ -1332,7 +1332,7 @@ export async function dispatchChildSession(
       })
       .catch((err) => {
         if (!settled) {
-          console.warn(`[child-session] sendTurn failed (parent: ${parentSessionId}, vendor: ${vendor}):`, err instanceof Error ? err.message : String(err));
+          pushRosieLog({ level: 'warn', source: 'child-session', summary: `sendTurn failed (parent: ${parentSessionId}, vendor: ${vendor}): ${err instanceof Error ? err.message : String(err)}` });
           pushRosieLog({ source: 'session', level: 'error', summary: `Session: child dispatch failed (${vendor})`, data: { parentSessionId, vendor, error: err instanceof Error ? err.message : String(err) } });
           settled = true;
           // Force-close: caller gets null, no way to clean up the child.
@@ -1379,7 +1379,7 @@ export async function resumeChildSession(
 
   const ch = getChannel(sessionId);
   if (!ch) {
-    console.warn(`[resume-child] No channel found for session ${sessionId}`);
+    pushRosieLog({ level: 'warn', source: 'resume-child', summary: `No channel found for session ${sessionId}` });
     return null;
   }
 
@@ -1407,7 +1407,7 @@ export async function resumeChildSession(
     const timer = setTimeout(() => {
       if (!settled) {
         if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-        console.warn(`[resume-child] Timeout after ${timeoutMs}ms — session ${sessionId}`);
+        pushRosieLog({ level: 'warn', source: 'resume-child', summary: `Timeout after ${timeoutMs}ms — session ${sessionId}` });
         settled = true;
         cleanup();
         if (text) {
@@ -1489,7 +1489,7 @@ export async function resumeChildSession(
             if (text || structured !== undefined || entryTypes.length > 1) {
               resolve({ sessionId, text, structured });
             } else {
-              if (lastError) console.warn(`[resume-child] Empty response with error: ${lastError}`);
+              if (lastError) pushRosieLog({ level: 'warn', source: 'resume-child', summary: `Empty response with error: ${lastError}` });
               resolve(null);
             }
           }, IDLE_SETTLE_MS);
@@ -1504,11 +1504,11 @@ export async function resumeChildSession(
     sendTurn(intent, internalSubscriber)
       .then(() => {
         if (settled) return;
-        console.error(`[resume-child] sendTurn resolved for ${sessionId}`);
+        pushRosieLog({ level: 'debug', source: 'resume-child', summary: `sendTurn resolved for ${sessionId}` });
       })
       .catch((err) => {
         if (!settled) {
-          console.warn(`[resume-child] sendTurn failed:`, err instanceof Error ? err.message : String(err));
+          pushRosieLog({ level: 'warn', source: 'resume-child', summary: `sendTurn failed: ${err instanceof Error ? err.message : String(err)}` });
           settled = true;
           cleanup();
           resolve(null);

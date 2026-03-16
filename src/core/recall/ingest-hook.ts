@@ -74,7 +74,7 @@ export function initRecallIngest(): void {
       }
     } catch (err) {
       // Fire-and-forget — never crash the lifecycle pipeline
-      console.warn('[recall-ingest] hook failed:', err);
+      pushRosieLog({ level: 'warn', source: 'recall-ingest', summary: `hook failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
     }
   });
 }

@@ -795,7 +795,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     for (const [name, config] of Object.entries(servers)) {
       if (this.isSdkServer(config)) {
         config.instance.close().catch((err: unknown) => {
-          console.error(`[claude-adapter] Failed to close MCP server '${name}':`, err);
+          pushRosieLog({ level: 'error', source: 'claude-adapter', summary: `Failed to close MCP server '${name}': ${err instanceof Error ? (err as Error).message : String(err)}`, data: { name, error: String(err) } });
         });
       }
     }
@@ -834,7 +834,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         const servers = opts.mcpServerFactory();
         this.activeMcpServers = Object.keys(servers).length ? servers : null;
       } catch (err) {
-        console.error('[claude-adapter] Failed to create MCP servers:', err);
+        pushRosieLog({ level: 'error', source: 'claude-adapter', summary: `Failed to create MCP servers: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
         this.activeMcpServers = null;
       }
     } else {

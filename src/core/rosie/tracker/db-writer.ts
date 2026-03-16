@@ -311,7 +311,7 @@ export function recordTrackerOutcome(
       [sessionFile, outcome, reason ?? null, attempts],
     );
   } catch (err) {
-    console.warn('[rosie.tracker] Failed to record outcome:', err instanceof Error ? err.message : String(err));
+    pushRosieLog({ level: 'warn', source: 'rosie.tracker', summary: `Failed to record outcome: ${err instanceof Error ? err.message : String(err)}`, data: { sessionFile, outcome, error: String(err) } });
   }
 }
 
@@ -712,7 +712,7 @@ export async function runDedupSweep(
     const candidates = findDupeCandidates(projects);
     if (candidates.length === 0) return;
 
-    console.log(`[rosie.dedup] Found ${candidates.length} candidate pair(s)`);
+    pushRosieLog({ level: 'debug', source: 'rosie.dedup', summary: `Found ${candidates.length} candidate pair(s)` });
 
     // Track merged IDs so we don't try to merge already-removed projects
     const merged = new Set<string>();
@@ -728,7 +728,7 @@ export async function runDedupSweep(
         // Auto-merge: keep the one with more recent updated_at
         const keepProject = candidate.a.updated_at >= candidate.b.updated_at ? candidate.a : candidate.b;
         const removeProject = keepProject === candidate.a ? candidate.b : candidate.a;
-        console.log(`[rosie.dedup] Auto-merge: "${removeProject.title}" → "${keepProject.title}" (${candidate.reason})`);
+        pushRosieLog({ level: 'debug', source: 'rosie.dedup', summary: `Auto-merge: "${removeProject.title}" → "${keepProject.title}" (${candidate.reason})` });
         mergeProjects(keepProject.id, removeProject.id);
         merged.add(removeProject.id);
       } else {
@@ -742,10 +742,10 @@ export async function runDedupSweep(
     }
 
     if (merged.size > 0) {
-      console.log(`[rosie.dedup] Sweep complete — merged ${merged.size} duplicate(s)`);
+      pushRosieLog({ level: 'debug', source: 'rosie.dedup', summary: `Sweep complete — merged ${merged.size} duplicate(s)` });
     }
   } catch (err) {
-    console.warn('[rosie.dedup] Sweep failed:', err instanceof Error ? err.message : String(err));
+    pushRosieLog({ level: 'warn', source: 'rosie.dedup', summary: `Sweep failed: ${err instanceof Error ? err.message : String(err)}` });
     pushRosieLog({
       source: 'tracker',
       level: 'error',
@@ -838,7 +838,7 @@ Nothing else. No commentary.`;
 
     return parseVerdict(result.text, a.id, b.id);
   } catch (err) {
-    console.warn('[rosie.dedup] LLM adjudication failed:', err instanceof Error ? err.message : String(err));
+    pushRosieLog({ level: 'warn', source: 'rosie.dedup', summary: `LLM adjudication failed: ${err instanceof Error ? err.message : String(err)}` });
     return null;
   }
 }

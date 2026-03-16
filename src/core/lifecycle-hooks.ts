@@ -22,6 +22,7 @@
  */
 
 import { isChildSession } from './session-manager.js';
+import { pushRosieLog } from './rosie/index.js';
 
 // ============================================================================
 // Types
@@ -90,7 +91,7 @@ export async function fireResponseComplete(sessionId: string): Promise<void> {
     );
     for (const result of results) {
       if (result.status === 'rejected') {
-        console.warn('[lifecycle-hooks] responseComplete handler failed:', result.reason);
+        pushRosieLog({ level: 'warn', source: 'lifecycle-hooks', summary: `responseComplete handler failed: ${result.reason}`, data: { reason: result.reason } });
       }
     }
   }
@@ -102,7 +103,7 @@ export async function fireResponseComplete(sessionId: string): Promise<void> {
     );
     for (const result of afterResults) {
       if (result.status === 'rejected') {
-        console.warn('[lifecycle-hooks] responseCompleteAfter handler failed:', result.reason);
+        pushRosieLog({ level: 'warn', source: 'lifecycle-hooks', summary: `responseCompleteAfter handler failed: ${result.reason}`, data: { reason: result.reason } });
       }
     }
   }

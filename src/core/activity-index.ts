@@ -601,7 +601,7 @@ export function deleteDuplicateEntries(
  * listAllSessions(). Cleans activity_entries (FTS5 auto-cascades via trigger),
  * scan_state, and session_lineage in a single transaction.
  *
- * Never throws — returns 0 on error with console.error.
+ * Never throws — returns 0 on error with pushRosieLog.
  */
 export function pruneDeletedFiles(livePaths: Set<string>): number {
   try {
@@ -666,7 +666,7 @@ export function pruneDeletedFiles(livePaths: Set<string>): number {
     }
     return stalePaths.length;
   } catch (err) {
-    console.error('[activity-index] pruneDeletedFiles error:', err);
+    pushRosieLog({ level: 'error', source: 'activity-index', summary: `pruneDeletedFiles error: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
     return 0;
   }
 }

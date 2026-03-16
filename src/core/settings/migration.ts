@@ -11,6 +11,7 @@ import { readFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import type { ProviderConfig } from './types.js';
+import { pushRosieLog } from '../rosie/index.js';
 
 /** Legacy providers file structure. */
 interface ProvidersFile {
@@ -54,7 +55,7 @@ export async function migrateFromProvidersJson(
       return {};
     }
     // Log other errors but don't crash — return empty providers
-    console.error('[settings/migration] Failed to migrate providers.json:', err);
+    pushRosieLog({ level: 'error', source: 'settings/migration', summary: `Failed to migrate providers.json: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
     return {};
   }
 }

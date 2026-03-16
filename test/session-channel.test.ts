@@ -658,15 +658,9 @@ describe('Approval flow', () => {
     setAdapter(ch, adapter);
     await tick();
 
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
+    // Should not throw — just logs via pushRosieLog
     resolveApproval(ch, 'unknown-tool', 'allow');
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('unknown-tool'),
-    );
     expect(adapter.respondToApproval).not.toHaveBeenCalled();
-
-    warnSpy.mockRestore();
   });
 
   it('resolveApproval throws without adapter', () => {

@@ -177,7 +177,7 @@ const migrations: Migration[] = [
         } catch (err) {
           // If rename fails, log but don't block startup
           if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-            console.error('[crispy-db] Legacy JSONL migration warning:', err);
+            pushRosieLog({ level: 'error', source: 'crispy-db', summary: `Legacy JSONL migration warning: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
           }
         }
       }
@@ -212,7 +212,7 @@ const migrations: Migration[] = [
           fs.renameSync(scanPath, scanBak);
         } catch (err) {
           if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-            console.error('[crispy-db] Legacy scan-state migration warning:', err);
+            pushRosieLog({ level: 'error', source: 'crispy-db', summary: `Legacy scan-state migration warning: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
           }
         }
       }

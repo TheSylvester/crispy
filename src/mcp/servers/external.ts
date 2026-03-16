@@ -171,9 +171,6 @@ export function createExternalServer(
             ),
         },
         async (args) => {
-          console.error(
-            `[recall] Tool handler invoked with query: "${args.query}"`,
-          );
           pushRosieLog({
             source: "recall",
             level: "info",
@@ -182,7 +179,6 @@ export function createExternalServer(
           });
           const activeSession = getActiveSession?.();
           if (!activeSession) {
-            console.error("[recall] No active session — cannot dispatch child");
             pushRosieLog({
               source: "recall",
               level: "warn",
@@ -193,9 +189,6 @@ export function createExternalServer(
             );
           }
 
-          console.error(
-            `[recall] Dispatching child for query: "${args.query}" (parent: ${activeSession.sessionId}, vendor: ${activeSession.vendor})`,
-          );
           pushRosieLog({
             source: "recall",
             level: "info",
@@ -267,9 +260,6 @@ export function createExternalServer(
             const elapsed = Date.now() - t0;
 
             if (!result) {
-              console.error(
-                `[recall] Child returned null after ${elapsed}ms — timeout or empty response`,
-              );
               pushRosieLog({
                 source: "recall",
                 level: "warn",
@@ -287,9 +277,6 @@ export function createExternalServer(
               );
             }
 
-            console.error(
-              `[recall] OK in ${elapsed}ms — ${result.text.length} chars`,
-            );
             pushRosieLog({
               source: "recall",
               level: "info",
@@ -305,10 +292,6 @@ export function createExternalServer(
             return textResult(result.text);
           } catch (err) {
             const elapsed = Date.now() - t0;
-            console.error(
-              `[recall] FAIL after ${elapsed}ms:`,
-              err instanceof Error ? err.message : String(err),
-            );
             pushRosieLog({
               source: "recall",
               level: "error",
