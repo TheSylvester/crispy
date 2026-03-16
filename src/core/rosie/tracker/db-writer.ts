@@ -309,6 +309,7 @@ export function recordTrackerOutcome(
     outputTokens?: number;
     cachedTokens?: number;
     model?: string;
+    costUsd?: number;
   },
 ): void {
   try {
@@ -316,8 +317,8 @@ export function recordTrackerOutcome(
 
     // Write to new rosie_usage table (per-invocation)
     db.run(
-      `INSERT INTO rosie_usage (session_file, subsystem, outcome, reason, input_tokens, output_tokens, cached_tokens, model)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO rosie_usage (session_file, subsystem, outcome, reason, input_tokens, output_tokens, cached_tokens, model, cost_usd)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         sessionFile,
         opts?.subsystem ?? 'tracker',
@@ -327,6 +328,7 @@ export function recordTrackerOutcome(
         opts?.outputTokens ?? null,
         opts?.cachedTokens ?? null,
         opts?.model ?? null,
+        opts?.costUsd ?? null,
       ],
     );
 

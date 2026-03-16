@@ -1008,6 +1008,13 @@ const migrations: Migration[] = [
       // but SQLite defers FK checks, so just recreate the index
     },
   },
+  {
+    version: 22,
+    description: 'Add cost_usd to rosie_usage',
+    up: (db: Database): void => {
+      db.exec(`ALTER TABLE rosie_usage ADD COLUMN cost_usd REAL`);
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {

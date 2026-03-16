@@ -812,8 +812,10 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
 
   // ------------------------------------------------------------------
   // grep — Regex search over clean message text
+  // Disabled: recall agent over-relies on grep for discovery instead of FTS5.
+  // Re-enable if needed for exact-pattern verification after FTS5 discovery.
   // ------------------------------------------------------------------
-  timedTool(server,
+  /* timedTool(server,
     'grep',
     'Regex search over conversation text (tool calls already stripped). Use when FTS5 keyword search misses — grep finds substrings, patterns, and partial matches that FTS5 tokenization can\'t. Scope to a session_id for fast targeted search, or omit to scan recent messages across sessions. Returns matching text with surrounding context.',
     {
@@ -861,7 +863,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
         };
       }
     },
-  );
+  ); */
 
   // ------------------------------------------------------------------
   // read_session — Sequential session reader with pagination

@@ -24,7 +24,7 @@
  */
 
 import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, ChannelMessage, TurnIntent, TurnTarget, TurnSettings, SubagentEntriesResult, EphemeralTargetOptions } from './agent-adapter.js';
-import type { TranscriptEntry, MessageContent, Vendor } from './transcript.js';
+import type { TranscriptEntry, MessageContent, Vendor, Usage } from './transcript.js';
 import type { SessionChannel, Subscriber, SubscriberMessage } from './session-channel.js';
 import { parseModelOption } from './model-utils.js';
 
@@ -141,6 +141,57 @@ function extractChildContextUsage(channelId: string): ChildSessionResult['contex
     cacheReadTokens: usage.tokens.cacheRead || undefined,
     totalCostUsd: usage.totalCostUsd,
   };
+}
+
+/** Accumulated per-entry token usage from child session subscribers. */
+interface ChildTokenAccumulator {
+  input: number;
+  output: number;
+  cacheRead: number;
+}
+
+/** Cost delta: adapter cost minus baseline, undefined when non-positive. */
+function costDelta(adapterCostUsd: number | undefined, baseline: number | undefined): number | undefined {
+  if (baseline === undefined) return adapterCostUsd;
+  const delta = (adapterCostUsd ?? 0) - baseline;
+  return delta > 0 ? delta : undefined;
+}
+
+/** Accumulate per-entry token usage from a non-sub-agent assistant entry. */
+function accumulateEntryUsage(entry: { type: string; parentToolUseID?: string; message?: { usage?: Usage } }, acc: ChildTokenAccumulator): void {
+  if (entry.type !== 'assistant' || entry.parentToolUseID || !entry.message?.usage) return;
+  const u = entry.message.usage;
+  acc.input += u.input_tokens ?? 0;
+  acc.output += u.output_tokens ?? 0;
+  acc.cacheRead += (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+}
+
+/**
+ * Build accurate contextUsage for child sessions by preferring accumulated
+ * per-entry usage (Claude) over adapter snapshot (Codex/OpenCode).
+ *
+ * Claude entries carry per-turn usage → sum entries for accurate totals.
+ * Codex injects cumulative _contextUsage into entries (codex-app-server-adapter.ts
+ * line ~521) → summing would double-count. The adapter-snapshot fallback handles
+ * Codex correctly. TODO: if Codex Rosie dispatches are needed, add vendor-aware
+ * logic to skip accumulation for Codex entries.
+ */
+function buildChildUsage(
+  channelId: string,
+  acc: ChildTokenAccumulator,
+  baselineCostUsd?: number,
+): ChildSessionResult['contextUsage'] | undefined {
+  const adapterUsage = extractChildContextUsage(channelId);
+  if (acc.input + acc.output > 0) {
+    return {
+      inputTokens: acc.input,
+      outputTokens: acc.output,
+      cacheReadTokens: acc.cacheRead || undefined,
+      totalCostUsd: costDelta(adapterUsage?.totalCostUsd, baselineCostUsd),
+    };
+  }
+  // Fallback: adapter snapshot (Codex cumulative / OpenCode / unknown vendors)
+  return adapterUsage;
 }
 
 /** Parent->child relationship tracking. Used by dispatchChildSession for lifecycle management.
@@ -1162,6 +1213,8 @@ export async function dispatchChildSession(
     let rekeyPromise: Promise<string> | undefined;
     // Idle debounce timer — prevents spurious early resolution (fix #8)
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    // Token accumulators — sum per-entry usage for accurate totals (Claude)
+    const tokenAcc: ChildTokenAccumulator = { input: 0, output: 0, cacheRead: 0 };
 
     // Timeout: safety net for hung adapters / infinite loops.
     // timeoutMs=0 disables the timeout — used for long-running agent sessions
@@ -1177,7 +1230,7 @@ export async function dispatchChildSession(
         console.warn(`[child-session] Timeout after ${timeoutMs}ms — no idle event received (parent: ${parentSessionId}, vendor: ${vendor}) — ${parts.join(' | ')}`);
         settled = true;
         if (text) {
-          const contextUsage = extractChildContextUsage(currentId);
+          const contextUsage = buildChildUsage(currentId, tokenAcc);
           cleanup();
           console.warn(`[child-session] Timeout with partial text (${text.length} chars) -- returning partial result (parent: ${parentSessionId}, vendor: ${vendor})`);
           resolve({ sessionId: currentId, text, structured, contextUsage });
@@ -1286,6 +1339,8 @@ export async function dispatchChildSession(
           if (entry.metadata?.structured_output !== undefined) {
             structured = entry.metadata.structured_output;
           }
+          // Accumulate per-entry token usage (Claude sends per-turn usage on assistant entries)
+          accumulateEntryUsage(entry, tokenAcc);
         }
 
         // Stream entries to caller via onEntry callback
@@ -1303,7 +1358,7 @@ export async function dispatchChildSession(
         // rekey promise resolves, leaving currentId as the stale pending ID.
         const finalize = (resolvedId: string) => {
           if (text || structured !== undefined || entryTypes.length > 1) {
-            const contextUsage = extractChildContextUsage(resolvedId);
+            const contextUsage = buildChildUsage(resolvedId, tokenAcc);
             cleanup();
             resolve({ sessionId: resolvedId, text, structured, contextUsage });
           } else {
@@ -1449,11 +1504,17 @@ export async function resumeChildSession(
 
   pushRosieLog({ source: 'session', level: 'info', summary: `Session: resuming child ${sessionId.slice(0, 12)}…`, data: { sessionId, timeoutMs } });
 
+  // Snapshot baseline cost before sending turn — for resumed sessions the
+  // adapter tracks cumulative cost, so we need the delta.
+  const baselineCostUsd = getChannel(sessionId)?.adapter?.contextUsage?.totalCostUsd;
+
   return new Promise<ChildSessionResult | null>((resolve) => {
     let text = '';
     let structured: unknown;
     let settled = false;
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    // Token accumulators — sum per-entry usage for accurate totals (Claude)
+    const tokenAcc: ChildTokenAccumulator = { input: 0, output: 0, cacheRead: 0 };
 
     // Timeout: safety net for hung adapters / infinite loops.
     // timeoutMs=0 disables the timeout — used for long-running agent sessions
@@ -1463,7 +1524,7 @@ export async function resumeChildSession(
         if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
         console.warn(`[resume-child] Timeout after ${timeoutMs}ms — session ${sessionId}`);
         settled = true;
-        const contextUsage = extractChildContextUsage(sessionId);
+        const contextUsage = buildChildUsage(sessionId, tokenAcc, baselineCostUsd);
         cleanup();
         if (text) {
           resolve({ sessionId, text, structured, contextUsage });
@@ -1527,6 +1588,8 @@ export async function resumeChildSession(
           if (entry.metadata?.structured_output !== undefined) {
             structured = entry.metadata.structured_output;
           }
+          // Accumulate per-entry token usage (Claude sends per-turn usage on assistant entries)
+          accumulateEntryUsage(entry, tokenAcc);
         }
 
         // Stream entries to caller via onEntry callback
@@ -1538,7 +1601,7 @@ export async function resumeChildSession(
         }
 
         const finalizeResume = () => {
-          const contextUsage = extractChildContextUsage(sessionId);
+          const contextUsage = buildChildUsage(sessionId, tokenAcc, baselineCostUsd);
           cleanup();
           if (text || structured !== undefined || entryTypes.length > 1) {
             resolve({ sessionId, text, structured, contextUsage });
