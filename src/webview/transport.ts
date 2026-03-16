@@ -22,11 +22,20 @@ export interface WireSessionInfo extends Omit<SessionInfo, 'modifiedAt'> {
   modifiedAt: string;
 }
 
+/** Stage definition from the DB stages table. */
+export interface WireStage {
+  name: string;
+  description: string;
+  sortOrder: number;
+  icon?: string;
+  color?: string;
+}
+
 /** Project data from the tracker DB, enriched with linked session display info. */
 export interface WireProject {
   id: string;
   title: string;
-  stage: 'active' | 'planning' | 'ready' | 'committed' | 'paused' | 'archived';
+  stage: string;
   status?: string;          // freeform narrative
   icon?: string;            // emoji
   sortOrder?: number;
@@ -136,6 +145,9 @@ export interface SessionService {
   /** Tracker notification subscription */
   subscribeTrackerNotify(): Promise<void>;
   unsubscribeTrackerNotify(): Promise<void>;
+
+  /** Stage definitions from the DB */
+  getStages(): Promise<WireStage[]>;
 
   /** Rosie-tracked projects with linked sessions and files */
   getProjects(): Promise<WireProject[]>;

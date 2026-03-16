@@ -33,7 +33,8 @@ import { pushTrackerNotification } from './tracker/tracker-notifications.js';
 import { buildInternalMcpConfig } from '../../mcp/servers/external.js';
 import type { TrackerDecision } from '../../mcp/servers/internal.js';
 import type { InternalServerPaths } from './tracker/types.js';
-import { VALID_STAGES, VALID_TYPES } from './tracker/types.js';
+import { VALID_TYPES } from './tracker/types.js';
+import { getStagesForPrompt } from './tracker/db-writer.js';
 import { readSessionMessages, getSessionMessageCount, inferRole } from '../recall/message-store.js';
 
 // ============================================================================
@@ -548,7 +549,7 @@ function summarizeToolInput(input: Record<string, unknown>): string {
 
 function buildTrackerSystemPrompt(): string {
   const types = VALID_TYPES.join(', ');
-  const stages = VALID_STAGES.join(', ');
+  const stages = getStagesForPrompt();
 
   return TRACKER_SYSTEM_PROMPT_TEMPLATE
     .replace('{{TYPES}}', types)
@@ -596,10 +597,14 @@ For each turn:
 root cause → fix is ONE project, not three. Only create when no existing
 item is a reasonable match.
 
+**Done items:** If new work clearly continues a done project (same
+title AND goal), reopen it by tracking with stage=active. Otherwise
+prefer creating a new item — the post-write validation will flag
+true duplicates.
+
 **Archived items:** Do not reopen archived projects on weak evidence
-(e.g. shared file alone). Prefer creating a new item — the post-write
-validation will flag true duplicates. Only reopen an archived item if
-the title AND goal clearly match the new work.
+(e.g. shared file alone). Prefer creating a new item. Only reopen an
+archived item if the title AND goal clearly match the new work.
 
 **Multiple items:** A turn may touch several distinct workstreams. If
 tools touch files in different domains, or the user describes unrelated
@@ -637,11 +642,14 @@ information without advancing any work.
 ## Schema
 
 Valid type values: {{TYPES}}
-Valid stage values: {{STAGES}}
 
-Use exactly these values. Never invent a type or stage.
+## Available Stages
+
+{{STAGES}}
+
+Use exactly these stage names. The description tells you when each is appropriate.
 stage=idea is only valid when type=idea. When an idea becomes real
-work, create a new project and archive the idea — do not mutate
+work, create a new project and mark the idea as done — do not mutate
 the idea's type.
 
 ## Field Rules
@@ -685,7 +693,8 @@ If the developer says something is blocked ("can't do X until Y",
 the reason.
 
 ### Lifecycle
-- Work completed or abandoned → stage=archived
+- Work completed → stage=done
+- Work abandoned or shelved → stage=paused (with blocked_by reason)
 - Work paused or blocked → stage=paused
 - Work resumed → stage=active
 - New planning discussion → stage=planning
@@ -719,7 +728,7 @@ track_project(
 create_project(
   type="project",
   title="Fix sidebar mobile overflow",
-  stage="archived",
+  stage="done",
   status="Fixed — CSS overflow corrected",
   summary="Sidebar broke on mobile viewports due to missing overflow rule",
   icon="🎨",
@@ -727,7 +736,8 @@ create_project(
 )
 
 The sidebar fix is unrelated to Auth Rewrite — it gets its own top-level
-project. Created as archived because the fix is already complete.
+project. Created as done because the fix is already complete — the user
+decides when to archive.
 
 ### Example 2: Track a child task (most specific match)
 

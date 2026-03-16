@@ -442,12 +442,7 @@
   flex-shrink: 0;
 }
 
-.crispy-stage-dot--active { background: #5cb870; }
-.crispy-stage-dot--paused { background: #d4a030; }
-.crispy-stage-dot--planning { background: #6878a0; }
-.crispy-stage-dot--ready { background: #50a0d0; }
-.crispy-stage-dot--committed { background: #a070c0; }
-.crispy-stage-dot--archived { background: #555568; }
+/* Stage dot colors are now applied via inline backgroundColor from DB data */
 
 /* Archived group items are muted */
 .crispy-session-group--archived .crispy-project-row {

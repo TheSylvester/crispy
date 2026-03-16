@@ -18,6 +18,7 @@ import { pushRosieLog } from '../debug-log.js';
 import { parseModelOption } from '../../model-utils.js';
 import { getSettingsSnapshotInternal } from '../../settings/index.js';
 import type { AgentDispatch } from '../../../host/agent-dispatch.js';
+import { VALID_STAGES } from './types.js';
 import type { TrackerBlock, ProjectStage } from './types.js';
 
 // ============================================================================
@@ -37,6 +38,55 @@ function getTrackerDb() {
     dirEnsured = true;
   }
   return getDb(dbPath());
+}
+
+// ============================================================================
+// Stage Queries
+// ============================================================================
+
+export interface StageRow {
+  name: string;
+  description: string;
+  sortOrder: number;
+  icon: string | null;
+  color: string | null;
+}
+
+/** Returns all stages ordered by sort_order. */
+export function getStages(): StageRow[] {
+  try {
+    const db = getTrackerDb();
+    const rows = db.all(`SELECT name, description, sort_order, icon, color FROM stages ORDER BY sort_order`);
+    return rows.map((r) => {
+      const row = r as Record<string, unknown>;
+      return {
+        name: row.name as string,
+        description: row.description as string,
+        sortOrder: row.sort_order as number,
+        icon: (row.icon as string) ?? null,
+        color: (row.color as string) ?? null,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** Returns multi-line `name: description` format for prompt injection. */
+export function getStagesForPrompt(): string {
+  const stages = getStages();
+  if (stages.length === 0) return '';
+  return stages.map((s) => `${s.name}: ${s.description}`).join('\n');
+}
+
+/** Returns stage name strings. Runtime replacement for VALID_STAGES. */
+export function getValidStageNames(): string[] {
+  const stages = getStages();
+  if (stages.length === 0) {
+    // Fallback to hardcoded constant if DB isn't migrated yet
+    return [...VALID_STAGES];
+  }
+  return stages.map((s) => s.name);
 }
 
 // ============================================================================
@@ -72,7 +122,7 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
          title = COALESCE(?, title), stage = ?, status = ?, icon = COALESCE(?, icon),
          blocked_by = ?, summary = COALESCE(?, summary),
          branch = COALESCE(?, branch), entities = ?, updated_at = ?, last_activity_at = ?,
-         closed_at = CASE WHEN ? IN ('archived') THEN ? ELSE closed_at END
+         closed_at = CASE WHEN ? IN ('archived', 'done') THEN ? ELSE closed_at END
        WHERE id = ?`,
     );
     const upsertSession = db.prepare(
@@ -226,7 +276,7 @@ export function updateProjectStage(projectId: string, newStage: ProjectStage, ac
   const now = new Date().toISOString();
   db.run(
     `UPDATE projects SET stage = ?, sort_order = NULL, updated_at = ?, last_activity_at = ?,
-       closed_at = CASE WHEN ? = 'archived' THEN ? ELSE closed_at END
+       closed_at = CASE WHEN ? IN ('archived', 'done') THEN ? ELSE closed_at END
      WHERE id = ?`,
     [newStage, now, now, newStage, now, projectId],
   );

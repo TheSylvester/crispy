@@ -1015,6 +1015,31 @@ const migrations: Migration[] = [
       db.exec(`ALTER TABLE rosie_usage ADD COLUMN cost_usd REAL`);
     },
   },
+  {
+    version: 23,
+    description: 'Create stages table with descriptions for prompt injection',
+    up: (db: Database): void => {
+      db.exec(`
+        CREATE TABLE stages (
+          name        TEXT PRIMARY KEY,
+          description TEXT NOT NULL,
+          sort_order  INTEGER NOT NULL,
+          icon        TEXT,
+          color       TEXT
+        );
+
+        INSERT INTO stages (name, description, sort_order, color) VALUES
+          ('active',    'Work is actively in progress', 0, '#5cb870'),
+          ('paused',    'On hold — record reason in blocked_by', 1, '#d4a030'),
+          ('planning',  'Being designed or specced out — not yet started', 2, '#6878a0'),
+          ('ready',     'Ready to start — all prerequisites met', 3, '#50a0d0'),
+          ('committed', 'Scheduled for implementation', 4, '#a070c0'),
+          ('done',      'Work is complete — awaiting user review before archiving', 5, '#22aa66'),
+          ('idea',      'A thought or suggestion discussed but not yet committed to. Create with type=''idea'' and stage=''idea''', 6, '#888898'),
+          ('archived',  'User-managed only. Do NOT move projects here — the user decides when to archive', 7, '#555568');
+      `);
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {

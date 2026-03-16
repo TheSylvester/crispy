@@ -72,7 +72,7 @@ import {
 } from '../core/recall/catchup-manager.js';
 import { getGitFiles, fileExists, readImage, readTextFile } from "../core/file-service.js";
 import { queryActivity, getLineage, getChildSessions, getLineageGraph } from '../core/activity-index.js';
-import { getProjectsWithDetails, getProjectActivity, updateProjectStage, updateProjectSortOrder, reorderProjectsInStage, VALID_STAGES } from '../core/rosie/tracker/index.js';
+import { getProjectsWithDetails, getProjectActivity, updateProjectStage, updateProjectSortOrder, reorderProjectsInStage, getStages, getValidStageNames } from '../core/rosie/tracker/index.js';
 import {
   subscribeTrackerNotify,
   unsubscribeTrackerNotify,
@@ -888,10 +888,13 @@ export function createClientConnection(
         return getProjectActivity(projectId, kind ? { kind } : undefined);
       }
 
+      case "getStages":
+        return getStages();
+
       case "updateProjectStage": {
         const { projectId: stageProjectId, stage } = params as { projectId: string; stage: string };
-        if (!(VALID_STAGES as readonly string[]).includes(stage)) throw new Error(`Invalid stage: ${stage}`);
-        updateProjectStage(stageProjectId, stage as 'active' | 'planning' | 'ready' | 'committed' | 'paused' | 'archived');
+        if (!getValidStageNames().includes(stage)) throw new Error(`Invalid stage: ${stage}`);
+        updateProjectStage(stageProjectId, stage);
         return { ok: true };
       }
 

@@ -8,9 +8,9 @@
  * @module ProjectsView
  */
 
-import { useState, useEffect, useCallback, useRef, type ChangeEvent } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, type ChangeEvent } from 'react';
 import { useTransport } from '../../context/TransportContext.js';
-import type { WireProject } from '../../transport.js';
+import type { WireProject, WireStage } from '../../transport.js';
 import type { AvailableCwd } from '../../hooks/useAvailableCwds.js';
 import { ProjectCard } from './ProjectCard.js';
 
@@ -21,23 +21,8 @@ interface ProjectsViewProps {
   onCwdChange: (slug: string | null) => void;
 }
 
-const STAGE_ORDER = ['active', 'paused', 'planning', 'ready', 'committed', 'archived'] as const;
-const STAGE_LABELS: Record<string, string> = {
-  active: 'Active',
-  paused: 'Paused',
-  planning: 'Planning',
-  ready: 'Ready',
-  committed: 'Committed',
-  archived: 'Archived',
-};
-
-const FILTER_STAGES = [
-  { label: 'All', value: null },
-  { label: 'Active', value: 'active' },
-  { label: 'Paused', value: 'paused' },
-  { label: 'Planning', value: 'planning' },
-  { label: 'Ready', value: 'ready' },
-] as const;
+/** Stages excluded from filter pills (still shown as stage groups). */
+const FILTER_EXCLUDED = new Set(['archived', 'idea']);
 
 function sortProjects(projects: WireProject[]): WireProject[] {
   return [...projects].sort((a, b) => {
@@ -55,6 +40,7 @@ function sortProjects(projects: WireProject[]): WireProject[] {
 export function ProjectsView({ onSelectSession, availableCwds, selectedCwd, onCwdChange }: ProjectsViewProps): React.JSX.Element {
   const transport = useTransport();
   const [projects, setProjects] = useState<WireProject[]>([]);
+  const [stages, setStages] = useState<WireStage[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -63,14 +49,36 @@ export function ProjectsView({ onSelectSession, availableCwds, selectedCwd, onCw
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const draggedIdRef = useRef<string | null>(null);
 
+  // Derive stage metadata from DB data (single pass)
+  const { stageOrder, stageLabels, stageColors, filterStages } = useMemo(() => {
+    const order: string[] = [];
+    const labels: Record<string, string> = {};
+    const colors: Record<string, string> = {};
+    const pills: Array<{ label: string; value: string | null }> = [{ label: 'All', value: null }];
+    for (const s of stages) {
+      order.push(s.name);
+      const label = s.name.charAt(0).toUpperCase() + s.name.slice(1);
+      labels[s.name] = label;
+      if (s.color) colors[s.name] = s.color;
+      if (!FILTER_EXCLUDED.has(s.name)) pills.push({ label, value: s.name });
+    }
+    return { stageOrder: order, stageLabels: labels, stageColors: colors, filterStages: pills };
+  }, [stages]);
+
   const handleCwdChange = (e: ChangeEvent<HTMLSelectElement>) => {
     onCwdChange(e.target.value || null);
   };
 
   useEffect(() => {
     let cancelled = false;
-    transport.getProjects()
-      .then(data => { if (!cancelled) { setProjects(data); setLoaded(true); } })
+    Promise.all([transport.getProjects(), transport.getStages()])
+      .then(([projectData, stageData]) => {
+        if (!cancelled) {
+          setProjects(projectData);
+          setStages(stageData);
+          setLoaded(true);
+        }
+      })
       .catch(() => { if (!cancelled) setLoaded(true); });
     return () => { cancelled = true; };
   }, [transport]);
@@ -130,7 +138,7 @@ export function ProjectsView({ onSelectSession, availableCwds, selectedCwd, onCw
 
     // Optimistically update UI
     setProjects(prev => prev.map(p =>
-      p.id === projectId ? { ...p, stage: targetStage as WireProject['stage'], sortOrder: undefined } : p
+      p.id === projectId ? { ...p, stage: targetStage, sortOrder: undefined } : p
     ));
 
     // Persist to server
@@ -152,6 +160,14 @@ export function ProjectsView({ onSelectSession, availableCwds, selectedCwd, onCw
       || (p.summary?.toLowerCase().includes(q) ?? false)
       || (p.status?.toLowerCase().includes(q) ?? false)
     );
+  }
+
+  // Pre-group by stage (single pass) so the render loop doesn't re-filter per stage
+  const groupedByStage = new Map<string, WireProject[]>();
+  for (const name of stageOrder) groupedByStage.set(name, []);
+  for (const p of filtered) {
+    const group = groupedByStage.get(p.stage);
+    if (group) group.push(p);
   }
 
   // Search + CWD filter bar (rendered at top of all states except loading)
@@ -205,13 +221,13 @@ export function ProjectsView({ onSelectSession, availableCwds, selectedCwd, onCw
       <div className="crispy-projects-container">
         {filterBar}
         <div className="crispy-project-filter-bar">
-          {FILTER_STAGES.map(f => (
+          {filterStages.map(f => (
             <button
               key={f.label}
               className={`crispy-project-filter-pill${stageFilter === f.value ? ' crispy-project-filter-pill--active' : ''}`}
               onClick={() => setStageFilter(f.value)}
             >
-              {f.value && <span className={`crispy-project-filter-dot crispy-stage-dot--${f.value}`} />}
+              {f.value && <span className="crispy-project-filter-dot" style={stageColors[f.value] ? { backgroundColor: stageColors[f.value] } : undefined} />}
               {f.label}
             </button>
           ))}
@@ -228,24 +244,22 @@ export function ProjectsView({ onSelectSession, availableCwds, selectedCwd, onCw
       {filterBar}
       {/* Filter pills */}
       <div className="crispy-project-filter-bar">
-        {FILTER_STAGES.map(f => (
+        {filterStages.map(f => (
           <button
             key={f.label}
             className={`crispy-project-filter-pill${stageFilter === f.value ? ' crispy-project-filter-pill--active' : ''}`}
             onClick={() => setStageFilter(f.value)}
           >
-            {f.value && <span className={`crispy-project-filter-dot crispy-stage-dot--${f.value}`} />}
+            {f.value && <span className="crispy-project-filter-dot" style={stageColors[f.value] ? { backgroundColor: stageColors[f.value] } : undefined} />}
             {f.label}
           </button>
         ))}
       </div>
 
       <ul className="crispy-session-list">
-        {STAGE_ORDER.map(stage => {
-          const items = sortProjects(filtered.filter(p => p.stage === stage));
-          if (items.length === 0) return null;
-
-          const collapsed = collapsedGroups.has(stage);
+        {stageOrder.map(stage => {
+          const items = sortProjects(groupedByStage.get(stage) ?? []);
+          const collapsed = collapsedGroups.has(stage) || (items.length === 0);
           const isDropTarget = dragOverStage === stage;
 
           return (
@@ -263,12 +277,12 @@ export function ProjectsView({ onSelectSession, availableCwds, selectedCwd, onCw
                 <span className={`crispy-session-group-header__chevron${collapsed ? ' crispy-session-group-header__chevron--collapsed' : ''}`}>
                   &#9660;
                 </span>
-                <span className={`crispy-stage-dot crispy-stage-dot--${stage}`} />
-                {STAGE_LABELS[stage]}
+                <span className="crispy-stage-dot" style={stageColors[stage] ? { backgroundColor: stageColors[stage] } : undefined} />
+                {stageLabels[stage] ?? stage}
                 <span className="crispy-session-group-header__count">{items.length}</span>
               </div>
 
-              {!collapsed && (
+              {!collapsed && items.length > 0 && (
                 <ul className="crispy-session-group__list">
                   {items.map(project => (
                     <ProjectCard

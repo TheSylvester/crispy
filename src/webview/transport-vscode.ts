@@ -8,7 +8,7 @@
  */
 
 import type { HostEvent } from '../host/client-connection.js';
-import type { SessionService, WireSessionInfo, WireProject, WireProjectActivity } from './transport.js';
+import type { SessionService, WireSessionInfo, WireProject, WireProjectActivity, WireStage } from './transport.js';
 import type { TranscriptEntry } from '../core/transcript.js';
 import type { TurnReceipt } from '../core/agent-adapter.js';
 import type { WireProviderConfig, WireSettingsSnapshot, SettingsPatch } from '../core/settings/types.js';
@@ -129,6 +129,7 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     subscribeTrackerNotify: () => request<void>('subscribeTrackerNotify'),
     unsubscribeTrackerNotify: () => request<void>('unsubscribeTrackerNotify'),
 
+    getStages: () => request<WireStage[]>('getStages'),
     getProjects: () => request<WireProject[]>('getProjects'),
     getProjectActivity: (projectId, opts) => request<WireProjectActivity[]>('getProjectActivity', { projectId, ...(opts?.kind && { kind: opts.kind }) }),
     updateProjectStage: (projectId, stage) => request<{ ok: boolean }>('updateProjectStage', { projectId, stage }),

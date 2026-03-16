@@ -9,7 +9,11 @@ export {
   updateProjectSortOrder,
   reorderProjectsInStage,
   getProjectActivity,
+  getStages,
+  getStagesForPrompt,
+  getValidStageNames,
 } from './db-writer.js';
+export type { StageRow } from './db-writer.js';
 
 export type { InternalServerPaths } from './types.js';
 export type {

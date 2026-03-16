@@ -21,8 +21,8 @@ import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPat
 import type { MessageSearchResult } from '../memory-queries.js';
 import { pushEventLog } from '../../core/rosie/event-log.js';
 
-import { writeTrackerResults, getProjectTitle, mergeProjects, getProjectTextsForEmbedding } from '../../core/rosie/tracker/db-writer.js';
-import { VALID_STAGES, VALID_TYPES } from '../../core/rosie/tracker/types.js';
+import { writeTrackerResults, getProjectTitle, mergeProjects, getProjectTextsForEmbedding, getValidStageNames } from '../../core/rosie/tracker/db-writer.js';
+import { VALID_TYPES } from '../../core/rosie/tracker/types.js';
 import type { TrackerBlock } from '../../core/rosie/tracker/types.js';
 
 // ============================================================================
@@ -341,6 +341,11 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
 
   const dbPath = getDbPath();
 
+  // Build dynamic stage enum from DB (read once at server creation time)
+  // getValidStageNames() is guaranteed non-empty (falls back to VALID_STAGES)
+  const rawStageNames = getValidStageNames();
+  const stageNames: [string, ...string[]] = [rawStageNames[0]!, ...rawStageNames.slice(1)];
+
   // ------------------------------------------------------------------
   // search_sessions — FTS5 search over activity entries
   // ------------------------------------------------------------------
@@ -475,7 +480,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
     'Create a new project based on this session\'s work. Use for NEW work that doesn\'t match any existing project.',
     {
       title: z.string().describe('Short, stable project title. Keep consistent across sessions.'),
-      stage: z.enum(VALID_STAGES).describe('Project stage: active (in progress), planning (designing), ready (ready to start), committed (scheduled), paused (on hold), archived (done/abandoned), idea (not yet started).'),
+      stage: z.enum(stageNames).describe('Project lifecycle stage — see Available Stages in system prompt for descriptions and usage guidance.'),
       status: z.string().describe('Freeform status line — what is true RIGHT NOW in 1-2 sentences.'),
       icon: z.string().describe('Single emoji representing the project domain (e.g. 🔧, 📊, 🎨).'),
       summary: z.string().describe('Stable description of what this project IS. Set once, rarely changed.'),
@@ -560,7 +565,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
     {
       project_id: z.string().describe('UUID of the existing project. Must match an id from the existing projects list.'),
       status: z.string().optional().describe('Updated freeform status line — only if changed.'),
-      stage: z.enum(VALID_STAGES).optional().describe('Updated stage — only if changed.'),
+      stage: z.enum(stageNames).optional().describe('Updated stage — only if changed. See Available Stages in system prompt.'),
       blocked_by: z.string().optional().describe('Why it\'s blocked (only if stage is \'paused\').'),
       branch: z.string().optional().describe('Git branch name if applicable.'),
       entities: z.array(z.string()).optional().describe('Additional entities to add (merged with existing). Only new ones.'),

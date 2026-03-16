@@ -11,8 +11,10 @@
 // Enums
 // ============================================================================
 
-export const VALID_STAGES = ['active', 'planning', 'ready', 'committed', 'paused', 'archived', 'idea'] as const;
-export type ProjectStage = (typeof VALID_STAGES)[number];
+/** @deprecated Use getValidStageNames() from db-writer.ts — stages now live in the DB. */
+export const VALID_STAGES = ['active', 'planning', 'ready', 'committed', 'paused', 'archived', 'idea', 'done'] as const;
+/** Widened to string — stages are now user-configurable via the DB. */
+export type ProjectStage = string;
 
 export const VALID_TYPES = ['project', 'task', 'idea'] as const;
 export type ProjectType = (typeof VALID_TYPES)[number];
