@@ -52,11 +52,24 @@ export interface StageRow {
   color: string | null;
 }
 
-/** Returns all stages ordered by sort_order. */
+/** Hardcoded fallback when the stages table doesn't exist yet (pre-migration). */
+const FALLBACK_STAGES: StageRow[] = [
+  { name: 'active', description: 'Work is actively in progress', sortOrder: 0, icon: null, color: '#5cb870' },
+  { name: 'paused', description: 'On hold — record reason in blocked_by', sortOrder: 1, icon: null, color: '#d4a030' },
+  { name: 'planning', description: 'Being designed or specced out — not yet started', sortOrder: 2, icon: null, color: '#6878a0' },
+  { name: 'ready', description: 'Ready to start — all prerequisites met', sortOrder: 3, icon: null, color: '#50a0d0' },
+  { name: 'committed', description: 'Scheduled for implementation', sortOrder: 4, icon: null, color: '#a070c0' },
+  { name: 'done', description: 'Work is complete — awaiting user review before archiving', sortOrder: 5, icon: null, color: '#22aa66' },
+  { name: 'idea', description: 'A thought or suggestion discussed but not yet committed to', sortOrder: 6, icon: null, color: '#888898' },
+  { name: 'archived', description: 'User-managed only. Do NOT move projects here', sortOrder: 7, icon: null, color: '#555568' },
+];
+
+/** Returns all stages ordered by sort_order. Falls back to hardcoded stages if DB isn't migrated. */
 export function getStages(): StageRow[] {
   try {
     const db = getTrackerDb();
     const rows = db.all(`SELECT name, description, sort_order, icon, color FROM stages ORDER BY sort_order`);
+    if (rows.length === 0) return FALLBACK_STAGES;
     return rows.map((r) => {
       const row = r as Record<string, unknown>;
       return {
@@ -68,7 +81,7 @@ export function getStages(): StageRow[] {
       };
     });
   } catch {
-    return [];
+    return FALLBACK_STAGES;
   }
 }
 
