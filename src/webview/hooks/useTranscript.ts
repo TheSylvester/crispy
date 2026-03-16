@@ -107,7 +107,14 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
             (e) => e.uuid?.startsWith('optimistic-')
           );
           if (optimistic.length === 0) return event.entries;
-          return [...event.entries, ...optimistic];
+          // Filter out optimistic entries whose real counterpart is
+          // already present in the catchup (uuid matches without prefix).
+          const catchupUuids = new Set(event.entries.map((e) => e.uuid));
+          const unresolved = optimistic.filter(
+            (e) => !catchupUuids.has(e.uuid!.replace('optimistic-', '')),
+          );
+          if (unresolved.length === 0) return event.entries;
+          return [...event.entries, ...unresolved];
         });
       }
     });
