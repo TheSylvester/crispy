@@ -152,7 +152,13 @@ h2 {
   overflow: hidden;
 }
 
-/* --- Session Dropdown (anchored to titlebar) --- */
+/* --- Dropdown Containers (anchored to titlebar) --- */
+
+/* Projects dropdown container — sits beside Conversations inside the shared wrapper */
+.crispy-project-dropdown-container {
+  display: flex;
+  align-items: center;
+}
 
 .crispy-session-dropdown-container {
   position: relative;

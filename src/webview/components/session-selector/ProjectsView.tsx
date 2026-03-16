@@ -8,14 +8,17 @@
  * @module ProjectsView
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, type ChangeEvent } from 'react';
 import { useTransport } from '../../context/TransportContext.js';
 import type { WireProject } from '../../transport.js';
+import type { AvailableCwd } from '../../hooks/useAvailableCwds.js';
 import { ProjectCard } from './ProjectCard.js';
 
 interface ProjectsViewProps {
-  searchQuery: string;
   onSelectSession: (sessionId: string) => void;
+  availableCwds: AvailableCwd[];
+  selectedCwd: string | null;
+  onCwdChange: (slug: string | null) => void;
 }
 
 const STAGE_ORDER = ['active', 'paused', 'planning', 'ready', 'committed', 'archived'] as const;
@@ -49,15 +52,20 @@ function sortProjects(projects: WireProject[]): WireProject[] {
   });
 }
 
-export function ProjectsView({ searchQuery, onSelectSession }: ProjectsViewProps): React.JSX.Element {
+export function ProjectsView({ onSelectSession, availableCwds, selectedCwd, onCwdChange }: ProjectsViewProps): React.JSX.Element {
   const transport = useTransport();
   const [projects, setProjects] = useState<WireProject[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set(['archived']));
   const [stageFilter, setStageFilter] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const draggedIdRef = useRef<string | null>(null);
+
+  const handleCwdChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    onCwdChange(e.target.value || null);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -146,14 +154,47 @@ export function ProjectsView({ searchQuery, onSelectSession }: ProjectsViewProps
     );
   }
 
+  // Search + CWD filter bar (rendered at top of all states except loading)
+  const filterBar = (
+    <div className="crispy-filter-bar">
+      <div className="crispy-filter-bar__search-row">
+        <input
+          className="crispy-filter-bar__search"
+          type="text"
+          placeholder="Search projects…"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+        />
+      </div>
+      {availableCwds.length > 0 && (
+        <select
+          className="crispy-filter-bar__cwd"
+          value={selectedCwd ?? ''}
+          onChange={handleCwdChange}
+          title="Filter by project"
+        >
+          <option value="">All Projects</option>
+          {availableCwds.map(cwd => (
+            <option key={cwd.slug} value={cwd.slug} title={cwd.fullPath}>
+              {cwd.display}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+
   // Empty state
   if (loaded && projects.length === 0) {
     return (
-      <div className="crispy-session-empty crispy-session-empty--columnar">
-        <span>No projects tracked yet</span>
-        <span className="crispy-session-empty__hint">
-          Enable Rosie bot in settings to start tracking your work across sessions.
-        </span>
+      <div className="crispy-projects-container">
+        {filterBar}
+        <div className="crispy-session-empty crispy-session-empty--columnar">
+          <span>No projects tracked yet</span>
+          <span className="crispy-session-empty__hint">
+            Enable Rosie bot in settings to start tracking your work across sessions.
+          </span>
+        </div>
       </div>
     );
   }
@@ -162,6 +203,7 @@ export function ProjectsView({ searchQuery, onSelectSession }: ProjectsViewProps
   if (loaded && filtered.length === 0 && (searchQuery || stageFilter)) {
     return (
       <div className="crispy-projects-container">
+        {filterBar}
         <div className="crispy-project-filter-bar">
           {FILTER_STAGES.map(f => (
             <button
@@ -183,6 +225,7 @@ export function ProjectsView({ searchQuery, onSelectSession }: ProjectsViewProps
 
   return (
     <div className="crispy-projects-container">
+      {filterBar}
       {/* Filter pills */}
       <div className="crispy-project-filter-bar">
         {FILTER_STAGES.map(f => (

@@ -12,14 +12,15 @@
  * @module TitleBar
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from '../context/SessionContext.js';
 import { usePreferences, type SidebarView } from '../context/PreferencesContext.js';
 import { useSessionStatus } from '../hooks/useSessionStatus.js';
 import { useTransport } from '../context/TransportContext.js';
 import { useEnvironment } from '../context/EnvironmentContext.js';
 import { useThemeKind, isLightTheme } from '../hooks/useThemeKind.js';
-import { SessionSelector } from './session-selector/index.js';
+import { SessionSelector, ProjectsView } from './session-selector/index.js';
+import { useAvailableCwds } from '../hooks/useAvailableCwds.js';
 import { getSessionDisplayName } from '../utils/session-display.js';
 
 /** SVG chevron — points down, rotates 180° when sidebar is open */
@@ -102,6 +103,27 @@ function FilePanelIcon(): React.JSX.Element {
       <line x1="2" y1="3" x2="14" y2="3" />
       <line x1="5" y1="8" x2="14" y2="8" />
       <line x1="5" y1="13" x2="14" y2="13" />
+    </svg>
+  );
+}
+
+/** Clipboard-list icon for Projects */
+function ProjectsIcon(): React.JSX.Element {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="2" y="1" width="8" height="10" rx="1" />
+      <line x1="4.5" y1="4" x2="8" y2="4" />
+      <line x1="4.5" y1="6.5" x2="8" y2="6.5" />
+      <line x1="4.5" y1="9" x2="7" y2="9" />
     </svg>
   );
 }
@@ -198,10 +220,25 @@ function truncateLabel(text: string, max: number): string {
 }
 
 export function TitleBar(): React.JSX.Element {
-  const { sessions, selectedSessionId, setSelectedSessionId } = useSession();
+  const { sessions, selectedSessionId, setSelectedSessionId, selectedCwd, setSelectedCwd } = useSession();
   const { sidebarCollapsed, setSidebarCollapsed, toolPanelOpen, setToolPanelOpen, sidebarView, setSidebarView } = usePreferences();
   const { channelState } = useSessionStatus(selectedSessionId);
   const dropdownContainerRef = useRef<HTMLDivElement>(null);
+  const projectDropdownRef = useRef<HTMLDivElement>(null);
+  const [projectsOpen, setProjectsOpen] = useState(false);
+  const allCwds = useAvailableCwds();
+
+  // Cap visible CWDs to keep the native dropdown manageable
+  const MAX_CWDS = 15;
+  const availableCwds = useMemo(() => {
+    if (allCwds.length <= MAX_CWDS) return allCwds;
+    const top = allCwds.slice(0, MAX_CWDS);
+    if (selectedCwd && !top.some(c => c.slug === selectedCwd)) {
+      const selected = allCwds.find(c => c.slug === selectedCwd);
+      if (selected) top.push(selected);
+    }
+    return top;
+  }, [allCwds, selectedCwd]);
 
   // Derive button label from current session — fall back to "Conversations"
   const currentSession = selectedSessionId
@@ -228,8 +265,19 @@ export function TitleBar(): React.JSX.Element {
   }, [tabTitle, transport, envKind]);
 
   const toggleSidebar = useCallback(() => {
+    setProjectsOpen(false);
     setSidebarCollapsed(!sidebarCollapsed);
   }, [sidebarCollapsed, setSidebarCollapsed]);
+
+  const toggleProjects = useCallback(() => {
+    setSidebarCollapsed(true);
+    setProjectsOpen(prev => !prev);
+  }, [setSidebarCollapsed]);
+
+  const handleProjectSelect = useCallback((sessionId: string) => {
+    setSelectedSessionId(sessionId);
+    setTimeout(() => setProjectsOpen(false), 200);
+  }, [setSelectedSessionId]);
 
   const handleNew = useCallback(() => {
     setSelectedSessionId(null);
@@ -262,23 +310,51 @@ export function TitleBar(): React.JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleSidebarButton]);
 
-  // Click-outside to close dropdown
+  // Click-outside to close dropdowns
   useEffect(() => {
-    if (sidebarCollapsed) return;
+    if (sidebarCollapsed && !projectsOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownContainerRef.current &&
-          !dropdownContainerRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (!sidebarCollapsed &&
+          dropdownContainerRef.current &&
+          !dropdownContainerRef.current.contains(target)) {
         setSidebarCollapsed(true);
+      }
+      if (projectsOpen &&
+          projectDropdownRef.current &&
+          !projectDropdownRef.current.contains(target)) {
+        setProjectsOpen(false);
       }
     };
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
-  }, [sidebarCollapsed, setSidebarCollapsed]);
+  }, [sidebarCollapsed, setSidebarCollapsed, projectsOpen]);
 
   return (
     <header className="crispy-titlebar">
-      {/* Left — session dropdown toggle + anchored dropdown */}
+      {/* Left — Projects + Conversations dropdowns share a positioning wrapper */}
       <div className="crispy-session-dropdown-container" ref={dropdownContainerRef}>
+        <div className="crispy-project-dropdown-container" ref={projectDropdownRef}>
+          <button
+            className="crispy-titlebar__btn crispy-titlebar__projects-btn"
+            onClick={toggleProjects}
+            title="Projects"
+            aria-label={projectsOpen ? 'Close projects' : 'Open projects'}
+          >
+            <ProjectsIcon />
+            <Chevron open={projectsOpen} />
+          </button>
+          {projectsOpen && (
+            <div className="crispy-session-dropdown">
+              <ProjectsView
+                onSelectSession={handleProjectSelect}
+                availableCwds={availableCwds}
+                selectedCwd={selectedCwd}
+                onCwdChange={setSelectedCwd}
+              />
+            </div>
+          )}
+        </div>
         <button
           className="crispy-titlebar__btn crispy-titlebar__session-btn"
           onClick={toggleSidebar}
