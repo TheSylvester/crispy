@@ -579,22 +579,30 @@ async function runResumeMode(
   settings: Record<string, unknown>,
   outputFile: string | null,
 ): Promise<void> {
-  const result = await router.sendRpc('resumeChild', {
+  const resumeParams: Record<string, unknown> = {
     sessionId: args.resume,
     prompt,
     settings,
     autoClose: args.autoClose,
     timeoutMs: args.timeoutMs,
-  }) as { sessionId: string; text: string; structured?: unknown } | null;
+  };
+  if (outputFile) {
+    resumeParams.logFile = outputFile;
+    writeFileSync(outputFile,
+      `# crispy-dispatch resume vendor=${args.vendor} started=${new Date().toISOString()}\n---\n`,
+      'utf8');
+  }
+
+  const result = await router.sendRpc('resumeChild', resumeParams) as {
+    sessionId: string; text: string; structured?: unknown;
+  } | null;
 
   if (result) {
     if (result.text) {
       process.stdout.write(result.text);
       if (!result.text.endsWith('\n')) process.stdout.write('\n');
     }
-    if (outputFile && result.text) {
-      try { writeFileSync(outputFile, result.text, 'utf8'); } catch { /* best-effort */ }
-    }
+    // Log file is now streamed via onEntry — no all-at-once write needed
     emitResult({ status: 'completed', sessionId: result.sessionId, textLength: result.text.length });
     process.exit(EXIT_OK);
   } else {
@@ -634,6 +642,14 @@ async function runDispatchMode(
   }
   dispatchParams.timeoutMs = args.timeoutMs;
 
+  // Stream log entries to the output file as they arrive (instead of all-at-once at the end)
+  if (outputFile) {
+    dispatchParams.logFile = outputFile;
+    writeFileSync(outputFile,
+      `# crispy-dispatch vendor=${args.vendor} started=${new Date().toISOString()}\n---\n`,
+      'utf8');
+  }
+
   // Fork mode with dispatchChild
   if (args.resume && args.fork) {
     dispatchParams.parentSessionId = args.resume;
@@ -651,9 +667,7 @@ async function runDispatchMode(
       process.stdout.write(result.text);
       if (!result.text.endsWith('\n')) process.stdout.write('\n');
     }
-    if (outputFile && result.text) {
-      try { writeFileSync(outputFile, result.text, 'utf8'); } catch { /* best-effort */ }
-    }
+    // Log file is now streamed via onEntry — no all-at-once write needed
     emitResult({ status: 'completed', sessionId: result.sessionId, textLength: result.text.length });
     process.exit(EXIT_OK);
   } else {

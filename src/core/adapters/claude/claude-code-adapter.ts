@@ -1258,7 +1258,8 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     // stays alive (waiting for next user input via inputQueue), so
     // drainOutput's finally block won't fire until the query is fully
     // closed/aborted.
-    this.emitStatus(this.backgroundTaskCount > 0 ? 'background' : 'idle');
+    this.emitStatus(this.backgroundTaskCount > 0 ? 'background' : 'idle',
+      this.backgroundTaskCount > 0 ? undefined : { turnComplete: true });
   }
 
   private handleSystemMessage(msg: SDKMessage): void {
@@ -1380,7 +1381,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         // The SDK processed this locally (e.g. unknown /skill, /model, /usage).
         // No model turn will follow, so emit idle to clear the UI's optimistic
         // 'streaming' state. This is the authoritative signal — no timer needed.
-        this.emitStatus('idle');
+        this.emitStatus('idle', { turnComplete: true });
         break;
       case 'elicitation_complete': // MCP elicitation done
         this.emitEntry(msg);
@@ -1664,11 +1665,11 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   /**
    * Emit a status change event and update the internal status.
    */
-  private emitStatus(status: 'idle' | 'active' | 'background'): void {
+  private emitStatus(status: 'idle' | 'active' | 'background', extra?: { turnComplete?: true }): void {
     this._status = status;
     this.outputQueue.enqueue({
       type: 'event',
-      event: { type: 'status', status },
+      event: { type: 'status', status, ...extra },
     });
   }
 }

@@ -21,6 +21,8 @@ export type ChannelStatus = 'idle' | 'active' | 'awaiting_approval' | 'backgroun
 export interface IdleEvent {
   type: 'status';
   status: 'idle';
+  /** Authoritative turn completion signal — resolve immediately, no debounce. */
+  turnComplete?: true;
 }
 
 export interface ActiveEvent {

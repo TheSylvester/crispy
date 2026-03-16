@@ -12,8 +12,9 @@
  */
 
 import { resolve } from "node:path";
+import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
-import type { TurnIntent } from "../core/agent-adapter.js";
+import type { TurnIntent, ChannelMessage } from "../core/agent-adapter.js";
 import type {
   Subscriber,
   SessionChannel,
@@ -87,6 +88,56 @@ import { startCapture, stopCapture, cancelCapture, cleanupOrphanedVoiceFiles } f
 
 // Clean up any orphaned voice temp files from previous sessions on module load.
 cleanupOrphanedVoiceFiles();
+
+// ============================================================================
+// Streaming Log Formatter
+// ============================================================================
+
+/** Format a timestamp as HH:MM:SS for log lines. */
+function logTimestamp(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+}
+
+/** Pretty-print a channel message for streaming log output. Returns null if the message should be skipped. */
+function formatLogEntry(msg: ChannelMessage): string | null {
+  const ts = logTimestamp();
+
+  if (msg.type === 'entry') {
+    const entry = msg.entry;
+    if (entry.type === 'assistant' && entry.message) {
+      const content = entry.message.content;
+      if (Array.isArray(content)) {
+        const texts: string[] = [];
+        for (const block of content) {
+          if (block.type === 'text' && block.text) texts.push(block.text);
+          else if (block.type === 'tool_use') texts.push(`[tool: ${(block as { name?: string }).name ?? '?'}]`);
+        }
+        return texts.length > 0 ? `[${ts}] ${texts.join(' ')}` : null;
+      }
+      if (typeof content === 'string') return `[${ts}] ${content}`;
+    }
+    if (entry.type === 'result' && entry.message) {
+      const content = entry.message.content;
+      let text = '';
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === 'text' && block.text) text += block.text;
+        }
+      } else if (typeof content === 'string') {
+        text = content;
+      }
+      if (text) return `[${ts}] result: ${text.length > 200 ? text.slice(0, 200) + '…' : text}`;
+    }
+    return null;
+  }
+
+  if (msg.type === 'event' && msg.event.type === 'status') {
+    return `[${ts}] status: ${msg.event.status}`;
+  }
+
+  return null;
+}
 
 // ============================================================================
 // Path Containment
@@ -480,12 +531,32 @@ export function createClientConnection(
       }
 
       case "dispatchChild": {
-        const options = params as unknown as ChildSessionOptions;
+        const options = params as unknown as ChildSessionOptions & { logFile?: string };
+        const logFile = options.logFile;
+        if (logFile) {
+          delete (options as unknown as Record<string, unknown>).logFile;
+          options.onEntry = (msg) => {
+            try {
+              const line = formatLogEntry(msg);
+              if (line) appendFileSync(logFile, line + '\n', 'utf8');
+            } catch { /* best-effort */ }
+          };
+        }
         return dispatchChildSession(options);
       }
 
       case "resumeChild": {
-        const options = params as unknown as ResumeChildOptions;
+        const options = params as unknown as ResumeChildOptions & { logFile?: string };
+        const logFile = options.logFile;
+        if (logFile) {
+          delete (options as unknown as Record<string, unknown>).logFile;
+          options.onEntry = (msg) => {
+            try {
+              const line = formatLogEntry(msg);
+              if (line) appendFileSync(logFile, line + '\n', 'utf8');
+            } catch { /* best-effort */ }
+          };
+        }
         return resumeChildSession(options);
       }
 

@@ -469,7 +469,11 @@ export class CodexAgentAdapter implements AgentAdapter {
       case 'turn/completed': {
         this.clearStreamingBuffer();
         this.currentTurnId = undefined;
-        // Only transition to idle if no pending approvals
+        // Don't emit turnComplete here — Codex delivers item/completed events
+        // (with the final assistant text) AFTER turn/completed, often in a
+        // separate event loop tick. The session-manager's debounce fallback
+        // (IDLE_SETTLE_MS) handles Codex correctly; turnComplete is only safe
+        // for adapters that guarantee all data is delivered before idle (Claude).
         if (this.pendingApprovals.size === 0) {
           this.emitStatus('idle');
         }

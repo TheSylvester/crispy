@@ -110,6 +110,8 @@ export interface ChildSessionOptions {
   env?: Record<string, string>;
   /** Explicit working directory — overrides parent session's projectPath. */
   cwd?: string;
+  /** Called for each channel message — use for streaming log output. */
+  onEntry?: (msg: ChannelMessage) => void;
 }
 
 export interface ChildSessionResult {
@@ -1257,6 +1259,9 @@ export async function dispatchChildSession(
           }
         }
 
+        // Stream entries to caller via onEntry callback
+        options.onEntry?.(msg);
+
         // Idle debounce: wait IDLE_SETTLE_MS after idle before resolving.
         // Cancels if 'active' fires (agent starting another tool round).
         // Prevents spurious early resolution in multi-step agent work (fix #8).
@@ -1264,41 +1269,54 @@ export async function dispatchChildSession(
           if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
         }
 
-        // Turn complete — debounced idle resolution
+        // For autoClose:false children, ensure we return the real (rekeyed) ID
+        // so resumeChildSession can find the channel. Idle can fire before the
+        // rekey promise resolves, leaving currentId as the stale pending ID.
+        const finalize = (resolvedId: string) => {
+          if (text || structured !== undefined || entryTypes.length > 1) {
+            cleanup();
+            resolve({ sessionId: resolvedId, text, structured });
+          } else {
+            const parts: string[] = [];
+            if (lastError) parts.push(`error: ${lastError}`);
+            parts.push(`entries: [${entryTypes.join(', ')}]`);
+            if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
+            console.warn(`[child-session] Turn completed with empty response (parent: ${parentSessionId}) — ${parts.join(' | ')}`);
+            cleanup(/* force */ true);
+            resolve(null);
+          }
+        };
+
+        const awaitRekeyThenFinalize = () => {
+          if (!autoClose && rekeyPromise) {
+            rekeyPromise.then((realId) => {
+              childSessions.delete(pendingId);
+              childSessions.set(realId, { parentSessionId, autoClose, visible: false });
+              finalize(realId);
+            }).catch(() => finalize(currentId));
+          } else {
+            finalize(currentId);
+          }
+        };
+
+        // Turn complete — check for authoritative turnComplete signal
         if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'idle') {
+          // Authoritative turn completion — resolve immediately, no debounce
+          if ('turnComplete' in msg.event && msg.event.turnComplete) {
+            if (settled) return;
+            settled = true;
+            if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+            awaitRekeyThenFinalize();
+            return;
+          }
+
+          // Fallback: debounced idle for adapters without turnComplete
           if (idleTimer) clearTimeout(idleTimer);
           idleTimer = setTimeout(() => {
             if (settled) return;
             settled = true;
             if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-
-            // For autoClose:false children, ensure we return the real (rekeyed) ID
-            // so resumeChildSession can find the channel. Idle can fire before the
-            // rekey promise resolves, leaving currentId as the stale pending ID.
-            const finalize = (resolvedId: string) => {
-              if (text || structured !== undefined || entryTypes.length > 1) {
-                cleanup();
-                resolve({ sessionId: resolvedId, text, structured });
-              } else {
-                const parts: string[] = [];
-                if (lastError) parts.push(`error: ${lastError}`);
-                parts.push(`entries: [${entryTypes.join(', ')}]`);
-                if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
-                console.warn(`[child-session] Turn completed with empty response (parent: ${parentSessionId}) — ${parts.join(' | ')}`);
-                cleanup(/* force */ true);
-                resolve(null);
-              }
-            };
-
-            if (!autoClose && rekeyPromise) {
-              rekeyPromise.then((realId) => {
-                childSessions.delete(pendingId);
-                childSessions.set(realId, { parentSessionId, autoClose, visible: false });
-                finalize(realId);
-              }).catch(() => finalize(currentId));
-            } else {
-              finalize(currentId);
-            }
+            awaitRekeyThenFinalize();
           }, IDLE_SETTLE_MS);
         }
       },
@@ -1358,6 +1376,8 @@ export interface ResumeChildOptions {
   autoClose?: boolean;
   /** Timeout in ms (default: 60000). */
   timeoutMs?: number;
+  /** Called for each channel message — use for streaming log output. */
+  onEntry?: (msg: ChannelMessage) => void;
 }
 
 /**
@@ -1375,6 +1395,7 @@ export async function resumeChildSession(
     settings = {},
     autoClose = true,
     timeoutMs = 60_000,
+    onEntry,
   } = options;
 
   const ch = getChannel(sessionId);
@@ -1474,24 +1495,41 @@ export async function resumeChildSession(
           }
         }
 
+        // Stream entries to caller via onEntry callback
+        onEntry?.(msg);
+
         // Idle debounce (fix #8)
         if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'active') {
           if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
         }
 
-        // Turn complete — debounced
+        const finalizeResume = () => {
+          cleanup();
+          if (text || structured !== undefined || entryTypes.length > 1) {
+            resolve({ sessionId, text, structured });
+          } else {
+            if (lastError) console.warn(`[resume-child] Empty response with error: ${lastError}`);
+            resolve(null);
+          }
+        };
+
+        // Turn complete — check for authoritative turnComplete signal
         if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'idle') {
+          // Authoritative turn completion — resolve immediately, no debounce
+          if ('turnComplete' in msg.event && msg.event.turnComplete) {
+            if (settled) return;
+            settled = true;
+            if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+            finalizeResume();
+            return;
+          }
+
+          // Fallback: debounced idle for adapters without turnComplete
           if (idleTimer) clearTimeout(idleTimer);
           idleTimer = setTimeout(() => {
             if (settled) return;
             settled = true;
-            cleanup();
-            if (text || structured !== undefined || entryTypes.length > 1) {
-              resolve({ sessionId, text, structured });
-            } else {
-              if (lastError) console.warn(`[resume-child] Empty response with error: ${lastError}`);
-              resolve(null);
-            }
+            finalizeResume();
           }, IDLE_SETTLE_MS);
         }
       },
