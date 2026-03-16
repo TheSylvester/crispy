@@ -182,7 +182,7 @@ async function runSummarize(
           CLAUDECODE: '',
           CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '30000',
         },
-        timeoutMs: 30_000,
+        timeoutMs: 90_000,
       });
 
       if (!result) {
@@ -202,6 +202,7 @@ async function runSummarize(
           outputTokens: result.contextUsage.outputTokens,
           cachedTokens: result.contextUsage.cacheReadTokens,
           model: model,
+          costUsd: result.contextUsage.totalCostUsd,
         });
       }
 
@@ -307,7 +308,7 @@ async function runTracker(
           allowDangerouslySkipPermissions: true,
         },
         autoClose: false,
-        timeoutMs: 30_000,
+        timeoutMs: 0,
       });
 
       if (!trackerResult) {
@@ -345,7 +346,7 @@ async function runTracker(
           CLAUDECODE: '',
           CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '30000',
         },
-        timeoutMs: 30_000,
+        timeoutMs: 0,
       });
 
       if (!trackerResult) {
@@ -384,6 +385,7 @@ async function runTracker(
         outputTokens: trackerResult.contextUsage?.outputTokens,
         cachedTokens: trackerResult.contextUsage?.cacheReadTokens,
         model: model,
+        costUsd: trackerResult.contextUsage?.totalCostUsd,
       });
 
       runDedupSweep(d.dispatchChild).catch((err) => {
@@ -398,6 +400,7 @@ async function runTracker(
         outputTokens: trackerResult.contextUsage?.outputTokens,
         cachedTokens: trackerResult.contextUsage?.cacheReadTokens,
         model: model,
+        costUsd: trackerResult.contextUsage?.totalCostUsd,
       });
     }
   } catch (err) {
