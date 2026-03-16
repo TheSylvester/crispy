@@ -29,7 +29,7 @@ export function WelcomePage({ loading }: WelcomePageProps): React.JSX.Element {
             Loading Conversation...
           </p>
         ) : (
-          <p className="crispy-welcome__subtitle">v0.1.4-dev.95</p>
+          <p className="crispy-welcome__subtitle">v0.1.4-dev.96</p>
         )}
       </div>
     </div>
