@@ -61,8 +61,8 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
   db.exec('BEGIN');
   try {
     const insertProject = db.prepare(
-      `INSERT INTO projects (id, title, stage, status, icon, blocked_by, summary, branch, entities, created_at, updated_at, last_activity_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO projects (id, title, stage, status, icon, blocked_by, summary, branch, entities, type, parent_id, created_at, updated_at, last_activity_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const readProject = db.prepare(
       `SELECT stage, status, entities FROM projects WHERE id = ?`,
@@ -94,12 +94,13 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
         let projectId: string;
 
         if (p.action === 'create') {
-          // New project
-          projectId = randomUUID();
+          // New project — use caller-supplied ID or generate one
+          projectId = p.id || randomUUID();
           insertProject.run([
             projectId, p.title, p.stage, p.status || null, p.icon || null,
             p.blocked_by || null, p.summary || null,
             p.branch || null, p.entities || '[]',
+            p.type || 'project', p.parent_id || null,
             now, now, now,
           ]);
           // Record 'created' activity
@@ -292,19 +293,44 @@ export function getProjectActivity(
 }
 
 /**
- * Record the outcome of a tracker analysis attempt.
+ * Record the outcome of a Rosie subsystem invocation with optional token usage.
  *
- * Called after successful tool calls (tracked/trivial) or after all retries
- * exhausted (failed). Uses INSERT OR REPLACE so re-runs overwrite prior results.
+ * Writes to `rosie_usage` (per-invocation rows) for both summarize and tracker.
+ * Also writes to legacy `tracker_outcomes` for backward compatibility.
  */
 export function recordTrackerOutcome(
   sessionFile: string,
   outcome: 'tracked' | 'trivial' | 'failed',
   attempts: number,
   reason?: string,
+  opts?: {
+    subsystem?: 'summarize' | 'tracker';
+    inputTokens?: number;
+    outputTokens?: number;
+    cachedTokens?: number;
+    model?: string;
+  },
 ): void {
   try {
     const db = getTrackerDb();
+
+    // Write to new rosie_usage table (per-invocation)
+    db.run(
+      `INSERT INTO rosie_usage (session_file, subsystem, outcome, reason, input_tokens, output_tokens, cached_tokens, model)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        sessionFile,
+        opts?.subsystem ?? 'tracker',
+        outcome,
+        reason ?? null,
+        opts?.inputTokens ?? null,
+        opts?.outputTokens ?? null,
+        opts?.cachedTokens ?? null,
+        opts?.model ?? null,
+      ],
+    );
+
+    // Legacy: also write to tracker_outcomes for backward compatibility
     db.run(
       `INSERT OR REPLACE INTO tracker_outcomes (session_file, outcome, reason, attempts, created_at)
        VALUES (?, ?, ?, ?, datetime('now'))`,
@@ -337,6 +363,49 @@ export function getExistingProjects(): { id: string; title: string; stage: strin
     });
   } catch {
     return [];
+  }
+}
+
+/**
+ * Return flat pipe-delimited records of non-archived projects for the tracker prompt.
+ */
+export function getProjectsForPrompt(): string {
+  try {
+    const db = getTrackerDb();
+    const stmt = db.prepare(
+      `SELECT id, type, stage, parent_id, title, status, entities
+       FROM projects
+       WHERE stage != 'archived'
+       ORDER BY updated_at DESC`,
+    );
+    let rows: Array<{
+      id: string;
+      type: string;
+      stage: string;
+      parent_id: string | null;
+      title: string;
+      status: string | null;
+      entities: string | null;
+    }>;
+    try {
+      rows = stmt.all() as typeof rows;
+    } finally {
+      stmt.finalize();
+    };
+
+    if (rows.length === 0) return '';
+
+    const sanitize = (s: string | null): string =>
+      (s ?? '').replace(/\|/g, '-').replace(/[\r\n]+/g, ' ');
+
+    return rows
+      .map(
+        (r) =>
+          `id=${r.id} | type=${r.type} | stage=${r.stage} | parent=${r.parent_id ?? '-'} | title=${sanitize(r.title)} | status=${sanitize(r.status)} | entities=${r.entities ?? '[]'}`,
+      )
+      .join('\n');
+  } catch {
+    return '';
   }
 }
 
@@ -426,6 +495,7 @@ interface ProjectRow {
   id: string;
   title: string;
   stage: string;
+  type: string;
   summary: string | null;
   entities: string;
   created_at: string;
@@ -624,6 +694,9 @@ export function mergeProjects(
     const migrateActivity = db.prepare(
       `UPDATE project_activity SET project_id = ? WHERE project_id = ?`,
     );
+    const reparentChildren = db.prepare(
+      `UPDATE projects SET parent_id = ? WHERE parent_id = ?`,
+    );
     const deleteSessions = db.prepare(`DELETE FROM project_sessions WHERE project_id = ?`);
     const deleteFiles = db.prepare(`DELETE FROM project_files WHERE project_id = ?`);
     const deleteActivity = db.prepare(`DELETE FROM project_activity WHERE project_id = ?`);
@@ -631,6 +704,7 @@ export function mergeProjects(
 
     try {
       updateSurvivor.run([title, summary, JSON.stringify(unionedEntities), earlierCreated, new Date().toISOString(), keepId]);
+      reparentChildren.run([keepId, removeId]);
       migrateSessions.run([keepId, removeId]);
       migrateFiles.run([keepId, removeId]);
       migrateActivity.run([keepId, removeId]);
@@ -640,6 +714,7 @@ export function mergeProjects(
       deleteProject.run([removeId]);
     } finally {
       updateSurvivor.finalize();
+      reparentChildren.finalize();
       migrateSessions.finalize();
       migrateFiles.finalize();
       migrateActivity.finalize();
@@ -691,7 +766,7 @@ export async function runDedupSweep(
     // Load all non-archived projects with full data for comparison
     const db = getTrackerDb();
     const rows = db.all(
-      `SELECT id, title, stage, summary, entities, created_at, updated_at
+      `SELECT id, title, stage, type, summary, entities, created_at, updated_at
        FROM projects WHERE stage != 'archived' ORDER BY updated_at DESC`,
     );
     const projects: ProjectRow[] = rows.map((r) => {
@@ -700,6 +775,7 @@ export async function runDedupSweep(
         id: row.id as string,
         title: row.title as string,
         stage: row.stage as string,
+        type: (row.type as string) ?? 'project',
         summary: (row.summary as string) ?? null,
         entities: (row.entities as string) ?? '[]',
         created_at: row.created_at as string,
@@ -754,6 +830,35 @@ export async function runDedupSweep(
     });
   } finally {
     dedupInFlight = false;
+  }
+}
+
+// ============================================================================
+// Semantic Similarity — Lightweight embedding-based duplicate detection
+// ============================================================================
+
+/**
+ * Get non-archived projects with their text for embedding.
+ * Returns id, title, and a text string suitable for embedding (title + summary).
+ */
+export function getProjectTextsForEmbedding(): Array<{ id: string; title: string; text: string }> {
+  try {
+    const db = getTrackerDb();
+    const rows = db.all(
+      `SELECT id, title, summary FROM projects WHERE stage != 'archived' ORDER BY updated_at DESC`,
+    );
+    return rows.map((r) => {
+      const row = r as Record<string, unknown>;
+      const title = row.title as string;
+      const summary = (row.summary as string) ?? '';
+      return {
+        id: row.id as string,
+        title,
+        text: summary ? `${title} ${summary}` : title,
+      };
+    });
+  } catch {
+    return [];
   }
 }
 

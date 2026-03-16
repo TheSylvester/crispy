@@ -2,7 +2,6 @@
  * Tests for Activity Index
  *
  * Tests the SQLite-backed persistence layer for user activity data:
- * - Scan state CRUD (loadScanState, saveScanState)
  * - Activity entries CRUD (appendActivityEntries, queryActivity)
  * - Error handling for edge cases
  * - Dedup via UNIQUE constraint
@@ -15,13 +14,10 @@ import { join } from 'node:path';
 
 import {
   ensureCrispyDir,
-  loadScanState,
-  saveScanState,
   appendActivityEntries,
   queryActivity,
   _setTestDir,
   type ActivityIndexEntry,
-  type ScanState,
 } from '../src/core/activity-index.js';
 
 // ============================================================================
@@ -69,69 +65,6 @@ describe('ensureCrispyDir', () => {
     ensureCrispyDir();
     ensureCrispyDir();
     expect(fs.existsSync(testDir)).toBe(true);
-  });
-});
-
-// ============================================================================
-// loadScanState
-// ============================================================================
-
-describe('loadScanState', () => {
-  it('returns default state when database is empty', () => {
-    const state = loadScanState();
-    expect(state).toEqual({ version: 1, files: {} });
-  });
-
-  it('returns saved state after saveScanState', () => {
-    const expected: ScanState = {
-      version: 1,
-      files: {
-        '/path/to/session.jsonl': { mtime: 1234567890, size: 1024, offset: 512 },
-      },
-    };
-    saveScanState(expected);
-
-    const state = loadScanState();
-    expect(state).toEqual(expected);
-  });
-});
-
-// ============================================================================
-// saveScanState
-// ============================================================================
-
-describe('saveScanState', () => {
-  it('writes state readable by loadScanState', () => {
-    const state: ScanState = {
-      version: 1,
-      files: {
-        '/a.jsonl': { mtime: 100, size: 50, offset: 25 },
-        '/b.jsonl': { mtime: 200, size: 100, offset: 75 },
-      },
-    };
-
-    saveScanState(state);
-
-    const loaded = loadScanState();
-    expect(loaded).toEqual(state);
-  });
-
-  it('creates directory if it does not exist', () => {
-    fs.rmSync(testDir, { recursive: true, force: true });
-    expect(fs.existsSync(testDir)).toBe(false);
-
-    saveScanState({ version: 1, files: {} });
-
-    expect(fs.existsSync(testDir)).toBe(true);
-    expect(loadScanState()).toEqual({ version: 1, files: {} });
-  });
-
-  it('overwrites existing state', () => {
-    saveScanState({ version: 1, files: { '/old.jsonl': { mtime: 1, size: 1, offset: 1 } } });
-    saveScanState({ version: 1, files: { '/new.jsonl': { mtime: 2, size: 2, offset: 2 } } });
-
-    const loaded = loadScanState();
-    expect(loaded.files).toEqual({ '/new.jsonl': { mtime: 2, size: 2, offset: 2 } });
   });
 });
 

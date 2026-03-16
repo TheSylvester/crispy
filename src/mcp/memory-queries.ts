@@ -114,11 +114,11 @@ export function searchSessions(
   return db.all(`
     SELECT ae.id, ae.timestamp, ae.kind, ae.file, ae.preview,
            ae.quest, ae.summary, ae.title, ae.status, ae.entities,
-           bm25(activity_fts, 10.0, 8.0, 4.0, 3.0, 1.0) as rank,
-           snippet(activity_fts, 1, '>>>', '<<<', '...', 32) as match_snippet
-    FROM activity_fts
-    JOIN activity_entries ae ON ae.id = activity_fts.rowid
-    WHERE activity_fts MATCH ?
+           bm25(session_meta_fts, 10.0, 8.0, 4.0, 3.0, 1.0) as rank,
+           snippet(session_meta_fts, 1, '>>>', '<<<', '...', 32) as match_snippet
+    FROM session_meta_fts
+    JOIN session_meta ae ON ae.id = session_meta_fts.rowid
+    WHERE session_meta_fts MATCH ?
       ${extraClauses}
     ORDER BY rank
     LIMIT ?
@@ -152,7 +152,7 @@ export function listSessions(
            MAX(CASE WHEN kind = 'rosie-meta' THEN title END) as title,
            MAX(CASE WHEN kind = 'rosie-meta' THEN status END) as status,
            COUNT(*) as entry_count
-    FROM activity_entries
+    FROM session_meta
     ${whereClause}
     GROUP BY file
     ORDER BY last_activity DESC
@@ -181,7 +181,7 @@ export function sessionContext(
 
   return db.all(`
     SELECT id, timestamp, kind, file, preview, quest, summary, title, status, entities
-    FROM activity_entries
+    FROM session_meta
     WHERE file = ?
       ${kindClause}
     ORDER BY timestamp ASC

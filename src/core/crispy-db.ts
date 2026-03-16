@@ -759,7 +759,7 @@ const migrations: Migration[] = [
   {
     version: 18,
     description: 'Projects: add stage/icon/sort_order columns, create project_activity table',
-    up: (db: Database) => {
+    up: (db: Database): void => {
       // PRAGMA foreign_keys is a no-op inside a transaction (the migration
       // runner wraps up() in BEGIN/COMMIT). Instead, we back up child table
       // data, drop FKs by recreating child tables after the projects table
@@ -856,6 +856,156 @@ const migrations: Migration[] = [
         CREATE INDEX idx_project_activity_project ON project_activity(project_id);
         CREATE INDEX idx_project_activity_ts ON project_activity(ts);
       `);
+    },
+  },
+  {
+    version: 19,
+    description: 'Cleanup: drop scan_state, rename activity_entries → session_meta, add type to projects, add idea stage',
+    up: (db: Database): void => {
+      // --- Cleanup ---
+      db.exec(`DROP TABLE IF EXISTS scan_state`);
+      db.exec(`DELETE FROM activity_entries WHERE kind = 'prompt'`);
+
+      // --- Rename activity_entries → session_meta ---
+      // SQLite ALTER TABLE RENAME preserves data, indexes, and column definitions.
+      // However the original CREATE TABLE has a CHECK constraint on `kind` that
+      // restricts values to ('prompt', 'rosie-meta'). Phase 3 needs 'user'/'system'.
+      // Since we just purged all 'prompt' rows and are renaming anyway, recreate
+      // the table without the CHECK constraint to future-proof the column.
+
+      db.exec(`
+        CREATE TABLE session_meta (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          timestamp   TEXT NOT NULL,
+          kind        TEXT NOT NULL,
+          file        TEXT NOT NULL,
+          preview     TEXT,
+          byte_offset INTEGER DEFAULT 0,
+          uuid        TEXT,
+          quest       TEXT,
+          summary     TEXT,
+          title       TEXT,
+          status      TEXT,
+          entities    TEXT,
+          UNIQUE (timestamp, file, uuid)
+        );
+
+        INSERT INTO session_meta SELECT * FROM activity_entries;
+
+        DROP TABLE activity_entries;
+
+        CREATE INDEX IF NOT EXISTS idx_session_meta_timestamp ON session_meta(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_session_meta_kind ON session_meta(kind);
+        CREATE INDEX IF NOT EXISTS idx_session_meta_file ON session_meta(file);
+      `);
+
+      // --- Recreate FTS5 ---
+      // SQLite cannot rename FTS5 virtual tables. Drop old, create new.
+      db.exec(`
+        DROP TRIGGER IF EXISTS activity_fts_ai;
+        DROP TRIGGER IF EXISTS activity_fts_ad;
+        DROP TRIGGER IF EXISTS activity_fts_au;
+        DROP TABLE IF EXISTS activity_fts;
+
+        CREATE VIRTUAL TABLE session_meta_fts USING fts5(
+          quest, summary, title, entities, preview,
+          content='session_meta', content_rowid='id',
+          tokenize='porter unicode61 remove_diacritics 2'
+        );
+
+        INSERT INTO session_meta_fts(session_meta_fts) VALUES('rebuild');
+
+        INSERT INTO session_meta_fts(session_meta_fts, rank) VALUES('rank', 'bm25(10.0, 5.0, 8.0, 3.0, 1.0)');
+      `);
+
+      // Sync triggers for the new FTS table
+      db.exec(`
+        CREATE TRIGGER session_meta_fts_ai AFTER INSERT ON session_meta BEGIN
+          INSERT INTO session_meta_fts(rowid, quest, summary, title, entities, preview)
+          VALUES (new.id, new.quest, new.summary, new.title, new.entities, new.preview);
+        END;
+
+        CREATE TRIGGER session_meta_fts_ad AFTER DELETE ON session_meta BEGIN
+          INSERT INTO session_meta_fts(session_meta_fts, rowid, quest, summary, title, entities, preview)
+          VALUES ('delete', old.id, old.quest, old.summary, old.title, old.entities, old.preview);
+        END;
+
+        CREATE TRIGGER session_meta_fts_au AFTER UPDATE ON session_meta BEGIN
+          INSERT INTO session_meta_fts(session_meta_fts, rowid, quest, summary, title, entities, preview)
+          VALUES ('delete', old.id, old.quest, old.summary, old.title, old.entities, old.preview);
+          INSERT INTO session_meta_fts(rowid, quest, summary, title, entities, preview)
+          VALUES (new.id, new.quest, new.summary, new.title, new.entities, new.preview);
+        END;
+      `);
+
+      // --- Add type column to projects ---
+      db.exec(`ALTER TABLE projects ADD COLUMN type TEXT NOT NULL DEFAULT 'project'`);
+    },
+  },
+  {
+    version: 20,
+    description: 'Create rosie_usage table for per-invocation token tracking',
+    up: (db: Database): void => {
+      db.exec(`
+        CREATE TABLE rosie_usage (
+          id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_file TEXT NOT NULL,
+          subsystem    TEXT NOT NULL DEFAULT 'tracker',
+          outcome      TEXT,
+          reason       TEXT,
+          input_tokens  INTEGER,
+          output_tokens INTEGER,
+          cached_tokens INTEGER,
+          model        TEXT,
+          created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX idx_rosie_usage_session ON rosie_usage(session_file);
+        CREATE INDEX idx_rosie_usage_subsystem ON rosie_usage(subsystem);
+      `);
+    },
+  },
+  {
+    version: 21,
+    description: 'Remove stage CHECK constraint from projects (enforced in app code via VALID_STAGES)',
+    up: (db: Database): void => {
+      // SQLite cannot ALTER CHECK constraints — must recreate the table.
+      // The old CHECK excluded 'idea'; app-level validation is now canonical.
+      db.exec(`
+        CREATE TABLE projects_new (
+          id               TEXT PRIMARY KEY,
+          title            TEXT NOT NULL,
+          stage            TEXT NOT NULL,
+          status           TEXT,
+          icon             TEXT,
+          sort_order       INTEGER,
+          blocked_by       TEXT,
+          summary          TEXT,
+          category         TEXT,
+          branch           TEXT,
+          entities         TEXT,
+          created_at       TEXT NOT NULL,
+          updated_at       TEXT NOT NULL,
+          last_activity_at TEXT,
+          closed_at        TEXT,
+          parent_id        TEXT,
+          type             TEXT NOT NULL DEFAULT 'project'
+        );
+
+        INSERT INTO projects_new
+          SELECT id, title, stage, status, icon, sort_order, blocked_by,
+                 summary, category, branch, entities, created_at, updated_at,
+                 last_activity_at, closed_at, parent_id, type
+          FROM projects;
+
+        DROP TABLE projects;
+        ALTER TABLE projects_new RENAME TO projects;
+
+        CREATE INDEX IF NOT EXISTS idx_projects_parent ON projects(parent_id);
+      `);
+
+      // Recreate FK-dependent tables that reference projects
+      // project_sessions and project_files have FK to projects(id)
+      // but SQLite defers FK checks, so just recreate the index
     },
   },
 ];

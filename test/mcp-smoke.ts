@@ -37,19 +37,19 @@ check('instance exists', server.instance != null);
 // 2. DB + FTS5 table
 console.log('\n2. Database & FTS5');
 const db = getDb(dbPath);
-const ftsRow = db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='activity_fts'") as Record<string, unknown> | undefined;
-check('activity_fts table exists', ftsRow?.name === 'activity_fts');
+const ftsRow = db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='session_meta_fts'") as Record<string, unknown> | undefined;
+check('session_meta_fts table exists', ftsRow?.name === 'session_meta_fts');
 
-const triggerRows = db.all("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'activity_fts%'") as Array<Record<string, unknown>>;
+const triggerRows = db.all("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'session_meta_fts%'") as Array<Record<string, unknown>>;
 check('FTS5 sync triggers exist', triggerRows.length === 3, `found ${triggerRows.length} triggers`);
 
 // 3. Entry counts
 console.log('\n3. Data');
-const countRow = db.get('SELECT COUNT(*) as cnt FROM activity_entries') as Record<string, unknown>;
+const countRow = db.get('SELECT COUNT(*) as cnt FROM session_meta') as Record<string, unknown>;
 const totalEntries = countRow.cnt as number;
-check('activity_entries has data', totalEntries > 0, `${totalEntries} entries`);
+check('session_meta has data', totalEntries > 0, `${totalEntries} entries`);
 
-const rosieCount = db.get("SELECT COUNT(*) as cnt FROM activity_entries WHERE kind = 'rosie-meta'") as Record<string, unknown>;
+const rosieCount = db.get("SELECT COUNT(*) as cnt FROM session_meta WHERE kind = 'rosie-meta'") as Record<string, unknown>;
 check('rosie-meta entries exist', (rosieCount.cnt as number) > 0, `${rosieCount.cnt} rosie-meta entries`);
 
 // 4. FTS5 search
@@ -60,11 +60,11 @@ check('sanitizeFts5Query("session") produces valid query', searchQuery != null, 
 if (searchQuery) {
   const searchResults = db.all(`
     SELECT ae.id, ae.kind, ae.quest, ae.title,
-           bm25(activity_fts) as rank,
-           snippet(activity_fts, 1, '>>>', '<<<', '...', 32) as match_snippet
-    FROM activity_fts
-    JOIN activity_entries ae ON ae.id = activity_fts.rowid
-    WHERE activity_fts MATCH ?
+           bm25(session_meta_fts) as rank,
+           snippet(session_meta_fts, 1, '>>>', '<<<', '...', 32) as match_snippet
+    FROM session_meta_fts
+    JOIN session_meta ae ON ae.id = session_meta_fts.rowid
+    WHERE session_meta_fts MATCH ?
     ORDER BY rank
     LIMIT 5
   `, [searchQuery]) as Array<Record<string, unknown>>;
@@ -86,7 +86,7 @@ const sessions = db.all(`
          MAX(CASE WHEN kind = 'rosie-meta' THEN title END) as title,
          MAX(CASE WHEN kind = 'rosie-meta' THEN status END) as status,
          COUNT(*) as entry_count
-  FROM activity_entries
+  FROM session_meta
   GROUP BY file
   ORDER BY last_activity DESC
   LIMIT 5
@@ -106,7 +106,7 @@ if (sessions.length > 0) {
   const file = sessions[0]!.file as string;
   const context = db.all(`
     SELECT id, timestamp, kind, quest, summary, title
-    FROM activity_entries
+    FROM session_meta
     WHERE file = ?
     ORDER BY timestamp ASC
     LIMIT 5

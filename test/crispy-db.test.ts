@@ -88,30 +88,26 @@ describe('getDb', () => {
 // ============================================================================
 
 describe('migrations', () => {
-  it('creates activity_entries table', () => {
+  it('creates session_meta table', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
     // Verify table exists by inserting and querying
     db.run(
-      `INSERT INTO activity_entries (timestamp, kind, file, preview, byte_offset)
+      `INSERT INTO session_meta (timestamp, kind, file, preview, byte_offset)
        VALUES (?, ?, ?, ?, ?)`,
-      ['2025-01-01T00:00:00Z', 'prompt', '/test.jsonl', 'test', 0],
+      ['2025-01-01T00:00:00Z', 'rosie-meta', '/test.jsonl', 'test', 0],
     );
-    const row = db.get('SELECT COUNT(*) as cnt FROM activity_entries') as Record<string, unknown>;
+    const row = db.get('SELECT COUNT(*) as cnt FROM session_meta') as Record<string, unknown>;
     expect(row.cnt).toBe(1);
   });
 
-  it('creates scan_state table', () => {
+  it('drops scan_state table in migration v19', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
-    db.run(
-      'INSERT INTO scan_state (file_path, mtime, size, byte_offset) VALUES (?, ?, ?, ?)',
-      ['/test.jsonl', 1000, 500, 250],
-    );
-    const row = db.get('SELECT COUNT(*) as cnt FROM scan_state') as Record<string, unknown>;
-    expect(row.cnt).toBe(1);
+    const row = db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='scan_state'") as Record<string, unknown> | null;
+    expect(row).toBeNull();
   });
 
   it('creates _migrations tracking table', () => {
@@ -119,9 +115,9 @@ describe('migrations', () => {
     const db = getDb(dbPath);
 
     const rows = db.all('SELECT version FROM _migrations ORDER BY version') as Array<Record<string, unknown>>;
-    expect(rows.length).toBe(18);
+    expect(rows.length).toBe(21);
     const versions = rows.map(r => r.version);
-    expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]);
+    expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]);
   });
 
   it('runs migrations idempotently', () => {
@@ -134,7 +130,7 @@ describe('migrations', () => {
 
     const db = getDb(dbPath);
     const rows = db.all('SELECT version FROM _migrations ORDER BY version');
-    expect(rows.length).toBe(18);
+    expect(rows.length).toBe(21);
   });
 });
 
@@ -146,16 +142,16 @@ describe('legacy migration', () => {
   it('imports existing JSONL data on first DB open', () => {
     const jsonlPath = join(testDir, 'activity-index.jsonl');
     const entries = [
-      JSON.stringify({ timestamp: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'First', offset: 0, uuid: 'msg-1' }),
-      JSON.stringify({ timestamp: '2025-01-15T11:00:00Z', kind: 'prompt', file: '/b.jsonl', preview: 'Second', offset: 100 }),
+      JSON.stringify({ timestamp: '2025-01-15T10:00:00Z', kind: 'rosie-meta', file: '/a.jsonl', preview: 'First', offset: 0, uuid: 'msg-1' }),
+      JSON.stringify({ timestamp: '2025-01-15T11:00:00Z', kind: 'rosie-meta', file: '/b.jsonl', preview: 'Second', offset: 100 }),
     ];
     fs.writeFileSync(jsonlPath, entries.join('\n') + '\n');
 
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
-    // Data should be in the DB
-    const rows = db.all('SELECT timestamp, file, preview, uuid FROM activity_entries ORDER BY timestamp');
+    // Data should be in the DB (migrated to session_meta, prompt rows purged by v19)
+    const rows = db.all('SELECT timestamp, file, preview, uuid FROM session_meta ORDER BY timestamp');
     expect(rows.length).toBe(2);
     expect((rows[0] as Record<string, unknown>).preview).toBe('First');
     expect((rows[0] as Record<string, unknown>).uuid).toBe('msg-1');
@@ -167,7 +163,7 @@ describe('legacy migration', () => {
     expect(fs.existsSync(jsonlPath + '.bak')).toBe(true);
   });
 
-  it('imports existing scan-state.json on first DB open', () => {
+  it('imports existing scan-state.json on first DB open (then drops scan_state in v19)', () => {
     const scanPath = join(testDir, 'scan-state.json');
     const scanState = {
       version: 1,
@@ -181,12 +177,11 @@ describe('legacy migration', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
-    const rows = db.all('SELECT file_path, mtime, size, byte_offset FROM scan_state ORDER BY file_path');
-    expect(rows.length).toBe(2);
-    expect((rows[0] as Record<string, unknown>).file_path).toBe('/a.jsonl');
-    expect((rows[0] as Record<string, unknown>).byte_offset).toBe(25);
+    // scan_state table is dropped by v19 — verify it no longer exists
+    const tableExists = db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='scan_state'") as Record<string, unknown> | null;
+    expect(tableExists).toBeNull();
 
-    // scan-state.json should be renamed to .bak
+    // scan-state.json should be renamed to .bak (migration v2 runs before v19)
     expect(fs.existsSync(scanPath)).toBe(false);
     expect(fs.existsSync(scanPath + '.bak')).toBe(true);
   });
@@ -194,16 +189,16 @@ describe('legacy migration', () => {
   it('skips malformed JSONL lines during migration', () => {
     const jsonlPath = join(testDir, 'activity-index.jsonl');
     const lines = [
-      JSON.stringify({ timestamp: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'Valid', offset: 0 }),
+      JSON.stringify({ timestamp: '2025-01-15T10:00:00Z', kind: 'rosie-meta', file: '/a.jsonl', preview: 'Valid', offset: 0 }),
       '{ not valid json',
-      JSON.stringify({ timestamp: '2025-01-15T12:00:00Z', kind: 'prompt', file: '/c.jsonl', preview: 'Also valid', offset: 0 }),
+      JSON.stringify({ timestamp: '2025-01-15T12:00:00Z', kind: 'rosie-meta', file: '/c.jsonl', preview: 'Also valid', offset: 0 }),
     ];
     fs.writeFileSync(jsonlPath, lines.join('\n') + '\n');
 
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
-    const rows = db.all('SELECT preview FROM activity_entries ORDER BY timestamp');
+    const rows = db.all('SELECT preview FROM session_meta ORDER BY timestamp');
     expect(rows.length).toBe(2);
     expect((rows[0] as Record<string, unknown>).preview).toBe('Valid');
     expect((rows[1] as Record<string, unknown>).preview).toBe('Also valid');
@@ -214,14 +209,14 @@ describe('legacy migration', () => {
     const bakPath = jsonlPath + '.bak';
 
     // Create both .jsonl and .bak — simulates a previous partial migration
-    fs.writeFileSync(jsonlPath, JSON.stringify({ timestamp: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'New', offset: 0 }) + '\n');
+    fs.writeFileSync(jsonlPath, JSON.stringify({ timestamp: '2025-01-15T10:00:00Z', kind: 'rosie-meta', file: '/a.jsonl', preview: 'New', offset: 0 }) + '\n');
     fs.writeFileSync(bakPath, 'old backup');
 
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
     // The .jsonl should NOT have been imported (since .bak exists)
-    const rows = db.all('SELECT * FROM activity_entries');
+    const rows = db.all('SELECT * FROM session_meta');
     expect(rows.length).toBe(0);
 
     // Original .jsonl should still exist (not renamed)
@@ -251,34 +246,34 @@ describe('FTS5 support', () => {
 });
 
 // ============================================================================
-// FTS5 Migration (v7) — activity_fts
+// FTS5 Migration (v7) — session_meta_fts
 // ============================================================================
 
-describe('FTS5 activity_fts (migration v7)', () => {
-  it('creates the activity_fts virtual table', () => {
+describe('FTS5 session_meta_fts (migration v7)', () => {
+  it('creates the session_meta_fts virtual table', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
     // Verify table exists by querying sqlite_master
     const row = db.get(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='activity_fts'",
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='session_meta_fts'",
     ) as Record<string, unknown> | undefined;
     expect(row).toBeDefined();
-    expect(row!.name).toBe('activity_fts');
+    expect(row!.name).toBe('session_meta_fts');
   });
 
-  it('syncs FTS5 on INSERT into activity_entries', () => {
+  it('syncs FTS5 on INSERT into session_meta', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
     db.run(
-      `INSERT INTO activity_entries (timestamp, kind, file, preview, quest, summary, title, entities)
+      `INSERT INTO session_meta (timestamp, kind, file, preview, quest, summary, title, entities)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       ['2025-06-01T10:00:00Z', 'rosie-meta', '/test.jsonl', 'test preview',
        'implement dark mode', 'added dark theme support', 'Dark Mode', 'theme.ts, colors.css'],
     );
 
-    const rows = db.all("SELECT * FROM activity_fts WHERE activity_fts MATCH 'dark'");
+    const rows = db.all("SELECT * FROM session_meta_fts WHERE session_meta_fts MATCH 'dark'");
     expect(rows.length).toBe(1);
   });
 
@@ -288,23 +283,23 @@ describe('FTS5 activity_fts (migration v7)', () => {
 
     // Insert entries with varying relevance to "authentication"
     db.run(
-      `INSERT INTO activity_entries (timestamp, kind, file, preview, quest, summary, title)
+      `INSERT INTO session_meta (timestamp, kind, file, preview, quest, summary, title)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       ['2025-06-01T10:00:00Z', 'rosie-meta', '/a.jsonl', 'some preview',
        'implement authentication', 'set up auth flow', 'Authentication Setup'],
     );
     db.run(
-      `INSERT INTO activity_entries (timestamp, kind, file, preview, quest, summary, title)
+      `INSERT INTO session_meta (timestamp, kind, file, preview, quest, summary, title)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       ['2025-06-01T11:00:00Z', 'prompt', '/b.jsonl',
        'mentioned authentication in passing', null, null, null],
     );
 
     const rows = db.all(`
-      SELECT ae.id, bm25(activity_fts) as rank
-      FROM activity_fts
-      JOIN activity_entries ae ON ae.id = activity_fts.rowid
-      WHERE activity_fts MATCH 'authentication'
+      SELECT ae.id, bm25(session_meta_fts) as rank
+      FROM session_meta_fts
+      JOIN session_meta ae ON ae.id = session_meta_fts.rowid
+      WHERE session_meta_fts MATCH 'authentication'
       ORDER BY rank
     `) as Array<Record<string, unknown>>;
 
@@ -318,12 +313,12 @@ describe('FTS5 activity_fts (migration v7)', () => {
     const db = getDb(dbPath);
 
     db.run(
-      `INSERT INTO activity_entries (timestamp, kind, file, summary)
+      `INSERT INTO session_meta (timestamp, kind, file, summary)
        VALUES (?, ?, ?, ?)`,
       ['2025-06-01T10:00:00Z', 'rosie-meta', '/test.jsonl', 'running the test suite'],
     );
 
-    const rows = db.all("SELECT * FROM activity_fts WHERE activity_fts MATCH 'run'");
+    const rows = db.all("SELECT * FROM session_meta_fts WHERE session_meta_fts MATCH 'run'");
     expect(rows.length).toBe(1);
   });
 });

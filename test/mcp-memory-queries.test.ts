@@ -61,7 +61,7 @@ function insertEntry(opts: {
 }): void {
   const db = getDb(dbPath);
   db.run(
-    `INSERT INTO activity_entries (timestamp, kind, file, preview, quest, summary, title, status, entities)
+    `INSERT INTO session_meta (timestamp, kind, file, preview, quest, summary, title, status, entities)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       opts.timestamp, opts.kind, opts.file,

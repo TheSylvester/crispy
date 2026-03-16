@@ -28,6 +28,24 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => {
   };
 });
 
+// Mock session-manager (findSession used inside the recall handler)
+vi.mock('../src/core/session-manager.js', () => ({
+  findSession: vi.fn().mockReturnValue({ projectPath: '/mock/project' }),
+}));
+
+// Mock model-utils (parseModelOption used inside the recall handler)
+vi.mock('../src/core/model-utils.js', () => ({
+  parseModelOption: vi.fn().mockReturnValue({ vendor: 'claude', model: '' }),
+}));
+
+// Mock rosie logging (side-effect imports used inside the recall handler)
+vi.mock('../src/core/rosie/index.js', () => ({
+  pushRosieLog: vi.fn(),
+}));
+vi.mock('../src/core/rosie/event-log.js', () => ({
+  pushEventLog: vi.fn(),
+}));
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -76,7 +94,7 @@ describe('external MCP server — recall tool (relay pattern)', () => {
 
   it('creates a server with a recall tool', () => {
     const dispatch = createMockDispatch();
-    const server = createExternalServer(dispatch, () => undefined, stubServerPaths);
+    const server = createExternalServer(dispatch, { sessionId: 'session-1', vendor: 'claude' }, stubServerPaths);
     expect(server).toBeDefined();
   });
 
@@ -86,7 +104,7 @@ describe('external MCP server — recall tool (relay pattern)', () => {
       text: 'You worked on JWT authentication in the Auth System session.',
     };
     const dispatch = createMockDispatch(mockResult);
-    createExternalServer(dispatch, () => ({ sessionId: 'session-abc', vendor: 'claude' }), stubServerPaths);
+    createExternalServer(dispatch, { sessionId: 'session-abc', vendor: 'claude' }, stubServerPaths);
 
     const recallTool = await getRecallTool();
     const result = await recallTool.handler({ query: 'authentication' });
@@ -98,6 +116,7 @@ describe('external MCP server — recall tool (relay pattern)', () => {
     // Core assertions: child gets MCP tools and sufficient timeout
     expect(callArgs.parentSessionId).toBe('session-abc');
     expect(callArgs.vendor).toBe('claude');
+    expect(callArgs.parentVendor).toBe('claude');
     expect(callArgs.settings.model).toBe('haiku');
     expect(callArgs.settings.permissionMode).toBe('bypassPermissions');
     expect(callArgs.settings.allowDangerouslySkipPermissions).toBe(true);
@@ -126,23 +145,24 @@ describe('external MCP server — recall tool (relay pattern)', () => {
     expect(content[0].text).toBe('You worked on JWT authentication in the Auth System session.');
   });
 
-  it('returns error message when no active session', async () => {
-    const dispatch = createMockDispatch();
-    createExternalServer(dispatch, () => undefined, stubServerPaths);
-
-    const recallTool = await getRecallTool();
-    const result = await recallTool.handler({ query: 'anything' });
-    const content = (result as { content: Array<{ text: string }> }).content;
-    expect(content[0].text).toContain('no active session');
-  });
-
   it('returns timeout message when dispatch returns null', async () => {
     const dispatch = createMockDispatch(null);
-    createExternalServer(dispatch, () => ({ sessionId: 'session-123', vendor: 'claude' }), stubServerPaths);
+    createExternalServer(dispatch, { sessionId: 'session-123', vendor: 'claude' }, stubServerPaths);
 
     const recallTool = await getRecallTool();
     const result = await recallTool.handler({ query: 'anything' });
     const content = (result as { content: Array<{ text: string }> }).content;
     expect(content[0].text).toContain('timed out');
+  });
+
+  it('returns error message when dispatch throws', async () => {
+    const dispatch = createMockDispatch();
+    (dispatch.dispatchChild as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('dispatch failed'));
+    createExternalServer(dispatch, { sessionId: 'session-456', vendor: 'claude' }, stubServerPaths);
+
+    const recallTool = await getRecallTool();
+    const result = await recallTool.handler({ query: 'anything' });
+    const content = (result as { content: Array<{ text: string }> }).content;
+    expect(content[0].text).toContain('dispatch failed');
   });
 });

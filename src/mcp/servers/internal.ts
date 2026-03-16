@@ -13,6 +13,7 @@
  * @module mcp/servers/internal
  */
 
+import { randomUUID } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
@@ -20,8 +21,8 @@ import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPat
 import type { MessageSearchResult } from '../memory-queries.js';
 import { pushEventLog } from '../../core/rosie/event-log.js';
 
-import { writeTrackerResults, recordTrackerOutcome, getProjectTitle } from '../../core/rosie/tracker/db-writer.js';
-import { VALID_STAGES } from '../../core/rosie/tracker/types.js';
+import { writeTrackerResults, getProjectTitle, mergeProjects, getProjectTextsForEmbedding } from '../../core/rosie/tracker/db-writer.js';
+import { VALID_STAGES, VALID_TYPES } from '../../core/rosie/tracker/types.js';
 import type { TrackerBlock } from '../../core/rosie/tracker/types.js';
 
 // ============================================================================
@@ -39,13 +40,17 @@ type McpToolResult = { content: Array<{ type: 'text'; text: string }>; isError?:
 
 /** Decision record appended to the sidecar file for parent-process observability. */
 export interface TrackerDecision {
-  tool: 'create_project' | 'track_project' | 'mark_trivial';
-  action?: 'created' | 'updated';
+  tool: 'create_project' | 'track_project' | 'mark_trivial' | 'merge_project';
+  action?: 'created' | 'updated' | 'merged';
   title?: string;
   stage?: string;
   status?: string;
   icon?: string;
   reason?: string;
+  /** For merge_project: the ID that was kept. */
+  keep_id?: string;
+  /** For merge_project: the ID that was removed. */
+  remove_id?: string;
 }
 
 /**
@@ -90,6 +95,55 @@ function appendDecision(decision: TrackerDecision): void {
     appendFileSync(file, JSON.stringify(decision) + '\n');
   } catch {
     // Best-effort — don't break the tool handler if the file can't be written
+  }
+}
+
+// ============================================================================
+// Post-write Semantic Validation
+// ============================================================================
+
+/** Cosine similarity threshold for duplicate warnings. */
+const SIMILARITY_THRESHOLD = 0.85;
+
+/**
+ * Check if a newly created project is semantically similar to existing projects.
+ * Returns warning strings for any matches above the threshold.
+ * Fails silently (returns []) if embeddings are unavailable — never blocks creates.
+ */
+async function checkSemanticDuplicates(title: string, summary: string, newProjectId?: string): Promise<string[]> {
+  try {
+    const existing = getProjectTextsForEmbedding();
+    // Need at least 2 projects (the new one is already in the DB)
+    if (existing.length < 2) return [];
+
+    // Lazy-import embedder to avoid pulling in llama deps at module load
+    const { embedBatch } = await import('../../core/recall/embedder.js');
+    const { computeNorm, cosineSimilarity } = await import('../../core/recall/quantize.js');
+
+    const newText = summary ? `${title} ${summary}` : title;
+    const allTexts = [newText, ...existing.map(p => p.text)];
+    const embeddings = await embedBatch(allTexts);
+
+    const newEmb = embeddings[0]!;
+    const newNorm = computeNorm(newEmb);
+    const warnings: string[] = [];
+
+    for (let i = 1; i < embeddings.length; i++) {
+      const proj = existing[i - 1]!;
+      // Skip comparing against itself (the just-created project is in the list)
+      if (newProjectId && proj.id === newProjectId) continue;
+
+      const sim = cosineSimilarity(newEmb, embeddings[i]!, newNorm, computeNorm(embeddings[i]!));
+      if (sim >= SIMILARITY_THRESHOLD) {
+        warnings.push(`⚠️ Similar project exists: '${proj.title}' (id: ${proj.id}, similarity: ${sim.toFixed(3)}). Call merge_project to combine if these are the same.`);
+      }
+    }
+
+    return warnings;
+  } catch (err) {
+    // Embedding failure must not block creates
+    console.error('[internal-mcp] semantic validation skipped:', err instanceof Error ? err.message : String(err));
+    return [];
   }
 }
 
@@ -300,7 +354,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
     {
       query: z.string().describe('Search query — use OR to broaden, "quoted phrases" for exact matches, prefix* for partial terms. Prefer short keywords over long natural-language phrases.'),
       limit: z.number().optional().default(20).describe('Maximum results to return (default 20)'),
-      kind: z.enum(['prompt', 'rosie-meta']).optional().describe('Filter by entry kind: "rosie-meta" for AI-generated summaries (richer), "prompt" for raw user prompts'),
+      kind: z.enum(['rosie-meta']).optional().describe('Filter by entry kind: "rosie-meta" for AI-generated summaries'),
       since: z.string().optional().describe('ISO timestamp — only return results after this time (e.g. "2026-03-01T00:00:00Z")'),
       before: z.string().optional().describe('ISO timestamp — only return results before this time'),
     },
@@ -342,7 +396,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
     'Get the activity index for a specific session — returns timestamped metadata entries (titles, quests, summaries, entities) in chronological order. This is structured metadata, NOT the raw conversation. Use read_turn to get actual conversation content.',
     {
       file: z.string().describe('Session transcript file path (from search_sessions or list_sessions results)'),
-      kind: z.enum(['prompt', 'rosie-meta']).optional().describe('Filter by entry kind'),
+      kind: z.enum(['rosie-meta']).optional().describe('Filter by entry kind'),
     },
     async (args) => {
       console.error(`[internal-mcp] session_context: file="${args.file}" kind=${args.kind ?? 'all'}`);
@@ -421,10 +475,12 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
     'Create a new project based on this session\'s work. Use for NEW work that doesn\'t match any existing project.',
     {
       title: z.string().describe('Short, stable project title. Keep consistent across sessions.'),
-      stage: z.enum(VALID_STAGES).describe('Project stage: active (in progress), planning (designing), ready (ready to start), committed (scheduled), paused (on hold), archived (done/abandoned).'),
+      stage: z.enum(VALID_STAGES).describe('Project stage: active (in progress), planning (designing), ready (ready to start), committed (scheduled), paused (on hold), archived (done/abandoned), idea (not yet started).'),
       status: z.string().describe('Freeform status line — what is true RIGHT NOW in 1-2 sentences.'),
       icon: z.string().describe('Single emoji representing the project domain (e.g. 🔧, 📊, 🎨).'),
       summary: z.string().describe('Stable description of what this project IS. Set once, rarely changed.'),
+      type: z.enum(VALID_TYPES).default('project').describe('Project type: project (default), task (sub-item of a project), idea (not yet a project).'),
+      parent_id: z.string().optional().describe('Parent project UUID. Required when type is \'task\'.'),
       blocked_by: z.string().optional().describe('Why it\'s blocked (only if stage is \'paused\', otherwise omit).'),
       branch: z.string().optional().describe('Git branch name if applicable.'),
       entities: z.array(z.string()).describe('Top 5-10 key entities: file paths, branch names, function names, concepts. Used for matching future sessions.'),
@@ -434,6 +490,14 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       })).optional().describe('Non-code artifacts only: plans, specs, design docs. NOT source code. Omit if none.'),
     },
     async (args) => {
+      // Validate: type='task' requires parent_id
+      if (args.type === 'task' && !args.parent_id) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: "type 'task' requires parent_id — provide the UUID of the parent project." }) }],
+          isError: true,
+        };
+      }
+
       const sessionFile = serverOptions.sessionFile ?? process.env.CRISPY_TRACKER_SESSION_FILE;
       if (!sessionFile) {
         return {
@@ -442,9 +506,11 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
         };
       }
 
+      const projectId = randomUUID();
       const block: TrackerBlock = {
         project: {
           action: 'create',
+          id: projectId,
           title: args.title,
           stage: args.stage,
           status: args.status,
@@ -453,6 +519,8 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
           summary: args.summary,
           branch: args.branch ?? '',
           entities: JSON.stringify(args.entities),
+          type: args.type,
+          parent_id: args.parent_id,
         },
         sessionRef: buildSessionRef(),
         files: (args.files ?? []).map((f) => ({ path: f.path, note: f.note })),
@@ -460,12 +528,19 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
 
       try {
         writeTrackerResults([block], sessionFile);
-        console.error(`[internal-mcp] create_project: created "${args.title}" [${args.stage}]`);
+        console.error(`[internal-mcp] create_project: created "${args.title}" [${args.stage}] type=${args.type}`);
         appendDecision({ tool: 'create_project', action: 'created', title: args.title, stage: args.stage, status: args.status, icon: args.icon });
-        recordTrackerOutcome(sessionFile, 'tracked', 1, args.title);
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action: 'created', project: args.title }) }],
-        };
+
+        // Post-write semantic validation — warn if similar project exists
+        const warnings = await checkSemanticDuplicates(args.title, args.summary, projectId);
+        const result: Record<string, unknown> = { status: 'ok', action: 'created', project: args.title, projectId };
+        const content: Array<{ type: 'text'; text: string }> = [
+          { type: 'text' as const, text: JSON.stringify(result) },
+        ];
+        if (warnings.length > 0) {
+          content.push({ type: 'text' as const, text: warnings.join('\n') });
+        }
+        return { content };
       } catch (err) {
         console.error('[internal-mcp] create_project FAIL:', err instanceof Error ? err.message : String(err));
         return {
@@ -523,7 +598,6 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
         const projectTitle = getProjectTitle(args.project_id) ?? args.project_id;
         console.error(`[internal-mcp] track_project: updated "${projectTitle}"`);
         appendDecision({ tool: 'track_project', action: 'updated', title: projectTitle, stage: args.stage, status: args.status });
-        recordTrackerOutcome(sessionFile, 'tracked', 1, projectTitle);
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action: 'updated', projectId: args.project_id }) }],
         };
@@ -549,14 +623,55 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
     async (args) => {
       console.error(`[internal-mcp] mark_trivial: "${args.reason}"`);
       appendDecision({ tool: 'mark_trivial', reason: args.reason });
-      // Persist trivial outcome to DB
-      const sessionFile = serverOptions.sessionFile ?? process.env.CRISPY_TRACKER_SESSION_FILE;
-      if (sessionFile) {
-        recordTrackerOutcome(sessionFile, 'trivial', 1, args.reason);
-      }
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', trivial: true, reason: args.reason }) }],
       };
+    },
+  );
+
+  // ------------------------------------------------------------------
+  // merge_project — Merge two projects into one
+  // ------------------------------------------------------------------
+  server.tool(
+    'merge_project',
+    'Merge two projects that represent the same work. Keeps one, removes the other. Reparents child tasks, migrates sessions and files.',
+    {
+      keep_id: z.string().describe('UUID of the project to keep (survivor).'),
+      remove_id: z.string().describe('UUID of the project to remove (merged into survivor).'),
+    },
+    async (args) => {
+      if (args.keep_id === args.remove_id) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: 'keep_id and remove_id must be different' }) }],
+          isError: true,
+        };
+      }
+
+      const keepTitle = getProjectTitle(args.keep_id);
+      const removeTitle = getProjectTitle(args.remove_id);
+
+      if (!keepTitle || !removeTitle) {
+        const missing = !keepTitle ? args.keep_id : args.remove_id;
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: `Project not found: ${missing}` }) }],
+          isError: true,
+        };
+      }
+
+      try {
+        mergeProjects(args.keep_id, args.remove_id);
+        console.error(`[internal-mcp] merge_project: merged "${removeTitle}" → "${keepTitle}"`);
+        appendDecision({ tool: 'merge_project', action: 'merged', title: keepTitle, keep_id: args.keep_id, remove_id: args.remove_id });
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action: 'merged', kept: keepTitle, removed: removeTitle }) }],
+        };
+      } catch (err) {
+        console.error('[internal-mcp] merge_project FAIL:', err instanceof Error ? err.message : String(err));
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: `merge_project failed: ${err instanceof Error ? err.message : String(err)}` }) }],
+          isError: true,
+        };
+      }
     },
   );
 

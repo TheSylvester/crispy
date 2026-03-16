@@ -11,8 +11,11 @@
 // Enums
 // ============================================================================
 
-export const VALID_STAGES = ['active', 'planning', 'ready', 'committed', 'paused', 'archived'] as const;
+export const VALID_STAGES = ['active', 'planning', 'ready', 'committed', 'paused', 'archived', 'idea'] as const;
 export type ProjectStage = (typeof VALID_STAGES)[number];
+
+export const VALID_TYPES = ['project', 'task', 'idea'] as const;
+export type ProjectType = (typeof VALID_TYPES)[number];
 
 
 // ============================================================================
@@ -21,6 +24,7 @@ export type ProjectStage = (typeof VALID_STAGES)[number];
 
 export interface ProjectCreate {
   action: 'create';
+  id?: string;           // optional: caller-supplied UUID (generated if omitted)
   title: string;
   stage: ProjectStage;
   status: string;        // freeform narrative
@@ -29,6 +33,8 @@ export interface ProjectCreate {
   summary: string;
   branch: string;
   entities: string;      // JSON array string
+  type?: ProjectType;    // defaults to 'project'
+  parent_id?: string;    // required when type === 'task'
 }
 
 export interface ProjectTrack {

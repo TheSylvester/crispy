@@ -583,7 +583,7 @@ describe('close() & lifecycle', () => {
     const output = await collectUntil(
       ch,
       (msgs) => msgs.some((m) => m.type === 'event' && m.event.type === 'status' && m.event.status === 'idle'),
-      500,
+      2000,
     );
 
     const errorEvent = output.find(

@@ -1,8 +1,8 @@
 /**
  * Activity Index — Persistence Layer for User Activity Data
  *
- * Owns activity entry CRUD, scan state, session lineage, rosie metadata
- * cache, and pruning for ~/.crispy/. The underlying storage is a SQLite
+ * Owns session metadata CRUD, session lineage, rosie metadata cache,
+ * and pruning for ~/.crispy/. The underlying storage is a SQLite
  * database (crispy.db) managed by crispy-db.ts.
  *
  * Message-level recall storage lives in recall/message-store.ts.
@@ -61,31 +61,6 @@ export interface ActivityIndexEntry {
   entities?: string;
 }
 
-/**
- * Per-file scan progress.
- *
- * Tracks mtime/size/offset for incremental scanning. If the file shrinks
- * (truncated), the scanner resets offset to 0 and re-scans.
- */
-export interface ScanFileState {
-  /** File mtime in milliseconds. */
-  mtime: number;
-  /** File size in bytes. */
-  size: number;
-  /** Byte offset where scanning left off. */
-  offset: number;
-}
-
-/**
- * Root scan state persisted to the scan_state table.
- *
- * Version field for API compatibility. Files map is keyed by
- * absolute file path.
- */
-export interface ScanState {
-  version: 1;
-  files: Record<string, ScanFileState>;
-}
 
 // ============================================================================
 // Paths
@@ -166,70 +141,6 @@ function persistLogEntry(entry: RosieLogEntry): void {
 registerLogPersister(persistLogEntry);
 
 // ============================================================================
-// Scan State CRUD
-// ============================================================================
-
-/**
- * Load scan state from the database.
- *
- * Returns default { version: 1, files: {} } if:
- * - Database doesn't exist yet
- * - Table is empty
- * - Any error occurs
- *
- * Never throws — always returns a valid ScanState.
- */
-export function loadScanState(): ScanState {
-  const defaultState: ScanState = { version: 1, files: {} };
-
-  try {
-    const db = getDb(dbPath());
-    const rows = db.all('SELECT file_path, mtime, size, byte_offset FROM scan_state');
-    const files: Record<string, ScanFileState> = {};
-    for (const row of rows) {
-      const r = row as Record<string, unknown>;
-      files[r.file_path as string] = {
-        mtime: r.mtime as number,
-        size: r.size as number,
-        offset: r.byte_offset as number,
-      };
-    }
-    return { version: 1, files };
-  } catch {
-    return defaultState;
-  }
-}
-
-/**
- * Save scan state to the database.
- *
- * Replaces all existing scan state rows in a single transaction.
- */
-export function saveScanState(state: ScanState): void {
-  ensureCrispyDir();
-  const db = getDb(dbPath());
-
-  db.exec('BEGIN');
-  try {
-    db.exec('DELETE FROM scan_state');
-    const stmt = db.prepare(
-      'INSERT INTO scan_state (file_path, mtime, size, byte_offset) VALUES (?, ?, ?, ?)',
-    );
-    try {
-      for (const [path, s] of Object.entries(state.files)) {
-        stmt.run([path, s.mtime, s.size, s.offset]);
-      }
-    } finally {
-      stmt.finalize();
-    }
-    db.exec('COMMIT');
-  } catch (e) {
-    db.exec('ROLLBACK');
-    throw e;
-  }
-}
-
-// ============================================================================
 // Rosie Metadata Cache
 // ============================================================================
 
@@ -281,7 +192,7 @@ export function appendActivityEntries(entries: ActivityIndexEntry[]): void {
   db.exec('BEGIN');
   try {
     const stmt = db.prepare(
-      `INSERT OR IGNORE INTO activity_entries
+      `INSERT OR IGNORE INTO session_meta
        (timestamp, kind, file, preview, byte_offset, uuid, quest, summary, title, status, entities)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
@@ -353,7 +264,7 @@ export function queryActivity(
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     const sql = `SELECT timestamp, kind, file, preview, byte_offset, uuid, quest, summary, title, status, entities
-                 FROM activity_entries ${where} ORDER BY timestamp ASC`;
+                 FROM session_meta ${where} ORDER BY timestamp ASC`;
 
     const rows = db.all(sql, params.length > 0 ? params : undefined);
     return rows.map(rowToEntry);
@@ -396,7 +307,7 @@ export function getAllRosieMetas(filePath: string): Pick<ActivityIndexEntry, 'ti
   const db = getDb(dbPath());
   const rows = db.all(`
     SELECT timestamp, quest, title, summary, status
-    FROM activity_entries
+    FROM session_meta
     WHERE kind = 'rosie-meta' AND file = ?
     ORDER BY timestamp ASC
   `, [filePath]) as Array<Record<string, unknown>>;
@@ -415,7 +326,7 @@ export function getAllRosieMetas(filePath: string): Pick<ActivityIndexEntry, 'ti
 // ============================================================================
 
 /**
- * Check if any of the given UUIDs exist in activity_entries under a different file.
+ * Check if any of the given UUIDs exist in session_meta under a different file.
  * Returns the parent file path and the matching UUID, or null if no match.
  * Used by the scanner to detect fork lineage before first scan of a new file.
  */
@@ -427,7 +338,7 @@ export function findParentByUuids(
     const db = getDb(dbPath());
     for (const uuid of uuids) {
       const row = db.get(
-        'SELECT file FROM activity_entries WHERE uuid = ? AND file != ? LIMIT 1',
+        'SELECT file FROM session_meta WHERE uuid = ? AND file != ? LIMIT 1',
         [uuid, excludeFile],
       );
       if (row) {
@@ -451,7 +362,7 @@ export function getFileUuids(file: string): Set<string> {
   try {
     const db = getDb(dbPath());
     const rows = db.all(
-      'SELECT uuid FROM activity_entries WHERE file = ? AND uuid IS NOT NULL',
+      'SELECT uuid FROM session_meta WHERE file = ? AND uuid IS NOT NULL',
       [file],
     );
     return new Set(rows.map((r) => (r as Record<string, unknown>).uuid as string));
@@ -577,11 +488,11 @@ export function deleteDuplicateEntries(
   try {
     const db = getDb(dbPath());
     db.run(`
-      DELETE FROM activity_entries
+      DELETE FROM session_meta
       WHERE file = ?
         AND uuid IS NOT NULL
         AND uuid IN (
-          SELECT uuid FROM activity_entries
+          SELECT uuid FROM session_meta
           WHERE file = ? AND uuid IS NOT NULL
         )
     `, [childFile, parentFile]);
@@ -598,8 +509,8 @@ export function deleteDuplicateEntries(
  * Remove all DB rows referencing file paths that no longer exist on disk.
  *
  * Called at the end of each scan cycle with the set of live file paths from
- * listAllSessions(). Cleans activity_entries (FTS5 auto-cascades via trigger),
- * scan_state, and session_lineage in a single transaction.
+ * listAllSessions(). Cleans session_meta (FTS5 auto-cascades via trigger)
+ * and session_lineage in a single transaction.
  *
  * Never throws — returns 0 on error with console.error.
  */
@@ -609,11 +520,7 @@ export function pruneDeletedFiles(livePaths: Set<string>): number {
 
     // Collect all file paths referenced in the DB
     const dbPaths = new Set<string>();
-    const scanRows = db.all('SELECT file_path FROM scan_state');
-    for (const r of scanRows) {
-      dbPaths.add((r as Record<string, unknown>).file_path as string);
-    }
-    const activityRows = db.all('SELECT DISTINCT file FROM activity_entries');
+    const activityRows = db.all('SELECT DISTINCT file FROM session_meta');
     for (const r of activityRows) {
       dbPaths.add((r as Record<string, unknown>).file as string);
     }
@@ -634,21 +541,18 @@ export function pruneDeletedFiles(livePaths: Set<string>): number {
 
     db.exec('BEGIN');
     try {
-      const delActivity = db.prepare('DELETE FROM activity_entries WHERE file = ?');
-      const delScan = db.prepare('DELETE FROM scan_state WHERE file_path = ?');
+      const delActivity = db.prepare('DELETE FROM session_meta WHERE file = ?');
       const delLineage = db.prepare('DELETE FROM session_lineage WHERE session_file = ?');
       const nullParent = db.prepare('UPDATE session_lineage SET parent_file = NULL WHERE parent_file = ?');
 
       try {
         for (const p of stalePaths) {
           delActivity.run([p]);
-          delScan.run([p]);
           delLineage.run([p]);
           nullParent.run([p]);
         }
       } finally {
         delActivity.finalize();
-        delScan.finalize();
         delLineage.finalize();
         nullParent.finalize();
       }
