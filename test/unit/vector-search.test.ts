@@ -154,6 +154,7 @@ describe('dualPathSearch', () => {
       expect.any(Number),
       'proj1',
       'sess1',
+      undefined,
     );
     expect(mockSearchSemantic).toHaveBeenCalledWith(
       expect.any(Int8Array),
