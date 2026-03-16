@@ -1148,7 +1148,16 @@ export class ClaudeAgentAdapter implements AgentAdapter {
 
     if (this._status !== 'active') this.emitStatus('active');
 
-    // --- Context usage extraction ---
+    // Sub-agent assistant messages must NOT update _contextUsage — their usage
+    // and model reflect the child session (e.g. Haiku 200k), not the parent.
+    // Without this guard, a Haiku sub-agent message arriving before the main
+    // Opus message locks contextWindow to 200k for the entire turn.
+    if (msg.parent_tool_use_id !== null) {
+      this.emitEntry(msg);
+      return;
+    }
+
+    // --- Context usage extraction (top-level messages only) ---
     // Assistant messages carry per-turn usage snapshot (not incremental).
     // Extract message.usage for token breakdown.
     const betaUsage = (msg.message as unknown as Record<string, unknown>)?.usage as Record<string, number> | undefined;
@@ -1160,11 +1169,12 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         cacheRead: betaUsage.cache_read_input_tokens ?? 0,
       };
       const totalTokens = tokens.input + tokens.output + tokens.cacheCreation + tokens.cacheRead;
-      // Prefer the model from the message itself (always present on assistant
-      // messages) over this.options.model which may be undefined for resumed
-      // sessions before the SDK init message arrives.
+      // Always recalculate contextWindow from the current message's model.
+      // Using ?? to preserve a prior value caused stale 200k windows when the
+      // first message in a turn happened to be from a sub-agent (now guarded
+      // above), but even for top-level messages we want the latest model's window.
       const msgModel = (msg.message as unknown as Record<string, unknown>)?.model as string | undefined;
-      const cw = this._contextUsage?.contextWindow ?? getContextWindowTokens('claude', msgModel ?? this.options.model);
+      const cw = getContextWindowTokens('claude', msgModel ?? this.options.model);
       this._contextUsage = {
         tokens,
         totalTokens,
@@ -1172,12 +1182,6 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         percent: Math.min(Math.round((totalTokens / cw) * 100), 100),
         totalCostUsd: this._contextUsage?.totalCostUsd,
       };
-    }
-
-    // Only clear top-level streaming — ignore sub-agent assistant messages
-    if (msg.parent_tool_use_id !== null) {
-      this.emitEntry(msg);
-      return;
     }
 
     // Emit real entry FIRST so the webview has it before the ghost clears.
