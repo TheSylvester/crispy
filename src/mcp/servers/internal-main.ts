@@ -22,7 +22,9 @@ import { createInternalServer } from './internal.js';
 import { log } from '../../core/log.js';
 
 process.on('unhandledRejection', (err) => {
-  log({ level: 'error', source: 'internal-mcp', summary: `Unhandled rejection: ${err instanceof Error ? err.message : String(err)}`, data: { error: err instanceof Error ? err.message : String(err) } });
+  const msg = `Unhandled rejection: ${err instanceof Error ? err.message : String(err)}`;
+  process.stderr.write(msg + '\n');
+  log({ level: 'error', source: 'internal-mcp', summary: msg, data: { error: err instanceof Error ? err.message : String(err) } });
   process.exit(1);
 });
 
@@ -44,7 +46,9 @@ function parseCliArgs(): { sessionFile?: string; decisionsFile?: string; project
 
 async function main() {
   const cliOpts = parseCliArgs();
-  log({ level: 'info', source: 'internal-mcp', summary: `Starting stdio server${cliOpts.sessionFile ? ` session=${cliOpts.sessionFile}` : ''}` });
+  const startMsg = `Starting stdio server${cliOpts.sessionFile ? ` session=${cliOpts.sessionFile}` : ''}`;
+  process.stderr.write(startMsg + '\n');
+  log({ level: 'info', source: 'internal-mcp', summary: startMsg });
   const server = createInternalServer(cliOpts);
   const transport = new StdioServerTransport();
   await server.connect(transport);
@@ -52,6 +56,8 @@ async function main() {
 }
 
 main().catch((err) => {
-  log({ level: 'error', source: 'internal-mcp', summary: `Fatal: ${err instanceof Error ? err.message : String(err)}`, data: { error: err instanceof Error ? err.message : String(err) } });
+  const msg = `Fatal: ${err instanceof Error ? err.message : String(err)}`;
+  process.stderr.write(msg + '\n');
+  log({ level: 'error', source: 'internal-mcp', summary: msg, data: { error: err instanceof Error ? err.message : String(err) } });
   process.exit(1);
 });

@@ -1418,8 +1418,12 @@ export async function resumeChildSession(
     const timer = setTimeout(() => {
       if (!settled) {
         if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+        const parts: string[] = [];
+        if (lastError) parts.push(`error: ${lastError}`);
+        parts.push(`entries: [${entryTypes.join(', ')}]`);
+        parts.push(`text: ${text.length} chars`);
         log({ level: 'debug', source: 'dispatch', summary: `Resume timeout fired: ${timeoutMs}ms elapsed, entries: ${entryTypes.length}, textLen: ${text.length} (session: ${sessionId.slice(0, 12)}…)` });
-        log({ level: 'warn', source: 'resume-child', summary: `Timeout after ${timeoutMs}ms — session ${sessionId}` });
+        log({ level: 'warn', source: 'resume-child', summary: `Timeout after ${timeoutMs}ms — session ${sessionId} — ${parts.join(' | ')}` });
         settled = true;
         cleanup();
         if (text) {
@@ -1465,6 +1469,7 @@ export async function resumeChildSession(
         // Track errors
         if (msg.type === 'event' && msg.event.type === 'notification' && msg.event.kind === 'error') {
           lastError = (msg.event as { error?: string }).error ?? 'unknown error';
+          log({ level: 'error', source: 'resume-child', summary: `Error notification: ${lastError} (session: ${sessionId})` });
         }
 
         // Collect response text and structured output
@@ -1531,6 +1536,7 @@ export async function resumeChildSession(
       .catch((err) => {
         if (!settled) {
           log({ level: 'warn', source: 'resume-child', summary: `sendTurn failed: ${err instanceof Error ? err.message : String(err)}` });
+          log({ source: 'session', level: 'error', summary: `Session: child resume failed`, data: { sessionId, error: err instanceof Error ? err.message : String(err) } });
           settled = true;
           cleanup();
           resolve(null);
