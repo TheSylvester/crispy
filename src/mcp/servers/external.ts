@@ -22,7 +22,6 @@ import { findSession } from "../../core/session-manager.js";
 import { parseModelOption } from "../../core/model-utils.js";
 import { INTERNAL_MCP_SERVER_NAME } from "./internal.js";
 import { pushRosieLog } from "../../core/rosie/index.js";
-import { pushEventLog } from "../../core/rosie/event-log.js";
 
 // ============================================================================
 // Recall Agent Prompt
@@ -206,8 +205,9 @@ export function createExternalServer(
               vendor: activeSession.vendor,
             },
           });
-          pushEventLog({
+          pushRosieLog({
             source: "recall",
+            level: "info",
             summary: `Dispatching child — query="${args.query.slice(0, 120)}"`,
             data: {
               query: args.query,
@@ -276,7 +276,7 @@ export function createExternalServer(
                 summary: `Recall: no response after ${elapsed}ms`,
                 data: { elapsed },
               });
-              pushEventLog({
+              pushRosieLog({
                 source: "recall",
                 level: "warn",
                 summary: `No response after ${elapsed}ms`,
@@ -296,8 +296,9 @@ export function createExternalServer(
               summary: `Recall: OK in ${elapsed}ms — ${result.text.length} chars`,
               data: { elapsed, chars: result.text.length },
             });
-            pushEventLog({
+            pushRosieLog({
               source: "recall",
+              level: "info",
               summary: `OK in ${elapsed}ms — ${result.text.length} chars`,
               data: { query: args.query, elapsed, chars: result.text.length },
             });
@@ -314,7 +315,7 @@ export function createExternalServer(
               summary: `Recall: failed after ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
               data: { elapsed, error: String(err) },
             });
-            pushEventLog({
+            pushRosieLog({
               source: "recall",
               level: "error",
               summary: `Failed after ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
