@@ -7,6 +7,9 @@
  *
  * Subscriber shape mirrors SessionListSubscriber: { id, send(event) }.
  *
+ * Log level threshold is controlled by the CRISPY_LOG_LEVEL env var (default: 'info').
+ * Set CRISPY_LOG_LEVEL=debug to enable verbose instrumentation logs.
+ *
  * @module rosie/debug-log
  */
 
@@ -18,7 +21,7 @@ export interface RosieLogEntry {
   id: number;
   ts: number;
   source: string;
-  level: 'info' | 'warn' | 'error';
+  level: 'debug' | 'info' | 'warn' | 'error';
   summary: string;
   data?: unknown;
 }
@@ -34,6 +37,24 @@ export interface RosieLogSubscriber {
 
 /** Sentinel sessionId used to route rosie log events on the shared event channel. */
 export const ROSIE_LOG_CHANNEL_ID = '__rosie_log__';
+
+// ============================================================================
+// Log level threshold (env-var gating)
+// ============================================================================
+
+const LEVEL_ORDER: Record<RosieLogEntry['level'], number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+};
+
+const _rawEnvLevel = process.env['CRISPY_LOG_LEVEL']?.toLowerCase();
+const _thresholdLevel: RosieLogEntry['level'] =
+  _rawEnvLevel === 'debug' || _rawEnvLevel === 'info' || _rawEnvLevel === 'warn' || _rawEnvLevel === 'error'
+    ? _rawEnvLevel
+    : 'info';
+const _threshold = LEVEL_ORDER[_thresholdLevel];
 
 // ============================================================================
 // Persistence callback (late-binding to avoid circular imports)
@@ -69,6 +90,8 @@ const subscribers = new Map<string, RosieLogSubscriber>();
 export function pushRosieLog(
   entry: Omit<RosieLogEntry, 'id' | 'ts'>,
 ): void {
+  if (LEVEL_ORDER[entry.level] < _threshold) return;
+
   const full: RosieLogEntry = {
     id: nextId++,
     ts: Date.now(),
