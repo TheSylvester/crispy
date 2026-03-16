@@ -28,7 +28,7 @@
  */
 
 import type { AgentAdapter, ChannelMessage } from './agent-adapter.js';
-import { pushRosieLog } from './rosie/index.js';
+import { log } from './log.js';
 import type { TranscriptEntry } from './transcript.js';
 import type {
   ChannelCatchupMessage,
@@ -417,7 +417,7 @@ export function resolveApproval(
   }
 
   if (!channel.pendingApprovals.has(toolUseId)) {
-    pushRosieLog({ level: 'warn', source: 'session-channel', summary: `No pending approval for toolUseId "${toolUseId}"` });
+    log({ level: 'warn', source: 'session-channel', summary: `No pending approval for toolUseId "${toolUseId}"` });
     return;
   }
 

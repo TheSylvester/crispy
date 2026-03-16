@@ -18,7 +18,7 @@
 // @huggingface/transformers and voice sub-modules are lazy-loaded to avoid
 // pulling onnxruntime-node native bindings at import time (crashes VS Code's
 // Electron extension host). See ensureModels().
-import { pushRosieLog } from '../rosie/index.js';
+import { log } from '../log.js';
 import { VoiceUnavailableError } from './optional-import.js';
 
 // ---------------------------------------------------------------------------
@@ -153,7 +153,7 @@ async function ensureModels(): Promise<void> {
   if (!loading) {
     loading = (async () => {
       try {
-        pushRosieLog({
+        log({
           source: 'voice',
           level: 'info',
           summary: 'Initialising voice pipeline (VAD + STT)...',
@@ -176,7 +176,7 @@ async function ensureModels(): Promise<void> {
 
         pipeline = { ready: true };
 
-        pushRosieLog({
+        log({
           source: 'voice',
           level: 'info',
           summary: 'Voice pipeline ready',
@@ -188,7 +188,7 @@ async function ensureModels(): Promise<void> {
         const msg = err instanceof Error ? err.message : String(err);
         const isUnavailable = err instanceof VoiceUnavailableError;
         const isGlibc = msg.includes('GLIBC');
-        pushRosieLog({
+        log({
           source: 'voice',
           level: 'error',
           summary: isUnavailable
@@ -285,7 +285,7 @@ export async function transcribeAudio(
 
     if (speechSegments.length === 0) {
       const durationMs = Math.round(performance.now() - t0);
-      pushRosieLog({
+      log({
         source: 'voice',
         level: 'info',
         summary: `No speech detected (${durationMs}ms)`,
@@ -307,7 +307,7 @@ export async function transcribeAudio(
 
     const durationMs = Math.round(performance.now() - t0);
 
-    pushRosieLog({
+    log({
       source: 'voice',
       level: 'info',
       summary: `Transcribed ${speechSegments.length} segment(s) in ${durationMs}ms: "${text.slice(0, 80)}"`,
@@ -316,7 +316,7 @@ export async function transcribeAudio(
     return { text, segments: speechSegments.length, durationMs };
   } catch (err) {
     const durationMs = Math.round(performance.now() - t0);
-    pushRosieLog({
+    log({
       source: 'voice',
       level: 'error',
       summary: 'transcribeAudio failed',

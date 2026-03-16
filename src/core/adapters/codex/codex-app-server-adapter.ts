@@ -22,7 +22,7 @@ import type {
   AdapterSettings,
   TurnSettings,
 } from '../../agent-adapter.js';
-import { pushRosieLog } from '../../rosie/index.js';
+import { log } from '../../log.js';
 import type { ChannelEvent, ChannelStatus } from '../../channel-events.js';
 import type {
   ContentBlock,
@@ -204,7 +204,7 @@ export class CodexAgentAdapter implements AgentAdapter {
     try {
       this.client?.sendResponse(pending.serverRequestId, decision);
     } catch (err) {
-      pushRosieLog({ level: 'error', source: 'codex-adapter', summary: `Failed to send approval response: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
+      log({ level: 'error', source: 'codex-adapter', summary: `Failed to send approval response: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
     }
 
     // Transition back to active if no more pending approvals
@@ -257,7 +257,7 @@ export class CodexAgentAdapter implements AgentAdapter {
         turnId: this.currentTurnId,
       });
     } catch (err) {
-      pushRosieLog({ level: 'error', source: 'codex-adapter', summary: `Interrupt failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
+      log({ level: 'error', source: 'codex-adapter', summary: `Interrupt failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
     }
   }
 
@@ -503,7 +503,7 @@ export class CodexAgentAdapter implements AgentAdapter {
                 this.outputQueue.enqueue({ type: 'entry', entry });
               }
             } catch (err) {
-              pushRosieLog({ level: 'warn', source: 'codex-adapter', summary: `Failed to adapt startup item: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
+              log({ level: 'warn', source: 'codex-adapter', summary: `Failed to adapt startup item: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
             }
             break;
           }
@@ -525,7 +525,7 @@ export class CodexAgentAdapter implements AgentAdapter {
             this.outputQueue.enqueue({ type: 'entry', entry });
           }
         } catch (err) {
-          pushRosieLog({ level: 'warn', source: 'codex-adapter', summary: `Failed to adapt item: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
+          log({ level: 'warn', source: 'codex-adapter', summary: `Failed to adapt item: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
         }
 
         // Clear streaming ghost when a complete assistant message arrives
@@ -616,7 +616,7 @@ export class CodexAgentAdapter implements AgentAdapter {
     params: unknown,
   ): void {
     if (!isApprovalRequest(method)) {
-      pushRosieLog({ level: 'warn', source: 'codex-adapter', summary: `Unknown server request: ${method}` });
+      log({ level: 'warn', source: 'codex-adapter', summary: `Unknown server request: ${method}` });
       try {
         this.client?.sendResponse(id, { error: 'Unknown method' });
       } catch { /* cleanup */ }
@@ -627,7 +627,7 @@ export class CodexAgentAdapter implements AgentAdapter {
     const mapped = codexApprovalToEvent(method, p);
 
     if (!mapped) {
-      pushRosieLog({ level: 'warn', source: 'codex-adapter', summary: `Failed to map approval request: ${method}` });
+      log({ level: 'warn', source: 'codex-adapter', summary: `Failed to map approval request: ${method}` });
       try {
         this.client?.sendResponse(id, { decision: 'deny' });
       } catch { /* cleanup — don't throw */ }
@@ -660,7 +660,7 @@ export class CodexAgentAdapter implements AgentAdapter {
   // --- Private: Process Lifecycle ---
 
   private handleProcessExit(code: number | null, signal: string | null): void {
-    pushRosieLog({ level: 'debug', source: 'codex-adapter', summary: `Process exited: code=${code}, signal=${signal}` });
+    log({ level: 'debug', source: 'codex-adapter', summary: `Process exited: code=${code}, signal=${signal}` });
 
     // Emit error if unexpected exit
     if (!this._closed && (code !== 0 && code !== null)) {
@@ -749,7 +749,7 @@ export class CodexAgentAdapter implements AgentAdapter {
 
   private emitError(error: Error | string): void {
     if (this._closed) return;
-    pushRosieLog({
+    log({
       source: 'session',
       level: 'error',
       summary: `Adapter: error (${this._sessionId?.slice(0, 12) ?? 'unknown'}…)`,

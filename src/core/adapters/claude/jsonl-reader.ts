@@ -9,7 +9,7 @@
 
 import * as fs from "fs";
 import * as crypto from "crypto";
-import { pushRosieLog } from '../../rosie/index.js';
+import { log } from '../../log.js';
 
 // ============================================================================
 // Claude JSONL Types (private to this module)
@@ -218,7 +218,7 @@ export function readLinesFromOffset(
           lastCompleteLineOffset += Buffer.byteLength(line + "\n", "utf-8");
         } catch (err) {
           // JSON parse error - skip it and continue
-          pushRosieLog({ level: 'warn', source: 'jsonl-reader', summary: `Skipping unparseable line: ${(err as Error).message}` });
+          log({ level: 'warn', source: 'jsonl-reader', summary: `Skipping unparseable line: ${(err as Error).message}` });
           lastCompleteLineOffset += Buffer.byteLength(line + "\n", "utf-8");
           continue;
         }
@@ -1004,14 +1004,14 @@ export function parseJsonlFile(filepath: string): ClaudeTranscriptEntry[] {
         entries.push(entry);
       } catch (err) {
         // Skip invalid JSON lines
-        pushRosieLog({ level: 'warn', source: 'claude:jsonl-reader', summary: `Skipping unparseable line: ${(err as Error).message}` });
+        log({ level: 'warn', source: 'claude:jsonl-reader', summary: `Skipping unparseable line: ${(err as Error).message}` });
         continue;
       }
     }
 
     return entries;
   } catch (error) {
-    pushRosieLog({ level: 'error', source: 'jsonl-reader', summary: `Failed to read JSONL file ${filepath}: ${error instanceof Error ? error.message : String(error)}`, data: { filepath, error: String(error) } });
+    log({ level: 'error', source: 'jsonl-reader', summary: `Failed to read JSONL file ${filepath}: ${error instanceof Error ? error.message : String(error)}`, data: { filepath, error: String(error) } });
     return [];
   }
 }

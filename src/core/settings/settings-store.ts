@@ -16,7 +16,7 @@ import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { watch, type FSWatcher } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { pushRosieLog } from '../rosie/index.js';
+import { log } from '../log.js';
 
 import type {
   CrispySettings,
@@ -294,7 +294,7 @@ async function loadSettingsFile(): Promise<CrispySettingsFile> {
 
     // Validate version
     if (parsed.version !== 1) {
-      pushRosieLog({ level: 'warn', source: 'settings-store', summary: 'Unknown settings version, using defaults' });
+      log({ level: 'warn', source: 'settings-store', summary: 'Unknown settings version, using defaults' });
       return {
         version: 1,
         revision: 0,
@@ -328,7 +328,7 @@ async function loadSettingsFile(): Promise<CrispySettingsFile> {
       const corruptPath = join(configDir, `settings.json.corrupt.${timestamp}`);
       try {
         await rename(settingsPath, corruptPath);
-        pushRosieLog({ level: 'error', source: 'settings-store', summary: `Corrupt settings.json renamed to ${corruptPath}` });
+        log({ level: 'error', source: 'settings-store', summary: `Corrupt settings.json renamed to ${corruptPath}` });
       } catch {
         // Best-effort rename
       }
@@ -595,7 +595,7 @@ export function startWatchingSettings(): void {
             } catch { /* best effort */ }
           }
         } catch (err) {
-          pushRosieLog({ level: 'error', source: 'settings-store', summary: `Watch reload failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
+          log({ level: 'error', source: 'settings-store', summary: `Watch reload failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
         }
       }, 200);
     });

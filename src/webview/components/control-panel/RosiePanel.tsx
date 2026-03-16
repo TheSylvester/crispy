@@ -12,12 +12,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { RobotIcon } from './icons.js';
 import { YamlDump } from '../../renderers/YamlDump.js';
-import type { RosieLogEntry } from '../../../core/rosie/debug-log.js';
+import type { LogEntry } from '../../../core/log.js';
 
 interface RosiePanelProps {
   pinned: boolean;
   onToggle: () => void;
-  entries: RosieLogEntry[];
+  entries: LogEntry[];
 }
 
 function formatTime(ts: number): string {
@@ -25,7 +25,7 @@ function formatTime(ts: number): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-function RosieLogEntryRow({ entry }: { entry: RosieLogEntry }): React.JSX.Element {
+function LogEntryRow({ entry }: { entry: LogEntry }): React.JSX.Element {
   const [expanded, setExpanded] = useState(false);
   const hasData = entry.data != null;
 
@@ -131,7 +131,7 @@ export function RosiePanel({ pinned, onToggle, entries }: RosiePanelProps): Reac
           {entries.length > 0 ? (
             <div className="crispy-cp-rosie__log-list">
               {entries.map((entry) => (
-                <RosieLogEntryRow key={entry.id} entry={entry} />
+                <LogEntryRow key={entry.id} entry={entry} />
               ))}
             </div>
           ) : (

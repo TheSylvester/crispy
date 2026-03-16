@@ -8,7 +8,7 @@
  *   4. Embedding backfill: embeds unvectorized messages via llama-embedding
  *
  * Uses a dedicated pub/sub channel (not session-channel) for status events,
- * following the pattern established by debug-log.ts.
+ * following the pattern established by log.ts.
  *
  * Owns: catch-up lifecycle, gap detection, background embedding orchestration,
  *       dedicated channel pub/sub for status events.
@@ -27,7 +27,7 @@ import {
 } from './message-store.js';
 import { ingestSessionMessages, embedMessageBatch } from './message-ingest.js';
 import { ensureModel, ensureBinary } from './embedder.js';
-import { pushRosieLog } from '../rosie/debug-log.js';
+import { log } from '../log.js';
 import { getSettingsSnapshot, onSettingsChanged } from '../settings/index.js';
 import type { RecallCatchupEvent } from '../channel-events.js';
 
@@ -86,7 +86,7 @@ let running = false;
 let settingsUnsub: (() => void) | null = null;
 
 // ============================================================================
-// Pub/Sub (follows debug-log.ts pattern)
+// Pub/Sub (follows log.ts pattern)
 // ============================================================================
 
 function broadcast(update: Partial<CatchupStatus>): void {
@@ -104,7 +104,7 @@ function broadcast(update: Partial<CatchupStatus>): void {
 /** Subscribe to catch-up status events. Sends current status immediately. */
 export function subscribeCatchup(sub: CatchupSubscriber): void {
   subscribers.set(sub.id, sub);
-  // Send current status immediately (like debug-log snapshot)
+  // Send current status immediately (like log snapshot)
   sub.send({
     type: 'notification',
     kind: 'recall-catchup',
@@ -171,7 +171,7 @@ async function runFts5Catchup(): Promise<void> {
   }
 
   if (indexed > 0) {
-    pushRosieLog({
+    log({
       source: 'recall-catchup',
       level: 'info',
       summary: `FTS5 catch-up: ${indexed} messages indexed`,
@@ -197,7 +197,7 @@ function memoryPressure(): boolean {
   const freeMB = Math.round(freemem() / 1024 / 1024);
   const under = freeMB < FREE_MEM_FLOOR_MB;
   if (under) {
-    pushRosieLog({
+    log({
       source: 'recall-catchup',
       level: 'warn',
       summary: `Memory pressure: ${freeMB} MB free < ${FREE_MEM_FLOOR_MB} MB floor`,
@@ -219,7 +219,7 @@ async function runEmbedding(): Promise<void> {
   try {
     await ensureBinary();
   } catch (err) {
-    pushRosieLog({
+    log({
       source: 'recall-catchup',
       level: 'warn',
       summary: `Binary download failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -230,7 +230,7 @@ async function runEmbedding(): Promise<void> {
   try {
     await ensureModel();
   } catch (err) {
-    pushRosieLog({
+    log({
       source: 'recall-catchup',
       level: 'warn',
       summary: `Model download failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -274,13 +274,13 @@ async function runEmbedding(): Promise<void> {
     } catch (err) {
       consecutiveFailures++;
       const msg = err instanceof Error ? err.message : String(err);
-      pushRosieLog({
+      log({
         source: 'recall-catchup',
         level: 'warn',
         summary: `Embed batch failed (${consecutiveFailures}/${MAX_CONSECUTIVE_FAILURES}): ${msg}`,
       });
       if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-        pushRosieLog({
+        log({
           source: 'recall-catchup',
           level: 'warn',
           summary: `Embedding stopped after ${MAX_CONSECUTIVE_FAILURES} consecutive failures`,
@@ -296,7 +296,7 @@ async function runEmbedding(): Promise<void> {
     broadcast({ stoppedByMemoryPressure: true });
   }
 
-  pushRosieLog({
+  log({
     source: 'recall-catchup',
     level: 'info',
     summary: `runEmbedding complete — ${totalEmbedded} messages vectorized`,
@@ -321,7 +321,7 @@ async function runEmbedding(): Promise<void> {
 export async function startRecallCatchup(
   host?: 'vscode' | 'devServer',
 ): Promise<void> {
-  pushRosieLog({
+  log({
     source: 'recall-catchup',
     level: 'info',
     summary: 'startRecallCatchup called',
@@ -337,7 +337,7 @@ export async function startRecallCatchup(
         // Recall toggled ON — trigger catch-up if not already running
         if (!running) {
           runCatchup().catch(err => {
-            pushRosieLog({ level: 'warn', source: 'recall-catchup', summary: `catch-up failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
+            log({ level: 'warn', source: 'recall-catchup', summary: `catch-up failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
           });
         }
       } else {
@@ -349,7 +349,7 @@ export async function startRecallCatchup(
 
   // Don't start if recall is disabled
   if (!isRecallEnabled()) {
-    pushRosieLog({
+    log({
       source: 'recall-catchup',
       level: 'warn',
       summary: 'Recall disabled — skipping catch-up',
@@ -363,13 +363,13 @@ export async function startRecallCatchup(
 
 /** Internal: run the full catch-up pipeline. */
 async function runCatchup(): Promise<void> {
-  pushRosieLog({
+  log({
     source: 'recall-catchup',
     level: 'info',
     summary: 'runCatchup called',
   });
   if (running) {
-    pushRosieLog({
+    log({
       source: 'recall-catchup',
       level: 'warn',
       summary: 'runCatchup blocked — already running',
@@ -387,7 +387,7 @@ async function runCatchup(): Promise<void> {
 
     // Phase 2: Gap detection
     const { gapCount, totalMessages } = getEmbeddingGapStats();
-    pushRosieLog({
+    log({
       source: 'recall-catchup',
       level: 'info',
       summary: 'Gap detection complete',
@@ -401,7 +401,7 @@ async function runCatchup(): Promise<void> {
     });
 
     if (gapCount === 0) {
-      pushRosieLog({
+      log({
         source: 'recall-catchup',
         level: 'info',
         summary: 'No embedding gap — nothing to do',
@@ -412,7 +412,7 @@ async function runCatchup(): Promise<void> {
 
     // Phase 3: Decision — silent embed or prompt
     if (gapCount <= SILENT_EMBED_THRESHOLD) {
-      pushRosieLog({
+      log({
         source: 'recall-catchup',
         level: 'info',
         summary: `Small gap (${gapCount}) — embedding silently`,
@@ -420,7 +420,7 @@ async function runCatchup(): Promise<void> {
       // Small gap — embed silently
       await runEmbedding();
     } else {
-      pushRosieLog({
+      log({
         source: 'recall-catchup',
         level: 'info',
         summary: `Large gap (${gapCount}) — prompting user`,
@@ -430,7 +430,7 @@ async function runCatchup(): Promise<void> {
       // phase stays at 'detecting-gap' with the gapCount set.
     }
   } catch (err) {
-    pushRosieLog({
+    log({
       source: 'recall-catchup',
       level: 'warn',
       summary: `Catch-up failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -442,20 +442,20 @@ async function runCatchup(): Promise<void> {
 
 /** User clicked "Start Embedding" — begin background backfill. */
 export async function startEmbeddingBackfill(): Promise<void> {
-  pushRosieLog({
+  log({
     source: 'recall-catchup',
     level: 'info',
     summary: 'startEmbeddingBackfill called',
   });
   if (running) {
-    pushRosieLog({
+    log({
       source: 'recall-catchup',
       level: 'warn',
       summary: 'startEmbeddingBackfill blocked — already running',
     });
     return;
   }
-  pushRosieLog({
+  log({
     source: 'recall-catchup',
     level: 'info',
     summary: 'Embedding backfill starting',
@@ -466,7 +466,7 @@ export async function startEmbeddingBackfill(): Promise<void> {
   try {
     await runEmbedding();
   } catch (err) {
-    pushRosieLog({
+    log({
       source: 'recall-catchup',
       level: 'warn',
       summary: `Embedding backfill failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -481,7 +481,7 @@ export async function startEmbeddingBackfill(): Promise<void> {
 
 /** User clicked "Stop" — cancel in-progress backfill. */
 export function stopEmbeddingBackfill(): void {
-  pushRosieLog({
+  log({
     source: 'recall-catchup',
     level: 'info',
     summary: 'stopEmbeddingBackfill called — cancel requested',

@@ -23,7 +23,7 @@ import { adaptCodexItem } from './codex-entry-adapter.js';
 import { findCodexSessionFile, parseCodexJsonlFile, scanCodexUserMessages } from './codex-jsonl-reader.js';
 import { adaptCodexJsonlRecords } from './codex-jsonl-adapter.js';
 import { CodexRpcClient, type CodexRpcClientOptions } from './codex-rpc-client.js';
-import { pushRosieLog } from '../../rosie/index.js';
+import { log } from '../../log.js';
 import { CRISPY_VERSION } from '../../version.js';
 import { getLatestRosieMeta } from '../../activity-index.js';
 
@@ -166,7 +166,7 @@ export class CodexDiscovery implements VendorDiscovery {
     if ((stale || this.sessionCache.length === 0) && !this.refreshing) {
       // Fire-and-forget refresh
       this.refresh().catch((err) => {
-        pushRosieLog({ level: 'error', source: 'codex-discovery', summary: `Refresh failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: err instanceof Error ? err.message : String(err) } });
+        log({ level: 'error', source: 'codex-discovery', summary: `Refresh failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: err instanceof Error ? err.message : String(err) } });
       });
     }
   }
@@ -206,7 +206,7 @@ export class CodexDiscovery implements VendorDiscovery {
       onNotification: () => {},
       onRequest: () => {},
       onError: (err) => {
-        pushRosieLog({ level: 'error', source: 'codex-discovery', summary: `RPC client error: ${err instanceof Error ? err.message : String(err)}`, data: { error: err instanceof Error ? err.message : String(err) } });
+        log({ level: 'error', source: 'codex-discovery', summary: `RPC client error: ${err instanceof Error ? err.message : String(err)}`, data: { error: err instanceof Error ? err.message : String(err) } });
       },
       onExit: () => {
         if (this.ownedClient) {

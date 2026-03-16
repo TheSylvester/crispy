@@ -18,7 +18,7 @@
  */
 
 import * as fs from 'fs';
-import { pushRosieLog } from '../../rosie/index.js';
+import { log } from '../../log.js';
 import * as path from 'path';
 import * as os from 'os';
 
@@ -68,7 +68,7 @@ const SESSION_ID_RE = /rollout-.*-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 /**
  * Parse a Codex JSONL transcript file into an array of envelopes.
  *
- * Handles malformed lines (skips with pushRosieLog warn), empty lines,
+ * Handles malformed lines (skips with log warn), empty lines,
  * and missing trailing newlines. Matches the Claude JSONL reader pattern.
  *
  * @param filepath - Absolute path to the .jsonl file
@@ -87,13 +87,13 @@ export function parseCodexJsonlFile(filepath: string): CodexJsonlEnvelope[] {
         const record = JSON.parse(trimmed) as CodexJsonlEnvelope;
         records.push(record);
       } catch (err) {
-        pushRosieLog({ level: 'warn', source: 'codex-jsonl-reader', summary: `Skipping unparseable line: ${(err as Error).message}` });
+        log({ level: 'warn', source: 'codex-jsonl-reader', summary: `Skipping unparseable line: ${(err as Error).message}` });
       }
     }
 
     return records;
   } catch (error) {
-    pushRosieLog({ level: 'error', source: 'codex-jsonl-reader', summary: `Failed to read ${filepath}: ${error instanceof Error ? error.message : String(error)}`, data: { filepath, error: String(error) } });
+    log({ level: 'error', source: 'codex-jsonl-reader', summary: `Failed to read ${filepath}: ${error instanceof Error ? error.message : String(error)}`, data: { filepath, error: String(error) } });
     return [];
   }
 }

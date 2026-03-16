@@ -33,7 +33,7 @@ import { request } from 'node:http';
 import { join } from 'node:path';
 import { tmpdir, homedir, platform, arch } from 'node:os';
 import { promisify } from 'node:util';
-import { pushRosieLog } from '../rosie/debug-log.js';
+import { log } from '../log.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -205,7 +205,7 @@ async function performBinaryDownload(binPath: string): Promise<string> {
   const archivePath = join(BIN_DIR, assetName);
   const tmpPath = archivePath + '.tmp';
 
-  pushRosieLog({
+  log({
     source: 'recall-catchup',
     level: 'info',
     summary: `Downloading llama binaries: ${assetName}${assetName.includes('cuda') || assetName.includes('vulkan') ? ' (GPU accelerated)' : ''}`,
@@ -252,7 +252,7 @@ async function performBinaryDownload(binPath: string): Promise<string> {
       }
     }
 
-    pushRosieLog({
+    log({
       source: 'recall-catchup',
       level: 'info',
       summary: 'llama binaries download complete',
@@ -314,7 +314,7 @@ async function performModelDownload(modelPath: string): Promise<string> {
       unlinkSync(tmpPath);
     }
 
-    pushRosieLog({
+    log({
       source: 'recall-catchup',
       level: 'info',
       summary: `Downloading embedding model: ${MODEL_FILENAME}`,
@@ -324,7 +324,7 @@ async function performModelDownload(modelPath: string): Promise<string> {
     await downloadFile(MODEL_URL, tmpPath);
     renameSync(tmpPath, modelPath);
 
-    pushRosieLog({
+    log({
       source: 'recall-catchup',
       level: 'info',
       summary: 'Embedding model download complete',
@@ -511,7 +511,7 @@ async function startServer(): Promise<string> {
 
   child.on('exit', handleChildGone);
   child.on('error', (err) => {
-    pushRosieLog({
+    log({
       source: 'recall-catchup',
       level: 'warn',
       summary: `llama-server process error: ${err.message}`,
@@ -527,7 +527,7 @@ async function startServer(): Promise<string> {
     writePidFile(child.pid, socket);
   }
 
-  pushRosieLog({
+  log({
     source: 'recall-catchup',
     level: 'info',
     summary: `Starting llama-server (PID ${child.pid}, socket ${socket})`,
@@ -536,7 +536,7 @@ async function startServer(): Promise<string> {
   // Wait for /health to return 200 — bail early if the process exits
   await waitForHealth(socket, child);
 
-  pushRosieLog({
+  log({
     source: 'recall-catchup',
     level: 'info',
     summary: 'llama-server ready',
@@ -581,7 +581,7 @@ function resetIdleTimer(): void {
   if (activeServerRequests > 0) return; // Don't start idle countdown while requests are active
   idleTimer = setTimeout(() => {
     if (activeServerRequests > 0) return; // Double-check before killing
-    pushRosieLog({
+    log({
       source: 'recall-catchup',
       level: 'info',
       summary: 'llama-server idle timeout — shutting down',
@@ -763,7 +763,7 @@ async function embedViaProcess(texts: string[], modelPath: string): Promise<Floa
     });
 
     if (stderr) {
-      pushRosieLog({
+      log({
         source: 'recall-catchup',
         level: 'warn',
         summary: 'llama-embedding stderr',
@@ -853,7 +853,7 @@ export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    pushRosieLog({
+    log({
       source: 'recall-catchup',
       level: 'warn',
       summary: `Server embedding failed, attempting restart: ${msg}`,
@@ -873,7 +873,7 @@ export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
       }
     } catch (retryErr) {
       const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
-      pushRosieLog({
+      log({
         source: 'recall-catchup',
         level: 'warn',
         summary: `Server restart failed, falling back to one-shot: ${retryMsg}`,

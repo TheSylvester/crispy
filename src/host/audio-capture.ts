@@ -22,7 +22,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { writeFileSync, readdirSync, unlinkSync, promises as fsp } from 'node:fs';
-import { pushRosieLog } from '../core/rosie/index.js';
+import { log } from '../core/log.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -66,7 +66,7 @@ export function cleanupOrphanedVoiceFiles(): void {
       }
     }
     if (orphans.length > 0) {
-      pushRosieLog({
+      log({
         source: 'voice',
         level: 'info',
         summary: `Cleaned up ${orphans.length} orphaned voice temp file(s)`,
@@ -96,7 +96,7 @@ export async function startCapture(): Promise<void> {
   try {
     const tempWavPath = join(tmpdir(), `crispy-voice-${Date.now()}.wav`);
 
-    pushRosieLog({
+    log({
       source: 'voice',
       level: 'info',
       summary: `Starting host-side audio capture on ${process.platform}...`,
@@ -112,7 +112,7 @@ export async function startCapture(): Promise<void> {
       throw new Error(`Voice recording not supported on ${process.platform}`);
     }
 
-    pushRosieLog({
+    log({
       source: 'voice',
       level: 'info',
       summary: 'Recording started',
@@ -142,7 +142,7 @@ export async function stopCapture(): Promise<{ pcmFloat32: Float32Array; sampleR
 
     const durationMs = Date.now() - startedAt;
 
-    pushRosieLog({
+    log({
       source: 'voice',
       level: 'info',
       summary: `Recording stopped after ${durationMs}ms, reading ${tempWavPath}...`,
@@ -151,7 +151,7 @@ export async function stopCapture(): Promise<{ pcmFloat32: Float32Array; sampleR
     const wavBuffer = await fsp.readFile(tempWavPath);
     const result = wavToFloat32(wavBuffer);
 
-    pushRosieLog({
+    log({
       source: 'voice',
       level: 'info',
       summary: `WAV decoded: ${result.pcmFloat32.length} samples, ${result.sampleRate}Hz (${(result.pcmFloat32.length / result.sampleRate).toFixed(1)}s)`,
@@ -159,7 +159,7 @@ export async function stopCapture(): Promise<{ pcmFloat32: Float32Array; sampleR
 
     return result;
   } catch (err) {
-    pushRosieLog({
+    log({
       source: 'voice',
       level: 'error',
       summary: `Failed to stop/read recording: ${err instanceof Error ? err.message : err}`,
@@ -185,7 +185,7 @@ export function cancelCapture(): void {
   fsp.unlink(tempWavPath).catch(() => {});
   if (tempScriptPath) fsp.unlink(tempScriptPath).catch(() => {});
 
-  pushRosieLog({
+  log({
     source: 'voice',
     level: 'info',
     summary: 'Recording cancelled',
@@ -231,11 +231,11 @@ function spawnRecorder(
     proc.stderr?.on('data', (data: Buffer) => {
       stderrOutput += data.toString();
       const msg = data.toString().trim();
-      if (msg) pushRosieLog({ source: 'voice', level: 'warn', summary: `Voice: recorder stderr — ${msg.slice(0, 200)}` });
+      if (msg) log({ source: 'voice', level: 'warn', summary: `Voice: recorder stderr — ${msg.slice(0, 200)}` });
     });
 
     proc.on('error', (err) => {
-      pushRosieLog({ source: 'voice', level: 'error', summary: `recorder error: ${err.message}` });
+      log({ source: 'voice', level: 'error', summary: `recorder error: ${err.message}` });
       if (!resolved) {
         resolved = true;
         reject(err);

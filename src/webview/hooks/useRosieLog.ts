@@ -9,23 +9,23 @@
 
 import { useState, useEffect } from 'react';
 import { useTransport } from '../context/TransportContext.js';
-import { ROSIE_LOG_CHANNEL_ID } from '../../core/rosie/debug-log.js';
-import type { RosieLogEntry, RosieLogEvent } from '../../core/rosie/debug-log.js';
+import { LOG_CHANNEL_ID } from '../../core/log.js';
+import type { LogEntry, LogEvent } from '../../core/log.js';
 
 const BUFFER_CAP = 200;
 
-export function useRosieLog(): RosieLogEntry[] {
+export function useRosieLog(): LogEntry[] {
   const transport = useTransport();
-  const [entries, setEntries] = useState<RosieLogEntry[]>([]);
+  const [entries, setEntries] = useState<LogEntry[]>([]);
 
   useEffect(() => {
     let unmounted = false;
 
-    transport.subscribeRosieLog().catch(() => {});
+    transport.subscribeLog().catch(() => {});
 
     const off = transport.onEvent((sessionId, event) => {
-      if (unmounted || sessionId !== ROSIE_LOG_CHANNEL_ID) return;
-      const rosieEvent = event as RosieLogEvent;
+      if (unmounted || sessionId !== LOG_CHANNEL_ID) return;
+      const rosieEvent = event as LogEvent;
 
       if (rosieEvent.type === 'rosie_log_snapshot') {
         setEntries([...rosieEvent.entries].reverse());
@@ -40,7 +40,7 @@ export function useRosieLog(): RosieLogEntry[] {
     return () => {
       unmounted = true;
       off();
-      transport.unsubscribeRosieLog().catch(() => {});
+      transport.unsubscribeLog().catch(() => {});
     };
   }, [transport]);
 

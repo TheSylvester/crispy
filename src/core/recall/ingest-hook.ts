@@ -14,7 +14,7 @@
 
 import { onResponseComplete } from '../lifecycle-hooks.js';
 import { ingestSessionMessages, embedSessionMessages } from './message-ingest.js';
-import { pushRosieLog } from '../rosie/debug-log.js';
+import { log } from '../log.js';
 
 // ============================================================================
 // Module State
@@ -35,14 +35,14 @@ export function initRecallIngest(): void {
       const result = await ingestSessionMessages(sessionId);
 
       if (result.error) {
-        pushRosieLog({
+        log({
           source: 'recall-ingest',
           level: 'warn',
           summary: `Ingest failed: ${result.error}`,
           data: { sessionId },
         });
       } else if (!result.skipped) {
-        pushRosieLog({
+        log({
           source: 'recall-ingest',
           level: 'info',
           summary: `Ingest: ${result.chunksCreated} messages indexed`,
@@ -55,7 +55,7 @@ export function initRecallIngest(): void {
         embedSessionMessages(sessionId)
           .then(count => {
             if (count > 0) {
-              pushRosieLog({
+              log({
                 source: 'recall-ingest',
                 level: 'info',
                 summary: `Embed: ${count} messages vectorized`,
@@ -64,7 +64,7 @@ export function initRecallIngest(): void {
             }
           })
           .catch(err => {
-            pushRosieLog({
+            log({
               source: 'recall-ingest',
               level: 'warn',
               summary: `Embed failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -74,7 +74,7 @@ export function initRecallIngest(): void {
       }
     } catch (err) {
       // Fire-and-forget — never crash the lifecycle pipeline
-      pushRosieLog({ level: 'warn', source: 'recall-ingest', summary: `hook failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
+      log({ level: 'warn', source: 'recall-ingest', summary: `hook failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
     }
   });
 }

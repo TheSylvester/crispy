@@ -16,7 +16,7 @@
 import * as fs from 'node:fs';
 import { join, dirname } from 'node:path';
 import { Database } from 'node-sqlite3-wasm';
-import { pushRosieLog } from './rosie/index.js';
+import { log } from './log.js';
 
 // ============================================================================
 // Singleton
@@ -54,7 +54,7 @@ export function getDb(dbPath: string): Database {
   db.exec('PRAGMA foreign_keys = ON');
 
   runMigrations(db, dbPath);
-  pushRosieLog({ source: 'db', level: 'info', summary: `DB: initialized at ${dbPath}` });
+  log({ source: 'db', level: 'info', summary: `DB: initialized at ${dbPath}` });
 
   return db;
 }
@@ -177,7 +177,7 @@ const migrations: Migration[] = [
         } catch (err) {
           // If rename fails, log but don't block startup
           if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-            pushRosieLog({ level: 'error', source: 'crispy-db', summary: `Legacy JSONL migration warning: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
+            log({ level: 'error', source: 'crispy-db', summary: `Legacy JSONL migration warning: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
           }
         }
       }
@@ -212,7 +212,7 @@ const migrations: Migration[] = [
           fs.renameSync(scanPath, scanBak);
         } catch (err) {
           if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-            pushRosieLog({ level: 'error', source: 'crispy-db', summary: `Legacy scan-state migration warning: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
+            log({ level: 'error', source: 'crispy-db', summary: `Legacy scan-state migration warning: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
           }
         }
       }
@@ -887,7 +887,7 @@ function runMigrations(db: Database, dbPath: string): void {
           [migration.version, migration.description],
         );
         db.exec('COMMIT');
-        pushRosieLog({ source: 'db', level: 'info', summary: `DB: migration v${migration.version} complete — ${migration.description}` });
+        log({ source: 'db', level: 'info', summary: `DB: migration v${migration.version} complete — ${migration.description}` });
       } catch (err) {
         db.exec('ROLLBACK');
         throw err;

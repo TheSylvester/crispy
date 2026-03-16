@@ -21,7 +21,7 @@ import type { ChildSessionOptions } from "../../core/session-manager.js";
 import { findSession } from "../../core/session-manager.js";
 import { parseModelOption } from "../../core/model-utils.js";
 import { INTERNAL_MCP_SERVER_NAME } from "./internal.js";
-import { pushRosieLog } from "../../core/rosie/index.js";
+import { log } from "../../core/log.js";
 
 // ============================================================================
 // Recall Agent Prompt
@@ -171,7 +171,7 @@ export function createExternalServer(
             ),
         },
         async (args) => {
-          pushRosieLog({
+          log({
             source: "recall",
             level: "info",
             summary: `Recall: query "${args.query.slice(0, 80)}"`,
@@ -179,7 +179,7 @@ export function createExternalServer(
           });
           const activeSession = getActiveSession?.();
           if (!activeSession) {
-            pushRosieLog({
+            log({
               source: "recall",
               level: "warn",
               summary: "Recall: no active session for dispatch",
@@ -189,7 +189,7 @@ export function createExternalServer(
             );
           }
 
-          pushRosieLog({
+          log({
             source: "recall",
             level: "info",
             summary: `Recall: dispatching child (vendor: ${activeSession.vendor})`,
@@ -198,7 +198,7 @@ export function createExternalServer(
               vendor: activeSession.vendor,
             },
           });
-          pushRosieLog({
+          log({
             source: "recall",
             level: "info",
             summary: `Dispatching child — query="${args.query.slice(0, 120)}"`,
@@ -260,13 +260,13 @@ export function createExternalServer(
             const elapsed = Date.now() - t0;
 
             if (!result) {
-              pushRosieLog({
+              log({
                 source: "recall",
                 level: "warn",
                 summary: `Recall: no response after ${elapsed}ms`,
                 data: { elapsed },
               });
-              pushRosieLog({
+              log({
                 source: "recall",
                 level: "warn",
                 summary: `No response after ${elapsed}ms`,
@@ -277,13 +277,13 @@ export function createExternalServer(
               );
             }
 
-            pushRosieLog({
+            log({
               source: "recall",
               level: "info",
               summary: `Recall: OK in ${elapsed}ms — ${result.text.length} chars`,
               data: { elapsed, chars: result.text.length },
             });
-            pushRosieLog({
+            log({
               source: "recall",
               level: "info",
               summary: `OK in ${elapsed}ms — ${result.text.length} chars`,
@@ -292,13 +292,13 @@ export function createExternalServer(
             return textResult(result.text);
           } catch (err) {
             const elapsed = Date.now() - t0;
-            pushRosieLog({
+            log({
               source: "recall",
               level: "error",
               summary: `Recall: failed after ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
               data: { elapsed, error: String(err) },
             });
-            pushRosieLog({
+            log({
               source: "recall",
               level: "error",
               summary: `Failed after ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,

@@ -13,7 +13,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { pushRosieLog } from '../rosie/index.js';
+import { log } from '../log.js';
 import { importOptionalModule } from './optional-import.js';
 
 // ---------------------------------------------------------------------------
@@ -76,7 +76,7 @@ async function downloadModel(): Promise<string> {
   const buffer = Buffer.from(await response.arrayBuffer());
   writeFileSync(modelPath, buffer);
 
-  pushRosieLog({ source: 'voice', level: 'info', summary: `VAD model downloaded from HuggingFace (${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB)` });
+  log({ source: 'voice', level: 'info', summary: `VAD model downloaded from HuggingFace (${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB)` });
 
   return modelPath;
 }
@@ -97,13 +97,13 @@ export async function initVAD(): Promise<void> {
     const modelPath = await downloadModel();
     session = await ort.InferenceSession.create(modelPath);
 
-    pushRosieLog({
+    log({
       source: 'voice',
       level: 'info',
       summary: `Silero VAD model loaded (inputs: ${session.inputNames.join(', ')}, outputs: ${session.outputNames.join(', ')})`,
     });
   } catch (err) {
-    pushRosieLog({ source: 'voice', level: 'error', summary: 'Failed to load Silero VAD model', data: err });
+    log({ source: 'voice', level: 'error', summary: 'Failed to load Silero VAD model', data: err });
     throw err;
   }
 }
@@ -133,7 +133,7 @@ export async function runVAD(audio: Float32Array): Promise<SpeechSegment[]> {
 
   const totalChunks = Math.floor(audio.length / CHUNK_SIZE);
 
-  pushRosieLog({
+  log({
     source: 'voice',
     level: 'info',
     summary: `VAD processing ${audio.length} samples (${(audio.length / SAMPLE_RATE).toFixed(1)}s), ${totalChunks} chunks`,
@@ -185,7 +185,7 @@ export async function runVAD(audio: Float32Array): Promise<SpeechSegment[]> {
     });
   }
 
-  pushRosieLog({
+  log({
     source: 'voice',
     level: 'info',
     summary: `VAD found ${segments.length} speech segment(s)${segments.length > 0 ? ': ' + segments.map(s => `[${(s.start / SAMPLE_RATE).toFixed(1)}s-${(s.end / SAMPLE_RATE).toFixed(1)}s]`).join(', ') : ''}`,

@@ -26,7 +26,7 @@ import type { VendorDiscovery, SessionInfo, SubagentEntriesResult } from '../../
 import type { TranscriptEntry } from '../../transcript.js';
 import type { Part } from '@opencode-ai/sdk/client';
 import { adaptOpenCodePart } from './opencode-entry-adapter.js';
-import { pushRosieLog } from '../../rosie/index.js';
+import { log } from '../../log.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -63,7 +63,7 @@ async function queryDb<T>(dbPath: string, sql: string): Promise<T[]> {
   } catch (err: unknown) {
     const error = err as NodeJS.ErrnoException;
     if (error.code === 'ENOENT') {
-      pushRosieLog({ level: 'error', source: 'opencode-discovery', summary: 'sqlite3 CLI not found — install sqlite3 to list OpenCode sessions' });
+      log({ level: 'error', source: 'opencode-discovery', summary: 'sqlite3 CLI not found — install sqlite3 to list OpenCode sessions' });
       return [];
     }
     throw err;
@@ -147,7 +147,7 @@ class OpenCodeDiscovery implements VendorDiscovery {
         const adapted = adaptOpenCodePart(part, sessionId);
         entries.push(...adapted);
       } catch (err) {
-        pushRosieLog({ level: 'warn', source: 'opencode-discovery', summary: `Failed to parse part: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
+        log({ level: 'warn', source: 'opencode-discovery', summary: `Failed to parse part: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
       }
     }
 
@@ -210,7 +210,7 @@ class OpenCodeDiscovery implements VendorDiscovery {
         done: rows.length < 100,
       };
     } catch (err) {
-      pushRosieLog({ level: 'error', source: 'opencode-discovery', summary: `readSubagentEntries failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
+      log({ level: 'error', source: 'opencode-discovery', summary: `readSubagentEntries failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
       return { entries: [], cursor: '', done: true };
     }
   }
@@ -223,7 +223,7 @@ class OpenCodeDiscovery implements VendorDiscovery {
     const stale = Date.now() - this.cacheTimestamp > this.cacheTtlMs;
     if ((stale || this.sessionCache.length === 0) && !this.refreshing) {
       this.refresh().catch((err) => {
-        pushRosieLog({ level: 'error', source: 'opencode-discovery', summary: `Refresh failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
+        log({ level: 'error', source: 'opencode-discovery', summary: `Refresh failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
       });
     }
   }
@@ -274,7 +274,7 @@ class OpenCodeDiscovery implements VendorDiscovery {
            FROM session ORDER BY time_updated DESC`,
         );
       } catch (fallbackErr) {
-        pushRosieLog({ level: 'error', source: 'opencode-discovery', summary: `Query failed: ${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}`, data: { error: String(fallbackErr) } });
+        log({ level: 'error', source: 'opencode-discovery', summary: `Query failed: ${fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)}`, data: { error: String(fallbackErr) } });
         return;
       }
     }

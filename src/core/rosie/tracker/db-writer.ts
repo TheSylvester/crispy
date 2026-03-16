@@ -14,7 +14,7 @@
 import { randomUUID } from 'node:crypto';
 import { getDb } from '../../crispy-db.js';
 import { ensureCrispyDir, dbPath } from '../../activity-index.js';
-import { pushRosieLog } from '../debug-log.js';
+import { log } from '../../log.js';
 import { parseModelOption } from '../../model-utils.js';
 import { getSettingsSnapshotInternal } from '../../settings/index.js';
 import type { AgentDispatch } from '../../../host/agent-dispatch.js';
@@ -109,7 +109,7 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
           projectId = p.id;
           const existing = readProject.get([projectId]) as Record<string, unknown> | undefined;
           if (!existing) {
-            pushRosieLog({ source: 'db', level: 'warn', summary: `Tracker DB: track skipped — project ${projectId} not found` });
+            log({ source: 'db', level: 'warn', summary: `Tracker DB: track skipped — project ${projectId} not found` });
             continue;
           }
           const oldStage = (existing.stage as string) ?? 'active';
@@ -169,10 +169,10 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
     }
 
     db.exec('COMMIT');
-    pushRosieLog({ source: 'db', level: 'info', summary: `Tracker DB: wrote ${blocks.length} projects`, data: { count: blocks.length } });
+    log({ source: 'db', level: 'info', summary: `Tracker DB: wrote ${blocks.length} projects`, data: { count: blocks.length } });
   } catch (e) {
     db.exec('ROLLBACK');
-    pushRosieLog({ source: 'db', level: 'error', summary: `Tracker DB: rollback — ${e instanceof Error ? e.message : String(e)}`, data: { error: String(e) } });
+    log({ source: 'db', level: 'error', summary: `Tracker DB: rollback — ${e instanceof Error ? e.message : String(e)}`, data: { error: String(e) } });
     throw e;
   }
 }
@@ -311,7 +311,7 @@ export function recordTrackerOutcome(
       [sessionFile, outcome, reason ?? null, attempts],
     );
   } catch (err) {
-    pushRosieLog({ level: 'warn', source: 'rosie.tracker', summary: `Failed to record outcome: ${err instanceof Error ? err.message : String(err)}`, data: { sessionFile, outcome, error: String(err) } });
+    log({ level: 'warn', source: 'rosie.tracker', summary: `Failed to record outcome: ${err instanceof Error ? err.message : String(err)}`, data: { sessionFile, outcome, error: String(err) } });
   }
 }
 
@@ -651,7 +651,7 @@ export function mergeProjects(
 
     db.exec('COMMIT');
 
-    pushRosieLog({
+    log({
       source: 'tracker',
       level: 'info',
       summary: `Dedup: merged "${removeRow.title}" → "${title}" (kept ${keepId})`,
@@ -712,7 +712,7 @@ export async function runDedupSweep(
     const candidates = findDupeCandidates(projects);
     if (candidates.length === 0) return;
 
-    pushRosieLog({ level: 'debug', source: 'rosie.dedup', summary: `Found ${candidates.length} candidate pair(s)` });
+    log({ level: 'debug', source: 'rosie.dedup', summary: `Found ${candidates.length} candidate pair(s)` });
 
     // Track merged IDs so we don't try to merge already-removed projects
     const merged = new Set<string>();
@@ -728,7 +728,7 @@ export async function runDedupSweep(
         // Auto-merge: keep the one with more recent updated_at
         const keepProject = candidate.a.updated_at >= candidate.b.updated_at ? candidate.a : candidate.b;
         const removeProject = keepProject === candidate.a ? candidate.b : candidate.a;
-        pushRosieLog({ level: 'debug', source: 'rosie.dedup', summary: `Auto-merge: "${removeProject.title}" → "${keepProject.title}" (${candidate.reason})` });
+        log({ level: 'debug', source: 'rosie.dedup', summary: `Auto-merge: "${removeProject.title}" → "${keepProject.title}" (${candidate.reason})` });
         mergeProjects(keepProject.id, removeProject.id);
         merged.add(removeProject.id);
       } else {
@@ -742,11 +742,11 @@ export async function runDedupSweep(
     }
 
     if (merged.size > 0) {
-      pushRosieLog({ level: 'debug', source: 'rosie.dedup', summary: `Sweep complete — merged ${merged.size} duplicate(s)` });
+      log({ level: 'debug', source: 'rosie.dedup', summary: `Sweep complete — merged ${merged.size} duplicate(s)` });
     }
   } catch (err) {
-    pushRosieLog({ level: 'warn', source: 'rosie.dedup', summary: `Sweep failed: ${err instanceof Error ? err.message : String(err)}` });
-    pushRosieLog({
+    log({ level: 'warn', source: 'rosie.dedup', summary: `Sweep failed: ${err instanceof Error ? err.message : String(err)}` });
+    log({
       source: 'tracker',
       level: 'error',
       summary: `Dedup sweep failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -838,7 +838,7 @@ Nothing else. No commentary.`;
 
     return parseVerdict(result.text, a.id, b.id);
   } catch (err) {
-    pushRosieLog({ level: 'warn', source: 'rosie.dedup', summary: `LLM adjudication failed: ${err instanceof Error ? err.message : String(err)}` });
+    log({ level: 'warn', source: 'rosie.dedup', summary: `LLM adjudication failed: ${err instanceof Error ? err.message : String(err)}` });
     return null;
   }
 }

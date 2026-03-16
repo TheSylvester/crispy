@@ -22,7 +22,7 @@ import {
 } from './store.js';
 import type { GitCommitCommand } from './types.js';
 import type { SessionInfo } from '../agent-adapter.js';
-import { pushRosieLog } from '../rosie/index.js';
+import { log } from '../log.js';
 
 // Re-export query functions for recall consumers
 export {
@@ -114,7 +114,7 @@ export function runProvenanceScan(sessions: SessionInfo[]): void {
         saveProvenanceScanState(scanState);
       }
     } catch (err) {
-      pushRosieLog({ level: 'error', source: 'provenance', summary: `Error scanning ${session.path}: ${err instanceof Error ? err.message : String(err)}`, data: { path: session.path, error: String(err) } });
+      log({ level: 'error', source: 'provenance', summary: `Error scanning ${session.path}: ${err instanceof Error ? err.message : String(err)}`, data: { path: session.path, error: String(err) } });
     }
   }
 
@@ -143,7 +143,7 @@ export function runProvenanceScan(sessions: SessionInfo[]): void {
           }
         }
       } catch (err) {
-        pushRosieLog({ level: 'error', source: 'provenance', summary: `Error matching commits in ${repoPath}: ${err instanceof Error ? err.message : String(err)}`, data: { repoPath, error: String(err) } });
+        log({ level: 'error', source: 'provenance', summary: `Error matching commits in ${repoPath}: ${err instanceof Error ? err.message : String(err)}`, data: { repoPath, error: String(err) } });
       }
     }
 

@@ -27,7 +27,7 @@ import type { Vendor } from '../transcript.js';
 import { appendActivityEntries, getLatestRosieMeta, getAllRosieMetas } from '../activity-index.js';
 import { refreshAndNotify } from '../session-list-manager.js';
 import { closeSession } from '../session-manager.js';
-import { pushRosieLog } from './debug-log.js';
+import { log } from '../log.js';
 import { extractTag } from './xml-utils.js';
 import { getExistingProjects, recordTrackerOutcome, runDedupSweep } from './tracker/db-writer.js';
 import { pushTrackerNotification } from './tracker/tracker-notifications.js';
@@ -59,29 +59,29 @@ export function initRosieBot(d: AgentDispatch, paths: InternalServerPaths): void
 
     const snap = getSettingsSnapshotInternal();
     if (!snap.settings.rosie.bot.enabled) {
-      pushRosieLog({ source: 'rosie-bot', level: 'info', summary: 'Rosie-bot: skipped (disabled)' });
+      log({ source: 'rosie-bot', level: 'info', summary: 'Rosie-bot: skipped (disabled)' });
       return;
     }
 
     if (sessionId.startsWith('pending:')) {
-      pushRosieLog({ source: 'rosie-bot', level: 'info', summary: 'Rosie-bot: skipped (pending ID)' });
+      log({ source: 'rosie-bot', level: 'info', summary: 'Rosie-bot: skipped (pending ID)' });
       return;
     }
     if (inflight.has(sessionId)) {
-      pushRosieLog({ source: 'rosie-bot', level: 'info', summary: 'Rosie-bot: skipped (already running)' });
+      log({ source: 'rosie-bot', level: 'info', summary: 'Rosie-bot: skipped (already running)' });
       return;
     }
 
     const info = await d.findSession(sessionId);
     if (!info) {
-      pushRosieLog({ source: 'rosie-bot', level: 'warn', summary: `Rosie-bot: skipped (session ${sessionId.slice(0, 12)}… not found)` });
+      log({ source: 'rosie-bot', level: 'warn', summary: `Rosie-bot: skipped (session ${sessionId.slice(0, 12)}… not found)` });
       return;
     }
 
     const rosieModel = snap.settings.rosie.bot.model;
 
     inflight.add(sessionId);
-    pushRosieLog({ source: 'rosie-bot', level: 'info', summary: `Rosie-bot: starting for ${sessionId.slice(0, 12)}…`, data: { sessionId, vendor: info.vendor } });
+    log({ source: 'rosie-bot', level: 'info', summary: `Rosie-bot: starting for ${sessionId.slice(0, 12)}…`, data: { sessionId, vendor: info.vendor } });
     try {
       await runRosieBot(d, sessionId, info.path, info.vendor, rosieModel);
     } finally {
@@ -111,7 +111,7 @@ async function runRosieBot(
   // Capture serverPaths early — shutdown can null it while we're in-flight
   const paths = serverPaths;
   if (!paths) {
-    pushRosieLog({ source: 'rosie-bot', level: 'warn', summary: 'Rosie-bot: skipped (shutdown in progress)' });
+    log({ source: 'rosie-bot', level: 'warn', summary: 'Rosie-bot: skipped (shutdown in progress)' });
     return;
   }
 
@@ -119,12 +119,12 @@ async function runRosieBot(
   const vendor = parsed?.vendor ?? parentVendor;
   const model = parsed?.model;
 
-  pushRosieLog({ source: 'rosie-bot', level: 'info', summary: `Rosie-bot: using ${vendor}/${model || 'default'}`, data: { vendor, model } });
+  log({ source: 'rosie-bot', level: 'info', summary: `Rosie-bot: using ${vendor}/${model || 'default'}`, data: { vendor, model } });
 
   // 1. Assemble bookend transcript from messages table
   const transcript = assembleBookendTranscript(sessionId, sessionPath, vendor as Vendor, model);
   if (!transcript) {
-    pushRosieLog({ source: 'rosie-bot', level: 'info', summary: 'Rosie-bot: skipped (no messages indexed yet)' });
+    log({ source: 'rosie-bot', level: 'info', summary: 'Rosie-bot: skipped (no messages indexed yet)' });
     return;
   }
 
@@ -296,7 +296,7 @@ async function runSummarizeTurn(
       });
 
       if (!result) {
-        pushRosieLog({ source: 'rosie-bot:summarize', level: 'warn',
+        log({ source: 'rosie-bot:summarize', level: 'warn',
           summary: `Summarize failed: no response (attempt ${attempt})` });
         try { unlinkSync(decisionsFile); } catch { /* best-effort */ }
         continue;
@@ -304,7 +304,7 @@ async function runSummarizeTurn(
 
       const fields = parseSummarizeResponse(result.text);
       if (!fields) {
-        pushRosieLog({ source: 'rosie-bot:summarize', level: 'warn',
+        log({ source: 'rosie-bot:summarize', level: 'warn',
           summary: `Summarize failed: XML parse error (attempt ${attempt})`,
           data: { responseSnippet: result.text.slice(0, 300) } });
         // Close this child since we'll retry with a fresh one
@@ -329,19 +329,19 @@ async function runSummarizeTurn(
 
       refreshAndNotify(sessionId);
 
-      pushRosieLog({ source: 'rosie-bot:summarize', level: 'info',
+      log({ source: 'rosie-bot:summarize', level: 'info',
         summary: `Summarize: ${fields.title || fields.quest}`,
         data: { quest: fields.quest, title: fields.title, status: fields.status } });
 
       return { childSessionId: result.sessionId, decisionsFile };
     } catch (err) {
-      pushRosieLog({ source: 'rosie-bot:summarize', level: 'error',
+      log({ source: 'rosie-bot:summarize', level: 'error',
         summary: `Summarize error: ${err instanceof Error ? err.message : String(err)}` });
       try { unlinkSync(decisionsFile); } catch { /* best-effort */ }
     }
   }
 
-  pushRosieLog({ source: 'rosie-bot:summarize', level: 'warn',
+  log({ source: 'rosie-bot:summarize', level: 'warn',
     summary: `Summarize: all ${MAX_SUMMARIZE_ATTEMPTS} attempts failed` });
   return null;
 }
@@ -478,15 +478,15 @@ async function runTrackerTurn(
       if (decisions.length > 0) {
         logDecisions(decisions, parentSessionId);
         runDedupSweep(d.dispatchChild).catch((err) => {
-          pushRosieLog({ level: 'warn', source: 'rosie-bot:tracker', summary: `Dedup sweep failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
+          log({ level: 'warn', source: 'rosie-bot:tracker', summary: `Dedup sweep failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
         });
         return;
       }
 
-      pushRosieLog({ source: 'rosie-bot:tracker', level: 'warn',
+      log({ source: 'rosie-bot:tracker', level: 'warn',
         summary: `Tracker: no tool calls (attempt ${attempt})` });
     } catch (err) {
-      pushRosieLog({ source: 'rosie-bot:tracker', level: 'error',
+      log({ source: 'rosie-bot:tracker', level: 'error',
         summary: `Tracker error: ${err instanceof Error ? err.message : String(err)}` });
     }
   }
@@ -512,7 +512,7 @@ function readDecisions(file: string): TrackerDecision[] {
     if (!raw) return [];
     return raw.split('\n').map((line) => JSON.parse(line) as TrackerDecision);
   } catch (err) {
-    pushRosieLog({ source: 'rosie-bot:tracker', level: 'warn', summary: 'Tracker: decisions file parse error', data: { file, error: String(err) } });
+    log({ source: 'rosie-bot:tracker', level: 'warn', summary: 'Tracker: decisions file parse error', data: { file, error: String(err) } });
     return [];
   }
 }
@@ -521,7 +521,7 @@ function readDecisions(file: string): TrackerDecision[] {
 function logDecisions(decisions: TrackerDecision[], sessionId: string): void {
   for (const d of decisions) {
     if (d.tool === 'create_project') {
-      pushRosieLog({
+      log({
         source: 'rosie-bot:tracker',
         level: 'info',
         summary: `Tracker: created "${d.title}" [${d.stage}] ${d.status ?? ''}`,
@@ -535,7 +535,7 @@ function logDecisions(decisions: TrackerDecision[], sessionId: string): void {
         status: d.status,
       });
     } else if (d.tool === 'track_project') {
-      pushRosieLog({
+      log({
         source: 'rosie-bot:tracker',
         level: 'info',
         summary: `Tracker: updated "${d.title}" ${d.stage ? `[${d.stage}]` : ''} ${d.status ?? ''}`,
@@ -549,7 +549,7 @@ function logDecisions(decisions: TrackerDecision[], sessionId: string): void {
         status: d.status,
       });
     } else if (d.tool === 'mark_trivial') {
-      pushRosieLog({
+      log({
         source: 'rosie-bot:tracker',
         level: 'info',
         summary: `Tracker: marked trivial — ${d.reason}`,
@@ -564,5 +564,5 @@ function logDecisions(decisions: TrackerDecision[], sessionId: string): void {
   const creates = decisions.filter(d => d.tool === 'create_project').length;
   const tracks = decisions.filter(d => d.tool === 'track_project').length;
   const trivials = decisions.filter(d => d.tool === 'mark_trivial').length;
-  pushRosieLog({ source: 'rosie-bot:tracker', level: 'info', summary: `Tracker: ${decisions.length} decisions (${creates} create, ${tracks} track, ${trivials} trivial)`, data: { sessionId, total: decisions.length, creates, tracks, trivials } });
+  log({ source: 'rosie-bot:tracker', level: 'info', summary: `Tracker: ${decisions.length} decisions (${creates} create, ${tracks} track, ${trivials} trivial)`, data: { sessionId, total: decisions.length, creates, tracks, trivials } });
 }

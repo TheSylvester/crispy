@@ -17,7 +17,7 @@
 
 import { spawn, type ChildProcess } from 'child_process';
 import { createInterface, type Interface as ReadlineInterface } from 'readline';
-import { pushRosieLog } from '../../rosie/index.js';
+import { log } from '../../log.js';
 
 // ============================================================================
 // Types
@@ -165,7 +165,7 @@ export class CodexRpcClient {
     const line = JSON.stringify(response) + '\n';
     this.process.stdin.write(line, (err) => {
       if (err) {
-        pushRosieLog({ level: 'error', source: 'codex-rpc-client', summary: `Failed to write response: ${err.message}` });
+        log({ level: 'error', source: 'codex-rpc-client', summary: `Failed to write response: ${err.message}` });
       }
     });
   }
@@ -244,7 +244,7 @@ export class CodexRpcClient {
     // Handle stderr - log to console but don't crash
     if (this.process.stderr) {
       this.process.stderr.on('data', (data: Buffer) => {
-        pushRosieLog({ level: 'debug', source: 'codex-rpc-client', summary: `stderr: ${data.toString().trim()}` });
+        log({ level: 'debug', source: 'codex-rpc-client', summary: `stderr: ${data.toString().trim()}` });
       });
     }
 
@@ -260,7 +260,7 @@ export class CodexRpcClient {
       });
 
       this.readline.on('error', (err) => {
-        pushRosieLog({ level: 'error', source: 'codex-rpc-client', summary: `readline error: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
+        log({ level: 'error', source: 'codex-rpc-client', summary: `readline error: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
       });
     }
   }
@@ -272,12 +272,12 @@ export class CodexRpcClient {
     try {
       message = JSON.parse(line);
     } catch (err) {
-      pushRosieLog({ level: 'error', source: 'codex-rpc-client', summary: 'Failed to parse JSON line', data: { line } });
+      log({ level: 'error', source: 'codex-rpc-client', summary: 'Failed to parse JSON line', data: { line } });
       return;
     }
 
     if (typeof message !== 'object' || message === null) {
-      pushRosieLog({ level: 'error', source: 'codex-rpc-client', summary: 'Invalid message (not object)', data: { line } });
+      log({ level: 'error', source: 'codex-rpc-client', summary: 'Invalid message (not object)', data: { line } });
       return;
     }
 
@@ -304,7 +304,7 @@ export class CodexRpcClient {
       this.handleNotification(msg as unknown as JsonRpcNotification);
     } else {
       // Unknown message type - log but don't crash
-      pushRosieLog({ level: 'error', source: 'codex-rpc-client', summary: 'Unknown message type', data: { line } });
+      log({ level: 'error', source: 'codex-rpc-client', summary: 'Unknown message type', data: { line } });
     }
   }
 

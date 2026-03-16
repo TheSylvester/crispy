@@ -53,12 +53,12 @@ import {
 } from "../core/session-list-manager.js";
 import { SESSION_LIST_CHANNEL_ID } from "../core/session-list-events.js";
 import {
-  subscribeRosieLog,
-  unsubscribeRosieLog,
-  ROSIE_LOG_CHANNEL_ID,
-  pushRosieLog,
-} from "../core/rosie/debug-log.js";
-import type { RosieLogEvent, RosieLogSubscriber } from "../core/rosie/debug-log.js";
+  subscribeLog,
+  unsubscribeLog,
+  LOG_CHANNEL_ID,
+  log,
+} from "../core/log.js";
+import type { LogEvent, LogSubscriber } from "../core/log.js";
 import type { RecallCatchupEvent } from "../core/channel-events.js";
 import {
   RECALL_CATCHUP_CHANNEL_ID,
@@ -118,7 +118,7 @@ export type ClientMessage = {
 };
 
 /** Union of all events that can be pushed over the wire. */
-export type HostEvent = SubscriberMessage | SessionListEvent | SettingsChangedGlobalEvent | RosieLogEvent | RecallCatchupEvent | TrackerNotifyEvent;
+export type HostEvent = SubscriberMessage | SessionListEvent | SettingsChangedGlobalEvent | LogEvent | RecallCatchupEvent | TrackerNotifyEvent;
 
 /** Host → Client response or push event. */
 export type HostMessage =
@@ -163,7 +163,7 @@ export function createClientConnection(
   let sessionListSub: SessionListSubscriber | null = null;
 
   /** Global rosie-log subscription for this client. */
-  let rosieLogSub: RosieLogSubscriber | null = null;
+  let rosieLogSub: LogSubscriber | null = null;
 
   /** Global recall catch-up subscription for this client. */
   let catchupSub: CatchupSubscriber | null = null;
@@ -509,21 +509,21 @@ export function createClientConnection(
         return { unsubscribed: true };
       }
 
-      case "subscribeRosieLog": {
+      case "subscribeLog": {
         if (rosieLogSub) return { subscribed: true };
         rosieLogSub = {
           id: clientId,
           send(event) {
-            sendFn({ kind: "event", sessionId: ROSIE_LOG_CHANNEL_ID, event });
+            sendFn({ kind: "event", sessionId: LOG_CHANNEL_ID, event });
           },
         };
-        subscribeRosieLog(rosieLogSub);
+        subscribeLog(rosieLogSub);
         return { subscribed: true };
       }
 
-      case "unsubscribeRosieLog": {
+      case "unsubscribeLog": {
         if (rosieLogSub) {
-          unsubscribeRosieLog(rosieLogSub);
+          unsubscribeLog(rosieLogSub);
           rosieLogSub = null;
         }
         return { unsubscribed: true };
@@ -550,7 +550,7 @@ export function createClientConnection(
         return { unsubscribed: true };
       }
 
-      // --- Recall catch-up subscription (follows subscribeRosieLog pattern) ---
+      // --- Recall catch-up subscription (follows subscribeLog pattern) ---
       case "subscribeRecallCatchup": {
         if (catchupSub) return { subscribed: true };
         catchupSub = {
@@ -709,7 +709,7 @@ export function createClientConnection(
 
         // Decode base64 → Float32Array
         const binary = Buffer.from(audioBase64, 'base64');
-        pushRosieLog({
+        log({
           source: 'voice',
           level: 'info',
           summary: `RPC transcribeAudio received: ${binary.byteLength} bytes, sampleRate=${sampleRate}, base64 length=${audioBase64.length}`,
@@ -718,7 +718,7 @@ export function createClientConnection(
           throw new Error(`Audio buffer length ${binary.byteLength} is not aligned to 4 bytes`);
         }
         const pcmFloat32 = new Float32Array(binary.buffer, binary.byteOffset, binary.byteLength / 4);
-        pushRosieLog({
+        log({
           source: 'voice',
           level: 'info',
           summary: `Decoded ${pcmFloat32.length} samples (${(pcmFloat32.length / sampleRate).toFixed(1)}s), calling transcribeAudio...`,
@@ -726,7 +726,7 @@ export function createClientConnection(
 
         const { transcribeAudio } = await import('../core/voice/index.js');
         const result = await transcribeAudio(pcmFloat32, sampleRate);
-        pushRosieLog({
+        log({
           source: 'voice',
           level: 'info',
           summary: `transcribeAudio result: ${result.segments} segments, ${result.durationMs}ms, text="${result.text.slice(0, 80)}"`,
@@ -742,7 +742,7 @@ export function createClientConnection(
       case "stopVoiceCapture": {
         const captured = await stopCapture();
 
-        pushRosieLog({
+        log({
           source: 'voice',
           level: 'info',
           summary: `Host capture: ${captured.pcmFloat32.length} samples (${(captured.pcmFloat32.length / captured.sampleRate).toFixed(1)}s), running transcription...`,
@@ -750,7 +750,7 @@ export function createClientConnection(
 
         const { transcribeAudio: transcribe } = await import('../core/voice/index.js');
         const txResult = await transcribe(captured.pcmFloat32, captured.sampleRate);
-        pushRosieLog({
+        log({
           source: 'voice',
           level: 'info',
           summary: `Host capture transcription: ${txResult.segments} segments, ${txResult.durationMs}ms, text="${txResult.text.slice(0, 80)}"`,
@@ -856,7 +856,7 @@ export function createClientConnection(
       sessionListSub = null;
     }
     if (rosieLogSub) {
-      unsubscribeRosieLog(rosieLogSub);
+      unsubscribeLog(rosieLogSub);
       rosieLogSub = null;
     }
     if (trackerNotifySub) {
