@@ -58,10 +58,12 @@ function extractContextWindow(entries: TranscriptEntry[]): number {
     }
   }
 
-  // Fallback: extract model from last assistant message and look up known window
+  // Fallback: extract model from last top-level assistant message and look up
+  // known window. Skip sub-agent entries (parentToolUseID set) — they may use
+  // a cheaper model (e.g. Haiku) that would report the wrong context window.
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
-    if (entry.type === 'assistant' && entry.message?.model !== undefined) {
+    if (entry.type === 'assistant' && entry.message?.model !== undefined && !entry.parentToolUseID) {
       const vendor = (entry.vendor ?? 'claude') as Vendor;
       return getContextWindowTokens(vendor, entry.message.model);
     }
@@ -81,7 +83,9 @@ function extractContextWindow(entries: TranscriptEntry[]): number {
 export function computeContextFromEntries(entries: TranscriptEntry[]): ContextUsage | null {
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
-    if (entry.type === 'assistant' && entry.message?.usage) {
+    // Skip sub-agent entries — their usage reflects the child session's context,
+    // not the main session's. Sub-agents have parentToolUseID set.
+    if (entry.type === 'assistant' && entry.message?.usage && !entry.parentToolUseID) {
       const u = entry.message.usage;
       const input = u.input_tokens ?? 0;
       const output = u.output_tokens ?? 0;

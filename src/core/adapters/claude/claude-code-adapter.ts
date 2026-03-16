@@ -1160,7 +1160,11 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         cacheRead: betaUsage.cache_read_input_tokens ?? 0,
       };
       const totalTokens = tokens.input + tokens.output + tokens.cacheCreation + tokens.cacheRead;
-      const cw = this._contextUsage?.contextWindow ?? getContextWindowTokens('claude', this.options.model);
+      // Prefer the model from the message itself (always present on assistant
+      // messages) over this.options.model which may be undefined for resumed
+      // sessions before the SDK init message arrives.
+      const msgModel = (msg.message as unknown as Record<string, unknown>)?.model as string | undefined;
+      const cw = this._contextUsage?.contextWindow ?? getContextWindowTokens('claude', msgModel ?? this.options.model);
       this._contextUsage = {
         tokens,
         totalTokens,
@@ -1303,18 +1307,41 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         // If options.model is already set (e.g. "opus" from send()), keep it —
         // the SDK init reports the full model string ("claude-opus-4-...") which
         // would clobber the short name the UI understands.
+        let settingsChanged = false;
         if (this._metadata.model && !this.options.model) {
           this.options.model = this._metadata.model;
+          settingsChanged = true;
         }
-        if (this._metadata.permissionMode) {
+        if (this._metadata.permissionMode && this._metadata.permissionMode !== this.options.permissionMode) {
           this.options.permissionMode = this._metadata.permissionMode as Options['permissionMode'];
+          settingsChanged = true;
+        }
+
+        // Recalculate contextWindow now that we know the real model.
+        // The first assistant message may have locked _contextUsage to the
+        // wrong value (200k default) because options.model was undefined.
+        if (this._contextUsage && this.options.model) {
+          const correctCw = getContextWindowTokens('claude', this.options.model);
+          if (correctCw !== this._contextUsage.contextWindow) {
+            this._contextUsage = {
+              ...this._contextUsage,
+              contextWindow: correctCw,
+              percent: Math.min(Math.round((this._contextUsage.totalTokens / correctCw) * 100), 100),
+            };
+          }
+        }
+
+        // Emit settings_changed so ControlPanel picks up the corrected
+        // model and permissionMode. Only emit when init actually backfilled
+        // values (resume case) — for fresh sessions where options were already
+        // set, this would clobber the UI-friendly short model name with the
+        // full SDK model string the dropdown can't represent.
+        if (settingsChanged) {
+          this.emitSettingsChanged();
         }
 
         // Re-emit current status so the channel broadcasts a fresh state_changed
-        // with the now-populated settings snapshot. The first 'active' status
-        // (from startQuery) was processed before init arrived, so its snapshot
-        // had empty settings. This causes a harmless streaming→streaming
-        // re-broadcast with the correct settings.
+        // with the now-populated settings snapshot.
         if (this._status === 'active') {
           this.emitStatus('active');
         }
@@ -1670,6 +1697,21 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     this.outputQueue.enqueue({
       type: 'event',
       event: { type: 'status', status, ...extra },
+    });
+  }
+
+  /**
+   * Emit a settings_changed notification so the UI can sync model/permissionMode.
+   */
+  private emitSettingsChanged(): void {
+    if (this._closed) return;
+    this.outputQueue.enqueue({
+      type: 'event',
+      event: {
+        type: 'notification',
+        kind: 'settings_changed',
+        settings: this.settings,
+      },
     });
   }
 }

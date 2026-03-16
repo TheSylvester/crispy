@@ -53,10 +53,30 @@ const MIN_CONTEXT_WINDOW = 200_000;
 
 /**
  * Return the context window size (in tokens) for a given vendor + model.
+ *
+ * Handles both short aliases ("opus", "claude-opus-4-6") and date-suffixed
+ * SDK model strings ("claude-opus-4-5-20251101") by trying an exact match
+ * first, then stripping the date suffix for a prefix match.
  */
 export function getContextWindowTokens(vendor: Vendor, model?: string): number {
   const key = `${vendor}:${model || ''}`;
   if (CONTEXT_WINDOWS[key] !== undefined) return CONTEXT_WINDOWS[key];
+  // Strip date suffix (e.g. "claude-opus-4-5-20251101" → "claude-opus-4-5")
+  // SDK model strings append -YYYYMMDD; the table uses the versionless form.
+  if (model) {
+    const stripped = model.replace(/-\d{8}$/, '');
+    if (stripped !== model) {
+      const strippedKey = `${vendor}:${stripped}`;
+      if (CONTEXT_WINDOWS[strippedKey] !== undefined) return CONTEXT_WINDOWS[strippedKey];
+    }
+    // Family-name fallback: SDK model strings vary across versions
+    // (claude-opus-4-6, claude-opus-4-5-20251101, claude-4-opus-20250514, etc.)
+    // but the family name (opus/sonnet/haiku) determines the context window.
+    const m = stripped.toLowerCase();
+    if (m.includes('opus')) return CONTEXT_WINDOWS[`${vendor}:opus`] ?? MIN_CONTEXT_WINDOW;
+    if (m.includes('sonnet')) return CONTEXT_WINDOWS[`${vendor}:sonnet`] ?? MIN_CONTEXT_WINDOW;
+    if (m.includes('haiku')) return CONTEXT_WINDOWS[`${vendor}:haiku`] ?? MIN_CONTEXT_WINDOW;
+  }
   // Try vendor default
   const vendorDefault = CONTEXT_WINDOWS[`${vendor}:`];
   if (vendorDefault !== undefined) return vendorDefault;

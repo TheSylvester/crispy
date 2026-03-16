@@ -248,7 +248,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           const savedMode = settingsEvent.snapshot.settings.turnDefaults?.permissionMode;
           if (savedMode) {
             const agencyMode = mapPermissionModeToAgency(savedMode);
-            if (agencyMode) setDefaultPermissionMode(agencyMode);
+            if (agencyMode) {
+              setDefaultPermissionMode(agencyMode);
+              defaultPermissionModeRef.current = agencyMode;
+            }
           }
           const mcpMem = settingsEvent.snapshot.settings.mcp?.memory;
           if (mcpMem) {
@@ -279,6 +282,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     // --- Default Permission Mode setting ---
     const [defaultPermissionMode, setDefaultPermissionMode] = useState<AgencyMode>('ask-before-edits');
+    // Ref mirror so event-handler closures always see the latest value
+    // (React state in useEffect closures is stale until the effect re-runs).
+    const defaultPermissionModeRef = useRef<AgencyMode>('ask-before-edits');
 
     // --- Rosie Bot settings state ---
     const [rosieEnabled, setRosieEnabled] = useState(false);
@@ -292,13 +298,16 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         setDefaultModel(savedDefault);
         // Apply persisted default model on initial load (before any session overrides it)
         if (savedDefault) dispatch({ type: 'SET_MODEL', model: savedDefault });
-        // Apply persisted permission mode + bypass on initial load
+        // Apply persisted permission mode + bypass on initial load.
+        // Also re-apply if catchup already ran with the stale hardcoded
+        // default (race: catchup arrives before getSettings resolves).
         const savedMode = snapshot.settings.turnDefaults?.permissionMode;
         if (savedMode) {
           const agencyMode = mapPermissionModeToAgency(savedMode);
           if (agencyMode) {
-            dispatch({ type: 'SET_AGENCY_MODE', mode: agencyMode });
             setDefaultPermissionMode(agencyMode);
+            defaultPermissionModeRef.current = agencyMode;
+            dispatch({ type: 'SET_AGENCY_MODE', mode: agencyMode });
             if (agencyMode === 'bypass-permissions') {
               dispatch({ type: 'SET_BYPASS', enabled: true });
             }
@@ -534,17 +543,27 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             ? ''
             : `${settings.vendor}:${rawModel}`;
           dispatch({ type: 'SET_MODEL', model: modelValue });
-          // Sync permission mode → agency mode (fall back to user default when session has none)
+          // Sync permission mode → agency mode (fall back to user default when session has none).
+          // Use ref (not state) so we always see the latest saved default, even if
+          // getSettings() resolved after this closure was created.
           if (settings.permissionMode) {
             const agencyMode = mapPermissionModeToAgency(settings.permissionMode);
             if (agencyMode) {
               dispatch({ type: 'SET_AGENCY_MODE', mode: agencyMode });
             }
+            // Sync bypass from session's explicit setting
+            dispatch({ type: 'SET_BYPASS', enabled: settings.allowDangerouslySkipPermissions });
           } else {
-            dispatch({ type: 'SET_AGENCY_MODE', mode: defaultPermissionMode });
+            // Session has no permission mode — reset to user's saved default.
+            // Use ref (not state) so the closure always sees the latest value.
+            const fallback = defaultPermissionModeRef.current;
+            dispatch({ type: 'SET_AGENCY_MODE', mode: fallback });
+            // Sync bypass to match the default mode (bypass-permissions → true,
+            // anything else → false). Don't use the adapter's
+            // allowDangerouslySkipPermissions which is always false for
+            // uninitialized adapters.
+            dispatch({ type: 'SET_BYPASS', enabled: fallback === 'bypass-permissions' });
           }
-          // Sync bypass
-          dispatch({ type: 'SET_BYPASS', enabled: settings.allowDangerouslySkipPermissions });
           // Sync chrome (extraArgs with 'chrome' key means enabled)
           const chromeEnabled = settings.extraArgs != null && 'chrome' in settings.extraArgs;
           dispatch({ type: 'SET_CHROME', enabled: chromeEnabled });
