@@ -110,6 +110,10 @@ export interface ChildSessionOptions {
   env?: Record<string, string>;
   /** Explicit working directory — overrides parent session's projectPath. */
   cwd?: string;
+  /** System prompt override for the child session. */
+  systemPrompt?: string;
+  /** Whether this is a user-initiated or system-initiated session. */
+  sessionKind?: 'user' | 'system';
   /** Called for each channel message — use for streaming log output. */
   onEntry?: (msg: ChannelMessage) => void;
 }
@@ -118,6 +122,25 @@ export interface ChildSessionResult {
   sessionId: string;
   text: string;
   structured?: unknown;
+  contextUsage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens?: number;
+    totalCostUsd?: number;
+  };
+}
+
+/** Extract contextUsage from a channel's adapter for inclusion in ChildSessionResult. */
+function extractChildContextUsage(channelId: string): ChildSessionResult['contextUsage'] | undefined {
+  const ch = getChannel(channelId);
+  const usage = ch?.adapter?.contextUsage;
+  if (!usage) return undefined;
+  return {
+    inputTokens: usage.tokens.input,
+    outputTokens: usage.tokens.output,
+    cacheReadTokens: usage.tokens.cacheRead || undefined,
+    totalCostUsd: usage.totalCostUsd,
+  };
 }
 
 /** Parent->child relationship tracking. Used by dispatchChildSession for lifecycle management.
@@ -1075,6 +1098,8 @@ export async function dispatchChildSession(
     skipPersistSession,
     ...(options.mcpServers && { mcpServers: options.mcpServers }),
     ...(options.env && { env: options.env }),
+    ...(options.systemPrompt && { systemPrompt: options.systemPrompt }),
+    ...(options.sessionKind && { sessionKind: options.sessionKind }),
   };
 
   // Build target: hydrated if caller provided pre-loaded history, fork if same
@@ -1138,7 +1163,10 @@ export async function dispatchChildSession(
     // Idle debounce timer — prevents spurious early resolution (fix #8)
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const timer = setTimeout(() => {
+    // Timeout: safety net for hung adapters / infinite loops.
+    // timeoutMs=0 disables the timeout — used for long-running agent sessions
+    // that should wait indefinitely for the turn to complete naturally.
+    const timer = timeoutMs > 0 ? setTimeout(() => {
       if (!settled) {
         if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
         const parts: string[] = [];
@@ -1149,9 +1177,10 @@ export async function dispatchChildSession(
         console.warn(`[child-session] Timeout after ${timeoutMs}ms — no idle event received (parent: ${parentSessionId}, vendor: ${vendor}) — ${parts.join(' | ')}`);
         settled = true;
         if (text) {
+          const contextUsage = extractChildContextUsage(currentId);
           cleanup();
           console.warn(`[child-session] Timeout with partial text (${text.length} chars) -- returning partial result (parent: ${parentSessionId}, vendor: ${vendor})`);
-          resolve({ sessionId: currentId, text, structured });
+          resolve({ sessionId: currentId, text, structured, contextUsage });
         } else {
           // No text → caller gets null and has no session ID to clean up.
           // Force-close to prevent leaking channel+adapter+MCP subprocesses.
@@ -1159,12 +1188,12 @@ export async function dispatchChildSession(
           resolve(null);
         }
       }
-    }, timeoutMs);
+    }, timeoutMs) : null;
 
     // force=true tears down even when autoClose:false — used when the dispatch
     // resolves null (no session ID returned to caller → unreachable channel).
     const cleanup = (force = false) => {
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
       const shouldClose = autoClose || force;
       // Clean up both pendingId and currentId to handle the rekey race —
@@ -1274,8 +1303,9 @@ export async function dispatchChildSession(
         // rekey promise resolves, leaving currentId as the stale pending ID.
         const finalize = (resolvedId: string) => {
           if (text || structured !== undefined || entryTypes.length > 1) {
+            const contextUsage = extractChildContextUsage(resolvedId);
             cleanup();
-            resolve({ sessionId: resolvedId, text, structured });
+            resolve({ sessionId: resolvedId, text, structured, contextUsage });
           } else {
             const parts: string[] = [];
             if (lastError) parts.push(`error: ${lastError}`);
@@ -1425,22 +1455,26 @@ export async function resumeChildSession(
     let settled = false;
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const timer = setTimeout(() => {
+    // Timeout: safety net for hung adapters / infinite loops.
+    // timeoutMs=0 disables the timeout — used for long-running agent sessions
+    // that should wait indefinitely for the turn to complete naturally.
+    const timer = timeoutMs > 0 ? setTimeout(() => {
       if (!settled) {
         if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
         console.warn(`[resume-child] Timeout after ${timeoutMs}ms — session ${sessionId}`);
         settled = true;
+        const contextUsage = extractChildContextUsage(sessionId);
         cleanup();
         if (text) {
-          resolve({ sessionId, text, structured });
+          resolve({ sessionId, text, structured, contextUsage });
         } else {
           resolve(null);
         }
       }
-    }, timeoutMs);
+    }, timeoutMs) : null;
 
     const cleanup = () => {
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
       const ch = getChannel(sessionId);
       if (ch) {
@@ -1504,9 +1538,10 @@ export async function resumeChildSession(
         }
 
         const finalizeResume = () => {
+          const contextUsage = extractChildContextUsage(sessionId);
           cleanup();
           if (text || structured !== undefined || entryTypes.length > 1) {
-            resolve({ sessionId, text, structured });
+            resolve({ sessionId, text, structured, contextUsage });
           } else {
             if (lastError) console.warn(`[resume-child] Empty response with error: ${lastError}`);
             resolve(null);

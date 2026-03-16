@@ -25,10 +25,11 @@ Use the same file for both agents.
 
 Launch both via `crispy-agent` **in the same message** using `PROMPT_FILE`:
 
-- **claude**: `PROMPT_FILE=/tmp/superthink-<stub>.md .claude/skills/crispy-agent/scripts/crispy-agent --vendor claude --no-auto-close` (`run_in_background`)
-- **codex**: `PROMPT_FILE=/tmp/superthink-<stub>.md .claude/skills/crispy-agent/scripts/crispy-agent --vendor codex --no-auto-close` (`run_in_background`)
+- **claude**: `PROMPT_FILE=/tmp/superthink-<stub>.md .claude/skills/crispy-agent/scripts/crispy-agent --vendor claude` (`run_in_background`)
+- **codex**: `PROMPT_FILE=/tmp/superthink-<stub>.md .claude/skills/crispy-agent/scripts/crispy-agent --vendor codex` (`run_in_background`)
 
 Both get the **identical prompt**. Both save output to `/tmp/crispy-agents/`.
+Agents run until their turn completes naturally — no timeout.
 
 **Reading output:** If `TaskOutput` returns empty/metadata-only or "No task
 found", fall back to reading the output file directly from
@@ -37,11 +38,29 @@ found", fall back to reading the output file directly from
 
 Capture their session IDs from the `[session_id: ...]` output.
 
+## Wait for BOTH agents, then collect conclusions
+
+**Wait for both background tasks to complete before proceeding.** Do not
+start verification after only one returns — the second agent's perspective
+may change your verification strategy.
+
+Check if either agent's output is only intermediate narration (tool-use
+summaries like "Let me read...", "I'm checking...") without a final analysis.
+This happens when agents spend their entire turn researching without
+synthesizing. **Resume those agents** to get their conclusions:
+
+- **claude**: `.claude/skills/crispy-agent/scripts/crispy-agent --vendor claude --resume <session-id> "You were investigating <topic>. Synthesize your findings into a concrete analysis. What did you find? What's the root cause? What's the fix?"`
+- **codex**: `.claude/skills/crispy-agent/scripts/crispy-agent --vendor codex --resume <session-id> "You were investigating <topic>. Synthesize your findings into a concrete analysis. What did you find? What's the root cause? What's the fix?"`
+
+Only proceed to verification once you have substantive analysis from both
+agents (not just intermediate progress text).
+
 ## Skeptically verify their claims
 
-For each claim or issue an agent raised, send a sub-agent to check it against the actual code. Be
-skeptical — grep for the thing, read the file, think hard about it and ask yourself if the claim holds up.
-Don't take the review agents at their word.
+For each claim or issue an agent raised, send a sub-agent to check it against
+the actual code. Be skeptical — grep for the thing, read the file, think hard
+about it and ask yourself if the claim holds up. Don't take the review agents
+at their word.
 
 Launch verification sub-agents in parallel where possible.
 
@@ -75,14 +94,3 @@ Tell the user what happened:
 
 Then stop. The user decides what to do next — fix things, dig deeper, ignore
 it, whatever. Do not auto-fix. Do not suggest next steps unprompted.
-
-## Options
-
-| Flag                    | Description                                        |
-| ----------------------- | -------------------------------------------------- |
-| `--vendor <v>`          | Vendor per dispatch (default: claude or codex)     |
-| `-m, --model <model>`   | Model override                                     |
-| `--timeout <ms>`        | Per-agent timeout (default: 120000)                |
-| `--no-auto-close`       | Keep sessions alive for resume/pushback            |
-| `--visible`             | Show child sessions in Crispy editor UI            |
-| `--debug`               | Print diagnostics to stderr                        |

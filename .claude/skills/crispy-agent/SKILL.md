@@ -11,8 +11,8 @@ allowed-tools: Bash
 Works in both foreground and background:
 
 ```
-# Foreground (blocks until done — use timeout since runs can take minutes)
-Bash(command: ".claude/skills/crispy-agent/scripts/crispy-agent Your prompt here", timeout: 600000)
+# Foreground (blocks until turn completes)
+Bash(command: ".claude/skills/crispy-agent/scripts/crispy-agent Your prompt here")
 
 # Background (non-blocking — check output later with TaskOutput)
 Bash(command: ".claude/skills/crispy-agent/scripts/crispy-agent Your prompt here", run_in_background: true)
@@ -28,7 +28,7 @@ Unified wrapper around `crispy-dispatch` (Crispy IPC) for multi-vendor dispatch:
 - Vendor selection via `--vendor` (default: `claude`)
 - Model selection via `--model` / `-m`
 - Session resume via `--resume` / `-r`
-- Default approval mode: `bypass` (YOLO)
+- Default: no timeout, bypass approvals, session kept alive for resume
 - All output goes through Crispy host — sessions stream live in the UI
 
 ## Prerequisites
@@ -61,23 +61,6 @@ cat task.md | .claude/skills/crispy-agent/scripts/crispy-agent
 .claude/skills/crispy-agent/scripts/crispy-agent --vendor codex --resume <UUID> "Continue"
 ```
 
-### Vendor Selection
-
-```bash
-# Claude (default)
-.claude/skills/crispy-agent/scripts/crispy-agent "Your prompt"
-
-# Codex
-.claude/skills/crispy-agent/scripts/crispy-agent --vendor codex "Your prompt"
-```
-
-### Model Selection
-
-```bash
-.claude/skills/crispy-agent/scripts/crispy-agent -m claude-haiku-4-5 "Your prompt"
-.claude/skills/crispy-agent/scripts/crispy-agent --vendor codex -m gpt-5.3-instant "Your prompt"
-```
-
 ## Options
 
 | Flag | Description |
@@ -85,9 +68,8 @@ cat task.md | .claude/skills/crispy-agent/scripts/crispy-agent
 | `--vendor <v>` | Vendor to dispatch through (default: `claude`) |
 | `-m, --model <model>` | Model override |
 | `-r, --resume <UUID>` | Resume session by ID |
-| `--timeout <ms>` | Per-dispatch timeout (default: 300s) |
-| `--no-auto-close` | Keep session alive after completion (default) |
-| `--auto-close` | Close session on completion |
+| `--timeout <ms>` | Override timeout (default: no timeout) |
+| `--auto-close` | Close session on completion (default: kept alive) |
 | `--visible` | Show session in Crispy editor UI |
 | `-f, --fork` | Fork from session (requires `--resume`) |
 | `--resume-at <msg-id>` | Fork at specific message (requires `--fork`) |
@@ -125,6 +107,6 @@ to capture output from a background run, read this file instead.
 |------|---------|
 | 0 | Completed successfully |
 | 10 | Approval required (session paused, can resume) |
-| 11 | Timeout (may have partial text on stdout) |
+| 11 | Timeout (only if explicit --timeout set) |
 | 12 | Transport error / no Crispy host |
 | 13 | Invalid usage |

@@ -95,7 +95,7 @@ function parseArgs(argv: string[]): CliArgs {
   const approvalEnv = process.env.CRISPY_DISPATCH_APPROVAL as ApprovalMode | undefined;
   const args: CliArgs = {
     vendor: 'claude',
-    timeoutMs: 300_000,
+    timeoutMs: 600_000,
     autoClose: true,
     visible: false,
     fork: false,
@@ -111,6 +111,7 @@ function parseArgs(argv: string[]): CliArgs {
   }
 
   const positionalParts: string[] = [];
+  let explicitTimeout = false;
   let i = 2; // skip node + script
 
   while (i < argv.length) {
@@ -140,6 +141,7 @@ function parseArgs(argv: string[]): CliArgs {
         break;
       case '--timeout':
         args.timeoutMs = parseInt(requireValue('--timeout', argv, i), 10);
+        explicitTimeout = true;
         i++;
         break;
       case '--no-auto-close':
@@ -200,6 +202,12 @@ function parseArgs(argv: string[]): CliArgs {
     args.prompt = positionalParts.join(' ');
   }
 
+  // Long-running agent sessions (--no-auto-close) default to no timeout —
+  // wait indefinitely for the turn to complete. Explicit --timeout overrides.
+  if (!args.autoClose && !explicitTimeout) {
+    args.timeoutMs = 0;
+  }
+
   return args;
 }
 
@@ -230,7 +238,7 @@ Vendor & Model:
 Behavior:
   --visible                 Show session in editor UI (uses sendTurn instead of dispatchChild)
   --parent-session <id>     Parent session ID (or set CRISPY_PARENT_SESSION)
-  --timeout <ms>            Timeout in milliseconds (default: 300000)
+  --timeout <ms>            Timeout in milliseconds (default: 600000)
   --persist                 Save session to disk (default: ephemeral)
   --no-auto-close           Keep session alive after completion
   --approval <mode>         Approval handling: fail (default), bypass, manual
