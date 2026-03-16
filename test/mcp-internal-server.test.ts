@@ -13,13 +13,13 @@ import { join } from 'node:path';
 // Mock the rosie debug-log module to prevent the log persister from
 // triggering a re-entrant getDb() call with the production DB path,
 // which would close the test DB mid-migration.
-vi.mock('../src/core/rosie/debug-log.js', () => ({
-  pushRosieLog: () => {},
-  getRosieLogSnapshot: () => [],
-  subscribeRosieLog: () => () => {},
-  unsubscribeRosieLog: () => {},
+vi.mock('../src/core/log.js', () => ({
+  log: () => {},
+  getLogSnapshot: () => [],
+  subscribeLog: () => () => {},
+  unsubscribeLog: () => {},
   registerLogPersister: () => {},
-  ROSIE_LOG_CHANNEL_ID: 'rosie-log',
+  LOG_CHANNEL_ID: 'log',
 }));
 
 import { getDb, _resetDb } from '../src/core/crispy-db.js';
