@@ -1124,6 +1124,7 @@ export async function dispatchChildSession(
   const pendingId = `pending:child-${crypto.randomUUID()}`;
 
   pushRosieLog({ source: 'session', level: 'info', summary: `Session: dispatching child (${vendor}) for parent ${parentSessionId.slice(0, 12)}…`, data: { parentSessionId, vendor, timeoutMs } });
+  pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Channel: creating new pending channel ${pendingId.slice(0, 30)}… (target: ${target.kind}, vendor: ${vendor})` });
 
   return new Promise<ChildSessionResult | null>((resolve) => {
     let text = '';
@@ -1144,15 +1145,18 @@ export async function dispatchChildSession(
         parts.push(`entries: [${entryTypes.join(', ')}]`);
         if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
         parts.push(`text: ${text.length} chars`);
+        pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Timeout fired: ${timeoutMs}ms elapsed, entries: ${entryTypes.length}, textLen: ${text.length} (parent: ${parentSessionId})` });
         pushRosieLog({ level: 'warn', source: 'child-session', summary: `Timeout after ${timeoutMs}ms — no idle event received (parent: ${parentSessionId}, vendor: ${vendor}) — ${parts.join(' | ')}` });
         settled = true;
         if (text) {
           cleanup();
+          pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Timeout with partial text — returning partial result (${text.length} chars)` });
           pushRosieLog({ level: 'warn', source: 'child-session', summary: `Timeout with partial text (${text.length} chars) -- returning partial result (parent: ${parentSessionId}, vendor: ${vendor})` });
           resolve({ sessionId: currentId, text, structured });
         } else {
           // No text → caller gets null and has no session ID to clean up.
           // Force-close to prevent leaking channel+adapter+MCP subprocesses.
+          pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Timeout null result: no text collected, force-closing channel (parent: ${parentSessionId})` });
           cleanup(/* force */ true);
           resolve(null);
         }
@@ -1203,20 +1207,21 @@ export async function dispatchChildSession(
         // Log every message type for diagnostics
         if (msg.type === 'event') {
           const evt = msg.event;
-          // Streaming content is too noisy — print label once then dots
+          // Streaming content is too noisy — log once when streaming starts
           if (evt.type === 'notification' && (evt as { kind?: string }).kind === 'streaming_content') {
             if (!streamingDots) {
-              process.stderr.write(`[child-session] Event: notification/streaming_content (parent: ${parentSessionId}) `);
+              pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Event: notification/streaming_content started (parent: ${parentSessionId})` });
               streamingDots = true;
             }
-            process.stderr.write('.');
           } else {
-            if (streamingDots) { process.stderr.write('\n'); streamingDots = false; }
-            pushRosieLog({ level: 'debug', source: 'child-session', summary: `Event: ${evt.type}${evt.type === 'status' ? `=${(evt as { status?: string }).status}` : evt.type === 'notification' ? `/${(evt as { kind?: string }).kind}` : ''} (parent: ${parentSessionId})` });
+            if (streamingDots) streamingDots = false;
+            pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Event: ${evt.type}${evt.type === 'status' ? `=${(evt as { status?: string }).status}` : evt.type === 'notification' ? `/${(evt as { kind?: string }).kind}` : ''} (parent: ${parentSessionId})` });
           }
         } else if (msg.type === 'entry') {
-          if (streamingDots) { process.stderr.write('\n'); streamingDots = false; }
-          pushRosieLog({ level: 'debug', source: 'child-session', summary: `Entry: ${msg.entry.type} (parent: ${parentSessionId})` });
+          if (streamingDots) streamingDots = false;
+          const hasText = msg.entry.message?.content ? (Array.isArray(msg.entry.message.content) ? msg.entry.message.content.some((b: { type?: string; text?: string }) => b.type === 'text' && !!b.text) : typeof msg.entry.message.content === 'string' && msg.entry.message.content.length > 0) : false;
+          const hasStructured = msg.entry.metadata?.structured_output !== undefined;
+          pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Entry: ${msg.entry.type} (parent: ${parentSessionId}, hasText: ${hasText}, hasStructured: ${hasStructured})` });
         }
 
         // Track error notifications from the adapter (SDK failures, auth errors, etc.)
@@ -1266,6 +1271,7 @@ export async function dispatchChildSession(
 
         // Turn complete — debounced idle resolution
         if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'idle') {
+          pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Idle event received (parent: ${parentSessionId}, textSoFar: ${text.length} chars, entries: ${entryTypes.length})` });
           if (idleTimer) clearTimeout(idleTimer);
           idleTimer = setTimeout(() => {
             if (settled) return;
@@ -1276,6 +1282,7 @@ export async function dispatchChildSession(
             // so resumeChildSession can find the channel. Idle can fire before the
             // rekey promise resolves, leaving currentId as the stale pending ID.
             const finalize = (resolvedId: string) => {
+              pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Finalize: textLen=${text.length}, hasStructured=${structured !== undefined}, entryTypes=[${entryTypes.join(', ')}] (parent: ${parentSessionId})` });
               if (text || structured !== undefined || entryTypes.length > 1) {
                 cleanup();
                 resolve({ sessionId: resolvedId, text, structured });
@@ -1284,6 +1291,7 @@ export async function dispatchChildSession(
                 if (lastError) parts.push(`error: ${lastError}`);
                 parts.push(`entries: [${entryTypes.join(', ')}]`);
                 if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
+                pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Null result: no text, no structured data, ≤1 entry (parent: ${parentSessionId}) — ${parts.join(' | ')}` });
                 pushRosieLog({ level: 'warn', source: 'child-session', summary: `Turn completed with empty response (parent: ${parentSessionId}) — ${parts.join(' | ')}` });
                 cleanup(/* force */ true);
                 resolve(null);
@@ -1309,11 +1317,12 @@ export async function dispatchChildSession(
     childSessions.set(pendingId, { parentSessionId, autoClose, visible: false });
 
     // Fire the turn with the explicit pending ID
-    pushRosieLog({ level: 'debug', source: 'child-session', summary: `Sending turn (parent: ${parentSessionId}, vendor: ${vendor}, pending: ${pendingId})` });
+    const promptLen = typeof prompt === 'string' ? prompt.length : Array.isArray(prompt) ? prompt.reduce((n, b) => n + ((b as { text?: string }).text?.length ?? 0), 0) : 0;
+    pushRosieLog({ level: 'debug', source: 'dispatch', summary: `sendTurn entry (parent: ${parentSessionId}, vendor: ${vendor}, pending: ${pendingId.slice(0, 30)}…, promptLen: ${promptLen})` });
     sendTurn(intent, internalSubscriber, pendingId)
       .then((result) => {
         if (settled) return;
-        pushRosieLog({ level: 'debug', source: 'child-session', summary: `sendTurn resolved — sessionId: ${result.sessionId} (parent: ${parentSessionId})` });
+        pushRosieLog({ level: 'debug', source: 'dispatch', summary: `sendTurn resolved — sessionId: ${result.sessionId} (parent: ${parentSessionId})` });
         currentId = result.sessionId;
         // Migrate child tracking from pending to real ID
         childSessions.delete(pendingId);
@@ -1379,9 +1388,11 @@ export async function resumeChildSession(
 
   const ch = getChannel(sessionId);
   if (!ch) {
+    pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Resume: no channel found for ${sessionId} — null result (channel not open or already closed)` });
     pushRosieLog({ level: 'warn', source: 'resume-child', summary: `No channel found for session ${sessionId}` });
     return null;
   }
+  pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Resume: reusing existing channel for ${sessionId.slice(0, 12)}…` });
 
   // Defensive: ensure childSessions tracks this session to prevent lifecycle
   // hooks from firing on it during turn 2.
@@ -1407,12 +1418,15 @@ export async function resumeChildSession(
     const timer = setTimeout(() => {
       if (!settled) {
         if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+        pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Resume timeout fired: ${timeoutMs}ms elapsed, entries: ${entryTypes.length}, textLen: ${text.length} (session: ${sessionId.slice(0, 12)}…)` });
         pushRosieLog({ level: 'warn', source: 'resume-child', summary: `Timeout after ${timeoutMs}ms — session ${sessionId}` });
         settled = true;
         cleanup();
         if (text) {
+          pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Resume timeout with partial text — returning partial result (${text.length} chars)` });
           resolve({ sessionId, text, structured });
         } else {
+          pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Resume timeout null result: no text collected (session: ${sessionId.slice(0, 12)}…)` });
           resolve(null);
         }
       }
@@ -1457,6 +1471,9 @@ export async function resumeChildSession(
         if (msg.type === 'entry') {
           const entry = msg.entry;
           entryTypes.push(entry.type);
+          const hasText = entry.message?.content ? (Array.isArray(entry.message.content) ? entry.message.content.some((b: { type?: string; text?: string }) => b.type === 'text' && !!b.text) : typeof entry.message.content === 'string' && entry.message.content.length > 0) : false;
+          const hasStructured = entry.metadata?.structured_output !== undefined;
+          pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Resume entry: ${entry.type} (session: ${sessionId.slice(0, 12)}…, hasText: ${hasText}, hasStructured: ${hasStructured})` });
           if ((entry.type === 'assistant' || entry.type === 'result') && entry.message) {
             const content = entry.message.content;
             if (Array.isArray(content)) {
@@ -1469,8 +1486,8 @@ export async function resumeChildSession(
               text += content;
             }
           }
-          if (entry.metadata?.structured_output !== undefined) {
-            structured = entry.metadata.structured_output;
+          if (hasStructured) {
+            structured = entry.metadata!.structured_output;
           }
         }
 
@@ -1481,14 +1498,17 @@ export async function resumeChildSession(
 
         // Turn complete — debounced
         if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'idle') {
+          pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Resume idle event (session: ${sessionId.slice(0, 12)}…, textSoFar: ${text.length} chars, entries: ${entryTypes.length})` });
           if (idleTimer) clearTimeout(idleTimer);
           idleTimer = setTimeout(() => {
             if (settled) return;
             settled = true;
+            pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Resume finalize: textLen=${text.length}, hasStructured=${structured !== undefined}, entryTypes=[${entryTypes.join(', ')}] (session: ${sessionId.slice(0, 12)}…)` });
             cleanup();
             if (text || structured !== undefined || entryTypes.length > 1) {
               resolve({ sessionId, text, structured });
             } else {
+              pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Resume null result: no text, no structured data, ≤1 entry (session: ${sessionId.slice(0, 12)}…)${lastError ? `, error: ${lastError}` : ''}` });
               if (lastError) pushRosieLog({ level: 'warn', source: 'resume-child', summary: `Empty response with error: ${lastError}` });
               resolve(null);
             }
@@ -1501,10 +1521,12 @@ export async function resumeChildSession(
     subscribe(ch, internalSubscriber);
 
     // Send the turn — no pending ID needed, session already exists
+    const resumePromptLen = typeof prompt === 'string' ? prompt.length : Array.isArray(prompt) ? prompt.reduce((n, b) => n + ((b as { text?: string }).text?.length ?? 0), 0) : 0;
+    pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Resume sendTurn entry (session: ${sessionId.slice(0, 12)}…, promptLen: ${resumePromptLen})` });
     sendTurn(intent, internalSubscriber)
       .then(() => {
         if (settled) return;
-        pushRosieLog({ level: 'debug', source: 'resume-child', summary: `sendTurn resolved for ${sessionId}` });
+        pushRosieLog({ level: 'debug', source: 'dispatch', summary: `Resume sendTurn resolved for ${sessionId.slice(0, 12)}…` });
       })
       .catch((err) => {
         if (!settled) {
