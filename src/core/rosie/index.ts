@@ -1,11 +1,11 @@
 export { initRosieBot, shutdownRosieBot } from './rosie-bot-hook.js';
 export type { InternalServerPaths } from './tracker/types.js';
 export {
-  pushRosieLog,
-  getRosieLogSnapshot,
-  subscribeRosieLog,
-  unsubscribeRosieLog,
+  log,
+  getLogSnapshot,
+  subscribeLog,
+  unsubscribeLog,
   registerLogPersister,
-  ROSIE_LOG_CHANNEL_ID,
-} from './debug-log.js';
-export type { RosieLogEntry, RosieLogEvent, RosieLogSubscriber } from './debug-log.js';
+  LOG_CHANNEL_ID,
+} from '../log.js';
+export type { LogEntry, LogEvent, LogSubscriber } from '../log.js';

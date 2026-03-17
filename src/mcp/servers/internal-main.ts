@@ -19,9 +19,12 @@
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createInternalServer, type InternalServerOptions } from './internal.js';
+import { log } from '../../core/log.js';
 
 process.on('unhandledRejection', (err) => {
-  console.error('[internal-mcp] Unhandled rejection:', err instanceof Error ? err.message : String(err));
+  const msg = `Unhandled rejection: ${err instanceof Error ? err.message : String(err)}`;
+  process.stderr.write(msg + '\n');
+  log({ level: 'error', source: 'internal-mcp', summary: msg, data: { error: err instanceof Error ? err.message : String(err) } });
   process.exit(1);
 });
 
@@ -44,14 +47,18 @@ function parseCliArgs(): InternalServerOptions {
 
 async function main() {
   const cliOpts = parseCliArgs();
-  console.error('[internal-mcp] Starting stdio server...', cliOpts.sessionFile ? `session=${cliOpts.sessionFile}` : '');
+  const startMsg = `Starting stdio server${cliOpts.sessionFile ? ` session=${cliOpts.sessionFile}` : ''}`;
+  process.stderr.write(startMsg + '\n');
+  log({ level: 'info', source: 'internal-mcp', summary: startMsg });
   const server = createInternalServer(cliOpts);
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('[internal-mcp] Connected — ready for tool calls');
+  log({ level: 'info', source: 'internal-mcp', summary: 'Connected — ready for tool calls' });
 }
 
 main().catch((err) => {
-  console.error('[internal-mcp] Fatal:', err instanceof Error ? err.message : String(err));
+  const msg = `Fatal: ${err instanceof Error ? err.message : String(err)}`;
+  process.stderr.write(msg + '\n');
+  log({ level: 'error', source: 'internal-mcp', summary: msg, data: { error: err instanceof Error ? err.message : String(err) } });
   process.exit(1);
 });

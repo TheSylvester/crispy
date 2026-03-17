@@ -20,12 +20,12 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { getDb, _resetDb } from './crispy-db.js';
-import { pushRosieLog } from './rosie/index.js';
-// Import registerLogPersister directly from debug-log to avoid the circular
+import { log } from './log.js';
+// Import registerLogPersister directly from log.ts to avoid the circular
 // dependency through rosie/index.ts → rosie-bot-hook.ts → activity-index.ts.
 // The barrel re-export triggers ESM cycle resolution issues in vitest.
-import { registerLogPersister } from './rosie/debug-log.js';
-import type { RosieLogEntry } from './rosie/index.js';
+import { registerLogPersister } from './log.js';
+import type { LogEntry } from './log.js';
 
 // ============================================================================
 // Types
@@ -113,12 +113,12 @@ export function ensureCrispyDir(): void {
 /**
  * Persist a Rosie log entry to the event_log table.
  *
- * Registered as a late-binding callback into debug-log.ts to break the
- * circular import chain (activity-index → rosie/index → debug-log).
+ * Registered as a late-binding callback into log.ts to break the
+ * circular import chain (activity-index → rosie/index → log).
  * Silently swallows errors — the in-memory ring buffer is always the
  * primary path; this is a best-effort crash-survivable supplement.
  */
-function persistLogEntry(entry: RosieLogEntry): void {
+function persistLogEntry(entry: LogEntry): void {
   try {
     const db = getDb(dbPath());
     db.run(
@@ -137,7 +137,7 @@ function persistLogEntry(entry: RosieLogEntry): void {
   }
 }
 
-// Wire up persistence so pushRosieLog() writes to SQLite automatically.
+// Wire up persistence so log() writes to SQLite automatically.
 registerLogPersister(persistLogEntry);
 
 // ============================================================================
@@ -512,7 +512,7 @@ export function deleteDuplicateEntries(
  * listAllSessions(). Cleans session_meta (FTS5 auto-cascades via trigger)
  * and session_lineage in a single transaction.
  *
- * Never throws — returns 0 on error with console.error.
+ * Never throws — returns 0 on error with log.
  */
 export function pruneDeletedFiles(livePaths: Set<string>): number {
   try {
@@ -566,11 +566,11 @@ export function pruneDeletedFiles(livePaths: Set<string>): number {
     rosieMetaCache = null;
 
     if (stalePaths.length > 0) {
-      pushRosieLog({ source: 'scanner', level: 'info', summary: `Index: pruned ${stalePaths.length} deleted sessions`, data: { count: stalePaths.length } });
+      log({ source: 'scanner', level: 'info', summary: `Index: pruned ${stalePaths.length} deleted sessions`, data: { count: stalePaths.length } });
     }
     return stalePaths.length;
   } catch (err) {
-    console.error('[activity-index] pruneDeletedFiles error:', err);
+    log({ level: 'error', source: 'activity-index', summary: `pruneDeletedFiles error: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
     return 0;
   }
 }

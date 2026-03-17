@@ -9,7 +9,7 @@
  * @module voice/stt
  */
 
-import { pushRosieLog } from '../rosie/index.js';
+import { log } from '../log.js';
 import { importOptionalModule } from './optional-import.js';
 
 // ---------------------------------------------------------------------------
@@ -43,7 +43,7 @@ export async function initSTT(): Promise<void> {
   if (processor && model) return;
 
   try {
-    pushRosieLog({
+    log({
       source: 'voice',
       level: 'info',
       summary: 'Loading Moonshine Base STT model...',
@@ -69,13 +69,13 @@ export async function initSTT(): Promise<void> {
     processor = p;
     model = m;
 
-    pushRosieLog({
+    log({
       source: 'voice',
       level: 'info',
       summary: 'Moonshine Base STT model loaded',
     });
   } catch (err) {
-    pushRosieLog({
+    log({
       source: 'voice',
       level: 'error',
       summary: 'Failed to load Moonshine Base STT model',
@@ -104,7 +104,7 @@ export async function runSTT(audio: Float32Array): Promise<string> {
 
     return text.trim();
   } catch (err) {
-    pushRosieLog({
+    log({
       source: 'voice',
       level: 'error',
       summary: 'STT transcription failed',

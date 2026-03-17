@@ -19,7 +19,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath, searchTranscript, searchTranscriptMeta, readMessageTurn, grepMessages, readSessionMessages } from '../memory-queries.js';
 import type { MessageSearchResult } from '../memory-queries.js';
-import { pushEventLog } from '../../core/rosie/event-log.js';
+import { log } from '../../core/log.js';
 
 import { writeTrackerResults, getProjectTitle, mergeProjects, getProjectTextsForEmbedding, getValidStageNames } from '../../core/rosie/tracker/db-writer.js';
 import { VALID_TYPES } from '../../core/rosie/tracker/types.js';
@@ -204,9 +204,9 @@ function wrapToolHandler<T extends unknown[]>(
     try {
       const results = queryFn(...args);
       const elapsed = Date.now() - t0;
-      console.error(`[internal-mcp] ${toolName}: ${results.length} ${resultKey}`);
-      pushEventLog({
+      log({
         source: `recall:${toolName}`,
+        level: 'info',
         summary: `${results.length} ${resultKey} in ${elapsed}ms`,
         data: {
           args,
@@ -218,19 +218,18 @@ function wrapToolHandler<T extends unknown[]>(
             ...(r.quest ? { quest: (r.quest as string).slice(0, 80) } : {}),
           })),
         },
-      }, getDbPath());
+      });
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({ [resultKey]: results, count: results.length }, null, 2) }],
       };
     } catch (err) {
       const elapsed = Date.now() - t0;
-      console.error(`[internal-mcp] ${toolName} FAIL:`, err instanceof Error ? err.message : String(err));
-      pushEventLog({
+      log({
         source: `recall:${toolName}`,
         level: 'error',
         summary: `FAIL in ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
         data: { args, elapsed, error: String(err) },
-      }, getDbPath());
+      });
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({
           [resultKey]: [],
@@ -364,7 +363,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       before: z.string().optional().describe('ISO timestamp — only return results before this time'),
     },
     async (args) => {
-      console.error(`[internal-mcp] search_sessions: query="${args.query}" limit=${args.limit} kind=${args.kind ?? 'all'} since=${args.since ?? '-'} before=${args.before ?? '-'}`);
+      log({ level: 'debug', source: 'recall:search_sessions', summary: `query="${args.query}" limit=${args.limit} kind=${args.kind ?? 'all'} since=${args.since ?? '-'} before=${args.before ?? '-'}` });
       return runSearch(args.query as string, args.limit as number, args.kind as string | undefined, args.since as string | undefined, args.before as string | undefined);
     },
   );
@@ -384,7 +383,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       since: z.string().optional().describe('ISO timestamp — only return sessions with activity after this time'),
     },
     async (args) => {
-      console.error(`[internal-mcp] list_sessions: limit=${args.limit} since=${args.since ?? 'all'}`);
+      log({ level: 'debug', source: 'recall:list_sessions', summary: `limit=${args.limit} since=${args.since ?? 'all'}` });
       return runList(args.limit as number, args.since as string | undefined);
     },
   );
@@ -404,7 +403,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       kind: z.enum(['rosie-meta']).optional().describe('Filter by entry kind'),
     },
     async (args) => {
-      console.error(`[internal-mcp] session_context: file="${args.file}" kind=${args.kind ?? 'all'}`);
+      log({ level: 'debug', source: 'recall:session_context', summary: `file="${args.file}" kind=${args.kind ?? 'all'}` });
       return runContext(args.file as string, args.kind as string | undefined);
     },
   );
@@ -422,19 +421,18 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
     async (args) => {
       const file = args.file as string;
       const offset = args.offset as number;
-      console.error(`[internal-mcp] read_turn: file="${file}" offset=${offset}`);
+      log({ level: 'debug', source: 'recall:read_turn', summary: `file="${file}" offset=${offset}` });
       const t0 = Date.now();
       try {
         const result = readTurnContent(file, offset);
         const elapsed = Date.now() - t0;
         if (!result) {
-          console.error('[internal-mcp] read_turn: not found');
-          pushEventLog({
+          log({
             source: 'recall:read_turn',
             level: 'warn',
             summary: `not found in ${elapsed}ms`,
             data: { file, offset, elapsed },
-          }, getDbPath());
+          });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify({ turn: null, found: false }, null, 2) }],
             isError: true,
@@ -442,24 +440,23 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
         }
         const promptChars = result.userPrompt.length;
         const responseChars = result.assistantResponse?.length ?? 0;
-        console.error(`[internal-mcp] read_turn: OK (prompt=${promptChars} chars, response=${responseChars} chars)`);
-        pushEventLog({
+        log({
           source: 'recall:read_turn',
+          level: 'info',
           summary: `OK in ${elapsed}ms — prompt=${promptChars} chars, response=${responseChars} chars`,
           data: { file, offset, elapsed, promptChars, responseChars },
-        }, getDbPath());
+        });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ turn: result, found: true }, null, 2) }],
         };
       } catch (err) {
         const elapsed = Date.now() - t0;
-        console.error('[internal-mcp] read_turn FAIL:', err instanceof Error ? err.message : String(err));
-        pushEventLog({
+        log({
           source: 'recall:read_turn',
           level: 'error',
           summary: `FAIL in ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
           data: { file, offset, elapsed, error: String(err) },
-        }, getDbPath());
+        });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({
             turn: null,
@@ -533,7 +530,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
 
       try {
         writeTrackerResults([block], sessionFile);
-        console.error(`[internal-mcp] create_project: created "${args.title}" [${args.stage}] type=${args.type}`);
+        log({ level: 'debug', source: 'recall:create_project', summary: `created "${args.title}" [${args.stage}] type=${args.type}` });
         appendDecision({ tool: 'create_project', action: 'created', title: args.title, stage: args.stage, status: args.status, icon: args.icon });
 
         // Post-write semantic validation — warn if similar project exists
@@ -547,7 +544,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
         }
         return { content };
       } catch (err) {
-        console.error('[internal-mcp] create_project FAIL:', err instanceof Error ? err.message : String(err));
+        log({ level: 'error', source: 'recall:create_project', summary: `FAIL: ${err instanceof Error ? err.message : String(err)}`, data: { error: err instanceof Error ? err.message : String(err) } });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: `create_project failed: ${err instanceof Error ? err.message : String(err)}` }) }],
           isError: true,
@@ -601,13 +598,13 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
         writeTrackerResults([block], sessionFile);
         // Look up the project title for decision logging (UUID is not user-friendly)
         const projectTitle = getProjectTitle(args.project_id) ?? args.project_id;
-        console.error(`[internal-mcp] track_project: updated "${projectTitle}"`);
+        log({ level: 'debug', source: 'recall:track_project', summary: `updated "${projectTitle}"` });
         appendDecision({ tool: 'track_project', action: 'updated', title: projectTitle, stage: args.stage, status: args.status });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action: 'updated', projectId: args.project_id }) }],
         };
       } catch (err) {
-        console.error('[internal-mcp] track_project FAIL:', err instanceof Error ? err.message : String(err));
+        log({ level: 'error', source: 'recall:track_project', summary: `FAIL: ${err instanceof Error ? err.message : String(err)}`, data: { error: err instanceof Error ? err.message : String(err) } });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: `track_project failed: ${err instanceof Error ? err.message : String(err)}` }) }],
           isError: true,
@@ -626,7 +623,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       reason: z.string().describe('Brief reason why no project is warranted.'),
     },
     async (args) => {
-      console.error(`[internal-mcp] mark_trivial: "${args.reason}"`);
+      log({ level: 'debug', source: 'recall:mark_trivial', summary: `"${args.reason}"` });
       appendDecision({ tool: 'mark_trivial', reason: args.reason });
       return {
         content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', trivial: true, reason: args.reason }) }],
@@ -697,15 +694,15 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       const limit = args.limit as number;
       const projectId = args.all_projects ? undefined : serverOptions.projectId;
       const sessionId = args.session_id as string | undefined;
-      console.error(`[internal-mcp] search_transcript: query="${query}" limit=${limit} project=${projectId ?? 'all'} session=${sessionId ?? 'all'}`);
+      log({ level: 'debug', source: 'recall:search_transcript', summary: `query="${query}" limit=${limit} project=${projectId ?? 'all'} session=${sessionId ?? 'all'}` });
       const t0 = Date.now();
       try {
         const results = await searchTranscript(query, limit, projectId, sessionId, serverOptions.excludeSessionId);
         const meta = searchTranscriptMeta(query, projectId, sessionId, serverOptions.excludeSessionId);
         const elapsed = Date.now() - t0;
-        console.error(`[internal-mcp] search_transcript: ${results.length} of ${meta.total_matches} results (${Object.keys(meta.session_hits).length} sessions)`);
-        pushEventLog({
+        log({
           source: 'recall:search_transcript',
+          level: 'info',
           summary: `${results.length} of ${meta.total_matches} results in ${elapsed}ms`,
           data: {
             query, limit, projectId, sessionId,
@@ -716,7 +713,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
               snippet: r.match_snippet?.slice(0, 100),
             })),
           },
-        }, getDbPath());
+        });
         // Group results by session — each session appears once with all its
         // unique snippets, so the agent sees more diverse sessions.
         const grouped = groupBySession(results);
@@ -731,13 +728,12 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
         };
       } catch (err) {
         const elapsed = Date.now() - t0;
-        console.error(`[internal-mcp] search_transcript FAIL:`, err instanceof Error ? err.message : String(err));
-        pushEventLog({
+        log({
           source: 'recall:search_transcript',
           level: 'error',
           summary: `FAIL in ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
           data: { query, limit, projectId, sessionId, elapsed, error: String(err) },
-        }, getDbPath());
+        });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({
             results: [],
@@ -764,19 +760,18 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       const sessionId = args.session_id as string;
       const messageId = args.message_id as string;
       const ctx = (args.context as number | undefined) ?? 0;
-      console.error(`[internal-mcp] read_message: session=${sessionId} message=${messageId} context=${ctx}`);
+      log({ level: 'debug', source: 'recall:read_message', summary: `session=${sessionId} message=${messageId} context=${ctx}` });
       const t0 = Date.now();
       try {
         const result = readMessageTurn(sessionId, messageId, ctx);
         const elapsed = Date.now() - t0;
         if (!result) {
-          console.error('[internal-mcp] read_message: not found');
-          pushEventLog({
+          log({
             source: 'recall:read_message',
             level: 'warn',
             summary: `not found in ${elapsed}ms`,
             data: { sessionId, messageId, context: ctx, elapsed },
-          }, getDbPath());
+          });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify({ turn: null, found: false }, null, 2) }],
             isError: true,
@@ -785,24 +780,23 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
         const userChars = result.userText.length;
         const assistantChars = result.assistantText.length;
         const ctxCount = result.context_messages?.length ?? 0;
-        console.error(`[internal-mcp] read_message: OK (user=${userChars} chars, assistant=${assistantChars} chars, context=${ctxCount} msgs)`);
-        pushEventLog({
+        log({
           source: 'recall:read_message',
+          level: 'info',
           summary: `OK in ${elapsed}ms — user=${userChars} chars, assistant=${assistantChars} chars, context=${ctxCount}`,
           data: { sessionId, messageId, context: ctx, elapsed, userChars, assistantChars, ctxCount },
-        }, getDbPath());
+        });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ turn: result, found: true }, null, 2) }],
         };
       } catch (err) {
         const elapsed = Date.now() - t0;
-        console.error('[internal-mcp] read_message FAIL:', err instanceof Error ? err.message : String(err));
-        pushEventLog({
+        log({
           source: 'recall:read_message',
           level: 'error',
           summary: `FAIL in ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
           data: { sessionId, messageId, context: ctx, elapsed, error: String(err) },
-        }, getDbPath());
+        });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({
             turn: null,
@@ -834,18 +828,18 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       const limit = args.limit as number;
       const sessionId = args.session_id as string | undefined;
       const projectId = args.all_projects ? undefined : serverOptions.projectId;
-      console.error(`[internal-mcp] grep: pattern="${pattern}" session=${sessionId ?? 'all'} limit=${limit}`);
+      log({ level: 'debug', source: 'recall:grep', summary: `pattern="${pattern}" session=${sessionId ?? 'all'} limit=${limit}` });
       const t0 = Date.now();
       try {
         const results = grepMessages(pattern, limit, sessionId, projectId, serverOptions.excludeSessionId);
         const elapsed = Date.now() - t0;
         const sessionCount = new Set(results.map(r => r.session_id)).size;
-        console.error(`[internal-mcp] grep: ${results.length} matches across ${sessionCount} sessions in ${elapsed}ms`);
-        pushEventLog({
+        log({
           source: 'recall:grep',
+          level: 'info',
           summary: `${results.length} matches in ${elapsed}ms`,
           data: { pattern, sessionId, limit, resultCount: results.length, sessionCount, elapsed },
-        }, getDbPath());
+        });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({
             matches: results,
@@ -855,13 +849,12 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
         };
       } catch (err) {
         const elapsed = Date.now() - t0;
-        console.error(`[internal-mcp] grep FAIL:`, err instanceof Error ? err.message : String(err));
-        pushEventLog({
+        log({
           source: 'recall:grep',
           level: 'error',
           summary: `FAIL in ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
           data: { pattern, elapsed, error: String(err) },
-        }, getDbPath());
+        });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ matches: [], error: String(err) }, null, 2) }],
           isError: true,
@@ -885,42 +878,40 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       const sessionId = args.session_id as string;
       const offset = (args.offset as number | undefined) ?? 0;
       const limit = Math.min((args.limit as number | undefined) ?? 10, 20);
-      console.error(`[internal-mcp] read_session: session=${sessionId} offset=${offset} limit=${limit}`);
+      log({ level: 'debug', source: 'recall:read_session', summary: `session=${sessionId} offset=${offset} limit=${limit}` });
       const t0 = Date.now();
       try {
         const page = readSessionMessages(sessionId, offset, limit);
         const elapsed = Date.now() - t0;
         if (!page) {
-          console.error('[internal-mcp] read_session: session not found or empty');
-          pushEventLog({
+          log({
             source: 'recall:read_session',
             level: 'warn',
             summary: `not found in ${elapsed}ms`,
             data: { sessionId, offset, limit, elapsed },
-          }, getDbPath());
+          });
           return {
             content: [{ type: 'text' as const, text: JSON.stringify({ session: null, found: false }, null, 2) }],
             isError: true,
           };
         }
-        console.error(`[internal-mcp] read_session: OK (${page.showing_count} of ${page.total_messages} messages, has_more=${page.has_more})`);
-        pushEventLog({
+        log({
           source: 'recall:read_session',
+          level: 'info',
           summary: `OK in ${elapsed}ms — ${page.showing_count} of ${page.total_messages} msgs`,
           data: { sessionId, offset, limit, elapsed, total: page.total_messages, returned: page.showing_count },
-        }, getDbPath());
+        });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ session: page, found: true }, null, 2) }],
         };
       } catch (err) {
         const elapsed = Date.now() - t0;
-        console.error('[internal-mcp] read_session FAIL:', err instanceof Error ? err.message : String(err));
-        pushEventLog({
+        log({
           source: 'recall:read_session',
           level: 'error',
           summary: `FAIL in ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
           data: { sessionId, offset, limit, elapsed, error: String(err) },
-        }, getDbPath());
+        });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ session: null, found: false, error: String(err) }, null, 2) }],
           isError: true,

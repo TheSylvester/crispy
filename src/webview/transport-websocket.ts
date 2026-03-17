@@ -157,8 +157,8 @@ export function createWebSocketTransport(url: string): SessionService {
 
     subscribeSessionList: () => request<void>('subscribeSessionList'),
     unsubscribeSessionList: () => request<void>('unsubscribeSessionList'),
-    subscribeRosieLog: () => request<void>('subscribeRosieLog'),
-    unsubscribeRosieLog: () => request<void>('unsubscribeRosieLog'),
+    subscribeLog: () => request<void>('subscribeLog'),
+    unsubscribeLog: () => request<void>('unsubscribeLog'),
     subscribeRecallCatchup: () => request<{ subscribed: boolean }>('subscribeRecallCatchup'),
     unsubscribeRecallCatchup: () => request<{ unsubscribed: boolean }>('unsubscribeRecallCatchup'),
     startEmbeddingBackfill: () => request<{ ok: boolean }>('startEmbeddingBackfill'),

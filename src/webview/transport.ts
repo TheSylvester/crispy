@@ -104,8 +104,8 @@ export interface SessionService {
   close(sessionId: string): Promise<void>;
   subscribeSessionList(): Promise<void>;
   unsubscribeSessionList(): Promise<void>;
-  subscribeRosieLog(): Promise<void>;
-  unsubscribeRosieLog(): Promise<void>;
+  subscribeLog(): Promise<void>;
+  unsubscribeLog(): Promise<void>;
   onEvent(handler: (sessionId: string, event: HostEvent) => void): () => void;
   getGitFiles(cwd: string): Promise<string[]>;
   fileExists(path: string): Promise<boolean>;

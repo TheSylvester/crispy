@@ -21,8 +21,7 @@ import type { ChildSessionOptions } from "../../core/session-manager.js";
 import { findSession } from "../../core/session-manager.js";
 import { parseModelOption } from "../../core/model-utils.js";
 import { INTERNAL_MCP_SERVER_NAME } from "./internal.js";
-import { pushRosieLog } from "../../core/rosie/index.js";
-import { pushEventLog } from "../../core/rosie/event-log.js";
+import { log } from "../../core/log.js";
 
 // ============================================================================
 // Recall Agent Prompt
@@ -172,10 +171,7 @@ export function createExternalServer(
             ),
         },
         async (args) => {
-          console.error(
-            `[recall] Tool handler invoked with query: "${args.query}"`,
-          );
-          pushRosieLog({
+          log({
             source: "recall",
             level: "info",
             summary: `Recall: query "${args.query.slice(0, 80)}"`,
@@ -183,8 +179,7 @@ export function createExternalServer(
           });
           const activeSession = callerSession;
           if (!activeSession) {
-            console.error("[recall] No active session — cannot dispatch child");
-            pushRosieLog({
+            log({
               source: "recall",
               level: "warn",
               summary: "Recall: no active session for dispatch",
@@ -194,10 +189,7 @@ export function createExternalServer(
             );
           }
 
-          console.error(
-            `[recall] Dispatching child for query: "${args.query}" (parent: ${activeSession.sessionId}, vendor: ${activeSession.vendor})`,
-          );
-          pushRosieLog({
+          log({
             source: "recall",
             level: "info",
             summary: `Recall: dispatching child (vendor: ${activeSession.vendor})`,
@@ -206,8 +198,9 @@ export function createExternalServer(
               vendor: activeSession.vendor,
             },
           });
-          pushEventLog({
+          log({
             source: "recall",
+            level: "info",
             summary: `Dispatching child — query="${args.query.slice(0, 120)}"`,
             data: {
               query: args.query,
@@ -263,16 +256,13 @@ export function createExternalServer(
             const elapsed = Date.now() - t0;
 
             if (!result) {
-              console.error(
-                `[recall] Child returned null after ${elapsed}ms — timeout or empty response`,
-              );
-              pushRosieLog({
+              log({
                 source: "recall",
                 level: "warn",
                 summary: `Recall: no response after ${elapsed}ms`,
                 data: { elapsed },
               });
-              pushEventLog({
+              log({
                 source: "recall",
                 level: "warn",
                 summary: `No response after ${elapsed}ms`,
@@ -283,34 +273,28 @@ export function createExternalServer(
               );
             }
 
-            console.error(
-              `[recall] OK in ${elapsed}ms — ${result.text.length} chars`,
-            );
-            pushRosieLog({
+            log({
               source: "recall",
               level: "info",
               summary: `Recall: OK in ${elapsed}ms — ${result.text.length} chars`,
               data: { elapsed, chars: result.text.length },
             });
-            pushEventLog({
+            log({
               source: "recall",
+              level: "info",
               summary: `OK in ${elapsed}ms — ${result.text.length} chars`,
               data: { query: args.query, elapsed, chars: result.text.length },
             });
             return textResult(result.text);
           } catch (err) {
             const elapsed = Date.now() - t0;
-            console.error(
-              `[recall] FAIL after ${elapsed}ms:`,
-              err instanceof Error ? err.message : String(err),
-            );
-            pushRosieLog({
+            log({
               source: "recall",
               level: "error",
               summary: `Recall: failed after ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
               data: { elapsed, error: String(err) },
             });
-            pushEventLog({
+            log({
               source: "recall",
               level: "error",
               summary: `Failed after ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,

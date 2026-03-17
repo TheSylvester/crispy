@@ -20,7 +20,7 @@ import type {
   TurnSettings,
   SessionInfo as AgentSessionInfo,
 } from '../../agent-adapter.js';
-import { pushRosieLog } from '../../rosie/index.js';
+import { log } from '../../log.js';
 import type { ChannelStatus } from '../../channel-events.js';
 import type { ApprovalOption } from '../../channel-events.js';
 
@@ -795,7 +795,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     for (const [name, config] of Object.entries(servers)) {
       if (this.isSdkServer(config)) {
         config.instance.close().catch((err: unknown) => {
-          console.error(`[claude-adapter] Failed to close MCP server '${name}':`, err);
+          log({ level: 'error', source: 'claude-adapter', summary: `Failed to close MCP server '${name}': ${err instanceof Error ? (err as Error).message : String(err)}`, data: { name, error: String(err) } });
         });
       }
     }
@@ -834,7 +834,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         const servers = opts.mcpServerFactory(this.sessionId ?? '', this.vendor);
         this.activeMcpServers = Object.keys(servers).length ? servers : null;
       } catch (err) {
-        console.error('[claude-adapter] Failed to create MCP servers:', err);
+        log({ level: 'error', source: 'claude-adapter', summary: `Failed to create MCP servers: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
         this.activeMcpServers = null;
       }
     } else {
@@ -1030,7 +1030,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       }
     } catch (err) {
       if (!this._closed) {
-        pushRosieLog({
+        log({
           source: 'session',
           level: 'error',
           summary: `Adapter: query error (${this._sessionId?.slice(0, 12) ?? 'unknown'}…)`,

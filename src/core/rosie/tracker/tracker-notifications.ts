@@ -1,7 +1,7 @@
 /**
  * Tracker Notifications — Fire-and-forget notifications for project tracking events
  *
- * Follows the debug-log.ts subscriber pattern but without ring buffer.
+ * Follows the log.ts subscriber pattern but without ring buffer.
  * Subscribers receive notifications as they arrive; no snapshot on subscribe.
  *
  * @module rosie/tracker/tracker-notifications

@@ -23,7 +23,7 @@ import type {
   AdapterSettings,
   TurnSettings,
 } from '../../agent-adapter.js';
-import { pushRosieLog } from '../../rosie/index.js';
+import { log } from '../../log.js';
 import type { ChannelEvent, ChannelStatus } from '../../channel-events.js';
 import type {
   ContentBlock,
@@ -153,7 +153,7 @@ export class OpenCodeAgentAdapter implements AgentAdapter {
     this.postJson(
       `/session/${encodeURIComponent(pending.sessionId)}/permissions/${encodeURIComponent(pending.permissionId)}`,
       body,
-    ).catch((err) => console.error('[opencode-adapter] Permission reply failed:', err));
+    ).catch((err) => log({ level: 'error', source: 'opencode-adapter', summary: `Permission reply failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } }));
 
     // Don't remove from pendingApprovals here — wait for permission.replied SSE event.
     // Fan-out: reject may auto-resolve other pending permissions.
@@ -198,7 +198,7 @@ export class OpenCodeAgentAdapter implements AgentAdapter {
     try {
       await this.postJson(`/session/${encodeURIComponent(this._sessionId)}/abort`, undefined);
     } catch (err) {
-      console.error('[opencode-adapter] Interrupt failed:', err);
+      log({ level: 'error', source: 'opencode-adapter', summary: `Interrupt failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
     }
   }
 
@@ -226,12 +226,12 @@ export class OpenCodeAgentAdapter implements AgentAdapter {
 
     this.serverProcess.stderr?.on('data', (data: Buffer) => {
       const msg = data.toString().trim();
-      if (msg) console.error(`[opencode-server] ${msg}`);
+      if (msg) log({ level: 'debug', source: 'opencode-server', summary: msg });
     });
 
     this.serverProcess.on('exit', (code, signal) => {
       if (!this._closed) {
-        console.log(`[opencode-adapter] Server exited: code=${code}, signal=${signal}`);
+        log({ level: 'debug', source: 'opencode-adapter', summary: `Server exited: code=${code}, signal=${signal}` });
         if (code !== 0 && code !== null) {
           this.emitError(`Server exited unexpectedly: code=${code}, signal=${signal}`);
         }
@@ -344,7 +344,7 @@ export class OpenCodeAgentAdapter implements AgentAdapter {
 
     this.consumeSSE(url, this.sseAbort.signal).catch((err) => {
       if (!this._closed) {
-        console.error('[opencode-adapter] SSE connection failed:', err);
+        log({ level: 'error', source: 'opencode-adapter', summary: `SSE connection failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
       }
     });
   }
@@ -404,7 +404,7 @@ export class OpenCodeAgentAdapter implements AgentAdapter {
       const parsed = JSON.parse(data) as OpenCodeEvent;
       this.processEvent(parsed);
     } catch (err) {
-      console.warn('[opencode-adapter] Failed to parse SSE event:', err);
+      log({ level: 'warn', source: 'opencode-adapter', summary: `Failed to parse SSE event: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
     }
   }
 
@@ -748,7 +748,7 @@ export class OpenCodeAgentAdapter implements AgentAdapter {
 
   private emitError(error: Error | string): void {
     if (this._closed) return;
-    pushRosieLog({
+    log({
       source: 'session',
       level: 'error',
       summary: `Adapter: error (${this._sessionId?.slice(0, 12) ?? 'unknown'}…)`,
