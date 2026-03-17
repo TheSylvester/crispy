@@ -232,7 +232,7 @@
   padding: 6px 12px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--vscode-descriptionForeground, #858585);
+  color: #a0a0a0;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   user-select: none;
@@ -244,12 +244,12 @@
 }
 
 .crispy-session-group-header:hover {
-  color: var(--vscode-foreground, #d4d4d4);
+  color: #e0e0e0;
 }
 
 .crispy-session-group-header__count {
   font-weight: 400;
-  opacity: 0.6;
+  opacity: 0.7;
 }
 
 .crispy-session-group-header__chevron {
@@ -310,18 +310,18 @@
 
 .crispy-session-item__time {
   font-size: var(--font-xs);
-  opacity: 0.5;
+  color: #999;
+  opacity: 0.8;
   flex-shrink: 0;
 }
 
 .crispy-session-item__preview {
   font-size: var(--font-xs);
-  color: var(--vscode-descriptionForeground, #858585);
+  color: #a0a0a0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   width: 100%;
-  opacity: 0.7;
 }
 
 /* --- Meta cluster: vendor icon + LIVE + time --- */
@@ -405,7 +405,7 @@
   align-items: center;
   justify-content: center;
   min-height: 120px;
-  color: var(--vscode-descriptionForeground, #858585);
+  color: #999;
   font-size: 12px;
   list-style: none;
 }
@@ -413,7 +413,7 @@
 /* --- Placeholder (generic empty state) --- */
 
 .crispy-placeholder {
-  color: var(--vscode-descriptionForeground, #888);
+  color: #999;
   font-size: var(--font-xs);
   padding: 12px 16px;
   text-align: center;
@@ -473,7 +473,7 @@
 .crispy-project-filter-pill {
   background: none;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  color: var(--vscode-descriptionForeground, #858585);
+  color: #a0a0a0;
   font-family: inherit;
   font-size: var(--font-2xs);
   padding: 2px 8px;
@@ -486,7 +486,7 @@
 }
 .crispy-project-filter-pill:hover {
   border-color: rgba(255, 255, 255, 0.2);
-  color: var(--vscode-foreground, #d4d4d4);
+  color: #e0e0e0;
 }
 .crispy-project-filter-pill--active {
   border-color: #a07850;
@@ -520,7 +520,7 @@
   background: var(--vscode-list-hoverBackground, #2a2d2e);
 }
 .crispy-project-row--archived .crispy-project-title {
-  color: var(--vscode-descriptionForeground, #858585);
+  color: #888;
   text-decoration: line-through;
   text-decoration-color: rgba(255, 255, 255, 0.2);
 }
@@ -541,7 +541,7 @@
 .crispy-project-title {
   font-size: var(--font-sm);
   font-weight: 500;
-  color: var(--vscode-foreground, #e0e0e0);
+  color: #e0e0e0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -553,7 +553,7 @@
 /* Status line — freeform text from Rosie */
 .crispy-project-status-text {
   font-size: var(--font-xs);
-  color: var(--vscode-descriptionForeground, #b8b8b8);
+  color: #b0b0b0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -571,15 +571,14 @@
 
 .crispy-project-meta-item {
   font-size: var(--font-2xs);
-  color: var(--vscode-descriptionForeground, #9a9a9a);
-  opacity: 0.8;
+  color: #a0a0a0;
   white-space: nowrap;
 }
 
 .crispy-project-branch {
   font-family: var(--font-mono);
   font-size: var(--font-2xs);
-  color: var(--vscode-descriptionForeground, #9a9a9a);
+  color: #a0a0a0;
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -591,7 +590,7 @@
   padding: 0 5px;
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.08);
-  color: var(--vscode-descriptionForeground, #a0a0a0);
+  color: #b0b0b0;
   max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -627,15 +626,15 @@
 /* Time column */
 .crispy-project-time {
   font-size: var(--font-2xs);
-  color: var(--vscode-descriptionForeground, #858585);
+  color: #999;
   white-space: nowrap;
   padding-top: 3px;
   text-align: right;
 }
 .crispy-project-time--fresh { color: #5cb870; }
-.crispy-project-time--warm { color: var(--vscode-descriptionForeground, #858585); }
+.crispy-project-time--warm { color: #999; }
 .crispy-project-time--stale { color: #d4a030; }
-.crispy-project-time--cold { color: var(--vscode-descriptionForeground, #858585); opacity: 0.5; }
+.crispy-project-time--cold { color: #888; opacity: 0.6; }
 
 /* --- Expanded project detail --- */
 
@@ -648,15 +647,14 @@
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--vscode-foreground, #cccccc);
-  opacity: 0.6;
+  color: #b0b0b0;
   margin: 8px 0 4px;
   font-weight: 600;
 }
 
 .crispy-project-detail-description {
   font-size: var(--font-xs);
-  color: var(--vscode-foreground, #cccccc);
+  color: #ccc;
   line-height: 1.5;
   margin-bottom: 8px;
 }
@@ -695,12 +693,12 @@
 .crispy-project-detail-session-time {
   font-family: var(--font-mono);
   font-size: 10px;
-  color: var(--vscode-descriptionForeground, #9a9a9a);
+  color: #a0a0a0;
   padding-top: 2px;
 }
 .crispy-project-detail-session-content { min-width: 0; }
 .crispy-project-detail-session-title {
-  color: var(--vscode-foreground, #cccccc);
+  color: #ccc;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -710,7 +708,7 @@
   color: #fff;
 }
 .crispy-project-detail-session-preview {
-  color: var(--vscode-descriptionForeground, #9a9a9a);
+  color: #a0a0a0;
   font-size: var(--font-2xs);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -745,7 +743,7 @@
 .crispy-project-detail-file-note {
   font-family: var(--font-sans);
   font-size: var(--font-2xs);
-  color: var(--vscode-descriptionForeground, #b0b0b0);
+  color: #b0b0b0;
   padding: 2px 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -754,7 +752,7 @@
 
 .crispy-project-detail-origin {
   font-size: var(--font-2xs);
-  color: var(--vscode-descriptionForeground, #a0a0a0);
+  color: #a0a0a0;
   margin-top: 6px;
 }
 .crispy-project-detail-origin-link {
@@ -767,8 +765,8 @@
 
 .crispy-project-detail-duration {
   font-size: 10px;
-  color: var(--vscode-descriptionForeground, #858585);
-  opacity: 0.6;
+  color: #999;
+  opacity: 0.7;
   margin-top: 4px;
 }
 
@@ -780,7 +778,7 @@
 
 .crispy-project-history-toggle {
   font-size: var(--font-2xs);
-  color: var(--vscode-descriptionForeground, #858585);
+  color: #999;
   cursor: pointer;
   padding: 4px 0;
   display: flex;
@@ -789,7 +787,7 @@
   user-select: none;
 }
 .crispy-project-history-toggle:hover {
-  color: var(--vscode-foreground, #d4d4d4);
+  color: #e0e0e0;
 }
 .crispy-project-history-toggle__chevron {
   font-size: 9px;
@@ -812,14 +810,14 @@
   font-size: 9px;
   background: none;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  color: var(--vscode-descriptionForeground, #858585);
+  color: #999;
   padding: 2px 6px;
   border-radius: 3px;
   cursor: pointer;
   font-family: inherit;
 }
 .crispy-project-history-filter:hover {
-  color: var(--vscode-foreground, #d4d4d4);
+  color: #e0e0e0;
   border-color: rgba(255, 255, 255, 0.2);
 }
 .crispy-project-history-filter--active {
@@ -832,14 +830,14 @@
   font-size: 9px;
   background: none;
   border: none;
-  color: var(--vscode-descriptionForeground, #858585);
+  color: #999;
   cursor: pointer;
   padding: 2px 4px;
   margin-left: auto;
   font-family: inherit;
 }
 .crispy-project-history-sort:hover {
-  color: var(--vscode-foreground, #d4d4d4);
+  color: #e0e0e0;
 }
 
 /* Timeline */
@@ -854,8 +852,8 @@
 .crispy-project-timeline-loading,
 .crispy-project-timeline-empty {
   font-size: var(--font-2xs);
-  color: var(--vscode-descriptionForeground, #858585);
-  opacity: 0.5;
+  color: #999;
+  opacity: 0.6;
   padding: 4px 0;
 }
 
@@ -898,12 +896,12 @@
 }
 
 .crispy-project-timeline-text {
-  color: var(--vscode-descriptionForeground, #858585);
+  color: #a0a0a0;
   flex: 1;
   min-width: 0;
 }
 .crispy-project-timeline-text .hl {
-  color: var(--vscode-foreground, #d4d4d4);
+  color: #e0e0e0;
 }
 .crispy-project-timeline-text .arrow {
   color: #d4a574;
@@ -913,8 +911,8 @@
 .crispy-project-timeline-time {
   font-family: var(--font-mono);
   font-size: 9px;
-  color: var(--vscode-descriptionForeground, #858585);
-  opacity: 0.5;
+  color: #999;
+  opacity: 0.6;
   flex-shrink: 0;
 }
 

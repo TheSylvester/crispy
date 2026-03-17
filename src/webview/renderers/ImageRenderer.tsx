@@ -19,7 +19,7 @@ export function ImageRenderer({ block }: { block: ContentBlock }): React.JSX.Ele
   if (!source?.data) {
     return (
       <div className="transcript-image">
-        <span style={{ color: 'var(--vscode-descriptionForeground, #888)', fontStyle: 'italic' }}>
+        <span style={{ color: '#999', fontStyle: 'italic'}}>
           [image]
         </span>
       </div>
