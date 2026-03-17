@@ -3,7 +3,7 @@
   "displayName": "Crispy",
   "icon": "media/crispy-icon.png",
   "description": "A zero-compromise UI for Claude Code, Codex, and more — with controls you can't get in a terminal",
-  "version": "0.1.4-dev.103",
+  "version": "0.1.4-dev.104",
   "publisher": "the-sylvester",
   "private": true,
   "license": "MIT",
@@ -16,6 +16,14 @@
   "bugs": {
     "url": "https://github.com/TheSylvester/crispy/issues"
   },
+  "qna": "https://discord.gg/e2vw4bTPup",
+  "badges": [
+    {
+      "url": "https://img.shields.io/discord/1483243664389177479?color=5865F2&logo=discord&logoColor=white&label=Discord",
+      "href": "https://discord.gg/e2vw4bTPup",
+      "description": "Join the Crispy Discord"
+    }
+  ],
   "keywords": [
     "ai",
     "claude",
