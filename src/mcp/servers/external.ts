@@ -18,7 +18,7 @@ import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-
 import { z } from "zod/v4";
 import type { AgentDispatch } from "../../host/agent-dispatch.js";
 import type { ChildSessionOptions } from "../../core/session-manager.js";
-import { findSession } from "../../core/session-manager.js";
+import { findSession, resolveSessionPrefix } from "../../core/session-manager.js";
 import { parseModelOption } from "../../core/model-utils.js";
 import { INTERNAL_MCP_SERVER_NAME } from "./internal.js";
 import { log } from "../../core/log.js";
@@ -40,9 +40,8 @@ export function buildRecallPrompt(
 
 ## Tools
 
-- **search_transcript** — FTS5 full-text search (fast, indexed). Returns matching messages with \`session_id\`, \`message_id\`, \`message_seq\`, snippet, and preview. Also returns **total_matches** and **session_hits** (per-session hit counts). Use \`session_id\` param to search within one session.
-- **grep** — Regex search over clean message text. Returns \`session_id\`, \`message_id\`, \`message_seq\`, and a context snippet. Use when FTS5 misses — finds substrings, patterns, and near-matches.
-- **read_message** — Read a specific turn by \`session_id\` + \`message_id\` (from search/grep results). Use \`context\` (1-5) to see surrounding turns. This is your primary drill-down tool after searching.
+- **search_transcript** — FTS5 full-text search (fast, indexed). Returns matching messages with \`session_id\`, \`message_id\`, \`message_seq\`, snippet, preview, and a pre-formatted \`date\` field (ISO 8601). Also returns **total_matches** and **session_hits** (per-session hit counts). Use \`session_id\` param to search within one session.
+- **read_message** — Read a specific turn by \`session_id\` + \`message_id\` (from search results). Use \`context\` (1-5) to see surrounding turns. This is your primary drill-down tool after searching.
 - **read_session** — Read messages sequentially with offset/limit pagination. Use \`message_seq\` from search results as the offset to jump directly to the relevant part of a session. Also useful for browsing a session's narrative flow.
 - **list_sessions** — Browse recent sessions by date. Useful when search returns nothing or when the query has time signals.
 
@@ -53,8 +52,7 @@ export function buildRecallPrompt(
 3. **Inspect session_hits** — pay close attention to the total count. The grouped results show a sample of sessions. If \`total_matches\` is much larger than the number of sessions shown, there are more results to discover. **You MUST drill into at least the top 10 unique sessions from session_hits before deciding you have enough.**
 4. **read_message** with \`context: 2-3\` for each candidate session — verify what the session is actually about. For broader context, use **read_session** with \`offset\` set to the \`message_seq\` from search results.
 5. **If fewer than 20 unique sessions found after initial searches**, run a second search with different terms. Keep iterating until you have a broad sample or you've exhausted search strategies.
-6. **grep** when search_transcript misses — try synonyms, related terms, or substring patterns. A keyword search for "bypass" won't find "intermediary" but grep for \`"ToolSearch"\` will find every message mentioning it regardless of surrounding words.
-7. **Present all candidates** with evidence snippets. Do not synthesize an answer.
+6. **Present all candidates** with evidence snippets. Do not synthesize an answer.
 
 ## How to search
 
@@ -66,22 +64,16 @@ export function buildRecallPrompt(
 - Related concepts: "authentication" → "auth", "login", "credentials", "session token"
 - Run 2-3 parallel search_transcript calls with different keyword variations in a single step.
 
-**grep** is slower but flexible. Use when:
-- FTS5 returned nothing or wrong results — try different vocabulary
-- You need substring matching (\`"crispy.*rename"\`)
-- You found one keyword but need to find messages using different words for the same concept
-
 **Iterate.** Read snippets and context carefully — they contain adjacent terms you can search for next. If "bypass" doesn't match, try "intermediary", "workaround", "skip", "avoid".
 
 ## Rules
 
 1. **Read before reporting.** Search results give you locations. read_message (with context) gives you understanding. Verify each candidate before including it.
 2. **Check every session.** If session_hits shows hits in multiple sessions, sample-read from each one.
-3. **When FTS5 fails, grep.** Don't give up after keyword search — the information may be there under different words.
-4. **Filter meta-sessions.** Distinguish sessions where the topic itself was discussed (primary sources) from sessions where someone was *searching for or referencing* that topic (meta-sessions). Label meta-sessions clearly — they're usually less relevant than the original discussion.
-5. **Prefer recent when ties exist.** When multiple sessions match equally well and the query implies recency, rank newer sessions higher. Always include dates so the caller can judge.
-6. **If you can't find it after a thorough search, say so.** Don't fabricate. Report what you did find and suggest alternative search terms.
-7. **Take your time.** You have 120 seconds for thorough exploration. Do not self-impose urgency. Stop only when you've drilled into a representative sample (top 10-20 sessions) or you've exhausted search strategies.
+3. **Filter meta-sessions.** Distinguish sessions where the topic itself was discussed (primary sources) from sessions where someone was *searching for or referencing* that topic (meta-sessions). Label meta-sessions clearly — they're usually less relevant than the original discussion.
+4. **Prefer recent when ties exist.** When multiple sessions match equally well and the query implies recency, rank newer sessions higher. Use the \`date\` field from search results verbatim — do not convert or reformat timestamps.
+5. **If you can't find it after a thorough search, say so.** Don't fabricate. Report what you did find and suggest alternative search terms.
+6. **Take your time.** You have 120 seconds for thorough exploration. Do not self-impose urgency. Stop only when you've drilled into a representative sample (top 10-20 sessions) or you've exhausted search strategies.
 
 ## Output
 
@@ -143,11 +135,11 @@ function textResult(data: string): {
 // ============================================================================
 
 /**
- * Create the external MCP server with `recall` and `read_transcript` tools.
+ * Create the external MCP server with `recall_conversations` and `read_conversation` tools.
  *
  * Two tools:
- * 1. `recall_conversations` — dispatch a child session to search and synthesize
- * 2. `read_transcript` — pure data tool, reads session transcript without agent dispatch
+ * 1. `recall_conversations` — dispatch a child session to search and present relevant sessions
+ * 2. `read_conversation` — pure data tool, reads session transcript without agent dispatch
  *
  * @param dispatch - AgentDispatch for spawning child sessions
  * @param callerSession - The session that owns this MCP server instance (for parent anchoring and self-filtering)
@@ -166,7 +158,7 @@ export function createExternalServer(
     tools: [
       tool(
         "recall_conversations",
-        "Ask a question about your past session history. A dedicated agent searches your sessions, reads conversations, and synthesizes an answer. Use this to remember decisions, find solutions, check what was discussed, or recall context. Works best with detailed natural-language questions — not keyword searches.",
+        "Search past sessions when you DON'T already have a session ID. Spawns a dedicated agent that searches, reads, and presents relevant sessions with evidence. Expensive (30-120s). Do NOT use when you already have a sessionId (full or prefix like 774b48b8) — use read_conversation instead. Works best with detailed natural-language questions.",
         {
           query: z
             .string()
@@ -294,8 +286,8 @@ export function createExternalServer(
         },
       ),
       tool(
-        "read_transcript",
-        "Read a session transcript directly — no agent dispatch, pure data retrieval. Complements recall: use recall to find sessions, then read_transcript to drill into full conversation content. Returns formatted conversation with pagination support. Accepts sessionId (preferred, reads from indexed SQLite) or sessionFile (fallback, parses raw JSONL).",
+        "read_conversation",
+        "Read a specific conversation when you HAVE a session ID (full UUID like xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx or a short unique prefix like 774b48b8) or file path. No agent dispatch — cheap, instant data retrieval. Use when the user provides a session ID directly, or after recall_conversations finds relevant sessions. Returns formatted conversation text with pagination (offset/limit), tail (last N entries), and budget-based truncation.",
         {
           sessionId: z
             .string()
@@ -338,9 +330,9 @@ export function createExternalServer(
         async (args) => {
           const source = args.sessionId ?? args.sessionFile ?? "unknown";
           log({
-            source: "read_transcript",
+            source: "read_conversation",
             level: "info",
-            summary: `read_transcript: ${source}`,
+            summary: `read_conversation: ${source}`,
             data: { sessionId: args.sessionId, sessionFile: args.sessionFile, offset: args.offset, limit: args.limit },
           });
 
@@ -352,11 +344,16 @@ export function createExternalServer(
             const limit = args.limit ?? 50;
             const budget = args.budget ?? 30000;
 
+            // Resolve short prefixes to full UUIDs
+            const sessionId = args.sessionId
+              ? resolveSessionPrefix(args.sessionId)
+              : undefined;
+
             let result: FormattedTranscriptResult;
 
-            if (args.sessionId) {
+            if (sessionId) {
               // Preferred path: read from indexed SQLite with server-side pagination
-              const total = getSessionMessageCount(args.sessionId);
+              const total = getSessionMessageCount(sessionId);
               if (total === 0) {
                 if (args.sessionFile) {
                   // Fall back to JSONL if session not indexed
@@ -368,15 +365,15 @@ export function createExternalServer(
                   if (args.tail) offset = Math.max(0, entries.length - args.tail);
                   result = formatTranscript(entries, { offset, limit, budget });
                 } else {
-                  return textResult(`Session ${args.sessionId} not found in index.`);
+                  return textResult(`Session ${sessionId} not found in index.`);
                 }
               } else {
                 // Compute offset (handling tail) then fetch only the slice we need
                 let offset = args.offset ?? 0;
                 if (args.tail) offset = Math.max(0, total - args.tail);
-                const page = readSessionMessages(args.sessionId, offset, limit);
+                const page = readSessionMessages(sessionId, offset, limit);
                 if (!page || page.messages.length === 0) {
-                  return textResult(`Session ${args.sessionId} has no messages at offset ${offset}.`);
+                  return textResult(`Session ${sessionId} has no messages at offset ${offset}.`);
                 }
                 // formatMessages receives only the requested slice — offset=0
                 // because the SQL already skipped.
@@ -408,9 +405,9 @@ export function createExternalServer(
             }
 
             log({
-              source: "read_transcript",
+              source: "read_conversation",
               level: "info",
-              summary: `read_transcript: OK — ${result.shownEntries}/${result.totalEntries} entries, ${result.content.length} chars`,
+              summary: `read_conversation: OK — ${result.shownEntries}/${result.totalEntries} entries, ${result.content.length} chars`,
               data: {
                 source,
                 shown: result.shownEntries,
@@ -422,9 +419,9 @@ export function createExternalServer(
             return textResult(result.content);
           } catch (err) {
             log({
-              source: "read_transcript",
+              source: "read_conversation",
               level: "error",
-              summary: `read_transcript: failed — ${err instanceof Error ? err.message : String(err)}`,
+              summary: `read_conversation: failed — ${err instanceof Error ? err.message : String(err)}`,
               data: { source, error: String(err) },
             });
             return textResult(

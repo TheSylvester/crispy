@@ -264,6 +264,15 @@ function timedTool(
 }
 
 // ============================================================================
+// Timestamp Formatting
+// ============================================================================
+
+/** Format a Unix-ms timestamp as ISO date string for LLM consumption. */
+function formatTimestamp(ms: number): string {
+  return new Date(ms).toISOString();
+}
+
+// ============================================================================
 // Session Grouping
 // ============================================================================
 
@@ -274,6 +283,8 @@ interface GroupedResult {
   message_seq: number;
   project_id: string | null;
   created_at: number;
+  /** ISO 8601 date string for LLM consumption. */
+  date: string;
   message_role: string | null;
   rank: number;
   match_snippet: string;
@@ -309,6 +320,7 @@ function groupBySession(results: MessageSearchResult[]): GroupedResult[] {
     message_seq: primary.message_seq,
     project_id: primary.project_id,
     created_at: primary.created_at,
+    date: formatTimestamp(primary.created_at),
     message_role: primary.message_role,
     rank: primary.rank,
     match_snippet: primary.match_snippet,
@@ -904,8 +916,16 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
           summary: `OK in ${elapsed}ms — ${page.showing_count} of ${page.total_messages} msgs`,
           data: { sessionId, offset, limit, elapsed, total: page.total_messages, returned: page.showing_count },
         });
+        // Format timestamps for LLM consumption
+        const formattedPage = {
+          ...page,
+          messages: page.messages.map(m => ({
+            ...m,
+            date: m.created_at ? formatTimestamp(m.created_at) : undefined,
+          })),
+        };
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ session: page, found: true }, null, 2) }],
+          content: [{ type: 'text' as const, text: JSON.stringify({ session: formattedPage, found: true }, null, 2) }],
         };
       } catch (err) {
         const elapsed = Date.now() - t0;

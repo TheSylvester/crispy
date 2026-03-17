@@ -33,9 +33,10 @@ const RECALL_SYSTEM_PROMPT =
   ' and whenever prior context could inform your approach — not just when the user explicitly' +
   ' references past conversations. Load it via ToolSearch first, then call it with a detailed' +
   ' natural-language question.\n\n' +
-  'You also have mcp__memory__read_transcript to read full session transcripts directly.' +
-  ' Use it after recall finds relevant sessions — pass the sessionId to read the conversation' +
-  ' content. Supports tail (last N entries), offset/limit pagination, and budget-based truncation.';
+  'You also have mcp__memory__read_conversation to read full session transcripts directly.' +
+  ' Use it when you already have a session ID (full UUID or a short unique prefix like 774b48b8)' +
+  ' — pass the sessionId to read the conversation content. Cheaper and faster than recall.' +
+  ' Supports tail (last N entries), offset/limit pagination, and budget-based truncation.';
 
 // ============================================================================
 // Types
