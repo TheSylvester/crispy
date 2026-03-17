@@ -86,6 +86,11 @@ events. No direct file I/O or process spawning. **State ownership:** UI-only
 - **Modify generated Codex protocol files** (`adapters/codex/protocol/**/*.ts`).
   They're auto-generated from ts-rs.
 - **Write to `~/.crispy/` outside `activity-index.ts`.** It owns all reads/writes.
+- **Use `console.log/warn/error` in `src/core/` or `src/mcp/`.** Use `log()` from
+  `src/core/log.ts` instead. `console.*` calls bypass the structured ring buffer
+  and won't appear in the Rosie Log panel or respond to `CRISPY_LOG_LEVEL`
+  gating. Only exception: fatal subprocess paths where the process is dying and
+  structured logging may be unavailable.
 - **Use deprecated APIs:** `Transport` → `SessionService`,
   `useSessionCwd()` → `useCwd()`, `extractBashOutput()` → `extractTailMetadata()`.
 - **Use vendor adapters or SDKs directly.** All LLM operations go through

@@ -237,7 +237,8 @@ async function runTracker(
     });
 
     runDedupSweep(d.dispatchChild).catch((err) => {
-      console.warn('[rosie-bot:tracker] Dedup sweep failed:', err);
+      log({ source: 'rosie-bot:tracker', level: 'warn',
+        summary: `Dedup sweep failed: ${err instanceof Error ? err.message : String(err)}` });
     });
   } catch (err) {
     log({ source: 'rosie-bot:tracker', level: 'error',

@@ -1371,7 +1371,8 @@ export async function dispatchChildSession(
             if (lastError) parts.push(`error: ${lastError}`);
             parts.push(`entries: [${entryTypes.join(', ')}]`);
             if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
-            console.warn(`[child-session] Turn completed with empty response (parent: ${parentSessionId}) — ${parts.join(' | ')}`);
+            log({ source: 'session-manager:dispatch', level: 'warn',
+              summary: `Turn completed with empty response (parent: ${parentSessionId}) — ${parts.join(' | ')}` });
             cleanup(/* force */ true);
             resolve(null);
           }
@@ -1627,7 +1628,8 @@ export async function resumeChildSession(
           if (text || structured !== undefined || entryTypes.length > 1) {
             resolve({ sessionId, text, structured, contextUsage });
           } else {
-            if (lastError) console.warn(`[resume-child] Empty response with error: ${lastError}`);
+            if (lastError) log({ source: 'session-manager:resume', level: 'warn',
+              summary: `Empty response with error: ${lastError}` });
             resolve(null);
           }
         };

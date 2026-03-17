@@ -142,7 +142,8 @@ async function checkSemanticDuplicates(title: string, summary: string, newProjec
     return warnings;
   } catch (err) {
     // Embedding failure must not block creates
-    console.error('[internal-mcp] semantic validation skipped:', err instanceof Error ? err.message : String(err));
+    log({ source: 'internal-mcp', level: 'warn',
+      summary: `Semantic validation skipped: ${err instanceof Error ? err.message : String(err)}` });
     return [];
   }
 }
@@ -662,13 +663,15 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
 
       try {
         mergeProjects(args.keep_id, args.remove_id);
-        console.error(`[internal-mcp] merge_project: merged "${removeInfo.title}" → "${keepInfo.title}"`);
+        log({ source: 'internal-mcp', level: 'info',
+          summary: `merge_project: merged "${removeInfo.title}" → "${keepInfo.title}"` });
         appendDecision({ tool: 'merge_project', action: 'merged', title: keepInfo.title, keep_id: args.keep_id, remove_id: args.remove_id });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action: 'merged', kept: keepInfo.title, removed: removeInfo.title }) }],
         };
       } catch (err) {
-        console.error('[internal-mcp] merge_project FAIL:', err instanceof Error ? err.message : String(err));
+        log({ source: 'internal-mcp', level: 'error',
+          summary: `merge_project FAIL: ${err instanceof Error ? err.message : String(err)}` });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: `merge_project failed: ${err instanceof Error ? err.message : String(err)}` }) }],
           isError: true,
