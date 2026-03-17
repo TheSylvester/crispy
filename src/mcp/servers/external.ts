@@ -22,6 +22,8 @@ import { findSession } from "../../core/session-manager.js";
 import { parseModelOption } from "../../core/model-utils.js";
 import { INTERNAL_MCP_SERVER_NAME } from "./internal.js";
 import { log } from "../../core/log.js";
+import { parseJsonlFile } from "../../core/adapters/claude/jsonl-reader.js";
+import { formatTranscript } from "../transcript-formatter.js";
 
 // ============================================================================
 // Recall Agent Prompt
@@ -47,10 +49,11 @@ export function buildRecallPrompt(
 
 1. **If the query has time signals** ("recently", "last week", "a while ago"), use **list_sessions** first to establish a date range and narrow the search window.
 2. **search_transcript** with multiple keyword variations in parallel. Cast a wide net — synonyms, related terms, different phrasings.
-3. **Inspect session_hits** — every session with hits is a candidate. Do not discard any yet.
+3. **Inspect session_hits** — pay close attention to the total count. The grouped results show a sample of sessions. If \`total_matches\` is much larger than the number of sessions shown, there are more results to discover. **You MUST drill into at least the top 10 unique sessions from session_hits before deciding you have enough.**
 4. **read_message** with \`context: 2-3\` for each candidate session — verify what the session is actually about. For broader context, use **read_session** with \`offset\` set to the \`message_seq\` from search results.
-5. **grep** when search_transcript misses — try synonyms, related terms, or substring patterns. A keyword search for "bypass" won't find "intermediary" but grep for \`"ToolSearch"\` will find every message mentioning it regardless of surrounding words.
-6. **Present all candidates** with evidence snippets. Do not synthesize an answer.
+5. **If fewer than 20 unique sessions found after initial searches**, run a second search with different terms. Keep iterating until you have a broad sample or you've exhausted search strategies.
+6. **grep** when search_transcript misses — try synonyms, related terms, or substring patterns. A keyword search for "bypass" won't find "intermediary" but grep for \`"ToolSearch"\` will find every message mentioning it regardless of surrounding words.
+7. **Present all candidates** with evidence snippets. Do not synthesize an answer.
 
 ## How to search
 
@@ -77,7 +80,7 @@ export function buildRecallPrompt(
 4. **Filter meta-sessions.** Distinguish sessions where the topic itself was discussed (primary sources) from sessions where someone was *searching for or referencing* that topic (meta-sessions). Label meta-sessions clearly — they're usually less relevant than the original discussion.
 5. **Prefer recent when ties exist.** When multiple sessions match equally well and the query implies recency, rank newer sessions higher. Always include dates so the caller can judge.
 6. **If you can't find it after a thorough search, say so.** Don't fabricate. Report what you did find and suggest alternative search terms.
-7. **Watch for timer warnings.** Search thoroughly until your tools show a time warning, then wrap up quickly. After tools lock out, format results immediately from what you have — partial results beat timing out with nothing.
+7. **Take your time.** You have 120 seconds for thorough exploration. Do not self-impose urgency. Stop only when you've drilled into a representative sample (top 10-20 sessions) or you've exhausted search strategies.
 
 ## Output
 
@@ -139,11 +142,11 @@ function textResult(data: string): {
 // ============================================================================
 
 /**
- * Create the external MCP server with the `recall` tool.
+ * Create the external MCP server with `recall` and `read_transcript` tools.
  *
- * The tool is a relay: dispatch a child session with the internal stdio
- * MCP server attached, let the child search and synthesize, return the
- * result. The child gets 120s and access to the query tools.
+ * Two tools:
+ * 1. `recall_conversations` — dispatch a child session to search and synthesize
+ * 2. `read_transcript` — pure data tool, reads session transcript without agent dispatch
  *
  * @param dispatch - AgentDispatch for spawning child sessions
  * @param callerSession - The session that owns this MCP server instance (for parent anchoring and self-filtering)
@@ -285,6 +288,83 @@ export function createExternalServer(
             });
             return textResult(
               `Recall failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        },
+      ),
+      tool(
+        "read_transcript",
+        "Read a session transcript file directly — no agent dispatch, pure data retrieval. Complements recall: use recall to find sessions, then read_transcript to drill into full conversation content. Returns formatted conversation with pagination support.",
+        {
+          sessionFile: z
+            .string()
+            .describe(
+              "Absolute path to the session transcript file (e.g., /home/user/.claude/projects/my-proj/sessions/abc123.jsonl). Usually obtained from recall results.",
+            ),
+          offset: z
+            .number()
+            .int()
+            .min(0)
+            .optional()
+            .describe("Skip first N entries (0-based). Default: 0"),
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(500)
+            .optional()
+            .describe("Return at most N entries. Default: 50"),
+          budget: z
+            .number()
+            .int()
+            .min(1000)
+            .optional()
+            .describe("Max output characters before truncation. Default: 30000"),
+        },
+        async (args) => {
+          log({
+            source: "read_transcript",
+            level: "info",
+            summary: `read_transcript: ${args.sessionFile}`,
+            data: { sessionFile: args.sessionFile, offset: args.offset, limit: args.limit },
+          });
+
+          try {
+            // Parse the JSONL file
+            const entries = parseJsonlFile(args.sessionFile);
+            if (entries.length === 0) {
+              return textResult("Session transcript is empty or could not be parsed.");
+            }
+
+            // Format with pagination
+            const result = formatTranscript(entries, {
+              offset: args.offset ?? 0,
+              limit: args.limit ?? 50,
+              budget: args.budget ?? 30000,
+            });
+
+            log({
+              source: "read_transcript",
+              level: "info",
+              summary: `read_transcript: OK — ${result.shownEntries}/${result.totalEntries} entries, ${result.content.length} chars`,
+              data: {
+                sessionFile: args.sessionFile,
+                shown: result.shownEntries,
+                total: result.totalEntries,
+                chars: result.content.length,
+              },
+            });
+
+            return textResult(result.content);
+          } catch (err) {
+            log({
+              source: "read_transcript",
+              level: "error",
+              summary: `read_transcript: failed — ${err instanceof Error ? err.message : String(err)}`,
+              data: { sessionFile: args.sessionFile, error: String(err) },
+            });
+            return textResult(
+              `Failed to read transcript: ${err instanceof Error ? err.message : String(err)}`,
             );
           }
         },

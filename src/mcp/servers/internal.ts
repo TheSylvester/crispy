@@ -688,7 +688,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
     'Dual-path search (FTS5 keywords + semantic embeddings, falls back to FTS5-only if embeddings unavailable) over raw conversation content. Results are grouped by session — each session appears once with its best match plus additional snippets, so you see maximum session diversity. Returns session ID, message UUID, highlighted snippet, short preview (up to 200 chars), additional_matches count, and other_snippets. Also returns total_matches and session_hits. Project-scoped by default. Supports FTS5 syntax: OR for broad searches, "quoted phrases" for exact matches, prefix* for partial terms. Use read_message to drill into a specific result.',
     {
       query: z.string().describe('Search query — short keywords work best. Use OR to broaden: "sqlite OR database"'),
-      limit: z.number().optional().default(20).describe('Maximum results (default 20)'),
+      limit: z.number().optional().default(40).describe('Maximum grouped session results (default 40)'),
       session_id: z.string().optional().describe('Scope search to a single session (use after broad search to drill into a specific session)'),
       all_projects: z.boolean().optional().default(false).describe('Search across all projects instead of just the current workspace'),
     },

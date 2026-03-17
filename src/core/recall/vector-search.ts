@@ -44,7 +44,7 @@ export interface DualPathSearchOptions {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_LIMIT = 20;
+const DEFAULT_LIMIT = 40;
 const FETCH_MULTIPLIER = 3; // fetch more from each path to improve union quality
 const RRF_K = 60; // Reciprocal Rank Fusion constant — dampens top-rank dominance
 const DEFAULT_RECENCY_DECAY = 0.005; // ~50% penalty at 200 days old
