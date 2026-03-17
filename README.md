@@ -6,6 +6,8 @@ Rendered Markdown. Fork and rewind conversations. Multiple agent windows side by
 
 VS Code / Cursor extension today. Standalone browser app after v0.1.x.
 
+[![Discord](https://img.shields.io/discord/1483243664389177479?color=5865F2&logo=discord&logoColor=white&label=Discord)](https://discord.gg/e2vw4bTPup)
+
 ![Crispy — sub-agent running with real-time tool auditing, then forking to side-by-side panels](./media/hero.gif)
 
 ---
@@ -152,6 +154,13 @@ npm run package:win32-arm64
 - VS Code 1.94+ (or any compatible fork)
 - Claude Code CLI installed and authenticated
 - Codex CLI (optional, for Codex sessions)
+
+---
+
+## Community
+
+- [Discord](https://discord.gg/e2vw4bTPup) — support, feature requests, and discussion
+- [GitHub Issues](https://github.com/TheSylvester/crispy/issues) — bug reports and tracking
 
 ---
 
