@@ -541,7 +541,7 @@
 .crispy-project-title {
   font-size: var(--font-sm);
   font-weight: 500;
-  color: var(--vscode-foreground, #d4d4d4);
+  color: var(--vscode-foreground, #e0e0e0);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -553,7 +553,7 @@
 /* Status line — freeform text from Rosie */
 .crispy-project-status-text {
   font-size: var(--font-xs);
-  color: var(--vscode-descriptionForeground, #858585);
+  color: var(--vscode-descriptionForeground, #b8b8b8);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -571,15 +571,15 @@
 
 .crispy-project-meta-item {
   font-size: var(--font-2xs);
-  color: var(--vscode-descriptionForeground, #858585);
-  opacity: 0.6;
+  color: var(--vscode-descriptionForeground, #9a9a9a);
+  opacity: 0.8;
   white-space: nowrap;
 }
 
 .crispy-project-branch {
   font-family: var(--font-mono);
   font-size: var(--font-2xs);
-  color: var(--vscode-descriptionForeground, #858585);
+  color: var(--vscode-descriptionForeground, #9a9a9a);
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -590,12 +590,30 @@
   font-size: 10px;
   padding: 0 5px;
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--vscode-descriptionForeground, #858585);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--vscode-descriptionForeground, #a0a0a0);
   max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.crispy-project-file-tag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: rgba(92, 184, 112, 0.1);
+  color: #7cc88e;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.crispy-project-file-tag:hover {
+  background: rgba(92, 184, 112, 0.18);
+  color: #a0ddb0;
 }
 
 .crispy-project-blocker-tag {
@@ -630,15 +648,15 @@
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--vscode-descriptionForeground, #858585);
-  opacity: 0.7;
+  color: var(--vscode-foreground, #cccccc);
+  opacity: 0.6;
   margin: 8px 0 4px;
   font-weight: 600;
 }
 
 .crispy-project-detail-description {
   font-size: var(--font-xs);
-  color: var(--vscode-descriptionForeground, #858585);
+  color: var(--vscode-foreground, #cccccc);
   line-height: 1.5;
   margin-bottom: 8px;
 }
@@ -677,24 +695,22 @@
 .crispy-project-detail-session-time {
   font-family: var(--font-mono);
   font-size: 10px;
-  color: var(--vscode-descriptionForeground, #858585);
-  opacity: 0.6;
+  color: var(--vscode-descriptionForeground, #9a9a9a);
   padding-top: 2px;
 }
 .crispy-project-detail-session-content { min-width: 0; }
 .crispy-project-detail-session-title {
-  color: var(--vscode-descriptionForeground, #858585);
+  color: var(--vscode-foreground, #cccccc);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--font-xs);
 }
 .crispy-project-detail-sessions li:hover .crispy-project-detail-session-title {
-  color: var(--vscode-foreground, #d4d4d4);
+  color: #fff;
 }
 .crispy-project-detail-session-preview {
-  color: var(--vscode-descriptionForeground, #858585);
-  opacity: 0.5;
+  color: var(--vscode-descriptionForeground, #9a9a9a);
   font-size: var(--font-2xs);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -708,28 +724,37 @@
   list-style: none;
   padding: 0;
   margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
 }
 .crispy-project-detail-files li {
-  font-family: var(--font-mono);
-  font-size: var(--font-2xs);
-  color: var(--vscode-descriptionForeground, #858585);
-  padding: 1px 0;
-  display: flex;
-  gap: 6px;
+  display: contents;
   cursor: pointer;
 }
-.crispy-project-detail-files li:hover {
-  color: var(--vscode-foreground, #d4d4d4);
+.crispy-project-detail-files li > .crispy-project-detail-file-name {
+  font-family: var(--font-mono);
+  font-size: var(--font-2xs);
+  color: #7cc88e;
+  white-space: nowrap;
+  padding: 2px 0;
+}
+.crispy-project-detail-files li:hover > .crispy-project-detail-file-name {
+  color: #a0ddb0;
 }
 .crispy-project-detail-file-note {
   font-family: var(--font-sans);
-  font-size: 10px;
-  opacity: 0.6;
+  font-size: var(--font-2xs);
+  color: var(--vscode-descriptionForeground, #b0b0b0);
+  padding: 2px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .crispy-project-detail-origin {
   font-size: var(--font-2xs);
-  color: var(--vscode-descriptionForeground, #858585);
+  color: var(--vscode-descriptionForeground, #a0a0a0);
   margin-top: 6px;
 }
 .crispy-project-detail-origin-link {

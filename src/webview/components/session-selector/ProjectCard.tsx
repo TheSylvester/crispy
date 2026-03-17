@@ -77,11 +77,16 @@ export function ProjectCard({
           <span className="crispy-project-meta-item">
             {p.sessionCount} session{p.sessionCount !== 1 ? 's' : ''}
           </span>
-          {p.files.length > 0 && (
-            <span className="crispy-project-meta-item">
-              {p.files.length} file{p.files.length !== 1 ? 's' : ''}
+          {p.files.length > 0 && p.files.map(f => (
+            <span
+              key={f.path}
+              className="crispy-project-file-tag"
+              title={f.path}
+              onClick={e => handleFileClick(e, f.path)}
+            >
+              {f.path.split('/').pop()}
             </span>
-          )}
+          ))}
           {p.entities && p.entities.slice(0, 3).map(e => (
             <span key={e} className="crispy-project-entity-tag">{e.split('/').pop()}</span>
           ))}
@@ -135,9 +140,9 @@ export function ProjectCard({
                 <div className="crispy-project-detail-label">Files</div>
                 <ul className="crispy-project-detail-files">
                   {p.files.map(f => (
-                    <li key={f.path} onClick={e => handleFileClick(e, f.path)}>
-                      <span>{f.path}</span>
-                      {f.note && <span className="crispy-project-detail-file-note">{f.note}</span>}
+                    <li key={f.path} onClick={e => handleFileClick(e, f.path)} title={f.path}>
+                      <span className="crispy-project-detail-file-name">{f.path.split('/').pop()}</span>
+                      <span className="crispy-project-detail-file-note">{f.note ?? ''}</span>
                     </li>
                   ))}
                 </ul>

@@ -134,6 +134,11 @@ async function callRpc(socketPath, method, params) {
     params.sessionId = sessionId;
   }
 
+  // Pass parent session ID for session linking (the session being tracked)
+  if (process.env.CRISPY_PARENT_SESSION_ID && !('parentSessionId' in params)) {
+    params.parentSessionId = process.env.CRISPY_PARENT_SESSION_ID;
+  }
+
   return sendRpc(socketPath, method, params);
 }
 

@@ -917,6 +917,16 @@ export function createClientConnection(
       case "createProject": {
         const projectId = randomUUID();
         const entities = Array.isArray(params.entities) ? JSON.stringify(params.entities) : (params.entities as string ?? '[]');
+        // Resolve session file: prefer explicit param, fall back to looking up
+        // parentSessionId (the session being tracked) or sessionId (caller)
+        let sessionFile = (params.sessionFile as string) || '';
+        if (!sessionFile) {
+          const lookupId = (params.parentSessionId as string) || (params.sessionId as string);
+          if (lookupId) {
+            const match = listAllSessions().find(s => s.sessionId === lookupId);
+            if (match) sessionFile = match.path;
+          }
+        }
         const block: TrackerBlock = {
           project: {
             action: 'create',
@@ -935,7 +945,7 @@ export function createClientConnection(
           sessionRef: { detected_in: '' },
           files: [],
         };
-        writeTrackerResults([block], (params.sessionFile as string) ?? '');
+        writeTrackerResults([block], sessionFile);
         pushTrackerNotification({
           kind: 'project_created',
           projectTitle: params.title as string,
@@ -949,6 +959,16 @@ export function createClientConnection(
       case "trackProject": {
         const projectId = params.projectId as string;
         const entities = Array.isArray(params.entities) ? JSON.stringify(params.entities) : (params.entities as string | undefined);
+        // Resolve session file: prefer explicit param, fall back to looking up
+        // parentSessionId (the session being tracked) or sessionId (caller)
+        let trackSessionFile = (params.sessionFile as string) || '';
+        if (!trackSessionFile) {
+          const lookupId = (params.parentSessionId as string) || (params.sessionId as string);
+          if (lookupId) {
+            const match = listAllSessions().find(s => s.sessionId === lookupId);
+            if (match) trackSessionFile = match.path;
+          }
+        }
         const block: TrackerBlock = {
           project: {
             action: 'track',
@@ -962,7 +982,7 @@ export function createClientConnection(
           sessionRef: { detected_in: '' },
           files: [],
         };
-        writeTrackerResults([block], (params.sessionFile as string) ?? '');
+        writeTrackerResults([block], trackSessionFile);
         const trackInfo = getProjectTitle(projectId);
         pushTrackerNotification({
           kind: params.stage ? 'stage_change' : 'project_matched',
