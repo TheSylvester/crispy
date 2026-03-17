@@ -267,10 +267,10 @@ describe('FTS5 session_meta_fts (migration v7)', () => {
     const db = getDb(dbPath);
 
     db.run(
-      `INSERT INTO session_meta (timestamp, kind, file, preview, quest, summary, title, entities)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO session_meta (timestamp, kind, file, preview, quest, summary, title)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       ['2025-06-01T10:00:00Z', 'rosie-meta', '/test.jsonl', 'test preview',
-       'implement dark mode', 'added dark theme support', 'Dark Mode', 'theme.ts, colors.css'],
+       'implement dark mode', 'added dark theme support', 'Dark Mode'],
     );
 
     const rows = db.all("SELECT * FROM session_meta_fts WHERE session_meta_fts MATCH 'dark'");

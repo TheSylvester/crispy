@@ -191,24 +191,17 @@ Flags:
   --status     (required) Current status description
   --summary    (optional) Brief summary
   --icon       (optional) Emoji icon
-  --entities   (optional) JSON array of related entities
   --parent-id  (optional) Parent project UUID (for type=task)`,
 
     run(args) {
       const flags = parseFlags(args, {
         title: {}, type: {}, stage: {}, status: {},
-        summary: {}, icon: {}, entities: {}, parentId: {},
+        summary: {}, icon: {}, parentId: {},
       });
       const params = buildParams(flags, {
         title: 'title', type: 'type', stage: 'stage', status: 'status',
         summary: 'summary', icon: 'icon', parentId: 'parent_id',
       });
-      if (flags.entities) {
-        try { params.entities = JSON.parse(flags.entities); } catch {
-          process.stderr.write(`Invalid JSON for --entities: ${flags.entities}\n`);
-          process.exit(1);
-        }
-      }
       return { method: 'createProject', params };
     },
   },
@@ -220,25 +213,18 @@ Flags:
   --id          (required) Project UUID
   --status      (required) New status description
   --stage       (optional) Move to a different stage
-  --entities    (optional) JSON array of related entities
   --blocked-by  (optional) Reason project is blocked
   --branch      (optional) Git branch name`,
 
     run(args) {
       const flags = parseFlags(args, {
-        id: {}, status: {}, stage: {}, entities: {},
+        id: {}, status: {}, stage: {},
         blockedBy: {}, branch: {},
       });
       const params = buildParams(flags, {
         id: 'projectId', status: 'status', stage: 'stage',
         blockedBy: 'blocked_by', branch: 'branch',
       });
-      if (flags.entities) {
-        try { params.entities = JSON.parse(flags.entities); } catch {
-          process.stderr.write(`Invalid JSON for --entities: ${flags.entities}\n`);
-          process.exit(1);
-        }
-      }
       return { method: 'trackProject', params };
     },
   },

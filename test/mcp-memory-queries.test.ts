@@ -57,16 +57,15 @@ function insertEntry(opts: {
   summary?: string;
   title?: string;
   status?: string;
-  entities?: string;
 }): void {
   const db = getDb(dbPath);
   db.run(
-    `INSERT INTO session_meta (timestamp, kind, file, preview, quest, summary, title, status, entities)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO session_meta (timestamp, kind, file, preview, quest, summary, title, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       opts.timestamp, opts.kind, opts.file,
       opts.preview ?? null, opts.quest ?? null, opts.summary ?? null,
-      opts.title ?? null, opts.status ?? null, opts.entities ?? null,
+      opts.title ?? null, opts.status ?? null,
     ],
   );
 }
@@ -84,7 +83,6 @@ describe('searchSessions', () => {
       quest: 'implement Rosie bot summarization',
       summary: 'added rosie-meta entries with quest and summary fields',
       title: 'Rosie Bot Setup',
-      entities: 'rosie.ts, activity-index.ts',
     });
     insertEntry({
       timestamp: '2025-06-01T11:00:00Z',

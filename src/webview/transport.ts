@@ -42,7 +42,6 @@ export interface WireProject {
   blockedBy?: string;
   summary?: string;
   branch?: string;
-  entities?: string[];
   createdAt: string;
   closedAt?: string;
   lastActivityAt: string;

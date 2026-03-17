@@ -125,16 +125,16 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
   try {
     const insertProject = db.prepare(
       `INSERT INTO projects (id, title, stage, status, icon, blocked_by, summary, branch, entities, type, parent_id, created_at, updated_at, last_activity_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
     );
     const readProject = db.prepare(
-      `SELECT stage, status, entities FROM projects WHERE id = ?`,
+      `SELECT stage, status FROM projects WHERE id = ?`,
     );
     const updateProject = db.prepare(
       `UPDATE projects SET
          title = COALESCE(?, title), stage = ?, status = ?, icon = COALESCE(?, icon),
          blocked_by = ?, summary = COALESCE(?, summary),
-         branch = COALESCE(?, branch), entities = ?, updated_at = ?, last_activity_at = ?,
+         branch = COALESCE(?, branch), entities = NULL, updated_at = ?, last_activity_at = ?,
          closed_at = CASE WHEN ? IN ('archived', 'done') THEN ? ELSE closed_at END
        WHERE id = ?`,
     );
@@ -162,8 +162,7 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
           insertProject.run([
             projectId, p.title, p.stage, p.status || null, p.icon || null,
             p.blocked_by || null, p.summary || null,
-            p.branch || null, p.entities || '[]',
-            p.type || 'project', p.parent_id || null,
+            p.branch || null, p.type || 'project', p.parent_id || null,
             now, now, now,
           ]);
           // Record 'created' activity
@@ -178,19 +177,6 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
           }
           const oldStage = (existing.stage as string) ?? 'active';
           const oldStatus = (existing?.status as string) ?? null;
-          const oldEntities = (existing?.entities as string) ?? '[]';
-
-          // Merge entities additively
-          let mergedEntities = oldEntities;
-          if (p.entities) {
-            try {
-              const existingArr: string[] = JSON.parse(oldEntities);
-              const newArr: string[] = JSON.parse(p.entities);
-              mergedEntities = JSON.stringify([...new Set([...existingArr, ...newArr])]);
-            } catch {
-              mergedEntities = p.entities;
-            }
-          }
 
           const newStage = p.stage ?? oldStage;
           const newStatus = p.status ?? oldStatus;
@@ -199,7 +185,7 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
             null, // title — keep existing for track (no title field)
             newStage, newStatus, null, // icon — keep existing for track
             p.blocked_by ?? null, null, // summary — keep existing
-            p.branch ?? null, mergedEntities, now, now,
+            p.branch ?? null, now, now,
             newStage, now, // for the CASE WHEN closed_at
             projectId,
           ]);
@@ -413,11 +399,11 @@ export function recordTrackerOutcome(
 /**
  * Get all non-abandoned projects for prompt context and validation.
  */
-export function getExistingProjects(): { id: string; title: string; stage: string; status: string | null; icon: string | null; entities: string }[] {
+export function getExistingProjects(): { id: string; title: string; stage: string; status: string | null; icon: string | null }[] {
   try {
     const db = getTrackerDb();
     const rows = db.all(
-      `SELECT id, title, stage, status, icon, entities FROM projects WHERE stage != 'archived' ORDER BY updated_at DESC`,
+      `SELECT id, title, stage, status, icon FROM projects WHERE stage != 'archived' ORDER BY updated_at DESC`,
     );
     return rows.map((r) => {
       const row = r as Record<string, unknown>;
@@ -427,7 +413,6 @@ export function getExistingProjects(): { id: string; title: string; stage: strin
         stage: row.stage as string,
         status: (row.status as string) ?? null,
         icon: (row.icon as string) ?? null,
-        entities: (row.entities as string) ?? '[]',
       };
     });
   } catch {
@@ -442,7 +427,7 @@ export function getProjectsForPrompt(): string {
   try {
     const db = getTrackerDb();
     const stmt = db.prepare(
-      `SELECT id, type, stage, parent_id, title, status, entities
+      `SELECT id, type, stage, parent_id, title, status
        FROM projects
        WHERE stage != 'archived'
        ORDER BY updated_at DESC`,
@@ -454,7 +439,6 @@ export function getProjectsForPrompt(): string {
       parent_id: string | null;
       title: string;
       status: string | null;
-      entities: string | null;
     }>;
     try {
       rows = stmt.all() as typeof rows;
@@ -470,7 +454,7 @@ export function getProjectsForPrompt(): string {
     return rows
       .map(
         (r) =>
-          `id=${r.id} | type=${r.type} | stage=${r.stage} | parent=${r.parent_id ?? '-'} | title=${sanitize(r.title)} | status=${sanitize(r.status)} | entities=${r.entities ?? '[]'}`,
+          `id=${r.id} | type=${r.type} | stage=${r.stage} | parent=${r.parent_id ?? '-'} | title=${sanitize(r.title)} | status=${sanitize(r.status)}`,
       )
       .join('\n');
   } catch {
@@ -516,7 +500,6 @@ export function getProjectsWithDetails(): Array<{
   blockedBy: string | null;
   summary: string | null;
   branch: string | null;
-  entities: string;
   createdAt: string;
   closedAt: string | null;
   lastActivityAt: string | null;
@@ -527,7 +510,7 @@ export function getProjectsWithDetails(): Array<{
     const db = getTrackerDb();
 
     const projects = db.all(
-      `SELECT id, title, stage, status, icon, sort_order, blocked_by, summary, branch, entities, created_at, closed_at, last_activity_at
+      `SELECT id, title, stage, status, icon, sort_order, blocked_by, summary, branch, created_at, closed_at, last_activity_at
        FROM projects ORDER BY last_activity_at DESC`,
     );
 
@@ -556,7 +539,6 @@ export function getProjectsWithDetails(): Array<{
           blockedBy: (row.blocked_by as string) ?? null,
           summary: (row.summary as string) ?? null,
           branch: (row.branch as string) ?? null,
-          entities: (row.entities as string) ?? '[]',
           createdAt: row.created_at as string,
           closedAt: (row.closed_at as string) ?? null,
           lastActivityAt: (row.last_activity_at as string) ?? null,
@@ -587,7 +569,6 @@ interface ProjectRow {
   stage: string;
   type: string;
   summary: string | null;
-  entities: string;
   created_at: string;
   updated_at: string;
 }
@@ -597,7 +578,6 @@ export interface DupCandidate {
   a: ProjectRow;
   b: ProjectRow;
   reason: string;
-  jaccard: number;
   levenshtein: number;
 }
 
@@ -605,28 +585,11 @@ export interface DupCandidate {
 let dedupInFlight = false;
 
 /** Stage 1 thresholds — either crossing its threshold flags a candidate pair. */
-const CANDIDATE_JACCARD_THRESHOLD = 0.5;
 const CANDIDATE_LEVENSHTEIN_THRESHOLD = 0.3;
 
 // ============================================================================
 // Stage 1: Heuristic helpers (pure functions, exported for testing)
 // ============================================================================
-
-/**
- * Jaccard similarity: |A ∩ B| / |A ∪ B|.
- * Returns 0 for empty sets.
- */
-export function computeJaccard(a: string[], b: string[]): number {
-  if (a.length === 0 && b.length === 0) return 0;
-  const setA = new Set(a);
-  const setB = new Set(b);
-  let intersection = 0;
-  for (const item of setA) {
-    if (setB.has(item)) intersection++;
-  }
-  const union = setA.size + setB.size - intersection;
-  return union === 0 ? 0 : intersection / union;
-}
 
 /**
  * Normalized Levenshtein distance: editDistance(a, b) / max(|a|, |b|).
@@ -664,31 +627,12 @@ export function normalizedLevenshtein(a: string, b: string): number {
 }
 
 /**
- * Parse a JSON entity array string safely.
- * Returns an empty array for invalid/missing input.
- */
-function parseEntities(raw: string | null | undefined): string[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((e): e is string => typeof e === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
-/**
  * Find candidate duplicate pairs among projects using heuristic signals.
  *
- * Either signal crossing its threshold produces a candidate:
- * - Entity Jaccard ≥ 0.5
- * - Title Levenshtein ≤ 0.3 (70%+ similarity)
+ * Title Levenshtein ≤ 0.3 (70%+ similarity) produces a candidate.
  */
 export function findDupeCandidates(projects: ProjectRow[]): DupCandidate[] {
   const candidates: DupCandidate[] = [];
-
-  // Pre-parse entities once per project (avoids O(n²) re-parsing)
-  const parsedEntities = projects.map((p) => parseEntities(p.entities));
 
   for (let i = 0; i < projects.length; i++) {
     for (let j = i + 1; j < projects.length; j++) {
@@ -698,25 +642,12 @@ export function findDupeCandidates(projects: ProjectRow[]): DupCandidate[] {
       // Never compare a project against itself
       if (a.id === b.id) continue;
 
-      const entitiesA = parsedEntities[i]!;
-      const entitiesB = parsedEntities[j]!;
-
-      // Compute entity overlap (skip if both have no entities)
-      const jaccard = (entitiesA.length > 0 && entitiesB.length > 0)
-        ? computeJaccard(entitiesA, entitiesB)
-        : 0;
-
       // Compute title similarity
       const lev = normalizedLevenshtein(a.title, b.title);
-
-      const entityMatch = jaccard >= CANDIDATE_JACCARD_THRESHOLD;
       const titleMatch = lev <= CANDIDATE_LEVENSHTEIN_THRESHOLD;
 
-      if (entityMatch || titleMatch) {
-        const reasons: string[] = [];
-        if (entityMatch) reasons.push(`entity-jaccard=${jaccard.toFixed(2)}`);
-        if (titleMatch) reasons.push(`title-levenshtein=${lev.toFixed(2)}`);
-        candidates.push({ a, b, reason: reasons.join(', '), jaccard, levenshtein: lev });
+      if (titleMatch) {
+        candidates.push({ a, b, reason: `title-levenshtein=${lev.toFixed(2)}`, levenshtein: lev });
       }
     }
   }
@@ -732,7 +663,6 @@ export function findDupeCandidates(projects: ProjectRow[]): DupCandidate[] {
  * Merge two projects: keep one, delete the other.
  *
  * - Preserves the older created_at
- * - Unions entity arrays (deduplicated)
  * - Migrates all project_sessions rows to survivor
  * - Migrates project_files rows (skips on UNIQUE conflict)
  * - Deletes the stale project row
@@ -761,17 +691,12 @@ export function mergeProjects(
     const removeCreated = removeRow.created_at as string;
     const earlierCreated = keepCreated < removeCreated ? keepCreated : removeCreated;
 
-    // Union entities
-    const keepEntities = parseEntities(keepRow.entities as string);
-    const removeEntities = parseEntities(removeRow.entities as string);
-    const unionedEntities = [...new Set([...keepEntities, ...removeEntities])];
-
     // Update the surviving project
     const title = mergedTitle || (keepRow.title as string);
     const summary = mergedSummary || (keepRow.summary as string);
 
     const updateSurvivor = db.prepare(
-      `UPDATE projects SET title = ?, summary = ?, entities = ?, created_at = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE projects SET title = ?, summary = ?, entities = NULL, created_at = ?, updated_at = ? WHERE id = ?`,
     );
     const migrateSessions = db.prepare(
       `INSERT OR IGNORE INTO project_sessions (project_id, session_file, detected_in, linked_at)
@@ -793,7 +718,7 @@ export function mergeProjects(
     const deleteProject = db.prepare(`DELETE FROM projects WHERE id = ?`);
 
     try {
-      updateSurvivor.run([title, summary, JSON.stringify(unionedEntities), earlierCreated, new Date().toISOString(), keepId]);
+      updateSurvivor.run([title, summary, earlierCreated, new Date().toISOString(), keepId]);
       reparentChildren.run([keepId, removeId]);
       migrateSessions.run([keepId, removeId]);
       migrateFiles.run([keepId, removeId]);
@@ -833,13 +758,12 @@ export function mergeProjects(
 // ============================================================================
 
 /** High-confidence thresholds for auto-merge (skip LLM). */
-const AUTO_MERGE_JACCARD = 0.7;
 const AUTO_MERGE_LEVENSHTEIN = 0.2;
 
 /**
  * Run the full dedup sweep: heuristic candidate detection + LLM adjudication.
  *
- * Auto-merges high-confidence duplicates (Jaccard ≥ 0.7 AND Levenshtein ≤ 0.2).
+ * Auto-merges high-confidence duplicates (Levenshtein ≤ 0.2).
  * For ambiguous candidates, dispatches a Haiku child session for adjudication.
  *
  * Safe to call after every writeTrackerResults() — SQL + string math is cheap.
@@ -856,7 +780,7 @@ export async function runDedupSweep(
     // Load all non-archived projects with full data for comparison
     const db = getTrackerDb();
     const rows = db.all(
-      `SELECT id, title, stage, type, summary, entities, created_at, updated_at
+      `SELECT id, title, stage, type, summary, created_at, updated_at
        FROM projects WHERE stage != 'archived' ORDER BY updated_at DESC`,
     );
     const projects: ProjectRow[] = rows.map((r) => {
@@ -867,7 +791,6 @@ export async function runDedupSweep(
         stage: row.stage as string,
         type: (row.type as string) ?? 'project',
         summary: (row.summary as string) ?? null,
-        entities: (row.entities as string) ?? '[]',
         created_at: row.created_at as string,
         updated_at: row.updated_at as string,
       };
@@ -887,7 +810,6 @@ export async function runDedupSweep(
       if (merged.has(candidate.a.id) || merged.has(candidate.b.id)) continue;
 
       const isHighConfidence =
-        candidate.jaccard >= AUTO_MERGE_JACCARD &&
         candidate.levenshtein <= AUTO_MERGE_LEVENSHTEIN;
 
       if (isHighConfidence) {
@@ -980,13 +902,11 @@ async function askLlmVerdict(
 - ID: ${a.id}
 - Title: ${a.title}
 - Summary: ${a.summary ?? '(none)'}
-- Entities: ${a.entities}
 
 ## Project B
 - ID: ${b.id}
 - Title: ${b.title}
 - Summary: ${b.summary ?? '(none)'}
-- Entities: ${b.entities}
 
 ## Flagged because
 ${candidate.reason}

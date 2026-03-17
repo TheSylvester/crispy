@@ -329,10 +329,10 @@ Emit one CLI call per distinct item.
 Use the Bash tool to call the tracker CLI:
 
 ### Create a project
-node $CRISPY_TRACKER create --title "..." --type project --stage active --status "..." --summary "..." --icon "🔧" --entities '["file.ts"]'
+node $CRISPY_TRACKER create --title "..." --type project --stage active --status "..." --summary "..." --icon "🔧"
 
 ### Update a project
-node $CRISPY_TRACKER track --id <project-id> --status "..." [--stage <stage>] [--entities '["file.ts"]']
+node $CRISPY_TRACKER track --id <project-id> --status "..." [--stage <stage>]
 
 ### Merge duplicates
 node $CRISPY_TRACKER merge --keep <keep-id> --remove <remove-id>
@@ -343,7 +343,7 @@ node $CRISPY_TRACKER trivial --reason "..."
 ### Show project details
 node $CRISPY_TRACKER show --id <project-id>
 
-Use this when you need full details (status, entities, summary) for a
+Use this when you need full details (status, summary) for a
 project before deciding whether to track it. The CURRENT_PROJECTS index
 only shows id, stage, and title.
 
@@ -392,11 +392,9 @@ the idea's type.
 - **summary**: What the project IS. Set once on create, rarely changed.
 - **title**: Short, descriptive. Stable — do not rename every turn.
 - **icon**: Single emoji for the domain.
-- **entities**: Top 5-10 files, branches, key concepts. Ignore stable
-  infrastructure files unless this session specifically modified them.
 - **files**: Non-code artifacts only — plans, specs, design docs
   (e.g. ".ai-reference/plans/auth-design.md"). Source code (*.ts,
-  *.css, *.rs, etc.) belongs in entities. Omit if none.
+  *.css, *.rs, etc.) does not belong here. Omit if none.
 - **parent_id**: Only set when the parent already exists in
   CURRENT_PROJECTS. Do not create parent and child in the same turn.
   Create the parent first; child tasks can be added on subsequent turns.
@@ -430,7 +428,7 @@ the reason.
 ### Example 1: Track existing + create new (multi-item turn)
 
 Given CURRENT_PROJECTS:
-id=p1 | type=project | stage=active | parent=- | title=Auth Rewrite | status=Designing token schema | entities=["src/middleware/auth.ts","jwt"]
+id=p1 | type=project | stage=active | parent=- | title=Auth Rewrite | status=Designing token schema
 
 Given TURN:
 user: Let's implement the JWT middleware now. Also, the sidebar CSS is
@@ -448,9 +446,9 @@ Expected reasoning and tool calls:
 Two distinct items here. The JWT middleware clearly continues the Auth
 Rewrite (p1). The sidebar fix is unrelated — needs a new project.
 
-node $CRISPY_TRACKER track --id p1 --status "JWT middleware implemented in jwt-verify.ts" --entities '["src/middleware/jwt-verify.ts"]'
+node $CRISPY_TRACKER track --id p1 --status "JWT middleware implemented in jwt-verify.ts"
 
-node $CRISPY_TRACKER create --title "Fix sidebar mobile overflow" --type project --stage done --status "Fixed — CSS overflow corrected" --summary "Sidebar broke on mobile viewports due to missing overflow rule" --icon "🎨" --entities '["src/components/Sidebar.css"]'
+node $CRISPY_TRACKER create --title "Fix sidebar mobile overflow" --type project --stage done --status "Fixed — CSS overflow corrected" --summary "Sidebar broke on mobile viewports due to missing overflow rule" --icon "🎨"
 
 node $CRISPY_TRACKER title --session $CRISPY_PARENT_SESSION_ID --title "Auth JWT & sidebar fix"
 
@@ -461,8 +459,8 @@ decides when to archive.
 ### Example 2: Track a child task (most specific match)
 
 Given CURRENT_PROJECTS:
-id=p1 | type=project | stage=active | parent=- | title=Auth Rewrite | status=JWT middleware done | entities=["src/middleware/auth.ts","jwt"]
-id=t1 | type=task | stage=active | parent=p1 | title=Write refresh token rotation | status=Started | entities=["src/middleware/refresh.ts"]
+id=p1 | type=project | stage=active | parent=- | title=Auth Rewrite | status=JWT middleware done
+id=t1 | type=task | stage=active | parent=p1 | title=Write refresh token rotation | status=Started
 
 Given TURN:
 user: Continue with the refresh token rotation — add the expiry check.
@@ -476,10 +474,8 @@ into a separate token-expiry module for reuse.
 Expected reasoning and tool calls:
 
 Both p1 and t1 match, but t1 is the most specific — track the child.
-Only the new file (token-expiry.ts) needs to be sent as an entity since
-refresh.ts is already tracked.
 
-node $CRISPY_TRACKER track --id t1 --status "Added expiry validation, extracted token-expiry module" --entities '["src/middleware/token-expiry.ts"]'
+node $CRISPY_TRACKER track --id t1 --status "Added expiry validation, extracted token-expiry module"
 
 ### Example 3: Trivial turn
 
@@ -511,7 +507,7 @@ TURN <N>
 \`\`\`
 
 The project index is compact — just id, stage, and title. If you need
-full details (status, entities, summary) to decide whether a turn matches
+full details (status, summary) to decide whether a turn matches
 a project, call \`node $CRISPY_TRACKER show --id <id>\` before making your decision.`;
 
 // ============================================================================
@@ -556,10 +552,10 @@ Provide your output in this format:
 /** @deprecated Gen 2 tracker prompt builder — only used by scripts/backfill.ts. */
 export function buildTrackerPrompt(
   meta: { quest?: string; title?: string; summary?: string; status?: string },
-  projects: { id: string; title: string; stage: string; status: string | null; icon: string | null; entities: string }[],
+  projects: { id: string; title: string; stage: string; status: string | null; icon: string | null }[],
 ): string {
   const projectList = projects.length > 0
-    ? projects.map((p) => `[${p.id}] ${p.icon ?? ''} ${p.title} [${p.stage}] ${p.status ?? ''} — entities: ${p.entities}`).join('\n')
+    ? projects.map((p) => `[${p.id}] ${p.icon ?? ''} ${p.title} [${p.stage}] ${p.status ?? ''}`).join('\n')
     : 'No existing projects yet.';
 
   const summaryLine = meta.summary ? `Summary: ${meta.summary}\n` : '';

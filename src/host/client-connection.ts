@@ -870,13 +870,6 @@ export function createClientConnection(
             // Origin session = first session (sessions are ordered by linked_at ASC)
             const originSessionTitle = sessions.length > 0 ? sessions[0]!.title : undefined;
 
-            // Parse entities
-            let entities: string[] | undefined;
-            try {
-              const parsed = JSON.parse(p.entities);
-              if (Array.isArray(parsed) && parsed.length > 0) entities = parsed;
-            } catch { /* leave undefined */ }
-
             return {
               id: p.id,
               title: p.title,
@@ -887,7 +880,6 @@ export function createClientConnection(
               blockedBy: p.blockedBy || undefined,
               summary: p.summary || undefined,
               branch: p.branch || undefined,
-              entities,
               createdAt: p.createdAt,
               closedAt: p.closedAt || undefined,
               lastActivityAt: p.lastActivityAt || new Date().toISOString(),
@@ -916,7 +908,6 @@ export function createClientConnection(
 
       case "createProject": {
         const projectId = randomUUID();
-        const entities = Array.isArray(params.entities) ? JSON.stringify(params.entities) : (params.entities as string ?? '[]');
         // Resolve session file: prefer explicit param, fall back to looking up
         // parentSessionId (the session being tracked) or sessionId (caller)
         let sessionFile = (params.sessionFile as string) || '';
@@ -937,7 +928,6 @@ export function createClientConnection(
             status: params.status as string,
             summary: params.summary as string,
             icon: params.icon as string,
-            entities,
             blocked_by: (params.blocked_by as string) ?? '',
             branch: (params.branch as string) ?? '',
             parent_id: params.parent_id as string | undefined,
@@ -958,7 +948,6 @@ export function createClientConnection(
 
       case "trackProject": {
         const projectId = params.projectId as string;
-        const entities = Array.isArray(params.entities) ? JSON.stringify(params.entities) : (params.entities as string | undefined);
         // Resolve session file: prefer explicit param, fall back to looking up
         // parentSessionId (the session being tracked) or sessionId (caller)
         let trackSessionFile = (params.sessionFile as string) || '';
@@ -977,7 +966,6 @@ export function createClientConnection(
             stage: params.stage as string | undefined,
             blocked_by: params.blocked_by as string | undefined,
             branch: params.branch as string | undefined,
-            entities,
           },
           sessionRef: { detected_in: '' },
           files: [],
@@ -1020,7 +1008,7 @@ export function createClientConnection(
         const projectId = params.projectId as string;
         const db = getDb(dbPath());
         const row = db.get(
-          `SELECT id, type, stage, parent_id, title, status, summary, icon, entities, branch, blocked_by, created_at, updated_at
+          `SELECT id, type, stage, parent_id, title, status, summary, icon, branch, blocked_by, created_at, updated_at
            FROM projects WHERE id = ?`,
           [projectId],
         );

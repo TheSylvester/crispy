@@ -37,7 +37,6 @@ export interface SearchResult {
   summary: string | null;
   title: string | null;
   status: string | null;
-  entities: string | null;
   rank: number;
   match_snippet: string;
 }
@@ -61,7 +60,6 @@ export interface ContextResult {
   summary: string | null;
   title: string | null;
   status: string | null;
-  entities: string | null;
 }
 
 // ============================================================================
@@ -113,7 +111,7 @@ export function searchSessions(
 
   return db.all(`
     SELECT ae.id, ae.timestamp, ae.kind, ae.file, ae.preview,
-           ae.quest, ae.summary, ae.title, ae.status, ae.entities,
+           ae.quest, ae.summary, ae.title, ae.status,
            bm25(session_meta_fts, 10.0, 8.0, 4.0, 3.0, 1.0) as rank,
            snippet(session_meta_fts, 1, '>>>', '<<<', '...', 32) as match_snippet
     FROM session_meta_fts
@@ -180,7 +178,7 @@ export function sessionContext(
   }
 
   return db.all(`
-    SELECT id, timestamp, kind, file, preview, quest, summary, title, status, entities
+    SELECT id, timestamp, kind, file, preview, quest, summary, title, status
     FROM session_meta
     WHERE file = ?
       ${kindClause}

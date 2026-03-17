@@ -7,25 +7,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { join } from 'node:path';
-import { computeJaccard, normalizedLevenshtein, findDupeCandidates, parseVerdict, mergeProjects } from '../src/core/rosie/tracker/db-writer.js';
+import { normalizedLevenshtein, findDupeCandidates, parseVerdict, mergeProjects } from '../src/core/rosie/tracker/db-writer.js';
 import { _setTestDir, dbPath } from '../src/core/activity-index.js';
 import { getDb } from '../src/core/crispy-db.js';
-
-// ============================================================================
-// Heuristic helpers
-// ============================================================================
-
-describe('computeJaccard', () => {
-  it('computes partial intersection correctly', () => {
-    expect(computeJaccard(['a', 'b', 'c'], ['b', 'c', 'd'])).toBe(0.5);
-  });
-
-  it('handles edge cases', () => {
-    expect(computeJaccard([], [])).toBe(0);
-    expect(computeJaccard(['a', 'b', 'c'], ['a', 'b', 'c'])).toBe(1);
-    expect(computeJaccard(['a'], ['b'])).toBe(0);
-  });
-});
 
 describe('normalizedLevenshtein', () => {
   it('treats case and punctuation as irrelevant', () => {
@@ -54,35 +38,26 @@ describe('normalizedLevenshtein', () => {
 // ============================================================================
 
 describe('findDupeCandidates', () => {
-  const base = { stage: 'active', summary: null, created_at: '2026-03-01T00:00:00Z', updated_at: '2026-03-08T00:00:00Z' };
+  const base = { stage: 'active', type: 'project', summary: null, created_at: '2026-03-01T00:00:00Z', updated_at: '2026-03-08T00:00:00Z' };
 
-  it('flags entity overlap, title similarity, or both', () => {
+  it('flags title similarity', () => {
     const projects = [
-      { ...base, id: '1', title: 'Unrelated Title X', entities: '["src/a.ts","src/b.ts","src/c.ts"]' },
-      { ...base, id: '2', title: 'Unrelated Title Y', entities: '["src/a.ts","src/b.ts","src/d.ts"]' },     // entity overlap (Jaccard 0.5)
-      { ...base, id: '3', title: 'Fix Rosie Tracker Hook Failures', entities: '["x.ts"]' },
-      { ...base, id: '4', title: 'Fix Rosie Tracker Hook Errors', entities: '["y.ts"]' },                     // title similarity
+      { ...base, id: '1', title: 'Build authentication dashboard' },
+      { ...base, id: '2', title: 'Ship marketing landing page' },
+      { ...base, id: '3', title: 'Fix Rosie Tracker Hook Failures' },
+      { ...base, id: '4', title: 'Fix Rosie Tracker Hook Errors' },
     ];
     const result = findDupeCandidates(projects);
-    expect(result).toHaveLength(2);
-    expect(result.some((c) => c.reason.includes('entity-jaccard'))).toBe(true);
+    expect(result).toHaveLength(1);
     expect(result.some((c) => c.reason.includes('title-levenshtein'))).toBe(true);
   });
 
   it('does not flag distinct projects', () => {
     const projects = [
-      { ...base, id: '1', title: 'Implement WebSocket reconnection', entities: '["src/ws.ts"]' },
-      { ...base, id: '2', title: 'Fix Rosie Tracker Hook Failures', entities: '["src/tracker.ts"]' },
+      { ...base, id: '1', title: 'Implement WebSocket reconnection' },
+      { ...base, id: '2', title: 'Fix Rosie Tracker Hook Failures' },
     ];
     expect(findDupeCandidates(projects)).toHaveLength(0);
-  });
-
-  it('handles malformed entity JSON gracefully', () => {
-    const projects = [
-      { ...base, id: '1', title: 'Implement WebSocket reconnection', entities: 'not-json' },
-      { ...base, id: '2', title: 'Fix Rosie Tracker Failures', entities: '["src/a.ts"]' },
-    ];
-    expect(findDupeCandidates(projects)).toEqual([]);
   });
 });
 
@@ -128,13 +103,13 @@ describe('mergeProjects', () => {
     fs.rmSync(testDir, { recursive: true, force: true });
   });
 
-  function insertProject(id: string, title: string, entities: string[], sessionFile: string) {
+  function insertProject(id: string, title: string, sessionFile: string) {
     const db = getDb(dbPath());
     const now = new Date().toISOString();
     db.run(
-      `INSERT INTO projects (id, title, stage, summary, entities, created_at, updated_at, last_activity_at)
-       VALUES (?, ?, 'active', ?, ?, ?, ?, ?)`,
-      [id, title, `Summary for ${title}`, JSON.stringify(entities), now, now, now],
+      `INSERT INTO projects (id, title, stage, summary, created_at, updated_at, last_activity_at)
+       VALUES (?, ?, 'active', ?, ?, ?, ?)`,
+      [id, title, `Summary for ${title}`, now, now, now],
     );
     db.run(
       `INSERT INTO project_sessions (project_id, session_file, linked_at) VALUES (?, ?, ?)`,
@@ -151,23 +126,20 @@ describe('mergeProjects', () => {
     return row.cnt as number;
   }
 
-  it('deletes loser, migrates sessions, unions entities', () => {
-    insertProject('keep', 'Fix Tracker Hook', ['src/tracker.ts', 'src/hook.ts'], '/session-a.jsonl');
-    insertProject('remove', 'Fix Tracker Hook Errors', ['src/tracker.ts', 'src/errors.ts'], '/session-b.jsonl');
+  it('deletes loser and migrates sessions', () => {
+    insertProject('keep', 'Fix Tracker Hook', '/session-a.jsonl');
+    insertProject('remove', 'Fix Tracker Hook Errors', '/session-b.jsonl');
 
     mergeProjects('keep', 'remove');
 
     expect(getProject('keep')).toBeDefined();
     expect(getProject('remove')).toBeUndefined();
     expect(getSessionCount('keep')).toBe(2);
-
-    const entities = JSON.parse(getProject('keep')!.entities as string) as string[];
-    expect(new Set(entities)).toEqual(new Set(['src/tracker.ts', 'src/hook.ts', 'src/errors.ts']));
   });
 
   it('preserves older created_at and applies title/summary overrides', () => {
-    insertProject('keep', 'Old Title', ['x.ts'], '/s1.jsonl');
-    insertProject('remove', 'Other Title', ['y.ts'], '/s2.jsonl');
+    insertProject('keep', 'Old Title', '/s1.jsonl');
+    insertProject('remove', 'Other Title', '/s2.jsonl');
 
     const db = getDb(dbPath());
     db.run(`UPDATE projects SET created_at = '2025-01-01T00:00:00Z' WHERE id = 'remove'`);
@@ -182,8 +154,8 @@ describe('mergeProjects', () => {
   });
 
   it('no-ops for nonexistent IDs, dedupes overlapping sessions', () => {
-    insertProject('keep', 'Project A', ['a.ts'], '/shared.jsonl');
-    insertProject('remove', 'Project B', ['b.ts'], '/shared.jsonl');
+    insertProject('keep', 'Project A', '/shared.jsonl');
+    insertProject('remove', 'Project B', '/shared.jsonl');
 
     // Nonexistent target — no throw, no damage
     mergeProjects('keep', 'nonexistent');

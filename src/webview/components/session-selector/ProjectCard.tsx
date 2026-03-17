@@ -1,7 +1,7 @@
 /**
  * ProjectCard — Collapsed/expanded card for a single project
  *
- * Collapsed: icon + title + relativeTime + status line + meta (branch, sessions, files, entities, blocker)
+ * Collapsed: icon + title + relativeTime + status line + meta (branch, sessions, files, blocker)
  * Expanded: description, blocker, sessions, files, origin, history timeline
  *
  * @module ProjectCard
@@ -86,9 +86,6 @@ export function ProjectCard({
             >
               {f.path.split('/').pop()}
             </span>
-          ))}
-          {p.entities && p.entities.slice(0, 3).map(e => (
-            <span key={e} className="crispy-project-entity-tag">{e.split('/').pop()}</span>
           ))}
           {p.blockedBy && (
             <span className="crispy-project-blocker-tag">Blocked</span>

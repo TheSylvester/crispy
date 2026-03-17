@@ -410,7 +410,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
 
   timedTool(server,
     'session_context',
-    'Get the activity index for a specific session — returns timestamped metadata entries (titles, quests, summaries, entities) in chronological order. This is structured metadata, NOT the raw conversation. Use read_turn to get actual conversation content.',
+    'Get the activity index for a specific session — returns timestamped metadata entries (titles, quests, summaries, statuses) in chronological order. This is structured metadata, NOT the raw conversation. Use read_turn to get actual conversation content.',
     {
       file: z.string().describe('Session transcript file path (from search_sessions or list_sessions results)'),
       kind: z.enum(['rosie-meta']).optional().describe('Filter by entry kind'),
@@ -498,7 +498,6 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       parent_id: z.string().optional().describe('Parent project UUID. Required when type is \'task\'.'),
       blocked_by: z.string().optional().describe('Why it\'s blocked (only if stage is \'paused\', otherwise omit).'),
       branch: z.string().optional().describe('Git branch name if applicable.'),
-      entities: z.array(z.string()).describe('Top 5-10 key entities: file paths, branch names, function names, concepts. Used for matching future sessions.'),
       files: z.array(z.object({
         path: z.string().describe('File path to a non-code artifact.'),
         note: z.string().describe('Why this file is relevant.'),
@@ -533,7 +532,6 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
           blocked_by: args.blocked_by ?? '',
           summary: args.summary,
           branch: args.branch ?? '',
-          entities: JSON.stringify(args.entities),
           type: args.type,
           parent_id: args.parent_id,
         },
@@ -578,7 +576,6 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       stage: z.enum(stageNames).optional().describe('Updated stage — only if changed. See Available Stages in system prompt.'),
       blocked_by: z.string().optional().describe('Why it\'s blocked (only if stage is \'paused\').'),
       branch: z.string().optional().describe('Git branch name if applicable.'),
-      entities: z.array(z.string()).optional().describe('Additional entities to add (merged with existing). Only new ones.'),
       files: z.array(z.object({
         path: z.string().describe('File path to a non-code artifact.'),
         note: z.string().describe('Why this file is relevant.'),
@@ -601,7 +598,6 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
           ...(args.stage !== undefined && { stage: args.stage }),
           ...(args.blocked_by !== undefined && { blocked_by: args.blocked_by }),
           ...(args.branch !== undefined && { branch: args.branch }),
-          ...(args.entities && { entities: JSON.stringify(args.entities) }),
         },
         sessionRef: buildSessionRef(),
         files: (args.files ?? []).map((f) => ({ path: f.path, note: f.note })),

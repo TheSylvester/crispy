@@ -66,16 +66,15 @@ function insertEntry(opts: {
   summary?: string;
   title?: string;
   status?: string;
-  entities?: string;
 }): void {
   const db = getDb(dbPath);
   db.run(
-    `INSERT INTO session_meta (timestamp, kind, file, preview, quest, summary, title, status, entities)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO session_meta (timestamp, kind, file, preview, quest, summary, title, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       opts.timestamp, opts.kind, opts.file,
       opts.preview ?? null, opts.quest ?? null, opts.summary ?? null,
-      opts.title ?? null, opts.status ?? null, opts.entities ?? null,
+      opts.title ?? null, opts.status ?? null,
     ],
   );
 }

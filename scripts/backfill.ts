@@ -29,7 +29,7 @@ import { initSettings } from '../src/core/settings/index.js';
 import { parseModelOption } from '../src/core/model-utils.js';
 import { appendActivityEntries, dbPath } from '../src/core/activity-index.js';
 import { listAllSessions, loadSession } from '../src/core/session-manager.js';
-import { extractTag, normalizeEntitiesJson } from '../src/core/rosie/xml-utils.js';
+import { extractTag } from '../src/core/rosie/xml-utils.js';
 import { SUMMARIZE_PROMPT, buildTrackerPrompt } from '../src/core/rosie/rosie-bot-hook.js';
 import { getExistingProjects } from '../src/core/rosie/tracker/db-writer.js';
 import { buildInternalMcpConfig } from '../src/mcp/servers/external.js';
@@ -346,7 +346,6 @@ async function runSummarize(dispatch: ReturnType<typeof createAgentDispatch>, op
         summary: fields.summary,
         title: fields.title,
         status: fields.status,
-        entities: fields.entities,
       }]);
 
       result(JSON.stringify({
@@ -355,7 +354,6 @@ async function runSummarize(dispatch: ReturnType<typeof createAgentDispatch>, op
         title: fields.title,
         quest: fields.quest,
         status: fields.status,
-        entitiesCount: JSON.parse(fields.entities || '[]').length,
       }));
 
       okCount++;
@@ -379,15 +377,13 @@ function parseSummarizeResponse(text: string): {
   title: string;
   summary: string;
   status: string;
-  entities: string;
 } | null {
   const quest = extractTag(text, 'goal');
   const title = extractTag(text, 'title');
   const summary = extractTag(text, 'summary');
   const status = extractTag(text, 'status');
-  const entities = normalizeEntitiesJson(extractTag(text, 'entities'));
 
-  if (quest && summary) return { quest, title, summary, status, entities };
+  if (quest && summary) return { quest, title, summary, status };
   return null;
 }
 
@@ -402,7 +398,6 @@ interface TrackCandidate {
   title: string;
   summary: string;
   status: string;
-  entities: string;
 }
 
 /**
@@ -415,7 +410,7 @@ function findTrackCandidates(workspace: string | undefined, session: string | un
   const filter = buildFileFilter(workspace, session);
 
   const rows = db.all(`
-    SELECT rowid, timestamp, file, quest, title, summary, status, entities
+    SELECT rowid, timestamp, file, quest, title, summary, status
     FROM activity_entries
     WHERE kind = 'rosie-meta'
     AND file NOT IN (SELECT session_file FROM tracker_outcomes)
@@ -430,7 +425,6 @@ function findTrackCandidates(workspace: string | undefined, session: string | un
     title: (r.title as string) ?? '',
     summary: (r.summary as string) ?? '',
     status: (r.status as string) ?? '',
-    entities: (r.entities as string) ?? '[]',
   }));
 }
 

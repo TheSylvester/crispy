@@ -34,7 +34,6 @@ export interface ProjectCreate {
   blocked_by: string;
   summary: string;
   branch: string;
-  entities: string;      // JSON array string
   type?: ProjectType;    // defaults to 'project'
   parent_id?: string;    // required when type === 'task'
 }
@@ -46,7 +45,6 @@ export interface ProjectTrack {
   stage?: ProjectStage;  // only if changed
   blocked_by?: string;
   branch?: string;
-  entities?: string;     // additive merge, JSON array string
 }
 
 /** @deprecated Use ProjectCreate | ProjectTrack instead. */
@@ -76,4 +74,3 @@ export interface InternalServerPaths {
   command: string;
   args: string[];
 }
-
