@@ -9,8 +9,10 @@
 
 import { useState, useEffect } from 'react';
 import { useTransport } from '../context/TransportContext.js';
-import { LOG_CHANNEL_ID } from '../../core/log.js';
 import type { LogEntry, LogEvent } from '../../core/log.js';
+
+/** Must match LOG_CHANNEL_ID in core/log.ts — inlined to avoid pulling Node code into browser bundle */
+const LOG_CHANNEL_ID = '__rosie_log__';
 
 const BUFFER_CAP = 200;
 
