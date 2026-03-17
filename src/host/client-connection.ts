@@ -12,6 +12,7 @@
  */
 
 import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import type { TurnIntent, ChannelMessage } from "../core/agent-adapter.js";
@@ -70,9 +71,12 @@ import {
   getCatchupStatus,
   type CatchupSubscriber,
 } from '../core/recall/catchup-manager.js';
+import { readSessionMessages } from '../core/recall/message-store.js';
 import { getGitFiles, fileExists, readImage, readTextFile } from "../core/file-service.js";
-import { queryActivity, getLineage, getChildSessions, getLineageGraph } from '../core/activity-index.js';
-import { getProjectsWithDetails, getProjectActivity, updateProjectStage, updateProjectSortOrder, reorderProjectsInStage, getStages, getValidStageNames } from '../core/rosie/tracker/index.js';
+import { queryActivity, getLineage, getChildSessions, getLineageGraph, dbPath } from '../core/activity-index.js';
+import { getProjectsWithDetails, getProjectActivity, updateProjectStage, updateProjectSortOrder, reorderProjectsInStage, getStages, getValidStageNames, writeTrackerResults, mergeProjects, extractTurnsFromMessages } from '../core/rosie/tracker/index.js';
+import type { TrackerBlock } from '../core/rosie/tracker/index.js';
+import { getDb } from '../core/crispy-db.js';
 import {
   subscribeTrackerNotify,
   unsubscribeTrackerNotify,
@@ -315,6 +319,16 @@ export function createClientConnection(
         return loadSession(params.sessionId as string, {
           until: params.until as string | undefined,
         });
+
+      case "readSessionTurns": {
+        const sid = params.sessionId as string;
+        const page = readSessionMessages(sid, 0, 10000);
+        if (!page) return [];
+        const allTurns = extractTurnsFromMessages(page.messages);
+        const from = (params.from as number | undefined) ?? 1;
+        const to = (params.to as number | undefined) ?? allTurns.length;
+        return allTurns.filter(t => t.turn >= from && t.turn <= to);
+      }
 
       case "subscribe": {
         const sessionId = params.sessionId as string;
@@ -896,6 +910,85 @@ export function createClientConnection(
         if (!getValidStageNames().includes(stage)) throw new Error(`Invalid stage: ${stage}`);
         updateProjectStage(stageProjectId, stage);
         return { ok: true };
+      }
+
+      case "createProject": {
+        const projectId = randomUUID();
+        const entities = Array.isArray(params.entities) ? JSON.stringify(params.entities) : (params.entities as string ?? '[]');
+        const block: TrackerBlock = {
+          project: {
+            action: 'create',
+            id: projectId,
+            title: params.title as string,
+            type: (params.type as 'project' | 'task' | 'idea') ?? 'project',
+            stage: params.stage as string,
+            status: params.status as string,
+            summary: params.summary as string,
+            icon: params.icon as string,
+            entities,
+            blocked_by: (params.blocked_by as string) ?? '',
+            branch: (params.branch as string) ?? '',
+            parent_id: params.parent_id as string | undefined,
+          },
+          sessionRef: { detected_in: '' },
+          files: [],
+        };
+        writeTrackerResults([block], (params.sessionFile as string) ?? '');
+        return { status: 'ok', projectId };
+      }
+
+      case "trackProject": {
+        const projectId = params.projectId as string;
+        const entities = Array.isArray(params.entities) ? JSON.stringify(params.entities) : (params.entities as string | undefined);
+        const block: TrackerBlock = {
+          project: {
+            action: 'track',
+            id: projectId,
+            status: params.status as string,
+            stage: params.stage as string | undefined,
+            blocked_by: params.blocked_by as string | undefined,
+            branch: params.branch as string | undefined,
+            entities,
+          },
+          sessionRef: { detected_in: '' },
+          files: [],
+        };
+        writeTrackerResults([block], (params.sessionFile as string) ?? '');
+        return { status: 'ok', projectId };
+      }
+
+      case "mergeProject": {
+        const keepId = params.keepId as string;
+        const removeId = params.removeId as string;
+        mergeProjects(keepId, removeId);
+        return { status: 'ok', keepId, removeId };
+      }
+
+      case "markTrivial": {
+        const reason = params.reason as string;
+        return { status: 'ok', reason };
+      }
+
+      case "getProjectDetails": {
+        const projectId = params.projectId as string;
+        const db = getDb(dbPath());
+        const row = db.get(
+          `SELECT id, type, stage, parent_id, title, status, summary, icon, entities, branch, blocked_by, created_at, updated_at
+           FROM projects WHERE id = ?`,
+          [projectId],
+        );
+        return row || { error: 'not found' };
+      }
+
+      case "setSessionTitle": {
+        const sessionId = params.sessionId as string;
+        const title = params.title as string;
+        const db = getDb(dbPath());
+        db.run(
+          `INSERT OR REPLACE INTO session_titles (session_id, title, updated_at) VALUES (?, ?, ?)`,
+          [sessionId, title, new Date().toISOString()],
+        );
+        return { status: 'ok', sessionId };
       }
 
       case "updateProjectSortOrder": {

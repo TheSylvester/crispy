@@ -1040,6 +1040,19 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 24,
+    description: 'Create session_titles table',
+    up: (db: Database): void => {
+      db.exec(`
+        CREATE TABLE session_titles (
+          session_id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+      `);
+    },
+  },
 ];
 
 function runMigrations(db: Database, dbPath: string): void {

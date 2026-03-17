@@ -4,6 +4,7 @@ export {
   writeTrackerResults,
   recordTrackerOutcome,
   runDedupSweep,
+  mergeProjects,
   recordProjectActivity,
   updateProjectStage,
   updateProjectSortOrder,
@@ -26,3 +27,6 @@ export type {
   FileRef,
 } from './types.js';
 export { VALID_STAGES } from './types.js';
+
+export { extractTurns, extractTurnsFromMessages, extractLatestTurn, formatTurnContent } from './turn-extractor.js';
+export type { SessionTurn, FlatMessage } from './turn-extractor.js';
