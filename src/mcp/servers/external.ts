@@ -260,12 +260,6 @@ export function createExternalServer(
                 source: "recall",
                 level: "warn",
                 summary: `Recall: no response after ${elapsed}ms`,
-                data: { elapsed },
-              });
-              log({
-                source: "recall",
-                level: "warn",
-                summary: `No response after ${elapsed}ms`,
                 data: { query: args.query, elapsed },
               });
               return textResult(
@@ -273,31 +267,20 @@ export function createExternalServer(
               );
             }
 
+            const text = result.text ?? "";
             log({
               source: "recall",
               level: "info",
-              summary: `Recall: OK in ${elapsed}ms — ${result.text.length} chars`,
-              data: { elapsed, chars: result.text.length },
+              summary: `Recall: OK in ${elapsed}ms — ${text.length} chars`,
+              data: { query: args.query, elapsed, chars: text.length },
             });
-            log({
-              source: "recall",
-              level: "info",
-              summary: `OK in ${elapsed}ms — ${result.text.length} chars`,
-              data: { query: args.query, elapsed, chars: result.text.length },
-            });
-            return textResult(result.text);
+            return textResult(text);
           } catch (err) {
             const elapsed = Date.now() - t0;
             log({
               source: "recall",
               level: "error",
               summary: `Recall: failed after ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
-              data: { elapsed, error: String(err) },
-            });
-            log({
-              source: "recall",
-              level: "error",
-              summary: `Failed after ${elapsed}ms — ${err instanceof Error ? err.message : String(err)}`,
               data: { query: args.query, elapsed, error: String(err) },
             });
             return textResult(

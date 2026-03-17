@@ -46,6 +46,12 @@ vi.mock('../src/core/rosie/event-log.js', () => ({
   pushEventLog: vi.fn(),
 }));
 
+// Mock core log (prevents test errors from polluting production crispy.db)
+vi.mock('../src/core/log.js', () => ({
+  log: vi.fn(),
+  registerLogPersister: vi.fn(),
+}));
+
 // ============================================================================
 // Helpers
 // ============================================================================
