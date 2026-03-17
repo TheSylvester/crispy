@@ -12,11 +12,11 @@
  * @module settings/settings-store
  */
 
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
-import { watch, type FSWatcher } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { readFile, writeFile, mkdir, rename, copyFile } from 'node:fs/promises';
+import { watch, existsSync, type FSWatcher } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { log } from '../log.js';
+import { settingsPath as getSettingsPath, crispyRoot, legacyConfigDir, _setTestRoot, _isTestOverride } from '../paths.js';
 
 import type {
   CrispySettings,
@@ -39,9 +39,6 @@ import { NATIVE_VENDORS } from '../transcript.js';
 
 /** Valid provider slug: lowercase alphanumeric with hyphens, no leading/trailing hyphen. */
 const SLUG_RE = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
-
-/** Default config directory. */
-const DEFAULT_CONFIG_DIR = join(homedir(), '.config', 'crispy');
 
 // ============================================================================
 // Module State
@@ -67,12 +64,6 @@ const changeListeners = new Set<(evt: {
   changedSections: SettingsSection[];
   source: 'rpc' | 'watch' | 'migration';
 }) => void>();
-
-/** Config directory path (overridable for tests). */
-let configDir = DEFAULT_CONFIG_DIR;
-
-/** Full path to settings.json. */
-let settingsPath = join(configDir, 'settings.json');
 
 /** Base options for adapter creation. */
 let providerBase: { cwd: string; pathToClaudeCodeExecutable?: string } | null = null;
@@ -289,7 +280,7 @@ function sanitizeSettings(data: unknown): CrispySettings {
 /** Load settings from disk. Creates defaults if missing. */
 async function loadSettingsFile(): Promise<CrispySettingsFile> {
   try {
-    const raw = await readFile(settingsPath, 'utf-8');
+    const raw = await readFile(getSettingsPath(), 'utf-8');
     const parsed = JSON.parse(raw) as CrispySettingsFile;
 
     // Validate version
@@ -325,9 +316,9 @@ async function loadSettingsFile(): Promise<CrispySettingsFile> {
     // Corrupt JSON — rename and start fresh
     if (err instanceof SyntaxError) {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const corruptPath = join(configDir, `settings.json.corrupt.${timestamp}`);
+      const corruptPath = join(dirname(getSettingsPath()), `settings.json.corrupt.${timestamp}`);
       try {
-        await rename(settingsPath, corruptPath);
+        await rename(getSettingsPath(), corruptPath);
         log({ level: 'error', source: 'settings-store', summary: `Corrupt settings.json renamed to ${corruptPath}` });
       } catch {
         // Best-effort rename
@@ -346,9 +337,9 @@ async function loadSettingsFile(): Promise<CrispySettingsFile> {
 
 /** Write settings to disk with chmod 600. */
 async function saveSettingsFile(settings: CrispySettingsFile): Promise<void> {
-  await mkdir(configDir, { recursive: true });
+  await mkdir(crispyRoot(), { recursive: true });
   const content = JSON.stringify(settings, null, 2) + '\n';
-  await writeFile(settingsPath, content, { mode: 0o600 });
+  await writeFile(getSettingsPath(), content, { mode: 0o600 });
 }
 
 // ============================================================================
@@ -365,6 +356,16 @@ export async function initSettings(
 ): Promise<void> {
   providerBase = base;
 
+  // Migrate settings.json from legacy ~/.config/crispy/ if needed
+  if (!_isTestOverride() && !existsSync(getSettingsPath())) {
+    const legacySettings = join(legacyConfigDir(), 'settings.json');
+    if (existsSync(legacySettings)) {
+      await mkdir(crispyRoot(), { recursive: true });
+      await copyFile(legacySettings, getSettingsPath());
+      log({ level: 'info', source: 'settings-store', summary: `Migrated settings.json from ${legacySettings}` });
+    }
+  }
+
   // Load existing settings
   let settings = await loadSettingsFile();
 
@@ -375,7 +376,8 @@ export async function initSettings(
 
   if (needsMigration) {
     // Migrate from legacy providers.json
-    const migratedProviders = await migrateFromProvidersJson(configDir);
+    const migrationDir = _isTestOverride() ? crispyRoot() : legacyConfigDir();
+    const migratedProviders = await migrateFromProvidersJson(migrationDir);
     if (Object.keys(migratedProviders).length > 0) {
       settings = {
         ...settings,
@@ -567,7 +569,7 @@ export function startWatchingSettings(): void {
   if (watcher) return;
 
   try {
-    watcher = watch(settingsPath, () => {
+    watcher = watch(getSettingsPath(), () => {
       if (watchDebounce) clearTimeout(watchDebounce);
       watchDebounce = setTimeout(async () => {
         try {
@@ -622,12 +624,8 @@ export function stopWatchingSettings(): void {
  * @returns Cleanup function that restores the original directory
  */
 export function _setTestConfigDir(dir: string): () => void {
-  const originalConfigDir = configDir;
-  const originalSettingsPath = settingsPath;
+  const restoreRoot = _setTestRoot(dir);
   const originalProviderBase = providerBase;
-
-  configDir = dir;
-  settingsPath = join(dir, 'settings.json');
 
   // Reset state
   currentSettings = {
@@ -640,8 +638,7 @@ export function _setTestConfigDir(dir: string): () => void {
   providerBase = null;
 
   return () => {
-    configDir = originalConfigDir;
-    settingsPath = originalSettingsPath;
+    restoreRoot();
     providerBase = originalProviderBase;
     currentSettings = {
       version: 1,

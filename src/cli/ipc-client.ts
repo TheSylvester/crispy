@@ -8,10 +8,10 @@
  */
 
 import { connect, type Socket } from 'node:net';
-import { homedir } from 'node:os';
-import { join, sep } from 'node:path';
+import { sep } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
+import { serversFilePath } from '../core/paths.js';
 
 // ============================================================================
 // Exit Codes
@@ -47,7 +47,7 @@ export function isWithinDir(child: string, parent: string): boolean {
 export function discoverSocket(): string {
   if (process.env.CRISPY_SOCK) return process.env.CRISPY_SOCK;
 
-  const serversFile = join(homedir(), '.crispy', 'ipc', 'servers.json');
+  const serversFile = serversFilePath();
   let entries: ServerEntry[];
   try {
     entries = JSON.parse(readFileSync(serversFile, 'utf8'));

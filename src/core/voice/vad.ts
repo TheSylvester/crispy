@@ -12,8 +12,8 @@
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 import { log } from '../log.js';
+import { vadCacheDir } from '../paths.js';
 import { importOptionalModule } from './optional-import.js';
 
 // ---------------------------------------------------------------------------
@@ -49,17 +49,12 @@ const SILENCE_GAP_SAMPLES = 8000; // 500ms at 16kHz
 
 const MODEL_URL = 'https://huggingface.co/onnx-community/silero-vad/resolve/main/onnx/model.onnx';
 
-/** Cache directory for downloaded models. */
-function getCacheDir(): string {
-  return join(homedir(), '.cache', 'crispy', 'silero-vad');
-}
-
 // ---------------------------------------------------------------------------
 // Internal: model download + cache
 // ---------------------------------------------------------------------------
 
 async function downloadModel(): Promise<string> {
-  const cacheDir = getCacheDir();
+  const cacheDir = vadCacheDir();
   const modelPath = join(cacheDir, 'model.onnx');
 
   if (existsSync(modelPath)) {

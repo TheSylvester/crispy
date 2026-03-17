@@ -16,17 +16,15 @@
 
 import { createServer, type Socket } from 'node:net';
 import { StringDecoder } from 'node:string_decoder';
-import { platform, homedir, userInfo } from 'node:os';
-import { join, dirname } from 'node:path';
+import { platform, userInfo } from 'node:os';
+import { join } from 'node:path';
 import { unlinkSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createClientConnection } from './client-connection.js';
+import { ipcDir, serversFilePath } from '../core/paths.js';
 
 // ============================================================================
 // Socket Path & Discovery
 // ============================================================================
-
-const IPC_DIR = join(homedir(), '.crispy', 'ipc');
-const SERVERS_FILE = join(IPC_DIR, 'servers.json');
 
 interface ServerEntry {
   pid: number;
@@ -39,7 +37,7 @@ export function getSocketPath(): string {
   if (process.env.CRISPY_SOCK) return process.env.CRISPY_SOCK;
   return platform() === 'win32'
     ? `\\\\.\\pipe\\crispy-${userInfo().username}-${process.pid}`
-    : join(IPC_DIR, `crispy-${process.pid}.sock`);
+    : join(ipcDir(), `crispy-${process.pid}.sock`);
 }
 
 function isPidAlive(pid: number): boolean {
@@ -50,7 +48,7 @@ function isPidAlive(pid: number): boolean {
 function pruneAndRead(): ServerEntry[] {
   let entries: ServerEntry[] = [];
   try {
-    entries = JSON.parse(readFileSync(SERVERS_FILE, 'utf8'));
+    entries = JSON.parse(readFileSync(serversFilePath(), 'utf8'));
   } catch { /* missing or corrupt — start fresh */ }
 
   const alive: ServerEntry[] = [];
@@ -66,7 +64,7 @@ function pruneAndRead(): ServerEntry[] {
   }
 
   if (alive.length !== entries.length) {
-    writeFileSync(SERVERS_FILE, JSON.stringify(alive, null, 2));
+    writeFileSync(serversFilePath(), JSON.stringify(alive, null, 2));
   }
   return alive;
 }
@@ -75,15 +73,15 @@ function pruneAndRead(): ServerEntry[] {
 function register(socketPath: string, cwd: string): void {
   const entries = pruneAndRead();
   entries.push({ pid: process.pid, socket: socketPath, cwd, startedAt: new Date().toISOString() });
-  writeFileSync(SERVERS_FILE, JSON.stringify(entries, null, 2));
+  writeFileSync(serversFilePath(), JSON.stringify(entries, null, 2));
 }
 
 /** Remove this server from servers.json. */
 function unregister(): void {
   try {
-    const entries: ServerEntry[] = JSON.parse(readFileSync(SERVERS_FILE, 'utf8'));
+    const entries: ServerEntry[] = JSON.parse(readFileSync(serversFilePath(), 'utf8'));
     const filtered = entries.filter(e => e.pid !== process.pid);
-    writeFileSync(SERVERS_FILE, JSON.stringify(filtered, null, 2));
+    writeFileSync(serversFilePath(), JSON.stringify(filtered, null, 2));
   } catch { /* best effort */ }
 }
 
@@ -96,8 +94,8 @@ let connectionCounter = 0;
 export async function startIpcServer(cwd: string): Promise<{ close(): void }> {
   const socketPath = getSocketPath();
 
-  // Ensure IPC directory exists
-  mkdirSync(dirname(socketPath), { recursive: true });
+  // Ensure IPC directory exists (use ipcDir() — on win32 socketPath is a pipe path, not a dir)
+  mkdirSync(ipcDir(), { recursive: true });
 
   // Remove leftover socket from a previous crash of this same PID (unlikely but possible)
   if (platform() !== 'win32') {

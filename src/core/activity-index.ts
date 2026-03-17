@@ -17,10 +17,9 @@
  */
 
 import * as fs from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
 import { getDb, _resetDb } from './crispy-db.js';
 import { log } from './log.js';
+import { crispyRoot, dbPath, _setTestRoot } from './paths.js';
 // Import registerLogPersister directly from log.ts to avoid the circular
 // dependency through rosie/index.ts → rosie-bot-hook.ts → activity-index.ts.
 // The barrel re-export triggers ESM cycle resolution issues in vitest.
@@ -63,24 +62,18 @@ export interface ActivityIndexEntry {
 
 
 // ============================================================================
-// Paths
+// Re-exports (9+ consumers import dbPath from here — keep working)
 // ============================================================================
 
-let crispyDir = join(homedir(), '.crispy');
-
-/** Get the path to the database file. */
-export function dbPath(): string {
-  return join(crispyDir, 'crispy.db');
-}
+export { dbPath, crispyRoot };
 
 /**
  * Override the crispy directory for testing.
  * Returns a cleanup function that restores the original paths.
  */
 export function _setTestDir(dir: string): () => void {
-  const prevDir = crispyDir;
   _resetDb(); // Close existing DB connection
-  crispyDir = dir;
+  const restoreRoot = _setTestRoot(dir);
   rosieMetaCache = null;
   sessionTitleCache = null;
   // Create dir and init DB in test directory
@@ -88,7 +81,7 @@ export function _setTestDir(dir: string): () => void {
   getDb(dbPath());
   return () => {
     _resetDb(); // Close test DB
-    crispyDir = prevDir;
+    restoreRoot();
     rosieMetaCache = null;
     sessionTitleCache = null;
   };
@@ -104,7 +97,7 @@ export function _setTestDir(dir: string): () => void {
  * Triggers lazy DB initialization.
  */
 export function ensureCrispyDir(): void {
-  fs.mkdirSync(crispyDir, { recursive: true });
+  fs.mkdirSync(crispyRoot(), { recursive: true });
   getDb(dbPath());
 }
 

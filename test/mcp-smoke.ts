@@ -6,10 +6,9 @@
 import { createMemoryServer } from '../src/mcp/index.js';
 import { getDb, closeDb } from '../src/core/crispy-db.js';
 import { sanitizeFts5Query } from '../src/mcp/query-sanitizer.js';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { dbPath as getDbPath } from '../src/core/paths.js';
 
-const dbPath = join(homedir(), '.crispy', 'crispy.db');
+const dbPath = getDbPath();
 let passed = 0;
 let failed = 0;
 

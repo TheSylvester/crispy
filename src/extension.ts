@@ -83,7 +83,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  // Initialize settings from ~/.config/crispy/settings.json
+  // Initialize settings from settingsPath() (platform-dependent: ~/.crispy/ or %APPDATA%/Crispy/)
   const providerBase = pathToClaudeCodeExecutable
     ? { cwd, pathToClaudeCodeExecutable }
     : { cwd };

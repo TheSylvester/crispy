@@ -31,10 +31,11 @@ import {
 import { writeFile, unlink, cp, readdir, rm } from 'node:fs/promises';
 import { request } from 'node:http';
 import { join } from 'node:path';
-import { tmpdir, homedir, platform, arch } from 'node:os';
+import { tmpdir, platform, arch } from 'node:os';
 import { promisify } from 'node:util';
 import extract from 'extract-zip';
 import { log } from '../log.js';
+import { modelsDir, binDir, runDir } from '../paths.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -44,7 +45,6 @@ const execFileAsync = promisify(execFile);
 
 const MODEL_FILENAME = 'nomic-embed-text-v1.5.Q8_0.gguf';
 const MODEL_URL = 'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf';
-const MODEL_DIR = join(homedir(), '.crispy', 'models');
 const EXPECTED_DIMS = 768;
 const BATCH_SEPARATOR = '<#sep#>';
 
@@ -56,13 +56,8 @@ const MAX_ARG_BYTES = 100_000;
 /** Last llama.cpp release that includes llama-embedding in prebuilt archives. */
 const LLAMA_RELEASE_TAG = 'b5300';
 
-const BIN_DIR = join(homedir(), '.crispy', 'bin');
 const BIN_NAME = platform() === 'win32' ? 'llama-embedding.exe' : 'llama-embedding';
 const SERVER_BIN_NAME = platform() === 'win32' ? 'llama-server.exe' : 'llama-server';
-
-// --- Server config ---
-
-const RUN_DIR = join(homedir(), '.crispy', 'run');
 
 /** Server mode requires Unix domain sockets — not available on native Windows. */
 const SERVER_SUPPORTED = platform() !== 'win32';
@@ -126,12 +121,12 @@ export function initEmbedder(binPath: string): void {
 
 /** Returns the expected llama-embedding binary path. */
 export function getBinaryPath(): string {
-  return join(BIN_DIR, BIN_NAME);
+  return join(binDir(), BIN_NAME);
 }
 
 /** Returns the expected llama-server binary path. */
 function getServerBinaryPath(): string {
-  return join(BIN_DIR, SERVER_BIN_NAME);
+  return join(binDir(), SERVER_BIN_NAME);
 }
 
 /** Detect NVIDIA GPU by checking if nvidia-smi exits successfully. */
@@ -201,9 +196,9 @@ async function performBinaryDownload(binPath: string): Promise<string> {
   const assetName = await getBinaryAssetName();
   const url = `https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_RELEASE_TAG}/${assetName}`;
 
-  mkdirSync(BIN_DIR, { recursive: true });
+  mkdirSync(binDir(), { recursive: true });
 
-  const archivePath = join(BIN_DIR, assetName);
+  const archivePath = join(binDir(), assetName);
   const tmpPath = archivePath + '.tmp';
 
   log({
@@ -232,7 +227,7 @@ async function performBinaryDownload(binPath: string): Promise<string> {
       if (existsSync(buildBinDir)) {
         for (const file of await readdir(buildBinDir)) {
           const src = join(buildBinDir, file);
-          const dest = join(BIN_DIR, file);
+          const dest = join(binDir(), file);
           await cp(src, dest, { force: true });
         }
       }
@@ -279,7 +274,7 @@ async function performBinaryDownload(binPath: string): Promise<string> {
 
 /** Returns the expected model file path. */
 export function getModelPath(): string {
-  return join(MODEL_DIR, MODEL_FILENAME);
+  return join(modelsDir(), MODEL_FILENAME);
 }
 
 /**
@@ -310,7 +305,7 @@ export async function ensureModel(): Promise<string> {
 async function performModelDownload(modelPath: string): Promise<string> {
   const tmpPath = modelPath + '.tmp';
   try {
-    mkdirSync(MODEL_DIR, { recursive: true });
+    mkdirSync(modelsDir(), { recursive: true });
 
     // Clean up stale .tmp from interrupted download
     if (existsSync(tmpPath)) {
@@ -390,13 +385,13 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
-/** Socket and PID file paths — constant per process, cached at module load. */
-const SOCKET_PATH = join(RUN_DIR, `llama-embed-${process.pid}.sock`);
-const PID_FILE_PATH = join(RUN_DIR, `llama-embed-${process.pid}.pid`);
+/** Socket and PID file paths — resolved lazily (runDir() depends on test overrides). */
+function getSocketPath(): string { return join(runDir(), `llama-embed-${process.pid}.sock`); }
+function getPidFilePath(): string { return join(runDir(), `llama-embed-${process.pid}.pid`); }
 
 /** Write PID file with server metadata. */
 function writePidFile(pid: number, socketPath: string): void {
-  writeFileSync(PID_FILE_PATH, JSON.stringify({
+  writeFileSync(getPidFilePath(), JSON.stringify({
     pid,
     socketPath,
     startedAt: new Date().toISOString(),
@@ -406,18 +401,18 @@ function writePidFile(pid: number, socketPath: string): void {
 
 /** Remove PID file and socket. */
 function cleanupPidAndSocket(): void {
-  for (const f of [PID_FILE_PATH, SOCKET_PATH]) {
+  for (const f of [getPidFilePath(), getSocketPath()]) {
     try { unlinkSync(f); } catch { /* ignore */ }
   }
 }
 
 /** Clean up stale PID files from dead processes. */
 function cleanupStalePidFiles(): void {
-  if (!existsSync(RUN_DIR)) return;
+  if (!existsSync(runDir())) return;
   try {
-    const files = readdirSync(RUN_DIR).filter(f => f.startsWith('llama-embed-') && f.endsWith('.pid'));
+    const files = readdirSync(runDir()).filter(f => f.startsWith('llama-embed-') && f.endsWith('.pid'));
     for (const f of files) {
-      const pidFile = join(RUN_DIR, f);
+      const pidFile = join(runDir(), f);
       try {
         const data = JSON.parse(readFileSync(pidFile, 'utf-8'));
         // Check if the OWNER process is alive — if it died, the server is orphaned
@@ -474,10 +469,10 @@ async function startServer(): Promise<string> {
     throw new Error('llama-server binary not available');
   }
 
-  mkdirSync(RUN_DIR, { recursive: true });
+  mkdirSync(runDir(), { recursive: true });
 
   // Clean up any stale socket from a previous crash
-  const socket = SOCKET_PATH;
+  const socket = getSocketPath();
   if (existsSync(socket)) {
     try { unlinkSync(socket); } catch { /* ignore */ }
   }

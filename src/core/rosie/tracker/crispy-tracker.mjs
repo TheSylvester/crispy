@@ -35,6 +35,9 @@ function isPidAlive(pid) {
 function discoverSocket() {
   if (process.env.CRISPY_SOCK) return process.env.CRISPY_SOCK;
 
+  // SYNC: POSIX-only fallback. In normal Rosie invocation CRISPY_SOCK is always
+  // set (see rosie-bot-hook.ts), so this path is dead code. Does NOT handle
+  // Windows %APPDATA% — see src/core/paths.ts for the canonical logic.
   const serversFile = join(homedir(), '.crispy', 'ipc', 'servers.json');
   let entries;
   try {

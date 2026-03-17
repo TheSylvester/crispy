@@ -1,7 +1,7 @@
 /**
  * Settings Types — Type definitions for the unified settings module
  *
- * All types, interfaces, and defaults for ~/.config/crispy/settings.json.
+ * All types, interfaces, and defaults for settings.json (see paths.ts for location).
  * Vendor-agnostic — no imports from adapter-specific modules.
  *
  * @module settings/types
