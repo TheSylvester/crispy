@@ -45,7 +45,7 @@
 
 /* Thinking block (collapsed by default) */
 .streaming-ghost__thinking {
-  color: #999;
+  color: var(--text-tertiary);
   font-size: 0.9em;
 }
 
@@ -72,7 +72,7 @@
   padding: 2px 8px;
   font-size: 0.85em;
   font-family: var(--vscode-editor-font-family, monospace);
-  color: #999;
+  color: var(--text-tertiary);
   background: var(--vscode-badge-background, rgba(127, 127, 127, 0.15));
   border-radius: 4px;
   width: fit-content;

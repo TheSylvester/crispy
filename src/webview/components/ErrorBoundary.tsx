@@ -77,7 +77,7 @@ const headingStyle: React.CSSProperties = {
 const errorTextStyle: React.CSSProperties = {
   margin: '0 0 16px',
   fontSize: '12px',
-  color: '#999',
+  color: 'var(--text-tertiary)',
   maxWidth: '480px',
   textAlign: 'center',
   wordBreak: 'break-word',
