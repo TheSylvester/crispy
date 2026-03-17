@@ -32,7 +32,10 @@ const RECALL_SYSTEM_PROMPT =
   ' Proactively use it at the start of non-trivial tasks, before architectural decisions,' +
   ' and whenever prior context could inform your approach — not just when the user explicitly' +
   ' references past conversations. Load it via ToolSearch first, then call it with a detailed' +
-  ' natural-language question.';
+  ' natural-language question.\n\n' +
+  'You also have mcp__memory__read_transcript to read full session transcripts directly.' +
+  ' Use it after recall finds relevant sessions — pass the sessionId to read the conversation' +
+  ' content. Supports tail (last N entries), offset/limit pagination, and budget-based truncation.';
 
 // ============================================================================
 // Types

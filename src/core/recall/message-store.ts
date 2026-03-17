@@ -417,6 +417,7 @@ export interface SessionPage {
     message_id: string;
     text: string;
     role?: string;
+    created_at?: number;
   }>;
   session_id: string;
   total_messages: number;
@@ -439,7 +440,7 @@ export function readSessionMessages(
     if (total === 0) return null;
 
     const rows = db().all(
-      `SELECT message_id, message_seq, message_text, message_role
+      `SELECT message_id, message_seq, message_text, message_role, created_at
        FROM messages
        WHERE session_id = ?
        ORDER BY message_seq ASC
@@ -454,6 +455,7 @@ export function readSessionMessages(
         message_id: row.message_id as string,
         text: row.message_text as string,
         role: (row.message_role as string) ?? undefined,
+        created_at: (row.created_at as number) ?? undefined,
       };
     });
 

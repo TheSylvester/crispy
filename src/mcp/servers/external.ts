@@ -23,7 +23,8 @@ import { parseModelOption } from "../../core/model-utils.js";
 import { INTERNAL_MCP_SERVER_NAME } from "./internal.js";
 import { log } from "../../core/log.js";
 import { parseJsonlFile } from "../../core/adapters/claude/jsonl-reader.js";
-import { formatTranscript } from "../transcript-formatter.js";
+import { formatTranscript, formatMessages, type FormattedTranscriptResult } from "../transcript-formatter.js";
+import { readSessionMessages } from "../../core/recall/message-store.js";
 
 // ============================================================================
 // Recall Agent Prompt
@@ -294,12 +295,19 @@ export function createExternalServer(
       ),
       tool(
         "read_transcript",
-        "Read a session transcript file directly — no agent dispatch, pure data retrieval. Complements recall: use recall to find sessions, then read_transcript to drill into full conversation content. Returns formatted conversation with pagination support.",
+        "Read a session transcript directly — no agent dispatch, pure data retrieval. Complements recall: use recall to find sessions, then read_transcript to drill into full conversation content. Returns formatted conversation with pagination support. Accepts sessionId (preferred, reads from indexed SQLite) or sessionFile (fallback, parses raw JSONL).",
         {
+          sessionId: z
+            .string()
+            .optional()
+            .describe(
+              "Session ID (from recall results). Reads from indexed SQLite — fast, vendor-agnostic. Preferred over sessionFile.",
+            ),
           sessionFile: z
             .string()
+            .optional()
             .describe(
-              "Absolute path to the session transcript file (e.g., /home/user/.claude/projects/my-proj/sessions/abc123.jsonl). Usually obtained from recall results.",
+              "Absolute path to session JSONL file. Fallback when sessionId is unavailable or session isn't indexed yet.",
             ),
           offset: z
             .number()
@@ -320,35 +328,71 @@ export function createExternalServer(
             .min(1000)
             .optional()
             .describe("Max output characters before truncation. Default: 30000"),
+          tail: z
+            .number()
+            .int()
+            .min(1)
+            .optional()
+            .describe("Read the last N entries instead of from the start. Overrides offset."),
         },
         async (args) => {
+          const source = args.sessionId ?? args.sessionFile ?? "unknown";
           log({
             source: "read_transcript",
             level: "info",
-            summary: `read_transcript: ${args.sessionFile}`,
-            data: { sessionFile: args.sessionFile, offset: args.offset, limit: args.limit },
+            summary: `read_transcript: ${source}`,
+            data: { sessionId: args.sessionId, sessionFile: args.sessionFile, offset: args.offset, limit: args.limit },
           });
 
-          try {
-            // Parse the JSONL file
-            const entries = parseJsonlFile(args.sessionFile);
-            if (entries.length === 0) {
-              return textResult("Session transcript is empty or could not be parsed.");
-            }
+          if (!args.sessionId && !args.sessionFile) {
+            return textResult("Provide either sessionId or sessionFile.");
+          }
 
-            // Format with pagination
-            const result = formatTranscript(entries, {
-              offset: args.offset ?? 0,
-              limit: args.limit ?? 50,
-              budget: args.budget ?? 30000,
-            });
+          try {
+            // Resolve tail into offset after we know the total count
+            const resolveOpts = (total: number) => {
+              const limit = args.limit ?? 50;
+              let offset = args.offset ?? 0;
+              if (args.tail) {
+                offset = Math.max(0, total - args.tail);
+              }
+              return { offset, limit, budget: args.budget ?? 30000 };
+            };
+
+            let result: FormattedTranscriptResult;
+
+            if (args.sessionId) {
+              // Preferred path: read from indexed SQLite
+              const page = readSessionMessages(args.sessionId, 0, 10000);
+              if (!page || page.messages.length === 0) {
+                if (args.sessionFile) {
+                  // Fall back to JSONL if session not indexed
+                  const entries = parseJsonlFile(args.sessionFile);
+                  if (entries.length === 0) {
+                    return textResult("Session transcript is empty or could not be parsed.");
+                  }
+                  result = formatTranscript(entries, resolveOpts(entries.length));
+                } else {
+                  return textResult(`Session ${args.sessionId} not found in index.`);
+                }
+              } else {
+                result = formatMessages(page.messages, resolveOpts(page.messages.length));
+              }
+            } else {
+              // Fallback path: parse raw JSONL
+              const entries = parseJsonlFile(args.sessionFile!);
+              if (entries.length === 0) {
+                return textResult("Session transcript is empty or could not be parsed.");
+              }
+              result = formatTranscript(entries, resolveOpts(entries.length));
+            }
 
             log({
               source: "read_transcript",
               level: "info",
               summary: `read_transcript: OK — ${result.shownEntries}/${result.totalEntries} entries, ${result.content.length} chars`,
               data: {
-                sessionFile: args.sessionFile,
+                source,
                 shown: result.shownEntries,
                 total: result.totalEntries,
                 chars: result.content.length,
@@ -361,7 +405,7 @@ export function createExternalServer(
               source: "read_transcript",
               level: "error",
               summary: `read_transcript: failed — ${err instanceof Error ? err.message : String(err)}`,
-              data: { sessionFile: args.sessionFile, error: String(err) },
+              data: { source, error: String(err) },
             });
             return textResult(
               `Failed to read transcript: ${err instanceof Error ? err.message : String(err)}`,

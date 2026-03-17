@@ -217,3 +217,89 @@ export function formatTranscript(
     nextOffset: truncated ? lastOffsetShown + 1 : undefined,
   };
 }
+
+// ============================================================================
+// From indexed SQLite messages (preferred path — vendor-agnostic)
+// ============================================================================
+
+/** Shape of a message from readSessionMessages(). */
+interface IndexedMessage {
+  message_seq: number;
+  message_id: string;
+  text: string;
+  role?: string;
+  created_at?: number;
+}
+
+/**
+ * Format a message into a display entry with role header and timestamp.
+ */
+function formatIndexedMessage(msg: IndexedMessage): string | null {
+  const text = msg.text.trim();
+  if (!text) return null;
+
+  const role = msg.role;
+  if (role !== 'user' && role !== 'human' && role !== 'assistant') return null;
+
+  const roleLabel = role === 'assistant' ? 'ASSISTANT' : 'USER';
+  const ts = msg.created_at
+    ? new Date(msg.created_at).toLocaleString('en-US', {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+      })
+    : 'unknown time';
+
+  const truncated = text.length > 2000;
+  const display = truncated ? text.slice(0, 2000) + '\n... [truncated]' : text;
+
+  return `--- ${roleLabel} [${ts}] ---\n${display}`;
+}
+
+/**
+ * Format indexed SQLite messages into token-efficient output with pagination.
+ *
+ * @param messages - Messages from readSessionMessages()
+ * @param options - Pagination and budget options
+ * @returns Formatted content, metadata, and next-page info
+ */
+export function formatMessages(
+  messages: IndexedMessage[],
+  options: FormattedTranscriptOptions = {},
+): FormattedTranscriptResult {
+  const offset = options.offset ?? 0;
+  const limit = options.limit ?? 50;
+  const budget = options.budget ?? 30000;
+
+  const formatted: string[] = [];
+  let currentChars = 0;
+  let shownCount = 0;
+  let lastOffsetShown = offset - 1;
+
+  for (let i = offset; i < messages.length && shownCount < limit; i++) {
+    const entry = formatIndexedMessage(messages[i]!);
+    if (!entry) continue;
+
+    const charCount = entry.length + 1;
+    if (currentChars + charCount > budget) break;
+
+    formatted.push(entry);
+    currentChars += charCount;
+    shownCount += 1;
+    lastOffsetShown = i;
+  }
+
+  const truncated = lastOffsetShown < messages.length - 1;
+  const footer = truncated
+    ? `\n────────────────────────────────────────\nShowing messages ${offset}–${lastOffsetShown} of ${messages.length} (~${currentChars} chars)\nNext page: offset=${lastOffsetShown + 1}`
+    : `\n────────────────────────────────────────\nShowing messages ${offset}–${lastOffsetShown} of ${messages.length} (~${currentChars} chars)`;
+
+  return {
+    content: formatted.join('\n\n') + footer,
+    offset,
+    limit,
+    totalEntries: messages.length,
+    shownEntries: shownCount,
+    truncated,
+    nextOffset: truncated ? lastOffsetShown + 1 : undefined,
+  };
+}
