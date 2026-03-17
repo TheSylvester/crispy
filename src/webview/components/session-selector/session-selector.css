@@ -553,7 +553,7 @@
 /* Status line — freeform text from Rosie */
 .crispy-project-status-text {
   font-size: var(--font-xs);
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -654,7 +654,7 @@
 
 .crispy-project-detail-description {
   font-size: var(--font-xs);
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   line-height: 1.5;
   margin-bottom: 8px;
 }
