@@ -9,7 +9,7 @@
 
 import { connect, type Socket } from 'node:net';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { StringDecoder } from 'node:string_decoder';
 
@@ -40,7 +40,7 @@ export function isPidAlive(pid: number): boolean {
 
 export function isWithinDir(child: string, parent: string): boolean {
   if (child === parent) return true;
-  const prefix = parent.endsWith('/') ? parent : parent + '/';
+  const prefix = parent.endsWith(sep) ? parent : parent + sep;
   return child.startsWith(prefix);
 }
 

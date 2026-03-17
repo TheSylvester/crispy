@@ -11,7 +11,7 @@
  * @module client-connection
  */
 
-import { resolve } from "node:path";
+import { resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -158,7 +158,7 @@ const CLAUDE_CONFIG_DIR = resolve(homedir(), '.claude');
  * (e.g. /home/user/project-evil matching /home/user/project).
  */
 function isWithin(filePath: string, root: string): boolean {
-  const normalizedRoot = root.endsWith('/') ? root : root + '/';
+  const normalizedRoot = root.endsWith(sep) ? root : root + sep;
   return filePath === root || filePath.startsWith(normalizedRoot);
 }
 

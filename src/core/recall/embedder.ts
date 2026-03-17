@@ -26,13 +26,14 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import {
   existsSync, mkdirSync, statSync, createWriteStream, renameSync,
-  unlinkSync, chmodSync, readFileSync, writeFileSync, readdirSync,
+  unlinkSync, chmodSync, readFileSync, writeFileSync, readdirSync, rmSync,
 } from 'node:fs';
-import { writeFile, unlink } from 'node:fs/promises';
+import { writeFile, unlink, cp, readdir, rm } from 'node:fs/promises';
 import { request } from 'node:http';
 import { join } from 'node:path';
 import { tmpdir, homedir, platform, arch } from 'node:os';
 import { promisify } from 'node:util';
+import extract from 'extract-zip';
 import { log } from '../log.js';
 
 const execFileAsync = promisify(execFile);
@@ -220,23 +221,25 @@ async function performBinaryDownload(binPath: string): Promise<string> {
     await downloadFile(url, tmpPath);
     renameSync(tmpPath, archivePath);
 
-    // Extract both binaries + required shared libraries from the zip.
-    // -j junk paths (flatten), -o overwrite.
-    // CUDA builds also include libcublas*, libcudart*; Vulkan includes libvulkan*.
-    const extractTargets = [
-      `build/bin/${BIN_NAME}`,
-      `build/bin/${SERVER_BIN_NAME}`,
-      'build/bin/libllama*',
-      'build/bin/libggml*',
-    ];
-    if (assetName.includes('cuda')) {
-      extractTargets.push('build/bin/libcublas*', 'build/bin/libcudart*');
+    // Extract binaries + shared libraries from zip
+    const tmpExtractDir = join(tmpdir(), `llama-extract-${Date.now()}`);
+    mkdirSync(tmpExtractDir, { recursive: true });
+    try {
+      await extract(archivePath, { dir: tmpExtractDir });
+
+      // Copy build/bin/* files to BIN_DIR
+      const buildBinDir = join(tmpExtractDir, 'build', 'bin');
+      if (existsSync(buildBinDir)) {
+        for (const file of await readdir(buildBinDir)) {
+          const src = join(buildBinDir, file);
+          const dest = join(BIN_DIR, file);
+          await cp(src, dest, { force: true });
+        }
+      }
+    } finally {
+      // Clean up temp extraction directory
+      try { rmSync(tmpExtractDir, { recursive: true, force: true }); } catch { /* ignore */ }
     }
-    await execFileAsync('unzip', [
-      '-o', '-j', archivePath,
-      ...extractTargets,
-      '-d', BIN_DIR,
-    ]);
 
     // Clean up archive
     if (existsSync(archivePath)) {
@@ -756,10 +759,19 @@ async function embedViaProcess(texts: string[], modelPath: string): Promise<Floa
 
     // Shared libs (libllama.so, libggml*.so/dylib) live alongside the binary
     const libDir = join(binaryPath, '..');
-    const envKey = platform() === 'darwin' ? 'DYLD_LIBRARY_PATH' : 'LD_LIBRARY_PATH';
+    const envKey = platform() === 'darwin' ? 'DYLD_LIBRARY_PATH'
+                 : platform() === 'win32' ? 'PATH'
+                 : 'LD_LIBRARY_PATH';
+    const env = { ...process.env };
+    if (platform() === 'win32') {
+      // On Windows, prepend to PATH for DLL search
+      env.PATH = `${libDir};${process.env.PATH || ''}`;
+    } else {
+      env[envKey] = libDir;
+    }
     const { stdout, stderr } = await execFileAsync(binaryPath, args, {
       maxBuffer: 2 * 1024 * 1024,
-      env: { ...process.env, [envKey]: libDir },
+      env,
     });
 
     if (stderr) {
