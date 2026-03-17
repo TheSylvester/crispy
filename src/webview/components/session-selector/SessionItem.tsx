@@ -13,7 +13,7 @@
 
 import type { WireSessionInfo } from '../../transport.js';
 import { VendorIcon } from './VendorIcon.js';
-import { getSessionDisplayName } from '../../utils/session-display.js';
+import { getSessionDisplayName, middleTruncate } from '../../utils/session-display.js';
 import { formatRelativeTime } from '../../utils/format.js';
 
 interface SessionItemProps {
@@ -67,7 +67,7 @@ export function SessionItem({
       className={classNames}
       onClick={onClick}
       data-session-index={index}
-      title={session.quest || label}
+      title={label}
     >
       <div className="crispy-session-item__header">
         <span className="crispy-session-item__label">
@@ -81,9 +81,9 @@ export function SessionItem({
           </span>
         </div>
       </div>
-      {(session.botSummary || session.lastMessage) && (
+      {session.lastMessage && (
         <div className="crispy-session-item__preview">
-          {highlightMatch(session.botSummary || session.lastMessage!, searchQuery)}
+          {highlightMatch(middleTruncate(session.lastMessage), searchQuery)}
         </div>
       )}
     </li>

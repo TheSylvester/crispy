@@ -56,16 +56,8 @@ export interface SessionInfo {
   lastMessage?: string;
   vendor: Vendor;
   isSidechain?: boolean;
-  /** Rosie Bot: main conversation goal. */
-  quest?: string;
-  /** Rosie Bot: most recent turn summary. */
-  botSummary?: string;
-  /** Rosie Bot: short conversation label. */
+  /** Short session title from the session_titles table. */
   title?: string;
-  /** Rosie Bot: current work status — done, in progress, blocked. */
-  status?: string;
-  /** Rosie Bot: key entities — JSON-stringified array of file paths, concepts, etc. */
-  entities?: string;
 }
 
 // ============================================================================

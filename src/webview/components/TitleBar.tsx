@@ -359,7 +359,7 @@ export function TitleBar(): React.JSX.Element {
           className="crispy-titlebar__btn crispy-titlebar__session-btn"
           onClick={toggleSidebar}
           aria-label={sidebarCollapsed ? 'Open sessions' : 'Close sessions'}
-          title={currentSession?.quest || 'Toggle session list'}
+          title={currentSession?.title || 'Toggle session list'}
         >
           <span className="crispy-titlebar__label">{buttonLabel}</span>
           <Chevron open={!sidebarCollapsed} />

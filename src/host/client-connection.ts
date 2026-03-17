@@ -860,8 +860,8 @@ export function createClientConnection(
                   sessionId: info.sessionId,
                   sessionFile: file,
                   // NOTE: duplicates getSessionDisplayName() logic from webview — can't import across layer boundary
-                  title: info.title?.trim() || info.quest?.trim() || info.label?.trim() || info.sessionId.slice(0, 8) + '\u2026',
-                  preview: info.botSummary || info.lastMessage || undefined,
+                  title: info.title?.trim() || info.label?.trim() || info.sessionId.slice(0, 8) + '\u2026',
+                  preview: info.lastMessage || undefined,
                   modifiedAt: info.modifiedAt instanceof Date ? info.modifiedAt.toISOString() : String(info.modifiedAt),
                 };
               })

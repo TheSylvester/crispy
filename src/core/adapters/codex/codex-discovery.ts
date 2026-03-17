@@ -25,7 +25,7 @@ import { adaptCodexJsonlRecords } from './codex-jsonl-adapter.js';
 import { CodexRpcClient, type CodexRpcClientOptions } from './codex-rpc-client.js';
 import { log } from '../../log.js';
 import { CRISPY_VERSION } from '../../version.js';
-import { getLatestRosieMeta, getSessionTitleFromDb } from '../../activity-index.js';
+import { getSessionTitleFromDb } from '../../activity-index.js';
 
 // ============================================================================
 // CodexDiscovery
@@ -229,7 +229,6 @@ export class CodexDiscovery implements VendorDiscovery {
   }
 
   private threadToSessionInfo(thread: Thread): SessionInfo {
-    const rosie = getLatestRosieMeta(thread.path ?? '');
     const gen3Title = getSessionTitleFromDb(thread.id);
     return {
       sessionId: thread.id,
@@ -241,8 +240,7 @@ export class CodexDiscovery implements VendorDiscovery {
       label: thread.preview?.slice(0, 80),
       lastMessage: thread.preview,
       vendor: 'codex',
-      ...(rosie && { quest: rosie.quest, botSummary: rosie.summary, title: rosie.title, status: rosie.status, entities: rosie.entities }),
-      ...(gen3Title && { title: gen3Title, botSummary: gen3Title, quest: gen3Title }),
+      ...(gen3Title && { title: gen3Title }),
     };
   }
 

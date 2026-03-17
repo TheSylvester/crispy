@@ -1,7 +1,7 @@
 /**
  * Activity Index — Persistence Layer for User Activity Data
  *
- * Owns session metadata CRUD, session lineage, rosie metadata cache,
+ * Owns session metadata CRUD, session lineage, session title cache,
  * and pruning for ~/.crispy/. The underlying storage is a SQLite
  * database (crispy.db) managed by crispy-db.ts.
  *
@@ -74,7 +74,6 @@ export { dbPath, crispyRoot };
 export function _setTestDir(dir: string): () => void {
   _resetDb(); // Close existing DB connection
   const restoreRoot = _setTestRoot(dir);
-  rosieMetaCache = null;
   sessionTitleCache = null;
   // Create dir and init DB in test directory
   fs.mkdirSync(dir, { recursive: true });
@@ -82,7 +81,6 @@ export function _setTestDir(dir: string): () => void {
   return () => {
     _resetDb(); // Close test DB
     restoreRoot();
-    rosieMetaCache = null;
     sessionTitleCache = null;
   };
 }
@@ -135,37 +133,6 @@ function persistLogEntry(entry: LogEntry): void {
 // Wire up persistence so log() writes to SQLite automatically.
 registerLogPersister(persistLogEntry);
 
-// ============================================================================
-// Rosie Metadata Cache
-// ============================================================================
-
-/**
- * In-memory cache of the latest rosie-meta entry per session file path.
- *
- * Built lazily from a single queryActivity() call, then served from memory
- * on subsequent getLatestRosieMeta() calls. Invalidated when new rosie-meta
- * entries are appended via appendActivityEntries().
- */
-let rosieMetaCache: Map<string, ActivityIndexEntry> | null = null;
-
-/** Build the cache from a single full read of the activity index. */
-function buildRosieMetaCache(): Map<string, ActivityIndexEntry> {
-  const entries = queryActivity(undefined, 'rosie-meta');
-  const map = new Map<string, ActivityIndexEntry>();
-  // Iterate forward — last entry per file wins (latest by timestamp)
-  for (const e of entries) {
-    if (e.quest && e.summary) {
-      map.set(e.file, e);
-    }
-  }
-  return map;
-}
-
-/** Invalidate the rosie metadata cache, forcing a rebuild on next access. */
-export function invalidateRosieMetaCache(): void {
-  rosieMetaCache = null;
-}
-
 /**
  * Lazy cache of session titles from the session_titles table.
  * Built on first access, invalidated by invalidateSessionTitleCache().
@@ -198,7 +165,6 @@ export function invalidateSessionTitleCache(): void {
  * Uses INSERT OR IGNORE to handle duplicates via the UNIQUE constraint.
  * No-op if entries array is empty.
  *
- * Invalidates the rosie metadata cache when rosie-meta entries are written.
  */
 export function appendActivityEntries(entries: ActivityIndexEntry[]): void {
   if (entries.length === 0) return;
@@ -238,10 +204,6 @@ export function appendActivityEntries(entries: ActivityIndexEntry[]): void {
     throw e;
   }
 
-  // Invalidate rosie cache when rosie-meta entries are appended
-  if (entries.some((e) => e.kind === 'rosie-meta')) {
-    rosieMetaCache = null;
-  }
 }
 
 /**
@@ -290,57 +252,10 @@ export function queryActivity(
   }
 }
 
-/**
- * Get the most recent rosie-meta entry from the activity index.
- *
- * When `filePath` is provided, returns the latest entry for that specific
- * session file. Otherwise returns the global latest.
- *
- * Uses an in-memory cache to avoid re-querying the DB on every call.
- */
-export function getLatestRosieMeta(filePath?: string): ActivityIndexEntry | undefined {
-  if (!rosieMetaCache) {
-    rosieMetaCache = buildRosieMetaCache();
-  }
-  if (filePath) {
-    return rosieMetaCache.get(filePath);
-  }
-  // No filePath = find the global latest (rare path)
-  let latest: ActivityIndexEntry | undefined;
-  for (const entry of rosieMetaCache.values()) {
-    if (!latest || entry.timestamp > latest.timestamp) {
-      latest = entry;
-    }
-  }
-  return latest;
-}
-
-/**
- * Get all rosie-meta entries for a session file, ordered chronologically.
- * Used by rosie-bot-hook to build the "middle" section of bookend transcripts.
- */
-export function getAllRosieMetas(filePath: string): Pick<ActivityIndexEntry, 'timestamp' | 'quest' | 'title' | 'summary' | 'status'>[] {
-  ensureCrispyDir();
-  const db = getDb(dbPath());
-  const rows = db.all(`
-    SELECT timestamp, quest, title, summary, status
-    FROM session_meta
-    WHERE kind = 'rosie-meta' AND file = ?
-    ORDER BY timestamp ASC
-  `, [filePath]) as Array<Record<string, unknown>>;
-
-  return rows.map((r) => ({
-    timestamp: (r.timestamp as string) ?? '',
-    quest: (r.quest as string) ?? '',
-    title: (r.title as string) ?? '',
-    summary: (r.summary as string) ?? '',
-    status: (r.status as string) ?? '',
-  }));
-}
 
 /**
  * Look up a session title from the session_titles table.
- * Uses a lazy in-memory cache (same pattern as rosieMetaCache).
+ * Uses a lazy in-memory cache.
  * Returns null if no title is set for this session.
  */
 export function getSessionTitleFromDb(sessionId: string): string | null {
@@ -604,8 +519,7 @@ export function pruneDeletedFiles(livePaths: Set<string>): number {
       throw e;
     }
 
-    // Invalidate caches — pruned files may have had rosie-meta entries or session titles
-    rosieMetaCache = null;
+    // Invalidate caches — pruned files may have had session titles
     sessionTitleCache = null;
 
     if (stalePaths.length > 0) {
