@@ -379,13 +379,22 @@ export function createExternalServer(
                   return textResult(`Session ${args.sessionId} has no messages at offset ${offset}.`);
                 }
                 // formatMessages receives only the requested slice — offset=0
-                // because the SQL already skipped. Pass total for footer accuracy.
+                // because the SQL already skipped.
                 result = formatMessages(page.messages, { offset: 0, limit, budget });
                 // Patch metadata to reflect true position in the full session
+                const shown = result.shownEntries;
                 result.offset = offset;
                 result.totalEntries = total;
                 result.truncated = offset + page.messages.length < total;
                 result.nextOffset = result.truncated ? offset + page.messages.length : undefined;
+                // Rebuild the footer in content so the LLM sees correct pagination
+                const separator = '\n────────────────────────────────────────\n';
+                const footerIdx = result.content.lastIndexOf(separator);
+                const body = footerIdx >= 0 ? result.content.slice(0, footerIdx) : result.content;
+                const lastShown = offset + shown - 1;
+                let newFooter = `${separator}Showing messages ${offset}–${lastShown} of ${total} (~${body.length} chars)`;
+                if (result.truncated) newFooter += `\nNext page: offset=${result.nextOffset}`;
+                result.content = body + newFooter;
               }
             } else {
               // Fallback path: parse raw JSONL
