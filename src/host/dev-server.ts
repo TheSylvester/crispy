@@ -31,8 +31,7 @@ import { initRosieBot, shutdownRosieBot } from '../core/rosie/index.js';
 import { initRecallIngest, shutdownRecallIngest } from '../core/recall/ingest-hook.js';
 import { startRecallCatchup, stopEmbeddingBackfill } from '../core/recall/catchup-manager.js';
 import { disposeEmbedder } from '../core/recall/embedder.js';
-import { resolveInternalServerPaths } from './adapter-registry.js';
-import { startIpcServer } from './ipc-server.js';
+import { startIpcServer, getSocketPath } from './ipc-server.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
 
@@ -184,7 +183,10 @@ startRecallCatchup('devServer');
 done();
 
 done = phase('init rosie bot');
-initRosieBot(dispatch, resolveInternalServerPaths());
+initRosieBot(dispatch, {
+  trackerScript: join(process.cwd(), 'src', 'core', 'rosie', 'tracker', 'crispy-tracker.mjs'),
+  ipcSocket: getSocketPath(),
+});
 done();
 
 const settingsDone = phase('init settings');

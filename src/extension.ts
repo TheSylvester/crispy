@@ -10,13 +10,14 @@ import { initSettings, startWatchingSettings, stopWatchingSettings } from './cor
 import { openCrispyPanel, getOrCreatePanelForPrefill, getMostRecentPanel, getActivePanel } from './host/webview-host.js';
 import { startRescan, stopRescan } from './core/session-list-manager.js';
 import { findClaudeBinary } from './core/find-claude-binary.js';
-import { registerAllAdapters, resolveInternalServerPaths } from './host/adapter-registry.js';
+import { registerAllAdapters } from './host/adapter-registry.js';
 import { createAgentDispatch } from './host/agent-dispatch.js';
 import { initRosieBot, shutdownRosieBot } from './core/rosie/index.js';
+import { resolve } from 'node:path';
 import { initRecallIngest, shutdownRecallIngest } from './core/recall/ingest-hook.js';
 import { startRecallCatchup, stopEmbeddingBackfill } from './core/recall/catchup-manager.js';
 import { disposeEmbedder } from './core/recall/embedder.js';
-import { startIpcServer } from './host/ipc-server.js';
+import { startIpcServer, getSocketPath } from './host/ipc-server.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const bootStart = performance.now();
@@ -98,7 +99,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // llama-embedding binary auto-downloads on first use (ensureBinary in embedder.ts)
   startRecallCatchup('vscode');
   done = phase('initRosieBot');
-  initRosieBot(dispatch, resolveInternalServerPaths(context.extensionPath));
+  initRosieBot(dispatch, {
+    trackerScript: resolve(context.extensionPath, 'dist', 'crispy-tracker.mjs'),
+    ipcSocket: getSocketPath(),
+  });
   done();
   context.subscriptions.push({
     dispose: () => {

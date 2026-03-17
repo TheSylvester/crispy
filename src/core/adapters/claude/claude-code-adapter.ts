@@ -69,7 +69,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, unlinkSync } fr
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { homedir } from 'os';
-import { getLatestRosieMeta } from '../../activity-index.js';
+import { getLatestRosieMeta, getSessionTitleFromDb } from '../../activity-index.js';
 import { getContextWindowTokens } from '../../model-utils.js';
 
 // ============================================================================
@@ -1799,6 +1799,8 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
       }
 
       const rosie = getLatestRosieMeta(filePath);
+      // Gen 3 session_titles overlay — takes priority over rosie-meta title
+      const gen3Title = getSessionTitleFromDb(sessionId);
 
       sessions.push({
         sessionId,
@@ -1812,6 +1814,7 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
         vendor: 'claude',
         isSidechain: meta?.isSidechain,
         ...(rosie && { quest: rosie.quest, botSummary: rosie.summary, title: rosie.title, status: rosie.status, entities: rosie.entities }),
+        ...(gen3Title && { title: gen3Title, botSummary: gen3Title, quest: gen3Title }),
       });
     }
   }
@@ -1848,6 +1851,7 @@ export function findSession(sessionId: string): SessionInfo | undefined {
 
     const meta = extractMetadataFast(filePath);
     const rosie = getLatestRosieMeta(filePath);
+    const gen3Title = getSessionTitleFromDb(sessionId);
 
     return {
       sessionId,
@@ -1860,6 +1864,7 @@ export function findSession(sessionId: string): SessionInfo | undefined {
       lastMessage: meta?.lastMessage,
       vendor: 'claude',
       ...(rosie && { quest: rosie.quest, botSummary: rosie.summary, title: rosie.title, status: rosie.status, entities: rosie.entities }),
+      ...(gen3Title && { title: gen3Title, botSummary: gen3Title, quest: gen3Title }),
     };
   }
 

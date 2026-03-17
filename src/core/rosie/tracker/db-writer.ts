@@ -267,12 +267,16 @@ export function recordProjectActivity(entry: {
   );
 }
 
-/** Look up a single project's title by ID. Returns undefined if not found. */
-export function getProjectTitle(projectId: string): string | undefined {
+/** Look up a single project's title and icon by ID. Returns undefined if not found. */
+export function getProjectTitle(projectId: string): { title?: string; icon?: string } | undefined {
   try {
     const db = getTrackerDb();
-    const row = db.get(`SELECT title FROM projects WHERE id = ?`, [projectId]) as Record<string, unknown> | undefined;
-    return row?.title as string | undefined;
+    const row = db.get(`SELECT title, icon FROM projects WHERE id = ?`, [projectId]) as Record<string, unknown> | undefined;
+    if (!row) return undefined;
+    return {
+      title: row.title as string | undefined,
+      icon: (row.icon as string | undefined) ?? undefined,
+    };
   } catch {
     return undefined;
   }
@@ -468,6 +472,27 @@ export function getProjectsForPrompt(): string {
         (r) =>
           `id=${r.id} | type=${r.type} | stage=${r.stage} | parent=${r.parent_id ?? '-'} | title=${sanitize(r.title)} | status=${sanitize(r.status)} | entities=${r.entities ?? '[]'}`,
       )
+      .join('\n');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Return compact `id | stage | title` lines for non-archived projects.
+ * Gen 3 format — progressive disclosure via `crispy-tracker show --id`.
+ */
+export function getCompactProjectsForPrompt(): string {
+  try {
+    const db = getTrackerDb();
+    const rows = db.all(
+      `SELECT id, stage, title FROM projects WHERE stage != 'archived' ORDER BY updated_at DESC`,
+    ) as Array<{ id: string; stage: string; title: string }>;
+
+    if (rows.length === 0) return '';
+
+    return rows
+      .map(r => `${r.id} | ${r.stage} | ${r.title}`)
       .join('\n');
   } catch {
     return '';

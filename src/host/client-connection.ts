@@ -73,13 +73,15 @@ import {
 } from '../core/recall/catchup-manager.js';
 import { readSessionMessages } from '../core/recall/message-store.js';
 import { getGitFiles, fileExists, readImage, readTextFile } from "../core/file-service.js";
-import { queryActivity, getLineage, getChildSessions, getLineageGraph, dbPath } from '../core/activity-index.js';
-import { getProjectsWithDetails, getProjectActivity, updateProjectStage, updateProjectSortOrder, reorderProjectsInStage, getStages, getValidStageNames, writeTrackerResults, mergeProjects, extractTurnsFromMessages } from '../core/rosie/tracker/index.js';
+import { queryActivity, getLineage, getChildSessions, getLineageGraph, dbPath, setSessionTitle } from '../core/activity-index.js';
+import { refreshAndNotify } from '../core/session-list-manager.js';
+import { getProjectsWithDetails, getProjectActivity, updateProjectStage, updateProjectSortOrder, reorderProjectsInStage, getStages, getValidStageNames, writeTrackerResults, mergeProjects, extractTurnsFromMessages, getProjectTitle } from '../core/rosie/tracker/index.js';
 import type { TrackerBlock } from '../core/rosie/tracker/index.js';
 import { getDb } from '../core/crispy-db.js';
 import {
   subscribeTrackerNotify,
   unsubscribeTrackerNotify,
+  pushTrackerNotification,
   TRACKER_NOTIFY_CHANNEL_ID,
 } from '../core/rosie/tracker/tracker-notifications.js';
 import type { TrackerNotifyEvent, TrackerNotifySubscriber } from '../core/rosie/tracker/tracker-notifications.js';
@@ -934,6 +936,13 @@ export function createClientConnection(
           files: [],
         };
         writeTrackerResults([block], (params.sessionFile as string) ?? '');
+        pushTrackerNotification({
+          kind: 'project_created',
+          projectTitle: params.title as string,
+          icon: params.icon as string | undefined,
+          newStage: params.stage as string,
+          status: params.status as string | undefined,
+        });
         return { status: 'ok', projectId };
       }
 
@@ -954,18 +963,36 @@ export function createClientConnection(
           files: [],
         };
         writeTrackerResults([block], (params.sessionFile as string) ?? '');
+        const trackInfo = getProjectTitle(projectId);
+        pushTrackerNotification({
+          kind: params.stage ? 'stage_change' : 'project_matched',
+          projectTitle: trackInfo?.title,
+          icon: trackInfo?.icon,
+          newStage: params.stage as string | undefined,
+          status: params.status as string | undefined,
+        });
         return { status: 'ok', projectId };
       }
 
       case "mergeProject": {
         const keepId = params.keepId as string;
         const removeId = params.removeId as string;
+        const keepInfo = getProjectTitle(keepId);
         mergeProjects(keepId, removeId);
+        pushTrackerNotification({
+          kind: 'project_matched',
+          projectTitle: keepInfo?.title,
+          status: `Merged duplicate (removed ${removeId.slice(0, 8)}…)`,
+        });
         return { status: 'ok', keepId, removeId };
       }
 
       case "markTrivial": {
         const reason = params.reason as string;
+        pushTrackerNotification({
+          kind: 'trivial',
+          status: reason,
+        });
         return { status: 'ok', reason };
       }
 
@@ -983,11 +1010,8 @@ export function createClientConnection(
       case "setSessionTitle": {
         const sessionId = params.sessionId as string;
         const title = params.title as string;
-        const db = getDb(dbPath());
-        db.run(
-          `INSERT OR REPLACE INTO session_titles (session_id, title, updated_at) VALUES (?, ?, ?)`,
-          [sessionId, title, new Date().toISOString()],
-        );
+        setSessionTitle(sessionId, title);
+        refreshAndNotify(sessionId);
         return { status: 'ok', sessionId };
       }
 

@@ -1,120 +1,76 @@
 /**
- * Rosie Bot Hook — Independent summarize + persistent tracker subsystems
+ * Rosie Bot Hook — Gen 3 single-call tracker
  *
- * Two independent subsystems registered on onResponseCompleteAfter:
- *
- *   Rosie.summarize — Stateless. Dispatches a fresh child session per turn,
- *     extracts XML (goal/title/summary/status), writes rosie-meta, discards.
- *
- *   Rosie.tracker — Persistent observer. Dispatches a child session on first
- *     turn, resumes it on every subsequent turn with stripped turn content +
- *     current project state. Fresh start on error or session reopen.
+ * Dispatches a persistent child session that observes developer turns and
+ * maintains a project board using the crispy-tracker CLI (via Bash).
+ * No separate summarize step — the tracker handles session titles directly
+ * via RPC. Notifications fire from the RPC write handlers in
+ * client-connection.ts, not from a sidecar.
  *
  * @module rosie/rosie-bot-hook
  */
 
-import { randomUUID } from 'node:crypto';
-import { readFileSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-
 import { onResponseCompleteAfter } from '../lifecycle-hooks.js';
 import type { AgentDispatch } from '../../host/agent-dispatch.js';
 import { getSettingsSnapshotInternal } from '../settings/index.js';
-import { parseModelOption, getContextWindowTokens } from '../model-utils.js';
-import type { Vendor, TranscriptEntry, ContentBlock } from '../transcript.js';
-import { appendActivityEntries, getLatestRosieMeta, getAllRosieMetas } from '../activity-index.js';
-import { refreshAndNotify } from '../session-list-manager.js';
+import { parseModelOption } from '../model-utils.js';
 import { closeSession } from '../session-manager.js';
 import { log } from '../log.js';
-import { extractTag } from './xml-utils.js';
-import { getProjectsForPrompt, recordTrackerOutcome, runDedupSweep } from './tracker/db-writer.js';
-import { pushTrackerNotification } from './tracker/tracker-notifications.js';
-import { buildInternalMcpConfig } from '../../mcp/servers/external.js';
-import type { TrackerDecision } from '../../mcp/servers/internal.js';
-import type { InternalServerPaths } from './tracker/types.js';
+import { recordTrackerOutcome, runDedupSweep, getStagesForPrompt, getCompactProjectsForPrompt } from './tracker/db-writer.js';
 import { VALID_TYPES } from './tracker/types.js';
-import { getStagesForPrompt } from './tracker/db-writer.js';
-import { readSessionMessages, getSessionMessageCount, inferRole } from '../recall/message-store.js';
+import { extractTurnsFromMessages, formatTurnContent } from './tracker/turn-extractor.js';
+import { readSessionMessages, getSessionMessageCount } from '../recall/message-store.js';
+import { getSessionTitleFromDb } from '../activity-index.js';
 
 // ============================================================================
 // Module State
 // ============================================================================
 
 let dispatch: AgentDispatch | null = null;
-let serverPaths: InternalServerPaths | null = null;
 const unsubscribers: Array<() => void> = [];
 
-// Summarize concurrency guard — one per parent session
-const summarizeInflight = new Set<string>();
+/** Resolved paths for the tracker child session. */
+let trackerScriptPath = '';
+let ipcSocketPath = '';
 
 // Tracker state — persistent session per parent, turn counter
 const trackerSessions = new Map<string, string>();  // parentSessionId → trackerChildSessionId
 const trackerTurnCounts = new Map<string, number>(); // parentSessionId → turn number
-const trackerDecisionsFiles = new Map<string, string>(); // parentSessionId → decisions file path
 const trackerInflight = new Set<string>();            // concurrency guard
 
 // ============================================================================
 // Lifecycle
 // ============================================================================
 
-export function initRosieBot(d: AgentDispatch, paths: InternalServerPaths): void {
+export interface RosieBotConfig {
+  /** Absolute path to the crispy-tracker.mjs script. */
+  trackerScript: string;
+  /** Absolute path to the IPC socket (or named pipe on Windows). */
+  ipcSocket: string;
+}
+
+export function initRosieBot(d: AgentDispatch, config: RosieBotConfig): void {
   dispatch = d;
-  serverPaths = paths;
-  initRosieSummarize(d, paths);
-  initRosieTracker(d, paths);
+  trackerScriptPath = config.trackerScript;
+  ipcSocketPath = config.ipcSocket;
+  initRosieTracker(d);
 }
 
 export function shutdownRosieBot(): void {
   for (const unsub of unsubscribers) unsub();
   unsubscribers.length = 0;
   dispatch = null;
-  serverPaths = null;
   // Close all live tracker child sessions before clearing state
   for (const [parentId] of trackerSessions) {
     evictTrackerSession(parentId);
   }
-  // Clean up any remaining decisions files
-  for (const file of trackerDecisionsFiles.values()) {
-    try { unlinkSync(file); } catch { /* best-effort */ }
-  }
-  trackerDecisionsFiles.clear();
 }
 
 // ============================================================================
-// Rosie.summarize — Stateless XML extraction
+// Rosie.tracker — Persistent observer session (Gen 3)
 // ============================================================================
 
-function initRosieSummarize(d: AgentDispatch, _paths: InternalServerPaths): void {
-  const unsub = onResponseCompleteAfter(async (sessionId: string) => {
-    if (!dispatch) return;
-    const snap = getSettingsSnapshotInternal();
-    if (!snap.settings.rosie.bot.enabled) return;
-    if (sessionId.startsWith('pending:')) return;
-    if (summarizeInflight.has(sessionId)) return;
-
-    const info = await d.findSession(sessionId);
-    if (!info) return;
-
-    const rosieModel = snap.settings.rosie.bot.model;
-    summarizeInflight.add(sessionId);
-    try {
-      await runSummarize(d, sessionId, info.path, info.vendor, rosieModel);
-    } catch (err) {
-      log({ source: 'rosie-bot:summarize', level: 'error',
-        summary: `Summarize error: ${err instanceof Error ? err.message : String(err)}` });
-    } finally {
-      summarizeInflight.delete(sessionId);
-    }
-  });
-  unsubscribers.push(unsub);
-}
-
-// ============================================================================
-// Rosie.tracker — Persistent observer session
-// ============================================================================
-
-function initRosieTracker(d: AgentDispatch, _paths: InternalServerPaths): void {
+function initRosieTracker(d: AgentDispatch): void {
   const unsub = onResponseCompleteAfter(async (sessionId: string) => {
     if (!dispatch) return;
     const snap = getSettingsSnapshotInternal();
@@ -142,110 +98,7 @@ function initRosieTracker(d: AgentDispatch, _paths: InternalServerPaths): void {
 }
 
 // ============================================================================
-// Summarize Implementation
-// ============================================================================
-
-async function runSummarize(
-  d: AgentDispatch,
-  sessionId: string,
-  sessionPath: string,
-  parentVendor: string,
-  modelOverride?: string,
-): Promise<void> {
-  const parsed = modelOverride ? parseModelOption(modelOverride) : undefined;
-  const vendor = parsed?.vendor ?? parentVendor;
-  const model = parsed?.model;
-
-  const transcript = assembleBookendTranscript(sessionId, sessionPath, vendor as Vendor, model);
-  if (!transcript) {
-    log({ source: 'rosie-bot:summarize', level: 'info', summary: 'Summarize: skipped (no messages indexed yet)' });
-    return;
-  }
-
-  const prompt = buildSummarizePrompt(transcript);
-
-  for (let attempt = 1; attempt <= MAX_SUMMARIZE_ATTEMPTS; attempt++) {
-    try {
-      const result = await d.dispatchChild({
-        parentSessionId: sessionId,
-        vendor,
-        parentVendor,
-        prompt,
-        settings: {
-          ...(model && { model }),
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
-        },
-        forceNew: true,
-        skipPersistSession: true,
-        autoClose: true,
-        env: {
-          CLAUDECODE: '',
-          CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '30000',
-        },
-        timeoutMs: 90_000,
-      });
-
-      if (!result) {
-        log({ source: 'rosie-bot:summarize', level: 'warn',
-          summary: `Summarize failed: no response (attempt ${attempt})` });
-        continue;
-      }
-
-      // Log token usage
-      if (result.contextUsage) {
-        log({ source: 'rosie-bot:summarize', level: 'info',
-          summary: `Summarize tokens: ${result.contextUsage.inputTokens}in / ${result.contextUsage.outputTokens}out`,
-          data: result.contextUsage });
-        recordTrackerOutcome(sessionPath, 'tracked', attempt, undefined, {
-          subsystem: 'summarize',
-          inputTokens: result.contextUsage.inputTokens,
-          outputTokens: result.contextUsage.outputTokens,
-          cachedTokens: result.contextUsage.cacheReadTokens,
-          model: model,
-          costUsd: result.contextUsage.totalCostUsd,
-        });
-      }
-
-      const fields = parseSummarizeResponse(result.text);
-      if (!fields) {
-        log({ source: 'rosie-bot:summarize', level: 'warn',
-          summary: `Summarize failed: XML parse error (attempt ${attempt})`,
-          data: { responseSnippet: result.text.slice(0, 300) } });
-        continue;
-      }
-
-      appendActivityEntries([{
-        timestamp: new Date().toISOString(),
-        kind: 'rosie-meta',
-        file: sessionPath,
-        preview: fields.quest,
-        offset: 0,
-        quest: fields.quest,
-        summary: fields.summary,
-        title: fields.title,
-        status: fields.status,
-        entities: '[]',
-      }]);
-
-      refreshAndNotify(sessionId);
-
-      log({ source: 'rosie-bot:summarize', level: 'info',
-        summary: `Summarize: ${fields.title || fields.quest}`,
-        data: { quest: fields.quest, title: fields.title, status: fields.status } });
-      return;
-    } catch (err) {
-      log({ source: 'rosie-bot:summarize', level: 'error',
-        summary: `Summarize error: ${err instanceof Error ? err.message : String(err)}` });
-    }
-  }
-
-  log({ source: 'rosie-bot:summarize', level: 'warn',
-    summary: `Summarize: all ${MAX_SUMMARIZE_ATTEMPTS} attempts failed` });
-}
-
-// ============================================================================
-// Tracker Implementation
+// Tracker Implementation (Gen 3)
 // ============================================================================
 
 async function runTracker(
@@ -255,42 +108,44 @@ async function runTracker(
   parentVendor: string,
   modelOverride?: string,
 ): Promise<void> {
-  const paths = serverPaths;
-  if (!paths) return;
-
   const parsed = modelOverride ? parseModelOption(modelOverride) : undefined;
   const vendor = parsed?.vendor ?? parentVendor;
   const model = parsed?.model;
 
   // Build turn content from the parent session's latest entries
   const turnNumber = (trackerTurnCounts.get(sessionId) ?? 0) + 1;
-  const turnContent = await buildTurnContent(d, sessionId);
-  if (!turnContent) {
-    log({ source: 'rosie-bot:tracker', level: 'info', summary: 'Tracker: skipped (no turn content)' });
+
+  // Read only the last 20 messages from the DB instead of loading the full transcript
+  const totalMessages = getSessionMessageCount(sessionId);
+  if (totalMessages === 0) {
+    log({ source: 'rosie-bot:tracker', level: 'info', summary: 'Tracker: skipped (no messages)' });
     return;
   }
 
-  // Build project state
-  const projectState = getProjectsForPrompt();
+  const page = readSessionMessages(sessionId, Math.max(0, totalMessages - 20), 20);
+  if (!page || page.messages.length === 0) {
+    log({ source: 'rosie-bot:tracker', level: 'info', summary: 'Tracker: skipped (no messages)' });
+    return;
+  }
+
+  const turns = extractTurnsFromMessages(page.messages);
+  const latestTurn = turns.length > 0 ? turns[turns.length - 1]! : null;
+  if (!latestTurn) {
+    log({ source: 'rosie-bot:tracker', level: 'info', summary: 'Tracker: skipped (no turn content)' });
+    return;
+  }
+  const turnContent = formatTurnContent(latestTurn);
+
+  // Build compact project state
+  const projectState = getCompactProjectsForPrompt();
+
+  // Read current session title
+  const sessionTitle = getSessionTitleFromDb(sessionId);
 
   // Build the per-turn injection
-  const injection = buildPerTurnInjection(projectState, turnContent, turnNumber);
+  const injection = buildPerTurnInjection(projectState, turnContent, turnNumber, sessionTitle);
 
-  // Get or create the decisions sidecar for this tracker session.
-  // On turn 1 we create a fresh file and store it; on resume turns the
-  // MCP sidecar is still bound to the original file, so we reuse it.
   const existingTrackerSessionId = trackerSessions.get(sessionId);
-  let decisionsFile = existingTrackerSessionId
-    ? trackerDecisionsFiles.get(sessionId)
-    : undefined;
-
-  // Truncate existing file so only this turn's decisions are present,
-  // or create a new one for the first turn.
-  if (decisionsFile) {
-    try { writeFileSync(decisionsFile, ''); } catch { /* best-effort */ }
-  } else {
-    decisionsFile = createDecisionsFile();
-  }
 
   try {
     let trackerResult: Awaited<ReturnType<typeof d.dispatchChild>> = null;
@@ -338,14 +193,12 @@ async function runTracker(
         skipPersistSession: true,
         autoClose: false,
         sessionKind: 'system',
-        mcpServers: buildInternalMcpConfig(paths.command, paths.args, [
-          `--session-file=${sessionPath}`,
-          `--decisions-file=${decisionsFile}`,
-          `--parent-session-id=${sessionId}`,
-        ]),
         env: {
           CLAUDECODE: '',
           CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '30000',
+          CRISPY_TRACKER: trackerScriptPath,
+          CRISPY_SOCK: ipcSocketPath,
+          CRISPY_PARENT_SESSION_ID: sessionId,
         },
         timeoutMs: 0,
       });
@@ -353,13 +206,11 @@ async function runTracker(
       if (!trackerResult) {
         log({ source: 'rosie-bot:tracker', level: 'warn',
           summary: 'Tracker: dispatch failed (null result)' });
-        try { unlinkSync(decisionsFile); } catch { /* best-effort */ }
         return;
       }
 
-      // Store the tracker session ID and decisions file for future resumes
+      // Store the tracker session ID for future resumes
       trackerSessions.set(sessionId, trackerResult.sessionId);
-      trackerDecisionsFiles.set(sessionId, decisionsFile);
     }
 
     // Log token usage
@@ -372,38 +223,22 @@ async function runTracker(
     // Record turn number
     trackerTurnCounts.set(sessionId, turnNumber);
 
-    // Read decisions from sidecar
-    const decisions = readDecisions(decisionsFile);
-    if (decisions.length > 0) {
-      logDecisions(decisions, sessionId);
+    // Record outcome with token data.
+    // Gen 3 tracker writes directly via RPCs — notifications fire there.
+    // We can't inspect individual decisions, so we record based on
+    // whether the tracker produced any output at all.
+    recordTrackerOutcome(sessionPath, 'tracked', turnNumber, undefined, {
+      subsystem: 'tracker',
+      inputTokens: trackerResult.contextUsage?.inputTokens,
+      outputTokens: trackerResult.contextUsage?.outputTokens,
+      cachedTokens: trackerResult.contextUsage?.cacheReadTokens,
+      model: model,
+      costUsd: trackerResult.contextUsage?.totalCostUsd,
+    });
 
-      // Record outcome with token data
-      const outcome = decisions.some(dec => dec.tool === 'mark_trivial' && !decisions.some(d2 => d2.tool === 'create_project' || d2.tool === 'track_project'))
-        ? 'trivial' as const : 'tracked' as const;
-      recordTrackerOutcome(sessionPath, outcome, turnNumber, undefined, {
-        subsystem: 'tracker',
-        inputTokens: trackerResult.contextUsage?.inputTokens,
-        outputTokens: trackerResult.contextUsage?.outputTokens,
-        cachedTokens: trackerResult.contextUsage?.cacheReadTokens,
-        model: model,
-        costUsd: trackerResult.contextUsage?.totalCostUsd,
-      });
-
-      runDedupSweep(d.dispatchChild).catch((err) => {
-        console.warn('[rosie-bot:tracker] Dedup sweep failed:', err);
-      });
-    } else {
-      log({ source: 'rosie-bot:tracker', level: 'warn',
-        summary: `Tracker: no tool calls on turn ${turnNumber}` });
-      recordTrackerOutcome(sessionPath, 'failed', turnNumber, 'no tool calls', {
-        subsystem: 'tracker',
-        inputTokens: trackerResult.contextUsage?.inputTokens,
-        outputTokens: trackerResult.contextUsage?.outputTokens,
-        cachedTokens: trackerResult.contextUsage?.cacheReadTokens,
-        model: model,
-        costUsd: trackerResult.contextUsage?.totalCostUsd,
-      });
-    }
+    runDedupSweep(d.dispatchChild).catch((err) => {
+      console.warn('[rosie-bot:tracker] Dedup sweep failed:', err);
+    });
   } catch (err) {
     log({ source: 'rosie-bot:tracker', level: 'error',
       summary: `Tracker error: ${err instanceof Error ? err.message : String(err)}` });
@@ -418,152 +253,29 @@ function evictTrackerSession(parentSessionId: string): void {
     closeSession(trackerSessionId);
     trackerSessions.delete(parentSessionId);
   }
-  const file = trackerDecisionsFiles.get(parentSessionId);
-  if (file) {
-    try { unlinkSync(file); } catch { /* best-effort */ }
-    trackerDecisionsFiles.delete(parentSessionId);
-  }
   trackerTurnCounts.delete(parentSessionId);
 }
 
 // ============================================================================
-// Turn Content Stripper
-// ============================================================================
-
-/**
- * Build stripped turn content from the latest entries in the parent session.
- * Extracts the most recent user message and assistant response, formatting
- * tool calls as one-liners and omitting tool results entirely.
- */
-async function buildTurnContent(d: AgentDispatch, sessionId: string): Promise<string | null> {
-  let entries: TranscriptEntry[];
-  try {
-    entries = await d.loadSession(sessionId);
-  } catch (err) {
-    log({ source: 'rosie-bot:tracker', level: 'warn',
-      summary: `buildTurnContent: loadSession threw: ${err instanceof Error ? err.message : String(err)}` });
-    return null;
-  }
-  if (entries.length === 0) {
-    log({ source: 'rosie-bot:tracker', level: 'warn',
-      summary: `buildTurnContent: loadSession returned 0 entries for ${sessionId.slice(0, 12)}…` });
-    return null;
-  }
-
-  // Diagnostic: log entry type distribution
-  const typeCounts: Record<string, number> = {};
-  for (const e of entries) typeCounts[e.type] = (typeCounts[e.type] ?? 0) + 1;
-  log({ source: 'rosie-bot:tracker', level: 'info',
-    summary: `buildTurnContent: ${entries.length} entries — ${JSON.stringify(typeCounts)}` });
-
-  // Find the last user entry that contains real text (not just tool_result blocks).
-  // In Claude transcripts, most `type: 'user'` entries are tool-result continuations
-  // with content like [{ type: 'tool_result', ... }]. The actual human prompt is
-  // typically a string or has text blocks.
-  let lastUserIdx = -1;
-  for (let i = entries.length - 1; i >= 0; i--) {
-    if (entries[i]!.type === 'user' && !entries[i]!.isMeta && extractEntryText(entries[i]!) !== null) {
-      lastUserIdx = i;
-      break;
-    }
-  }
-  if (lastUserIdx === -1) {
-    log({ source: 'rosie-bot:tracker', level: 'warn',
-      summary: `buildTurnContent: no user entry with text in ${entries.length} entries` });
-    return null;
-  }
-
-  const userEntry = entries[lastUserIdx]!;
-  const assistantEntries = entries.slice(lastUserIdx + 1);
-
-  const userText = extractEntryText(userEntry)!;
-
-  // Extract assistant text and tool calls
-  const toolCalls: string[] = [];
-  let assistantText = '';
-
-  for (const entry of assistantEntries) {
-    if (entry.type === 'assistant' && entry.message) {
-      const content = entry.message.content;
-      if (typeof content === 'string') {
-        assistantText += content;
-      } else if (Array.isArray(content)) {
-        for (const block of content) {
-          if (block.type === 'text') {
-            assistantText += (block as { text: string }).text;
-          } else if (block.type === 'tool_use') {
-            const tb = block as { name: string; input?: Record<string, unknown> };
-            const params = tb.input ? summarizeToolInput(tb.input) : '';
-            toolCalls.push(`- ${tb.name}${params ? ' ' + params : ''}`);
-          }
-        }
-      }
-    }
-  }
-
-  // Build the TURN template
-  let result = `user: ${userText}`;
-
-  if (toolCalls.length > 0) {
-    result += `\nassistant_tools:\n${toolCalls.join('\n')}`;
-  }
-
-  if (assistantText.trim()) {
-    result += `\nassistant_text: ${assistantText.trim()}`;
-  }
-
-  return result;
-}
-
-/** Extract plain text from a transcript entry. */
-function extractEntryText(entry: TranscriptEntry): string | null {
-  if (!entry.message) return null;
-  const content = entry.message.content;
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    const texts = (content as ContentBlock[])
-      .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
-      .map(b => b.text);
-    return texts.length > 0 ? texts.join('\n') : null;
-  }
-  return null;
-}
-
-/** Summarize tool input as key params for the one-liner format. */
-function summarizeToolInput(input: Record<string, unknown>): string {
-  const parts: string[] = [];
-  for (const [key, value] of Object.entries(input)) {
-    if (typeof value === 'string' && value.length <= 100) {
-      parts.push(value);
-    } else if (typeof value === 'string') {
-      parts.push(value.slice(0, 80) + '…');
-    }
-    if (parts.length >= 2) break;
-  }
-  return parts.join(' ');
-}
-
-// ============================================================================
-// Tracker System Prompt (v4)
+// Gen 3 System Prompt
 // ============================================================================
 
 function buildTrackerSystemPrompt(): string {
   const types = VALID_TYPES.join(', ');
   const stages = getStagesForPrompt();
 
-  return TRACKER_SYSTEM_PROMPT_TEMPLATE
+  return GEN3_SYSTEM_PROMPT_TEMPLATE
     .replace('{{TYPES}}', types)
     .replace('{{STAGES}}', stages);
 }
 
-const TRACKER_SYSTEM_PROMPT_TEMPLATE = `You are Rosie Tracker. You silently observe a developer's coding session
-and maintain a project board using tool calls only.
+const GEN3_SYSTEM_PROMPT_TEMPLATE = `You are Rosie Tracker. You observe a developer's coding session
+and maintain a project board by calling the tracker CLI.
 
-## Output Contract
+## Reasoning
 
-- Respond ONLY with tool calls. Never emit text, commentary, or markdown.
-- Every turn must end with at least one tool call.
-- Call mark_trivial only if no items were tracked or created for this turn.
+Think through your decisions before acting. Explain your reasoning,
+then make your tool calls.
 
 ## What Counts as Work
 
@@ -582,18 +294,18 @@ For each turn:
 
 0. If the user explicitly says not to track this turn or session (e.g.
    "don't track this", "scratch session", "just experimenting"), call
-   mark_trivial with the user's reason. Skip the rest.
+   \`node $CRISPY_TRACKER trivial\` with the user's reason. Skip the rest.
 1. Identify all distinct work items in the turn.
 2. For each item: does it match an existing item in CURRENT_PROJECTS?
    Match if: (a) title/goal aligns, (b) entity overlap, or (c) continues
    an existing item's trajectory. Check in that order.
-   → call track_project.
+   → call \`node $CRISPY_TRACKER track\`.
    If both a parent and child match, track the most specific (child).
 3. For each remaining unmatched item where real work happened:
-   → call create_project.
-4. If no items qualify after steps 1-3, call mark_trivial with a reason.
+   → call \`node $CRISPY_TRACKER create\`.
+4. If no items qualify after steps 1-3, call \`node $CRISPY_TRACKER trivial\` with a reason.
 
-**Default bias: prefer track_project over create_project.** Diagnosis →
+**Default bias: prefer track over create.** Diagnosis →
 root cause → fix is ONE project, not three. Only create when no existing
 item is a reasonable match.
 
@@ -609,35 +321,48 @@ archived item if the title AND goal clearly match the new work.
 **Multiple items:** A turn may touch several distinct workstreams. If
 tools touch files in different domains, or the user describes unrelated
 topics (look for "+", "&", or topic shifts), evaluate each independently.
-Emit one tool call per distinct item.
+Emit one CLI call per distinct item.
 
 ## Tools
 
-### create_project
-Creates a new item on the board.
-Required: title, type, stage, status, summary, icon, entities.
-Optional: parent_id (for tasks/nested items), blocked_by (when paused),
-files (non-code artifacts only — e.g. plans, specs, design docs),
-branch.
+Use the Bash tool to call the tracker CLI:
 
-### track_project
-Updates an existing item.
-Required: project_id (exact ID from CURRENT_PROJECTS), status.
-Optional only if changed: stage, blocked_by, entities, files, branch.
-Do not resend unchanged stage, title, summary, or icon.
-Entities are appended to the existing list server-side — include only
-NEW entities from this turn.
+### Create a project
+node $CRISPY_TRACKER create --title "..." --type project --stage active --status "..." --summary "..." --icon "🔧" --entities '["file.ts"]'
 
-### merge_project
-Combines a duplicate into an existing item.
-Required: keep_id (the established item), remove_id (the duplicate).
-Call when create_project returns a similarity warning in its response.
+### Update a project
+node $CRISPY_TRACKER track --id <project-id> --status "..." [--stage <stage>] [--entities '["file.ts"]']
 
-### mark_trivial
-Marks the turn as not warranting any tracking. Include a brief reason.
-Trivial signals: turn dominated by "recall", "status check", "recap",
-"what was", "did we discuss", "refresh understanding", or retrieving
-information without advancing any work.
+### Merge duplicates
+node $CRISPY_TRACKER merge --keep <keep-id> --remove <remove-id>
+
+### Mark trivial
+node $CRISPY_TRACKER trivial --reason "..."
+
+### Show project details
+node $CRISPY_TRACKER show --id <project-id>
+
+Use this when you need full details (status, entities, summary) for a
+project before deciding whether to track it. The CURRENT_PROJECTS index
+only shows id, stage, and title.
+
+### Set session title
+node $CRISPY_TRACKER title --session $CRISPY_PARENT_SESSION_ID --title "Short descriptive title"
+
+### List available stages
+node $CRISPY_TRACKER stages
+
+## Session Title (MANDATORY)
+
+The injection includes \`SESSION_TITLE:\` showing the current title.
+
+- If it says \`(none — you MUST set one)\` → you MUST call \`node $CRISPY_TRACKER title\`
+- If it shows an existing title → only update if the session's focus has
+  significantly shifted. Otherwise skip the title call.
+
+node $CRISPY_TRACKER title --session $CRISPY_PARENT_SESSION_ID --title "Short 3-8 word label"
+
+Always call this AFTER your tracking action (create/track/merge/trivial).
 
 ## Schema
 
@@ -717,23 +442,16 @@ assistant_tools:
 assistant_text: Created the JWT verification middleware and fixed the
 sidebar overflow on mobile viewports.
 
-Expected tool calls:
+Expected reasoning and tool calls:
 
-track_project(
-  project_id="p1",
-  status="JWT middleware implemented in jwt-verify.ts",
-  entities=["src/middleware/jwt-verify.ts"]
-)
+Two distinct items here. The JWT middleware clearly continues the Auth
+Rewrite (p1). The sidebar fix is unrelated — needs a new project.
 
-create_project(
-  type="project",
-  title="Fix sidebar mobile overflow",
-  stage="done",
-  status="Fixed — CSS overflow corrected",
-  summary="Sidebar broke on mobile viewports due to missing overflow rule",
-  icon="🎨",
-  entities=["src/components/Sidebar.css"]
-)
+node $CRISPY_TRACKER track --id p1 --status "JWT middleware implemented in jwt-verify.ts" --entities '["src/middleware/jwt-verify.ts"]'
+
+node $CRISPY_TRACKER create --title "Fix sidebar mobile overflow" --type project --stage done --status "Fixed — CSS overflow corrected" --summary "Sidebar broke on mobile viewports due to missing overflow rule" --icon "🎨" --entities '["src/components/Sidebar.css"]'
+
+node $CRISPY_TRACKER title --session $CRISPY_PARENT_SESSION_ID --title "Auth JWT & sidebar fix"
 
 The sidebar fix is unrelated to Auth Rewrite — it gets its own top-level
 project. Created as done because the fix is already complete — the user
@@ -754,18 +472,13 @@ assistant_tools:
 assistant_text: Added expiry validation. Extracted the expiry logic
 into a separate token-expiry module for reuse.
 
-Expected tool calls:
-
-track_project(
-  project_id="t1",
-  status="Added expiry validation, extracted token-expiry module",
-  entities=["src/middleware/token-expiry.ts"]
-)
+Expected reasoning and tool calls:
 
 Both p1 and t1 match, but t1 is the most specific — track the child.
-Only the new file (token-expiry.ts) is sent as an entity since
-refresh.ts is already tracked. Do not also update the parent unless
-its status meaningfully changed.
+Only the new file (token-expiry.ts) needs to be sent as an entity since
+refresh.ts is already tracked.
+
+node $CRISPY_TRACKER track --id t1 --status "Added expiry validation, extracted token-expiry module" --entities '["src/middleware/token-expiry.ts"]'
 
 ### Example 3: Trivial turn
 
@@ -776,98 +489,57 @@ assistant_tools:
 assistant_text: Last session we decided on opaque refresh tokens with
 a 7-day sliding window.
 
-Expected tool calls:
+Expected reasoning and tool calls:
 
-mark_trivial(reason="Recall of prior decision, no new work")
+The turn retrieved information but made no changes or decisions.
 
-The turn retrieved information but made no changes or decisions.`;
+node $CRISPY_TRACKER trivial --reason "Recall of prior decision, no new work"
+
+## Injection Format
+
+Each turn arrives as:
+
+\`\`\`
+CURRENT_PROJECTS (N non-archived)
+<id> | <stage> | <title>
+<id> | <stage> | <title>
+...
+
+TURN <N>
+<turn content>
+\`\`\`
+
+The project index is compact — just id, stage, and title. If you need
+full details (status, entities, summary) to decide whether a turn matches
+a project, call \`node $CRISPY_TRACKER show --id <id>\` before making your decision.`;
 
 // ============================================================================
-// Per-Turn Injection Builder
+// Per-Turn Injection Builder (Gen 3)
 // ============================================================================
 
-function buildPerTurnInjection(projectState: string, turnContent: string, turnNumber: number): string {
+function buildPerTurnInjection(
+  projectState: string,
+  turnContent: string,
+  turnNumber: number,
+  sessionTitle: string | null,
+): string {
+  const count = projectState ? projectState.split('\n').length : 0;
   const projectsSection = projectState
-    ? `CURRENT_PROJECTS\n${projectState}`
+    ? `CURRENT_PROJECTS (${count} non-archived)\n${projectState}`
     : 'CURRENT_PROJECTS\n(none)';
 
-  return `${projectsSection}\n\nTURN ${turnNumber}\n${turnContent}\n\nUpdate your tracking.`;
+  const titleLine = sessionTitle
+    ? `SESSION_TITLE: ${sessionTitle}`
+    : 'SESSION_TITLE: (none — you MUST set one)';
+
+  return `${projectsSection}\n\n${titleLine}\n\nObserve the following turn...\n\nTURN ${turnNumber}\n${turnContent}`;
 }
 
 // ============================================================================
-// Bookend Transcript Assembly (for Summarize)
+// Legacy Exports (consumed by scripts/backfill.ts)
 // ============================================================================
 
-/** 30% of model context window, ~3 chars per token. */
-function transcriptBudget(vendor: Vendor, model?: string): number {
-  return Math.floor(getContextWindowTokens(vendor, model) * 0.3 * 3);
-}
-
-function assembleBookendTranscript(sessionId: string, sessionPath: string, vendor?: Vendor, model?: string): string | null {
-  const budget = transcriptBudget((vendor ?? 'claude') as Vendor, model);
-  const total = getSessionMessageCount(sessionId);
-  if (total === 0) return null;
-
-  const firstN = 2;
-  const lastM = 3;
-
-  const firstPage = readSessionMessages(sessionId, 0, firstN);
-  if (!firstPage) return null;
-  const first = firstPage.messages;
-
-  const lastOffset = Math.max(firstN, total - lastM);
-  const last = total > firstN
-    ? (readSessionMessages(sessionId, lastOffset, lastM)?.messages ?? [])
-    : [];
-
-  const metas = getAllRosieMetas(sessionPath);
-
-  let metasSection = '';
-  if (metas.length > 0) {
-    metasSection += '## Intermediate turn summaries (from prior analysis)\n\n';
-    for (const m of metas) {
-      metasSection += `- **${m.title}** — ${m.quest}\n  Status: ${m.status}\n\n`;
-    }
-  }
-
-  let lastSection = '';
-  if (last.length > 0) {
-    lastSection += '## Final turns (verbatim)\n\n';
-    for (const m of last) {
-      const role = inferRole(m.role, m.message_seq);
-      lastSection += `**${role}:** ${m.text || ''}\n\n`;
-    }
-  }
-
-  const sacredLen = metasSection.length + lastSection.length;
-  const openingBudget = Math.max(0, budget - sacredLen);
-
-  let openingSection = '## Opening turns (verbatim)\n\n';
-  let openingUsed = openingSection.length;
-  for (const m of first) {
-    const role = inferRole(m.role, m.message_seq);
-    const text = m.text || '';
-    const entry = `**${role}:** ${text}\n\n`;
-    if (openingUsed + entry.length <= openingBudget) {
-      openingSection += entry;
-      openingUsed += entry.length;
-    } else {
-      const remaining = openingBudget - openingUsed;
-      if (remaining > 50) {
-        const truncated = text.slice(0, remaining - `**${role}:** \n\n…\n\n`.length);
-        openingSection += `**${role}:** ${truncated}\n\n…\n\n`;
-      }
-      break;
-    }
-  }
-
-  return openingSection + metasSection + lastSection;
-}
-
-// ============================================================================
-// Summarize Prompt & Parsing
-// ============================================================================
-
+/** @deprecated Gen 2 summarize prompt — only used by scripts/backfill.ts. */
 export const SUMMARIZE_PROMPT = `Consider this session transcript.
 What is the stated or apparent goal of this particular conversation?
 How would you label this conversation in a short sentence for a user to best remember what this session was for?
@@ -880,31 +552,7 @@ Provide your output in this format:
 <summary>Turn summary</summary>
 <status>Current status of the work</status>`;
 
-function buildSummarizePrompt(transcript: string): string {
-  return `${transcript}\n---\n\nBased on the conversation above:\n\n${SUMMARIZE_PROMPT}`;
-}
-
-function parseSummarizeResponse(text: string): {
-  quest: string;
-  title: string;
-  summary: string;
-  status: string;
-} | null {
-  const quest = extractTag(text, 'goal');
-  const title = extractTag(text, 'title');
-  const summary = extractTag(text, 'summary');
-  const status = extractTag(text, 'status');
-
-  if (quest && summary) return { quest, title, summary, status };
-  return null;
-}
-
-const MAX_SUMMARIZE_ATTEMPTS = 2;
-
-// ============================================================================
-// Tracker Prompt (legacy, kept for export compatibility)
-// ============================================================================
-
+/** @deprecated Gen 2 tracker prompt builder — only used by scripts/backfill.ts. */
 export function buildTrackerPrompt(
   meta: { quest?: string; title?: string; summary?: string; status?: string },
   projects: { id: string; title: string; stage: string; status: string | null; icon: string | null; entities: string }[],
@@ -922,100 +570,4 @@ ${summaryLine}Status: ${meta.status ?? ''}
 ## Existing Projects
 
 ${projectList}`;
-}
-
-// ============================================================================
-// Decision Sidecar
-// ============================================================================
-
-function createDecisionsFile(): string {
-  const file = join(tmpdir(), `crispy-tracker-${randomUUID()}.jsonl`);
-  writeFileSync(file, '');
-  return file;
-}
-
-function readDecisions(file: string): TrackerDecision[] {
-  try {
-    const raw = readFileSync(file, 'utf-8').trim();
-    if (!raw) return [];
-    return raw.split('\n').map((line) => JSON.parse(line) as TrackerDecision);
-  } catch (err) {
-    log({ source: 'rosie-bot:tracker', level: 'warn', summary: 'Tracker: decisions file parse error', data: { file, error: String(err) } });
-    return [];
-  }
-}
-
-/**
- * Filter contradictory mark_trivial decisions.
- * If mark_trivial was called alongside create_project or track_project in the
- * same turn, the trivial call is discarded — the other tools take priority.
- */
-function filterContradictoryTrivials(decisions: TrackerDecision[]): TrackerDecision[] {
-  const hasSubstantive = decisions.some(d => d.tool === 'create_project' || d.tool === 'track_project' || d.tool === 'merge_project');
-  const hasTrivial = decisions.some(d => d.tool === 'mark_trivial');
-
-  if (hasSubstantive && hasTrivial) {
-    log({ source: 'tracker', level: 'warn', summary: 'Discarded mark_trivial — other tools called in same turn' });
-    return decisions.filter(d => d.tool !== 'mark_trivial');
-  }
-
-  return decisions;
-}
-
-function logDecisions(decisions: TrackerDecision[], sessionId: string): void {
-  decisions = filterContradictoryTrivials(decisions);
-  for (const d of decisions) {
-    if (d.tool === 'create_project') {
-      log({
-        source: 'rosie-bot:tracker',
-        level: 'info',
-        summary: `Tracker: created "${d.title}" [${d.stage}] ${d.status ?? ''}`,
-        data: { sessionId, ...d },
-      });
-      pushTrackerNotification({
-        kind: 'project_created',
-        projectTitle: d.title,
-        icon: d.icon,
-        newStage: d.stage,
-        status: d.status,
-      });
-    } else if (d.tool === 'track_project') {
-      log({
-        source: 'rosie-bot:tracker',
-        level: 'info',
-        summary: `Tracker: updated "${d.title}" ${d.stage ? `[${d.stage}]` : ''} ${d.status ?? ''}`,
-        data: { sessionId, ...d },
-      });
-      pushTrackerNotification({
-        kind: d.stage ? 'stage_change' : 'project_matched',
-        projectTitle: d.title,
-        icon: d.icon,
-        newStage: d.stage,
-        status: d.status,
-      });
-    } else if (d.tool === 'merge_project') {
-      log({
-        source: 'rosie-bot:tracker',
-        level: 'info',
-        summary: `Tracker: merged project "${d.title}" (kept ${d.keep_id}, removed ${d.remove_id})`,
-        data: { sessionId, ...d },
-      });
-    } else if (d.tool === 'mark_trivial') {
-      log({
-        source: 'rosie-bot:tracker',
-        level: 'info',
-        summary: `Tracker: marked trivial — ${d.reason}`,
-        data: { sessionId, ...d },
-      });
-      pushTrackerNotification({
-        kind: 'trivial',
-        status: d.reason,
-      });
-    }
-  }
-  const creates = decisions.filter(d => d.tool === 'create_project').length;
-  const tracks = decisions.filter(d => d.tool === 'track_project').length;
-  const merges = decisions.filter(d => d.tool === 'merge_project').length;
-  const trivials = decisions.filter(d => d.tool === 'mark_trivial').length;
-  log({ source: 'rosie-bot:tracker', level: 'info', summary: `Tracker: ${decisions.length} decisions (${creates} create, ${tracks} track, ${merges} merge, ${trivials} trivial)`, data: { sessionId, total: decisions.length, creates, tracks, merges, trivials } });
 }

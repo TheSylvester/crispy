@@ -35,7 +35,7 @@ interface ServerEntry {
   startedAt: string;
 }
 
-function getSocketPath(): string {
+export function getSocketPath(): string {
   if (process.env.CRISPY_SOCK) return process.env.CRISPY_SOCK;
   return platform() === 'win32'
     ? `\\\\.\\pipe\\crispy-${userInfo().username}-${process.pid}`

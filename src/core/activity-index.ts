@@ -82,6 +82,7 @@ export function _setTestDir(dir: string): () => void {
   _resetDb(); // Close existing DB connection
   crispyDir = dir;
   rosieMetaCache = null;
+  sessionTitleCache = null;
   // Create dir and init DB in test directory
   fs.mkdirSync(dir, { recursive: true });
   getDb(dbPath());
@@ -89,6 +90,7 @@ export function _setTestDir(dir: string): () => void {
     _resetDb(); // Close test DB
     crispyDir = prevDir;
     rosieMetaCache = null;
+    sessionTitleCache = null;
   };
 }
 
@@ -169,6 +171,28 @@ function buildRosieMetaCache(): Map<string, ActivityIndexEntry> {
 /** Invalidate the rosie metadata cache, forcing a rebuild on next access. */
 export function invalidateRosieMetaCache(): void {
   rosieMetaCache = null;
+}
+
+/**
+ * Lazy cache of session titles from the session_titles table.
+ * Built on first access, invalidated by invalidateSessionTitleCache().
+ */
+let sessionTitleCache: Map<string, string> | null = null;
+
+function buildSessionTitleCache(): Map<string, string> {
+  try {
+    const db = getDb(dbPath());
+    const rows = db.all(`SELECT session_id, title FROM session_titles`) as
+      Array<{ session_id: string; title: string }>;
+    return new Map(rows.map(r => [r.session_id, r.title]));
+  } catch {
+    return new Map();
+  }
+}
+
+/** Invalidate the session title cache, forcing a rebuild on next access. */
+export function invalidateSessionTitleCache(): void {
+  sessionTitleCache = null;
 }
 
 // ============================================================================
@@ -319,6 +343,31 @@ export function getAllRosieMetas(filePath: string): Pick<ActivityIndexEntry, 'ti
     summary: (r.summary as string) ?? '',
     status: (r.status as string) ?? '',
   }));
+}
+
+/**
+ * Look up a session title from the session_titles table.
+ * Uses a lazy in-memory cache (same pattern as rosieMetaCache).
+ * Returns null if no title is set for this session.
+ */
+export function getSessionTitleFromDb(sessionId: string): string | null {
+  if (!sessionTitleCache) {
+    sessionTitleCache = buildSessionTitleCache();
+  }
+  return sessionTitleCache.get(sessionId) ?? null;
+}
+
+/**
+ * Write a session title to the session_titles table.
+ * Invalidates the in-memory cache after the write.
+ */
+export function setSessionTitle(sessionId: string, title: string): void {
+  const db = getDb(dbPath());
+  db.run(
+    `INSERT OR REPLACE INTO session_titles (session_id, title, updated_at) VALUES (?, ?, ?)`,
+    [sessionId, title, new Date().toISOString()],
+  );
+  invalidateSessionTitleCache();
 }
 
 // ============================================================================
@@ -562,8 +611,9 @@ export function pruneDeletedFiles(livePaths: Set<string>): number {
       throw e;
     }
 
-    // Invalidate rosie cache — pruned files may have had rosie-meta entries
+    // Invalidate caches — pruned files may have had rosie-meta entries or session titles
     rosieMetaCache = null;
+    sessionTitleCache = null;
 
     if (stalePaths.length > 0) {
       log({ source: 'scanner', level: 'info', summary: `Index: pruned ${stalePaths.length} deleted sessions`, data: { count: stalePaths.length } });

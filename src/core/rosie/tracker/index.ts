@@ -13,6 +13,8 @@ export {
   getStages,
   getStagesForPrompt,
   getValidStageNames,
+  getProjectTitle,
+  getCompactProjectsForPrompt,
 } from './db-writer.js';
 export type { StageRow } from './db-writer.js';
 

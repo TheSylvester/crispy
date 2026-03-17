@@ -597,7 +597,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       try {
         writeTrackerResults([block], sessionFile);
         // Look up the project title for decision logging (UUID is not user-friendly)
-        const projectTitle = getProjectTitle(args.project_id) ?? args.project_id;
+        const projectTitle = getProjectTitle(args.project_id)?.title ?? args.project_id;
         log({ level: 'debug', source: 'recall:track_project', summary: `updated "${projectTitle}"` });
         appendDecision({ tool: 'track_project', action: 'updated', title: projectTitle, stage: args.stage, status: args.status });
         return {
@@ -649,11 +649,11 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
         };
       }
 
-      const keepTitle = getProjectTitle(args.keep_id);
-      const removeTitle = getProjectTitle(args.remove_id);
+      const keepInfo = getProjectTitle(args.keep_id);
+      const removeInfo = getProjectTitle(args.remove_id);
 
-      if (!keepTitle || !removeTitle) {
-        const missing = !keepTitle ? args.keep_id : args.remove_id;
+      if (!keepInfo || !removeInfo) {
+        const missing = !keepInfo ? args.keep_id : args.remove_id;
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: `Project not found: ${missing}` }) }],
           isError: true,
@@ -662,10 +662,10 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
 
       try {
         mergeProjects(args.keep_id, args.remove_id);
-        console.error(`[internal-mcp] merge_project: merged "${removeTitle}" → "${keepTitle}"`);
-        appendDecision({ tool: 'merge_project', action: 'merged', title: keepTitle, keep_id: args.keep_id, remove_id: args.remove_id });
+        console.error(`[internal-mcp] merge_project: merged "${removeInfo.title}" → "${keepInfo.title}"`);
+        appendDecision({ tool: 'merge_project', action: 'merged', title: keepInfo.title, keep_id: args.keep_id, remove_id: args.remove_id });
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action: 'merged', kept: keepTitle, removed: removeTitle }) }],
+          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action: 'merged', kept: keepInfo.title, removed: removeInfo.title }) }],
         };
       } catch (err) {
         console.error('[internal-mcp] merge_project FAIL:', err instanceof Error ? err.message : String(err));
