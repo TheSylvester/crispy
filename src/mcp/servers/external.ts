@@ -24,7 +24,7 @@ import { INTERNAL_MCP_SERVER_NAME } from "./internal.js";
 import { log } from "../../core/log.js";
 import { parseJsonlFile } from "../../core/adapters/claude/jsonl-reader.js";
 import { formatTranscript, formatMessages, type FormattedTranscriptResult } from "../transcript-formatter.js";
-import { readSessionMessages } from "../../core/recall/message-store.js";
+import { readSessionMessages, getSessionMessageCount } from "../../core/recall/message-store.js";
 
 // ============================================================================
 // Recall Agent Prompt
@@ -349,34 +349,43 @@ export function createExternalServer(
           }
 
           try {
-            // Resolve tail into offset after we know the total count
-            const resolveOpts = (total: number) => {
-              const limit = args.limit ?? 50;
-              let offset = args.offset ?? 0;
-              if (args.tail) {
-                offset = Math.max(0, total - args.tail);
-              }
-              return { offset, limit, budget: args.budget ?? 30000 };
-            };
+            const limit = args.limit ?? 50;
+            const budget = args.budget ?? 30000;
 
             let result: FormattedTranscriptResult;
 
             if (args.sessionId) {
-              // Preferred path: read from indexed SQLite
-              const page = readSessionMessages(args.sessionId, 0, 10000);
-              if (!page || page.messages.length === 0) {
+              // Preferred path: read from indexed SQLite with server-side pagination
+              const total = getSessionMessageCount(args.sessionId);
+              if (total === 0) {
                 if (args.sessionFile) {
                   // Fall back to JSONL if session not indexed
                   const entries = parseJsonlFile(args.sessionFile);
                   if (entries.length === 0) {
                     return textResult("Session transcript is empty or could not be parsed.");
                   }
-                  result = formatTranscript(entries, resolveOpts(entries.length));
+                  let offset = args.offset ?? 0;
+                  if (args.tail) offset = Math.max(0, entries.length - args.tail);
+                  result = formatTranscript(entries, { offset, limit, budget });
                 } else {
                   return textResult(`Session ${args.sessionId} not found in index.`);
                 }
               } else {
-                result = formatMessages(page.messages, resolveOpts(page.messages.length));
+                // Compute offset (handling tail) then fetch only the slice we need
+                let offset = args.offset ?? 0;
+                if (args.tail) offset = Math.max(0, total - args.tail);
+                const page = readSessionMessages(args.sessionId, offset, limit);
+                if (!page || page.messages.length === 0) {
+                  return textResult(`Session ${args.sessionId} has no messages at offset ${offset}.`);
+                }
+                // formatMessages receives only the requested slice — offset=0
+                // because the SQL already skipped. Pass total for footer accuracy.
+                result = formatMessages(page.messages, { offset: 0, limit, budget });
+                // Patch metadata to reflect true position in the full session
+                result.offset = offset;
+                result.totalEntries = total;
+                result.truncated = offset + page.messages.length < total;
+                result.nextOffset = result.truncated ? offset + page.messages.length : undefined;
               }
             } else {
               // Fallback path: parse raw JSONL
@@ -384,7 +393,9 @@ export function createExternalServer(
               if (entries.length === 0) {
                 return textResult("Session transcript is empty or could not be parsed.");
               }
-              result = formatTranscript(entries, resolveOpts(entries.length));
+              let offset = args.offset ?? 0;
+              if (args.tail) offset = Math.max(0, entries.length - args.tail);
+              result = formatTranscript(entries, { offset, limit, budget });
             }
 
             log({
