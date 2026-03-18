@@ -13,7 +13,7 @@
 
 import type { WireSessionInfo } from '../../transport.js';
 import { VendorIcon } from './VendorIcon.js';
-import { getSessionDisplayName, middleTruncate } from '../../utils/session-display.js';
+import { getSessionDisplayName } from '../../utils/session-display.js';
 import { formatRelativeTime } from '../../utils/format.js';
 
 interface SessionItemProps {
@@ -83,7 +83,21 @@ export function SessionItem({
       </div>
       {session.lastMessage && (
         <div className="crispy-session-item__preview">
-          {highlightMatch(middleTruncate(session.lastMessage), searchQuery)}
+          {(() => {
+            const mid = Math.ceil(session.lastMessage.length / 2);
+            const head = session.lastMessage.slice(0, mid);
+            const tail = session.lastMessage.slice(mid);
+            return (
+              <>
+                <span className="crispy-session-item__preview-head">
+                  {highlightMatch(head, searchQuery)}
+                </span>
+                <span className="crispy-session-item__preview-tail">
+                  <bdo dir="ltr">{highlightMatch(tail, searchQuery)}</bdo>
+                </span>
+              </>
+            );
+          })()}
         </div>
       )}
     </li>
