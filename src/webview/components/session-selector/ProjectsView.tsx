@@ -21,8 +21,6 @@ interface ProjectsViewProps {
   onCwdChange: (slug: string | null) => void;
 }
 
-/** Stages excluded from filter pills (still shown as stage groups). */
-const FILTER_EXCLUDED = new Set(['archived', 'idea']);
 
 function sortProjects(projects: WireProject[]): WireProject[] {
   return [...projects].sort((a, b) => {
@@ -45,24 +43,20 @@ export function ProjectsView({ onSelectSession, availableCwds, selectedCwd, onCw
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set(['archived']));
-  const [stageFilter, setStageFilter] = useState<string | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
   const draggedIdRef = useRef<string | null>(null);
 
   // Derive stage metadata from DB data (single pass)
-  const { stageOrder, stageLabels, stageColors, filterStages } = useMemo(() => {
+  const { stageOrder, stageLabels, stageColors } = useMemo(() => {
     const order: string[] = [];
     const labels: Record<string, string> = {};
     const colors: Record<string, string> = {};
-    const pills: Array<{ label: string; value: string | null }> = [{ label: 'All', value: null }];
     for (const s of stages) {
       order.push(s.name);
-      const label = s.name.charAt(0).toUpperCase() + s.name.slice(1);
-      labels[s.name] = label;
+      labels[s.name] = s.name.charAt(0).toUpperCase() + s.name.slice(1);
       if (s.color) colors[s.name] = s.color;
-      if (!FILTER_EXCLUDED.has(s.name)) pills.push({ label, value: s.name });
     }
-    return { stageOrder: order, stageLabels: labels, stageColors: colors, filterStages: pills };
+    return { stageOrder: order, stageLabels: labels, stageColors: colors };
   }, [stages]);
 
   const handleCwdChange = (e: ChangeEvent<HTMLSelectElement>) => {
@@ -148,11 +142,8 @@ export function ProjectsView({ onSelectSession, availableCwds, selectedCwd, onCw
     });
   }, [projects, transport]);
 
-  // Filter by search query and stage filter
+  // Filter by search query
   let filtered = projects;
-  if (stageFilter) {
-    filtered = filtered.filter(p => p.stage === stageFilter);
-  }
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
     filtered = filtered.filter(p =>
@@ -216,22 +207,10 @@ export function ProjectsView({ onSelectSession, availableCwds, selectedCwd, onCw
   }
 
   // Search with no matches
-  if (loaded && filtered.length === 0 && (searchQuery || stageFilter)) {
+  if (loaded && filtered.length === 0 && searchQuery) {
     return (
       <div className="crispy-projects-container">
         {filterBar}
-        <div className="crispy-project-filter-bar">
-          {filterStages.map(f => (
-            <button
-              key={f.label}
-              className={`crispy-project-filter-pill${stageFilter === f.value ? ' crispy-project-filter-pill--active' : ''}`}
-              onClick={() => setStageFilter(f.value)}
-            >
-              {f.value && <span className="crispy-project-filter-dot" style={stageColors[f.value] ? { backgroundColor: stageColors[f.value] } : undefined} />}
-              {f.label}
-            </button>
-          ))}
-        </div>
         <ul className="crispy-session-list">
           <li className="crispy-session-empty">No matches</li>
         </ul>
@@ -242,20 +221,6 @@ export function ProjectsView({ onSelectSession, availableCwds, selectedCwd, onCw
   return (
     <div className="crispy-projects-container">
       {filterBar}
-      {/* Filter pills */}
-      <div className="crispy-project-filter-bar">
-        {filterStages.map(f => (
-          <button
-            key={f.label}
-            className={`crispy-project-filter-pill${stageFilter === f.value ? ' crispy-project-filter-pill--active' : ''}`}
-            onClick={() => setStageFilter(f.value)}
-          >
-            {f.value && <span className="crispy-project-filter-dot" style={stageColors[f.value] ? { backgroundColor: stageColors[f.value] } : undefined} />}
-            {f.label}
-          </button>
-        ))}
-      </div>
-
       <ul className="crispy-session-list">
         {stageOrder.map(stage => {
           const items = sortProjects(groupedByStage.get(stage) ?? []);
