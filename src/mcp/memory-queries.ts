@@ -13,7 +13,6 @@
 
 import { getDb } from '../core/crispy-db.js';
 import { dbPath as crispyDbPath } from '../core/activity-index.js';
-import { sanitizeFts5Query } from './query-sanitizer.js';
 import { readClaudeTurnContent, type TurnContent } from '../core/adapters/claude/jsonl-reader.js';
 import { readCodexTurnContent } from '../core/adapters/codex/codex-jsonl-reader.js';
 import { searchMessagesFtsMeta, getMessageByUuid, getAdjacentMessages, getSessionMessageCount, grepMessages, readSessionMessages, inferRole } from '../core/recall/message-store.js';
@@ -27,28 +26,12 @@ export { grepMessages, readSessionMessages };
 // Types
 // ============================================================================
 
-export interface SearchResult {
-  id: number;
-  ts: string;
-  kind: string;
-  file: string;
-  preview: string | null;
-  rank: number;
-  match_snippet: string;
-}
-
 export interface ListResult {
-  file: string;
-  last_activity: string;
-  entry_count: number;
-}
-
-export interface ContextResult {
-  id: number;
-  ts: string;
-  kind: string;
-  file: string;
-  preview: string | null;
+  session_id: string;
+  first_activity: number;  // epoch ms
+  last_activity: number;   // epoch ms
+  message_count: number;
+  title: string | null;
 }
 
 // ============================================================================
@@ -65,61 +48,10 @@ export function getDbPath(): string {
 // ============================================================================
 
 /**
- * FTS5 full-text search over activity entries.
- *
- * Returns BM25-ranked results with match snippets. Supports natural
- * language or FTS5 syntax (AND, OR, NOT, "quoted phrases", prefix*).
- *
- * @param excludeSessionId - Optional session ID to exclude from results (e.g., caller's own session)
- */
-export function searchSessions(
-  dbPath: string,
-  query: string,
-  limit: number = 20,
-  kind?: string,
-  since?: string,
-  before?: string,
-  excludeSessionId?: string,
-): SearchResult[] {
-  const sanitized = sanitizeFts5Query(query);
-  if (!sanitized) return [];
-
-  const db = getDb(dbPath);
-  const params: (string | number)[] = [sanitized];
-  let extraClauses = '';
-  if (kind) {
-    extraClauses += 'AND ae.kind = ? ';
-    params.push(kind);
-  }
-  if (since) {
-    extraClauses += 'AND ae.ts >= ? ';
-    params.push(since);
-  }
-  if (before) {
-    extraClauses += 'AND ae.ts <= ? ';
-    params.push(before);
-  }
-  if (excludeSessionId) {
-    extraClauses += 'AND (ae.session_id != ? OR ae.session_id IS NULL) ';
-    params.push(excludeSessionId);
-  }
-  params.push(limit);
-
-  return db.all(`
-    SELECT ae.id, ae.ts, ae.kind, ae.file, ae.preview,
-           bm25(session_meta_fts, 1.0) as rank,
-           snippet(session_meta_fts, 0, '>>>', '<<<', '...', 32) as match_snippet
-    FROM session_meta_fts
-    JOIN session_meta ae ON ae.id = session_meta_fts.rowid
-    WHERE session_meta_fts MATCH ?
-      ${extraClauses}
-    ORDER BY rank
-    LIMIT ?
-  `, params) as unknown as SearchResult[];
-}
-
-/**
  * List distinct sessions ordered by most recent activity.
+ *
+ * Queries the `messages` table (not session_meta) and enriches with
+ * session titles from the `session_titles` table.
  *
  * @param excludeSessionId - Optional session ID to exclude from results (e.g., caller's own session)
  */
@@ -131,66 +63,35 @@ export function listSessions(
 ): ListResult[] {
   const db = getDb(dbPath);
   const params: (string | number)[] = [];
-  let whereClause = '';
-  if (since || excludeSessionId) {
-    const conditions: string[] = [];
-    if (since) {
-      conditions.push('ts >= ?');
-      params.push(since);
-    }
-    if (excludeSessionId) {
-      conditions.push('(session_id != ? OR session_id IS NULL)');
-      params.push(excludeSessionId);
-    }
-    whereClause = 'WHERE ' + conditions.join(' AND ');
-  }
-  params.push(limit);
+  const conditions: string[] = ['m.session_id IS NOT NULL'];
 
-  return db.all(`
-    SELECT file,
-           MAX(ts) as last_activity,
-           COUNT(*) as entry_count
-    FROM session_meta
-    ${whereClause}
-    GROUP BY file
-    ORDER BY last_activity DESC
-    LIMIT ?
-  `, params) as unknown as ListResult[];
-}
-
-/**
- * Get full activity history for a specific session file.
- *
- * Returns all prompts in chronological order.
- * Optionally filter by entry kind.
- *
- * @param excludeSessionId - Optional session ID to exclude. If the session belongs to the excluded ID, returns empty.
- */
-export function sessionContext(
-  dbPath: string,
-  file: string,
-  kind?: string,
-  excludeSessionId?: string,
-): ContextResult[] {
-  const db = getDb(dbPath);
-  const params: string[] = [file];
-  let extraClauses = '';
-  if (kind) {
-    extraClauses += 'AND kind = ? ';
-    params.push(kind);
+  if (since) {
+    // messages.created_at is INTEGER (epoch ms) — convert ISO string to epoch ms
+    const sinceMs = new Date(since).getTime();
+    conditions.push('m.created_at >= ?');
+    params.push(sinceMs);
   }
   if (excludeSessionId) {
-    extraClauses += 'AND (session_id != ? OR session_id IS NULL) ';
+    conditions.push('m.session_id != ?');
     params.push(excludeSessionId);
   }
 
+  const whereClause = 'WHERE ' + conditions.join(' AND ');
+  params.push(limit);
+
   return db.all(`
-    SELECT id, ts, kind, file, preview
-    FROM session_meta
-    WHERE file = ?
-      ${extraClauses}
-    ORDER BY ts ASC
-  `, params) as unknown as ContextResult[];
+    SELECT m.session_id,
+           MIN(m.created_at) as first_activity,
+           MAX(m.created_at) as last_activity,
+           COUNT(*) as message_count,
+           t.title
+    FROM messages m
+    LEFT JOIN session_titles t ON t.session_id = m.session_id
+    ${whereClause}
+    GROUP BY m.session_id
+    ORDER BY last_activity DESC
+    LIMIT ?
+  `, params) as unknown as ListResult[];
 }
 
 /**

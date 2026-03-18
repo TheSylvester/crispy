@@ -33,34 +33,34 @@ check('name is "memory"', server.name === 'memory');
 check('type is "sdk"', server.type === 'sdk');
 check('instance exists', server.instance != null);
 
-// 2. DB + FTS5 table
+// 2. DB + FTS5 table (messages_fts)
 console.log('\n2. Database & FTS5');
 const db = getDb(dbPath);
-const ftsRow = db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='session_meta_fts'") as Record<string, unknown> | undefined;
-check('session_meta_fts table exists', ftsRow?.name === 'session_meta_fts');
+const ftsRow = db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='messages_fts'") as Record<string, unknown> | undefined;
+check('messages_fts table exists', ftsRow?.name === 'messages_fts');
 
-const triggerRows = db.all("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'session_meta_fts%'") as Array<Record<string, unknown>>;
+const triggerRows = db.all("SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'messages_fts%'") as Array<Record<string, unknown>>;
 check('FTS5 sync triggers exist', triggerRows.length === 3, `found ${triggerRows.length} triggers`);
 
-// 3. Entry counts
+// 3. Entry counts (messages table)
 console.log('\n3. Data');
-const countRow = db.get('SELECT COUNT(*) as cnt FROM session_meta') as Record<string, unknown>;
-const totalEntries = countRow.cnt as number;
-check('session_meta has data', totalEntries >= 0, `${totalEntries} entries`);
+const countRow = db.get('SELECT COUNT(*) as cnt FROM messages') as Record<string, unknown>;
+const totalMessages = countRow.cnt as number;
+check('messages has data', totalMessages >= 0, `${totalMessages} messages`);
 
-// 4. FTS5 search
+// 4. FTS5 search (messages_fts)
 console.log('\n4. FTS5 search');
 const searchQuery = sanitizeFts5Query('session');
 check('sanitizeFts5Query("session") produces valid query', searchQuery != null, `"${searchQuery}"`);
 
-if (searchQuery && totalEntries > 0) {
+if (searchQuery && totalMessages > 0) {
   const searchResults = db.all(`
-    SELECT ae.id, ae.kind,
-           bm25(session_meta_fts) as rank,
-           snippet(session_meta_fts, 0, '>>>', '<<<', '...', 32) as match_snippet
-    FROM session_meta_fts
-    JOIN session_meta ae ON ae.id = session_meta_fts.rowid
-    WHERE session_meta_fts MATCH ?
+    SELECT m.message_id,
+           bm25(messages_fts) as rank,
+           snippet(messages_fts, 0, '>>>', '<<<', '...', 32) as match_snippet
+    FROM messages_fts
+    JOIN messages m ON m.rowid = messages_fts.rowid
+    WHERE messages_fts MATCH ?
     ORDER BY rank
     LIMIT 5
   `, [searchQuery]) as Array<Record<string, unknown>>;
@@ -73,40 +73,29 @@ if (searchQuery && totalEntries > 0) {
   }
 }
 
-// 5. list_sessions query
+// 5. list_sessions query (messages table)
 console.log('\n5. list_sessions query');
 const sessions = db.all(`
-  SELECT file, MAX(ts) as last_activity,
-         COUNT(*) as entry_count
-  FROM session_meta
-  GROUP BY file
+  SELECT m.session_id,
+         MIN(m.created_at) as first_activity,
+         MAX(m.created_at) as last_activity,
+         COUNT(*) as message_count
+  FROM messages m
+  WHERE m.session_id IS NOT NULL
+  GROUP BY m.session_id
   ORDER BY last_activity DESC
   LIMIT 5
 `) as Array<Record<string, unknown>>;
-check('list_sessions groups by file', sessions.length >= 0, `${sessions.length} sessions`);
+check('list_sessions groups by session_id', sessions.length >= 0, `${sessions.length} sessions`);
 
 if (sessions.length > 0) {
   const first = sessions[0]!;
-  check('session has last_activity', typeof first.last_activity === 'string');
-  check('session has entry_count', typeof first.entry_count === 'number');
+  check('session has last_activity (epoch ms)', typeof first.last_activity === 'number');
+  check('session has message_count', typeof first.message_count === 'number');
 }
 
-// 6. session_context query
-console.log('\n6. session_context query');
-if (sessions.length > 0) {
-  const file = sessions[0]!.file as string;
-  const context = db.all(`
-    SELECT id, ts, kind, preview
-    FROM session_meta
-    WHERE file = ?
-    ORDER BY ts ASC
-    LIMIT 5
-  `, [file]) as Array<Record<string, unknown>>;
-  check('session_context returns entries', context.length > 0, `${context.length} entries for ${file.split('/').pop()}`);
-}
-
-// 7. Query sanitizer edge cases
-console.log('\n7. Query sanitizer');
+// 6. Query sanitizer edge cases
+console.log('\n6. Query sanitizer');
 check('empty string → null', sanitizeFts5Query('') === null);
 check('whitespace → null', sanitizeFts5Query('   ') === null);
 check('simple word passes through', sanitizeFts5Query('hello') === 'hello');

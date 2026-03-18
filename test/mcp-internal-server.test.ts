@@ -57,17 +57,18 @@ afterEach(() => {
   fs.rmSync(testDir, { recursive: true, force: true });
 });
 
-function insertEntry(opts: {
-  ts: string;
-  kind: 'prompt';
-  file: string;
-  preview?: string;
+function insertMessage(opts: {
+  messageId: string;
+  sessionId: string;
+  seq: number;
+  text: string;
+  createdAt: number;
 }): void {
   const db = getDb(dbPath);
   db.run(
-    `INSERT INTO session_meta (ts, kind, file, preview)
-     VALUES (?, ?, ?, ?)`,
-    [opts.ts, opts.kind, opts.file, opts.preview ?? null],
+    `INSERT INTO messages (message_id, session_id, message_seq, message_text, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [opts.messageId, opts.sessionId, opts.seq, opts.text, opts.createdAt],
   );
 }
 
@@ -95,41 +96,17 @@ describe('internal MCP server', () => {
     const { tools } = await client.listTools();
 
     const names = tools.map((t) => t.name);
-    expect(names).toContain('search_sessions');
     expect(names).toContain('list_sessions');
-    expect(names).toContain('session_context');
+    expect(names).not.toContain('search_sessions');
+    expect(names).not.toContain('session_context');
   });
 
-  it('search_sessions returns matching results', async () => {
-    insertEntry({
-      ts: '2025-06-01T10:00:00Z',
-      kind: 'prompt',
-      file: '/sessions/a.jsonl',
-      preview: 'implement authentication system',
-    });
+  it('list_sessions returns grouped sessions from messages table', async () => {
+    const t1 = new Date('2025-06-01T10:00:00Z').getTime();
+    const t2 = new Date('2025-06-01T11:00:00Z').getTime();
 
-    const { client } = await createConnectedClient();
-    const result = await client.callTool({ name: 'search_sessions', arguments: { query: 'authentication' } });
-
-    const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
-    const parsed = JSON.parse(text);
-    expect(parsed.count).toBe(1);
-    expect(parsed.results[0].preview).toBe('implement authentication system');
-  });
-
-  it('list_sessions returns grouped sessions', async () => {
-    insertEntry({
-      ts: '2025-06-01T10:00:00Z',
-      kind: 'prompt',
-      file: '/sessions/a.jsonl',
-      preview: 'hello',
-    });
-    insertEntry({
-      ts: '2025-06-01T11:00:00Z',
-      kind: 'prompt',
-      file: '/sessions/a.jsonl',
-      preview: 'dark mode implementation',
-    });
+    insertMessage({ messageId: 'a1', sessionId: 'sess-a', seq: 0, text: 'hello', createdAt: t1 });
+    insertMessage({ messageId: 'a2', sessionId: 'sess-a', seq: 1, text: 'dark mode implementation', createdAt: t2 });
 
     const { client } = await createConnectedClient();
     const result = await client.callTool({ name: 'list_sessions', arguments: {} });
@@ -137,34 +114,7 @@ describe('internal MCP server', () => {
     const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
     const parsed = JSON.parse(text);
     expect(parsed.count).toBe(1);
-    expect(parsed.sessions[0].entry_count).toBe(2);
-  });
-
-  it('session_context returns ordered entries', async () => {
-    insertEntry({
-      ts: '2025-06-01T10:00:00Z',
-      kind: 'prompt',
-      file: '/sessions/a.jsonl',
-      preview: 'first',
-    });
-    insertEntry({
-      ts: '2025-06-01T10:05:00Z',
-      kind: 'prompt',
-      file: '/sessions/a.jsonl',
-      preview: 'second',
-    });
-
-    const { client } = await createConnectedClient();
-    const result = await client.callTool({
-      name: 'session_context',
-      arguments: { file: '/sessions/a.jsonl' },
-    });
-
-    const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
-    const parsed = JSON.parse(text);
-    expect(parsed.count).toBe(2);
-    expect(parsed.entries[0].preview).toBe('first');
-    expect(parsed.entries[1].preview).toBe('second');
+    expect(parsed.sessions[0].message_count).toBe(2);
   });
 });
 
@@ -174,16 +124,12 @@ describe('internal MCP server', () => {
 
 describe('time-aware tool responses', () => {
   it('no footer during clean search phase (>30s remaining)', async () => {
-    insertEntry({
-      ts: '2025-06-01T10:00:00Z',
-      kind: 'prompt',
-      file: '/sessions/a.jsonl',
-      preview: 'test query',
-    });
+    const t1 = new Date('2025-06-01T10:00:00Z').getTime();
+    insertMessage({ messageId: 'm1', sessionId: 'sess-a', seq: 0, text: 'test query', createdAt: t1 });
 
     // Deadline 60s from now — clean phase, no footer
     const { client } = await createConnectedClient({ deadlineMs: Date.now() + 60_000 });
-    const result = await client.callTool({ name: 'search_sessions', arguments: { query: 'test' } });
+    const result = await client.callTool({ name: 'list_sessions', arguments: {} });
 
     const content = result.content as Array<{ type: string; text: string }>;
     expect(content).toHaveLength(1);
@@ -193,7 +139,7 @@ describe('time-aware tool responses', () => {
   it('returns isError when deadline has passed', async () => {
     // Deadline in the past
     const { client } = await createConnectedClient({ deadlineMs: Date.now() - 1000 });
-    const result = await client.callTool({ name: 'search_sessions', arguments: { query: 'test' } });
+    const result = await client.callTool({ name: 'list_sessions', arguments: {} });
 
     expect(result.isError).toBe(true);
     const content = result.content as Array<{ type: string; text: string }>;
@@ -201,15 +147,11 @@ describe('time-aware tool responses', () => {
   });
 
   it('no footer when deadlineMs is not set', async () => {
-    insertEntry({
-      ts: '2025-06-01T10:00:00Z',
-      kind: 'prompt',
-      file: '/sessions/a.jsonl',
-      preview: 'test query',
-    });
+    const t1 = new Date('2025-06-01T10:00:00Z').getTime();
+    insertMessage({ messageId: 'm1', sessionId: 'sess-a', seq: 0, text: 'test query', createdAt: t1 });
 
     const { client } = await createConnectedClient();
-    const result = await client.callTool({ name: 'search_sessions', arguments: { query: 'test' } });
+    const result = await client.callTool({ name: 'list_sessions', arguments: {} });
 
     const content = result.content as Array<{ type: string; text: string }>;
     expect(content).toHaveLength(1);
@@ -217,16 +159,12 @@ describe('time-aware tool responses', () => {
   });
 
   it('shows time warning when deadline is close', async () => {
-    insertEntry({
-      ts: '2025-06-01T10:00:00Z',
-      kind: 'prompt',
-      file: '/sessions/a.jsonl',
-      preview: 'warning test',
-    });
+    const t1 = new Date('2025-06-01T10:00:00Z').getTime();
+    insertMessage({ messageId: 'm1', sessionId: 'sess-a', seq: 0, text: 'warning test', createdAt: t1 });
 
     // Deadline 20s from now — should show warning
     const { client } = await createConnectedClient({ deadlineMs: Date.now() + 20_000 });
-    const result = await client.callTool({ name: 'search_sessions', arguments: { query: 'warning' } });
+    const result = await client.callTool({ name: 'list_sessions', arguments: {} });
 
     const content = result.content as Array<{ type: string; text: string }>;
     expect(content).toHaveLength(2);

@@ -88,42 +88,13 @@ describe('getDb', () => {
 // ============================================================================
 
 describe('schema', () => {
-  it('creates session_meta table with correct columns', () => {
-    const dbPath = join(testDir, 'crispy.db');
-    const db = getDb(dbPath);
-
-    // Verify table exists by inserting and querying
-    db.run(
-      `INSERT INTO session_meta (ts, kind, file, preview)
-       VALUES (?, ?, ?, ?)`,
-      ['2025-01-01T00:00:00Z', 'prompt', '/test.jsonl', 'test'],
-    );
-    const row = db.get('SELECT COUNT(*) as cnt FROM session_meta') as Record<string, unknown>;
-    expect(row.cnt).toBe(1);
-  });
-
-  it('session_meta has session_id, model, cwd columns', () => {
-    const dbPath = join(testDir, 'crispy.db');
-    const db = getDb(dbPath);
-
-    db.run(
-      `INSERT INTO session_meta (ts, kind, file, preview, session_id, model, cwd)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ['2025-01-01T00:00:00Z', 'prompt', '/test.jsonl', 'test', 'sess-123', 'haiku', '/home/user'],
-    );
-    const row = db.get('SELECT session_id, model, cwd FROM session_meta') as Record<string, unknown>;
-    expect(row.session_id).toBe('sess-123');
-    expect(row.model).toBe('haiku');
-    expect(row.cwd).toBe('/home/user');
-  });
-
-  it('creates _migrations tracking table with version 1', () => {
+  it('creates _migrations tracking table with version 2', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
     const rows = db.all('SELECT version FROM _migrations ORDER BY version') as Array<Record<string, unknown>>;
     expect(rows.length).toBe(1);
-    expect(rows[0]!.version).toBe(1);
+    expect(rows[0]!.version).toBe(2);
   });
 
   it('runs schema idempotently', () => {
@@ -139,7 +110,7 @@ describe('schema', () => {
     expect(rows.length).toBe(1);
   });
 
-  it('creates all 19 regular tables', () => {
+  it('creates all 18 regular tables', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
@@ -149,7 +120,7 @@ describe('schema', () => {
     const tableNames = new Set(tables.map(r => r.name));
 
     const expected = [
-      '_migrations', 'session_meta', 'session_lineage', 'session_titles',
+      '_migrations', 'session_lineage', 'session_titles',
       'projects', 'project_sessions', 'project_files', 'project_activity', 'stages',
       'messages', 'message_vectors',
       'file_mutations', 'commit_index', 'commit_file_changes',
@@ -162,7 +133,7 @@ describe('schema', () => {
     }
   });
 
-  it('creates 3 FTS5 virtual tables', () => {
+  it('creates 2 FTS5 virtual tables', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
@@ -171,9 +142,9 @@ describe('schema', () => {
     ) as Array<{ name: string }>;
     const names = fts.map(r => r.name);
 
-    expect(names).toContain('session_meta_fts');
     expect(names).toContain('messages_fts');
     expect(names).toContain('commit_fts');
+    expect(names).not.toContain('session_meta_fts');
   });
 
   it('seeds 8 stage rows', () => {
@@ -205,51 +176,6 @@ describe('FTS5 support', () => {
     const rows = db.all("SELECT * FROM test_fts WHERE test_fts MATCH 'hello'");
     expect(rows.length).toBe(1);
     expect((rows[0] as Record<string, unknown>).content).toBe('hello world');
-  });
-});
-
-// ============================================================================
-// FTS5 — session_meta_fts
-// ============================================================================
-
-describe('session_meta_fts', () => {
-  it('creates the session_meta_fts virtual table', () => {
-    const dbPath = join(testDir, 'crispy.db');
-    const db = getDb(dbPath);
-
-    const row = db.get(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='session_meta_fts'",
-    ) as Record<string, unknown> | undefined;
-    expect(row).toBeDefined();
-    expect(row!.name).toBe('session_meta_fts');
-  });
-
-  it('syncs FTS5 on INSERT into session_meta', () => {
-    const dbPath = join(testDir, 'crispy.db');
-    const db = getDb(dbPath);
-
-    db.run(
-      `INSERT INTO session_meta (ts, kind, file, preview)
-       VALUES (?, ?, ?, ?)`,
-      ['2025-06-01T10:00:00Z', 'prompt', '/test.jsonl', 'added dark theme support'],
-    );
-
-    const rows = db.all("SELECT * FROM session_meta_fts WHERE session_meta_fts MATCH 'dark'");
-    expect(rows.length).toBe(1);
-  });
-
-  it('supports Porter stemming (running matches run)', () => {
-    const dbPath = join(testDir, 'crispy.db');
-    const db = getDb(dbPath);
-
-    db.run(
-      `INSERT INTO session_meta (ts, kind, file, preview)
-       VALUES (?, ?, ?, ?)`,
-      ['2025-06-01T10:00:00Z', 'prompt', '/test.jsonl', 'running the test suite'],
-    );
-
-    const rows = db.all("SELECT * FROM session_meta_fts WHERE session_meta_fts MATCH 'run'");
-    expect(rows.length).toBe(1);
   });
 });
 

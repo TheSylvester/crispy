@@ -43,7 +43,7 @@ export function buildRecallPrompt(
 - **search_transcript** — FTS5 full-text search (fast, indexed). Returns matching messages with \`session_id\`, \`message_id\`, \`message_seq\`, snippet, preview, and a pre-formatted \`date\` field (ISO 8601). Also returns **total_matches** and **session_hits** (per-session hit counts). Use \`session_id\` param to search within one session.
 - **read_message** — Read a specific turn by \`session_id\` + \`message_id\` (from search results). Use \`context\` (1-5) to see surrounding turns. This is your primary drill-down tool after searching.
 - **read_session** — Read messages sequentially with offset/limit pagination. Use \`message_seq\` from search results as the offset to jump directly to the relevant part of a session. Also useful for browsing a session's narrative flow.
-- **list_sessions** — Browse recent sessions by date. Useful when search returns nothing or when the query has time signals.
+- **list_sessions** — Browse recent sessions by date. Returns session_id, title, message_count, first_activity and last_activity (epoch ms), sorted by most recent. Useful when search returns nothing or when the query has time signals.
 
 ## Workflow
 

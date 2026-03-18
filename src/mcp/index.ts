@@ -10,4 +10,4 @@
 
 export { createExternalServer } from './servers/external.js';
 export { createInternalServer } from './servers/internal.js';
-export { searchSessions, listSessions, sessionContext, getDbPath } from './memory-queries.js';
+export { listSessions, getDbPath } from './memory-queries.js';

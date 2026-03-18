@@ -17,7 +17,7 @@ import { randomUUID } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
-import { searchSessions, listSessions, sessionContext, readTurnContent, getDbPath, searchTranscript, searchTranscriptMeta, readMessageTurn, grepMessages, readSessionMessages } from '../memory-queries.js';
+import { listSessions, readTurnContent, getDbPath, searchTranscript, searchTranscriptMeta, readMessageTurn, grepMessages, readSessionMessages } from '../memory-queries.js';
 import type { MessageSearchResult } from '../memory-queries.js';
 import { log } from '../../core/log.js';
 
@@ -358,28 +358,6 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
   const stageNames: [string, ...string[]] = [rawStageNames[0]!, ...rawStageNames.slice(1)];
 
   // ------------------------------------------------------------------
-  // search_sessions — FTS5 search over activity entries
-  // ------------------------------------------------------------------
-  const runSearch = wrapToolHandler('search_sessions', 'results',
-    (query: string, limit: number, kind?: string, since?: string, before?: string) => searchSessions(dbPath, query, limit, kind, since, before, serverOptions.excludeSessionId),
-  );
-
-  timedTool(server,
-    'search_sessions',
-    'Full-text search over session activity. Returns BM25-ranked results with match snippets and previews. Start here for most queries. Supports FTS5 syntax: use OR for broad searches ("sqlite OR database"), "quoted phrases" for exact matches, prefix* for partial terms. Supports time filtering with since/before.',
-    {
-      query: z.string().describe('Search query — use OR to broaden, "quoted phrases" for exact matches, prefix* for partial terms. Prefer short keywords over long natural-language phrases.'),
-      limit: z.number().optional().default(20).describe('Maximum results to return (default 20)'),
-      since: z.string().optional().describe('ISO timestamp — only return results after this time (e.g. "2026-03-01T00:00:00Z")'),
-      before: z.string().optional().describe('ISO timestamp — only return results before this time'),
-    },
-    async (args) => {
-      log({ level: 'debug', source: 'recall:search_sessions', summary: `query="${args.query}" limit=${args.limit} since=${args.since ?? '-'} before=${args.before ?? '-'}` });
-      return runSearch(args.query as string, args.limit as number, undefined, args.since as string | undefined, args.before as string | undefined);
-    },
-  );
-
-  // ------------------------------------------------------------------
   // list_sessions — List distinct sessions with latest metadata
   // ------------------------------------------------------------------
   const runList = wrapToolHandler('list_sessions', 'sessions',
@@ -388,7 +366,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
 
   timedTool(server,
     'list_sessions',
-    'Browse sessions by recency — use when you need to scan recent work without a specific search term, or when search returns nothing and you want to browse what exists.',
+    'Browse sessions by recency. Returns session_id, title, message_count, first_activity and last_activity (epoch ms), sorted by most recent activity. Use when you need to scan recent work without a specific search term, or when search returns nothing and you want to browse what exists.',
     {
       limit: z.number().optional().default(50).describe('Maximum sessions to return (default 50)'),
       since: z.string().optional().describe('ISO timestamp — only return sessions with activity after this time'),
@@ -396,25 +374,6 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
     async (args) => {
       log({ level: 'debug', source: 'recall:list_sessions', summary: `limit=${args.limit} since=${args.since ?? 'all'}` });
       return runList(args.limit as number, args.since as string | undefined);
-    },
-  );
-
-  // ------------------------------------------------------------------
-  // session_context — Full activity history for a specific session
-  // ------------------------------------------------------------------
-  const runContext = wrapToolHandler('session_context', 'entries',
-    (file: string, kind?: string) => sessionContext(dbPath, file, kind, serverOptions.excludeSessionId),
-  );
-
-  timedTool(server,
-    'session_context',
-    'Get the activity index for a specific session — returns timestamped prompt entries in chronological order. This is structured metadata, NOT the raw conversation. Use read_turn to get actual conversation content.',
-    {
-      file: z.string().describe('Session transcript file path (from search_sessions or list_sessions results)'),
-    },
-    async (args) => {
-      log({ level: 'debug', source: 'recall:session_context', summary: `file="${args.file}"` });
-      return runContext(args.file as string);
     },
   );
 

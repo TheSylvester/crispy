@@ -14,7 +14,6 @@ import type { HostEvent } from '../host/client-connection.js';
 import type { ApprovalExtra } from './components/approval/types.js';
 import type { WireProviderConfig, ProviderConfig, WireSettingsSnapshot, SettingsPatch } from '../core/settings/types.js';
 import type { VendorModelGroup } from './components/control-panel/types.js';
-import type { ActivityIndexEntry } from '../core/activity-index.js';
 import type { CatchupStatus } from '../core/recall/catchup-types.js';
 
 /** Client-side session info — modifiedAt is a string after JSON serialization. */
@@ -133,8 +132,6 @@ export interface SessionService {
   getSettings(): Promise<WireSettingsSnapshot>;
   updateSettings(patch: SettingsPatch, opts?: { expectedRevision?: number }): Promise<WireSettingsSnapshot>;
 
-  /** Activity index — user prompt history across all sessions */
-  getActivityLog(timeRange?: { from?: string; to?: string }, projectSlug?: string): Promise<ActivityIndexEntry[]>;
   getResponsePreview(file: string, offset: number): Promise<string | null>;
   getLineageGraph(): Promise<Array<{ sessionFile: string; parentFile: string | null }>>;
 

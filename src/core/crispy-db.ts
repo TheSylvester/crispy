@@ -96,12 +96,11 @@ function ensureSchema(db: Database): void {
     ? (row as Record<string, unknown>).max_ver as number
     : 0;
 
-  // v1 = clean schema from this file. Return early — nothing to do.
-  if (currentVersion === 1) return;
+  // v2 = current schema. Return early — nothing to do.
+  if (currentVersion === 2) return;
 
-  // Old DBs created by the 24-migration system have version=24.
-  // No existing users have a database, so wipe and recreate.
-  if (currentVersion > 1) {
+  // Old DBs (v1 or the legacy 24-migration system) — wipe and recreate.
+  if (currentVersion >= 1) {
     log({ source: 'db', level: 'info', summary: `DB: detected old schema v${currentVersion} — dropping and recreating` });
     // Drop all known tables (order matters for FKs)
     db.exec(`
@@ -158,62 +157,6 @@ function ensureSchema(db: Database): void {
 
   db.exec('BEGIN');
   try {
-    // ====================================================================
-    // session_meta — user prompt activity index
-    // ====================================================================
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS session_meta (
-        id         INTEGER PRIMARY KEY AUTOINCREMENT,
-        file       TEXT NOT NULL,
-        session_id TEXT,
-        kind       TEXT NOT NULL DEFAULT 'prompt',
-        preview    TEXT,
-        ts         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-        model      TEXT,
-        cwd        TEXT,
-        UNIQUE(file, ts, kind)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_session_meta_ts ON session_meta(ts);
-      CREATE INDEX IF NOT EXISTS idx_session_meta_kind ON session_meta(kind);
-      CREATE INDEX IF NOT EXISTS idx_session_meta_file ON session_meta(file);
-      CREATE INDEX IF NOT EXISTS idx_session_meta_session_id ON session_meta(session_id);
-    `);
-
-    // ====================================================================
-    // session_meta_fts — full-text search (preview only)
-    // ====================================================================
-    db.exec(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS session_meta_fts USING fts5(
-        preview,
-        content='session_meta', content_rowid='id',
-        tokenize='porter unicode61 remove_diacritics 2'
-      );
-
-      INSERT INTO session_meta_fts(session_meta_fts, rank)
-        VALUES('rank', 'bm25(1.0)');
-    `);
-
-    // FTS sync triggers
-    db.exec(`
-      CREATE TRIGGER IF NOT EXISTS session_meta_fts_ai AFTER INSERT ON session_meta BEGIN
-        INSERT INTO session_meta_fts(rowid, preview)
-        VALUES (new.id, new.preview);
-      END;
-
-      CREATE TRIGGER IF NOT EXISTS session_meta_fts_ad AFTER DELETE ON session_meta BEGIN
-        INSERT INTO session_meta_fts(session_meta_fts, rowid, preview)
-        VALUES ('delete', old.id, old.preview);
-      END;
-
-      CREATE TRIGGER IF NOT EXISTS session_meta_fts_au AFTER UPDATE ON session_meta BEGIN
-        INSERT INTO session_meta_fts(session_meta_fts, rowid, preview)
-        VALUES ('delete', old.id, old.preview);
-        INSERT INTO session_meta_fts(rowid, preview)
-        VALUES (new.id, new.preview);
-      END;
-    `);
-
     // ====================================================================
     // session_lineage — fork tracking
     // ====================================================================
@@ -569,11 +512,11 @@ function ensureSchema(db: Database): void {
     // Record schema version
     db.run(
       'INSERT INTO _migrations (version, description) VALUES (?, ?)',
-      [1, 'Clean schema v1 — all tables, indexes, triggers, seed data'],
+      [2, 'remove session_meta, consolidate on messages'],
     );
 
     db.exec('COMMIT');
-    log({ source: 'db', level: 'info', summary: 'DB: schema v1 created — all tables, indexes, triggers, seed data' });
+    log({ source: 'db', level: 'info', summary: 'DB: schema v2 created — session_meta removed, consolidated on messages' });
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;

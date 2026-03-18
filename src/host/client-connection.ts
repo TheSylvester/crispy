@@ -73,7 +73,7 @@ import {
 } from '../core/recall/catchup-manager.js';
 import { readSessionMessages } from '../core/recall/message-store.js';
 import { getGitFiles, fileExists, readImage, readTextFile } from "../core/file-service.js";
-import { queryActivity, getLineage, getChildSessions, getLineageGraph, dbPath, setSessionTitle } from '../core/activity-index.js';
+import { getLineage, getChildSessions, getLineageGraph, dbPath, setSessionTitle } from '../core/activity-index.js';
 import { refreshAndNotify } from '../core/session-list-manager.js';
 import { getProjectsWithDetails, getProjectActivity, updateProjectStage, updateProjectSortOrder, reorderProjectsInStage, getStages, getValidStageNames, writeTrackerResults, mergeProjects, extractTurnsFromMessages, getProjectTitle } from '../core/rosie/tracker/index.js';
 import type { TrackerBlock } from '../core/rosie/tracker/index.js';
@@ -745,24 +745,6 @@ export function createClientConnection(
 
       case 'getModelGroups':
         return await getModelGroups(getRegisteredVendors());
-
-      case "getActivityLog": {
-        const from = params.from as string | undefined;
-        const to = params.to as string | undefined;
-        const projectSlug = params.projectSlug as string | undefined;
-
-        // Convert project slug to file path prefix for filtering
-        let filePrefix: string | undefined;
-        if (projectSlug) {
-          filePrefix = resolve(homedir(), '.claude', 'projects', projectSlug);
-        }
-
-        return queryActivity(
-          from || to ? { from, to } : undefined,
-          'prompt',
-          filePrefix,
-        );
-      }
 
       case "getResponsePreview": {
         const file = params.file as string;
