@@ -40,10 +40,11 @@ const INACTIVE: MentionState = { active: false, query: '', atPosition: 0 };
 
 /**
  * Check if a character is valid within a file path query.
- * Allows alphanumeric, path separators, dots, hyphens, underscores.
+ * Rejects whitespace and @ (mention trigger) — allows everything else
+ * including emoji and unicode characters in filenames.
  */
 function isPathChar(ch: string): boolean {
-  return /[A-Za-z0-9._/\-]/.test(ch);
+  return ch.length > 0 && !/[\s@]/.test(ch);
 }
 
 /**
