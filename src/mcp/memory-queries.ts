@@ -50,8 +50,7 @@ export function getDbPath(): string {
 /**
  * List distinct sessions ordered by most recent activity.
  *
- * Queries the `messages` table (not session_meta) and enriches with
- * session titles from the `session_titles` table.
+ * Queries the `messages` table and enriches with session titles.
  *
  * @param excludeSessionId - Optional session ID to exclude from results (e.g., caller's own session)
  */
@@ -63,7 +62,7 @@ export function listSessions(
 ): ListResult[] {
   const db = getDb(dbPath);
   const params: (string | number)[] = [];
-  const conditions: string[] = ['m.session_id IS NOT NULL'];
+  const conditions: string[] = [];
 
   if (since) {
     // messages.created_at is INTEGER (epoch ms) — convert ISO string to epoch ms
@@ -76,7 +75,7 @@ export function listSessions(
     params.push(excludeSessionId);
   }
 
-  const whereClause = 'WHERE ' + conditions.join(' AND ');
+  const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
   params.push(limit);
 
   return db.all(`

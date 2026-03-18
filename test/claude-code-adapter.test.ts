@@ -709,9 +709,7 @@ describe('Streaming delta accumulation', () => {
       uuid: 'se-4',
       session_id: 's1',
     }));
-
-    // Wait for throttle timer to fire
-    await new Promise<void>(r => setTimeout(r, 30));
+    await tick();
 
     const output = await collectUntil(ch, (msgs) =>
       msgs.some(m =>
@@ -719,7 +717,6 @@ describe('Streaming delta accumulation', () => {
         m.event.type === 'notification' &&
         (m.event as { kind: string }).kind === 'streaming_content',
       ),
-      200,
     );
 
     const streamingEvents = output.filter(m =>
@@ -781,9 +778,7 @@ describe('Streaming delta accumulation', () => {
       uuid: 'a-1',
       session_id: 's1',
     }));
-
-    // Wait for throttle + processing
-    await new Promise<void>(r => setTimeout(r, 50));
+    await tick();
 
     // Collect — should see a streaming_content with null (clear signal)
     const output = await collectUntil(ch, (msgs) =>
@@ -793,7 +788,6 @@ describe('Streaming delta accumulation', () => {
         (m.event as { kind: string }).kind === 'streaming_content' &&
         (m.event as unknown as { content: unknown }).content === null,
       ),
-      200,
     );
 
     const clearEvent = output.find(m =>
@@ -857,9 +851,7 @@ describe('Streaming delta accumulation', () => {
       uuid: 'se-5',
       session_id: 's1',
     }));
-
-    // Wait for throttle
-    await new Promise<void>(r => setTimeout(r, 30));
+    await tick();
 
     const output = await collectUntil(ch, (msgs) =>
       msgs.some(m =>
@@ -867,7 +859,6 @@ describe('Streaming delta accumulation', () => {
         m.event.type === 'notification' &&
         (m.event as { kind: string }).kind === 'streaming_content',
       ),
-      200,
     );
 
     const streamingEvents = output.filter(m =>
@@ -926,8 +917,7 @@ describe('Streaming delta accumulation', () => {
       uuid: 'se-4',
       session_id: 's1',
     }));
-
-    await new Promise<void>(r => setTimeout(r, 30));
+    await tick();
 
     const output = await collectUntil(ch, (msgs) =>
       msgs.some(m =>
@@ -935,7 +925,6 @@ describe('Streaming delta accumulation', () => {
         m.event.type === 'notification' &&
         (m.event as { kind: string }).kind === 'streaming_content',
       ),
-      200,
     );
 
     const streamingEvents = output.filter(m =>
@@ -970,10 +959,9 @@ describe('Streaming delta accumulation', () => {
       uuid: 'se-sub',
       session_id: 's1',
     }));
+    await tick();
 
-    await new Promise<void>(r => setTimeout(r, 30));
-
-    const output = await collectUntil(ch, () => false, 50);
+    const output = await collectUntil(ch, () => false, 100);
     const streamingEvents = output.filter(m =>
       m.type === 'event' &&
       m.event.type === 'notification' &&
