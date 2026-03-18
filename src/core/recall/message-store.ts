@@ -168,7 +168,7 @@ export function searchMessagesFts(
     }
     params.push(limit);
 
-    const MAX_PREVIEW = 200;
+    const MAX_PREVIEW = 400;
     const rows = db().all(
       `SELECT m.message_id, m.session_id, m.message_seq,
               m.project_id, m.created_at, m.message_role, f.rank,
@@ -602,7 +602,7 @@ export function searchMessagesSemantic(
     if (rows.length === 0) return [];
 
     // Brute-force q8 dot product scan over filtered vectors
-    const MAX_PREVIEW = 200;
+    const MAX_PREVIEW = 400;
     const scored: Array<{ row: Record<string, unknown>; score: number }> = [];
 
     for (const r of rows) {

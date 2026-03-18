@@ -25,12 +25,36 @@ import { log } from "../../core/log.js";
 import { parseJsonlFile } from "../../core/adapters/claude/jsonl-reader.js";
 import { formatTranscript, formatMessages, type FormattedTranscriptResult } from "../transcript-formatter.js";
 import { readSessionMessages, getSessionMessageCount } from "../../core/recall/message-store.js";
-// @ts-expect-error — esbuild inlines .md as text via loader config
-import RECALL_PROMPT_TEMPLATE from "../prompts/recall-agent.md";
+import { readFileSync, existsSync } from "node:fs";
+import { resolve as resolvePath, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // ============================================================================
 // Recall Agent Prompt
 // ============================================================================
+
+// Lazy-loaded on first use. Works in both esbuild (bundled dist/) and tsx (dev).
+let _recallPromptTemplate: string | undefined;
+
+function getRecallPromptTemplate(): string {
+  if (!_recallPromptTemplate) {
+    const thisDir = dirname(fileURLToPath(import.meta.url));
+    // In dev (tsx): relative to src/mcp/servers/
+    // In prod (esbuild bundle): relative to dist/
+    const candidates = [
+      resolvePath(thisDir, "../prompts/recall-agent.md"),
+      resolvePath(thisDir, "../../src/mcp/prompts/recall-agent.md"),
+    ];
+    const promptPath = candidates.find((p) => existsSync(p));
+    if (!promptPath) {
+      throw new Error(
+        `recall-agent.md not found. Searched:\n  ${candidates.join("\n  ")}`,
+      );
+    }
+    _recallPromptTemplate = readFileSync(promptPath, "utf-8");
+  }
+  return _recallPromptTemplate;
+}
 
 export function buildRecallPrompt(
   query: string,
@@ -38,7 +62,7 @@ export function buildRecallPrompt(
   return [
     {
       type: "text" as const,
-      text: RECALL_PROMPT_TEMPLATE.replace("{{query}}", query),
+      text: getRecallPromptTemplate().replace("{{query}}", query),
     },
   ];
 }
