@@ -221,7 +221,7 @@ try {
 
   const result = spawnSync(
     vsceBin,
-    ['package', '--target', target],
+    ['package', '--target', target, '--no-dependencies'],
     { stdio: 'inherit', shell: process.platform === 'win32' },
   );
 
