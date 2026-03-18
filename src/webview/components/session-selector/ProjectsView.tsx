@@ -97,6 +97,18 @@ export function ProjectsView({ onSelectSession, availableCwds, selectedCwd, onCw
     transport.openFile(path);
   }, [transport]);
 
+  const handleArchiveDone = useCallback(() => {
+    const doneProjects = projects.filter(p => p.stage === 'done');
+    if (doneProjects.length === 0) return;
+    // Optimistic UI update
+    setProjects(prev => prev.map(p =>
+      p.stage === 'done' ? { ...p, stage: 'archived', sortOrder: undefined } : p
+    ));
+    // Persist each
+    Promise.all(doneProjects.map(p => transport.updateProjectStage(p.id, 'archived')))
+      .catch(() => { transport.getProjects().then(setProjects).catch(() => {}); });
+  }, [projects, transport]);
+
   // Drag-and-drop handlers
   const handleDragStart = useCallback((e: React.DragEvent, projectId: string) => {
     draggedIdRef.current = projectId;
@@ -163,16 +175,14 @@ export function ProjectsView({ onSelectSession, availableCwds, selectedCwd, onCw
 
   // Search + CWD filter bar (rendered at top of all states except loading)
   const filterBar = (
-    <div className="crispy-filter-bar">
-      <div className="crispy-filter-bar__search-row">
-        <input
-          className="crispy-filter-bar__search"
-          type="text"
-          placeholder="Search projects…"
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-        />
-      </div>
+    <div className="crispy-filter-bar crispy-filter-bar--row">
+      <input
+        className="crispy-filter-bar__search"
+        type="text"
+        placeholder="Search projects…"
+        value={searchQuery}
+        onChange={e => setSearchQuery(e.target.value)}
+      />
       {availableCwds.length > 0 && (
         <select
           className="crispy-filter-bar__cwd"
@@ -245,6 +255,15 @@ export function ProjectsView({ onSelectSession, availableCwds, selectedCwd, onCw
                 <span className="crispy-stage-dot" style={stageColors[stage] ? { backgroundColor: stageColors[stage] } : undefined} />
                 {stageLabels[stage] ?? stage}
                 <span className="crispy-session-group-header__count">{items.length}</span>
+                {stage === 'done' && items.length > 0 && (
+                  <button
+                    className="crispy-archive-done-btn"
+                    onClick={(e) => { e.stopPropagation(); handleArchiveDone(); }}
+                    title="Move all done projects to archived"
+                  >
+                    Archive all
+                  </button>
+                )}
               </div>
 
               {!collapsed && items.length > 0 && (

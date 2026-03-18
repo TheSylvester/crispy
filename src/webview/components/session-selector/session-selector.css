@@ -35,6 +35,19 @@
   flex-shrink: 0;
 }
 
+.crispy-filter-bar--row {
+  flex-direction: row;
+  align-items: center;
+}
+
+.crispy-filter-bar--row .crispy-filter-bar__search {
+  flex: 1;
+}
+
+.crispy-filter-bar--row .crispy-filter-bar__cwd {
+  flex: 2;
+}
+
 .crispy-filter-bar__cwd {
   width: 100%;
   padding: 4px 6px;
@@ -926,5 +939,23 @@
   outline: 1px dashed #d4a574;
   outline-offset: -1px;
   background: rgba(212, 165, 116, 0.04);
+}
+
+/* --- Archive Done button --- */
+
+.crispy-archive-done-btn {
+  margin-left: auto;
+  padding: 1px 6px;
+  font-size: var(--font-xs);
+  color: var(--vscode-descriptionForeground, #888);
+  background: transparent;
+  border: 1px solid var(--vscode-widget-border, #444);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.crispy-archive-done-btn:hover {
+  color: var(--vscode-foreground, #ccc);
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
 }
 
