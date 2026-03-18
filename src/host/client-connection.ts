@@ -337,11 +337,10 @@ export function createClientConnection(
 
         // Already subscribed — resend catchup so the client can resync
         // after a pending→real handoff or listener race without creating
-        // a duplicate subscriber.
+        // a duplicate subscriber. Channel-owned entries are used for catchup.
         const existing = subscriptions.get(sessionId);
         if (existing) {
-          const entries = await loadSession(sessionId);
-          subscribe(existing.channel, existing.subscriber, entries);
+          subscribe(existing.channel, existing.subscriber);
           return { subscribed: true };
         }
 
@@ -461,7 +460,7 @@ export function createClientConnection(
         }
 
         // New-channel paths (new/fork)
-        const pendingId = `pending:${crypto.randomUUID()}`;
+        const pendingId = (params.pendingId as string) || `pending:${crypto.randomUUID()}`;
         const mutable = createMutableSubscriber(pendingId);
 
         // Register provenance before sendTurn so the child is tracked immediately

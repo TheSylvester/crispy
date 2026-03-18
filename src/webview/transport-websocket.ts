@@ -123,8 +123,8 @@ export function createWebSocketTransport(url: string): SessionService {
     loadSession: (sessionId, options) =>
       request<TranscriptEntry[]>('loadSession', { sessionId, ...options }),
 
-    sendTurn: (intent) =>
-      request<TurnReceipt>('sendTurn', { intent }),
+    sendTurn: (intent, pendingId) =>
+      request<TurnReceipt>('sendTurn', { intent, ...(pendingId && { pendingId }) }),
 
     forkToNewPanel: async (params) => {
       // Browser dev-server: open fork in a new tab via window.open()

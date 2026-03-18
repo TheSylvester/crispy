@@ -81,8 +81,12 @@ export interface SessionService {
    *
    * The session manager handles existing/new/fork targets, broadcasts the
    * user entry, and calls the adapter. Returns a receipt with the session ID.
+   *
+   * @param pendingId Optional caller-provided pending ID for new/fork sends.
+   *   When provided, the host uses this ID instead of generating one, allowing
+   *   the webview to preselect the pending session before the RPC resolves.
    */
-  sendTurn(intent: TurnIntent): Promise<TurnReceipt>;
+  sendTurn(intent: TurnIntent, pendingId?: string): Promise<TurnReceipt>;
 
   forkToNewPanel?(params: {
     fromSessionId: string;

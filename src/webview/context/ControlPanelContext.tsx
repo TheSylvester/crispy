@@ -1,9 +1,10 @@
 /**
  * Control Panel Context — isolates control-panel-specific state from TranscriptViewer
  *
- * Holds state that the ControlPanel needs but the transcript rendering does NOT:
- * bypassEnabled, prefillInput, pendingAgencyMode, hasForkHistory, agencyMode,
- * and their associated callbacks.
+ * Holds state owned by the control panel layer: bypassEnabled, prefillInput,
+ * pendingAgencyMode, agencyMode, and their callbacks. Also owns fork/rewind
+ * preview state (previewEntries, hasForkHistory) — set by ControlPanel's
+ * fork handler, read by TranscriptViewer for pre-send preview rendering.
  *
  * This prevents transcript entry re-renders when control panel state changes
  * (e.g. toggling bypass, typing in prefill, changing agency mode).
@@ -14,7 +15,7 @@
  * @module context/ControlPanelContext
  */
 
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { AgencyMode } from '../components/control-panel/types.js';
 import type { TranscriptEntry } from '../../core/transcript.js';
 
@@ -40,13 +41,17 @@ interface ControlPanelContextValue {
   setHasForkHistory: (has: boolean) => void;
 
   /**
-   * Handle fork history loaded — calls the registered setForkHistory handler
-   * and sets hasForkHistory to true.
+   * Fork/rewind preview entries — pre-send UI state, not live channel state.
+   * Set by ControlPanel's fork/rewind handler, rendered by TranscriptViewer
+   * when non-null (takes priority over useTranscript entries).
+   * Cleared when the user sends (fork session is created and real catchup arrives).
+   */
+  previewEntries: TranscriptEntry[] | null;
+
+  /**
+   * Handle fork history loaded — sets previewEntries and hasForkHistory.
    */
   handleForkHistoryLoaded: (entries: TranscriptEntry[]) => void;
-
-  /** Register the setForkHistory handler from useTranscript (called by TranscriptViewer on mount). */
-  registerForkHistoryHandler: (handler: (entries: TranscriptEntry[]) => void) => void;
 
   /** Current agency mode from ControlPanel (for CSS data-agency on .crispy-main). */
   agencyMode: AgencyMode;
@@ -75,27 +80,24 @@ export function ControlPanelProvider({
   const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean } | null>(null);
   const [pendingAgencyMode, setPendingAgencyMode] = useState<{ agencyMode: AgencyMode; bypassEnabled: boolean } | null>(null);
   const [hasForkHistory, setHasForkHistory] = useState(false);
+  const [previewEntries, setPreviewEntries] = useState<TranscriptEntry[] | null>(null);
   const [agencyMode, setAgencyMode] = useState<AgencyMode>('ask-before-edits');
 
   const consumePrefillInput = useCallback(() => setPrefillInput(null), []);
   const consumePendingAgencyMode = useCallback(() => setPendingAgencyMode(null), []);
 
-  // Fork history handler: registered by TranscriptViewer after useTranscript is called
-  const forkHistoryHandlerRef = useRef<((entries: TranscriptEntry[]) => void) | null>(null);
-
-  const registerForkHistoryHandler = useCallback((handler: (entries: TranscriptEntry[]) => void) => {
-    forkHistoryHandlerRef.current = handler;
-  }, []);
-
   const handleForkHistoryLoaded = useCallback((forkEntries: TranscriptEntry[]) => {
-    forkHistoryHandlerRef.current?.(forkEntries);
+    setPreviewEntries(forkEntries);
     setHasForkHistory(true);
   }, []);
 
-  // Clear fork history flag when a real session is selected
+  // Clear fork history flag and preview when a real (non-pending) session is
+  // selected. Don't clear for pending: sessions — previewEntries must survive
+  // through the pending phase until the catchup arrives with real entries.
   useEffect(() => {
-    if (selectedSessionId) {
+    if (selectedSessionId && !selectedSessionId.startsWith('pending:')) {
       setHasForkHistory(false);
+      setPreviewEntries(null);
     }
   }, [selectedSessionId]);
 
@@ -110,8 +112,8 @@ export function ControlPanelProvider({
     consumePendingAgencyMode,
     hasForkHistory,
     setHasForkHistory,
+    previewEntries,
     handleForkHistoryLoaded,
-    registerForkHistoryHandler,
     agencyMode,
     setAgencyMode,
   };

@@ -487,14 +487,19 @@ function evictIfDead(sessionId: string): void {
  * Each channel gets its own adapter instance from the vendor's factory,
  * so multiple live sessions per vendor are fully supported.
  */
-function openChannel(channelId: string, vendor: Vendor, spec: SessionOpenSpec): SessionChannel {
+function openChannel(
+  channelId: string,
+  vendor: Vendor,
+  spec: SessionOpenSpec,
+  options?: { initialEntries?: TranscriptEntry[] },
+): SessionChannel {
   const registration = adapters.get(vendor);
   if (!registration) {
     throw new Error(`No adapter registered for vendor "${vendor}".`);
   }
 
   const liveAdapter = registration.createAdapter(spec);
-  const channel = createChannel(channelId);
+  const channel = createChannel(channelId, options?.initialEntries);
 
   // Wire idle hook: when the channel transitions to idle (end of turn),
   // re-read session metadata from disk and push an upsert to all
@@ -593,11 +598,13 @@ function createPendingChannel(
   const envSessionId = spec.mode === 'resume' ? spec.sessionId! : pendingId;
   spec = { ...spec, env: { ...spec.env, CRISPY_SESSION_ID: envSessionId } };
 
-  const channel = openChannel(pendingId, vendor, spec);
+  const channel = openChannel(pendingId, vendor, spec, {
+    initialEntries: options?.entries,
+  });
   sessions.set(pendingId, channel);
 
-  // Subscribe with entries (history is included in catchup message)
-  subscribe(channel, subscriber, options?.entries);
+  // Subscribe — catchup uses channel-owned entries
+  subscribe(channel, subscriber);
 
   // One-shot session-list notifier: pushes upsert when the real session ID resolves
   const listNotifySubscriber: Subscriber = {
@@ -679,14 +686,12 @@ export async function subscribeSession(
   const inflight = pending.get(sessionId);
   if (inflight) {
     const channel = await inflight;
-    // Load history for this subscriber (may differ from init if using `until`)
-    const entries = await loadSession(sessionId, { until });
-    subscribe(channel, subscriber, entries);
+    // Channel already has entries in memory — just subscribe (catchup delivers them)
+    subscribe(channel, subscriber);
     return channel;
   }
 
   let channel = sessions.get(sessionId);
-  let entries: TranscriptEntry[] = [];
 
   if (!channel) {
     // Create a promise for initialization so concurrent callers coalesce
@@ -698,29 +703,24 @@ export async function subscribeSession(
         );
       }
 
-      const ch = openChannel(sessionId, info.vendor, { mode: 'resume', sessionId });
-      sessions.set(sessionId, ch);
-
-      // Load transcript history for subscribers.
-      // If this fails, clean up the partially-initialized channel
-      // so the next caller gets a clean slate, not a poisoned entry.
-      try {
-        const reg = adapters.get(info.vendor)!;
-        entries = await reg.discovery.loadHistory(sessionId);
-        // Apply truncation if specified
-        if (until) {
-          const cutIdx = entries.findIndex(e => e.uuid === until);
-          if (cutIdx !== -1) {
-            entries = entries.slice(0, cutIdx + 1);
-          } else {
-            log({ source: 'session', level: 'warn', summary: 'Fork truncation UUID not found, loading full history', data: { sessionId, until } });
-          }
+      // Load history BEFORE opening the channel so entries are seeded
+      // before the consumption loop starts (prevents seeding race).
+      const reg = adapters.get(info.vendor)!;
+      let entries = await reg.discovery.loadHistory(sessionId);
+      // Apply truncation if specified
+      if (until) {
+        const cutIdx = entries.findIndex(e => e.uuid === until);
+        if (cutIdx !== -1) {
+          entries = entries.slice(0, cutIdx + 1);
+        } else {
+          log({ source: 'session', level: 'warn', summary: 'Fork truncation UUID not found, loading full history', data: { sessionId, until } });
         }
-      } catch (err) {
-        destroyChannel(sessionId);
-        sessions.delete(sessionId);
-        throw err;
       }
+
+      const ch = openChannel(sessionId, info.vendor, { mode: 'resume', sessionId }, {
+        initialEntries: entries,
+      });
+      sessions.set(sessionId, ch);
 
       return ch;
     })();
@@ -731,12 +731,10 @@ export async function subscribeSession(
     } finally {
       pending.delete(sessionId);
     }
-  } else {
-    // Channel exists — load entries for this subscriber
-    entries = await loadSession(sessionId, { until });
   }
+  // Existing channel: entries are already in memory — catchup delivers them.
 
-  subscribe(channel, subscriber, entries);
+  subscribe(channel, subscriber);
   return channel;
 }
 
@@ -823,12 +821,20 @@ export async function createForkSession(
 
       log({ source: 'session', level: 'info', summary: `Pre-fork materialized: ${realId.slice(0, 12)}…`, data: { fromSessionId, realId } });
 
+      // Load fork history before opening — the Claude adapter skips replayed
+      // messages (isMessageReplayed guard), so history is never re-emitted
+      // through the consumption loop. Without seeding, the user sees an
+      // empty transcript after fork until the first live entry arrives.
+      const forkEntries = await reg.discovery.loadHistory(realId);
+
       // Open channel with real ID directly — no pending prefix, no re-key
       const spec: SessionOpenSpec = {
         mode: 'resume',
         sessionId: realId,
       };
-      const channel = openChannel(realId, vendor, spec);
+      const channel = openChannel(realId, vendor, spec, {
+        initialEntries: forkEntries,
+      });
       sessions.set(realId, channel);
       subscribe(channel, subscriber);
 

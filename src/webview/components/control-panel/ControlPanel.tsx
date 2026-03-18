@@ -69,8 +69,6 @@ interface ControlPanelProps {
   onRegisterForkHandler?: (handler: (atMessageId: string) => void) => void;
   /** Register a handler for per-message rewind execution (fork-in-same-panel). */
   onRegisterRewindHandler?: (handler: (atMessageId: string) => void) => void;
-  /** Inject a synthetic user entry for immediate rendering before backend echo. */
-  onOptimisticEntry?: (entry: TranscriptEntry) => void;
 }
 
 /** Agency modes for keyboard cycling (excluding bypass-permissions). */
@@ -137,7 +135,7 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange, onScrollToBottom, entries, children, onRegisterForkHandler, onRegisterRewindHandler, onOptimisticEntry }, ref) {
+  function ControlPanel({ onForkHoverChange, onScrollToBottom, entries, children, onRegisterForkHandler, onRegisterRewindHandler }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     const {
       setBypassEnabled: ctxSetBypassEnabled,
@@ -666,36 +664,28 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         target,
       };
 
-      // Stash forkMode for error recovery before clearing
+      // Stash forkMode and previous session for error recovery before clearing
       const forkModeBackup = state.forkMode;
+      const prevSessionId = selectedSessionId;
+
+      // For new/fork sends, generate a pendingId and preselect it so
+      // useTranscript subscribes to the correct channel before events arrive.
+      // Vendor-switch sends look like 'existing' — the host detects the switch
+      // internally and the receipt triggers the session switch + catchup.
+      const needsPendingId = target.kind === 'new' || target.kind === 'fork';
+      const pendingId = needsPendingId ? `pending:${crypto.randomUUID()}` : undefined;
 
       // Clear input immediately (optimistic)
       dispatch({ type: 'CLEAR_INPUT' });
       onScrollToBottom?.();
       setOptimisticStatus('streaming');
 
-      // Inject optimistic user entry for immediate rendering.
-      // For new/fork sessions, the server-broadcast entry arrives before
-      // useTranscript has subscribed to the pending session ID, so we
-      // must inject locally. The dedup logic in useTranscript replaces
-      // the optimistic entry when the real echo arrives.
-      if (onOptimisticEntry) {
-        const optimisticEntry: TranscriptEntry = {
-          type: 'user',
-          uuid: `optimistic-${intent.clientMessageId}`,
-          sessionId: selectedSessionId ?? 'pending',
-          timestamp: new Date().toISOString(),
-          message: {
-            role: 'user',
-            content: typeof content === 'string'
-              ? [{ type: 'text', text: content }]
-              : content as MessageContentBlock[],
-          },
-        };
-        onOptimisticEntry(optimisticEntry);
+      // Preselect the pending session so useTranscript sees events on it
+      if (pendingId) {
+        setSelectedSessionId(pendingId);
       }
 
-      transport.sendTurn(intent)
+      transport.sendTurn(intent, pendingId)
         .then((receipt) => {
           clearSendError();
           // Update selected session if it changed (new/fork/vendor-switch)
@@ -709,13 +699,16 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           // Surface error to user
           const msg = err instanceof Error ? err.message : String(err);
           showSendError(msg);
-          // Restore input on error
+          // Restore input and session on error
           dispatch({ type: 'SET_INPUT', value: typeof content === 'string' ? content : text });
           if (forkModeBackup) {
             dispatch({ type: 'SET_FORK_MODE', forkMode: forkModeBackup });
           }
+          if (pendingId) {
+            setSelectedSessionId(prevSessionId);
+          }
         });
-    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, state.forkMode, selectedSessionId, selectedCwd, sessions, setSelectedSessionId, setOptimisticStatus, transport, onScrollToBottom, onOptimisticEntry, showSendError, clearSendError, workspaceCwdPath]);
+    }, [state.input, state.attachedImages, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, state.forkMode, selectedSessionId, selectedCwd, sessions, setSelectedSessionId, setOptimisticStatus, transport, onScrollToBottom, showSendError, clearSendError, workspaceCwdPath]);
 
     // Keep ref in sync so forkConfig auto-send always calls the latest handleSend
     useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);

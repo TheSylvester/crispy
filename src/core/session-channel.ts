@@ -114,6 +114,13 @@ export interface SessionChannel {
   /** Pending approval data — tracking + replay for late subscribers. */
   pendingApprovals: Map<string, PendingApprovalInfo>;
 
+  /**
+   * Accumulated transcript entries — the single source of truth for this
+   * channel's entry history. Late subscribers receive a shallow copy via
+   * catchup. Grows via broadcastAndTrack() on entry messages.
+   */
+  entries: TranscriptEntry[];
+
   /** Running count of entries broadcast (used as index in entry events). */
   entryIndex: number;
 
@@ -139,19 +146,26 @@ const channels = new Map<string, SessionChannel>();
 /**
  * Create a new session channel in the 'unattached' state.
  * Throws if a channel with the same ID already exists.
+ *
+ * @param initialEntries Optional pre-seeded entries (e.g., history loaded from
+ *   disk before the adapter starts). Populates `channel.entries` and sets
+ *   `entryIndex` before `setAdapter()` starts the consumption loop, preventing
+ *   a seeding race by construction.
  */
-export function createChannel(channelId: string): SessionChannel {
+export function createChannel(channelId: string, initialEntries?: TranscriptEntry[]): SessionChannel {
   if (channels.has(channelId)) {
     throw new Error(`Channel "${channelId}" already exists`);
   }
 
+  const seeded = initialEntries ?? [];
   const channel: SessionChannel = {
     channelId,
     adapter: null,
     subscribers: new Map(),
     state: 'unattached',
     pendingApprovals: new Map(),
-    entryIndex: 0,
+    entries: seeded,
+    entryIndex: seeded.length,
     loopDone: null,
     tearing: false,
   };
@@ -220,24 +234,16 @@ export function _resetRegistry(): void {
  * subscriber with the same ID.
  *
  * Late subscribers immediately receive a catchup message with current
- * channel state (including pending approvals and optional history entries),
- * so their UI matches the session's actual state without waiting for the
- * next event.
- *
- * @param entries Optional history entries to include in the catchup message.
- *                When provided, the channel's entryIndex is set to entries.length.
+ * channel state (including pending approvals and the channel's accumulated
+ * entries), so their UI matches the session's actual state without waiting
+ * for the next event. Entries are sent as a shallow copy so same-process
+ * subscribers don't observe mutations from later broadcasts.
  */
 export function subscribe(
   channel: SessionChannel,
   subscriber: Subscriber,
-  entries?: TranscriptEntry[],
 ): void {
   channel.subscribers.set(subscriber.id, subscriber);
-
-  // Set entry index if history provided (only advance, never go backward)
-  if (entries?.length && entries.length > channel.entryIndex) {
-    channel.entryIndex = entries.length;
-  }
 
   // Emit catchup with current state (skip 'unattached' — no useful state)
   if (channel.state !== 'unattached') {
@@ -249,7 +255,7 @@ export function subscribe(
         settings: channel.adapter?.settings ?? null,
         contextUsage: channel.adapter?.contextUsage ?? null,
         pendingApprovals: Array.from(channel.pendingApprovals.values()),
-        entries: entries ?? [],
+        entries: [...channel.entries],
       };
       subscriber.send(catchup);
     } catch { /* swallow — consistent with broadcast() */ }
@@ -298,7 +304,7 @@ export function setAdapter(channel: SessionChannel, adapter: AgentAdapter): void
   }
 
   channel.adapter = adapter;
-  channel.entryIndex = 0;
+  channel.entryIndex = channel.entries.length; // Respect pre-seeded entries
   channel.state = 'idle'; // Just set, don't broadcast
   startConsumptionLoop(channel);
 }
@@ -350,8 +356,9 @@ function broadcastAndTrack(channel: SessionChannel, msg: ChannelMessage): void {
   // Broadcast to all subscribers
   broadcast(channel, msg);
 
-  // Track entry index
+  // Accumulate entries and track index
   if (msg.type === 'entry') {
+    channel.entries.push(msg.entry);
     channel.entryIndex++;
   }
 }

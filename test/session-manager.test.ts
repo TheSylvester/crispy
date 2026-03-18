@@ -814,10 +814,9 @@ describe('Regression: concurrent subscribeSession coalescing', () => {
     // Factory was called only once (coalesced)
     expect(factoryCallCount).toBe(1);
 
-    // loadHistory is called twice: once during channel init, once for the second
-    // subscriber's catchup (via loadSession). This ensures both subscribers
-    // receive history entries in their catchup message.
-    expect(discovery.loadHistory).toHaveBeenCalledTimes(2);
+    // loadHistory is called once during channel init. The second subscriber
+    // gets entries from channel-owned entry list via catchup (no disk re-read).
+    expect(discovery.loadHistory).toHaveBeenCalledTimes(1);
   });
 
   it('concurrent calls share a single channel initialization', async () => {
@@ -843,14 +842,11 @@ describe('Regression: concurrent subscribeSession coalescing', () => {
     // Both got the same channel
     expect(ch1).toBe(ch2);
 
-    // loadHistory is called twice: once during init, once for the second
-    // subscriber's catchup. Both subscribers receive history in their catchup.
-    expect(discovery.loadHistory).toHaveBeenCalledTimes(2);
+    // loadHistory is called once during init. The second subscriber gets
+    // entries from the channel-owned entry list via catchup (no disk re-read).
+    expect(discovery.loadHistory).toHaveBeenCalledTimes(1);
 
-    // The channel's entryIndex reflects the loaded history (set by subscribe()
-    // when entries are passed). The second subscriber's subscribe() call may
-    // overwrite this, but since both loads return the same entries, the value
-    // stays consistent.
+    // The channel's entryIndex reflects the seeded history
     expect(ch1.entryIndex).toBe(1);
 
     // Both subscribers are registered

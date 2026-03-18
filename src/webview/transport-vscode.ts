@@ -95,8 +95,8 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     loadSession: (sessionId, options) =>
       request<TranscriptEntry[]>('loadSession', { sessionId, ...options }),
 
-    sendTurn: (intent) =>
-      request<TurnReceipt>('sendTurn', { intent }),
+    sendTurn: (intent, pendingId) =>
+      request<TurnReceipt>('sendTurn', { intent, ...(pendingId && { pendingId }) }),
 
     forkToNewPanel: (params) =>
       request<{ ok: boolean }>('forkToNewPanel', params),

@@ -86,28 +86,23 @@ function ApprovalBridge({
 export function TranscriptViewer(): React.JSX.Element {
   const { selectedSessionId, setSelectedSessionId } = useSession();
   const transport = useTransport();
-  const { entries, isLoading, error, addOptimisticEntry, setForkHistory } = useTranscript(selectedSessionId);
+  const { entries: liveEntries, isLoading, error } = useTranscript(selectedSessionId);
   const { renderMode, toolPanelOpen, debugMode, sidebarView } = usePreferences();
   const { registerInsertHandler } = useFilePanel();
+
+  // Read hasForkHistory and previewEntries from context.
+  // previewEntries takes priority over liveEntries (fork/rewind preview).
+  const cpCtx = useControlPanel();
+  const { hasForkHistory, previewEntries } = cpCtx;
+  const entries = previewEntries ?? liveEntries;
+
   useToolPanelAutoOpen(entries);
   const { approvalRequest, resolve: resolveApproval } = useApprovalRequest(selectedSessionId);
   const streamingContent = useStreamingContent();
 
-  // Read only hasForkHistory from context — it changes at most once per fork
-  // flow and is needed for the WelcomePage conditional branch. All other
-  // control-panel state is accessed via refs to avoid re-rendering the
-  // transcript when those values change.
-  const cpCtx = useControlPanel();
-  const { hasForkHistory } = cpCtx;
-
   // Stable ref to context for use in callbacks (no re-render on changes)
   const cpCtxRef = useRef(cpCtx);
   cpCtxRef.current = cpCtx;
-
-  // Register setForkHistory with the context so handleForkHistoryLoaded works
-  useEffect(() => {
-    cpCtx.registerForkHistoryHandler(setForkHistory);
-  }, [cpCtx.registerForkHistoryHandler, setForkHistory]);
 
   const {
     visibleCount,
@@ -466,7 +461,6 @@ export function TranscriptViewer(): React.JSX.Element {
         onRegisterRewindHandler={handleRegisterRewindHandler}
         onScrollToBottom={pinToBottom}
         entries={entries}
-        onOptimisticEntry={addOptimisticEntry}
       >
         {approvalRequest && (
           <ApprovalBridge

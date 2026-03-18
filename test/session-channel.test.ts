@@ -723,22 +723,22 @@ describe('Approval flow', () => {
 
 // ========== 8. Subscribe with entries (history in catchup) ==========
 
-describe('Subscribe with entries', () => {
-  it('includes entries in catchup message and sets entryIndex', async () => {
-    const ch = createChannel('ch-1');
-    const adapter = createMockAdapter();
-
-    setAdapter(ch, adapter);
-    await tick();
-
+describe('Subscribe with entries (channel-owned)', () => {
+  it('includes seeded entries in catchup message and sets entryIndex', async () => {
     const entries: TranscriptEntry[] = [
       { type: 'user', message: { role: 'user', content: 'hello' } },
       { type: 'assistant', message: { role: 'assistant', content: 'hi' } },
       { type: 'user', message: { role: 'user', content: 'how are you' } },
     ];
 
+    const ch = createChannel('ch-1', entries);
+    const adapter = createMockAdapter();
+
+    setAdapter(ch, adapter);
+    await tick();
+
     const sub = createTestSubscriber('sub-1');
-    subscribe(ch, sub, entries);
+    subscribe(ch, sub);
 
     const catchupEvents = sub.eventsOfType('catchup');
     expect(catchupEvents.length).toBe(1);
@@ -746,7 +746,7 @@ describe('Subscribe with entries', () => {
     expect(ch.entryIndex).toBe(3);
   });
 
-  it('empty entries results in empty array in catchup', async () => {
+  it('empty initial entries results in empty array in catchup', async () => {
     const ch = createChannel('ch-1');
     const adapter = createMockAdapter();
 
@@ -754,7 +754,7 @@ describe('Subscribe with entries', () => {
     await tick();
 
     const sub = createTestSubscriber('sub-1');
-    subscribe(ch, sub, []);
+    subscribe(ch, sub);
 
     const catchupEvents = sub.eventsOfType('catchup');
     expect(catchupEvents.length).toBe(1);
