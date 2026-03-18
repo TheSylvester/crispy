@@ -334,6 +334,25 @@ function ensureSchema(db: Database): void {
     `);
 
     // ====================================================================
+    // messages_fts_vocab — term statistics for IDF-based query filtering
+    // ====================================================================
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts_vocab
+        USING fts5vocab(messages_fts, 'row');
+    `);
+
+    // ====================================================================
+    // _stem — helper table to resolve porter stems via FTS5's own tokenizer
+    // ====================================================================
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS _stem USING fts5(
+        t, tokenize='porter unicode61'
+      );
+      CREATE VIRTUAL TABLE IF NOT EXISTS _stem_vocab
+        USING fts5vocab(_stem, 'row');
+    `);
+
+    // ====================================================================
     // message_vectors — embedding vectors for semantic search
     // ====================================================================
     db.exec(`
