@@ -4,8 +4,8 @@
  * Two data sources, in priority order:
  * 1. Live `state_changed` events from the transport (adapter → channel → snapshot)
  * 2. Historical fallback: walk `entries` backwards for the last assistant turn's
- *    `message.usage` and compute ContextUsage using the model's actual context
- *    window from result entries (falls back to 200k default).
+ *    compaction-aware `message.usage` and compute ContextUsage using the model's
+ *    actual context window from result entries (falls back to 200k default).
  *
  * Returns null when no usage data is available yet.
  *
@@ -79,10 +79,16 @@ function extractContextWindow(entries: TranscriptEntry[]): number {
  * then converts SDK Usage fields into our ContextUsage shape. Uses the model's
  * actual context window from result entries when available, falling back to
  * DEFAULT_CONTEXT_WINDOW.
+ *
+ * Codex app-server currently reports cumulative/per-turn token usage, but not
+ * compaction-aware in-window occupancy. Old Crispy builds backfilled those
+ * values into assistant entries, so historical Codex entries must be ignored
+ * here to avoid resurrecting impossible "context used" percentages.
  */
 export function computeContextFromEntries(entries: TranscriptEntry[]): ContextUsage | null {
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
+    if (entry.vendor === 'codex') continue;
     // Skip sub-agent entries — their usage reflects the child session's context,
     // not the main session's. Sub-agents have parentToolUseID set.
     if (entry.type === 'assistant' && entry.message?.usage && !entry.parentToolUseID) {
@@ -140,10 +146,9 @@ export function useContextUsage(
 
   // Always compute from entries when available — not gated by liveUsage.
   // Entries usage updates every time a new assistant message with message.usage
-  // arrives. Catchup (liveUsage) only fires once on subscribe. For Codex,
-  // catchup contextUsage may be null at subscribe time (adapter hasn't received
-  // tokenUsage yet). Entries-first ensures the gauge updates as soon as the
-  // first assistant message completes.
+  // arrives. Catchup (liveUsage) only fires once on subscribe. Codex is
+  // intentionally excluded from the historical fallback until the app-server
+  // exposes a trustworthy occupancy signal.
   const entriesUsage = useMemo(() => {
     if (!entries || entries.length === 0) return null;
     return computeContextFromEntries(entries);

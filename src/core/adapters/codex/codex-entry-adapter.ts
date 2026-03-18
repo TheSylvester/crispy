@@ -22,6 +22,7 @@ import type {
   ToolResultBlock,
 } from '../../transcript.js';
 import type { ThreadItem } from './protocol/v2/ThreadItem.js';
+import type { DynamicToolCallOutputContentItem } from './protocol/v2/DynamicToolCallOutputContentItem.js';
 import type { UserInput } from './protocol/v2/UserInput.js';
 import type { FileUpdateChange } from './protocol/v2/FileUpdateChange.js';
 
@@ -69,6 +70,9 @@ export function adaptCodexItem(
     case 'mcpToolCall':
       return adaptMcpToolCall(item, baseFields);
 
+    case 'dynamicToolCall':
+      return adaptDynamicToolCall(item, baseFields);
+
     case 'collabAgentToolCall':
       return [adaptCollabAgentToolCall(item, baseFields)];
 
@@ -77,6 +81,9 @@ export function adaptCodexItem(
 
     case 'imageView':
       return [adaptImageView(item, baseFields)];
+
+    case 'imageGeneration':
+      return [adaptImageGeneration(item, baseFields)];
 
     case 'enteredReviewMode':
       return [adaptEnteredReviewMode(item, baseFields)];
@@ -181,9 +188,11 @@ type PlanItem = Extract<ThreadItem, { type: 'plan' }>;
 type CommandExecutionItem = Extract<ThreadItem, { type: 'commandExecution' }>;
 type FileChangeItem = Extract<ThreadItem, { type: 'fileChange' }>;
 type McpToolCallItem = Extract<ThreadItem, { type: 'mcpToolCall' }>;
+type DynamicToolCallItem = Extract<ThreadItem, { type: 'dynamicToolCall' }>;
 type CollabAgentToolCallItem = Extract<ThreadItem, { type: 'collabAgentToolCall' }>;
 type WebSearchItem = Extract<ThreadItem, { type: 'webSearch' }>;
 type ImageViewItem = Extract<ThreadItem, { type: 'imageView' }>;
+type ImageGenerationItem = Extract<ThreadItem, { type: 'imageGeneration' }>;
 type EnteredReviewModeItem = Extract<ThreadItem, { type: 'enteredReviewMode' }>;
 type ExitedReviewModeItem = Extract<ThreadItem, { type: 'exitedReviewMode' }>;
 type ContextCompactionItem = Extract<ThreadItem, { type: 'contextCompaction' }>;
@@ -432,6 +441,54 @@ function adaptMcpToolCall(item: McpToolCallItem, base: BaseFields): TranscriptEn
   return [assistantEntry, resultEntry];
 }
 
+function adaptDynamicToolCall(item: DynamicToolCallItem, base: BaseFields): TranscriptEntry[] {
+  const { id, tool, status, arguments: args, contentItems, success, durationMs } = item;
+
+  const toolUse: ToolUseBlock = {
+    type: 'tool_use',
+    id,
+    name: tool,
+    input: args as Record<string, unknown>,
+  };
+
+  const assistantEntry: TranscriptEntry = {
+    type: 'assistant',
+    uuid: id,
+    ...base,
+    message: {
+      role: 'assistant',
+      content: [toolUse],
+    },
+    metadata: { status, dynamicTool: true },
+  };
+
+  const toolResult: ToolResultBlock = {
+    type: 'tool_result',
+    tool_use_id: id,
+    content: formatDynamicToolContent(contentItems),
+    is_error: success === false || status === 'failed',
+  };
+
+  const resultEntry: TranscriptEntry = {
+    type: 'result',
+    uuid: `${id}-result`,
+    parentUuid: id,
+    ...base,
+    message: {
+      role: 'tool',
+      content: [toolResult],
+    },
+    metadata: {
+      status,
+      success,
+      durationMs,
+      dynamicTool: true,
+    },
+  };
+
+  return [assistantEntry, resultEntry];
+}
+
 function adaptCollabAgentToolCall(item: CollabAgentToolCallItem, base: BaseFields): TranscriptEntry {
   const { id, tool, status, senderThreadId, receiverThreadIds, prompt, agentsStates } = item;
 
@@ -505,6 +562,28 @@ function adaptImageView(item: ImageViewItem, base: BaseFields): TranscriptEntry 
       content: [toolUse],
     },
     metadata: { isImageView: true },
+  };
+}
+
+function adaptImageGeneration(item: ImageGenerationItem, base: BaseFields): TranscriptEntry {
+  const { id, status, revisedPrompt, result } = item;
+
+  return {
+    type: 'assistant',
+    uuid: id,
+    ...base,
+    message: {
+      role: 'assistant',
+      content: [{
+        type: 'text',
+        text: revisedPrompt ?? result,
+      }],
+    },
+    metadata: {
+      status,
+      imageGenerationResult: result,
+      revisedPrompt,
+    },
   };
 }
 
@@ -601,6 +680,16 @@ function adaptUserInputs(inputs: UserInput[]): ContentBlock[] {
   }
 
   return blocks;
+}
+
+function formatDynamicToolContent(
+  contentItems: DynamicToolCallOutputContentItem[] | null,
+): string {
+  if (!contentItems || contentItems.length === 0) return '';
+
+  return contentItems
+    .map((item) => item.type === 'inputText' ? item.text : item.imageUrl)
+    .join('\n');
 }
 
 /**

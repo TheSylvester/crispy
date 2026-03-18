@@ -24,7 +24,7 @@ let cachedBinaryPath: string | undefined;
  */
 function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => AgentAdapter {
   return (spec) => {
-    const effectiveCwd = ('cwd' in spec) ? spec.cwd : config.cwd;
+    const effectiveCwd = ('cwd' in spec ? spec.cwd : undefined) ?? config.cwd;
 
     return new OpenCodeAgentAdapter(spec, {
       cwd: effectiveCwd,

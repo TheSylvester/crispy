@@ -218,10 +218,10 @@ export interface AdapterSettings {
  * 'hydrated' — start a new session pre-loaded with cross-vendor history
  */
 export type SessionOpenSpec =
-  | { mode: 'resume'; sessionId: string; env?: Record<string, string> }
+  | { mode: 'resume'; sessionId: string; cwd?: string; model?: string; permissionMode?: TurnSettings['permissionMode']; mcpServers?: Record<string, unknown>; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' }
   | { mode: 'fresh'; cwd: string; model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' }
   | { mode: 'fork'; fromSessionId: string; atMessageId?: string; model?: string; skipPersistSession?: boolean; outputFormat?: TurnSettings['outputFormat']; mcpServers?: Record<string, unknown>; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' }
-  | { mode: 'hydrated'; cwd: string; history: TranscriptEntry[]; sourceVendor: Vendor; sourceSessionId?: string; model?: string; permissionMode?: TurnSettings['permissionMode']; skipPersistSession?: boolean; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' };
+  | { mode: 'hydrated'; cwd: string; history: TranscriptEntry[]; sourceVendor: Vendor; sourceSessionId?: string; model?: string; permissionMode?: TurnSettings['permissionMode']; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' };
 
 // ============================================================================
 // Agent Adapter Interface

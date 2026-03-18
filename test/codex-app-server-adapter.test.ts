@@ -270,6 +270,55 @@ describe('CodexAgentAdapter', () => {
 
       adapter.close();
     });
+
+    it('forwards resume-time config and instruction overrides', async () => {
+      const spec: SessionOpenSpec = {
+        mode: 'resume',
+        sessionId: 'existing-session',
+        cwd: '/resume/project',
+        model: 'o4-mini',
+        permissionMode: 'acceptEdits',
+        systemPrompt: 'Use memory first',
+        mcpServers: {
+          memory: { type: 'stdio', command: 'memory-mcp' },
+        },
+        env: { FOO: 'bar' },
+      };
+      const adapter = new CodexAgentAdapter(spec);
+
+      adapter.sendTurn('Continue', {});
+
+      const initMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(initMsg.id, { userAgent: 'codex/0.1.0' });
+
+      const resumeMsg = await mockProcess.getNextClientMessage();
+      expect(resumeMsg.method).toBe('thread/resume');
+      expect((resumeMsg.params as any)).toMatchObject({
+        threadId: 'existing-session',
+        cwd: '/resume/project',
+        model: 'o4-mini',
+        approvalPolicy: 'on-request',
+        developerInstructions: 'Use memory first',
+        config: {
+          mcp_servers: {
+            memory: { type: 'stdio', command: 'memory-mcp' },
+          },
+        },
+      });
+
+      mockProcess.pushResponse(resumeMsg.id, {
+        thread: { id: 'existing-session', status: 'idle', turns: [] },
+        model: 'o4-mini',
+        approvalPolicy: 'on-request',
+      });
+
+      const turnMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(turnMsg.id, { turn: { id: 'turn-1' } });
+
+      expect(adapter.settings.permissionMode).toBe('acceptEdits');
+
+      adapter.close();
+    });
   });
 
   describe('Fork session', () => {
@@ -298,6 +347,49 @@ describe('CodexAgentAdapter', () => {
       mockProcess.pushResponse(turnMsg.id, { turn: { id: 'turn-1' } });
 
       expect(adapter.sessionId).toBe('forked-session');
+
+      adapter.close();
+    });
+
+    it('forwards fork MCP and instruction overrides', async () => {
+      const spec: SessionOpenSpec = {
+        mode: 'fork',
+        fromSessionId: 'original-session',
+        atMessageId: 'msg-5',
+        model: 'o3',
+        systemPrompt: 'Fork prompt',
+        mcpServers: {
+          memory: { type: 'stdio', command: 'memory-mcp', args: ['serve'] },
+        },
+      };
+      const adapter = new CodexAgentAdapter(spec);
+
+      adapter.sendTurn('Fork from here', {});
+
+      const initMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(initMsg.id, { userAgent: 'codex/0.1.0' });
+
+      const forkMsg = await mockProcess.getNextClientMessage();
+      expect(forkMsg.method).toBe('thread/fork');
+      expect((forkMsg.params as any)).toMatchObject({
+        threadId: 'original-session',
+        atItemId: 'msg-5',
+        model: 'o3',
+        developerInstructions: 'Fork prompt',
+        config: {
+          mcp_servers: {
+            memory: { type: 'stdio', command: 'memory-mcp', args: ['serve'] },
+          },
+        },
+      });
+
+      mockProcess.pushResponse(forkMsg.id, {
+        thread: { id: 'forked-session', status: 'idle', turns: [] },
+        model: 'o3',
+      });
+
+      const turnMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(turnMsg.id, { turn: { id: 'turn-1' } });
 
       adapter.close();
     });
@@ -724,7 +816,7 @@ describe('CodexAgentAdapter', () => {
   // --------------------------------------------------------------------------
 
   describe('Token usage updates', () => {
-    it('updates contextUsage from tokenUsage notification', async () => {
+    it('does not map cumulative Codex token totals into context occupancy', async () => {
       const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test' };
       const adapter = new CodexAgentAdapter(spec);
 
@@ -746,23 +838,88 @@ describe('CodexAgentAdapter', () => {
         turnId: 'turn-1',
         tokenUsage: {
           total: {
-            totalTokens: 1000,
-            inputTokens: 800,
-            cachedInputTokens: 500,
-            outputTokens: 200,
+            totalTokens: 743067,
+            inputTokens: 700000,
+            cachedInputTokens: 500000,
+            outputTokens: 43067,
           },
-          modelContextWindow: 100000,
+          last: {
+            totalTokens: 1200,
+            inputTokens: 1100,
+            cachedInputTokens: 900,
+            outputTokens: 100,
+          },
+          modelContextWindow: 200000,
         },
       });
 
       await waitForTick(50);
 
-      const usage = adapter.contextUsage;
-      expect(usage).toBeDefined();
-      expect(usage?.totalTokens).toBe(1000);
-      expect(usage?.tokens.input).toBe(800);
-      expect(usage?.tokens.output).toBe(200);
-      expect(usage?.contextWindow).toBe(100000);
+      expect(adapter.contextUsage).toBeNull();
+
+      adapter.close();
+    });
+
+    it('does not backfill Codex token totals into assistant entry usage', async () => {
+      const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test' };
+      const adapter = new CodexAgentAdapter(spec);
+
+      const collectionPromise = collectUntil(
+        adapter,
+        (msgs) => msgs.some((m) => m.type === 'entry' && m.entry.type === 'assistant'),
+        1000,
+      );
+
+      adapter.sendTurn('Test', {});
+
+      const initMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(initMsg.id, { userAgent: 'codex' });
+      const startMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(startMsg.id, { thread: { id: 't-1', turns: [] }, model: 'o3' });
+      const turnMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(turnMsg.id, { turn: { id: 'turn-1' } });
+
+      await waitForTick();
+
+      mockProcess.pushNotification('turn/started', { turn: { id: 'turn-1' } });
+      mockProcess.pushNotification('thread/tokenUsage/updated', {
+        threadId: 't-1',
+        turnId: 'turn-1',
+        tokenUsage: {
+          total: {
+            totalTokens: 743067,
+            inputTokens: 700000,
+            cachedInputTokens: 500000,
+            outputTokens: 43067,
+          },
+          last: {
+            totalTokens: 1200,
+            inputTokens: 1100,
+            cachedInputTokens: 900,
+            outputTokens: 100,
+          },
+          modelContextWindow: 200000,
+        },
+      });
+      mockProcess.pushNotification('item/completed', {
+        threadId: 't-1',
+        turnId: 'turn-1',
+        item: {
+          type: 'agentMessage',
+          id: 'msg-agent-1',
+          text: 'Hello from Codex!',
+        },
+      });
+
+      const messages = await collectionPromise;
+      const assistantEntry = messages.find(
+        (msg) => msg.type === 'entry' && msg.entry.type === 'assistant',
+      );
+
+      expect(assistantEntry?.type).toBe('entry');
+      if (assistantEntry?.type === 'entry' && assistantEntry.entry.type === 'assistant') {
+        expect(assistantEntry.entry.message?.usage).toBeUndefined();
+      }
 
       adapter.close();
     });

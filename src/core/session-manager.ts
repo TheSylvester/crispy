@@ -168,13 +168,10 @@ function accumulateEntryUsage(entry: { type: string; parentToolUseID?: string; m
 
 /**
  * Build accurate contextUsage for child sessions by preferring accumulated
- * per-entry usage (Claude) over adapter snapshot (Codex/OpenCode).
+ * per-entry usage over adapter snapshot fallbacks.
  *
  * Claude entries carry per-turn usage → sum entries for accurate totals.
- * Codex injects cumulative _contextUsage into entries (codex-app-server-adapter.ts
- * line ~521) → summing would double-count. The adapter-snapshot fallback handles
- * Codex correctly. TODO: if Codex Rosie dispatches are needed, add vendor-aware
- * logic to skip accumulation for Codex entries.
+ * Vendors without trustworthy per-entry usage fall back to the adapter snapshot.
  */
 function buildChildUsage(
   channelId: string,

@@ -155,6 +155,19 @@ describe('computeContextFromEntries', () => {
     expect(ctx!.contextWindow).toBe(1_000_000);
   });
 
+  it('ignores Codex assistant usage because it is not a trustworthy occupancy signal', () => {
+    const entries = [
+      user(),
+      assistant('o3', {
+        input_tokens: 700_000,
+        output_tokens: 43_067,
+        cache_read_input_tokens: 500_000,
+      }, 'codex'),
+    ];
+
+    expect(computeContextFromEntries(entries)).toBeNull();
+  });
+
   it('uses most recent assistant entry (backwards scan)', () => {
     const entries = [
       user(),

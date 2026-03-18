@@ -303,23 +303,18 @@ export class CodexAgentAdapter implements AgentAdapter {
     switch (this.spec.mode) {
       case 'fresh': {
         const params: Record<string, unknown> = {
-          cwd: this.spec.cwd,
+          ...this.buildThreadConfigParams({
+            cwd: this.spec.cwd,
+            model: this.spec.model,
+            permissionMode: this.spec.permissionMode,
+            mcpServers: this.spec.mcpServers,
+            systemPrompt: this.spec.systemPrompt,
+          }),
           experimentalRawEvents: false,
         };
-        if (this.spec.model) params.model = this.spec.model;
-        if (this.spec.permissionMode) {
-          params.approvalPolicy = mapPermissionMode(this.spec.permissionMode);
-        }
         // Ephemeral sessions for Rosie child dispatches — not persisted by Codex
         if (this.spec.skipPersistSession) {
           params.ephemeral = true;
-        }
-        // Try injecting MCP servers via the config bag on thread/start
-        if (this.spec.mcpServers && Object.keys(this.spec.mcpServers).length > 0) {
-          params.config = { mcp_servers: this.spec.mcpServers };
-        }
-        if (this.spec.systemPrompt) {
-          params.developerInstructions = this.spec.systemPrompt;
         }
 
         response = await this.client.request('thread/start', params);
@@ -329,6 +324,13 @@ export class CodexAgentAdapter implements AgentAdapter {
       case 'resume': {
         response = await this.client.request('thread/resume', {
           threadId: this.spec.sessionId,
+          ...this.buildThreadConfigParams({
+            cwd: this.spec.cwd,
+            model: this.spec.model,
+            permissionMode: this.spec.permissionMode,
+            mcpServers: this.spec.mcpServers,
+            systemPrompt: this.spec.systemPrompt,
+          }),
         });
         break;
       }
@@ -336,16 +338,14 @@ export class CodexAgentAdapter implements AgentAdapter {
       case 'fork': {
         const forkParams: Record<string, unknown> = {
           threadId: this.spec.fromSessionId,
+          ...this.buildThreadConfigParams({
+            model: this.spec.model,
+            mcpServers: this.spec.mcpServers,
+            systemPrompt: this.spec.systemPrompt,
+          }),
         };
         if (this.spec.atMessageId) {
           forkParams.atItemId = this.spec.atMessageId;
-        }
-        // Try injecting MCP servers via the config bag on thread/fork
-        if (this.spec.mcpServers && Object.keys(this.spec.mcpServers).length > 0) {
-          forkParams.config = { mcp_servers: this.spec.mcpServers };
-        }
-        if (this.spec.systemPrompt) {
-          forkParams.developerInstructions = this.spec.systemPrompt;
         }
         response = await this.client.request('thread/fork', forkParams);
         break;
@@ -356,10 +356,13 @@ export class CodexAgentAdapter implements AgentAdapter {
         response = await this.client.request('thread/resume', {
           threadId: crypto.randomUUID(),
           history,
-          cwd: this.spec.cwd,
-          ...(this.spec.model && { model: this.spec.model }),
-          ...(this.spec.permissionMode && { approvalPolicy: mapPermissionMode(this.spec.permissionMode) }),
-          ...(this.spec.systemPrompt && { developerInstructions: this.spec.systemPrompt }),
+          ...this.buildThreadConfigParams({
+            cwd: this.spec.cwd,
+            model: this.spec.model,
+            permissionMode: this.spec.permissionMode,
+            mcpServers: this.spec.mcpServers,
+            systemPrompt: this.spec.systemPrompt,
+          }),
         });
         break;
       }
@@ -387,7 +390,10 @@ export class CodexAgentAdapter implements AgentAdapter {
     }
 
     // Update settings from response
-    const newSettings = mapThreadConfig(response);
+    const newSettings = mapThreadConfig(
+      response,
+      this._settings.permissionMode as TurnSettings['permissionMode'] | undefined,
+    );
     this._settings = { ...this._settings, ...newSettings };
     this.emitSettingsChanged();
 
@@ -424,6 +430,34 @@ export class CodexAgentAdapter implements AgentAdapter {
 
   /** Stored outputFormat for passing to turn/start. */
   private _outputFormat: TurnSettings['outputFormat'];
+
+  private buildThreadConfigParams(options: {
+    cwd?: string;
+    model?: string;
+    permissionMode?: TurnSettings['permissionMode'];
+    mcpServers?: Record<string, unknown>;
+    systemPrompt?: string;
+  }): Record<string, unknown> {
+    const params: Record<string, unknown> = {};
+
+    if (options.cwd) {
+      params.cwd = options.cwd;
+    }
+    if (options.model) {
+      params.model = options.model;
+    }
+    if (options.permissionMode) {
+      params.approvalPolicy = mapPermissionMode(options.permissionMode);
+    }
+    if (options.mcpServers && Object.keys(options.mcpServers).length > 0) {
+      params.config = { mcp_servers: options.mcpServers };
+    }
+    if (options.systemPrompt) {
+      params.developerInstructions = options.systemPrompt;
+    }
+
+    return params;
+  }
 
   private applySettings(settings: TurnSettings): void {
     if (settings.model !== undefined) {
@@ -516,8 +550,8 @@ export class CodexAgentAdapter implements AgentAdapter {
         try {
           const entries = adaptCodexItem(item, threadId, turnId);
           for (const entry of entries) {
-            // Inject context usage into assistant entries so the webview gauge
-            // can compute usage from entries (same pattern Claude SDK uses).
+            // Inject context usage into assistant entries only when the adapter
+            // has a trustworthy occupancy snapshot.
             if (entry.type === 'assistant' && this._contextUsage && entry.message) {
               entry.message.usage = {
                 input_tokens: this._contextUsage.tokens.input,

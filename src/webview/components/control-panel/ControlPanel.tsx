@@ -1078,7 +1078,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             groups={modelGroups}
           />
           <span className="crispy-cp-right">
-            <ContextWidget percent={state.contextPercent} contextUsage={state.contextUsage} compact={compact} />
+            {state.contextUsage && (
+              <ContextWidget percent={state.contextPercent} contextUsage={state.contextUsage} compact={compact} />
+            )}
             <RosiePanel
               pinned={rosiePanelPinned}
               onToggle={() => setRosiePanelPinned(!rosiePanelPinned)}

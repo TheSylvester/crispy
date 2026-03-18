@@ -7,7 +7,8 @@
  * - Map permission modes ↔ approval policies
  * - Convert TurnSettings to Codex params
  * - Parse thread config into AdapterSettings
- * - Convert token usage to ContextUsage
+ * - Convert token usage to ContextUsage when the protocol exposes
+ *   defensible in-window occupancy
  * - Transform MessageContent to UserInput[]
  *
  * Does NOT:
@@ -30,7 +31,7 @@ import type { UserInput } from './protocol/v2/UserInput.js';
  * | Crispy permissionMode | → Codex approvalPolicy |
  * |---|---|
  * | 'default' | 'on-request' |
- * | 'acceptEdits' | 'on-failure' |
+ * | 'acceptEdits' | 'on-request' |
  * | 'bypassPermissions' | 'never' |
  * | 'plan' | 'on-request' |
  */
@@ -39,7 +40,10 @@ export function mapPermissionMode(mode: string): AskForApproval {
     case 'default':
       return 'on-request';
     case 'acceptEdits':
-      return 'on-failure';
+      // Codex CLI 0.115.0 still accepts on-failure but marks it deprecated.
+      // Keep Crispy on the supported path even though this collapses multiple
+      // UI modes onto the same Codex approval policy.
+      return 'on-request';
     case 'bypassPermissions':
       return 'never';
     case 'plan':
@@ -54,14 +58,23 @@ export function mapPermissionMode(mode: string): AskForApproval {
  *
  * | Codex approvalPolicy | → Crispy permissionMode |
  * |---|---|
- * | 'on-request' | 'default' |
+ * | 'on-request' | 'default' / preserved current mode |
  * | 'on-failure' | 'acceptEdits' |
  * | 'never' | 'bypassPermissions' |
  * | 'untrusted' | 'default' (closest match) |
  */
-export function mapApprovalPolicy(policy: string): TurnSettings['permissionMode'] {
+export function mapApprovalPolicy(
+  policy: string,
+  currentMode?: TurnSettings['permissionMode'],
+): TurnSettings['permissionMode'] {
   switch (policy) {
     case 'on-request':
+      // Codex reports on-request for several Crispy modes once we stop using
+      // deprecated on-failure. Preserve the current UI mode when possible so
+      // round-trips don't silently flip back to "ask before edits".
+      if (currentMode === 'acceptEdits' || currentMode === 'plan') {
+        return currentMode;
+      }
       return 'default';
     case 'on-failure':
       return 'acceptEdits';
@@ -120,14 +133,17 @@ export function mapTurnSettings(settings: TurnSettings): Record<string, unknown>
  * }
  * ```
  */
-export function mapThreadConfig(response: Record<string, unknown>): AdapterSettings {
+export function mapThreadConfig(
+  response: Record<string, unknown>,
+  currentPermissionMode?: TurnSettings['permissionMode'],
+): AdapterSettings {
   const approvalPolicy = response.approvalPolicy as string | undefined;
   const model = response.model as string | undefined;
 
   return {
     vendor: 'codex',
     model,
-    permissionMode: approvalPolicy ? mapApprovalPolicy(approvalPolicy) : undefined,
+    permissionMode: approvalPolicy ? mapApprovalPolicy(approvalPolicy, currentPermissionMode) : undefined,
     allowDangerouslySkipPermissions: approvalPolicy === 'never',
     extraArgs: undefined,
   };
@@ -140,6 +156,11 @@ export function mapThreadConfig(response: Record<string, unknown>): AdapterSetti
 /**
  * Map Codex ThreadTokenUsage → Crispy ContextUsage.
  *
+ * Codex exposes cumulative `total` usage and per-turn `last` usage, but the
+ * current app-server surface does not identify either field as compaction-aware
+ * current context occupancy. Until it does, Crispy must not present this
+ * payload as "context used".
+ *
  * Expected usage shape from thread/tokenUsage/updated notification:
  * ```json
  * {
@@ -151,34 +172,20 @@ export function mapThreadConfig(response: Record<string, unknown>): AdapterSetti
  *       "outputTokens": 25,
  *       "reasoningOutputTokens": 14
  *     },
+ *     "last": {
+ *       "totalTokens": 1197,
+ *       "inputTokens": 1120,
+ *       "cachedInputTokens": 1040,
+ *       "outputTokens": 77,
+ *       "reasoningOutputTokens": 0
+ *     },
  *     "modelContextWindow": 258400
  *   }
  * }
  * ```
  */
-export function mapTokenUsage(usage: Record<string, unknown>): ContextUsage {
-  // Handle both nested (from notification params) and direct shape
-  const tokenUsage = (usage.tokenUsage ?? usage) as Record<string, unknown>;
-  const total = (tokenUsage.total ?? {}) as Record<string, number>;
-  const modelContextWindow = (tokenUsage.modelContextWindow as number) ?? 200000;
-
-  const inputTokens = total.inputTokens ?? 0;
-  const outputTokens = total.outputTokens ?? 0;
-  const cachedInputTokens = total.cachedInputTokens ?? 0;
-  const totalTokens = total.totalTokens ?? (inputTokens + outputTokens);
-
-  return {
-    tokens: {
-      input: inputTokens,
-      output: outputTokens,
-      cacheCreation: 0,  // Codex doesn't report cache creation tokens
-      cacheRead: cachedInputTokens,
-    },
-    totalTokens,
-    contextWindow: modelContextWindow,
-    percent: Math.min(Math.round((totalTokens / modelContextWindow) * 100), 100),
-    // totalCostUsd: omitted — Codex doesn't provide cost information
-  };
+export function mapTokenUsage(_usage: Record<string, unknown>): ContextUsage | null {
+  return null;
 }
 
 // ============================================================================
