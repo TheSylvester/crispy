@@ -39,8 +39,22 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   'claude:opus':               1_000_000,
   'claude:':                   200_000,  // default Claude
   // Codex (OpenAI)
-  'codex:gpt-5.3-instant':    200_000,
-  'codex:gpt-5.4-medium':     200_000,
+  'codex:gpt-5':               400_000,
+  'codex:gpt-5-pro':           400_000,
+  'codex:gpt-5-mini':          400_000,
+  'codex:gpt-5-nano':          400_000,
+  'codex:gpt-5-codex':         400_000,
+  'codex:gpt-5.1':             400_000,
+  'codex:gpt-5.1-codex':       400_000,
+  'codex:gpt-5.1-codex-mini':  400_000,
+  'codex:gpt-5.1-codex-max':   400_000,
+  'codex:gpt-5.2':             400_000,
+  'codex:gpt-5.2-pro':         400_000,
+  'codex:gpt-5.2-codex':       400_000,
+  'codex:gpt-5.3-instant':     200_000,
+  'codex:gpt-5.4':           1_050_000,
+  'codex:gpt-5.4-pro':       1_050_000,
+  'codex:gpt-5.4-medium':      200_000,
   'codex:':                    200_000,  // default Codex
   // Gemini
   'gemini:':                   1_000_000,
@@ -62,9 +76,10 @@ export function getContextWindowTokens(vendor: Vendor, model?: string): number {
   const key = `${vendor}:${model || ''}`;
   if (CONTEXT_WINDOWS[key] !== undefined) return CONTEXT_WINDOWS[key];
   // Strip date suffix (e.g. "claude-opus-4-5-20251101" → "claude-opus-4-5")
-  // SDK model strings append -YYYYMMDD; the table uses the versionless form.
+  // SDK model strings append -YYYYMMDD or -YYYY-MM-DD; the table uses the
+  // versionless form.
   if (model) {
-    const stripped = model.replace(/-\d{8}$/, '');
+    const stripped = model.replace(/(?:-\d{8}|-\d{4}-\d{2}-\d{2})$/, '');
     if (stripped !== model) {
       const strippedKey = `${vendor}:${stripped}`;
       if (CONTEXT_WINDOWS[strippedKey] !== undefined) return CONTEXT_WINDOWS[strippedKey];
