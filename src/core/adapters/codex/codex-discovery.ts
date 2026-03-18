@@ -19,6 +19,8 @@ import type { TranscriptEntry } from '../../transcript.js';
 import type { Thread } from './protocol/v2/Thread.js';
 import type { ThreadListResponse } from './protocol/v2/ThreadListResponse.js';
 import type { ThreadReadResponse } from './protocol/v2/ThreadReadResponse.js';
+import type { Model } from './protocol/v2/Model.js';
+import type { ModelListResponse } from './protocol/v2/ModelListResponse.js';
 import { adaptCodexItem } from './codex-entry-adapter.js';
 import { findCodexSessionFile, parseCodexJsonlFile, scanCodexUserMessages } from './codex-jsonl-reader.js';
 import { adaptCodexJsonlRecords } from './codex-jsonl-adapter.js';
@@ -42,6 +44,11 @@ export class CodexDiscovery implements VendorDiscovery {
   private readonly cacheTtlMs = 30_000;
   private refreshing = false;
   private refreshPromise: Promise<void> | null = null;
+
+  /** Cached models from model/list RPC. */
+  private modelCache: Model[] = [];
+  private modelCacheTimestamp = 0;
+  private readonly modelCacheTtlMs = 300_000; // 5 min — models change rarely
 
   /**
    * Set the resolved codex binary path.
@@ -135,6 +142,29 @@ export class CodexDiscovery implements VendorDiscovery {
     }
 
     return entries;
+  }
+
+  /**
+   * List available models from the Codex app-server.
+   * Returns cached result if fresh enough; otherwise fetches via model/list RPC.
+   */
+  async listModels(): Promise<Model[]> {
+    if (Date.now() - this.modelCacheTimestamp < this.modelCacheTtlMs && this.modelCache.length > 0) {
+      return this.modelCache;
+    }
+
+    try {
+      const client = await this.ensureClient();
+      const response = await client.request<ModelListResponse>('model/list', {
+        includeHidden: false,
+      });
+      this.modelCache = response.data;
+      this.modelCacheTimestamp = Date.now();
+      return this.modelCache;
+    } catch (err) {
+      log({ level: 'error', source: 'codex-discovery', summary: `model/list failed: ${err instanceof Error ? err.message : String(err)}` });
+      return this.modelCache; // return stale cache on failure
+    }
   }
 
   /**

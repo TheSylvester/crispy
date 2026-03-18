@@ -745,7 +745,7 @@ export function createClientConnection(
       }
 
       case 'getModelGroups':
-        return getModelGroups(getRegisteredVendors());
+        return await getModelGroups(getRegisteredVendors());
 
       case "getActivityLog": {
         const from = params.from as string | undefined;

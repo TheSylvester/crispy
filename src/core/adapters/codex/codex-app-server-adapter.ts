@@ -450,7 +450,18 @@ export class CodexAgentAdapter implements AgentAdapter {
       params.approvalPolicy = mapPermissionMode(options.permissionMode);
     }
     if (options.mcpServers && Object.keys(options.mcpServers).length > 0) {
-      params.config = { mcp_servers: options.mcpServers };
+      // Only forward serializable MCP configs (stdio/SSE with command/args).
+      // In-process server instances (McpSdkServerConfigWithInstance from Claude SDK)
+      // contain Zod schemas with circular references and can't be JSON.stringify'd.
+      const serializableServers: Record<string, unknown> = {};
+      for (const [name, config] of Object.entries(options.mcpServers)) {
+        if (config && typeof config === 'object' && 'type' in config && (config as Record<string, unknown>).type === 'stdio') {
+          serializableServers[name] = config;
+        }
+      }
+      if (Object.keys(serializableServers).length > 0) {
+        params.config = { mcp_servers: serializableServers };
+      }
     }
     if (options.systemPrompt) {
       params.developerInstructions = options.systemPrompt;

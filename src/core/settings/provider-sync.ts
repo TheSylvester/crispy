@@ -14,6 +14,7 @@ import { NATIVE_VENDORS, type Vendor } from '../transcript.js';
 import type { VendorDiscovery, SessionOpenSpec } from '../agent-adapter.js';
 import type { ProviderConfig } from './types.js';
 import { log } from '../log.js';
+import { codexDiscovery } from '../adapters/codex/codex-discovery.js';
 
 // ============================================================================
 // Types
@@ -267,7 +268,7 @@ export function syncProviderAdapters(
  *   `available: false` so the UI can gray them out. When omitted (e.g. dev-server
  *   where everything is registered), all groups default to available.
  */
-export function getModelGroups(registeredVendors?: Set<string>): VendorModelGroup[] {
+export async function getModelGroups(registeredVendors?: Set<string>): Promise<VendorModelGroup[]> {
   // Use provided set or get from session-manager
   const vendors = registeredVendors ?? getRegisteredVendors();
   const groups: VendorModelGroup[] = [];
@@ -285,14 +286,38 @@ export function getModelGroups(registeredVendors?: Set<string>): VendorModelGrou
     available: !vendors || vendors.has('claude'),
   });
 
-  // Codex — models are server-managed, user can override via model string
+  // Codex — query live models from app-server, fall back to Default only
+  const codexAvailable = !vendors || vendors.has('codex');
+  let codexModels: { value: string; label: string }[] = [
+    { value: 'codex:', label: 'Default' },
+  ];
+  if (codexAvailable) {
+    try {
+      const liveModels = await codexDiscovery.listModels();
+      if (liveModels.length > 0) {
+        codexModels = [];
+        // Put the default model first
+        const defaultModel = liveModels.find(m => m.isDefault);
+        if (defaultModel) {
+          codexModels.push({ value: 'codex:', label: `${defaultModel.displayName} (default)` });
+        } else {
+          codexModels.push({ value: 'codex:', label: 'Default' });
+        }
+        // Add non-default, non-hidden models
+        for (const m of liveModels) {
+          if (m.isDefault || m.hidden) continue;
+          codexModels.push({ value: `codex:${m.id}`, label: m.displayName });
+        }
+      }
+    } catch {
+      // RPC failed — stick with Default only
+    }
+  }
   groups.push({
     vendor: 'codex',
     label: 'Codex',
-    models: [
-      { value: 'codex:', label: 'GPT (default)' },
-    ],
-    available: !vendors || vendors.has('codex'),
+    models: codexModels,
+    available: codexAvailable,
   });
 
   // Dynamic providers
