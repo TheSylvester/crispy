@@ -215,8 +215,7 @@ function wrapToolHandler<T extends unknown[]>(
           elapsed,
           hits: (results as Array<Record<string, unknown>>).slice(0, 10).map((r) => ({
             ...(r.file ? { file: r.file } : {}),
-            ...(r.title ? { title: (r.title as string).slice(0, 80) } : {}),
-            ...(r.quest ? { quest: (r.quest as string).slice(0, 80) } : {}),
+            ...(r.preview ? { preview: (r.preview as string).slice(0, 80) } : {}),
           })),
         },
       });
@@ -367,17 +366,16 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
 
   timedTool(server,
     'search_sessions',
-    'Full-text search over session activity. Returns BM25-ranked results with match snippets, summaries, and titles — often enough to answer without drilling deeper. Start here for most queries. Supports FTS5 syntax: use OR for broad searches ("sqlite OR database"), "quoted phrases" for exact matches, prefix* for partial terms. Supports time filtering with since/before.',
+    'Full-text search over session activity. Returns BM25-ranked results with match snippets and previews. Start here for most queries. Supports FTS5 syntax: use OR for broad searches ("sqlite OR database"), "quoted phrases" for exact matches, prefix* for partial terms. Supports time filtering with since/before.',
     {
       query: z.string().describe('Search query — use OR to broaden, "quoted phrases" for exact matches, prefix* for partial terms. Prefer short keywords over long natural-language phrases.'),
       limit: z.number().optional().default(20).describe('Maximum results to return (default 20)'),
-      kind: z.enum(['rosie-meta']).optional().describe('Filter by entry kind: "rosie-meta" for AI-generated summaries'),
       since: z.string().optional().describe('ISO timestamp — only return results after this time (e.g. "2026-03-01T00:00:00Z")'),
       before: z.string().optional().describe('ISO timestamp — only return results before this time'),
     },
     async (args) => {
-      log({ level: 'debug', source: 'recall:search_sessions', summary: `query="${args.query}" limit=${args.limit} kind=${args.kind ?? 'all'} since=${args.since ?? '-'} before=${args.before ?? '-'}` });
-      return runSearch(args.query as string, args.limit as number, args.kind as string | undefined, args.since as string | undefined, args.before as string | undefined);
+      log({ level: 'debug', source: 'recall:search_sessions', summary: `query="${args.query}" limit=${args.limit} since=${args.since ?? '-'} before=${args.before ?? '-'}` });
+      return runSearch(args.query as string, args.limit as number, undefined, args.since as string | undefined, args.before as string | undefined);
     },
   );
 
@@ -390,7 +388,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
 
   timedTool(server,
     'list_sessions',
-    'Browse sessions by recency — use when you need to scan recent work without a specific search term, or when search returns nothing and you want to browse what exists. Returns session titles, quests, and status.',
+    'Browse sessions by recency — use when you need to scan recent work without a specific search term, or when search returns nothing and you want to browse what exists.',
     {
       limit: z.number().optional().default(50).describe('Maximum sessions to return (default 50)'),
       since: z.string().optional().describe('ISO timestamp — only return sessions with activity after this time'),
@@ -410,14 +408,13 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
 
   timedTool(server,
     'session_context',
-    'Get the activity index for a specific session — returns timestamped metadata entries (titles, quests, summaries, statuses) in chronological order. This is structured metadata, NOT the raw conversation. Use read_turn to get actual conversation content.',
+    'Get the activity index for a specific session — returns timestamped prompt entries in chronological order. This is structured metadata, NOT the raw conversation. Use read_turn to get actual conversation content.',
     {
       file: z.string().describe('Session transcript file path (from search_sessions or list_sessions results)'),
-      kind: z.enum(['rosie-meta']).optional().describe('Filter by entry kind'),
     },
     async (args) => {
-      log({ level: 'debug', source: 'recall:session_context', summary: `file="${args.file}" kind=${args.kind ?? 'all'}` });
-      return runContext(args.file as string, args.kind as string | undefined);
+      log({ level: 'debug', source: 'recall:session_context', summary: `file="${args.file}"` });
+      return runContext(args.file as string);
     },
   );
 
@@ -426,10 +423,10 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
   // ------------------------------------------------------------------
   timedTool(server,
     'read_turn',
-    'Read the full user prompt and assistant response at a byte offset. This is the only way to see actual conversation content. Use the file path and byte offset from search_sessions or session_context results.',
+    'Read the full user prompt and assistant response at a byte offset in a JSONL transcript file. Prefer read_message (by message UUID) over this tool — it is more reliable. Only use read_turn when you have a known byte offset.',
     {
-      file: z.string().describe('Session transcript file path (from search results)'),
-      offset: z.number().describe('Byte offset of the turn (from the "id" field in search results or session_context entries)'),
+      file: z.string().describe('Session transcript file path'),
+      offset: z.number().describe('Byte offset of the turn in the JSONL file'),
     },
     async (args) => {
       const file = args.file as string;

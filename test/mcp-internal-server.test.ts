@@ -58,24 +58,16 @@ afterEach(() => {
 });
 
 function insertEntry(opts: {
-  timestamp: string;
-  kind: 'prompt' | 'rosie-meta';
+  ts: string;
+  kind: 'prompt';
   file: string;
   preview?: string;
-  quest?: string;
-  summary?: string;
-  title?: string;
-  status?: string;
 }): void {
   const db = getDb(dbPath);
   db.run(
-    `INSERT INTO session_meta (timestamp, kind, file, preview, quest, summary, title, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      opts.timestamp, opts.kind, opts.file,
-      opts.preview ?? null, opts.quest ?? null, opts.summary ?? null,
-      opts.title ?? null, opts.status ?? null,
-    ],
+    `INSERT INTO session_meta (ts, kind, file, preview)
+     VALUES (?, ?, ?, ?)`,
+    [opts.ts, opts.kind, opts.file, opts.preview ?? null],
   );
 }
 
@@ -110,11 +102,10 @@ describe('internal MCP server', () => {
 
   it('search_sessions returns matching results', async () => {
     insertEntry({
-      timestamp: '2025-06-01T10:00:00Z',
-      kind: 'rosie-meta',
+      ts: '2025-06-01T10:00:00Z',
+      kind: 'prompt',
       file: '/sessions/a.jsonl',
-      quest: 'implement authentication system',
-      title: 'Auth System',
+      preview: 'implement authentication system',
     });
 
     const { client } = await createConnectedClient();
@@ -123,22 +114,21 @@ describe('internal MCP server', () => {
     const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
     const parsed = JSON.parse(text);
     expect(parsed.count).toBe(1);
-    expect(parsed.results[0].quest).toBe('implement authentication system');
+    expect(parsed.results[0].preview).toBe('implement authentication system');
   });
 
   it('list_sessions returns grouped sessions', async () => {
     insertEntry({
-      timestamp: '2025-06-01T10:00:00Z',
+      ts: '2025-06-01T10:00:00Z',
       kind: 'prompt',
       file: '/sessions/a.jsonl',
       preview: 'hello',
     });
     insertEntry({
-      timestamp: '2025-06-01T11:00:00Z',
-      kind: 'rosie-meta',
+      ts: '2025-06-01T11:00:00Z',
+      kind: 'prompt',
       file: '/sessions/a.jsonl',
-      quest: 'dark mode',
-      title: 'Dark Mode',
+      preview: 'dark mode implementation',
     });
 
     const { client } = await createConnectedClient();
@@ -147,21 +137,21 @@ describe('internal MCP server', () => {
     const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
     const parsed = JSON.parse(text);
     expect(parsed.count).toBe(1);
-    expect(parsed.sessions[0].quest).toBe('dark mode');
+    expect(parsed.sessions[0].entry_count).toBe(2);
   });
 
   it('session_context returns ordered entries', async () => {
     insertEntry({
-      timestamp: '2025-06-01T10:00:00Z',
+      ts: '2025-06-01T10:00:00Z',
       kind: 'prompt',
       file: '/sessions/a.jsonl',
       preview: 'first',
     });
     insertEntry({
-      timestamp: '2025-06-01T10:05:00Z',
-      kind: 'rosie-meta',
+      ts: '2025-06-01T10:05:00Z',
+      kind: 'prompt',
       file: '/sessions/a.jsonl',
-      quest: 'dark mode',
+      preview: 'second',
     });
 
     const { client } = await createConnectedClient();
@@ -173,8 +163,8 @@ describe('internal MCP server', () => {
     const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
     const parsed = JSON.parse(text);
     expect(parsed.count).toBe(2);
-    expect(parsed.entries[0].kind).toBe('prompt');
-    expect(parsed.entries[1].kind).toBe('rosie-meta');
+    expect(parsed.entries[0].preview).toBe('first');
+    expect(parsed.entries[1].preview).toBe('second');
   });
 });
 
@@ -185,11 +175,10 @@ describe('internal MCP server', () => {
 describe('time-aware tool responses', () => {
   it('no footer during clean search phase (>30s remaining)', async () => {
     insertEntry({
-      timestamp: '2025-06-01T10:00:00Z',
-      kind: 'rosie-meta',
+      ts: '2025-06-01T10:00:00Z',
+      kind: 'prompt',
       file: '/sessions/a.jsonl',
-      quest: 'test query',
-      title: 'Test',
+      preview: 'test query',
     });
 
     // Deadline 60s from now — clean phase, no footer
@@ -213,11 +202,10 @@ describe('time-aware tool responses', () => {
 
   it('no footer when deadlineMs is not set', async () => {
     insertEntry({
-      timestamp: '2025-06-01T10:00:00Z',
-      kind: 'rosie-meta',
+      ts: '2025-06-01T10:00:00Z',
+      kind: 'prompt',
       file: '/sessions/a.jsonl',
-      quest: 'test query',
-      title: 'Test',
+      preview: 'test query',
     });
 
     const { client } = await createConnectedClient();
@@ -230,11 +218,10 @@ describe('time-aware tool responses', () => {
 
   it('shows time warning when deadline is close', async () => {
     insertEntry({
-      timestamp: '2025-06-01T10:00:00Z',
-      kind: 'rosie-meta',
+      ts: '2025-06-01T10:00:00Z',
+      kind: 'prompt',
       file: '/sessions/a.jsonl',
-      quest: 'warning test',
-      title: 'Test',
+      preview: 'warning test',
     });
 
     // Deadline 20s from now — should show warning

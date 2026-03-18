@@ -749,7 +749,6 @@ export function createClientConnection(
       case "getActivityLog": {
         const from = params.from as string | undefined;
         const to = params.to as string | undefined;
-        const kind = (params.kind as string | undefined) ?? 'prompt';
         const projectSlug = params.projectSlug as string | undefined;
 
         // Convert project slug to file path prefix for filtering
@@ -760,7 +759,7 @@ export function createClientConnection(
 
         return queryActivity(
           from || to ? { from, to } : undefined,
-          kind as 'prompt' | 'rosie-meta',
+          'prompt',
           filePrefix,
         );
       }

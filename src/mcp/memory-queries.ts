@@ -29,14 +29,10 @@ export { grepMessages, readSessionMessages };
 
 export interface SearchResult {
   id: number;
-  timestamp: string;
+  ts: string;
   kind: string;
   file: string;
   preview: string | null;
-  quest: string | null;
-  summary: string | null;
-  title: string | null;
-  status: string | null;
   rank: number;
   match_snippet: string;
 }
@@ -44,22 +40,15 @@ export interface SearchResult {
 export interface ListResult {
   file: string;
   last_activity: string;
-  quest: string | null;
-  title: string | null;
-  status: string | null;
   entry_count: number;
 }
 
 export interface ContextResult {
   id: number;
-  timestamp: string;
+  ts: string;
   kind: string;
   file: string;
   preview: string | null;
-  quest: string | null;
-  summary: string | null;
-  title: string | null;
-  status: string | null;
 }
 
 // ============================================================================
@@ -100,20 +89,19 @@ export function searchSessions(
     params.push(kind);
   }
   if (since) {
-    extraClauses += 'AND ae.timestamp >= ? ';
+    extraClauses += 'AND ae.ts >= ? ';
     params.push(since);
   }
   if (before) {
-    extraClauses += 'AND ae.timestamp <= ? ';
+    extraClauses += 'AND ae.ts <= ? ';
     params.push(before);
   }
   params.push(limit);
 
   return db.all(`
-    SELECT ae.id, ae.timestamp, ae.kind, ae.file, ae.preview,
-           ae.quest, ae.summary, ae.title, ae.status,
-           bm25(session_meta_fts, 10.0, 8.0, 4.0, 3.0, 1.0) as rank,
-           snippet(session_meta_fts, 1, '>>>', '<<<', '...', 32) as match_snippet
+    SELECT ae.id, ae.ts, ae.kind, ae.file, ae.preview,
+           bm25(session_meta_fts, 1.0) as rank,
+           snippet(session_meta_fts, 0, '>>>', '<<<', '...', 32) as match_snippet
     FROM session_meta_fts
     JOIN session_meta ae ON ae.id = session_meta_fts.rowid
     WHERE session_meta_fts MATCH ?
@@ -124,10 +112,7 @@ export function searchSessions(
 }
 
 /**
- * List distinct sessions with latest Rosie metadata.
- *
- * Sessions are grouped by transcript file and ordered by most recent
- * activity. Returns quest, title, status from the latest rosie-meta entry.
+ * List distinct sessions ordered by most recent activity.
  */
 export function listSessions(
   dbPath: string,
@@ -138,17 +123,14 @@ export function listSessions(
   const params: (string | number)[] = [];
   let whereClause = '';
   if (since) {
-    whereClause = 'WHERE timestamp >= ?';
+    whereClause = 'WHERE ts >= ?';
     params.push(since);
   }
   params.push(limit);
 
   return db.all(`
     SELECT file,
-           MAX(timestamp) as last_activity,
-           MAX(CASE WHEN kind = 'rosie-meta' THEN quest END) as quest,
-           MAX(CASE WHEN kind = 'rosie-meta' THEN title END) as title,
-           MAX(CASE WHEN kind = 'rosie-meta' THEN status END) as status,
+           MAX(ts) as last_activity,
            COUNT(*) as entry_count
     FROM session_meta
     ${whereClause}
@@ -161,7 +143,7 @@ export function listSessions(
 /**
  * Get full activity history for a specific session file.
  *
- * Returns all prompts and Rosie summaries in chronological order.
+ * Returns all prompts in chronological order.
  * Optionally filter by entry kind.
  */
 export function sessionContext(
@@ -178,11 +160,11 @@ export function sessionContext(
   }
 
   return db.all(`
-    SELECT id, timestamp, kind, file, preview, quest, summary, title, status
+    SELECT id, ts, kind, file, preview
     FROM session_meta
     WHERE file = ?
       ${kindClause}
-    ORDER BY timestamp ASC
+    ORDER BY ts ASC
   `, params) as unknown as ContextResult[];
 }
 

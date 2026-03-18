@@ -75,11 +75,10 @@ describe('ensureCrispyDir', () => {
 describe('appendActivityEntries', () => {
   it('stores entries retrievable by queryActivity', () => {
     const entry: ActivityIndexEntry = {
-      timestamp: '2025-01-15T10:00:00Z',
+      ts: '2025-01-15T10:00:00Z',
       kind: 'prompt',
       file: '/path/session.jsonl',
       preview: 'Hello world',
-      offset: 0,
     };
 
     appendActivityEntries([entry]);
@@ -91,18 +90,16 @@ describe('appendActivityEntries', () => {
 
   it('accumulates entries across multiple calls', () => {
     const entry1: ActivityIndexEntry = {
-      timestamp: '2025-01-15T10:00:00Z',
+      ts: '2025-01-15T10:00:00Z',
       kind: 'prompt',
       file: '/a.jsonl',
       preview: 'First',
-      offset: 0,
     };
     const entry2: ActivityIndexEntry = {
-      timestamp: '2025-01-15T11:00:00Z',
+      ts: '2025-01-15T11:00:00Z',
       kind: 'prompt',
       file: '/b.jsonl',
       preview: 'Second',
-      offset: 100,
     };
 
     appendActivityEntries([entry1]);
@@ -116,9 +113,9 @@ describe('appendActivityEntries', () => {
 
   it('writes multiple entries in one call', () => {
     const entries: ActivityIndexEntry[] = [
-      { timestamp: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'A', offset: 0 },
-      { timestamp: '2025-01-15T11:00:00Z', kind: 'prompt', file: '/b.jsonl', preview: 'B', offset: 0 },
-      { timestamp: '2025-01-15T12:00:00Z', kind: 'prompt', file: '/c.jsonl', preview: 'C', offset: 0 },
+      { ts: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'A' },
+      { ts: '2025-01-15T11:00:00Z', kind: 'prompt', file: '/b.jsonl', preview: 'B' },
+      { ts: '2025-01-15T12:00:00Z', kind: 'prompt', file: '/c.jsonl', preview: 'C' },
     ];
 
     appendActivityEntries(entries);
@@ -134,30 +131,12 @@ describe('appendActivityEntries', () => {
     expect(result).toEqual([]);
   });
 
-  it('preserves uuid field when present', () => {
+  it('deduplicates entries with same file+ts+kind', () => {
     const entry: ActivityIndexEntry = {
-      timestamp: '2025-01-15T10:00:00Z',
-      kind: 'prompt',
-      file: '/path/session.jsonl',
-      preview: 'With UUID',
-      offset: 0,
-      uuid: 'msg-abc-123',
-    };
-
-    appendActivityEntries([entry]);
-
-    const entries = readActivityEntries();
-    expect(entries[0].uuid).toBe('msg-abc-123');
-  });
-
-  it('deduplicates entries with same timestamp+file+uuid', () => {
-    const entry: ActivityIndexEntry = {
-      timestamp: '2025-01-15T10:00:00Z',
+      ts: '2025-01-15T10:00:00Z',
       kind: 'prompt',
       file: '/path/session.jsonl',
       preview: 'Hello world',
-      offset: 0,
-      uuid: 'msg-abc-123',
     };
 
     appendActivityEntries([entry]);
@@ -165,6 +144,38 @@ describe('appendActivityEntries', () => {
 
     const entries = readActivityEntries();
     expect(entries.length).toBe(1);
+  });
+
+  it('preserves session_id field when present', () => {
+    const entry: ActivityIndexEntry = {
+      ts: '2025-01-15T10:00:00Z',
+      kind: 'prompt',
+      file: '/path/session.jsonl',
+      preview: 'With session ID',
+      session_id: 'sess-abc-123',
+    };
+
+    appendActivityEntries([entry]);
+
+    const entries = readActivityEntries();
+    expect(entries[0]!.session_id).toBe('sess-abc-123');
+  });
+
+  it('preserves model and cwd fields when present', () => {
+    const entry: ActivityIndexEntry = {
+      ts: '2025-01-15T10:00:00Z',
+      kind: 'prompt',
+      file: '/path/session.jsonl',
+      preview: 'With extras',
+      model: 'claude-haiku-4-5',
+      cwd: '/home/user/project',
+    };
+
+    appendActivityEntries([entry]);
+
+    const entries = readActivityEntries();
+    expect(entries[0]!.model).toBe('claude-haiku-4-5');
+    expect(entries[0]!.cwd).toBe('/home/user/project');
   });
 });
 
@@ -178,126 +189,74 @@ describe('queryActivity', () => {
     expect(result).toEqual([]);
   });
 
-  it('returns all entries sorted by timestamp ascending', () => {
+  it('returns all entries sorted by ts ascending', () => {
     appendActivityEntries([
-      { timestamp: '2025-01-15T12:00:00Z', kind: 'prompt', file: '/c.jsonl', preview: 'C', offset: 0 },
-      { timestamp: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'A', offset: 0 },
-      { timestamp: '2025-01-15T11:00:00Z', kind: 'prompt', file: '/b.jsonl', preview: 'B', offset: 0 },
+      { ts: '2025-01-15T12:00:00Z', kind: 'prompt', file: '/c.jsonl', preview: 'C' },
+      { ts: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'A' },
+      { ts: '2025-01-15T11:00:00Z', kind: 'prompt', file: '/b.jsonl', preview: 'B' },
     ]);
 
     const result = queryActivity();
     expect(result.length).toBe(3);
-    expect(result[0].preview).toBe('A');
-    expect(result[1].preview).toBe('B');
-    expect(result[2].preview).toBe('C');
+    expect(result[0]!.preview).toBe('A');
+    expect(result[1]!.preview).toBe('B');
+    expect(result[2]!.preview).toBe('C');
   });
 
   it('filters by from timestamp', () => {
     appendActivityEntries([
-      { timestamp: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'A', offset: 0 },
-      { timestamp: '2025-01-15T11:00:00Z', kind: 'prompt', file: '/b.jsonl', preview: 'B', offset: 0 },
-      { timestamp: '2025-01-15T12:00:00Z', kind: 'prompt', file: '/c.jsonl', preview: 'C', offset: 0 },
+      { ts: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'A' },
+      { ts: '2025-01-15T11:00:00Z', kind: 'prompt', file: '/b.jsonl', preview: 'B' },
+      { ts: '2025-01-15T12:00:00Z', kind: 'prompt', file: '/c.jsonl', preview: 'C' },
     ]);
 
     const result = queryActivity({ from: '2025-01-15T11:00:00Z' });
     expect(result.length).toBe(2);
-    expect(result[0].preview).toBe('B');
-    expect(result[1].preview).toBe('C');
+    expect(result[0]!.preview).toBe('B');
+    expect(result[1]!.preview).toBe('C');
   });
 
   it('filters by to timestamp', () => {
     appendActivityEntries([
-      { timestamp: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'A', offset: 0 },
-      { timestamp: '2025-01-15T11:00:00Z', kind: 'prompt', file: '/b.jsonl', preview: 'B', offset: 0 },
-      { timestamp: '2025-01-15T12:00:00Z', kind: 'prompt', file: '/c.jsonl', preview: 'C', offset: 0 },
+      { ts: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'A' },
+      { ts: '2025-01-15T11:00:00Z', kind: 'prompt', file: '/b.jsonl', preview: 'B' },
+      { ts: '2025-01-15T12:00:00Z', kind: 'prompt', file: '/c.jsonl', preview: 'C' },
     ]);
 
     const result = queryActivity({ to: '2025-01-15T11:00:00Z' });
     expect(result.length).toBe(2);
-    expect(result[0].preview).toBe('A');
-    expect(result[1].preview).toBe('B');
+    expect(result[0]!.preview).toBe('A');
+    expect(result[1]!.preview).toBe('B');
   });
 
   it('filters by both from and to timestamps', () => {
     appendActivityEntries([
-      { timestamp: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'A', offset: 0 },
-      { timestamp: '2025-01-15T11:00:00Z', kind: 'prompt', file: '/b.jsonl', preview: 'B', offset: 0 },
-      { timestamp: '2025-01-15T12:00:00Z', kind: 'prompt', file: '/c.jsonl', preview: 'C', offset: 0 },
+      { ts: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'A' },
+      { ts: '2025-01-15T11:00:00Z', kind: 'prompt', file: '/b.jsonl', preview: 'B' },
+      { ts: '2025-01-15T12:00:00Z', kind: 'prompt', file: '/c.jsonl', preview: 'C' },
     ]);
 
     const result = queryActivity({ from: '2025-01-15T10:30:00Z', to: '2025-01-15T11:30:00Z' });
     expect(result.length).toBe(1);
-    expect(result[0].preview).toBe('B');
+    expect(result[0]!.preview).toBe('B');
   });
 
   it('filters by kind', () => {
     appendActivityEntries([
-      { timestamp: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'Prompt', offset: 0 },
-      { timestamp: '2025-01-15T11:00:00Z', kind: 'rosie-meta', file: '/b.jsonl', preview: 'Meta', offset: 0 },
+      { ts: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'Prompt' },
     ]);
 
     const prompts = queryActivity(undefined, 'prompt');
     expect(prompts.length).toBe(1);
-    expect(prompts[0].preview).toBe('Prompt');
-
-    const metas = queryActivity(undefined, 'rosie-meta');
-    expect(metas.length).toBe(1);
-    expect(metas[0].preview).toBe('Meta');
+    expect(prompts[0]!.preview).toBe('Prompt');
   });
 
-  it('preserves uuid in returned entries', () => {
+  it('does not include session_id when entry has no session_id', () => {
     appendActivityEntries([
-      { timestamp: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'A', offset: 0, uuid: 'abc-123' },
+      { ts: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'A' },
     ]);
 
     const result = queryActivity();
-    expect(result[0].uuid).toBe('abc-123');
+    expect(result[0]!.session_id).toBeUndefined();
   });
-
-  it('does not include uuid when entry has no uuid', () => {
-    appendActivityEntries([
-      { timestamp: '2025-01-15T10:00:00Z', kind: 'prompt', file: '/a.jsonl', preview: 'A', offset: 0 },
-    ]);
-
-    const result = queryActivity();
-    expect(result[0].uuid).toBeUndefined();
-  });
-
-  it('persists and retrieves rosie-meta fields including status', () => {
-    appendActivityEntries([{
-      timestamp: '2025-01-15T10:00:00Z',
-      kind: 'rosie-meta',
-      file: '/session.jsonl',
-      preview: 'Build the tracker',
-      offset: 0,
-      quest: 'Build the project tracker MVP',
-      summary: 'User asked to implement the tracker. I created the schema.',
-      title: 'Project Tracker Implementation',
-      status: 'Schema created. Hook wiring in progress. Tests pending.',
-    }]);
-
-    const result = queryActivity(undefined, 'rosie-meta');
-    expect(result.length).toBe(1);
-    expect(result[0].quest).toBe('Build the project tracker MVP');
-    expect(result[0].summary).toBe('User asked to implement the tracker. I created the schema.');
-    expect(result[0].title).toBe('Project Tracker Implementation');
-    expect(result[0].status).toBe('Schema created. Hook wiring in progress. Tests pending.');
-  });
-
-  it('returns undefined status when not provided', () => {
-    appendActivityEntries([{
-      timestamp: '2025-01-15T10:00:00Z',
-      kind: 'rosie-meta',
-      file: '/session.jsonl',
-      preview: 'Goal text',
-      offset: 0,
-      quest: 'Some goal',
-      summary: 'Some summary',
-      title: 'Some title',
-    }]);
-
-    const result = queryActivity(undefined, 'rosie-meta');
-    expect(result[0].status).toBeUndefined();
-  });
-
 });

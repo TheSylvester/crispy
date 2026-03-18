@@ -532,39 +532,3 @@ function buildPerTurnInjection(
   return `${projectsSection}\n\n${titleLine}\n\nObserve the following turn...\n\nTURN ${turnNumber}\n${turnContent}`;
 }
 
-// ============================================================================
-// Legacy Exports (consumed by scripts/backfill.ts)
-// ============================================================================
-
-/** @deprecated Gen 2 summarize prompt — only used by scripts/backfill.ts. */
-export const SUMMARIZE_PROMPT = `Consider this session transcript.
-What is the stated or apparent goal of this particular conversation?
-How would you label this conversation in a short sentence for a user to best remember what this session was for?
-Summarize the last turn: Describe the User Request and your Response; including any work completed.
-What is the current status of the work in this conversation? Describe where things stand right now — what's done, what's in progress, what's blocked or paused.
-
-Provide your output in this format:
-<goal>The goal of this conversation</goal>
-<title>Label the conversation</title>
-<summary>Turn summary</summary>
-<status>Current status of the work</status>`;
-
-/** @deprecated Gen 2 tracker prompt builder — only used by scripts/backfill.ts. */
-export function buildTrackerPrompt(
-  meta: { quest?: string; title?: string; summary?: string; status?: string },
-  projects: { id: string; title: string; stage: string; status: string | null; icon: string | null }[],
-): string {
-  const projectList = projects.length > 0
-    ? projects.map((p) => `[${p.id}] ${p.icon ?? ''} ${p.title} [${p.stage}] ${p.status ?? ''}`).join('\n')
-    : 'No existing projects yet.';
-
-  const summaryLine = meta.summary ? `Summary: ${meta.summary}\n` : '';
-
-  return `Title: ${meta.title ?? ''}
-Quest: ${meta.quest ?? ''}
-${summaryLine}Status: ${meta.status ?? ''}
-
-## Existing Projects
-
-${projectList}`;
-}

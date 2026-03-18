@@ -1,8 +1,8 @@
 /**
  * Tests for Crispy Database Module
  *
- * Tests the SQLite singleton lifecycle, pragmas, migration runner,
- * and legacy data import.
+ * Tests the SQLite singleton lifecycle, pragmas, schema creation,
+ * and FTS5 support.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -84,144 +84,107 @@ describe('getDb', () => {
 });
 
 // ============================================================================
-// Migrations
+// Schema
 // ============================================================================
 
-describe('migrations', () => {
-  it('creates session_meta table', () => {
+describe('schema', () => {
+  it('creates session_meta table with correct columns', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
     // Verify table exists by inserting and querying
     db.run(
-      `INSERT INTO session_meta (timestamp, kind, file, preview, byte_offset)
-       VALUES (?, ?, ?, ?, ?)`,
-      ['2025-01-01T00:00:00Z', 'rosie-meta', '/test.jsonl', 'test', 0],
+      `INSERT INTO session_meta (ts, kind, file, preview)
+       VALUES (?, ?, ?, ?)`,
+      ['2025-01-01T00:00:00Z', 'prompt', '/test.jsonl', 'test'],
     );
     const row = db.get('SELECT COUNT(*) as cnt FROM session_meta') as Record<string, unknown>;
     expect(row.cnt).toBe(1);
   });
 
-  it('drops scan_state table in migration v19', () => {
+  it('session_meta has session_id, model, cwd columns', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
-    const row = db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='scan_state'") as Record<string, unknown> | null;
-    expect(row).toBeNull();
+    db.run(
+      `INSERT INTO session_meta (ts, kind, file, preview, session_id, model, cwd)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ['2025-01-01T00:00:00Z', 'prompt', '/test.jsonl', 'test', 'sess-123', 'haiku', '/home/user'],
+    );
+    const row = db.get('SELECT session_id, model, cwd FROM session_meta') as Record<string, unknown>;
+    expect(row.session_id).toBe('sess-123');
+    expect(row.model).toBe('haiku');
+    expect(row.cwd).toBe('/home/user');
   });
 
-  it('creates _migrations tracking table', () => {
+  it('creates _migrations tracking table with version 1', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
     const rows = db.all('SELECT version FROM _migrations ORDER BY version') as Array<Record<string, unknown>>;
-    expect(rows.length).toBe(24);
-    const versions = rows.map(r => r.version);
-    expect(versions).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]);
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.version).toBe(1);
   });
 
-  it('runs migrations idempotently', () => {
+  it('runs schema idempotently', () => {
     const dbPath = join(testDir, 'crispy.db');
 
-    // Open, close, reopen — migrations should not fail
+    // Open, close, reopen — schema should not fail
     getDb(dbPath);
     _resetDb();
     getDb(dbPath);
 
     const db = getDb(dbPath);
     const rows = db.all('SELECT version FROM _migrations ORDER BY version');
-    expect(rows.length).toBe(24);
+    expect(rows.length).toBe(1);
   });
-});
 
-// ============================================================================
-// Legacy Data Migration
-// ============================================================================
+  it('creates all 19 regular tables', () => {
+    const dbPath = join(testDir, 'crispy.db');
+    const db = getDb(dbPath);
 
-describe('legacy migration', () => {
-  it('imports existing JSONL data on first DB open', () => {
-    const jsonlPath = join(testDir, 'activity-index.jsonl');
-    const entries = [
-      JSON.stringify({ timestamp: '2025-01-15T10:00:00Z', kind: 'rosie-meta', file: '/a.jsonl', preview: 'First', offset: 0, uuid: 'msg-1' }),
-      JSON.stringify({ timestamp: '2025-01-15T11:00:00Z', kind: 'rosie-meta', file: '/b.jsonl', preview: 'Second', offset: 100 }),
+    const tables = db.all(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`
+    ) as Array<{ name: string }>;
+    const tableNames = new Set(tables.map(r => r.name));
+
+    const expected = [
+      '_migrations', 'session_meta', 'session_lineage', 'session_titles',
+      'projects', 'project_sessions', 'project_files', 'project_activity', 'stages',
+      'messages', 'message_vectors',
+      'file_mutations', 'commit_index', 'commit_file_changes',
+      'provenance_scan_state', 'provenance_repo_state',
+      'event_log', 'rosie_usage', 'tracker_outcomes',
     ];
-    fs.writeFileSync(jsonlPath, entries.join('\n') + '\n');
 
-    const dbPath = join(testDir, 'crispy.db');
-    const db = getDb(dbPath);
-
-    // Data should be in the DB (migrated to session_meta, prompt rows purged by v19)
-    const rows = db.all('SELECT timestamp, file, preview, uuid FROM session_meta ORDER BY timestamp');
-    expect(rows.length).toBe(2);
-    expect((rows[0] as Record<string, unknown>).preview).toBe('First');
-    expect((rows[0] as Record<string, unknown>).uuid).toBe('msg-1');
-    expect((rows[1] as Record<string, unknown>).preview).toBe('Second');
-    expect((rows[1] as Record<string, unknown>).uuid).toBeNull();
-
-    // JSONL should be renamed to .bak
-    expect(fs.existsSync(jsonlPath)).toBe(false);
-    expect(fs.existsSync(jsonlPath + '.bak')).toBe(true);
+    for (const t of expected) {
+      expect(tableNames.has(t), `table ${t} should exist`).toBe(true);
+    }
   });
 
-  it('imports existing scan-state.json on first DB open (then drops scan_state in v19)', () => {
-    const scanPath = join(testDir, 'scan-state.json');
-    const scanState = {
-      version: 1,
-      files: {
-        '/a.jsonl': { mtime: 100, size: 50, offset: 25 },
-        '/b.jsonl': { mtime: 200, size: 100, offset: 75 },
-      },
-    };
-    fs.writeFileSync(scanPath, JSON.stringify(scanState));
-
+  it('creates 3 FTS5 virtual tables', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
-    // scan_state table is dropped by v19 — verify it no longer exists
-    const tableExists = db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='scan_state'") as Record<string, unknown> | null;
-    expect(tableExists).toBeNull();
+    const fts = db.all(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%_fts' ORDER BY name`
+    ) as Array<{ name: string }>;
+    const names = fts.map(r => r.name);
 
-    // scan-state.json should be renamed to .bak (migration v2 runs before v19)
-    expect(fs.existsSync(scanPath)).toBe(false);
-    expect(fs.existsSync(scanPath + '.bak')).toBe(true);
+    expect(names).toContain('session_meta_fts');
+    expect(names).toContain('messages_fts');
+    expect(names).toContain('commit_fts');
   });
 
-  it('skips malformed JSONL lines during migration', () => {
-    const jsonlPath = join(testDir, 'activity-index.jsonl');
-    const lines = [
-      JSON.stringify({ timestamp: '2025-01-15T10:00:00Z', kind: 'rosie-meta', file: '/a.jsonl', preview: 'Valid', offset: 0 }),
-      '{ not valid json',
-      JSON.stringify({ timestamp: '2025-01-15T12:00:00Z', kind: 'rosie-meta', file: '/c.jsonl', preview: 'Also valid', offset: 0 }),
-    ];
-    fs.writeFileSync(jsonlPath, lines.join('\n') + '\n');
-
+  it('seeds 8 stage rows', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
-    const rows = db.all('SELECT preview FROM session_meta ORDER BY timestamp');
-    expect(rows.length).toBe(2);
-    expect((rows[0] as Record<string, unknown>).preview).toBe('Valid');
-    expect((rows[1] as Record<string, unknown>).preview).toBe('Also valid');
-  });
-
-  it('skips migration if .bak files already exist (idempotent)', () => {
-    const jsonlPath = join(testDir, 'activity-index.jsonl');
-    const bakPath = jsonlPath + '.bak';
-
-    // Create both .jsonl and .bak — simulates a previous partial migration
-    fs.writeFileSync(jsonlPath, JSON.stringify({ timestamp: '2025-01-15T10:00:00Z', kind: 'rosie-meta', file: '/a.jsonl', preview: 'New', offset: 0 }) + '\n');
-    fs.writeFileSync(bakPath, 'old backup');
-
-    const dbPath = join(testDir, 'crispy.db');
-    const db = getDb(dbPath);
-
-    // The .jsonl should NOT have been imported (since .bak exists)
-    const rows = db.all('SELECT * FROM session_meta');
-    expect(rows.length).toBe(0);
-
-    // Original .jsonl should still exist (not renamed)
-    expect(fs.existsSync(jsonlPath)).toBe(true);
-    expect(fs.existsSync(bakPath)).toBe(true);
+    const rows = db.all('SELECT name FROM stages ORDER BY sort_order') as Array<{ name: string }>;
+    expect(rows.length).toBe(8);
+    expect(rows.map(r => r.name)).toEqual([
+      'idea', 'planning', 'ready', 'active', 'paused', 'committed', 'done', 'archived',
+    ]);
   });
 });
 
@@ -246,15 +209,14 @@ describe('FTS5 support', () => {
 });
 
 // ============================================================================
-// FTS5 Migration (v7) — session_meta_fts
+// FTS5 — session_meta_fts
 // ============================================================================
 
-describe('FTS5 session_meta_fts (migration v7)', () => {
+describe('session_meta_fts', () => {
   it('creates the session_meta_fts virtual table', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
-    // Verify table exists by querying sqlite_master
     const row = db.get(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='session_meta_fts'",
     ) as Record<string, unknown> | undefined;
@@ -267,45 +229,13 @@ describe('FTS5 session_meta_fts (migration v7)', () => {
     const db = getDb(dbPath);
 
     db.run(
-      `INSERT INTO session_meta (timestamp, kind, file, preview, quest, summary, title)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ['2025-06-01T10:00:00Z', 'rosie-meta', '/test.jsonl', 'test preview',
-       'implement dark mode', 'added dark theme support', 'Dark Mode'],
+      `INSERT INTO session_meta (ts, kind, file, preview)
+       VALUES (?, ?, ?, ?)`,
+      ['2025-06-01T10:00:00Z', 'prompt', '/test.jsonl', 'added dark theme support'],
     );
 
     const rows = db.all("SELECT * FROM session_meta_fts WHERE session_meta_fts MATCH 'dark'");
     expect(rows.length).toBe(1);
-  });
-
-  it('returns BM25-ranked results ordered by relevance', () => {
-    const dbPath = join(testDir, 'crispy.db');
-    const db = getDb(dbPath);
-
-    // Insert entries with varying relevance to "authentication"
-    db.run(
-      `INSERT INTO session_meta (timestamp, kind, file, preview, quest, summary, title)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ['2025-06-01T10:00:00Z', 'rosie-meta', '/a.jsonl', 'some preview',
-       'implement authentication', 'set up auth flow', 'Authentication Setup'],
-    );
-    db.run(
-      `INSERT INTO session_meta (timestamp, kind, file, preview, quest, summary, title)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ['2025-06-01T11:00:00Z', 'prompt', '/b.jsonl',
-       'mentioned authentication in passing', null, null, null],
-    );
-
-    const rows = db.all(`
-      SELECT ae.id, bm25(session_meta_fts) as rank
-      FROM session_meta_fts
-      JOIN session_meta ae ON ae.id = session_meta_fts.rowid
-      WHERE session_meta_fts MATCH 'authentication'
-      ORDER BY rank
-    `) as Array<Record<string, unknown>>;
-
-    expect(rows.length).toBe(2);
-    // First result should have better (more negative) rank due to quest+title+summary matches
-    expect(rows[0]!.rank as number).toBeLessThan(rows[1]!.rank as number);
   });
 
   it('supports Porter stemming (running matches run)', () => {
@@ -313,9 +243,9 @@ describe('FTS5 session_meta_fts (migration v7)', () => {
     const db = getDb(dbPath);
 
     db.run(
-      `INSERT INTO session_meta (timestamp, kind, file, summary)
+      `INSERT INTO session_meta (ts, kind, file, preview)
        VALUES (?, ?, ?, ?)`,
-      ['2025-06-01T10:00:00Z', 'rosie-meta', '/test.jsonl', 'running the test suite'],
+      ['2025-06-01T10:00:00Z', 'prompt', '/test.jsonl', 'running the test suite'],
     );
 
     const rows = db.all("SELECT * FROM session_meta_fts WHERE session_meta_fts MATCH 'run'");
@@ -343,7 +273,7 @@ describe('closeDb', () => {
 });
 
 // ============================================================================
-// message_vectors CASCADE (migration v15)
+// message_vectors CASCADE
 // ============================================================================
 
 describe('message_vectors ON DELETE CASCADE', () => {
@@ -380,11 +310,10 @@ describe('message_vectors ON DELETE CASCADE', () => {
     expect(after.cnt).toBe(0);
   });
 
-  it('migration v15 would fail with orphaned vectors (regression proof)', () => {
+  it('with FK ON, inserting a vector with no parent message fails', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
-    // With FK ON, inserting a vector with no parent message fails
     expect(() => {
       db.run(
         `INSERT INTO message_vectors (message_id, embedding_q8, norm, quant_scale)

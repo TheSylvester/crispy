@@ -113,7 +113,7 @@ function checkDbIntegrity(): void {
     `SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`
   ) as Array<{ name: string }>;
   const tableNames = new Set(tables.map(r => r.name));
-  const required = ['activity_entries', 'messages', 'messages_fts', 'projects', 'project_sessions'];
+  const required = ['session_meta', 'messages', 'messages_fts', 'projects', 'project_sessions'];
   for (const t of required) {
     record(`Table "${t}" exists`, tableNames.has(t) ? 'pass' : 'fail');
   }

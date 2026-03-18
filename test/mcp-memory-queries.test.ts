@@ -35,7 +35,7 @@ let dbPath: string;
 beforeEach(() => {
   testDir = fs.mkdtempSync(join(os.tmpdir(), 'crispy-queries-test-'));
   dbPath = join(testDir, 'crispy.db');
-  // Initialize DB with all migrations (including FTS5 v7)
+  // Initialize DB with schema
   getDb(dbPath);
 });
 
@@ -49,24 +49,16 @@ afterEach(() => {
 // ============================================================================
 
 function insertEntry(opts: {
-  timestamp: string;
-  kind: 'prompt' | 'rosie-meta';
+  ts: string;
+  kind: 'prompt';
   file: string;
   preview?: string;
-  quest?: string;
-  summary?: string;
-  title?: string;
-  status?: string;
 }): void {
   const db = getDb(dbPath);
   db.run(
-    `INSERT INTO session_meta (timestamp, kind, file, preview, quest, summary, title, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      opts.timestamp, opts.kind, opts.file,
-      opts.preview ?? null, opts.quest ?? null, opts.summary ?? null,
-      opts.title ?? null, opts.status ?? null,
-    ],
+    `INSERT INTO session_meta (ts, kind, file, preview)
+     VALUES (?, ?, ?, ?)`,
+    [opts.ts, opts.kind, opts.file, opts.preview ?? null],
   );
 }
 
@@ -77,15 +69,13 @@ function insertEntry(opts: {
 describe('searchSessions', () => {
   it('returns ranked results for matching query', () => {
     insertEntry({
-      timestamp: '2025-06-01T10:00:00Z',
-      kind: 'rosie-meta',
+      ts: '2025-06-01T10:00:00Z',
+      kind: 'prompt',
       file: '/sessions/a.jsonl',
-      quest: 'implement Rosie bot summarization',
-      summary: 'added rosie-meta entries with quest and summary fields',
-      title: 'Rosie Bot Setup',
+      preview: 'implement Rosie bot summarization and added rosie-meta entries',
     });
     insertEntry({
-      timestamp: '2025-06-01T11:00:00Z',
+      ts: '2025-06-01T11:00:00Z',
       kind: 'prompt',
       file: '/sessions/b.jsonl',
       preview: 'Can you help with the rosie integration?',
@@ -93,40 +83,14 @@ describe('searchSessions', () => {
 
     const results = searchSessions(dbPath, 'rosie');
     expect(results.length).toBe(2);
-    // rosie-meta entry should rank higher (quest + title + summary all match)
-    expect(results[0]!.file).toBe('/sessions/a.jsonl');
-  });
-
-  it('filters by kind when specified', () => {
-    insertEntry({
-      timestamp: '2025-06-01T10:00:00Z',
-      kind: 'rosie-meta',
-      file: '/sessions/a.jsonl',
-      quest: 'database optimization',
-      title: 'DB Perf',
-    });
-    insertEntry({
-      timestamp: '2025-06-01T11:00:00Z',
-      kind: 'prompt',
-      file: '/sessions/b.jsonl',
-      preview: 'optimize database queries',
-    });
-
-    const rosieOnly = searchSessions(dbPath, 'database', 20, 'rosie-meta');
-    expect(rosieOnly.length).toBe(1);
-    expect(rosieOnly[0]!.kind).toBe('rosie-meta');
-
-    const promptOnly = searchSessions(dbPath, 'database', 20, 'prompt');
-    expect(promptOnly.length).toBe(1);
-    expect(promptOnly[0]!.kind).toBe('prompt');
   });
 
   it('returns empty array for empty query', () => {
     insertEntry({
-      timestamp: '2025-06-01T10:00:00Z',
-      kind: 'rosie-meta',
+      ts: '2025-06-01T10:00:00Z',
+      kind: 'prompt',
       file: '/sessions/a.jsonl',
-      quest: 'dark mode',
+      preview: 'dark mode',
     });
 
     const results = searchSessions(dbPath, '  ');
@@ -135,10 +99,10 @@ describe('searchSessions', () => {
 
   it('returns empty results for no-match query', () => {
     insertEntry({
-      timestamp: '2025-06-01T10:00:00Z',
-      kind: 'rosie-meta',
+      ts: '2025-06-01T10:00:00Z',
+      kind: 'prompt',
       file: '/sessions/a.jsonl',
-      quest: 'implement dark mode',
+      preview: 'implement dark mode',
     });
 
     const results = searchSessions(dbPath, 'authentication');
@@ -147,10 +111,10 @@ describe('searchSessions', () => {
 
   it('supports Porter stemming (running matches run)', () => {
     insertEntry({
-      timestamp: '2025-06-01T10:00:00Z',
-      kind: 'rosie-meta',
+      ts: '2025-06-01T10:00:00Z',
+      kind: 'prompt',
       file: '/sessions/a.jsonl',
-      summary: 'running the test suite successfully',
+      preview: 'running the test suite successfully',
     });
 
     const results = searchSessions(dbPath, 'run');
@@ -160,10 +124,10 @@ describe('searchSessions', () => {
   it('respects limit parameter', () => {
     for (let i = 0; i < 5; i++) {
       insertEntry({
-        timestamp: `2025-06-01T1${i}:00:00Z`,
-        kind: 'rosie-meta',
+        ts: `2025-06-01T1${i}:00:00Z`,
+        kind: 'prompt',
         file: `/sessions/${i}.jsonl`,
-        quest: `task number ${i} about testing`,
+        preview: `task number ${i} about testing`,
       });
     }
 
@@ -177,23 +141,21 @@ describe('searchSessions', () => {
 // ============================================================================
 
 describe('listSessions', () => {
-  it('groups by file and returns latest metadata', () => {
+  it('groups by file and returns entry count', () => {
     insertEntry({
-      timestamp: '2025-06-01T10:00:00Z',
+      ts: '2025-06-01T10:00:00Z',
       kind: 'prompt',
       file: '/sessions/a.jsonl',
       preview: 'first prompt',
     });
     insertEntry({
-      timestamp: '2025-06-01T11:00:00Z',
-      kind: 'rosie-meta',
+      ts: '2025-06-01T11:00:00Z',
+      kind: 'prompt',
       file: '/sessions/a.jsonl',
-      quest: 'dark mode',
-      title: 'Dark Mode',
-      status: 'completed',
+      preview: 'dark mode work',
     });
     insertEntry({
-      timestamp: '2025-06-01T12:00:00Z',
+      ts: '2025-06-01T12:00:00Z',
       kind: 'prompt',
       file: '/sessions/b.jsonl',
       preview: 'another session',
@@ -205,21 +167,18 @@ describe('listSessions', () => {
     // Most recent first
     expect(rows[0]!.file).toBe('/sessions/b.jsonl');
     expect(rows[1]!.file).toBe('/sessions/a.jsonl');
-    expect(rows[1]!.quest).toBe('dark mode');
-    expect(rows[1]!.title).toBe('Dark Mode');
-    expect(rows[1]!.status).toBe('completed');
     expect(rows[1]!.entry_count).toBe(2);
   });
 
   it('filters by since parameter', () => {
     insertEntry({
-      timestamp: '2025-06-01T10:00:00Z',
+      ts: '2025-06-01T10:00:00Z',
       kind: 'prompt',
       file: '/sessions/old.jsonl',
       preview: 'old session',
     });
     insertEntry({
-      timestamp: '2025-06-02T10:00:00Z',
+      ts: '2025-06-02T10:00:00Z',
       kind: 'prompt',
       file: '/sessions/new.jsonl',
       preview: 'new session',
@@ -233,7 +192,7 @@ describe('listSessions', () => {
   it('respects limit parameter', () => {
     for (let i = 0; i < 5; i++) {
       insertEntry({
-        timestamp: `2025-06-0${i + 1}T10:00:00Z`,
+        ts: `2025-06-0${i + 1}T10:00:00Z`,
         kind: 'prompt',
         file: `/sessions/${i}.jsonl`,
         preview: `session ${i}`,
@@ -252,20 +211,19 @@ describe('listSessions', () => {
 describe('sessionContext', () => {
   it('returns ordered entries for a session', () => {
     insertEntry({
-      timestamp: '2025-06-01T10:00:00Z',
+      ts: '2025-06-01T10:00:00Z',
       kind: 'prompt',
       file: '/sessions/a.jsonl',
       preview: 'first prompt',
     });
     insertEntry({
-      timestamp: '2025-06-01T10:05:00Z',
-      kind: 'rosie-meta',
+      ts: '2025-06-01T10:05:00Z',
+      kind: 'prompt',
       file: '/sessions/a.jsonl',
-      quest: 'dark mode',
-      summary: 'user asked about dark mode',
+      preview: 'second prompt',
     });
     insertEntry({
-      timestamp: '2025-06-01T11:00:00Z',
+      ts: '2025-06-01T11:00:00Z',
       kind: 'prompt',
       file: '/sessions/b.jsonl',
       preview: 'different session',
@@ -274,28 +232,8 @@ describe('sessionContext', () => {
     const rows = sessionContext(dbPath, '/sessions/a.jsonl');
 
     expect(rows.length).toBe(2);
-    expect(rows[0]!.kind).toBe('prompt');
-    expect(rows[1]!.kind).toBe('rosie-meta');
-    expect(rows[1]!.quest).toBe('dark mode');
-  });
-
-  it('filters by kind', () => {
-    insertEntry({
-      timestamp: '2025-06-01T10:00:00Z',
-      kind: 'prompt',
-      file: '/sessions/a.jsonl',
-      preview: 'a prompt',
-    });
-    insertEntry({
-      timestamp: '2025-06-01T10:05:00Z',
-      kind: 'rosie-meta',
-      file: '/sessions/a.jsonl',
-      quest: 'dark mode',
-    });
-
-    const promptOnly = sessionContext(dbPath, '/sessions/a.jsonl', 'prompt');
-    expect(promptOnly.length).toBe(1);
-    expect(promptOnly[0]!.kind).toBe('prompt');
+    expect(rows[0]!.preview).toBe('first prompt');
+    expect(rows[1]!.preview).toBe('second prompt');
   });
 
   it('returns empty array for unknown file', () => {

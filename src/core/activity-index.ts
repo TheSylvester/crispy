@@ -8,10 +8,8 @@
  * Message-level recall storage lives in recall/message-store.ts.
  *
  * The activity index is an acceleration structure, not a source of truth.
- * Duplicates are prevented by a UNIQUE(timestamp, file, uuid) constraint
- * with INSERT OR IGNORE. NULL uuids are treated as unique per SQLite
- * semantics — this matches the old JSONL behavior where entries without
- * UUIDs could be duplicated.
+ * Duplicates are prevented by a UNIQUE(file, ts, kind) constraint
+ * with INSERT OR IGNORE.
  *
  * @module activity-index
  */
@@ -37,25 +35,19 @@ import type { LogEntry } from './log.js';
  */
 export interface ActivityIndexEntry {
   /** ISO 8601 timestamp of the prompt. */
-  timestamp: string;
-  /** Discriminator — 'prompt' for user prompts, 'rosie-meta' for Rosie Bot metadata. */
-  kind: 'prompt' | 'rosie-meta';
+  ts: string;
+  /** Discriminator — 'prompt' for user prompts. */
+  kind: 'prompt';
   /** Absolute path to the JSONL session file. */
   file: string;
   /** Preview text (~120 chars). */
   preview: string;
-  /** Byte offset of this entry in the JSONL file. */
-  offset: number;
-  /** Entry UUID for jump-to navigation (optional). */
-  uuid?: string;
-  /** Rosie Bot: main conversation goal (rosie-meta entries only). */
-  quest?: string;
-  /** Rosie Bot: most recent turn summary (rosie-meta entries only). */
-  summary?: string;
-  /** Rosie Bot: short conversation label (rosie-meta entries only). */
-  title?: string;
-  /** Rosie Bot: current work status — done, in progress, blocked (rosie-meta entries only). */
-  status?: string;
+  /** Session UUID (optional — for self-filtering in recall). */
+  session_id?: string;
+  /** Model used in the session (optional). */
+  model?: string;
+  /** Working directory of the session (optional). */
+  cwd?: string;
 }
 
 
@@ -174,22 +166,19 @@ export function appendActivityEntries(entries: ActivityIndexEntry[]): void {
   try {
     const stmt = db.prepare(
       `INSERT OR IGNORE INTO session_meta
-       (timestamp, kind, file, preview, byte_offset, uuid, quest, summary, title, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (ts, kind, file, preview, session_id, model, cwd)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
     try {
       for (const e of entries) {
         stmt.run([
-          e.timestamp,
+          e.ts,
           e.kind,
           e.file,
           e.preview,
-          e.offset,
-          e.uuid ?? null,
-          e.quest ?? null,
-          e.summary ?? null,
-          e.title ?? null,
-          e.status ?? null,
+          e.session_id ?? null,
+          e.model ?? null,
+          e.cwd ?? null,
         ]);
       }
     } finally {
@@ -226,11 +215,11 @@ export function queryActivity(
       params.push(kind);
     }
     if (timeRange?.from) {
-      conditions.push('timestamp >= ?');
+      conditions.push('ts >= ?');
       params.push(timeRange.from);
     }
     if (timeRange?.to) {
-      conditions.push('timestamp <= ?');
+      conditions.push('ts <= ?');
       params.push(timeRange.to);
     }
     if (filePrefix) {
@@ -239,8 +228,8 @@ export function queryActivity(
     }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const sql = `SELECT timestamp, kind, file, preview, byte_offset, uuid, quest, summary, title, status
-                 FROM session_meta ${where} ORDER BY timestamp ASC`;
+    const sql = `SELECT ts, kind, file, preview, session_id, model, cwd
+                 FROM session_meta ${where} ORDER BY ts ASC`;
 
     const rows = db.all(sql, params.length > 0 ? params : undefined);
     return rows.map(rowToEntry);
@@ -278,52 +267,6 @@ export function setSessionTitle(sessionId: string, title: string): void {
 // ============================================================================
 // Session Lineage
 // ============================================================================
-
-/**
- * Check if any of the given UUIDs exist in session_meta under a different file.
- * Returns the parent file path and the matching UUID, or null if no match.
- * Used by the scanner to detect fork lineage before first scan of a new file.
- */
-export function findParentByUuids(
-  uuids: string[],
-  excludeFile: string,
-): { parentFile: string; matchedUuid: string } | null {
-  try {
-    const db = getDb(dbPath());
-    for (const uuid of uuids) {
-      const row = db.get(
-        'SELECT file FROM session_meta WHERE uuid = ? AND file != ? LIMIT 1',
-        [uuid, excludeFile],
-      );
-      if (row) {
-        return {
-          parentFile: (row as Record<string, unknown>).file as string,
-          matchedUuid: uuid,
-        };
-      }
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Get all non-null UUIDs indexed for a given file.
- * Used to build the parent UUID set for fork divergence detection.
- */
-export function getFileUuids(file: string): Set<string> {
-  try {
-    const db = getDb(dbPath());
-    const rows = db.all(
-      'SELECT uuid FROM session_meta WHERE file = ? AND uuid IS NOT NULL',
-      [file],
-    );
-    return new Set(rows.map((r) => (r as Record<string, unknown>).uuid as string));
-  } catch {
-    return new Set();
-  }
-}
 
 /**
  * Record a lineage relationship for a session file.
@@ -430,31 +373,6 @@ export function getLineageGraph(): Array<{ sessionFile: string; parentFile: stri
   }
 }
 
-/**
- * Delete duplicate activity entries from a child file that share UUIDs
- * with a parent file. Used during retroactive lineage detection for
- * files that were scanned before the lineage feature existed.
- */
-export function deleteDuplicateEntries(
-  childFile: string,
-  parentFile: string,
-): void {
-  try {
-    const db = getDb(dbPath());
-    db.run(`
-      DELETE FROM session_meta
-      WHERE file = ?
-        AND uuid IS NOT NULL
-        AND uuid IN (
-          SELECT uuid FROM session_meta
-          WHERE file = ? AND uuid IS NOT NULL
-        )
-    `, [childFile, parentFile]);
-  } catch {
-    // Non-fatal
-  }
-}
-
 // ============================================================================
 // Pruning
 // ============================================================================
@@ -536,16 +454,13 @@ export function pruneDeletedFiles(livePaths: Set<string>): number {
 function rowToEntry(row: Record<string, unknown>): ActivityIndexEntry {
   const r = row as Record<string, unknown>;
   const entry: ActivityIndexEntry = {
-    timestamp: r.timestamp as string,
-    kind: r.kind as 'prompt' | 'rosie-meta',
+    ts: r.ts as string,
+    kind: r.kind as 'prompt',
     file: r.file as string,
     preview: r.preview as string,
-    offset: r.byte_offset as number,
   };
-  if (r.uuid != null) entry.uuid = r.uuid as string;
-  if (r.quest != null) entry.quest = r.quest as string;
-  if (r.summary != null) entry.summary = r.summary as string;
-  if (r.title != null) entry.title = r.title as string;
-  if (r.status != null) entry.status = r.status as string;
+  if (r.session_id != null) entry.session_id = r.session_id as string;
+  if (r.model != null) entry.model = r.model as string;
+  if (r.cwd != null) entry.cwd = r.cwd as string;
   return entry;
 }

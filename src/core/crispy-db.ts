@@ -1,7 +1,7 @@
 /**
  * Crispy Database — SQLite Singleton via node-sqlite3-wasm
  *
- * Owns the Database instance lifecycle: lazy init, pragmas, migrations,
+ * Owns the Database instance lifecycle: lazy init, pragmas, schema,
  * and clean shutdown. activity-index.ts and session-lineage consumers.
  *
  * Uses node-sqlite3-wasm (pure WASM, no native binaries) to avoid
@@ -13,10 +13,9 @@
  * @module crispy-db
  */
 
-import * as fs from 'node:fs';
-import { join, dirname } from 'node:path';
-import { Database } from 'node-sqlite3-wasm';
 import { log } from './log.js';
+import type { Database } from 'node-sqlite3-wasm';
+import { Database as DatabaseConstructor } from 'node-sqlite3-wasm';
 
 // ============================================================================
 // Singleton
@@ -29,7 +28,7 @@ let currentDbPath: string | null = null;
  * Get or create the SQLite database singleton.
  *
  * On first call, opens the database file (creating it if needed),
- * sets concurrency pragmas, and runs any pending migrations.
+ * sets concurrency pragmas, and runs schema setup.
  * Subsequent calls return the cached instance if the path matches.
  */
 export function getDb(dbPath: string): Database {
@@ -40,7 +39,7 @@ export function getDb(dbPath: string): Database {
     closeDb();
   }
 
-  db = new Database(dbPath);
+  db = new DatabaseConstructor(dbPath);
   currentDbPath = dbPath;
 
   // Concurrency: wait up to 5s if another process holds the lock
@@ -53,7 +52,7 @@ export function getDb(dbPath: string): Database {
   // Enable foreign key enforcement (OFF by default in SQLite)
   db.exec('PRAGMA foreign_keys = ON');
 
-  runMigrations(db, dbPath);
+  ensureSchema(db);
   log({ source: 'db', level: 'info', summary: `DB: initialized at ${dbPath}` });
 
   return db;
@@ -78,984 +77,10 @@ export function _resetDb(): void {
 }
 
 // ============================================================================
-// Migrations
+// Schema — single-pass creation of all tables, indexes, triggers, seed data
 // ============================================================================
 
-interface Migration {
-  version: number;
-  description: string;
-  up: (db: Database, dbPath: string) => void;
-}
-
-const migrations: Migration[] = [
-  {
-    version: 1,
-    description: 'Create activity_entries and scan_state tables',
-    up: (db: Database) => {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS activity_entries (
-          id          INTEGER PRIMARY KEY AUTOINCREMENT,
-          timestamp   TEXT NOT NULL,
-          kind        TEXT NOT NULL CHECK (kind IN ('prompt', 'rosie-meta')),
-          file        TEXT NOT NULL,
-          preview     TEXT,
-          byte_offset INTEGER DEFAULT 0,
-          uuid        TEXT,
-          quest       TEXT,
-          summary     TEXT,
-          title       TEXT,
-          UNIQUE (timestamp, file, uuid)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_activity_timestamp ON activity_entries(timestamp);
-        CREATE INDEX IF NOT EXISTS idx_activity_kind ON activity_entries(kind);
-        CREATE INDEX IF NOT EXISTS idx_activity_file ON activity_entries(file);
-
-        CREATE TABLE IF NOT EXISTS scan_state (
-          file_path   TEXT PRIMARY KEY,
-          mtime       INTEGER NOT NULL,
-          size        INTEGER NOT NULL,
-          byte_offset INTEGER NOT NULL DEFAULT 0
-        );
-      `);
-    },
-  },
-  {
-    version: 2,
-    description: 'Migrate legacy JSONL/JSON data',
-    up: (db: Database, dbPath: string): void => {
-      const dir = dirname(dbPath);
-      const jsonlPath = join(dir, 'activity-index.jsonl');
-      const jsonlBak = jsonlPath + '.bak';
-      const scanPath = join(dir, 'scan-state.json');
-      const scanBak = scanPath + '.bak';
-
-      // Import activity-index.jsonl if it exists and hasn't been migrated.
-      // No nested BEGIN/COMMIT — the migration runner already wraps us in a transaction.
-      if (fs.existsSync(jsonlPath) && !fs.existsSync(jsonlBak)) {
-        try {
-          const content = fs.readFileSync(jsonlPath, 'utf-8');
-          const lines = content.split('\n').filter((l) => l.trim() !== '');
-
-          if (lines.length > 0) {
-            const stmt = db.prepare(
-              `INSERT OR IGNORE INTO activity_entries
-               (timestamp, kind, file, preview, byte_offset, uuid, quest, summary, title)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            );
-            try {
-              for (const line of lines) {
-                try {
-                  const e = JSON.parse(line);
-                  if (
-                    typeof e.timestamp === 'string' &&
-                    typeof e.file === 'string' &&
-                    typeof e.preview === 'string'
-                  ) {
-                    stmt.run([
-                      e.timestamp,
-                      e.kind ?? 'prompt',
-                      e.file,
-                      e.preview,
-                      e.offset ?? 0,
-                      e.uuid ?? null,
-                      e.quest ?? null,
-                      e.summary ?? null,
-                      e.title ?? null,
-                    ]);
-                  }
-                } catch {
-                  // Skip malformed lines
-                }
-              }
-            } finally {
-              stmt.finalize();
-            }
-          }
-
-          fs.renameSync(jsonlPath, jsonlBak);
-        } catch (err) {
-          // If rename fails, log but don't block startup
-          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-            log({ level: 'error', source: 'crispy-db', summary: `Legacy JSONL migration warning: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
-          }
-        }
-      }
-
-      // Import scan-state.json if it exists and hasn't been migrated.
-      // No nested BEGIN/COMMIT — the migration runner already wraps us in a transaction.
-      if (fs.existsSync(scanPath) && !fs.existsSync(scanBak)) {
-        try {
-          const content = fs.readFileSync(scanPath, 'utf-8');
-          const parsed = JSON.parse(content);
-
-          if (
-            typeof parsed === 'object' &&
-            parsed !== null &&
-            parsed.version === 1 &&
-            typeof parsed.files === 'object' &&
-            parsed.files !== null
-          ) {
-            const stmt = db.prepare(
-              'INSERT OR REPLACE INTO scan_state (file_path, mtime, size, byte_offset) VALUES (?, ?, ?, ?)',
-            );
-            try {
-              for (const [path, s] of Object.entries(parsed.files)) {
-                const state = s as { mtime: number; size: number; offset: number };
-                stmt.run([path, state.mtime, state.size, state.offset]);
-              }
-            } finally {
-              stmt.finalize();
-            }
-          }
-
-          fs.renameSync(scanPath, scanBak);
-        } catch (err) {
-          if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-            log({ level: 'error', source: 'crispy-db', summary: `Legacy scan-state migration warning: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
-          }
-        }
-      }
-    },
-  },
-  {
-    version: 3,
-    description: 'Create session_lineage table and backfill fork dedup',
-    up: (db: Database): void => {
-      // Create the lineage tracking table
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS session_lineage (
-          session_file      TEXT PRIMARY KEY,
-          parent_file       TEXT,
-          fork_point_uuid   TEXT,
-          fork_point_offset INTEGER NOT NULL DEFAULT 0,
-          created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_lineage_parent
-          ON session_lineage(parent_file);
-      `);
-
-      // Backfill: detect existing fork pairs by shared UUIDs and timestamps.
-      // For each pair of files sharing a UUID, the one with fewer total rows
-      // (or scanned later) is treated as the child. We pick the file with the
-      // lower rowid for the earliest matching entry as the parent.
-      //
-      // Step 1: Find fork relationships. Group by shared non-null UUIDs
-      // across different files. For each pair, the file whose first entry has
-      // the lower id is the parent (it was indexed first).
-      const forkPairs = db.all(`
-        SELECT
-          a1.file AS file_a,
-          a2.file AS file_b,
-          MIN(a1.id) AS first_id_a,
-          MIN(a2.id) AS first_id_b,
-          COUNT(*) AS shared_count
-        FROM activity_entries a1
-        JOIN activity_entries a2
-          ON a1.uuid = a2.uuid
-          AND a1.file < a2.file
-          AND a1.uuid IS NOT NULL
-        GROUP BY a1.file, a2.file
-        HAVING shared_count >= 1
-      `) as Array<Record<string, unknown>>;
-
-      for (const pair of forkPairs) {
-        const fileA = pair.file_a as string;
-        const fileB = pair.file_b as string;
-        const firstIdA = pair.first_id_a as number;
-        const firstIdB = pair.first_id_b as number;
-
-        // Parent = whichever file was indexed first (lower first row id)
-        const parentFile = firstIdA <= firstIdB ? fileA : fileB;
-        const childFile = parentFile === fileA ? fileB : fileA;
-
-        // Find the last shared UUID (the fork point)
-        const forkRow = db.get(`
-          SELECT a1.uuid, a1.byte_offset
-          FROM activity_entries a1
-          JOIN activity_entries a2
-            ON a1.uuid = a2.uuid
-            AND a1.uuid IS NOT NULL
-          WHERE a1.file = ? AND a2.file = ?
-          ORDER BY a1.byte_offset DESC
-          LIMIT 1
-        `, [childFile, parentFile]) as Record<string, unknown> | undefined;
-
-        const forkPointUuid = forkRow?.uuid as string | null ?? null;
-        const forkPointOffset = forkRow?.byte_offset as number ?? 0;
-
-        // Insert lineage record (ignore if already exists from a prior pair)
-        db.run(
-          `INSERT OR IGNORE INTO session_lineage
-           (session_file, parent_file, fork_point_uuid, fork_point_offset)
-           VALUES (?, ?, ?, ?)`,
-          [childFile, parentFile, forkPointUuid, forkPointOffset],
-        );
-
-        // Delete duplicate entries from the child file for the shared prefix.
-        // Keep the parent's entries, remove the child's entries that share UUIDs.
-        db.run(`
-          DELETE FROM activity_entries
-          WHERE file = ?
-            AND uuid IS NOT NULL
-            AND uuid IN (
-              SELECT uuid FROM activity_entries
-              WHERE file = ? AND uuid IS NOT NULL
-            )
-        `, [childFile, parentFile]);
-      }
-    },
-  },
-  {
-    version: 4,
-    description: 'Backfill fork pairs missed by v3 (shared_count = 1)',
-    up: (db: Database): void => {
-      // v3 used HAVING shared_count >= 2, missing single-shared-UUID forks.
-      // Re-run the same logic with >= 1 for any remaining duplicates.
-      // INSERT OR IGNORE ensures already-recorded lineage from v3 is untouched.
-      const forkPairs = db.all(`
-        SELECT
-          a1.file AS file_a,
-          a2.file AS file_b,
-          MIN(a1.id) AS first_id_a,
-          MIN(a2.id) AS first_id_b,
-          COUNT(*) AS shared_count
-        FROM activity_entries a1
-        JOIN activity_entries a2
-          ON a1.uuid = a2.uuid
-          AND a1.file < a2.file
-          AND a1.uuid IS NOT NULL
-        GROUP BY a1.file, a2.file
-        HAVING shared_count >= 1
-      `) as Array<Record<string, unknown>>;
-
-      for (const pair of forkPairs) {
-        const fileA = pair.file_a as string;
-        const fileB = pair.file_b as string;
-        const firstIdA = pair.first_id_a as number;
-        const firstIdB = pair.first_id_b as number;
-
-        const parentFile = firstIdA <= firstIdB ? fileA : fileB;
-        const childFile = parentFile === fileA ? fileB : fileA;
-
-        const forkRow = db.get(`
-          SELECT a1.uuid, a1.byte_offset
-          FROM activity_entries a1
-          JOIN activity_entries a2
-            ON a1.uuid = a2.uuid
-            AND a1.uuid IS NOT NULL
-          WHERE a1.file = ? AND a2.file = ?
-          ORDER BY a1.byte_offset DESC
-          LIMIT 1
-        `, [childFile, parentFile]) as Record<string, unknown> | undefined;
-
-        const forkPointUuid = forkRow?.uuid as string | null ?? null;
-        const forkPointOffset = forkRow?.byte_offset as number ?? 0;
-
-        db.run(
-          `INSERT OR IGNORE INTO session_lineage
-           (session_file, parent_file, fork_point_uuid, fork_point_offset)
-           VALUES (?, ?, ?, ?)`,
-          [childFile, parentFile, forkPointUuid, forkPointOffset],
-        );
-
-        db.run(`
-          DELETE FROM activity_entries
-          WHERE file = ?
-            AND uuid IS NOT NULL
-            AND uuid IN (
-              SELECT uuid FROM activity_entries
-              WHERE file = ? AND uuid IS NOT NULL
-            )
-        `, [childFile, parentFile]);
-      }
-    },
-  },
-  {
-    version: 5,
-    description: 'Add status column to activity_entries for Rosie work-status tracking',
-    up: (db: Database): void => {
-      db.exec('ALTER TABLE activity_entries ADD COLUMN status TEXT');
-    },
-  },
-  {
-    version: 6,
-    description: 'Add entities column to activity_entries for Rosie entity extraction',
-    up: (db: Database): void => {
-      db.exec('ALTER TABLE activity_entries ADD COLUMN entities TEXT');
-    },
-  },
-  {
-    version: 7,
-    description: 'Create FTS5 full-text search index on activity_entries',
-    up: (db: Database): void => {
-      // External content FTS5 table — Porter stemmer + unicode61
-      db.exec(`
-        CREATE VIRTUAL TABLE IF NOT EXISTS activity_fts USING fts5(
-          quest, summary, title, entities, preview,
-          content='activity_entries', content_rowid='id',
-          tokenize='porter unicode61 remove_diacritics 2'
-        );
-      `);
-
-      // Sync triggers — keep FTS5 in sync with activity_entries
-      db.exec(`
-        CREATE TRIGGER IF NOT EXISTS activity_fts_ai AFTER INSERT ON activity_entries BEGIN
-          INSERT INTO activity_fts(rowid, quest, summary, title, entities, preview)
-          VALUES (new.id, new.quest, new.summary, new.title, new.entities, new.preview);
-        END;
-
-        CREATE TRIGGER IF NOT EXISTS activity_fts_ad AFTER DELETE ON activity_entries BEGIN
-          INSERT INTO activity_fts(activity_fts, rowid, quest, summary, title, entities, preview)
-          VALUES ('delete', old.id, old.quest, old.summary, old.title, old.entities, old.preview);
-        END;
-
-        CREATE TRIGGER IF NOT EXISTS activity_fts_au AFTER UPDATE ON activity_entries BEGIN
-          INSERT INTO activity_fts(activity_fts, rowid, quest, summary, title, entities, preview)
-          VALUES ('delete', old.id, old.quest, old.summary, old.title, old.entities, old.preview);
-          INSERT INTO activity_fts(rowid, quest, summary, title, entities, preview)
-          VALUES (new.id, new.quest, new.summary, new.title, new.entities, new.preview);
-        END;
-      `);
-
-      // Backfill: populate FTS5 from all existing rows
-      db.exec("INSERT INTO activity_fts(activity_fts) VALUES('rebuild')");
-
-      // Configure BM25 column weights (column order: quest, summary, title, entities, preview)
-      // quest(10): session goal, most concentrated signal
-      // title(8): short label, highly informative
-      // summary(5): turn summary, action detail
-      // entities(3): file paths, concepts, tools
-      // preview(1): raw prompt text, lowest signal density
-      db.exec("INSERT INTO activity_fts(activity_fts, rank) VALUES('rank', 'bm25(10.0, 5.0, 8.0, 3.0, 1.0)')");
-    },
-  },
-  {
-    version: 8,
-    description: 'Create projects, project_sessions, project_files tables for Rosie.tracker',
-    up: (db: Database): void => {
-      db.exec(`
-        CREATE TABLE projects (
-          id               TEXT PRIMARY KEY,
-          title            TEXT NOT NULL,
-          status           TEXT NOT NULL CHECK (status IN ('active','done','blocked','planned','abandoned')),
-          blocked_by       TEXT,
-          summary          TEXT,
-          category         TEXT,
-          branch           TEXT,
-          entities         TEXT,
-          created_at       TEXT NOT NULL,
-          updated_at       TEXT NOT NULL,
-          last_activity_at TEXT,
-          closed_at        TEXT,
-          parent_id        TEXT REFERENCES projects(id)
-        );
-
-        CREATE TABLE project_sessions (
-          project_id   TEXT NOT NULL REFERENCES projects(id),
-          session_file TEXT NOT NULL,
-          detected_in  TEXT,
-          linked_at    TEXT NOT NULL,
-          PRIMARY KEY (project_id, session_file)
-        );
-
-        CREATE TABLE project_files (
-          project_id   TEXT NOT NULL REFERENCES projects(id),
-          file_path    TEXT NOT NULL,
-          session_file TEXT,
-          message_id   TEXT,
-          note         TEXT,
-          added_at     TEXT NOT NULL,
-          UNIQUE (project_id, file_path)
-        );
-
-        CREATE INDEX idx_projects_status ON projects(status);
-        CREATE INDEX idx_projects_parent ON projects(parent_id);
-        CREATE INDEX idx_project_sessions_file ON project_sessions(session_file);
-      `);
-    },
-  },
-  {
-    version: 9,
-    description: 'Create tracker_outcomes table for tracking analysis attempts',
-    up: (db: Database): void => {
-      db.exec(`
-        CREATE TABLE tracker_outcomes (
-          session_file TEXT PRIMARY KEY,
-          outcome      TEXT NOT NULL CHECK (outcome IN ('tracked', 'trivial', 'failed')),
-          reason       TEXT,
-          attempts     INTEGER NOT NULL DEFAULT 1,
-          created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-      `);
-    },
-  },
-  {
-    version: 10,
-    description: 'Create provenance tables for git history indexing',
-    up: (db: Database): void => {
-      db.exec(`
-        CREATE TABLE file_mutations (
-          id             INTEGER PRIMARY KEY AUTOINCREMENT,
-          session_file   TEXT NOT NULL,
-          session_id     TEXT,
-          tool           TEXT NOT NULL,
-          bash_category  TEXT,
-          file_path      TEXT,
-          timestamp      TEXT,
-          message_uuid   TEXT,
-          tool_use_id    TEXT,
-          byte_offset    INTEGER NOT NULL,
-          command         TEXT,
-          old_hash        TEXT,
-          new_hash        TEXT,
-          commit_sha      TEXT,
-          UNIQUE (session_file, tool_use_id)
-        );
-
-        CREATE INDEX idx_mut_file ON file_mutations(file_path);
-        CREATE INDEX idx_mut_session ON file_mutations(session_file);
-        CREATE INDEX idx_mut_commit ON file_mutations(commit_sha);
-        CREATE INDEX idx_mut_ts ON file_mutations(timestamp);
-
-        CREATE TABLE commit_index (
-          sha              TEXT PRIMARY KEY,
-          message          TEXT NOT NULL,
-          author           TEXT,
-          author_date      TEXT NOT NULL,
-          repo_path        TEXT NOT NULL,
-          session_file     TEXT,
-          session_id       TEXT,
-          message_uuid     TEXT,
-          match_confidence REAL NOT NULL DEFAULT 0.0,
-          matched_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE INDEX idx_ci_session ON commit_index(session_file);
-        CREATE INDEX idx_ci_date ON commit_index(author_date);
-        CREATE INDEX idx_ci_repo ON commit_index(repo_path);
-
-        CREATE TABLE commit_file_changes (
-          commit_sha  TEXT NOT NULL REFERENCES commit_index(sha),
-          file_path   TEXT NOT NULL,
-          additions   INTEGER NOT NULL DEFAULT 0,
-          deletions   INTEGER NOT NULL DEFAULT 0,
-          PRIMARY KEY (commit_sha, file_path)
-        );
-
-        CREATE VIRTUAL TABLE commit_fts USING fts5(
-          message,
-          content='commit_index', content_rowid='rowid',
-          tokenize='porter unicode61 remove_diacritics 2'
-        );
-
-        CREATE TRIGGER commit_fts_ai AFTER INSERT ON commit_index BEGIN
-          INSERT INTO commit_fts(rowid, message) VALUES (new.rowid, new.message);
-        END;
-
-        CREATE TRIGGER commit_fts_ad AFTER DELETE ON commit_index BEGIN
-          INSERT INTO commit_fts(commit_fts, rowid, message)
-          VALUES ('delete', old.rowid, old.message);
-        END;
-
-        CREATE TRIGGER commit_fts_au AFTER UPDATE ON commit_index BEGIN
-          INSERT INTO commit_fts(commit_fts, rowid, message)
-          VALUES ('delete', old.rowid, old.message);
-          INSERT INTO commit_fts(rowid, message) VALUES (new.rowid, new.message);
-        END;
-
-        CREATE TABLE provenance_scan_state (
-          file_path   TEXT PRIMARY KEY,
-          mtime       INTEGER NOT NULL,
-          size        INTEGER NOT NULL,
-          byte_offset INTEGER NOT NULL DEFAULT 0
-        );
-
-        CREATE TABLE provenance_repo_state (
-          repo_path   TEXT PRIMARY KEY,
-          head_sha    TEXT NOT NULL,
-          scanned_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-      `);
-    },
-  },
-  {
-    version: 11,
-    description: 'Add recall chunk storage with FTS5 and vector tables',
-    up: (db: Database, _dbPath: string) => {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS chunks (
-          chunk_id    TEXT PRIMARY KEY,
-          session_id  TEXT NOT NULL,
-          message_uuid TEXT,
-          chunk_seq   INTEGER NOT NULL,
-          heading     TEXT,
-          heading_level INTEGER,
-          chunk_text  TEXT NOT NULL,
-          project_id  TEXT,
-          created_at  INTEGER NOT NULL,
-          UNIQUE(session_id, chunk_seq)
-        );
-
-        CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
-          chunk_text,
-          heading,
-          content=chunks,
-          content_rowid=rowid,
-          tokenize='porter unicode61'
-        );
-
-        -- Sync triggers (same pattern as activity_fts in migration v7)
-        CREATE TRIGGER IF NOT EXISTS chunks_fts_ai AFTER INSERT ON chunks BEGIN
-          INSERT INTO chunks_fts(rowid, chunk_text, heading)
-          VALUES (new.rowid, new.chunk_text, new.heading);
-        END;
-
-        CREATE TRIGGER IF NOT EXISTS chunks_fts_ad AFTER DELETE ON chunks BEGIN
-          INSERT INTO chunks_fts(chunks_fts, rowid, chunk_text, heading)
-          VALUES ('delete', old.rowid, old.chunk_text, old.heading);
-        END;
-
-        CREATE TRIGGER IF NOT EXISTS chunks_fts_au AFTER UPDATE ON chunks BEGIN
-          INSERT INTO chunks_fts(chunks_fts, rowid, chunk_text, heading)
-          VALUES ('delete', old.rowid, old.chunk_text, old.heading);
-          INSERT INTO chunks_fts(rowid, chunk_text, heading)
-          VALUES (new.rowid, new.chunk_text, new.heading);
-        END;
-
-        CREATE TABLE IF NOT EXISTS chunk_vectors (
-          chunk_id      TEXT PRIMARY KEY REFERENCES chunks(chunk_id),
-          embedding_f32 BLOB NOT NULL,
-          embedding_q8  BLOB NOT NULL,
-          norm          REAL NOT NULL,
-          quant_scale   REAL NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_chunks_session ON chunks(session_id);
-        CREATE INDEX IF NOT EXISTS idx_chunks_project ON chunks(project_id);
-        CREATE INDEX IF NOT EXISTS idx_chunks_created ON chunks(created_at);
-      `);
-    },
-  },
-  {
-    version: 12,
-    description: 'Message-level recall indexing with FTS5',
-    up: (db: Database, _dbPath: string) => {
-      db.exec(`
-        CREATE TABLE messages (
-          message_id    TEXT PRIMARY KEY,
-          session_id    TEXT NOT NULL,
-          message_seq   INTEGER NOT NULL,
-          message_text  TEXT NOT NULL,
-          project_id    TEXT,
-          created_at    INTEGER NOT NULL,
-          UNIQUE(session_id, message_id)
-        );
-
-        CREATE INDEX idx_messages_session ON messages(session_id);
-        CREATE INDEX idx_messages_project ON messages(project_id);
-
-        CREATE VIRTUAL TABLE messages_fts USING fts5(
-          message_text,
-          content=messages,
-          content_rowid=rowid,
-          tokenize='porter unicode61'
-        );
-
-        CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN
-          INSERT INTO messages_fts(rowid, message_text) VALUES (new.rowid, new.message_text);
-        END;
-
-        CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN
-          INSERT INTO messages_fts(messages_fts, rowid, message_text)
-          VALUES ('delete', old.rowid, old.message_text);
-        END;
-
-        CREATE TRIGGER messages_fts_au AFTER UPDATE ON messages BEGIN
-          INSERT INTO messages_fts(messages_fts, rowid, message_text)
-          VALUES ('delete', old.rowid, old.message_text);
-          INSERT INTO messages_fts(rowid, message_text) VALUES (new.rowid, new.message_text);
-        END;
-      `);
-    },
-  },
-  {
-    version: 13,
-    description: 'Persistent event log for recall diagnostics',
-    up: (db: Database) => {
-      db.exec(`
-        CREATE TABLE event_log (
-          id      INTEGER PRIMARY KEY AUTOINCREMENT,
-          ts      INTEGER NOT NULL,
-          source  TEXT NOT NULL,
-          level   TEXT NOT NULL DEFAULT 'info',
-          summary TEXT NOT NULL,
-          data    TEXT
-        );
-        CREATE INDEX idx_event_log_source ON event_log(source);
-        CREATE INDEX idx_event_log_ts ON event_log(ts);
-      `);
-    },
-  },
-  {
-    version: 14,
-    description: 'Add message_vectors table, drop unused chunk pipeline tables',
-    up: (db: Database) => {
-      db.exec(`
-        -- Drop chunk pipeline tables and triggers (replaced by message-level pipeline)
-        DROP TRIGGER IF EXISTS chunks_fts_ai;
-        DROP TRIGGER IF EXISTS chunks_fts_ad;
-        DROP TRIGGER IF EXISTS chunks_fts_au;
-        DROP TABLE IF EXISTS chunk_vectors;
-        DROP TABLE IF EXISTS chunks_fts;
-        DROP TABLE IF EXISTS chunks;
-
-        -- Message-level embedding vectors (q8-quantized Nomic Embed Code)
-        CREATE TABLE message_vectors (
-          message_id    TEXT PRIMARY KEY REFERENCES messages(message_id),
-          embedding_q8  BLOB NOT NULL,
-          norm          REAL NOT NULL,
-          quant_scale   REAL NOT NULL
-        );
-      `);
-    },
-  },
-  {
-    version: 15,
-    description: 'Recreate message_vectors with ON DELETE CASCADE',
-    up: (db: Database) => {
-      db.exec(`
-        -- Purge orphaned vectors (FK was unenforced before this migration)
-        DELETE FROM message_vectors
-          WHERE NOT EXISTS (SELECT 1 FROM messages m WHERE m.message_id = message_vectors.message_id);
-
-        CREATE TABLE message_vectors_new (
-          message_id    TEXT PRIMARY KEY REFERENCES messages(message_id) ON DELETE CASCADE,
-          embedding_q8  BLOB NOT NULL,
-          norm          REAL NOT NULL,
-          quant_scale   REAL NOT NULL
-        );
-        INSERT INTO message_vectors_new SELECT * FROM message_vectors;
-        DROP TABLE message_vectors;
-        ALTER TABLE message_vectors_new RENAME TO message_vectors;
-      `);
-    },
-  },
-  {
-    version: 16,
-    description: 'Add message_role column to messages',
-    up: (db: Database) => {
-      db.exec(`ALTER TABLE messages ADD COLUMN message_role TEXT;`);
-    },
-  },
-  {
-    version: 17,
-    description: 'Clear v1 vectors for nomic-embed-text-v1.5 re-embed',
-    up: (db: Database) => {
-      db.exec(`DELETE FROM message_vectors;`);
-    },
-  },
-  {
-    version: 18,
-    description: 'Projects: add stage/icon/sort_order columns, create project_activity table',
-    up: (db: Database): void => {
-      // PRAGMA foreign_keys is a no-op inside a transaction (the migration
-      // runner wraps up() in BEGIN/COMMIT). Instead, we back up child table
-      // data, drop FKs by recreating child tables after the projects table
-      // rename, then restore the data.
-
-      db.exec(`
-        -- Back up child tables that FK-reference projects(id)
-        CREATE TABLE _ps_backup AS SELECT * FROM project_sessions;
-        CREATE TABLE _pf_backup AS SELECT * FROM project_files;
-        DROP TABLE project_sessions;
-        DROP TABLE project_files;
-
-        -- Now safe to drop projects (no FK references remain)
-        CREATE TABLE projects_new (
-          id               TEXT PRIMARY KEY,
-          title            TEXT NOT NULL,
-          stage            TEXT NOT NULL CHECK (stage IN ('active','planning','ready','committed','paused','archived')),
-          status           TEXT,
-          icon             TEXT,
-          sort_order       INTEGER,
-          blocked_by       TEXT,
-          summary          TEXT,
-          category         TEXT,
-          branch           TEXT,
-          entities         TEXT,
-          created_at       TEXT NOT NULL,
-          updated_at       TEXT NOT NULL,
-          last_activity_at TEXT,
-          closed_at        TEXT,
-          parent_id        TEXT
-        );
-
-        INSERT INTO projects_new (id, title, stage, status, icon, sort_order, blocked_by, summary, category, branch, entities, created_at, updated_at, last_activity_at, closed_at, parent_id)
-          SELECT id, title,
-            CASE status
-              WHEN 'active' THEN 'active'
-              WHEN 'planned' THEN 'planning'
-              WHEN 'blocked' THEN 'paused'
-              WHEN 'done' THEN 'archived'
-              WHEN 'abandoned' THEN 'archived'
-              ELSE 'active'
-            END,
-            summary,
-            NULL, NULL,
-            blocked_by, summary, category, branch, entities,
-            created_at, updated_at, last_activity_at, closed_at, parent_id
-          FROM projects;
-
-        DROP TABLE projects;
-        ALTER TABLE projects_new RENAME TO projects;
-
-        CREATE INDEX idx_projects_stage ON projects(stage);
-        CREATE INDEX idx_projects_parent ON projects(parent_id);
-
-        -- Recreate child tables with FK references to the new projects table
-        CREATE TABLE project_sessions (
-          project_id   TEXT NOT NULL REFERENCES projects(id),
-          session_file TEXT NOT NULL,
-          detected_in  TEXT,
-          linked_at    TEXT NOT NULL,
-          PRIMARY KEY (project_id, session_file)
-        );
-        INSERT INTO project_sessions SELECT * FROM _ps_backup;
-        DROP TABLE _ps_backup;
-
-        CREATE TABLE project_files (
-          project_id   TEXT NOT NULL REFERENCES projects(id),
-          file_path    TEXT NOT NULL,
-          session_file TEXT,
-          message_id   TEXT,
-          note         TEXT,
-          added_at     TEXT NOT NULL,
-          UNIQUE (project_id, file_path)
-        );
-        INSERT INTO project_files SELECT * FROM _pf_backup;
-        DROP TABLE _pf_backup;
-
-        -- Activity log table
-        CREATE TABLE project_activity (
-          id           INTEGER PRIMARY KEY AUTOINCREMENT,
-          project_id   TEXT NOT NULL REFERENCES projects(id),
-          session_file TEXT,
-          ts           INTEGER NOT NULL,
-          kind         TEXT NOT NULL CHECK (kind IN (
-            'created','stage_change','status_update','session_linked','file_linked','entity_added'
-          )),
-          old_stage    TEXT,
-          new_stage    TEXT,
-          old_status   TEXT,
-          new_status   TEXT,
-          narrative    TEXT,
-          actor        TEXT NOT NULL DEFAULT 'rosie'
-        );
-        CREATE INDEX idx_project_activity_project ON project_activity(project_id);
-        CREATE INDEX idx_project_activity_ts ON project_activity(ts);
-      `);
-    },
-  },
-  {
-    version: 19,
-    description: 'Cleanup: drop scan_state, rename activity_entries → session_meta, add type to projects, add idea stage',
-    up: (db: Database): void => {
-      // --- Cleanup ---
-      db.exec(`DROP TABLE IF EXISTS scan_state`);
-      db.exec(`DELETE FROM activity_entries WHERE kind = 'prompt'`);
-
-      // --- Rename activity_entries → session_meta ---
-      // SQLite ALTER TABLE RENAME preserves data, indexes, and column definitions.
-      // However the original CREATE TABLE has a CHECK constraint on `kind` that
-      // restricts values to ('prompt', 'rosie-meta'). Phase 3 needs 'user'/'system'.
-      // Since we just purged all 'prompt' rows and are renaming anyway, recreate
-      // the table without the CHECK constraint to future-proof the column.
-
-      db.exec(`
-        CREATE TABLE session_meta (
-          id          INTEGER PRIMARY KEY AUTOINCREMENT,
-          timestamp   TEXT NOT NULL,
-          kind        TEXT NOT NULL,
-          file        TEXT NOT NULL,
-          preview     TEXT,
-          byte_offset INTEGER DEFAULT 0,
-          uuid        TEXT,
-          quest       TEXT,
-          summary     TEXT,
-          title       TEXT,
-          status      TEXT,
-          entities    TEXT,
-          UNIQUE (timestamp, file, uuid)
-        );
-
-        INSERT INTO session_meta SELECT * FROM activity_entries;
-
-        DROP TABLE activity_entries;
-
-        CREATE INDEX IF NOT EXISTS idx_session_meta_timestamp ON session_meta(timestamp);
-        CREATE INDEX IF NOT EXISTS idx_session_meta_kind ON session_meta(kind);
-        CREATE INDEX IF NOT EXISTS idx_session_meta_file ON session_meta(file);
-      `);
-
-      // --- Recreate FTS5 ---
-      // SQLite cannot rename FTS5 virtual tables. Drop old, create new.
-      db.exec(`
-        DROP TRIGGER IF EXISTS activity_fts_ai;
-        DROP TRIGGER IF EXISTS activity_fts_ad;
-        DROP TRIGGER IF EXISTS activity_fts_au;
-        DROP TABLE IF EXISTS activity_fts;
-
-        CREATE VIRTUAL TABLE session_meta_fts USING fts5(
-          quest, summary, title, entities, preview,
-          content='session_meta', content_rowid='id',
-          tokenize='porter unicode61 remove_diacritics 2'
-        );
-
-        INSERT INTO session_meta_fts(session_meta_fts) VALUES('rebuild');
-
-        INSERT INTO session_meta_fts(session_meta_fts, rank) VALUES('rank', 'bm25(10.0, 5.0, 8.0, 3.0, 1.0)');
-      `);
-
-      // Sync triggers for the new FTS table
-      db.exec(`
-        CREATE TRIGGER session_meta_fts_ai AFTER INSERT ON session_meta BEGIN
-          INSERT INTO session_meta_fts(rowid, quest, summary, title, entities, preview)
-          VALUES (new.id, new.quest, new.summary, new.title, new.entities, new.preview);
-        END;
-
-        CREATE TRIGGER session_meta_fts_ad AFTER DELETE ON session_meta BEGIN
-          INSERT INTO session_meta_fts(session_meta_fts, rowid, quest, summary, title, entities, preview)
-          VALUES ('delete', old.id, old.quest, old.summary, old.title, old.entities, old.preview);
-        END;
-
-        CREATE TRIGGER session_meta_fts_au AFTER UPDATE ON session_meta BEGIN
-          INSERT INTO session_meta_fts(session_meta_fts, rowid, quest, summary, title, entities, preview)
-          VALUES ('delete', old.id, old.quest, old.summary, old.title, old.entities, old.preview);
-          INSERT INTO session_meta_fts(rowid, quest, summary, title, entities, preview)
-          VALUES (new.id, new.quest, new.summary, new.title, new.entities, new.preview);
-        END;
-      `);
-
-      // --- Add type column to projects ---
-      db.exec(`ALTER TABLE projects ADD COLUMN type TEXT NOT NULL DEFAULT 'project'`);
-    },
-  },
-  {
-    version: 20,
-    description: 'Create rosie_usage table for per-invocation token tracking',
-    up: (db: Database): void => {
-      db.exec(`
-        CREATE TABLE rosie_usage (
-          id           INTEGER PRIMARY KEY AUTOINCREMENT,
-          session_file TEXT NOT NULL,
-          subsystem    TEXT NOT NULL DEFAULT 'tracker',
-          outcome      TEXT,
-          reason       TEXT,
-          input_tokens  INTEGER,
-          output_tokens INTEGER,
-          cached_tokens INTEGER,
-          model        TEXT,
-          created_at   TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE INDEX idx_rosie_usage_session ON rosie_usage(session_file);
-        CREATE INDEX idx_rosie_usage_subsystem ON rosie_usage(subsystem);
-      `);
-    },
-  },
-  {
-    version: 21,
-    description: 'Remove stage CHECK constraint from projects (enforced in app code via VALID_STAGES)',
-    up: (db: Database): void => {
-      // SQLite cannot ALTER CHECK constraints — must recreate the table.
-      // The old CHECK excluded 'idea'; app-level validation is now canonical.
-      db.exec(`
-        CREATE TABLE projects_new (
-          id               TEXT PRIMARY KEY,
-          title            TEXT NOT NULL,
-          stage            TEXT NOT NULL,
-          status           TEXT,
-          icon             TEXT,
-          sort_order       INTEGER,
-          blocked_by       TEXT,
-          summary          TEXT,
-          category         TEXT,
-          branch           TEXT,
-          entities         TEXT,
-          created_at       TEXT NOT NULL,
-          updated_at       TEXT NOT NULL,
-          last_activity_at TEXT,
-          closed_at        TEXT,
-          parent_id        TEXT,
-          type             TEXT NOT NULL DEFAULT 'project'
-        );
-
-        INSERT INTO projects_new
-          SELECT id, title, stage, status, icon, sort_order, blocked_by,
-                 summary, category, branch, entities, created_at, updated_at,
-                 last_activity_at, closed_at, parent_id, type
-          FROM projects;
-
-        DROP TABLE projects;
-        ALTER TABLE projects_new RENAME TO projects;
-
-        CREATE INDEX IF NOT EXISTS idx_projects_parent ON projects(parent_id);
-      `);
-
-      // Recreate FK-dependent tables that reference projects
-      // project_sessions and project_files have FK to projects(id)
-      // but SQLite defers FK checks, so just recreate the index
-    },
-  },
-  {
-    version: 22,
-    description: 'Add cost_usd to rosie_usage',
-    up: (db: Database): void => {
-      db.exec(`ALTER TABLE rosie_usage ADD COLUMN cost_usd REAL`);
-    },
-  },
-  {
-    version: 23,
-    description: 'Create stages table with descriptions for prompt injection',
-    up: (db: Database): void => {
-      db.exec(`
-        CREATE TABLE stages (
-          name        TEXT PRIMARY KEY,
-          description TEXT NOT NULL,
-          sort_order  INTEGER NOT NULL,
-          icon        TEXT,
-          color       TEXT
-        );
-
-        INSERT INTO stages (name, description, sort_order, color) VALUES
-          ('active',    'Work is actively in progress', 0, '#5cb870'),
-          ('paused',    'On hold — record reason in blocked_by', 1, '#d4a030'),
-          ('planning',  'Being designed or specced out — not yet started', 2, '#6878a0'),
-          ('ready',     'Ready to start — all prerequisites met', 3, '#50a0d0'),
-          ('committed', 'Scheduled for implementation', 4, '#a070c0'),
-          ('done',      'Work is complete — awaiting user review before archiving', 5, '#22aa66'),
-          ('idea',      'A thought or suggestion discussed but not yet committed to. Create with type=''idea'' and stage=''idea''', 6, '#888898'),
-          ('archived',  'User-managed only. Do NOT move projects here — the user decides when to archive', 7, '#555568');
-      `);
-    },
-  },
-  {
-    version: 24,
-    description: 'Create session_titles table',
-    up: (db: Database): void => {
-      db.exec(`
-        CREATE TABLE session_titles (
-          session_id TEXT PRIMARY KEY,
-          title TEXT NOT NULL,
-          updated_at TEXT NOT NULL
-        );
-      `);
-    },
-  },
-];
-
-function runMigrations(db: Database, dbPath: string): void {
+function ensureSchema(db: Database): void {
   // Create migrations tracking table
   db.exec(`
     CREATE TABLE IF NOT EXISTS _migrations (
@@ -1065,28 +90,492 @@ function runMigrations(db: Database, dbPath: string): void {
     );
   `);
 
-  // Find current version
+  // Check if schema already exists
   const row = db.get('SELECT MAX(version) as max_ver FROM _migrations');
   const currentVersion = (row && typeof (row as Record<string, unknown>).max_ver === 'number')
     ? (row as Record<string, unknown>).max_ver as number
     : 0;
 
-  // Run pending migrations
-  for (const migration of migrations) {
-    if (migration.version > currentVersion) {
-      db.exec('BEGIN');
-      try {
-        migration.up(db, dbPath);
-        db.run(
-          'INSERT INTO _migrations (version, description) VALUES (?, ?)',
-          [migration.version, migration.description],
-        );
-        db.exec('COMMIT');
-        log({ source: 'db', level: 'info', summary: `DB: migration v${migration.version} complete — ${migration.description}` });
-      } catch (err) {
-        db.exec('ROLLBACK');
-        throw err;
-      }
-    }
+  // v1 = clean schema from this file. Return early — nothing to do.
+  if (currentVersion === 1) return;
+
+  // Old DBs created by the 24-migration system have version=24.
+  // No existing users have a database, so wipe and recreate.
+  if (currentVersion > 1) {
+    log({ source: 'db', level: 'info', summary: `DB: detected old schema v${currentVersion} — dropping and recreating` });
+    // Drop all known tables (order matters for FKs)
+    db.exec(`
+      DROP TRIGGER IF EXISTS session_meta_fts_ai;
+      DROP TRIGGER IF EXISTS session_meta_fts_ad;
+      DROP TRIGGER IF EXISTS session_meta_fts_au;
+      DROP TRIGGER IF EXISTS messages_fts_ai;
+      DROP TRIGGER IF EXISTS messages_fts_ad;
+      DROP TRIGGER IF EXISTS messages_fts_au;
+      DROP TRIGGER IF EXISTS commit_fts_ai;
+      DROP TRIGGER IF EXISTS commit_fts_ad;
+      DROP TRIGGER IF EXISTS commit_fts_au;
+      DROP TRIGGER IF EXISTS activity_fts_ai;
+      DROP TRIGGER IF EXISTS activity_fts_ad;
+      DROP TRIGGER IF EXISTS activity_fts_au;
+      DROP TABLE IF EXISTS session_meta_fts;
+      DROP TABLE IF EXISTS messages_fts;
+      DROP TABLE IF EXISTS commit_fts;
+      DROP TABLE IF EXISTS activity_fts;
+      DROP TABLE IF EXISTS message_vectors;
+      DROP TABLE IF EXISTS commit_file_changes;
+      DROP TABLE IF EXISTS project_activity;
+      DROP TABLE IF EXISTS project_files;
+      DROP TABLE IF EXISTS project_sessions;
+      DROP TABLE IF EXISTS tracker_outcomes;
+      DROP TABLE IF EXISTS rosie_usage;
+      DROP TABLE IF EXISTS event_log;
+      DROP TABLE IF EXISTS provenance_repo_state;
+      DROP TABLE IF EXISTS provenance_scan_state;
+      DROP TABLE IF EXISTS commit_index;
+      DROP TABLE IF EXISTS file_mutations;
+      DROP TABLE IF EXISTS messages;
+      DROP TABLE IF EXISTS stages;
+      DROP TABLE IF EXISTS session_titles;
+      DROP TABLE IF EXISTS session_lineage;
+      DROP TABLE IF EXISTS session_meta;
+      DROP TABLE IF EXISTS projects;
+      DROP TABLE IF EXISTS scan_state;
+      DROP TABLE IF EXISTS activity_entries;
+      DROP TABLE IF EXISTS chunk_vectors;
+      DROP TABLE IF EXISTS chunks_fts;
+      DROP TABLE IF EXISTS chunks;
+      DROP TABLE IF EXISTS _migrations;
+    `);
+    // Recreate the _migrations table for the new schema
+    db.exec(`
+      CREATE TABLE _migrations (
+        version     INTEGER PRIMARY KEY,
+        description TEXT NOT NULL,
+        applied_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  }
+
+  db.exec('BEGIN');
+  try {
+    // ====================================================================
+    // session_meta — user prompt activity index
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS session_meta (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        file       TEXT NOT NULL,
+        session_id TEXT,
+        kind       TEXT NOT NULL DEFAULT 'prompt',
+        preview    TEXT,
+        ts         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        model      TEXT,
+        cwd        TEXT,
+        UNIQUE(file, ts, kind)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_session_meta_ts ON session_meta(ts);
+      CREATE INDEX IF NOT EXISTS idx_session_meta_kind ON session_meta(kind);
+      CREATE INDEX IF NOT EXISTS idx_session_meta_file ON session_meta(file);
+      CREATE INDEX IF NOT EXISTS idx_session_meta_session_id ON session_meta(session_id);
+    `);
+
+    // ====================================================================
+    // session_meta_fts — full-text search (preview only)
+    // ====================================================================
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS session_meta_fts USING fts5(
+        preview,
+        content='session_meta', content_rowid='id',
+        tokenize='porter unicode61 remove_diacritics 2'
+      );
+
+      INSERT INTO session_meta_fts(session_meta_fts, rank)
+        VALUES('rank', 'bm25(1.0)');
+    `);
+
+    // FTS sync triggers
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS session_meta_fts_ai AFTER INSERT ON session_meta BEGIN
+        INSERT INTO session_meta_fts(rowid, preview)
+        VALUES (new.id, new.preview);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS session_meta_fts_ad AFTER DELETE ON session_meta BEGIN
+        INSERT INTO session_meta_fts(session_meta_fts, rowid, preview)
+        VALUES ('delete', old.id, old.preview);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS session_meta_fts_au AFTER UPDATE ON session_meta BEGIN
+        INSERT INTO session_meta_fts(session_meta_fts, rowid, preview)
+        VALUES ('delete', old.id, old.preview);
+        INSERT INTO session_meta_fts(rowid, preview)
+        VALUES (new.id, new.preview);
+      END;
+    `);
+
+    // ====================================================================
+    // session_lineage — fork tracking
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS session_lineage (
+        session_file      TEXT PRIMARY KEY,
+        parent_file       TEXT,
+        fork_point_uuid   TEXT,
+        fork_point_offset INTEGER NOT NULL DEFAULT 0,
+        created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_lineage_parent ON session_lineage(parent_file);
+    `);
+
+    // ====================================================================
+    // session_titles — display name cache
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS session_titles (
+        session_id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    // ====================================================================
+    // projects — project board
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id               TEXT PRIMARY KEY,
+        title            TEXT NOT NULL,
+        stage            TEXT NOT NULL,
+        status           TEXT,
+        icon             TEXT,
+        sort_order       INTEGER,
+        blocked_by       TEXT,
+        summary          TEXT,
+        category         TEXT,
+        branch           TEXT,
+        entities         TEXT,
+        created_at       TEXT NOT NULL,
+        updated_at       TEXT NOT NULL,
+        last_activity_at TEXT,
+        closed_at        TEXT,
+        parent_id        TEXT,
+        type             TEXT NOT NULL DEFAULT 'project'
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_projects_parent ON projects(parent_id);
+    `);
+
+    // ====================================================================
+    // project_sessions — session↔project links
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS project_sessions (
+        project_id   TEXT NOT NULL REFERENCES projects(id),
+        session_file TEXT NOT NULL,
+        detected_in  TEXT,
+        linked_at    TEXT NOT NULL,
+        PRIMARY KEY (project_id, session_file)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_project_sessions_file ON project_sessions(session_file);
+    `);
+
+    // ====================================================================
+    // project_files — file↔project links
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS project_files (
+        project_id   TEXT NOT NULL REFERENCES projects(id),
+        file_path    TEXT NOT NULL,
+        session_file TEXT,
+        message_id   TEXT,
+        note         TEXT,
+        added_at     TEXT NOT NULL,
+        UNIQUE (project_id, file_path)
+      );
+    `);
+
+    // ====================================================================
+    // project_activity — activity log
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS project_activity (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id   TEXT NOT NULL REFERENCES projects(id),
+        session_file TEXT,
+        ts           INTEGER NOT NULL,
+        kind         TEXT NOT NULL CHECK (kind IN (
+          'created','stage_change','status_update','session_linked','file_linked','entity_added'
+        )),
+        old_stage    TEXT,
+        new_stage    TEXT,
+        old_status   TEXT,
+        new_status   TEXT,
+        narrative    TEXT,
+        actor        TEXT NOT NULL DEFAULT 'rosie'
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_project_activity_project ON project_activity(project_id);
+      CREATE INDEX IF NOT EXISTS idx_project_activity_ts ON project_activity(ts);
+    `);
+
+    // ====================================================================
+    // stages — stage definitions with descriptions for prompt injection
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stages (
+        name        TEXT PRIMARY KEY,
+        description TEXT NOT NULL,
+        sort_order  INTEGER NOT NULL,
+        icon        TEXT,
+        color       TEXT
+      );
+
+      INSERT INTO stages (name, description, sort_order, color, icon) VALUES
+        ('idea',      'Captured but not yet evaluated',         10, '#9ca3af', '💡'),
+        ('planning',  'Being scoped or specced out',            20, '#a78bfa', '📋'),
+        ('ready',     'Specced and ready to start',             30, '#60a5fa', '🎯'),
+        ('active',    'Currently being worked on',              40, '#34d399', '🔨'),
+        ('paused',    'Temporarily on hold',                    50, '#fbbf24', '⏸️'),
+        ('committed', 'Code complete, awaiting merge/deploy',   60, '#f472b6', '✅'),
+        ('done',      'Shipped and verified',                   70, '#6ee7b7', '🎉'),
+        ('archived',  'No longer relevant',                     80, '#6b7280', '📦');
+    `);
+
+    // ====================================================================
+    // messages — recall message index
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS messages (
+        message_id    TEXT PRIMARY KEY,
+        session_id    TEXT NOT NULL,
+        message_seq   INTEGER NOT NULL,
+        message_text  TEXT NOT NULL,
+        project_id    TEXT,
+        created_at    INTEGER NOT NULL,
+        message_role  TEXT,
+        UNIQUE(session_id, message_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
+      CREATE INDEX IF NOT EXISTS idx_messages_project ON messages(project_id);
+    `);
+
+    // ====================================================================
+    // messages_fts — full-text search over messages
+    // ====================================================================
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+        message_text,
+        content=messages,
+        content_rowid=rowid,
+        tokenize='porter unicode61'
+      );
+
+      CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
+        INSERT INTO messages_fts(rowid, message_text) VALUES (new.rowid, new.message_text);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
+        INSERT INTO messages_fts(messages_fts, rowid, message_text)
+        VALUES ('delete', old.rowid, old.message_text);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
+        INSERT INTO messages_fts(messages_fts, rowid, message_text)
+        VALUES ('delete', old.rowid, old.message_text);
+        INSERT INTO messages_fts(rowid, message_text) VALUES (new.rowid, new.message_text);
+      END;
+    `);
+
+    // ====================================================================
+    // message_vectors — embedding vectors for semantic search
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS message_vectors (
+        message_id    TEXT PRIMARY KEY REFERENCES messages(message_id) ON DELETE CASCADE,
+        embedding_q8  BLOB NOT NULL,
+        norm          REAL NOT NULL,
+        quant_scale   REAL NOT NULL
+      );
+    `);
+
+    // ====================================================================
+    // file_mutations — provenance tracking
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS file_mutations (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_file   TEXT NOT NULL,
+        session_id     TEXT,
+        tool           TEXT NOT NULL,
+        bash_category  TEXT,
+        file_path      TEXT,
+        timestamp      TEXT,
+        message_uuid   TEXT,
+        tool_use_id    TEXT,
+        byte_offset    INTEGER NOT NULL,
+        command         TEXT,
+        old_hash        TEXT,
+        new_hash        TEXT,
+        commit_sha      TEXT,
+        UNIQUE (session_file, tool_use_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_mut_file ON file_mutations(file_path);
+      CREATE INDEX IF NOT EXISTS idx_mut_session ON file_mutations(session_file);
+      CREATE INDEX IF NOT EXISTS idx_mut_commit ON file_mutations(commit_sha);
+      CREATE INDEX IF NOT EXISTS idx_mut_ts ON file_mutations(timestamp);
+    `);
+
+    // ====================================================================
+    // commit_index — git commit provenance
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS commit_index (
+        sha              TEXT PRIMARY KEY,
+        message          TEXT NOT NULL,
+        author           TEXT,
+        author_date      TEXT NOT NULL,
+        repo_path        TEXT NOT NULL,
+        session_file     TEXT,
+        session_id       TEXT,
+        message_uuid     TEXT,
+        match_confidence REAL NOT NULL DEFAULT 0.0,
+        matched_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_ci_session ON commit_index(session_file);
+      CREATE INDEX IF NOT EXISTS idx_ci_date ON commit_index(author_date);
+      CREATE INDEX IF NOT EXISTS idx_ci_repo ON commit_index(repo_path);
+    `);
+
+    // ====================================================================
+    // commit_file_changes — per-file stats for commits
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS commit_file_changes (
+        commit_sha  TEXT NOT NULL REFERENCES commit_index(sha),
+        file_path   TEXT NOT NULL,
+        additions   INTEGER NOT NULL DEFAULT 0,
+        deletions   INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (commit_sha, file_path)
+      );
+    `);
+
+    // ====================================================================
+    // commit_fts — full-text search over commit messages
+    // ====================================================================
+    db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS commit_fts USING fts5(
+        message,
+        content='commit_index', content_rowid='rowid',
+        tokenize='porter unicode61 remove_diacritics 2'
+      );
+
+      CREATE TRIGGER IF NOT EXISTS commit_fts_ai AFTER INSERT ON commit_index BEGIN
+        INSERT INTO commit_fts(rowid, message) VALUES (new.rowid, new.message);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS commit_fts_ad AFTER DELETE ON commit_index BEGIN
+        INSERT INTO commit_fts(commit_fts, rowid, message)
+        VALUES ('delete', old.rowid, old.message);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS commit_fts_au AFTER UPDATE ON commit_index BEGIN
+        INSERT INTO commit_fts(commit_fts, rowid, message)
+        VALUES ('delete', old.rowid, old.message);
+        INSERT INTO commit_fts(rowid, message) VALUES (new.rowid, new.message);
+      END;
+    `);
+
+    // ====================================================================
+    // provenance_scan_state — scan resume state
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS provenance_scan_state (
+        file_path   TEXT PRIMARY KEY,
+        mtime       INTEGER NOT NULL,
+        size        INTEGER NOT NULL,
+        byte_offset INTEGER NOT NULL DEFAULT 0
+      );
+    `);
+
+    // ====================================================================
+    // provenance_repo_state — HEAD tracking
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS provenance_repo_state (
+        repo_path   TEXT PRIMARY KEY,
+        head_sha    TEXT NOT NULL,
+        scanned_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // ====================================================================
+    // event_log — persistent audit log
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS event_log (
+        id      INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts      INTEGER NOT NULL,
+        source  TEXT NOT NULL,
+        level   TEXT NOT NULL DEFAULT 'info',
+        summary TEXT NOT NULL,
+        data    TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_event_log_source ON event_log(source);
+      CREATE INDEX IF NOT EXISTS idx_event_log_ts ON event_log(ts);
+    `);
+
+    // ====================================================================
+    // rosie_usage — per-invocation token tracking
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS rosie_usage (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_file TEXT NOT NULL,
+        subsystem    TEXT NOT NULL DEFAULT 'tracker',
+        outcome      TEXT,
+        reason       TEXT,
+        input_tokens  INTEGER,
+        output_tokens INTEGER,
+        cached_tokens INTEGER,
+        model        TEXT,
+        cost_usd     REAL,
+        created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_rosie_usage_session ON rosie_usage(session_file);
+      CREATE INDEX IF NOT EXISTS idx_rosie_usage_subsystem ON rosie_usage(subsystem);
+    `);
+
+    // ====================================================================
+    // tracker_outcomes — backfill dedup marker
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS tracker_outcomes (
+        session_file TEXT PRIMARY KEY,
+        outcome      TEXT NOT NULL CHECK (outcome IN ('tracked', 'trivial', 'failed')),
+        reason       TEXT,
+        attempts     INTEGER NOT NULL DEFAULT 1,
+        created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Record schema version
+    db.run(
+      'INSERT INTO _migrations (version, description) VALUES (?, ?)',
+      [1, 'Clean schema v1 — all tables, indexes, triggers, seed data'],
+    );
+
+    db.exec('COMMIT');
+    log({ source: 'db', level: 'info', summary: 'DB: schema v1 created — all tables, indexes, triggers, seed data' });
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
   }
 }
