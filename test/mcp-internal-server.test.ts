@@ -28,6 +28,15 @@ import { getDb, _resetDb } from '../src/core/crispy-db.js';
 let testDir: string;
 let dbPath: string;
 
+vi.mock('../src/core/activity-index.js', async (importOriginal) => {
+  const actual = await importOriginal() as Record<string, unknown>;
+  return {
+    ...actual,
+    dbPath: () => dbPath,
+    ensureCrispyDir: () => {},
+  };
+});
+
 // Mock getDbPath to return our test DB path
 vi.mock('../src/mcp/memory-queries.js', async (importOriginal) => {
   const actual = await importOriginal() as Record<string, unknown>;
@@ -115,6 +124,87 @@ describe('internal MCP server', () => {
     const parsed = JSON.parse(text);
     expect(parsed.count).toBe(1);
     expect(parsed.sessions[0].message_count).toBe(2);
+  });
+
+  it('list_sessions excludes the caller session when excludeSessionId is set', async () => {
+    const t1 = new Date('2025-06-01T10:00:00Z').getTime();
+    const t2 = new Date('2025-06-01T11:00:00Z').getTime();
+
+    insertMessage({ messageId: 'a1', sessionId: 'sess-a', seq: 0, text: 'caller session text', createdAt: t1 });
+    insertMessage({ messageId: 'b1', sessionId: 'sess-b', seq: 0, text: 'other session text', createdAt: t2 });
+
+    const { client } = await createConnectedClient({ excludeSessionId: 'sess-a' });
+    const result = await client.callTool({ name: 'list_sessions', arguments: {} });
+
+    const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
+    const parsed = JSON.parse(text);
+    expect(parsed.count).toBe(1);
+    expect(parsed.sessions).toHaveLength(1);
+    expect(parsed.sessions[0].session_id).toBe('sess-b');
+  });
+
+  it('search_transcript excludes the caller session from results and session_hits', async () => {
+    const t1 = new Date('2025-06-01T10:00:00Z').getTime();
+    const t2 = new Date('2025-06-01T11:00:00Z').getTime();
+    const t3 = new Date('2025-06-01T12:00:00Z').getTime();
+
+    insertMessage({ messageId: 'a1', sessionId: 'sess-a', seq: 0, text: 'recall playground prompt tuning', createdAt: t1 });
+    insertMessage({ messageId: 'a2', sessionId: 'sess-a', seq: 1, text: 'more recall playground work', createdAt: t2 });
+    insertMessage({ messageId: 'b1', sessionId: 'sess-b', seq: 0, text: 'recall playground regression fix', createdAt: t3 });
+
+    const { client } = await createConnectedClient({ excludeSessionId: 'sess-a' });
+    const result = await client.callTool({
+      name: 'search_transcript',
+      arguments: { query: 'recall playground', all_projects: true },
+    });
+
+    const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
+    const parsed = JSON.parse(text);
+    expect(parsed.count).toBe(1);
+    expect(parsed.total_matches).toBe(1);
+    expect(parsed.results).toHaveLength(1);
+    expect(parsed.results[0].session_id).toBe('sess-b');
+    expect(parsed.session_hits).toEqual({ 'sess-b': 1 });
+  });
+
+  it('read_message rejects direct reads of the excluded session', async () => {
+    const t1 = new Date('2025-06-01T10:00:00Z').getTime();
+    const t2 = new Date('2025-06-01T10:01:00Z').getTime();
+
+    insertMessage({ messageId: 'a1', sessionId: 'sess-a', seq: 0, text: 'user prompt', createdAt: t1 });
+    insertMessage({ messageId: 'a2', sessionId: 'sess-a', seq: 1, text: 'assistant reply', createdAt: t2 });
+
+    const { client } = await createConnectedClient({ excludeSessionId: 'sess-a' });
+    const result = await client.callTool({
+      name: 'read_message',
+      arguments: { session_id: 'sess-a', message_id: 'a1' },
+    });
+
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
+    const parsed = JSON.parse(text);
+    expect(parsed.found).toBe(false);
+    expect(parsed.error).toContain('blocked');
+  });
+
+  it('read_session rejects direct reads of the excluded session', async () => {
+    const t1 = new Date('2025-06-01T10:00:00Z').getTime();
+    const t2 = new Date('2025-06-01T10:01:00Z').getTime();
+
+    insertMessage({ messageId: 'a1', sessionId: 'sess-a', seq: 0, text: 'user prompt', createdAt: t1 });
+    insertMessage({ messageId: 'a2', sessionId: 'sess-a', seq: 1, text: 'assistant reply', createdAt: t2 });
+
+    const { client } = await createConnectedClient({ excludeSessionId: 'sess-a' });
+    const result = await client.callTool({
+      name: 'read_session',
+      arguments: { session_id: 'sess-a', offset: 0, limit: 10 },
+    });
+
+    expect(result.isError).toBe(true);
+    const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;
+    const parsed = JSON.parse(text);
+    expect(parsed.found).toBe(false);
+    expect(parsed.error).toContain('blocked');
   });
 });
 

@@ -83,6 +83,10 @@ function buildSessionRef(): { detected_in: string } {
   return { detected_in: serverOptions.parentSessionId ?? '' };
 }
 
+function isExcludedSession(sessionId: string): boolean {
+  return !!serverOptions.excludeSessionId && sessionId === serverOptions.excludeSessionId;
+}
+
 /**
  * Append a decision record to the sidecar file.
  * The parent process reads this after dispatchChild completes and pushes entries
@@ -730,6 +734,23 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       log({ level: 'debug', source: 'recall:read_message', summary: `session=${sessionId} message=${messageId} context=${ctx}` });
       const t0 = Date.now();
       try {
+        if (isExcludedSession(sessionId)) {
+          const elapsed = Date.now() - t0;
+          log({
+            source: 'recall:read_message',
+            level: 'warn',
+            summary: `blocked self-session read in ${elapsed}ms`,
+            data: { sessionId, messageId, context: ctx, elapsed },
+          });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({
+              turn: null,
+              found: false,
+              error: 'read_message blocked: requested session is excluded from this recall context',
+            }, null, 2) }],
+            isError: true,
+          };
+        }
         const result = readMessageTurn(sessionId, messageId, ctx);
         const elapsed = Date.now() - t0;
         if (!result) {
@@ -848,6 +869,23 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       log({ level: 'debug', source: 'recall:read_session', summary: `session=${sessionId} offset=${offset} limit=${limit}` });
       const t0 = Date.now();
       try {
+        if (isExcludedSession(sessionId)) {
+          const elapsed = Date.now() - t0;
+          log({
+            source: 'recall:read_session',
+            level: 'warn',
+            summary: `blocked self-session read in ${elapsed}ms`,
+            data: { sessionId, offset, limit, elapsed },
+          });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify({
+              session: null,
+              found: false,
+              error: 'read_session blocked: requested session is excluded from this recall context',
+            }, null, 2) }],
+            isError: true,
+          };
+        }
         const page = readSessionMessages(sessionId, offset, limit);
         const elapsed = Date.now() - t0;
         if (!page) {
