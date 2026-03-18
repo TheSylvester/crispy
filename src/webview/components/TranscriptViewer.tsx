@@ -58,6 +58,8 @@ import { FilePanel } from "./file-panel/FilePanel.js";
 import { FileViewerModal } from "./file-panel/FileViewerModal.js";
 import { useFilePanel } from "../context/FilePanelContext.js";
 import { useControlPanel } from "../context/ControlPanelContext.js";
+import { useTranscriptAnnotation } from "../hooks/useTranscriptAnnotation.js";
+import { TranscriptAnnotationPopover } from "./TranscriptAnnotationPopover.js";
 
 // Debug mode now lives in PreferencesContext (default: on during development).
 
@@ -122,6 +124,16 @@ export function TranscriptViewer(): React.JSX.Element {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const controlPanelRef = useRef<HTMLDivElement>(null);
   const stopButtonRef = useRef<HTMLDivElement>(null);
+
+  // Transcript annotation — select text in assistant responses, annotate, insert into chat
+  const annotationEnabled = renderMode === 'blocks' || renderMode === 'icons';
+  const annotation = useTranscriptAnnotation({
+    scrollRef: transcriptRef,
+    onInsert: (text) => cpCtxRef.current.setPrefillInput({ text }),
+    enabled: annotationEnabled,
+  });
+  const annotationClear = annotation.clear;
+  useEffect(() => { annotationClear(); }, [selectedSessionId, annotationEnabled, annotationClear]);
 
   // Filter entries for rendering (used for both display and scroll settle detection).
   // Memoized for reference stability — downstream useMemos (forkTargets) and
@@ -437,6 +449,7 @@ export function TranscriptViewer(): React.JSX.Element {
       {mainContent}
       {toolPanelOpen && sidebarView === 'files' && <FilePanel />}
       <FileViewerModal />
+      <TranscriptAnnotationPopover {...annotation} />
       {selectedSessionId && !error && <StopButton ref={stopButtonRef} />}
       {debugMode && (
         <PlaybackControls

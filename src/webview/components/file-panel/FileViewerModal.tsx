@@ -138,9 +138,9 @@ export function FileViewerModal(): React.JSX.Element | null {
       : '';
 
     const comment = annotationText.trim();
-    let annotation = `From \`${activeFileView.relativePath}${lineRef}\`:\n\`\`\`${activeFileView.language}\n${selection.text}\n\`\`\`\n`;
+    let annotation = `From \`${activeFileView.relativePath}${lineRef}\`:\n\`\`\`\`${activeFileView.language}\n${selection.text}\n\`\`\`\`\n`;
     if (comment) {
-      annotation += `${comment}\n`;
+      annotation += `* ${comment}\n`;
     }
 
     insertIntoChat(annotation);

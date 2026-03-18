@@ -1408,14 +1408,15 @@ h2 {
 
 .crispy-annotation-popover {
   position: fixed;
-  transform: translate(-50%, -100%);
   z-index: 400;
   background: var(--vscode-editorWidget-background, #252526);
-  border: 1px solid var(--vscode-editorWidget-border, #454545);
+  border: 1px solid var(--border-panel);
   border-radius: var(--radius-md);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   padding: 4px;
   min-width: 100px;
+  max-width: calc(100vw - 16px);
+  box-sizing: border-box;
 }
 
 .crispy-annotation-popover__btn {
@@ -1441,8 +1442,9 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  min-width: 280px;
+  width: min(280px, calc(100vw - 32px));
   padding: 4px;
+  box-sizing: border-box;
 }
 
 .crispy-annotation-popover__textarea {
@@ -1459,10 +1461,11 @@ h2 {
   line-height: 1.4;
   resize: vertical;
   outline: none;
+  box-sizing: border-box;
 }
 
 .crispy-annotation-popover__textarea:focus {
-  border-color: var(--vscode-focusBorder, #007fd4);
+  border-color: var(--border-panel);
 }
 
 .crispy-annotation-popover__textarea::placeholder {
@@ -1477,9 +1480,9 @@ h2 {
 
 .crispy-annotation-popover__cancel {
   padding: 3px 10px;
-  background: transparent;
-  color: var(--vscode-foreground, #ccc);
-  border: 1px solid var(--border-panel);
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #d4d4d4);
+  border: none;
   border-radius: var(--radius-sm);
   font-size: var(--font-xs);
   font-family: inherit;
@@ -1487,7 +1490,7 @@ h2 {
 }
 
 .crispy-annotation-popover__cancel:hover {
-  background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+  opacity: 0.85;
 }
 
 .crispy-annotation-popover__submit {
@@ -1503,6 +1506,10 @@ h2 {
 
 .crispy-annotation-popover__submit:hover {
   background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+::highlight(crispy-transcript-annotation) {
+  background-color: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
 }
 
 /* --- TodoWrite checklist --- */
