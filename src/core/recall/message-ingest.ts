@@ -32,7 +32,8 @@ import {
 } from './message-store.js';
 import type { MessageRecord, MessageVectorRecord } from './message-store.js';
 import { getDb } from '../crispy-db.js';
-import { dbPath } from '../activity-index.js';
+import { dbPath, appendActivityEntries } from '../activity-index.js';
+import type { ActivityIndexEntry } from '../activity-index.js';
 import { findSession, loadSession } from '../session-manager.js';
 import type { TranscriptEntry } from '../transcript.js';
 
@@ -125,8 +126,13 @@ export async function ingestSessionMessages(
   const filtered = stripToolContent(rawEntries);
   const topLevel = filtered.filter(e => !e.parentToolUseID);
 
-  // 5. Extract text per entry, build MessageRecords
+  // 5. Extract text per entry, build MessageRecords and ActivityEntries
   const records: MessageRecord[] = [];
+  const activityEntries: ActivityIndexEntry[] = [];
+
+  // Resolve session info for activity index metadata
+  const session = findSession(sessionId);
+  const file = session?.path ?? '';
 
   for (let i = 0; i < topLevel.length; i++) {
     const entry = topLevel[i]!;
@@ -141,6 +147,7 @@ export async function ingestSessionMessages(
     const createdAt = entry.timestamp
       ? new Date(entry.timestamp).getTime()
       : Date.now();
+    const ts = entry.timestamp ?? new Date(createdAt).toISOString();
 
     records.push({
       message_id: entry.uuid,
@@ -151,6 +158,19 @@ export async function ingestSessionMessages(
       created_at: createdAt,
       message_role: entry.message?.role ?? entry.type ?? null,
     });
+
+    // Extract activity entries for user prompts only
+    const role = entry.message?.role ?? entry.type;
+    if (role === 'user') {
+      const preview = text.length > 120 ? text.slice(0, 120) + '…' : text;
+      activityEntries.push({
+        ts,
+        kind: 'prompt',
+        file,
+        preview,
+        session_id: sessionId,
+      });
+    }
   }
 
   if (records.length === 0) {
@@ -162,7 +182,7 @@ export async function ingestSessionMessages(
     deleteSessionMessages(sessionId);
   }
 
-  // 7. Batch insert
+  // 7. Batch insert messages
   try {
     insertMessages(records);
   } catch (err) {
@@ -172,6 +192,18 @@ export async function ingestSessionMessages(
       skipped: false,
       error: `DB insert failed: ${err instanceof Error ? err.message : String(err)}`,
     };
+  }
+
+  // 8. Populate activity index (session_meta) with user prompts
+  if (activityEntries.length > 0) {
+    try {
+      appendActivityEntries(activityEntries);
+    } catch (err) {
+      // Don't fail the entire ingest if activity index fails — log but continue
+      if (options?.verbose) {
+        console.warn(`Activity index insert failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 
   return {
