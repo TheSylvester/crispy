@@ -155,17 +155,21 @@ describe('computeContextFromEntries', () => {
     expect(ctx!.contextWindow).toBe(1_000_000);
   });
 
-  it('ignores Codex assistant usage because it is not a trustworthy occupancy signal', () => {
+  it('reads Codex assistant usage from per-turn backfill', () => {
     const entries = [
       user(),
       assistant('o3', {
-        input_tokens: 700_000,
-        output_tokens: 43_067,
-        cache_read_input_tokens: 500_000,
+        input_tokens: 1_100,
+        output_tokens: 100,
+        cache_read_input_tokens: 900,
       }, 'codex'),
     ];
 
-    expect(computeContextFromEntries(entries)).toBeNull();
+    const ctx = computeContextFromEntries(entries);
+    expect(ctx).not.toBeNull();
+    expect(ctx!.tokens.input).toBe(1_100);
+    expect(ctx!.tokens.output).toBe(100);
+    expect(ctx!.tokens.cacheRead).toBe(900);
   });
 
   it('uses most recent assistant entry (backwards scan)', () => {

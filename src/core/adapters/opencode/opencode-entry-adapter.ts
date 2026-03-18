@@ -22,6 +22,7 @@ import type {
   ToolResultBlock,
   ContextUsage,
 } from '../../transcript.js';
+import { getContextWindowTokens } from '../../model-utils.js';
 import type {
   Part,
   TextPart,
@@ -332,12 +333,13 @@ export function extractChildSessionId(output: string): string | undefined {
  *
  * Returns a ContextUsage-compatible shape for the adapter to track.
  */
-export function extractContextUsage(part: StepFinishPart): ContextUsage {
+export function extractContextUsage(part: StepFinishPart, model?: string): ContextUsage {
   const input = part.tokens.input;
   const output = part.tokens.output;
   const cacheRead = part.tokens.cache.read;
   const cacheCreation = part.tokens.cache.write;
   const totalTokens = input + output + cacheRead + cacheCreation;
+  const contextWindow = getContextWindowTokens('opencode', model);
 
   return {
     tokens: {
@@ -347,9 +349,8 @@ export function extractContextUsage(part: StepFinishPart): ContextUsage {
       cacheCreation,
     },
     totalTokens,
-    // OpenCode doesn't expose context window — use a reasonable default
-    contextWindow: 200_000,
-    percent: Math.min(100, (totalTokens / 200_000) * 100),
+    contextWindow,
+    percent: Math.min(100, Math.round((totalTokens / contextWindow) * 100)),
     totalCostUsd: part.cost,
   };
 }

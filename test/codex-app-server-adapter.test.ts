@@ -816,7 +816,7 @@ describe('CodexAgentAdapter', () => {
   // --------------------------------------------------------------------------
 
   describe('Token usage updates', () => {
-    it('does not map cumulative Codex token totals into context occupancy', async () => {
+    it('maps per-turn Codex token usage into context occupancy', async () => {
       const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test' };
       const adapter = new CodexAgentAdapter(spec);
 
@@ -855,12 +855,17 @@ describe('CodexAgentAdapter', () => {
 
       await waitForTick(50);
 
-      expect(adapter.contextUsage).toBeNull();
+      expect(adapter.contextUsage).not.toBeNull();
+      expect(adapter.contextUsage!.tokens.input).toBe(1100);
+      expect(adapter.contextUsage!.tokens.output).toBe(100);
+      expect(adapter.contextUsage!.tokens.cacheRead).toBe(900);
+      expect(adapter.contextUsage!.contextWindow).toBe(200000);
+      expect(adapter.contextUsage!.totalTokens).toBe(1200);
 
       adapter.close();
     });
 
-    it('does not backfill Codex token totals into assistant entry usage', async () => {
+    it('backfills Codex token usage into assistant entry', async () => {
       const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test' };
       const adapter = new CodexAgentAdapter(spec);
 
@@ -918,7 +923,12 @@ describe('CodexAgentAdapter', () => {
 
       expect(assistantEntry?.type).toBe('entry');
       if (assistantEntry?.type === 'entry' && assistantEntry.entry.type === 'assistant') {
-        expect(assistantEntry.entry.message?.usage).toBeUndefined();
+        expect(assistantEntry.entry.message?.usage).toEqual({
+          input_tokens: 1100,
+          output_tokens: 100,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 900,
+        });
       }
 
       adapter.close();

@@ -468,7 +468,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     }, [pendingAgencyMode, consumePendingAgencyMode]);
 
     // --- Context usage tracking ---
-    const contextUsage = useContextUsage(selectedSessionId, entries);
+    const contextUsage = useContextUsage(selectedSessionId, entries, state.model);
     useEffect(() => {
       if (contextUsage) {
         dispatch({ type: 'SET_CONTEXT', contextUsage });

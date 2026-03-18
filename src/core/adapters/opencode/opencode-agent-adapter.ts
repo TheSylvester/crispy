@@ -520,7 +520,7 @@ export class OpenCodeAgentAdapter implements AgentAdapter {
 
     // Handle step-finish → update context usage
     if (part.type === 'step-finish') {
-      this._contextUsage = extractContextUsage(part);
+      this._contextUsage = extractContextUsage(part, this._settings.model);
       return;
     }
 

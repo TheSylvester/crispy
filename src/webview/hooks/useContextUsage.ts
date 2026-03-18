@@ -14,7 +14,7 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react';
 import type { ContextUsage, TranscriptEntry, Vendor } from '../../core/transcript.js';
-import { getContextWindowTokens } from '../../core/model-utils.js';
+import { getContextWindowTokens, parseModelOption } from '../../core/model-utils.js';
 import { useTransport } from '../context/TransportContext.js';
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
@@ -80,15 +80,12 @@ function extractContextWindow(entries: TranscriptEntry[]): number {
  * actual context window from result entries when available, falling back to
  * DEFAULT_CONTEXT_WINDOW.
  *
- * Codex app-server currently reports cumulative/per-turn token usage, but not
- * compaction-aware in-window occupancy. Old Crispy builds backfilled those
- * values into assistant entries, so historical Codex entries must be ignored
- * here to avoid resurrecting impossible "context used" percentages.
+ * Codex adapter now backfills per-turn `last` token usage (not cumulative
+ * `total`) into assistant entries, so Codex entries are safe to read here.
  */
 export function computeContextFromEntries(entries: TranscriptEntry[]): ContextUsage | null {
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
-    if (entry.vendor === 'codex') continue;
     // Skip sub-agent entries — their usage reflects the child session's context,
     // not the main session's. Sub-agents have parentToolUseID set.
     if (entry.type === 'assistant' && entry.message?.usage && !entry.parentToolUseID) {
@@ -124,6 +121,7 @@ export function computeContextFromEntries(entries: TranscriptEntry[]): ContextUs
 export function useContextUsage(
   sessionId: string | null,
   entries?: TranscriptEntry[],
+  modelOption?: string,
 ): ContextUsage | null {
   const transport = useTransport();
   // Keyed by sessionId — resets synchronously on session switch to prevent
@@ -146,9 +144,7 @@ export function useContextUsage(
 
   // Always compute from entries when available — not gated by liveUsage.
   // Entries usage updates every time a new assistant message with message.usage
-  // arrives. Catchup (liveUsage) only fires once on subscribe. Codex is
-  // intentionally excluded from the historical fallback until the app-server
-  // exposes a trustworthy occupancy signal.
+  // arrives. Catchup (liveUsage) only fires once on subscribe.
   const entriesUsage = useMemo(() => {
     if (!entries || entries.length === 0) return null;
     return computeContextFromEntries(entries);
@@ -156,5 +152,20 @@ export function useContextUsage(
 
   // Prefer live usage (adapter has authoritative contextWindow from SDK) over
   // entries-based (which can't extract contextWindow from entry metadata).
-  return liveUsage ?? entriesUsage;
+  const raw = liveUsage ?? entriesUsage;
+
+  // Override contextWindow from the model dropdown when known. The dropdown
+  // tracks the exact model the user selected — this is the same signal shown
+  // in the UI, so the gauge always agrees with the dropdown.
+  return useMemo(() => {
+    if (!raw || !modelOption) return raw;
+    const { vendor, model } = parseModelOption(modelOption);
+    const cw = getContextWindowTokens(vendor, model);
+    if (cw === raw.contextWindow) return raw;
+    return {
+      ...raw,
+      contextWindow: cw,
+      percent: Math.min(Math.round((raw.totalTokens / cw) * 100), 100),
+    };
+  }, [raw, modelOption]);
 }

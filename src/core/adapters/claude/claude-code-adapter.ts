@@ -1321,20 +1321,6 @@ export class ClaudeAgentAdapter implements AgentAdapter {
           settingsChanged = true;
         }
 
-        // Recalculate contextWindow now that we know the real model.
-        // The first assistant message may have locked _contextUsage to the
-        // wrong value (200k default) because options.model was undefined.
-        if (this._contextUsage && this.options.model) {
-          const correctCw = getContextWindowTokens('claude', this.options.model);
-          if (correctCw !== this._contextUsage.contextWindow) {
-            this._contextUsage = {
-              ...this._contextUsage,
-              contextWindow: correctCw,
-              percent: Math.min(Math.round((this._contextUsage.totalTokens / correctCw) * 100), 100),
-            };
-          }
-        }
-
         // Emit settings_changed so ControlPanel picks up the corrected
         // model and permissionMode. Only emit when init actually backfilled
         // values (resume case) — for fresh sessions where options were already

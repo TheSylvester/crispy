@@ -156,22 +156,16 @@ export function mapThreadConfig(
 /**
  * Map Codex ThreadTokenUsage → Crispy ContextUsage.
  *
- * Codex exposes cumulative `total` usage and per-turn `last` usage, but the
- * current app-server surface does not identify either field as compaction-aware
- * current context occupancy. Until it does, Crispy must not present this
- * payload as "context used".
+ * Uses `last` (per-turn usage for the most recent API call) as the context
+ * occupancy signal — `last.inputTokens` reflects the full input context for
+ * that turn, so it shrinks after compaction. `total` is cumulative and not
+ * useful for a gauge. `modelContextWindow` provides the denominator.
  *
  * Expected usage shape from thread/tokenUsage/updated notification:
  * ```json
  * {
  *   "tokenUsage": {
- *     "total": {
- *       "totalTokens": 8447,
- *       "inputTokens": 8422,
- *       "cachedInputTokens": 7552,
- *       "outputTokens": 25,
- *       "reasoningOutputTokens": 14
- *     },
+ *     "total": { ... },
  *     "last": {
  *       "totalTokens": 1197,
  *       "inputTokens": 1120,
@@ -184,8 +178,23 @@ export function mapThreadConfig(
  * }
  * ```
  */
-export function mapTokenUsage(_usage: Record<string, unknown>): ContextUsage | null {
-  return null;
+export function mapTokenUsage(usage: Record<string, unknown>): ContextUsage | null {
+  const last = usage.last as Record<string, number> | undefined;
+  if (!last) return null;
+
+  const input = last.inputTokens ?? 0;
+  const output = last.outputTokens ?? 0;
+  const cacheRead = last.cachedInputTokens ?? 0;
+  const totalTokens = input + output;
+  const contextWindow = (usage.modelContextWindow as number) || 200_000;
+  const percent = Math.min(Math.round((totalTokens / contextWindow) * 100), 100);
+
+  return {
+    tokens: { input, output, cacheCreation: 0, cacheRead },
+    totalTokens,
+    contextWindow,
+    percent,
+  };
 }
 
 // ============================================================================
