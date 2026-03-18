@@ -361,7 +361,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
   // search_sessions — FTS5 search over activity entries
   // ------------------------------------------------------------------
   const runSearch = wrapToolHandler('search_sessions', 'results',
-    (query: string, limit: number, kind?: string, since?: string, before?: string) => searchSessions(dbPath, query, limit, kind, since, before),
+    (query: string, limit: number, kind?: string, since?: string, before?: string) => searchSessions(dbPath, query, limit, kind, since, before, serverOptions.excludeSessionId),
   );
 
   timedTool(server,
@@ -383,7 +383,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
   // list_sessions — List distinct sessions with latest metadata
   // ------------------------------------------------------------------
   const runList = wrapToolHandler('list_sessions', 'sessions',
-    (limit: number, since?: string) => listSessions(dbPath, limit, since),
+    (limit: number, since?: string) => listSessions(dbPath, limit, since, serverOptions.excludeSessionId),
   );
 
   timedTool(server,
@@ -403,7 +403,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
   // session_context — Full activity history for a specific session
   // ------------------------------------------------------------------
   const runContext = wrapToolHandler('session_context', 'entries',
-    (file: string, kind?: string) => sessionContext(dbPath, file, kind),
+    (file: string, kind?: string) => sessionContext(dbPath, file, kind, serverOptions.excludeSessionId),
   );
 
   timedTool(server,

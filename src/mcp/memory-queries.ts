@@ -69,6 +69,8 @@ export function getDbPath(): string {
  *
  * Returns BM25-ranked results with match snippets. Supports natural
  * language or FTS5 syntax (AND, OR, NOT, "quoted phrases", prefix*).
+ *
+ * @param excludeSessionId - Optional session ID to exclude from results (e.g., caller's own session)
  */
 export function searchSessions(
   dbPath: string,
@@ -77,6 +79,7 @@ export function searchSessions(
   kind?: string,
   since?: string,
   before?: string,
+  excludeSessionId?: string,
 ): SearchResult[] {
   const sanitized = sanitizeFts5Query(query);
   if (!sanitized) return [];
@@ -96,6 +99,10 @@ export function searchSessions(
     extraClauses += 'AND ae.ts <= ? ';
     params.push(before);
   }
+  if (excludeSessionId) {
+    extraClauses += 'AND (ae.session_id != ? OR ae.session_id IS NULL) ';
+    params.push(excludeSessionId);
+  }
   params.push(limit);
 
   return db.all(`
@@ -113,18 +120,29 @@ export function searchSessions(
 
 /**
  * List distinct sessions ordered by most recent activity.
+ *
+ * @param excludeSessionId - Optional session ID to exclude from results (e.g., caller's own session)
  */
 export function listSessions(
   dbPath: string,
   limit: number = 50,
   since?: string,
+  excludeSessionId?: string,
 ): ListResult[] {
   const db = getDb(dbPath);
   const params: (string | number)[] = [];
   let whereClause = '';
-  if (since) {
-    whereClause = 'WHERE ts >= ?';
-    params.push(since);
+  if (since || excludeSessionId) {
+    const conditions: string[] = [];
+    if (since) {
+      conditions.push('ts >= ?');
+      params.push(since);
+    }
+    if (excludeSessionId) {
+      conditions.push('(session_id != ? OR session_id IS NULL)');
+      params.push(excludeSessionId);
+    }
+    whereClause = 'WHERE ' + conditions.join(' AND ');
   }
   params.push(limit);
 
@@ -145,25 +163,32 @@ export function listSessions(
  *
  * Returns all prompts in chronological order.
  * Optionally filter by entry kind.
+ *
+ * @param excludeSessionId - Optional session ID to exclude. If the session belongs to the excluded ID, returns empty.
  */
 export function sessionContext(
   dbPath: string,
   file: string,
   kind?: string,
+  excludeSessionId?: string,
 ): ContextResult[] {
   const db = getDb(dbPath);
   const params: string[] = [file];
-  let kindClause = '';
+  let extraClauses = '';
   if (kind) {
-    kindClause = 'AND kind = ?';
+    extraClauses += 'AND kind = ? ';
     params.push(kind);
+  }
+  if (excludeSessionId) {
+    extraClauses += 'AND (session_id != ? OR session_id IS NULL) ';
+    params.push(excludeSessionId);
   }
 
   return db.all(`
     SELECT id, ts, kind, file, preview
     FROM session_meta
     WHERE file = ?
-      ${kindClause}
+      ${extraClauses}
     ORDER BY ts ASC
   `, params) as unknown as ContextResult[];
 }
