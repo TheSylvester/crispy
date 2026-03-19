@@ -210,23 +210,33 @@ async function runEmbedding(): Promise<void> {
   try {
     await ensureBinary();
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     log({
       source: 'recall-catchup',
       level: 'warn',
-      summary: `Binary download failed: ${err instanceof Error ? err.message : String(err)}`,
+      summary: `Binary download failed: ${msg}`,
     });
-    broadcast({ phase: 'done', gapCount: status.gapCount });
+    broadcast({
+      phase: 'done',
+      gapCount: status.gapCount,
+      stoppedByError: `Binary download failed: ${msg}`,
+    });
     return;
   }
   try {
     await ensureModel();
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     log({
       source: 'recall-catchup',
       level: 'warn',
-      summary: `Model download failed: ${err instanceof Error ? err.message : String(err)}`,
+      summary: `Model download failed: ${msg}`,
     });
-    broadcast({ phase: 'done', gapCount: status.gapCount });
+    broadcast({
+      phase: 'done',
+      gapCount: status.gapCount,
+      stoppedByError: `Model download failed: ${msg}`,
+    });
     return;
   }
 
@@ -276,7 +286,9 @@ async function runEmbedding(): Promise<void> {
           level: 'warn',
           summary: `Embedding stopped after ${MAX_CONSECUTIVE_FAILURES} consecutive failures`,
         });
-        broadcast({ stoppedByError: 'Embedding failed repeatedly — check logs for details' });
+        // Surface the actual error to the UI, truncated for display
+        const shortMsg = msg.length > 120 ? msg.slice(0, 120) + '…' : msg;
+        broadcast({ stoppedByError: `Embedding failed repeatedly — ${shortMsg}` });
         break;
       }
     }

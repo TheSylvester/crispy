@@ -174,10 +174,12 @@ async function hasNvidiaGpu(): Promise<boolean> {
   }
 }
 
-/** Map (platform, arch, gpu) → release asset filename. All assets are .zip.
- *  CUDA builds are selected when an NVIDIA GPU is detected on Linux/Windows x64.
+/** Map (platform, arch, gpu) → ordered list of release asset filenames to try.
+ *  Returns an array: first entry is preferred (e.g. CUDA), rest are fallbacks.
+ *  CUDA builds are tried first when an NVIDIA GPU is detected on Windows x64,
+ *  falling back to CPU if the CUDA binary fails (missing CUDA toolkit).
  *  macOS ARM64 includes Metal acceleration in the standard build. */
-async function getBinaryAssetName(): Promise<string> {
+async function getBinaryAssetCandidates(): Promise<string[]> {
   const p = platform();
   const a = arch();
   const tag = LLAMA_RELEASE_TAG;
@@ -185,14 +187,20 @@ async function getBinaryAssetName(): Promise<string> {
   // Linux: no CUDA build available from llama.cpp releases. Vulkan build
   // exists but fails on WSL2 (ErrorOutOfDeviceMemory for KV cache allocation).
   // Use CPU build for now — GPU acceleration requires building from source.
-  if (p === 'linux' && a === 'x64') return `llama-${tag}-bin-ubuntu-x64.zip`;
+  if (p === 'linux' && a === 'x64') return [`llama-${tag}-bin-ubuntu-x64.zip`];
 
-  if (p === 'linux' && a === 'arm64') return `llama-${tag}-bin-ubuntu-arm64.zip`;
-  if (p === 'darwin' && a === 'arm64') return `llama-${tag}-bin-macos-arm64.zip`;
-  if (p === 'darwin' && a === 'x64') return `llama-${tag}-bin-macos-x64.zip`;
+  if (p === 'linux' && a === 'arm64') return [`llama-${tag}-bin-ubuntu-arm64.zip`];
+  if (p === 'darwin' && a === 'arm64') return [`llama-${tag}-bin-macos-arm64.zip`];
+  if (p === 'darwin' && a === 'x64') return [`llama-${tag}-bin-macos-x64.zip`];
   if (p === 'win32' && a === 'x64') {
-    if (await hasNvidiaGpu()) return `llama-${tag}-bin-win-cuda-cu12.4-x64.zip`;
-    return `llama-${tag}-bin-win-cpu-x64.zip`;
+    if (await hasNvidiaGpu()) {
+      // Try CUDA first, fall back to CPU if CUDA toolkit isn't installed
+      return [
+        `llama-${tag}-bin-win-cuda-cu12.4-x64.zip`,
+        `llama-${tag}-bin-win-cpu-x64.zip`,
+      ];
+    }
+    return [`llama-${tag}-bin-win-cpu-x64.zip`];
   }
   throw new Error(`Unsupported platform for llama-embedding: ${p}/${a}`);
 }
@@ -227,9 +235,124 @@ export async function ensureBinary(): Promise<string> {
   }
 }
 
+/** Files we actually need from the llama.cpp release archive. */
+const WANTED_FILES = new Set([
+  // Binaries
+  BIN_NAME,               // llama-embedding / llama-embedding.exe
+  SERVER_BIN_NAME,         // llama-server / llama-server.exe
+  // Shared libraries (all platforms)
+  'libllama.so', 'libllama.dylib', 'llama.dll',
+  'libggml.so', 'libggml.dylib', 'ggml.dll',
+]);
+
+/** Patterns for shared libraries we need (DLLs, .so, .dylib). */
+const WANTED_LIB_PATTERNS = [
+  /^ggml.*\.(dll|so|dylib)$/,
+  /^libggml.*\.(dll|so|dylib)$/,
+  /^llama\.(dll|so|dylib)$/,
+  /^libllama\.(dll|so|dylib)$/,
+  /^libcurl.*\.(dll|so|dylib)$/,
+  // CUDA runtime DLLs that may be bundled
+  /^cublas.*\.dll$/,
+  /^cudart.*\.dll$/,
+  /^cublasLt.*\.dll$/,
+];
+
+/** Check if a filename is one we need to extract. */
+function isWantedFile(name: string): boolean {
+  if (WANTED_FILES.has(name)) return true;
+  return WANTED_LIB_PATTERNS.some(p => p.test(name));
+}
+
+/**
+ * Smoke-test the llama-embedding binary by running --version.
+ * Returns true if the binary executes successfully, false if it fails
+ * (missing DLLs, blocked by antivirus, wrong architecture, etc.).
+ */
+async function validateBinary(binPath: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const libDir = join(binPath, '..');
+    const env = { ...process.env };
+    if (platform() === 'win32') {
+      env.PATH = `${libDir};${process.env.PATH || ''}`;
+    } else if (platform() === 'darwin') {
+      env.DYLD_LIBRARY_PATH = libDir;
+    } else {
+      env.LD_LIBRARY_PATH = libDir;
+    }
+    await execFileAsync(binPath, ['--version'], { env, timeout: 10_000 });
+    return { ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
+  }
+}
+
+/**
+ * Wipe all files from binDir() so a fresh download can replace them.
+ * Used when falling back from CUDA to CPU build.
+ */
+async function clearBinDir(): Promise<void> {
+  if (!existsSync(binDir())) return;
+  for (const file of await readdir(binDir())) {
+    try { unlinkSync(join(binDir(), file)); } catch { /* ignore */ }
+  }
+}
+
 async function performBinaryDownload(binPath: string): Promise<string> {
-  const assetName = await getBinaryAssetName();
+  const candidates = await getBinaryAssetCandidates();
+
+  for (let i = 0; i < candidates.length; i++) {
+    const assetName = candidates[i];
+    const isLastCandidate = i === candidates.length - 1;
+    const isGpu = assetName.includes('cuda') || assetName.includes('vulkan');
+
+    try {
+      await downloadAndExtract(assetName, binPath);
+
+      // Validate the binary actually runs
+      const validation = await validateBinary(binPath);
+      if (!validation.ok) {
+        const reason = validation.error || 'unknown error';
+        if (!isLastCandidate) {
+          log({
+            source: 'recall-catchup',
+            level: 'warn',
+            summary: `${isGpu ? 'GPU' : 'CPU'} binary failed validation: ${reason}. Trying ${candidates[i + 1].includes('cpu') ? 'CPU' : 'next'} fallback…`,
+          });
+          await clearBinDir();
+          continue;
+        }
+        throw new Error(`Binary validation failed: ${reason}`);
+      }
+
+      log({
+        source: 'recall-catchup',
+        level: 'info',
+        summary: `llama binaries ready${isGpu ? ' (GPU accelerated)' : ' (CPU)'}`,
+      });
+      return binPath;
+    } catch (err) {
+      if (!isLastCandidate) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log({
+          source: 'recall-catchup',
+          level: 'warn',
+          summary: `${isGpu ? 'GPU' : 'CPU'} build failed: ${msg}. Falling back to CPU…`,
+        });
+        await clearBinDir();
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw new Error('No suitable llama-embedding binary found');
+}
+
+async function downloadAndExtract(assetName: string, binPath: string): Promise<void> {
   const url = `https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_RELEASE_TAG}/${assetName}`;
+  const isGpu = assetName.includes('cuda') || assetName.includes('vulkan');
 
   mkdirSync(binDir(), { recursive: true });
 
@@ -239,7 +362,7 @@ async function performBinaryDownload(binPath: string): Promise<string> {
   log({
     source: 'recall-catchup',
     level: 'info',
-    summary: `Downloading llama binaries: ${assetName}${assetName.includes('cuda') || assetName.includes('vulkan') ? ' (GPU accelerated)' : ''}`,
+    summary: `Downloading llama binaries: ${assetName}${isGpu ? ' (GPU accelerated)' : ''}`,
     data: { url, dest: binPath },
   });
 
@@ -257,14 +380,22 @@ async function performBinaryDownload(binPath: string): Promise<string> {
     try {
       await extract(archivePath, { dir: tmpExtractDir });
 
-      // Copy build/bin/* files to BIN_DIR
+      // Find the directory containing binaries — llama.cpp releases use either
+      // build/bin/ (older releases) or flat root (b5300+).
       const buildBinDir = join(tmpExtractDir, 'build', 'bin');
-      if (existsSync(buildBinDir)) {
-        for (const file of await readdir(buildBinDir)) {
-          const src = join(buildBinDir, file);
-          const dest = join(binDir(), file);
-          await cp(src, dest, { force: true });
-        }
+      const sourceDir = existsSync(buildBinDir) ? buildBinDir : tmpExtractDir;
+
+      let copiedCount = 0;
+      for (const file of await readdir(sourceDir)) {
+        if (!isWantedFile(file)) continue;
+        const src = join(sourceDir, file);
+        const dest = join(binDir(), file);
+        await cp(src, dest, { force: true });
+        copiedCount++;
+      }
+
+      if (copiedCount === 0) {
+        throw new Error(`No binaries found in archive ${assetName}`);
       }
     } finally {
       // Clean up temp extraction directory
@@ -276,22 +407,19 @@ async function performBinaryDownload(binPath: string): Promise<string> {
       try { unlinkSync(archivePath); } catch { /* ignore */ }
     }
 
-    // Ensure executable
+    // Ensure executable on Unix
     if (platform() !== 'win32') {
-      chmodSync(binPath, 0o755);
+      if (existsSync(binPath)) chmodSync(binPath, 0o755);
       const serverBin = getServerBinaryPath();
       if (existsSync(serverBin)) {
         chmodSync(serverBin, 0o755);
       }
     }
 
-    log({
-      source: 'recall-catchup',
-      level: 'info',
-      summary: 'llama binaries download complete',
-    });
-
-    return binPath;
+    // Post-extraction validation: the binary must exist
+    if (!existsSync(binPath)) {
+      throw new Error(`${BIN_NAME} not found after extracting ${assetName}`);
+    }
   } catch (err) {
     // Clean up on failure
     for (const p of [tmpPath, archivePath]) {
