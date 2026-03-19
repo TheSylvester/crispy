@@ -3,7 +3,7 @@
   "displayName": "Crispy",
   "icon": "media/crispy-icon.png",
   "description": "A zero-compromise UI for Claude Code, Codex, and more — with controls you can't get in a terminal",
-  "version": "0.2.0-dev.1",
+  "version": "0.2.0-dev.2",
   "publisher": "the-sylvester",
   "private": true,
   "license": "MIT",
