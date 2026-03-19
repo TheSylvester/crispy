@@ -281,23 +281,14 @@ function formatTimestamp(ms: number): string {
 // ============================================================================
 
 interface GroupedResult {
-  /** Best-scoring result for this session (use its message_id/session_id to drill down). */
+  /** Session UUID — use with read_session / select_sessions to drill down. */
   session_id: string;
-  message_id: string;
-  message_seq: number;
-  project_id: string | null;
-  created_at: number;
-  /** ISO 8601 date string for LLM consumption. */
+  /** ISO 8601 date of the best-matching message. */
   date: string;
-  message_role: string | null;
-  rank: number;
-  match_snippet: string;
-  message_preview: string;
-  truncated: boolean;
-  /** How many additional matches exist in this session beyond the primary. */
-  additional_matches: number;
-  /** Snippets from other matching messages in this session (deduped, up to 3). */
-  other_snippets: string[];
+  /** Best-matching snippet (keyword-highlighted). */
+  snippet: string;
+  /** Total matching messages in this session. */
+  hits: number;
 }
 
 /**
@@ -320,18 +311,9 @@ function groupBySession(results: MessageSearchResult[]): GroupedResult[] {
 
   return [...groups.values()].map(({ primary, others }) => ({
     session_id: primary.session_id,
-    message_id: primary.message_id,
-    message_seq: primary.message_seq,
-    project_id: primary.project_id,
-    created_at: primary.created_at,
     date: formatTimestamp(primary.created_at),
-    message_role: primary.message_role,
-    rank: primary.rank,
-    match_snippet: primary.match_snippet,
-    message_preview: primary.message_preview,
-    truncated: primary.truncated,
-    additional_matches: others.length,
-    other_snippets: others.slice(0, 3).map(o => o.match_snippet).filter(Boolean),
+    snippet: (primary.match_snippet ?? primary.message_preview ?? '').slice(0, 150),
+    hits: 1 + others.length,
   }));
 }
 
@@ -654,7 +636,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
   // ------------------------------------------------------------------
   timedTool(server,
     'search_transcript',
-    'Dual-path search (FTS5 keywords + semantic embeddings, falls back to FTS5-only if embeddings unavailable) over raw conversation content. Results are grouped by session — each session appears once with its best match plus additional snippets, so you see maximum session diversity. Returns session ID, message UUID, highlighted snippet, short preview (up to 200 chars), additional_matches count, and other_snippets. Also returns total_matches and session_hits. Project-scoped by default. Supports FTS5 syntax: OR for broad searches, "quoted phrases" for exact matches, prefix* for partial terms. Use read_message to drill into a specific result.',
+    'Dual-path search (FTS5 keywords + semantic embeddings) over conversation content. Results grouped by session: session_id, date, snippet (150-char highlighted match), hits. Project-scoped by default. FTS5 syntax: OR to broaden, "quoted phrases" for exact, prefix* for partial.',
     {
       query: z.string().describe('Search query — short keywords work best. Use OR to broaden: "sqlite OR database"'),
       session_id: z.string().optional().describe('Scope search to a single session (use after broad search to drill into a specific session)'),
@@ -696,7 +678,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
             results: grouped,
             count: grouped.length,
             total_matches: meta.total_matches,
-            session_hits: meta.session_hits,
+            sessions_matched: Object.keys(meta.session_hits).length,
             search_paths: { fts5: searchResult.ftsCount, semantic: searchResult.semanticCount },
             semantic_available: searchResult.semanticAvailable,
           }) }],
