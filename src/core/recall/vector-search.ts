@@ -41,8 +41,16 @@ export interface DualPathSearchOptions {
   recencyDecay?: number;
 }
 
+export interface ScoredResult {
+  result: MessageSearchResult;
+  /** RRF score (higher = more relevant). Used by groupBySession for score-gap detection. */
+  score: number;
+}
+
 export interface DualPathSearchResult {
   results: MessageSearchResult[];
+  /** Scored results preserving RRF scores — used for session-level score gap detection. */
+  scored: ScoredResult[];
   /** Whether the semantic (embedding) path was available and produced results. */
   semanticAvailable: boolean;
   /** Number of results from FTS5 keyword search. */
@@ -55,7 +63,7 @@ export interface DualPathSearchResult {
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_LIMIT = 40;
+const DEFAULT_LIMIT = 200; // generous ceiling — score gap cuts naturally within this
 const FETCH_MULTIPLIER = 3; // fetch more from each path to improve union quality
 const RRF_K = 60; // Reciprocal Rank Fusion constant — dampens top-rank dominance
 const DEFAULT_RECENCY_DECAY = 0.005; // ~50% penalty at 200 days old
@@ -79,7 +87,7 @@ export async function dualPathSearch(
   const limit = opts?.limit ?? DEFAULT_LIMIT;
   const fetchLimit = limit * FETCH_MULTIPLIER;
 
-  if (!query.trim()) return { results: [], semanticAvailable: false, ftsCount: 0, semanticCount: 0 };
+  if (!query.trim()) return { results: [], scored: [], semanticAvailable: false, ftsCount: 0, semanticCount: 0 };
 
   // Embed the query and quantize
   let queryQ8: Int8Array | null = null;
@@ -152,6 +160,7 @@ export async function dualPathSearch(
 
   return {
     results: merged.slice(0, limit).map(m => m.result),
+    scored: merged,  // full list with RRF scores — groupBySession uses for gap detection
     semanticAvailable,
     ftsCount: ftsResults.length,
     semanticCount: semanticResults.length,

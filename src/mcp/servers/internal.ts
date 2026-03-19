@@ -19,7 +19,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 import { listSessions, readTurnContent, getDbPath, searchTranscript, searchTranscriptMeta, readMessageTurn, grepMessages, readSessionMessages } from '../memory-queries.js';
 import { getDb } from '../../core/crispy-db.js';
-import type { MessageSearchResult } from '../memory-queries.js';
+import type { MessageSearchResult, DualPathSearchResult } from '../memory-queries.js';
 import { log } from '../../core/log.js';
 
 import { writeTrackerResults, getProjectTitle, mergeProjects, getProjectTextsForEmbedding, getValidStageNames } from '../../core/rosie/tracker/db-writer.js';
@@ -292,28 +292,79 @@ interface GroupedResult {
 }
 
 /**
- * Group search results by session_id. Each session appears once with its
- * best-scoring result as the primary entry, plus snippets from other matches.
- * This ensures the agent sees maximum session diversity instead of 5 results
- * from the same session eating top-20 slots.
+ * Group search results by session_id with score-gap detection.
+ *
+ * Aggregates RRF scores per session (sum of all matching messages), sorts by
+ * total session score, then looks for the largest relative score drop to find
+ * a natural relevance cliff. Returns all sessions above the cliff instead of
+ * applying a hard numeric limit.
+ *
+ * This prevents high-volume "noise" sessions (e.g., sessions that discuss
+ * testing recall) from pushing genuinely relevant sessions below a fixed cutoff.
  */
-function groupBySession(results: MessageSearchResult[]): GroupedResult[] {
-  const groups = new Map<string, { primary: MessageSearchResult; others: MessageSearchResult[] }>();
+function groupBySession(searchResult: DualPathSearchResult): GroupedResult[] {
+  // Aggregate RRF scores by session
+  const sessionScores = new Map<string, {
+    primary: MessageSearchResult;
+    totalScore: number;
+    hits: number;
+  }>();
 
-  for (const r of results) {
-    const existing = groups.get(r.session_id);
-    if (!existing) {
-      groups.set(r.session_id, { primary: r, others: [] });
+  for (const scored of searchResult.scored) {
+    const sid = scored.result.session_id;
+    const existing = sessionScores.get(sid);
+    if (existing) {
+      existing.totalScore += scored.score;
+      existing.hits++;
     } else {
-      existing.others.push(r);
+      sessionScores.set(sid, {
+        primary: scored.result,
+        totalScore: scored.score,
+        hits: 1,
+      });
     }
   }
 
-  return [...groups.values()].map(({ primary, others }) => ({
-    session_id: primary.session_id,
-    date: formatTimestamp(primary.created_at),
-    snippet: (primary.match_snippet ?? primary.message_preview ?? '').slice(0, 150),
-    hits: 1 + others.length,
+  // Sort by total session score (descending)
+  const sorted = [...sessionScores.values()];
+  sorted.sort((a, b) => b.totalScore - a.totalScore);
+
+  // Score gap detection: find where scores drop off a cliff
+  let cutoff = sorted.length;
+  if (sorted.length > 5) {
+    let maxGap = 0;
+    let gapIdx = sorted.length;
+    // Search from position 5 onward for the biggest relative drop
+    for (let i = 5; i < sorted.length; i++) {
+      const prev = sorted[i - 1]!.totalScore;
+      const curr = sorted[i]!.totalScore;
+      if (prev > 0) {
+        const relGap = (prev - curr) / prev;
+        if (relGap > maxGap) {
+          maxGap = relGap;
+          gapIdx = i;
+        }
+      }
+    }
+    // Use gap if significant (>20% relative drop), otherwise take all
+    if (maxGap > 0.20) {
+      cutoff = gapIdx;
+      log({ source: 'recall:score-gap', level: 'info',
+        summary: `Gap ${(maxGap * 100).toFixed(0)}% at #${gapIdx}: ${sorted[gapIdx - 1]?.primary.session_id.slice(0, 8)}(${sorted[gapIdx - 1]?.totalScore.toFixed(4)}) → ${sorted[gapIdx]?.primary.session_id.slice(0, 8)}(${sorted[gapIdx]?.totalScore.toFixed(4)}). Returning ${cutoff} of ${sorted.length} sessions` });
+    }
+  }
+
+  // Log session score distribution for diagnostics
+  const distLog = sorted.slice(0, Math.min(60, sorted.length)).map((s, i) =>
+    `${i}:${s.primary.session_id.slice(0, 8)}=${s.totalScore.toFixed(4)}(${s.hits})`
+  ).join(' ');
+  log({ source: 'recall:score-gap', level: 'debug', summary: `Session scores: ${distLog}` });
+
+  return sorted.slice(0, cutoff).map(s => ({
+    session_id: s.primary.session_id,
+    date: formatTimestamp(s.primary.created_at),
+    snippet: (s.primary.match_snippet ?? s.primary.message_preview ?? '').slice(0, 150),
+    hits: s.hits,
   }));
 }
 
@@ -644,7 +695,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
     },
     async (args) => {
       const query = args.query as string;
-      const limit = 40; // hardcoded — dualPathSearch fetches 3× internally, groupBySession dedupes
+      const limit = 200; // generous ceiling — score gap in groupBySession cuts naturally
       const projectId = args.all_projects ? undefined : serverOptions.projectId;
       const sessionId = args.session_id as string | undefined;
       log({ level: 'debug', source: 'recall:search_transcript', summary: `query="${query}" limit=${limit} project=${projectId ?? 'all'} session=${sessionId ?? 'all'}` });
@@ -671,7 +722,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
         });
         // Group results by session — each session appears once with all its
         // unique snippets, so the agent sees more diverse sessions.
-        const grouped = groupBySession(searchResult.results);
+        const grouped = groupBySession(searchResult);
 
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({
