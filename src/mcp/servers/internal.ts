@@ -18,6 +18,7 @@ import { appendFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 import { listSessions, readTurnContent, getDbPath, searchTranscript, searchTranscriptMeta, readMessageTurn, grepMessages, readSessionMessages } from '../memory-queries.js';
+import { getDb } from '../../core/crispy-db.js';
 import type { MessageSearchResult } from '../memory-queries.js';
 import { log } from '../../core/log.js';
 
@@ -936,15 +937,35 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
   // ------------------------------------------------------------------
   // select_sessions — Batch structured output: record relevant sessions
   // ------------------------------------------------------------------
+
+  const SESSION_PREFIX_RE = /^[0-9a-f]{8}/i;
+
+  /** Resolve a session ID prefix to a full UUID via the messages table. */
+  function resolveSessionId(prefix: string): string | null {
+    const clean = prefix.trim().replace(/[^0-9a-f-]/gi, '');
+    if (clean.length < 8) return null;
+    // Already full UUID length — trust it
+    if (clean.length >= 36) return clean.slice(0, 36);
+    try {
+      const row = getDb().get(
+        `SELECT DISTINCT session_id FROM messages WHERE session_id LIKE ? LIMIT 1`,
+        [`${clean}%`],
+      ) as { session_id: string } | undefined;
+      return row?.session_id ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   server.tool(
     'select_sessions',
-    'Record one or more sessions as relevant to the query. Pass an array of selections. This is your primary output mechanism. Returns the count of unselected sessions from search results — use this to decide if a second pass is needed.',
+    'Record one or more sessions as relevant to the query. Pass an array of selections. session_id can be the first 8+ characters — full UUID not required. This is your primary output mechanism.',
     {
       selections: z.array(z.object({
-        session_id: z.string().describe('Session ID'),
-        date: z.string().describe('Date from search results'),
+        session_id: z.string().describe('Session ID or 8+ char prefix from search results'),
+        date: z.string().optional().default('').describe('Date from search results'),
         topic: z.string().describe('One sentence — what was discussed'),
-        evidence: z.string().describe('1-2 direct quotes or snippets'),
+        evidence: z.string().optional().default('').describe('1-2 direct quotes or snippets'),
         hits: z.number().optional().default(0).describe('additional_matches count'),
       })).describe('Array of relevant sessions to select'),
     },
@@ -952,13 +973,26 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       const selections = args.selections as Array<{
         session_id: string; date: string; topic: string; evidence: string; hits: number;
       }>;
+      const accepted: typeof selections = [];
+      const warnings: string[] = [];
+
       for (const s of selections) {
+        if (!SESSION_PREFIX_RE.test(s.session_id)) {
+          warnings.push(`Skipped "${s.session_id.slice(0, 20)}" — not a valid session ID prefix`);
+          continue;
+        }
+        const resolved = resolveSessionId(s.session_id);
+        if (!resolved) {
+          warnings.push(`Skipped "${s.session_id.slice(0, 12)}…" — no matching session found`);
+          continue;
+        }
+        accepted.push({ ...s, session_id: resolved });
         log({
           source: 'recall:select_session',
           level: 'info',
-          summary: `Selected ${s.session_id} — ${s.topic.slice(0, 80)}`,
+          summary: `Selected ${resolved} — ${s.topic.slice(0, 80)}`,
           data: {
-            sessionId: s.session_id,
+            sessionId: resolved,
             date: s.date,
             topic: s.topic,
             evidence: s.evidence,
@@ -966,8 +1000,13 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
           },
         });
       }
+
+      const parts: string[] = [`Selected ${accepted.length} sessions.`];
+      if (warnings.length > 0) {
+        parts.push(`\n${warnings.length} skipped:\n${warnings.join('\n')}`);
+      }
       return {
-        content: [{ type: 'text' as const, text: `Selected ${selections.length} sessions.` }],
+        content: [{ type: 'text' as const, text: parts.join('') }],
       };
     },
   );
