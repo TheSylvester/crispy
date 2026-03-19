@@ -27,7 +27,8 @@ import { opencodeRegistration } from '../core/adapters/opencode/opencode-registr
 /** System prompt hint for Crispy skills — nudges the model to use /recall. */
 const CRISPY_SKILLS_PROMPT =
   'You have Crispy skills available. Use /recall to search or read past ' +
-  'session transcripts. Use /recall --help for full usage.';
+  'session transcripts. Use /recall --help for full usage.\n\n' +
+  'Your Crispy session ID is available in the $CRISPY_SESSION_ID environment variable.';
 
 // ============================================================================
 // Types

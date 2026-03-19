@@ -12,6 +12,7 @@ import type { SessionOpenSpec, AgentAdapter } from '../../agent-adapter.js';
 import type { AdapterRegistration, HostAdapterConfig } from '../../../host/adapter-registry.js';
 import { ClaudeAgentAdapter, claudeDiscovery, getResumeModel, type SettingSource } from './claude-code-adapter.js';
 import { findClaudeBinary } from '../../find-claude-binary.js';
+import { getSettingsSnapshotInternal } from '../../settings/index.js';
 
 /** Cached binary path — resolved once at availability check time. */
 let cachedBinaryPath: string | undefined;
@@ -45,6 +46,22 @@ function buildEphemeralConfig(spec: SessionOpenSpec): Record<string, unknown> {
 }
 
 /**
+ * Read saved turn defaults from settings (permission mode, bypass, etc.).
+ *
+ * Resume and fork sessions don't carry permission config in their spec —
+ * they inherit from the user's saved defaults so the adapter starts with
+ * the correct permission mode instead of falling back to SDK defaults.
+ */
+function getTurnDefaultsConfig(): Record<string, unknown> {
+  const { settings } = getSettingsSnapshotInternal();
+  const td = settings.turnDefaults;
+  return {
+    ...(td.permissionMode && { permissionMode: td.permissionMode }),
+    ...(td.allowDangerouslySkipPermissions && { allowDangerouslySkipPermissions: true }),
+  };
+}
+
+/**
  * Build a Claude adapter factory that bakes in host config.
  *
  * The returned factory is called by session-manager for each new session.
@@ -74,6 +91,7 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
         return new ClaudeAgentAdapter({
           ...getBase(), cwd: config.cwd, resume: spec.sessionId,
           ...(model && { model }),
+          ...getTurnDefaultsConfig(),
         });
       }
       case 'fresh':
@@ -103,6 +121,10 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           // Structured output forks should complete in a single model response.
           ...(spec.outputFormat && { maxTurns: 1 }),
           ...buildEphemeralConfig(spec),
+          // Apply saved turn defaults (permission mode, bypass) — fork specs
+          // don't carry these, but ephemeral forks (buildEphemeralConfig) may
+          // override permissionMode, so turn defaults come after.
+          ...(!spec.skipPersistSession && getTurnDefaultsConfig()),
         });
       case 'hydrated':
         return new ClaudeAgentAdapter({
