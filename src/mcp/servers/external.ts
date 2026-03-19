@@ -27,7 +27,6 @@ import { formatTranscript, formatMessages, type FormattedTranscriptResult } from
 import { readSessionMessages, getSessionMessageCount } from "../../core/recall/message-store.js";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve as resolvePath, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
 
 // ============================================================================
 // Recall Agent Prompt
@@ -38,7 +37,9 @@ let _recallPromptTemplate: string | undefined;
 
 function getRecallPromptTemplate(): string {
   if (!_recallPromptTemplate) {
-    const thisDir = dirname(fileURLToPath(import.meta.url));
+    // __dirname works in CJS (tsc NodeNext typecheck) and is shimmed by
+    // esbuild in the bundled ESM output. tsx also provides it for .ts files.
+    const thisDir = __dirname;
     // In dev (tsx): relative to src/mcp/servers/
     // In prod (esbuild bundle): relative to dist/
     const candidates = [

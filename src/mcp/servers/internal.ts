@@ -669,18 +669,20 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
       log({ level: 'debug', source: 'recall:search_transcript', summary: `query="${query}" limit=${limit} project=${projectId ?? 'all'} session=${sessionId ?? 'all'}` });
       const t0 = Date.now();
       try {
-        const results = await searchTranscript(query, limit, projectId, sessionId, serverOptions.excludeSessionId);
+        const searchResult = await searchTranscript(query, limit, projectId, sessionId, serverOptions.excludeSessionId);
         const meta = searchTranscriptMeta(query, projectId, sessionId, serverOptions.excludeSessionId);
         const elapsed = Date.now() - t0;
         log({
           source: 'recall:search_transcript',
-          level: 'info',
-          summary: `${results.length} of ${meta.total_matches} results in ${elapsed}ms`,
+          level: searchResult.semanticAvailable ? 'info' : 'warn',
+          summary: `${searchResult.results.length} of ${meta.total_matches} results in ${elapsed}ms (FTS5: ${searchResult.ftsCount}, Semantic: ${searchResult.semanticCount}${!searchResult.semanticAvailable ? ' UNAVAILABLE' : ''})`,
           data: {
             query, limit, projectId, sessionId,
-            resultCount: results.length, totalMatches: meta.total_matches,
+            resultCount: searchResult.results.length, totalMatches: meta.total_matches,
             sessionCount: Object.keys(meta.session_hits).length, elapsed,
-            hits: results.slice(0, 10).map((r) => ({
+            semanticAvailable: searchResult.semanticAvailable,
+            ftsCount: searchResult.ftsCount, semanticCount: searchResult.semanticCount,
+            hits: searchResult.results.slice(0, 10).map((r) => ({
               sessionId: r.session_id,
               snippet: r.match_snippet?.slice(0, 100),
             })),
@@ -688,7 +690,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
         });
         // Group results by session — each session appears once with all its
         // unique snippets, so the agent sees more diverse sessions.
-        const grouped = groupBySession(results);
+        const grouped = groupBySession(searchResult.results);
 
         return {
           content: [{ type: 'text' as const, text: JSON.stringify({
@@ -696,6 +698,8 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
             count: grouped.length,
             total_matches: meta.total_matches,
             session_hits: meta.session_hits,
+            search_paths: { fts5: searchResult.ftsCount, semantic: searchResult.semanticCount },
+            semantic_available: searchResult.semanticAvailable,
           }, null, 2) }],
         };
       } catch (err) {
@@ -947,7 +951,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
     // Already full UUID length — trust it
     if (clean.length >= 36) return clean.slice(0, 36);
     try {
-      const row = getDb().get(
+      const row = getDb(getDbPath()).get(
         `SELECT DISTINCT session_id FROM messages WHERE session_id LIKE ? LIMIT 1`,
         [`${clean}%`],
       ) as { session_id: string } | undefined;

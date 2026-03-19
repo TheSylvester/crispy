@@ -376,21 +376,21 @@ async function runSearch(query: string, opts: CliOptions): Promise<void> {
 
     // ── Dual-path ───────────────────────────────────────────────────
     const stopDual = perf();
-    const dualResults = await dualPathSearch(query, {
+    const dualResult = await dualPathSearch(query, {
       limit: opts.searchLimit,
       projectId: opts.projectId,
     });
     const dualMs = stopDual();
 
     log(`  FTS5 search: ${fmtMs(ftsMs)} (${ftsResults.length} results)`);
-    log(`  Dual-path:   ${fmtMs(dualMs)} (${dualResults.length} results, ${fmt(vectorCount)} vectors scanned)`);
+    log(`  Dual-path:   ${fmtMs(dualMs)} (${dualResult.results.length} results, ${fmt(vectorCount)} vectors scanned, semantic: ${dualResult.semanticAvailable ? 'ON' : 'OFF'})`);
 
     printResults(`FTS5-only (${fmtMs(ftsMs)})`, ftsResults);
-    printResults(`Dual-path (${fmtMs(dualMs)})`, dualResults);
+    printResults(`Dual-path (${fmtMs(dualMs)})`, dualResult.results);
 
     // Show what semantic search added
     const ftsIds = new Set(ftsResults.map(r => r.message_id));
-    const semanticOnly = dualResults.filter(r => !ftsIds.has(r.message_id));
+    const semanticOnly = dualResult.results.filter(r => !ftsIds.has(r.message_id));
     if (semanticOnly.length > 0) {
       printResults('Semantic-only additions', semanticOnly);
     } else {
@@ -399,15 +399,15 @@ async function runSearch(query: string, opts: CliOptions): Promise<void> {
   } else {
     // ── Standard dual-path search ───────────────────────────────────
     const stopSearch = perf();
-    const results = await dualPathSearch(query, {
+    const searchResult = await dualPathSearch(query, {
       limit: opts.searchLimit,
       projectId: opts.projectId,
     });
     const searchMs = stopSearch();
 
-    log(`  Total: ${fmtMs(searchMs)} (${fmt(vectorCount)} vectors scanned)`);
+    log(`  Total: ${fmtMs(searchMs)} (${fmt(vectorCount)} vectors scanned, semantic: ${searchResult.semanticAvailable ? 'ON' : 'OFF'})`);
 
-    printResults(`Dual-path results (${fmtMs(searchMs)})`, results);
+    printResults(`Dual-path results (${fmtMs(searchMs)})`, searchResult.results);
   }
 }
 

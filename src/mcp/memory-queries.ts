@@ -18,8 +18,9 @@ import { readCodexTurnContent } from '../core/adapters/codex/codex-jsonl-reader.
 import { searchMessagesFtsMeta, getMessageByUuid, getAdjacentMessages, getSessionMessageCount, grepMessages, readSessionMessages, inferRole } from '../core/recall/message-store.js';
 import type { MessageRecord, MessageSearchResult, MessageSearchMeta, GrepMatch, SessionPage } from '../core/recall/message-store.js';
 import { dualPathSearch } from '../core/recall/vector-search.js';
+import type { DualPathSearchResult } from '../core/recall/vector-search.js';
 
-export type { TurnContent, MessageRecord, MessageSearchResult, MessageSearchMeta, GrepMatch, SessionPage };
+export type { TurnContent, MessageRecord, MessageSearchResult, MessageSearchMeta, GrepMatch, SessionPage, DualPathSearchResult };
 export { grepMessages, readSessionMessages };
 
 // ============================================================================
@@ -117,6 +118,8 @@ export function readTurnContent(file: string, offset: number): TurnContent | nul
  *
  * Runs keyword and vector search in parallel, unions results, deduplicates
  * by message_id. Falls back to FTS5-only if embeddings are unavailable.
+ *
+ * Returns the full DualPathSearchResult including semantic availability metadata.
  */
 export async function searchTranscript(
   query: string,
@@ -124,7 +127,7 @@ export async function searchTranscript(
   projectId?: string,
   sessionId?: string,
   excludeSessionId?: string,
-): Promise<MessageSearchResult[]> {
+): Promise<DualPathSearchResult> {
   return dualPathSearch(query, { limit, projectId, sessionId, excludeSessionId });
 }
 

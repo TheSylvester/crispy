@@ -69,14 +69,15 @@ describe('dualPathSearch', () => {
     vi.clearAllMocks();
   });
 
-  it('returns empty array for empty query', async () => {
-    const results = await dualPathSearch('');
+  it('returns empty results for empty query', async () => {
+    const { results, semanticAvailable } = await dualPathSearch('');
     expect(results).toEqual([]);
+    expect(semanticAvailable).toBe(false);
     expect(mockEmbed).not.toHaveBeenCalled();
   });
 
-  it('returns empty array for whitespace query', async () => {
-    const results = await dualPathSearch('   ');
+  it('returns empty results for whitespace query', async () => {
+    const { results } = await dualPathSearch('   ');
     expect(results).toEqual([]);
   });
 
@@ -86,10 +87,13 @@ describe('dualPathSearch', () => {
       makeFtsResult('m1', 's1', -5.0),
     ]);
 
-    const results = await dualPathSearch('install deps');
+    const { results, semanticAvailable, ftsCount, semanticCount } = await dualPathSearch('install deps');
 
     expect(results).toHaveLength(1);
     expect(results[0]!.message_id).toBe('m1');
+    expect(semanticAvailable).toBe(false);
+    expect(ftsCount).toBe(1);
+    expect(semanticCount).toBe(0);
     expect(mockSearchSemantic).not.toHaveBeenCalled();
   });
 
@@ -108,7 +112,7 @@ describe('dualPathSearch', () => {
       makeSemanticResult('m3', 's2', 0.8),
     ]);
 
-    const results = await dualPathSearch('test query');
+    const { results, semanticAvailable, ftsCount, semanticCount } = await dualPathSearch('test query');
 
     // m1 appears in both, should be deduplicated (FTS takes priority)
     const ids = results.map(r => r.message_id);
@@ -117,6 +121,9 @@ describe('dualPathSearch', () => {
     expect(ids).toContain('m3');
     // No duplicates
     expect(new Set(ids).size).toBe(ids.length);
+    expect(semanticAvailable).toBe(true);
+    expect(ftsCount).toBe(2);
+    expect(semanticCount).toBe(2);
   });
 
   it('respects limit', async () => {
@@ -127,7 +134,7 @@ describe('dualPathSearch', () => {
       ),
     );
 
-    const results = await dualPathSearch('test', { limit: 3 });
+    const { results } = await dualPathSearch('test', { limit: 3 });
     expect(results.length).toBeLessThanOrEqual(3);
   });
 
@@ -136,8 +143,9 @@ describe('dualPathSearch', () => {
     mockSearchFts.mockReturnValueOnce([]);
     mockSearchSemantic.mockReturnValueOnce([]);
 
-    const results = await dualPathSearch('anything');
+    const { results, semanticAvailable } = await dualPathSearch('anything');
     expect(results).toHaveLength(0);
+    expect(semanticAvailable).toBe(true); // embed succeeded, just no matches
   });
 
   it('passes projectId and sessionId to both paths', async () => {

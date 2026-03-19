@@ -41,6 +41,16 @@ export interface DualPathSearchOptions {
   recencyDecay?: number;
 }
 
+export interface DualPathSearchResult {
+  results: MessageSearchResult[];
+  /** Whether the semantic (embedding) path was available and produced results. */
+  semanticAvailable: boolean;
+  /** Number of results from FTS5 keyword search. */
+  ftsCount: number;
+  /** Number of results from semantic vector search (0 if unavailable). */
+  semanticCount: number;
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -65,16 +75,17 @@ const DEFAULT_RECENCY_DECAY = 0.005; // ~50% penalty at 200 days old
 export async function dualPathSearch(
   query: string,
   opts?: DualPathSearchOptions,
-): Promise<MessageSearchResult[]> {
+): Promise<DualPathSearchResult> {
   const limit = opts?.limit ?? DEFAULT_LIMIT;
   const fetchLimit = limit * FETCH_MULTIPLIER;
 
-  if (!query.trim()) return [];
+  if (!query.trim()) return { results: [], semanticAvailable: false, ftsCount: 0, semanticCount: 0 };
 
   // Embed the query and quantize
   let queryQ8: Int8Array | null = null;
   let queryNorm = 0;
   let queryScale = 0;
+  let semanticAvailable = true;
 
   try {
     const queryF32 = await embed(query);
@@ -83,6 +94,7 @@ export async function dualPathSearch(
     queryQ8 = quantized.q8;
     queryScale = quantized.scale;
   } catch (err) {
+    semanticAvailable = false;
     log({
       source: 'recall:dual-path',
       level: 'warn',
@@ -102,10 +114,12 @@ export async function dualPathSearch(
       })
     : [];
 
+  // If embed succeeded but produced 0 semantic results, that's still "available"
+  // (just no matches). Only mark unavailable if embed() itself failed.
   log({
     source: 'recall:dual-path',
-    level: 'info',
-    summary: `FTS5: ${ftsResults.length} results, Semantic: ${semanticResults.length} results`,
+    level: semanticAvailable ? 'info' : 'warn',
+    summary: `FTS5: ${ftsResults.length} results, Semantic: ${semanticResults.length} results${!semanticAvailable ? ' (UNAVAILABLE — embed failed)' : ''}`,
   });
 
   // RRF merge with recency decay — scale-invariant fusion of ranked lists
@@ -136,5 +150,10 @@ export async function dualPathSearch(
   const merged = [...rrfScores.values()];
   merged.sort((a, b) => b.score - a.score);
 
-  return merged.slice(0, limit).map(m => m.result);
+  return {
+    results: merged.slice(0, limit).map(m => m.result),
+    semanticAvailable,
+    ftsCount: ftsResults.length,
+    semanticCount: semanticResults.length,
+  };
 }

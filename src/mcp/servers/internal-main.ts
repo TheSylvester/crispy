@@ -20,6 +20,7 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { createInternalServer, type InternalServerOptions } from './internal.js';
 import { log } from '../../core/log.js';
+import { ensureBinary, ensureModel } from '../../core/recall/embedder.js';
 
 process.on('unhandledRejection', (err) => {
   const msg = `Unhandled rejection: ${err instanceof Error ? err.message : String(err)}`;
@@ -50,9 +51,22 @@ async function main() {
   const startMsg = `Starting stdio server${cliOpts.sessionFile ? ` session=${cliOpts.sessionFile}` : ''}`;
   process.stderr.write(startMsg + '\n');
   log({ level: 'info', source: 'internal-mcp', summary: startMsg });
+
+  // Pre-warm embedder: ensure binary + model are downloaded and ready before
+  // the first search_transcript call. This runs concurrently with MCP transport
+  // setup so there's no added latency. If warmup fails, embed() will fail
+  // later and dualPathSearch will fall back to FTS5-only (now with visibility).
+  const warmupPromise = Promise.all([ensureBinary(), ensureModel()])
+    .then(() => log({ level: 'info', source: 'internal-mcp', summary: 'Embedder warmup complete — semantic search ready' }))
+    .catch((err) => log({ level: 'warn', source: 'internal-mcp', summary: `Embedder warmup failed — semantic search will be unavailable: ${err instanceof Error ? err.message : String(err)}` }));
+
   const server = createInternalServer(cliOpts);
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  // Wait for warmup to finish (usually already done by now)
+  await warmupPromise;
+
   log({ level: 'info', source: 'internal-mcp', summary: 'Connected — ready for tool calls' });
 }
 

@@ -84,6 +84,41 @@ const SERVER_KILL_TIMEOUT_MS = 5_000;
 const SERVER_COOLDOWN_MS = 60_000;
 
 // ---------------------------------------------------------------------------
+// Embedding Mutex — serializes embed calls to prevent CPU contention
+// ---------------------------------------------------------------------------
+
+/** Queue of pending embedding requests waiting for the mutex. */
+let embedQueue: Array<{
+  resolve: (value: Float32Array[]) => void;
+  reject: (reason: unknown) => void;
+  fn: () => Promise<Float32Array[]>;
+}> = [];
+let embedRunning = false;
+
+/** Run an embedding function under a process-level mutex. */
+async function withEmbedMutex(fn: () => Promise<Float32Array[]>): Promise<Float32Array[]> {
+  return new Promise<Float32Array[]>((resolve, reject) => {
+    embedQueue.push({ resolve, reject, fn });
+    drainEmbedQueue();
+  });
+}
+
+async function drainEmbedQueue(): Promise<void> {
+  if (embedRunning || embedQueue.length === 0) return;
+  embedRunning = true;
+  const item = embedQueue.shift()!;
+  try {
+    const result = await item.fn();
+    item.resolve(result);
+  } catch (err) {
+    item.reject(err);
+  } finally {
+    embedRunning = false;
+    drainEmbedQueue();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Module State
 // ---------------------------------------------------------------------------
 
@@ -828,6 +863,12 @@ export async function embed(text: string): Promise<Float32Array> {
 export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
   if (texts.length === 0) return [];
 
+  // Serialize embedding calls to prevent CPU contention when multiple
+  // recall queries fire concurrently (e.g., 6 parallel search_transcript calls).
+  return withEmbedMutex(() => embedBatchInner(texts));
+}
+
+async function embedBatchInner(texts: string[]): Promise<Float32Array[]> {
   // Lazy-resolve binary: download on first use if not already present
   if (!binaryPath) {
     await ensureBinary();

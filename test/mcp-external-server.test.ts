@@ -144,7 +144,7 @@ describe('external MCP server — recall tool (relay pattern)', () => {
     const promptText = callArgs.prompt[0].text;
     expect(promptText).toContain('authentication');
     expect(promptText).toContain('search_transcript');
-    expect(promptText).toContain('read_message');
+    expect(promptText).toContain('select_sessions');
 
     // Result passes through
     const content = (result as { content: Array<{ text: string }> }).content;
