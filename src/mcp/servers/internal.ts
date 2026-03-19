@@ -1,10 +1,9 @@
 /**
  * Internal stdio MCP Server — raw tools for internal agents.
  *
- * Exposes search/browse tools for the recall agent and project tracking
- * tools for the tracker agent, all over stdio. Designed to be spawned as
- * a child process by any vendor's child agents that need session memory
- * access. Each consumer sees only its tools via allowedTools glob patterns.
+ * Exposes search/browse tools for the recall agent over stdio. Designed to
+ * be spawned as a child process by any vendor's child agents that need
+ * session memory access.
  *
  * Uses @modelcontextprotocol/sdk (vendor-agnostic) — not the Claude SDK.
  * This is the extensible knowledge backend — future graph search, commit
@@ -13,8 +12,6 @@
  * @module mcp/servers/internal
  */
 
-import { randomUUID } from 'node:crypto';
-import { appendFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v4';
 import { listSessions, readTurnContent, getDbPath, searchTranscript, searchTranscriptMeta, readMessageTurn, grepMessages, readSessionMessages } from '../memory-queries.js';
@@ -22,9 +19,6 @@ import { getDb } from '../../core/crispy-db.js';
 import type { MessageSearchResult, DualPathSearchResult } from '../memory-queries.js';
 import { log } from '../../core/log.js';
 
-import { writeTrackerResults, getProjectTitle, mergeProjects, getProjectTextsForEmbedding, getValidStageNames } from '../../core/rosie/tracker/db-writer.js';
-import { VALID_TYPES } from '../../core/rosie/tracker/types.js';
-import type { TrackerBlock } from '../../core/rosie/tracker/types.js';
 
 // ============================================================================
 // Constants
@@ -39,20 +33,6 @@ export const INTERNAL_MCP_SERVER_NAME = 'crispy-memory';
 
 type McpToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: true };
 
-/** Decision record appended to the sidecar file for parent-process observability. */
-export interface TrackerDecision {
-  tool: 'create_project' | 'track_project' | 'mark_trivial' | 'merge_project';
-  action?: 'created' | 'updated' | 'merged';
-  title?: string;
-  stage?: string;
-  status?: string;
-  icon?: string;
-  reason?: string;
-  /** For merge_project: the ID that was kept. */
-  keep_id?: string;
-  /** For merge_project: the ID that was removed. */
-  remove_id?: string;
-}
 
 /**
  * Options for configuring the internal MCP server.
@@ -62,96 +42,21 @@ export interface TrackerDecision {
  * spawns MCP subprocesses. Falls back to env vars for backwards compatibility.
  */
 export interface InternalServerOptions {
-  /** Session file path for tracker's upsert_project tool. */
-  sessionFile?: string;
-  /** Sidecar JSONL file for tracker decision observability. */
-  decisionsFile?: string;
   /** Project path for scoping search_transcript results. */
   projectId?: string;
   /** Wall-clock deadline (epoch ms) after which tool calls are refused. */
   deadlineMs?: number;
   /** Session ID to exclude from search results (caller's own session). */
   excludeSessionId?: string;
-  /** Parent session ID for tracker provenance (which session spawned the tracker). */
-  parentSessionId?: string;
 }
 
 /** Module-level options — set by createInternalServer(), read by tool handlers. */
 let serverOptions: InternalServerOptions = {};
 
-/** Build a SessionRef with the parent session's ID for provenance tracking. */
-function buildSessionRef(): { detected_in: string } {
-  return { detected_in: serverOptions.parentSessionId ?? '' };
-}
-
 function isExcludedSession(sessionId: string): boolean {
   return !!serverOptions.excludeSessionId && sessionId === serverOptions.excludeSessionId;
 }
 
-/**
- * Append a decision record to the sidecar file.
- * The parent process reads this after dispatchChild completes and pushes entries
- * to the rosie debug log. Silently no-ops if no decisions file is configured.
- */
-function appendDecision(decision: TrackerDecision): void {
-  const file = serverOptions.decisionsFile ?? process.env.CRISPY_TRACKER_DECISIONS_FILE;
-  if (!file) return;
-  try {
-    appendFileSync(file, JSON.stringify(decision) + '\n');
-  } catch {
-    // Best-effort — don't break the tool handler if the file can't be written
-  }
-}
-
-// ============================================================================
-// Post-write Semantic Validation
-// ============================================================================
-
-/** Cosine similarity threshold for duplicate warnings. */
-const SIMILARITY_THRESHOLD = 0.85;
-
-/**
- * Check if a newly created project is semantically similar to existing projects.
- * Returns warning strings for any matches above the threshold.
- * Fails silently (returns []) if embeddings are unavailable — never blocks creates.
- */
-async function checkSemanticDuplicates(title: string, summary: string, newProjectId?: string): Promise<string[]> {
-  try {
-    const existing = getProjectTextsForEmbedding();
-    // Need at least 2 projects (the new one is already in the DB)
-    if (existing.length < 2) return [];
-
-    // Lazy-import embedder to avoid pulling in llama deps at module load
-    const { embedBatch } = await import('../../core/recall/embedder.js');
-    const { computeNorm, cosineSimilarity } = await import('../../core/recall/quantize.js');
-
-    const newText = summary ? `${title} ${summary}` : title;
-    const allTexts = [newText, ...existing.map(p => p.text)];
-    const embeddings = await embedBatch(allTexts);
-
-    const newEmb = embeddings[0]!;
-    const newNorm = computeNorm(newEmb);
-    const warnings: string[] = [];
-
-    for (let i = 1; i < embeddings.length; i++) {
-      const proj = existing[i - 1]!;
-      // Skip comparing against itself (the just-created project is in the list)
-      if (newProjectId && proj.id === newProjectId) continue;
-
-      const sim = cosineSimilarity(newEmb, embeddings[i]!, newNorm, computeNorm(embeddings[i]!));
-      if (sim >= SIMILARITY_THRESHOLD) {
-        warnings.push(`⚠️ Similar project exists: '${proj.title}' (id: ${proj.id}, similarity: ${sim.toFixed(3)}). Call merge_project to combine if these are the same.`);
-      }
-    }
-
-    return warnings;
-  } catch (err) {
-    // Embedding failure must not block creates
-    log({ source: 'internal-mcp', level: 'warn',
-      summary: `Semantic validation skipped: ${err instanceof Error ? err.message : String(err)}` });
-    return [];
-  }
-}
 
 // ============================================================================
 // Time-awareness helpers
@@ -378,8 +283,7 @@ function groupBySession(searchResult: DualPathSearchResult): GroupedResult[] {
  * Returns the McpServer — callers connect their own transport (stdio for
  * production, in-memory for tests).
  *
- * @param options - CLI-provided options (session file, decisions file).
- *   Falls back to env vars for backwards compatibility.
+ * @param options - CLI-provided options (project scope, deadline, exclusions).
  */
 export function createInternalServer(options?: InternalServerOptions): McpServer {
   serverOptions = options ?? {};
@@ -389,11 +293,6 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
   });
 
   const dbPath = getDbPath();
-
-  // Build dynamic stage enum from DB (read once at server creation time)
-  // getValidStageNames() is guaranteed non-empty (falls back to VALID_STAGES)
-  const rawStageNames = getValidStageNames();
-  const stageNames: [string, ...string[]] = [rawStageNames[0]!, ...rawStageNames.slice(1)];
 
   // ------------------------------------------------------------------
   // list_sessions — List distinct sessions with latest metadata
@@ -470,212 +369,6 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
             found: false,
             error: `read_turn failed: ${err instanceof Error ? err.message : String(err)}`,
           }) }],
-          isError: true,
-        };
-      }
-    },
-  );
-
-  // ------------------------------------------------------------------
-  // create_project — Create a new tracked project
-  // ------------------------------------------------------------------
-  server.tool(
-    'create_project',
-    'Create a new project based on this session\'s work. Use for NEW work that doesn\'t match any existing project.',
-    {
-      title: z.string().describe('Short, stable project title. Keep consistent across sessions.'),
-      stage: z.enum(stageNames).describe('Project lifecycle stage — see Available Stages in system prompt for descriptions and usage guidance.'),
-      status: z.string().describe('Freeform status line — what is true RIGHT NOW in 1-2 sentences.'),
-      icon: z.string().describe('Single emoji representing the project domain (e.g. 🔧, 📊, 🎨).'),
-      summary: z.string().describe('Stable description of what this project IS. Set once, rarely changed.'),
-      type: z.enum(VALID_TYPES).default('project').describe('Project type: project (default), task (sub-item of a project), idea (not yet a project).'),
-      parent_id: z.string().optional().describe('Parent project UUID. Required when type is \'task\'.'),
-      blocked_by: z.string().optional().describe('Why it\'s blocked (only if stage is \'paused\', otherwise omit).'),
-      branch: z.string().optional().describe('Git branch name if applicable.'),
-      files: z.array(z.object({
-        path: z.string().describe('File path to a non-code artifact.'),
-        note: z.string().describe('Why this file is relevant.'),
-      })).optional().describe('Non-code artifacts only: plans, specs, design docs. NOT source code. Omit if none.'),
-    },
-    async (args) => {
-      // Validate: type='task' requires parent_id
-      if (args.type === 'task' && !args.parent_id) {
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: "type 'task' requires parent_id — provide the UUID of the parent project." }) }],
-          isError: true,
-        };
-      }
-
-      const sessionFile = serverOptions.sessionFile ?? process.env.CRISPY_TRACKER_SESSION_FILE;
-      if (!sessionFile) {
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: 'Session file not configured' }) }],
-          isError: true,
-        };
-      }
-
-      const projectId = randomUUID();
-      const block: TrackerBlock = {
-        project: {
-          action: 'create',
-          id: projectId,
-          title: args.title,
-          stage: args.stage,
-          status: args.status,
-          icon: args.icon,
-          blocked_by: args.blocked_by ?? '',
-          summary: args.summary,
-          branch: args.branch ?? '',
-          type: args.type,
-          parent_id: args.parent_id,
-        },
-        sessionRef: buildSessionRef(),
-        files: (args.files ?? []).map((f) => ({ path: f.path, note: f.note })),
-      };
-
-      try {
-        writeTrackerResults([block], sessionFile);
-        log({ level: 'debug', source: 'recall:create_project', summary: `created "${args.title}" [${args.stage}] type=${args.type}` });
-        appendDecision({ tool: 'create_project', action: 'created', title: args.title, stage: args.stage, status: args.status, icon: args.icon });
-
-        // Post-write semantic validation — warn if similar project exists
-        const warnings = await checkSemanticDuplicates(args.title, args.summary, projectId);
-        const result: Record<string, unknown> = { status: 'ok', action: 'created', project: args.title, projectId };
-        const content: Array<{ type: 'text'; text: string }> = [
-          { type: 'text' as const, text: JSON.stringify(result) },
-        ];
-        if (warnings.length > 0) {
-          content.push({ type: 'text' as const, text: warnings.join('\n') });
-        }
-        return { content };
-      } catch (err) {
-        log({ level: 'error', source: 'recall:create_project', summary: `FAIL: ${err instanceof Error ? err.message : String(err)}`, data: { error: err instanceof Error ? err.message : String(err) } });
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: `create_project failed: ${err instanceof Error ? err.message : String(err)}` }) }],
-          isError: true,
-        };
-      }
-    },
-  );
-
-  // ------------------------------------------------------------------
-  // track_project — Update an existing tracked project
-  // ------------------------------------------------------------------
-  server.tool(
-    'track_project',
-    'Update an existing project with this session\'s work. Provide only fields that changed. Always auto-links the current session.',
-    {
-      project_id: z.string().describe('UUID of the existing project. Must match an id from the existing projects list.'),
-      status: z.string().optional().describe('Updated freeform status line — only if changed.'),
-      stage: z.enum(stageNames).optional().describe('Updated stage — only if changed. See Available Stages in system prompt.'),
-      blocked_by: z.string().optional().describe('Why it\'s blocked (only if stage is \'paused\').'),
-      branch: z.string().optional().describe('Git branch name if applicable.'),
-      files: z.array(z.object({
-        path: z.string().describe('File path to a non-code artifact.'),
-        note: z.string().describe('Why this file is relevant.'),
-      })).optional().describe('Non-code artifacts only. Omit if none.'),
-    },
-    async (args) => {
-      const sessionFile = serverOptions.sessionFile ?? process.env.CRISPY_TRACKER_SESSION_FILE;
-      if (!sessionFile) {
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: 'Session file not configured' }) }],
-          isError: true,
-        };
-      }
-
-      const block: TrackerBlock = {
-        project: {
-          action: 'track',
-          id: args.project_id,
-          ...(args.status !== undefined && { status: args.status }),
-          ...(args.stage !== undefined && { stage: args.stage }),
-          ...(args.blocked_by !== undefined && { blocked_by: args.blocked_by }),
-          ...(args.branch !== undefined && { branch: args.branch }),
-        },
-        sessionRef: buildSessionRef(),
-        files: (args.files ?? []).map((f) => ({ path: f.path, note: f.note })),
-      };
-
-      try {
-        writeTrackerResults([block], sessionFile);
-        // Look up the project title for decision logging (UUID is not user-friendly)
-        const projectTitle = getProjectTitle(args.project_id)?.title ?? args.project_id;
-        log({ level: 'debug', source: 'recall:track_project', summary: `updated "${projectTitle}"` });
-        appendDecision({ tool: 'track_project', action: 'updated', title: projectTitle, stage: args.stage, status: args.status });
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action: 'updated', projectId: args.project_id }) }],
-        };
-      } catch (err) {
-        log({ level: 'error', source: 'recall:track_project', summary: `FAIL: ${err instanceof Error ? err.message : String(err)}`, data: { error: err instanceof Error ? err.message : String(err) } });
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: `track_project failed: ${err instanceof Error ? err.message : String(err)}` }) }],
-          isError: true,
-        };
-      }
-    },
-  );
-
-  // ------------------------------------------------------------------
-  // mark_trivial — Flag session as not warranting project tracking
-  // ------------------------------------------------------------------
-  server.tool(
-    'mark_trivial',
-    'Mark this session as trivial — no project needed. Use when the session was a quick recall, empty session, false start, or doesn\'t represent meaningful project work.',
-    {
-      reason: z.string().describe('Brief reason why no project is warranted.'),
-    },
-    async (args) => {
-      log({ level: 'debug', source: 'recall:mark_trivial', summary: `"${args.reason}"` });
-      appendDecision({ tool: 'mark_trivial', reason: args.reason });
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', trivial: true, reason: args.reason }) }],
-      };
-    },
-  );
-
-  // ------------------------------------------------------------------
-  // merge_project — Merge two projects into one
-  // ------------------------------------------------------------------
-  server.tool(
-    'merge_project',
-    'Merge two projects that represent the same work. Keeps one, removes the other. Reparents child tasks, migrates sessions and files.',
-    {
-      keep_id: z.string().describe('UUID of the project to keep (survivor).'),
-      remove_id: z.string().describe('UUID of the project to remove (merged into survivor).'),
-    },
-    async (args) => {
-      if (args.keep_id === args.remove_id) {
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: 'keep_id and remove_id must be different' }) }],
-          isError: true,
-        };
-      }
-
-      const keepInfo = getProjectTitle(args.keep_id);
-      const removeInfo = getProjectTitle(args.remove_id);
-
-      if (!keepInfo || !removeInfo) {
-        const missing = !keepInfo ? args.keep_id : args.remove_id;
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: `Project not found: ${missing}` }) }],
-          isError: true,
-        };
-      }
-
-      try {
-        mergeProjects(args.keep_id, args.remove_id);
-        log({ source: 'internal-mcp', level: 'info',
-          summary: `merge_project: merged "${removeInfo.title}" → "${keepInfo.title}"` });
-        appendDecision({ tool: 'merge_project', action: 'merged', title: keepInfo.title, keep_id: args.keep_id, remove_id: args.remove_id });
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'ok', action: 'merged', kept: keepInfo.title, removed: removeInfo.title }) }],
-        };
-      } catch (err) {
-        log({ source: 'internal-mcp', level: 'error',
-          summary: `merge_project FAIL: ${err instanceof Error ? err.message : String(err)}` });
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ status: 'error', error: `merge_project failed: ${err instanceof Error ? err.message : String(err)}` }) }],
           isError: true,
         };
       }

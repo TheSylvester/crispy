@@ -31,24 +31,20 @@ process.on('unhandledRejection', (err) => {
 
 /**
  * Parse --key=value CLI args into an options object.
- * Supports: --session-file, --decisions-file
  */
 function parseCliArgs(): InternalServerOptions {
   const opts: InternalServerOptions = {};
   for (const arg of process.argv.slice(2)) {
-    if (arg.startsWith('--session-file=')) opts.sessionFile = arg.slice('--session-file='.length);
-    else if (arg.startsWith('--decisions-file=')) opts.decisionsFile = arg.slice('--decisions-file='.length);
-    else if (arg.startsWith('--project-id=')) opts.projectId = arg.slice('--project-id='.length);
+    if (arg.startsWith('--project-id=')) opts.projectId = arg.slice('--project-id='.length);
     else if (arg.startsWith('--deadline-ms=')) opts.deadlineMs = parseInt(arg.slice('--deadline-ms='.length), 10) || undefined;
     else if (arg.startsWith('--exclude-session-id=')) opts.excludeSessionId = arg.slice('--exclude-session-id='.length);
-    else if (arg.startsWith('--parent-session-id=')) opts.parentSessionId = arg.slice('--parent-session-id='.length);
   }
   return opts;
 }
 
 async function main() {
   const cliOpts = parseCliArgs();
-  const startMsg = `Starting stdio server${cliOpts.sessionFile ? ` session=${cliOpts.sessionFile}` : ''}`;
+  const startMsg = `Starting stdio server`;
   process.stderr.write(startMsg + '\n');
   log({ level: 'info', source: 'internal-mcp', summary: startMsg });
 
