@@ -64,8 +64,11 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  // Wait for warmup to finish (usually already done by now)
-  await warmupPromise;
+  // Warmup proceeds in background. Don't block server ready — if warmup is slow
+  // or fails, dualPathSearch will use FTS5-only (logged in warmupPromise catch handler).
+  warmupPromise.finally(() => {
+    log({ level: 'info', source: 'internal-mcp', summary: 'Embedder warmup finished' });
+  });
 
   log({ level: 'info', source: 'internal-mcp', summary: 'Connected — ready for tool calls' });
 }

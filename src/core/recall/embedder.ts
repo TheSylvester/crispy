@@ -379,30 +379,79 @@ async function performModelDownload(modelPath: string): Promise<string> {
 
 /** Download a URL to a local file, following one redirect (GitHub/HuggingFace pattern). */
 async function downloadFile(url: string, destPath: string): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
+  const DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+  return new Promise<void>((resolve, reject) => {
+    let timeoutHandle: NodeJS.Timeout | null = null;
+
+    const cleanup = () => {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+        timeoutHandle = null;
+      }
+    };
+
     import('node:https').then(({ default: https }) => {
       const file = createWriteStream(destPath);
+
       const pipeResponse = (response: import('node:http').IncomingMessage) => {
         if (response.statusCode !== 200) {
+          cleanup();
           reject(new Error(`Download failed: HTTP ${response.statusCode}`));
           return;
         }
+
+        // Reset timeout on data arrival
+        response.on('data', () => {
+          if (timeoutHandle) clearTimeout(timeoutHandle);
+          timeoutHandle = setTimeout(() => {
+            response.destroy();
+            file.destroy();
+            reject(new Error('Download timeout — no data for 30 seconds'));
+          }, 30 * 1000);
+        });
+
         response.pipe(file);
-        file.on('finish', () => { file.close(); resolve(); });
-        file.on('error', reject);
+        file.on('finish', () => {
+          cleanup();
+          file.close();
+          resolve();
+        });
+        file.on('error', (err) => {
+          cleanup();
+          reject(err);
+        });
       };
+
+      // Start overall timeout
+      timeoutHandle = setTimeout(() => {
+        reject(new Error(`Download timeout after ${DOWNLOAD_TIMEOUT_MS / 1000}s`));
+      }, DOWNLOAD_TIMEOUT_MS);
 
       https.get(url, { headers: { 'User-Agent': 'crispy' } }, (response) => {
         // Follow redirects (GitHub uses 302, HuggingFace uses 302)
         if (response.statusCode === 301 || response.statusCode === 302) {
           const location = response.headers.location;
-          if (!location) { reject(new Error('Redirect without location')); return; }
-          https.get(location, { headers: { 'User-Agent': 'crispy' } }, pipeResponse).on('error', reject);
+          if (!location) {
+            cleanup();
+            reject(new Error('Redirect without location'));
+            return;
+          }
+          https.get(location, { headers: { 'User-Agent': 'crispy' } }, pipeResponse).on('error', (err) => {
+            cleanup();
+            reject(err);
+          });
           return;
         }
         pipeResponse(response);
-      }).on('error', reject);
-    }).catch(reject);
+      }).on('error', (err) => {
+        cleanup();
+        reject(err);
+      });
+    }).catch((err) => {
+      cleanup();
+      reject(err);
+    });
   });
 }
 

@@ -225,7 +225,7 @@ function wrapToolHandler<T extends unknown[]>(
         },
       });
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ [resultKey]: results, count: results.length }, null, 2) }],
+        content: [{ type: 'text' as const, text: JSON.stringify({ [resultKey]: results, count: results.length }) }],
       };
     } catch (err) {
       const elapsed = Date.now() - t0;
@@ -239,7 +239,7 @@ function wrapToolHandler<T extends unknown[]>(
         content: [{ type: 'text' as const, text: JSON.stringify({
           [resultKey]: [],
           error: `${toolName} failed: ${err instanceof Error ? err.message : String(err)}`,
-        }, null, 2) }],
+        }) }],
         isError: true,
       };
     }
@@ -408,7 +408,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
             data: { file, offset, elapsed },
           });
           return {
-            content: [{ type: 'text' as const, text: JSON.stringify({ turn: null, found: false }, null, 2) }],
+            content: [{ type: 'text' as const, text: JSON.stringify({ turn: null, found: false }) }],
             isError: true,
           };
         }
@@ -421,7 +421,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
           data: { file, offset, elapsed, promptChars, responseChars },
         });
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ turn: result, found: true }, null, 2) }],
+          content: [{ type: 'text' as const, text: JSON.stringify({ turn: result, found: true }) }],
         };
       } catch (err) {
         const elapsed = Date.now() - t0;
@@ -436,7 +436,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
             turn: null,
             found: false,
             error: `read_turn failed: ${err instanceof Error ? err.message : String(err)}`,
-          }, null, 2) }],
+          }) }],
           isError: true,
         };
       }
@@ -657,7 +657,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
     'Dual-path search (FTS5 keywords + semantic embeddings, falls back to FTS5-only if embeddings unavailable) over raw conversation content. Results are grouped by session — each session appears once with its best match plus additional snippets, so you see maximum session diversity. Returns session ID, message UUID, highlighted snippet, short preview (up to 200 chars), additional_matches count, and other_snippets. Also returns total_matches and session_hits. Project-scoped by default. Supports FTS5 syntax: OR for broad searches, "quoted phrases" for exact matches, prefix* for partial terms. Use read_message to drill into a specific result.',
     {
       query: z.string().describe('Search query — short keywords work best. Use OR to broaden: "sqlite OR database"'),
-      limit: z.number().optional().default(120).describe('Maximum grouped session results (default 120)'),
+      limit: z.number().optional().default(60).describe('Maximum grouped session results (default 60)'),
       session_id: z.string().optional().describe('Scope search to a single session (use after broad search to drill into a specific session)'),
       all_projects: z.boolean().optional().default(false).describe('Search across all projects instead of just the current workspace'),
     },
@@ -700,7 +700,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
             session_hits: meta.session_hits,
             search_paths: { fts5: searchResult.ftsCount, semantic: searchResult.semanticCount },
             semantic_available: searchResult.semanticAvailable,
-          }, null, 2) }],
+          }) }],
         };
       } catch (err) {
         const elapsed = Date.now() - t0;
@@ -714,7 +714,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
           content: [{ type: 'text' as const, text: JSON.stringify({
             results: [],
             error: `search_transcript failed: ${err instanceof Error ? err.message : String(err)}`,
-          }, null, 2) }],
+          }) }],
           isError: true,
         };
       }
@@ -752,7 +752,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
               turn: null,
               found: false,
               error: 'read_message blocked: requested session is excluded from this recall context',
-            }, null, 2) }],
+            }) }],
             isError: true,
           };
         }
@@ -766,7 +766,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
             data: { sessionId, messageId, context: ctx, elapsed },
           });
           return {
-            content: [{ type: 'text' as const, text: JSON.stringify({ turn: null, found: false }, null, 2) }],
+            content: [{ type: 'text' as const, text: JSON.stringify({ turn: null, found: false }) }],
             isError: true,
           };
         }
@@ -780,7 +780,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
           data: { sessionId, messageId, context: ctx, elapsed, userChars, assistantChars, ctxCount },
         });
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ turn: result, found: true }, null, 2) }],
+          content: [{ type: 'text' as const, text: JSON.stringify({ turn: result, found: true }) }],
         };
       } catch (err) {
         const elapsed = Date.now() - t0;
@@ -795,7 +795,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
             turn: null,
             found: false,
             error: `read_message failed: ${err instanceof Error ? err.message : String(err)}`,
-          }, null, 2) }],
+          }) }],
           isError: true,
         };
       }
@@ -838,7 +838,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
             matches: results,
             count: results.length,
             sessions: sessionCount,
-          }, null, 2) }],
+          }) }],
         };
       } catch (err) {
         const elapsed = Date.now() - t0;
@@ -849,7 +849,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
           data: { pattern, elapsed, error: String(err) },
         });
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ matches: [], error: String(err) }, null, 2) }],
+          content: [{ type: 'text' as const, text: JSON.stringify({ matches: [], error: String(err) }) }],
           isError: true,
         };
       }
@@ -887,7 +887,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
               session: null,
               found: false,
               error: 'read_session blocked: requested session is excluded from this recall context',
-            }, null, 2) }],
+            }) }],
             isError: true,
           };
         }
@@ -901,7 +901,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
             data: { sessionId, offset, limit, elapsed },
           });
           return {
-            content: [{ type: 'text' as const, text: JSON.stringify({ session: null, found: false }, null, 2) }],
+            content: [{ type: 'text' as const, text: JSON.stringify({ session: null, found: false }) }],
             isError: true,
           };
         }
@@ -920,7 +920,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
           })),
         };
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ session: formattedPage, found: true }, null, 2) }],
+          content: [{ type: 'text' as const, text: JSON.stringify({ session: formattedPage, found: true }) }],
         };
       } catch (err) {
         const elapsed = Date.now() - t0;
@@ -931,7 +931,7 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
           data: { sessionId, offset, limit, elapsed, error: String(err) },
         });
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ session: null, found: false, error: String(err) }, null, 2) }],
+          content: [{ type: 'text' as const, text: JSON.stringify({ session: null, found: false, error: String(err) }) }],
           isError: true,
         };
       }
