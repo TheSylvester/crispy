@@ -28,31 +28,39 @@ import { readSessionMessages, getSessionMessageCount } from "../../core/recall/m
 import { readFileSync, existsSync } from "node:fs";
 import { resolve as resolvePath, dirname } from "node:path";
 
+// esbuild --loader:.md=text inlines this as a string at build time.
+// In tsx (dev), the import is handled by the TypeScript loader natively.
+// @ts-expect-error — no type declarations for raw .md import
+import recallAgentPromptText from "../prompts/recall-agent.md";
+
 // ============================================================================
 // Recall Agent Prompt
 // ============================================================================
 
-// Lazy-loaded on first use. Works in both esbuild (bundled dist/) and tsx (dev).
+// Inlined at build time by esbuild --loader:.md=text.
+// Falls back to filesystem read for dev (tsx) if the import yields undefined.
 let _recallPromptTemplate: string | undefined;
 
 function getRecallPromptTemplate(): string {
   if (!_recallPromptTemplate) {
-    // __dirname works in CJS (tsc NodeNext typecheck) and is shimmed by
-    // esbuild in the bundled ESM output. tsx also provides it for .ts files.
-    const thisDir = __dirname;
-    // In dev (tsx): relative to src/mcp/servers/
-    // In prod (esbuild bundle): relative to dist/
-    const candidates = [
-      resolvePath(thisDir, "../prompts/recall-agent.md"),
-      resolvePath(thisDir, "../../src/mcp/prompts/recall-agent.md"),
-    ];
-    const promptPath = candidates.find((p) => existsSync(p));
-    if (!promptPath) {
-      throw new Error(
-        `recall-agent.md not found. Searched:\n  ${candidates.join("\n  ")}`,
-      );
+    // esbuild inlines the .md as a string; tsx may also resolve it
+    if (typeof recallAgentPromptText === "string" && recallAgentPromptText.length > 0) {
+      _recallPromptTemplate = recallAgentPromptText;
+    } else {
+      // Fallback: filesystem read (dev server, tests)
+      const thisDir = __dirname;
+      const candidates = [
+        resolvePath(thisDir, "../prompts/recall-agent.md"),
+        resolvePath(thisDir, "../../src/mcp/prompts/recall-agent.md"),
+      ];
+      const promptPath = candidates.find((p) => existsSync(p));
+      if (!promptPath) {
+        throw new Error(
+          `recall-agent.md not found. Searched:\n  ${candidates.join("\n  ")}`,
+        );
+      }
+      _recallPromptTemplate = readFileSync(promptPath, "utf-8");
     }
-    _recallPromptTemplate = readFileSync(promptPath, "utf-8");
   }
   return _recallPromptTemplate;
 }
