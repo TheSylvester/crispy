@@ -50,6 +50,8 @@ interface Preferences {
   bashBlockInIcons: boolean;
   /** Which view is shown in the unified right sidebar. */
   sidebarView: SidebarView;
+  /** Whether the Rosie bot tracker is enabled. Read-only from settings. */
+  rosieBotEnabled: boolean;
 }
 
 interface PreferencesContextValue extends Preferences {
@@ -101,6 +103,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
   const [condensedToolMode, setCondensedToolMode] = useState(false);
   const [sidebarView, setSidebarView] = useState<SidebarView>('tools');
+  const [rosieBotEnabled, setRosieBotEnabled] = useState(false);
 
   // ============================================================================
   // Persisted preferences — synced to settings.json
@@ -129,6 +132,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       if (prefs.badgeStyle) setBadgeStyleLocal(prefs.badgeStyle as BadgeStyle);
       setToolPanelAutoOpenLocal(prefs.toolPanelAutoOpen);
       setBashBlockInIconsLocal(prefs.bashBlockInIcons);
+      setRosieBotEnabled(snapshot.settings.rosie?.bot?.enabled ?? false);
     }).catch((err) => {
       console.error('[PreferencesContext] Failed to load settings:', err);
     });
@@ -155,6 +159,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         if (prefs.badgeStyle) setBadgeStyleLocal(prefs.badgeStyle as BadgeStyle);
         setToolPanelAutoOpenLocal(prefs.toolPanelAutoOpen);
         setBashBlockInIconsLocal(prefs.bashBlockInIcons);
+      }
+      if (changedSections.includes('rosie')) {
+        setRosieBotEnabled(snapshot.settings.rosie?.bot?.enabled ?? false);
       }
     });
   }, [transport]);
@@ -234,6 +241,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     badgeStyle,
     bashBlockInIcons,
     sidebarView,
+    rosieBotEnabled,
     setRenderMode,
     setSettingsPinned,
     setSidebarCollapsed,
@@ -261,6 +269,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     badgeStyle,
     bashBlockInIcons,
     sidebarView,
+    rosieBotEnabled,
     setRenderMode,
     setSettingsPinned,
     setSidebarCollapsed,

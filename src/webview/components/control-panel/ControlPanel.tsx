@@ -325,6 +325,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     }, [transport]);
 
     const handleUpdateRosie = useCallback(async (patch: { enabled?: boolean; model?: string }) => {
+      if (patch.enabled !== undefined) setRosieEnabled(patch.enabled);
+      if (patch.model !== undefined) setRosieModel(patch.model);
       await transport.updateSettings({ rosie: { bot: patch } });
     }, [transport]);
 

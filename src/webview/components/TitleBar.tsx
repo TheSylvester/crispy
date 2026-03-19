@@ -221,7 +221,7 @@ function truncateLabel(text: string, max: number): string {
 
 export function TitleBar(): React.JSX.Element {
   const { sessions, selectedSessionId, setSelectedSessionId, selectedCwd, setSelectedCwd } = useSession();
-  const { sidebarCollapsed, setSidebarCollapsed, toolPanelOpen, setToolPanelOpen, sidebarView, setSidebarView } = usePreferences();
+  const { sidebarCollapsed, setSidebarCollapsed, toolPanelOpen, setToolPanelOpen, sidebarView, setSidebarView, rosieBotEnabled } = usePreferences();
   const { channelState } = useSessionStatus(selectedSessionId);
   const dropdownContainerRef = useRef<HTMLDivElement>(null);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
@@ -334,27 +334,29 @@ export function TitleBar(): React.JSX.Element {
     <header className="crispy-titlebar">
       {/* Left — Projects + Conversations dropdowns share a positioning wrapper */}
       <div className="crispy-session-dropdown-container" ref={dropdownContainerRef}>
-        <div className="crispy-project-dropdown-container" ref={projectDropdownRef}>
-          <button
-            className="crispy-titlebar__btn crispy-titlebar__projects-btn"
-            onClick={toggleProjects}
-            title="Projects"
-            aria-label={projectsOpen ? 'Close projects' : 'Open projects'}
-          >
-            <ProjectsIcon />
-            <Chevron open={projectsOpen} />
-          </button>
-          {projectsOpen && (
-            <div className="crispy-session-dropdown">
-              <ProjectsView
-                onSelectSession={handleProjectSelect}
-                availableCwds={availableCwds}
-                selectedCwd={selectedCwd}
-                onCwdChange={setSelectedCwd}
-              />
-            </div>
-          )}
-        </div>
+        {rosieBotEnabled && (
+          <div className="crispy-project-dropdown-container" ref={projectDropdownRef}>
+            <button
+              className="crispy-titlebar__btn crispy-titlebar__projects-btn"
+              onClick={toggleProjects}
+              title="Projects"
+              aria-label={projectsOpen ? 'Close projects' : 'Open projects'}
+            >
+              <ProjectsIcon />
+              <Chevron open={projectsOpen} />
+            </button>
+            {projectsOpen && (
+              <div className="crispy-session-dropdown">
+                <ProjectsView
+                  onSelectSession={handleProjectSelect}
+                  availableCwds={availableCwds}
+                  selectedCwd={selectedCwd}
+                  onCwdChange={setSelectedCwd}
+                />
+              </div>
+            )}
+          </div>
+        )}
         <button
           className="crispy-titlebar__btn crispy-titlebar__session-btn"
           onClick={toggleSidebar}

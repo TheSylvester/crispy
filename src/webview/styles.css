@@ -1883,7 +1883,7 @@ h2 {
     (var(--container-width, 100vw) - var(--right-panels-width, 0px)) / 2
   );
   transform: translateX(-50%) translateY(8px);
-  z-index: 201;
+  z-index: 199;
   opacity: 0;
   pointer-events: none;
   transition:
