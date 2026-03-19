@@ -317,15 +317,24 @@ Flags:
         offset: { default: '0' },
         json: { default: 'false' },
       });
+      const limit = parseInt(flags.limit, 10) || 50;
+      const offset = parseInt(flags.offset, 10) || 0;
       return {
         method: 'getProjects',
         params: {
           all: flags.all === 'true',
           stage: flags.stage || undefined,
           type: flags.type || undefined,
-          limit: parseInt(flags.limit, 10) || 50,
-          offset: parseInt(flags.offset, 10) || 0,
-          json: flags.json === 'true',
+          limit,
+          offset,
+        },
+        format: flags.json !== 'true',
+        formatFlags: {
+          excludeArchived: flags.all !== 'true',
+          stageFilter: flags.stage,
+          typeFilter: flags.type,
+          limit,
+          offset,
         },
       };
     },
@@ -341,6 +350,41 @@ Dumps all projects as raw JSON. No filters, no pagination.`,
     },
   },
 };
+
+// ============================================================================
+// Formatting
+// ============================================================================
+
+function formatListOutput(result, flags) {
+  const { excludeArchived, stageFilter, typeFilter, limit, offset } = flags;
+  let projects = result.projects || [];
+
+  // Client-side filtering (server should filter, but ensure consistency)
+  if (excludeArchived) {
+    projects = projects.filter(p => p.stage !== 'archived' && p.stage !== 'done');
+  }
+  if (stageFilter) {
+    projects = projects.filter(p => p.stage === stageFilter);
+  }
+  if (typeFilter) {
+    projects = projects.filter(p => p.type === typeFilter);
+  }
+
+  // Format as table
+  const header = `${'ID'.padEnd(8)} | ${'Stage'.padEnd(12)} | Title`;
+  process.stdout.write(header + '\n');
+  process.stdout.write('-'.repeat(80) + '\n');
+
+  for (const p of projects.slice(0, limit)) {
+    const row = `${p.id.substring(0, 8).padEnd(8)} | ${p.stage.padEnd(12)} | ${p.title}`;
+    process.stdout.write(row + '\n');
+  }
+
+  // Pagination hint
+  if (projects.length > limit) {
+    process.stdout.write(`\n(Showing ${limit} of ${projects.length}. Use --offset ${offset + limit} for next page)\n`);
+  }
+}
 
 // ============================================================================
 // Main
@@ -396,12 +440,19 @@ async function main() {
   }
 
   // Build RPC call from subcommand
-  const { method, params } = cmd.run(subArgs);
+  const spec = cmd.run(subArgs);
+  const { method, params, format = false, formatFlags = {} } = spec;
 
   // Execute
   try {
     const result = await callRpc(socketPath, method, params);
-    process.stdout.write(JSON.stringify(result) + '\n');
+
+    // Optional client-side formatting
+    if (format && subcommand === 'list') {
+      formatListOutput(result, formatFlags);
+    } else {
+      process.stdout.write(JSON.stringify(result) + '\n');
+    }
     process.exit(0);
   } catch (err) {
     process.stderr.write(JSON.stringify({ error: err.message }) + '\n');
