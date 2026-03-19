@@ -24,6 +24,7 @@ import { embed } from './embedder.js';
 import { quantizeToQ8, computeNorm } from './quantize.js';
 import { searchMessagesFts, searchMessagesSemantic } from './message-store.js';
 import type { MessageSearchResult } from './message-store.js';
+import { log } from '../log.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -81,8 +82,12 @@ export async function dualPathSearch(
     const quantized = quantizeToQ8(queryF32);
     queryQ8 = quantized.q8;
     queryScale = quantized.scale;
-  } catch {
-    // Embedding unavailable — fall through to FTS5-only
+  } catch (err) {
+    log({
+      source: 'recall:dual-path',
+      level: 'warn',
+      summary: `Semantic path disabled — embed() failed: ${err instanceof Error ? err.message : String(err)}`,
+    });
   }
 
   // Run both paths (both are synchronous SQLite operations)
@@ -96,6 +101,12 @@ export async function dualPathSearch(
         excludeSessionId: opts?.excludeSessionId,
       })
     : [];
+
+  log({
+    source: 'recall:dual-path',
+    level: 'info',
+    summary: `FTS5: ${ftsResults.length} results, Semantic: ${semanticResults.length} results`,
+  });
 
   // RRF merge with recency decay — scale-invariant fusion of ranked lists
   const decay = opts?.recencyDecay ?? DEFAULT_RECENCY_DECAY;
