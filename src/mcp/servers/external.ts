@@ -18,6 +18,7 @@ import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-
 import { z } from "zod/v4";
 import type { AgentDispatch } from "../../host/agent-dispatch.js";
 import type { ChildSessionOptions } from "../../core/session-manager.js";
+import type { ChannelMessage } from "../../core/session-channel.js";
 import { findSession, resolveSessionPrefix } from "../../core/session-manager.js";
 import { parseModelOption } from "../../core/model-utils.js";
 import { INTERNAL_MCP_SERVER_NAME } from "./internal.js";
@@ -29,9 +30,10 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve as resolvePath, dirname } from "node:path";
 
 // esbuild --loader:.md=text inlines this as a string at build time.
-// In tsx (dev), the import is handled by the TypeScript loader natively.
-// @ts-expect-error — no type declarations for raw .md import
-import recallAgentPromptText from "../prompts/recall-agent.md";
+// In tsx (dev/scripts), require() crashes because tsx has no .md loader.
+// We defer the attempt to first use so the filesystem fallback can kick in.
+let recallAgentPromptText: string | undefined;
+let recallAgentPromptAttempted = false;
 
 // ============================================================================
 // Recall Agent Prompt
@@ -43,11 +45,24 @@ let _recallPromptTemplate: string | undefined;
 
 function getRecallPromptTemplate(): string {
   if (!_recallPromptTemplate) {
-    // esbuild inlines the .md as a string; tsx may also resolve it
+    // Try esbuild-inlined string first (built extension).
+    // In tsx/dev, the require crashes — try lazily and catch.
+    if (!recallAgentPromptAttempted) {
+      recallAgentPromptAttempted = true;
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const loaded = require("../prompts/recall-agent.md");
+        if (typeof loaded === "string" && loaded.length > 0) {
+          recallAgentPromptText = loaded;
+        }
+      } catch {
+        // Expected in tsx — fall through to filesystem read
+      }
+    }
     if (typeof recallAgentPromptText === "string" && recallAgentPromptText.length > 0) {
       _recallPromptTemplate = recallAgentPromptText;
     } else {
-      // Fallback: filesystem read (dev server, tests)
+      // Fallback: filesystem read (dev server, scripts, tests)
       const thisDir = __dirname;
       const candidates = [
         resolvePath(thisDir, "../prompts/recall-agent.md"),
@@ -118,6 +133,38 @@ function textResult(data: string): {
 // ============================================================================
 // Factory
 // ============================================================================
+
+/**
+ * Format collected tool calls into a readable log for the MCP response.
+ * Shows what searches were run, what sessions were selected, etc.
+ */
+function formatToolCallLog(
+  toolCalls: Array<{
+    name: string;
+    input: Record<string, unknown>;
+    result?: string;
+  }>,
+): string {
+  if (toolCalls.length === 0) return "";
+  const lines: string[] = [];
+  for (const tc of toolCalls) {
+    const inputStr = Object.entries(tc.input)
+      .map(([k, v]) => {
+        const s = typeof v === "string" ? v : JSON.stringify(v);
+        return `${k}: ${s.length > 200 ? s.slice(0, 200) + "…" : s}`;
+      })
+      .join(", ");
+    lines.push(`**${tc.name}**(${inputStr})`);
+    if (tc.result) {
+      // Indent result, truncate for readability
+      const preview =
+        tc.result.length > 500 ? tc.result.slice(0, 500) + "…" : tc.result;
+      lines.push(`> ${preview.replace(/\n/g, "\n> ")}`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
+}
 
 /**
  * Create the external MCP server with `recall_conversations` and `read_conversation` tools.
@@ -208,6 +255,62 @@ export function createExternalServer(
 
             const deadlineMs = Date.now() + 120_000; // last third of 180s reserved for synthesis
 
+            // Collect tool calls from the recall agent for visibility.
+            // The caller sees what searches were run and which sessions selected.
+            interface ToolCallRecord {
+              name: string;
+              input: Record<string, unknown>;
+              result?: string;
+            }
+            const toolCalls: ToolCallRecord[] = [];
+            const pendingToolUses = new Map<string, ToolCallRecord>();
+
+            const onEntry = (msg: ChannelMessage) => {
+              if (msg.type !== "entry" || !msg.entry.message?.content) return;
+              const content = msg.entry.message.content;
+              if (!Array.isArray(content)) return;
+              for (const block of content) {
+                if (
+                  block.type === "tool_use" &&
+                  typeof block.name === "string" &&
+                  block.input
+                ) {
+                  const rec: ToolCallRecord = {
+                    name: block.name,
+                    input: block.input as Record<string, unknown>,
+                  };
+                  toolCalls.push(rec);
+                  pendingToolUses.set(block.id as string, rec);
+                } else if (
+                  block.type === "tool_result" &&
+                  typeof block.tool_use_id === "string"
+                ) {
+                  const rec = pendingToolUses.get(block.tool_use_id);
+                  if (rec) {
+                    // Capture a truncated version of the result for visibility
+                    const raw =
+                      typeof block.content === "string"
+                        ? block.content
+                        : Array.isArray(block.content)
+                          ? block.content
+                              .filter(
+                                (b: { type?: string; text?: string }) =>
+                                  b.type === "text",
+                              )
+                              .map(
+                                (b: { type?: string; text?: string }) =>
+                                  b.text ?? "",
+                              )
+                              .join("")
+                          : "";
+                    rec.result =
+                      raw.length > 2000 ? raw.slice(0, 2000) + "…" : raw;
+                    pendingToolUses.delete(block.tool_use_id);
+                  }
+                }
+              }
+            };
+
             const options: ChildSessionOptions = {
               parentSessionId: activeSession.sessionId,
               vendor: recallVendor,
@@ -231,6 +334,7 @@ export function createExternalServer(
               skipPersistSession: true,
               autoClose: true,
               timeoutMs: 180_000,
+              onEntry,
             };
 
             const result = await dispatch.dispatchChild(options);
@@ -243,19 +347,33 @@ export function createExternalServer(
                 summary: `Recall: no response after ${elapsed}ms`,
                 data: { query: args.query, elapsed },
               });
+              // Still surface tool calls if any were collected before timeout
+              const toolLog = formatToolCallLog(toolCalls);
               return textResult(
-                "Recall agent timed out or failed to produce a result.",
+                toolLog
+                  ? `Recall agent timed out.\n\n## Agent activity before timeout\n\n${toolLog}`
+                  : "Recall agent timed out or failed to produce a result.",
               );
             }
 
             const text = result.text ?? "";
+            const toolLog = formatToolCallLog(toolCalls);
             log({
               source: "recall",
               level: "info",
-              summary: `Recall: OK in ${elapsed}ms — ${text.length} chars`,
-              data: { query: args.query, elapsed, chars: text.length },
+              summary: `Recall: OK in ${elapsed}ms — ${text.length} chars, ${toolCalls.length} tool calls`,
+              data: {
+                query: args.query,
+                elapsed,
+                chars: text.length,
+                toolCalls: toolCalls.length,
+              },
             });
-            return textResult(text);
+            // Prepend tool call log so the caller sees what searches/selections were made
+            const fullResponse = toolLog
+              ? `## Recall agent activity\n\n${toolLog}\n\n## Recall agent response\n\n${text}`
+              : text;
+            return textResult(fullResponse);
           } catch (err) {
             const elapsed = Date.now() - t0;
             log({
