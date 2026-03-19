@@ -96,7 +96,7 @@ ARGUMENTS
 
 FLAGS
   --limit N     Max results (search: 200, list: 50, read: 20)
-  --offset N    Pagination offset for session reads (default 0)
+  --offset N    Pagination offset (search: sessions, read: messages; default 0)
   --context N   Extra turns around target message, 0-5 (default 0)
   --since DATE  Only sessions after this date (list mode only, ISO-8601)
   --raw         Output raw JSON instead of formatted tables
@@ -366,13 +366,21 @@ async function runSearch(query: string) {
           ? new Date(x.result.created_at).toISOString().slice(0, 10)
           : 'unknown',
         snippet: (x.result.match_snippet || x.result.message_preview || '')
-          .slice(0, 120)
+          .slice(0, 400)
           .replace(/\n/g, ' '),
         hits: 1,
         score: x.score,
       });
     }
   }
+
+  // --- Paginate sessions ---
+  const PAGE_SIZE = 75;
+  const totalSessions = sessions.length;
+  const pageStart = Math.min(offset, totalSessions);
+  const pageEnd = Math.min(pageStart + PAGE_SIZE, totalSessions);
+  const page = sessions.slice(pageStart, pageEnd);
+  const hasMore = pageEnd < totalSessions;
 
   // --- Output ---
   if (raw) {
@@ -384,12 +392,15 @@ async function runSearch(query: string) {
       fts_count: r.ftsCount,
       semantic_count: r.semanticCount,
       semantic_available: r.semanticAvailable,
-      unique_sessions: sessions.length,
-      sessions,
+      unique_sessions: totalSessions,
+      showing_offset: pageStart,
+      showing_count: page.length,
+      has_more: hasMore,
+      sessions: page,
     }, null, 2));
   } else {
     console.log(`Query: "${query}"`);
-    console.log(`Results: ${trimmed.length} messages (${scored.length} before cutoff), ${sessions.length} unique sessions`);
+    console.log(`Results: ${trimmed.length} messages, ${totalSessions} unique sessions (showing ${pageStart + 1}-${pageEnd})`);
     console.log(`Paths: FTS5=${r.ftsCount}  Semantic=${r.semanticCount} (${r.semanticAvailable ? 'active' : 'UNAVAILABLE'})`);
     if (cutoffIdx < scored.length) {
       console.log(`Cutoff: position ${cutoffIdx} of ${scored.length} (score gap detected)`);
@@ -409,7 +420,7 @@ async function runSearch(query: string) {
       'Snippet'
     );
 
-    for (const s of sessions) {
+    for (const s of page) {
       console.log(
         String(s.rank).padStart(rankW) + '  ' +
         s.short_id.padEnd(idW) +
@@ -417,6 +428,10 @@ async function runSearch(query: string) {
         String(s.hits).padStart(hitsW) + '  ' +
         s.snippet
       );
+    }
+
+    if (hasMore) {
+      console.log(`\n--- Showing ${pageStart + 1}-${pageEnd} of ${totalSessions} sessions. Next page: --offset ${pageEnd} ---`);
     }
   }
 }
