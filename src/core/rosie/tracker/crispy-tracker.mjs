@@ -294,6 +294,52 @@ Lists all available project stages. No flags required.`,
       return { method: 'getStages', params: {} };
     },
   },
+
+  list: {
+    help: `Usage: crispy-tracker list [flags]
+
+Lists all projects with filtering and pagination. Excludes archived/done by default.
+
+Flags:
+  --all      (optional) Include archived and done projects
+  --stage    (optional) Filter by stage name
+  --type     (optional) Filter by type (project, task, idea)
+  --limit    (optional) Results per page (default: 50)
+  --offset   (optional) Pagination offset (default: 0)
+  --json     (optional) Output raw JSON instead of formatted`,
+
+    run(args) {
+      const flags = parseFlags(args, {
+        all: { default: 'false' },
+        stage: { default: '' },
+        type: { default: '' },
+        limit: { default: '50' },
+        offset: { default: '0' },
+        json: { default: 'false' },
+      });
+      return {
+        method: 'getProjects',
+        params: {
+          all: flags.all === 'true',
+          stage: flags.stage || undefined,
+          type: flags.type || undefined,
+          limit: parseInt(flags.limit, 10) || 50,
+          offset: parseInt(flags.offset, 10) || 0,
+          json: flags.json === 'true',
+        },
+      };
+    },
+  },
+
+  dump: {
+    help: `Usage: crispy-tracker dump
+
+Dumps all projects as raw JSON. No filters, no pagination.`,
+
+    run() {
+      return { method: 'getProjects', params: { all: true, json: true } };
+    },
+  },
 };
 
 // ============================================================================
@@ -311,6 +357,8 @@ Subcommands:
   title     Set session title
   show      Show full details for a project
   stages    List available stages
+  list      List projects with filtering and pagination
+  dump      Dump all projects as raw JSON
 
 Run \`crispy-tracker <subcommand> --help\` for subcommand flags.
 `);
