@@ -337,6 +337,11 @@ $outFile = '${psPath}'
 $r = [WinMM]::mciSendString("open new type waveaudio alias crispyrec", $sb, 256, [IntPtr]::Zero)
 if ($r -ne 0) { Write-Error "Failed to open audio device (MCI error $r)"; exit 1 }
 $r = [WinMM]::mciSendString("set crispyrec time format milliseconds", $sb, 256, [IntPtr]::Zero)
+$fmt = @("set crispyrec bitspersample 16","set crispyrec channels 1","set crispyrec samplespersec 16000")
+foreach ($cmd in $fmt) {
+  $fr = [WinMM]::mciSendString($cmd, $sb, 256, [IntPtr]::Zero)
+  if ($fr -ne 0) { [Console]::Error.WriteLine("MCI warning: '$cmd' returned $fr — using device default") }
+}
 $r = [WinMM]::mciSendString("record crispyrec", $sb, 256, [IntPtr]::Zero)
 if ($r -ne 0) {
   [WinMM]::mciSendString("close crispyrec", $sb, 256, [IntPtr]::Zero)
@@ -390,7 +395,7 @@ echo "RECORDING_SAVED"`;
 
 /**
  * Parse a WAV file buffer into Float32 PCM samples.
- * Supports 16-bit signed integer PCM (the format all our recorders produce).
+ * Supports 16-bit signed and 8-bit unsigned integer PCM.
  */
 function wavToFloat32(wav: Buffer): { pcmFloat32: Float32Array; sampleRate: number } {
   // Validate RIFF header
@@ -403,12 +408,14 @@ function wavToFloat32(wav: Buffer): { pcmFloat32: Float32Array; sampleRate: numb
   let sampleRate = 16000;
   let bitsPerSample = 16;
   let numChannels = 1;
+  let audioFormat = 1; // 1 = PCM integer
 
   while (offset < wav.length - 8) {
     const chunkId = wav.toString('ascii', offset, offset + 4);
     const chunkSize = wav.readUInt32LE(offset + 4);
 
     if (chunkId === 'fmt ') {
+      audioFormat = wav.readUInt16LE(offset + 8);
       numChannels = wav.readUInt16LE(offset + 10);
       sampleRate = wav.readUInt32LE(offset + 12);
       bitsPerSample = wav.readUInt16LE(offset + 22);
@@ -419,19 +426,29 @@ function wavToFloat32(wav: Buffer): { pcmFloat32: Float32Array; sampleRate: numb
       const dataEnd = Math.min(dataStart + chunkSize, wav.length);
       const dataSlice = wav.subarray(dataStart, dataEnd);
 
-      if (bitsPerSample !== 16) {
-        throw new Error(`Unsupported WAV bit depth: ${bitsPerSample} (expected 16)`);
+      if (audioFormat !== 1) {
+        throw new Error(`Unsupported WAV format: ${audioFormat} (expected 1/PCM)`);
       }
 
-      // Convert 16-bit signed integer PCM to Float32 (-1..1)
-      // If stereo, take only the first channel
-      const bytesPerSample = 2;
+      if (bitsPerSample !== 16 && bitsPerSample !== 8) {
+        throw new Error(`Unsupported WAV bit depth: ${bitsPerSample} (expected 8 or 16)`);
+      }
+
+      const bytesPerSample = bitsPerSample / 8;
       const frameSize = bytesPerSample * numChannels;
       const frameCount = Math.floor(dataSlice.length / frameSize);
       const pcmFloat32 = new Float32Array(frameCount);
 
-      for (let i = 0; i < frameCount; i++) {
-        pcmFloat32[i] = dataSlice.readInt16LE(i * frameSize) / 32768;
+      if (bitsPerSample === 16) {
+        // 16-bit signed integer PCM → Float32 (-1..1)
+        for (let i = 0; i < frameCount; i++) {
+          pcmFloat32[i] = dataSlice.readInt16LE(i * frameSize) / 32768;
+        }
+      } else {
+        // 8-bit unsigned integer PCM → Float32 (-1..1); 128 = silence
+        for (let i = 0; i < frameCount; i++) {
+          pcmFloat32[i] = (dataSlice[i * frameSize] - 128) / 128;
+        }
       }
 
       return { pcmFloat32, sampleRate };
