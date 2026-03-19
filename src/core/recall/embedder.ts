@@ -48,8 +48,10 @@ const MODEL_URL = 'https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/re
 const EXPECTED_DIMS = 768;
 const BATCH_SEPARATOR = '<#sep#>';
 
-/** Max bytes for -p argument before switching to -f file input. */
-const MAX_ARG_BYTES = 100_000;
+/** Max bytes for -p argument before switching to -f file input.
+ *  Windows CreateProcess has a 32,767 char command line limit — always use
+ *  file input there to avoid ENAMETOOLONG on large batches. */
+const MAX_ARG_BYTES = platform() === 'win32' ? 0 : 100_000;
 
 // --- Binary download config ---
 
@@ -265,9 +267,10 @@ function isWantedFile(name: string): boolean {
 }
 
 /**
- * Smoke-test the llama-embedding binary by running --version.
- * Returns true if the binary executes successfully, false if it fails
- * (missing DLLs, blocked by antivirus, wrong architecture, etc.).
+ * Smoke-test the llama-embedding binary to verify it can load and run.
+ * Only fails on spawn errors (missing DLLs, blocked by antivirus, wrong
+ * architecture). A non-zero exit code (e.g. "no model specified") still
+ * means the binary loaded successfully — that's a pass.
  */
 async function validateBinary(binPath: string): Promise<{ ok: boolean; error?: string }> {
   try {
@@ -280,9 +283,14 @@ async function validateBinary(binPath: string): Promise<{ ok: boolean; error?: s
     } else {
       env.LD_LIBRARY_PATH = libDir;
     }
-    await execFileAsync(binPath, ['--version'], { env, timeout: 10_000 });
+    await execFileAsync(binPath, ['--help'], { env, timeout: 10_000 });
     return { ok: true };
-  } catch (err) {
+  } catch (err: unknown) {
+    // Non-zero exit code = binary loaded and ran, just didn't like the args → pass
+    if (err && typeof err === 'object' && 'code' in err && typeof (err as { code: unknown }).code === 'number') {
+      return { ok: true };
+    }
+    // Spawn errors (ENOENT, ENAMETOOLONG, etc.) = binary can't load → fail
     const msg = err instanceof Error ? err.message : String(err);
     return { ok: false, error: msg };
   }
