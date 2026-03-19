@@ -12,7 +12,7 @@
  *   --limit N     Max results (default varies by mode)
  *   --offset N    Pagination offset for session reads
  *   --context N   Extra turns around a message (turn mode, 0-5)
- *   --since DATE  Filter sessions after date (list mode only)
+ *   --since DATE  Filter by date (list/search modes; ISO-8601)
  *   --raw         JSON output instead of formatted tables
  *   --help        Print usage
  *   --list        List sessions
@@ -92,7 +92,7 @@ USAGE
 ARGUMENTS
   query         Free-text search (FTS5 + optional semantic)
   session-id    Full or prefix UUID of a session
-  message-id    Full UUID of a message within the session
+  message-id    Full or prefix UUID of a message within the session
 
 FLAGS
   --limit N     Max results (search: 200, list: 50, read: 20)
@@ -105,7 +105,7 @@ FLAGS
 
 EXAMPLES
   recall "MCP server rename"
-  recall "refactored provider config" --limit 30
+  recall "refactored provider config" --limit 30 --since 2025-06-01
   recall --list --since 2025-06-01
   recall a1b2c3d4
   recall a1b2c3d4 --offset 20 --limit 10
@@ -126,7 +126,7 @@ function resolveSessionId(prefix: string): string {
   const clean = prefix.trim().replace(/[^0-9a-f-]/gi, '');
   if (clean.length >= 36) return clean.slice(0, 36);
   const rows = getDb(getDbPath()).all(
-    'SELECT DISTINCT session_id FROM messages WHERE session_id LIKE ? LIMIT 2',
+    'SELECT DISTINCT session_id FROM messages WHERE session_id LIKE ? ORDER BY session_id ASC LIMIT 2',
     [`${clean}%`],
   ) as { session_id: string }[];
   if (rows.length === 0) {
@@ -139,6 +139,26 @@ function resolveSessionId(prefix: string): string {
     process.exit(1);
   }
   return rows[0]!.session_id;
+}
+
+/** Resolve a message ID prefix to a full UUID within a session. */
+function resolveMessageId(sessionId: string, prefix: string): string {
+  const clean = prefix.trim().replace(/[^0-9a-f-]/gi, '');
+  if (clean.length >= 36) return clean.slice(0, 36);
+  const rows = getDb(getDbPath()).all(
+    'SELECT DISTINCT message_id FROM messages WHERE session_id = ? AND message_id LIKE ? ORDER BY message_id ASC LIMIT 2',
+    [sessionId, `${clean}%`],
+  ) as { message_id: string }[];
+  if (rows.length === 0) {
+    console.error(`No message found in session ${sessionId.slice(0, 8)} matching prefix: ${prefix}`);
+    process.exit(1);
+  }
+  if (rows.length > 1) {
+    console.error(`Ambiguous message ID prefix "${prefix}" — matches multiple messages:`);
+    for (const r of rows) console.error(`  ${r.message_id}`);
+    process.exit(1);
+  }
+  return rows[0]!.message_id;
 }
 
 // ---------------------------------------------------------------------------
@@ -275,7 +295,21 @@ async function runSearch(query: string) {
   initDb();
   const ceiling = limit > 0 ? limit : 200;
   const r = await dualPathSearch(query, { limit: ceiling });
-  const { scored } = r;
+  let { scored } = r;
+
+  // Filter by --since date if provided
+  if (since) {
+    const sinceMs = new Date(since).getTime();
+    if (!isNaN(sinceMs)) {
+      scored = scored.filter(x => {
+        const created = x.result.created_at ?? 0;
+        return created >= sinceMs;
+      });
+    } else {
+      console.error(`Invalid --since date: "${since}" (expected ISO-8601)`);
+      process.exit(1);
+    }
+  }
 
   // --- Score-gap cutoff ---
   // Scan from position 10 onward. Find the largest relative drop between
@@ -405,7 +439,9 @@ async function main() {
   // Two UUID-like positional args → turn read
   if (positional.length >= 2 && UUID_PREFIX.test(positional[0]!) && UUID_PREFIX.test(positional[1]!)) {
     initDb();
-    runReadTurn(resolveSessionId(positional[0]!), positional[1]!);
+    const sessionId = resolveSessionId(positional[0]!);
+    const messageId = resolveMessageId(sessionId, positional[1]!);
+    runReadTurn(sessionId, messageId);
     process.exit(0);
   }
 
