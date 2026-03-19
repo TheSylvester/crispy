@@ -20,8 +20,6 @@ CLAUDE.md
 # Build artifacts not needed for extension
 dist/dev-server.js
 dist/dev-server.js.map
-dist/crispy-dispatch.js
-dist/crispy-dispatch.js.map
 dist/extension.js.map
 
 # Dependencies
