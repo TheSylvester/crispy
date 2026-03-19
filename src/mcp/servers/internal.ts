@@ -933,5 +933,44 @@ export function createInternalServer(options?: InternalServerOptions): McpServer
     },
   );
 
+  // ------------------------------------------------------------------
+  // select_sessions — Batch structured output: record relevant sessions
+  // ------------------------------------------------------------------
+  server.tool(
+    'select_sessions',
+    'Record one or more sessions as relevant to the query. Pass an array of selections. This is your primary output mechanism. Returns the count of unselected sessions from search results — use this to decide if a second pass is needed.',
+    {
+      selections: z.array(z.object({
+        session_id: z.string().describe('Session ID'),
+        date: z.string().describe('Date from search results'),
+        topic: z.string().describe('One sentence — what was discussed'),
+        evidence: z.string().describe('1-2 direct quotes or snippets'),
+        hits: z.number().optional().default(0).describe('additional_matches count'),
+      })).describe('Array of relevant sessions to select'),
+    },
+    async (args) => {
+      const selections = args.selections as Array<{
+        session_id: string; date: string; topic: string; evidence: string; hits: number;
+      }>;
+      for (const s of selections) {
+        log({
+          source: 'recall:select_session',
+          level: 'info',
+          summary: `Selected ${s.session_id} — ${s.topic.slice(0, 80)}`,
+          data: {
+            sessionId: s.session_id,
+            date: s.date,
+            topic: s.topic,
+            evidence: s.evidence,
+            hits: s.hits,
+          },
+        });
+      }
+      return {
+        content: [{ type: 'text' as const, text: `Selected ${selections.length} sessions.` }],
+      };
+    },
+  );
+
   return server;
 }

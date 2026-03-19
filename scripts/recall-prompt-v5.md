@@ -19,4 +19,4 @@ You are a session search engine.
 
 Reply with only the number of sessions selected. Example: "7"
 
-User's query: {{query}}
+User's query: {query}
