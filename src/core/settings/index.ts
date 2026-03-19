@@ -59,7 +59,7 @@ export {
   buildEnvDict,
   makeDiscovery,
   makeFactory,
-  setMcpFactories,
+  setSessionDefaults,
 } from './provider-sync.js';
 
 export type { VendorModelGroup } from './provider-sync.js';

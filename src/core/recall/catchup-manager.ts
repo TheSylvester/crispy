@@ -28,7 +28,7 @@ import {
 import { ingestSessionMessages, embedMessageBatch } from './message-ingest.js';
 import { ensureModel, ensureBinary } from './embedder.js';
 import { log } from '../log.js';
-import { getSettingsSnapshot, onSettingsChanged } from '../settings/index.js';
+// Settings imports removed — recall is always enabled since plugin bundle migration.
 import type { RecallCatchupEvent } from '../channel-events.js';
 
 // ============================================================================
@@ -83,7 +83,7 @@ let cancelRequested = false;
 let running = false;
 
 /** Unsubscribe from settings changes. */
-let settingsUnsub: (() => void) | null = null;
+// settingsUnsub removed — no longer subscribing to settings changes.
 
 // ============================================================================
 // Pub/Sub (follows log.ts pattern)
@@ -121,18 +121,9 @@ export function unsubscribeCatchup(subId: string): void {
 // Settings Helpers
 // ============================================================================
 
-/** Check if recall is enabled for the current host environment. */
+/** Recall is always enabled — the MCP toggle was removed in the plugin bundle migration. */
 function isRecallEnabled(): boolean {
-  try {
-    const snapshot = getSettingsSnapshot();
-    const mcpMem = snapshot.settings.mcp?.memory;
-    if (!mcpMem) return true; // default ON
-    return mcpMem[hostType] !== false;
-  } catch {
-    // Settings not initialized yet — defer; the settings-change listener
-    // will trigger catch-up once settings load.
-    return false;
-  }
+  return true;
 }
 
 // ============================================================================
@@ -328,24 +319,9 @@ export async function startRecallCatchup(
     data: { host: host ?? 'devServer' },
   });
   if (host) hostType = host;
-  // Subscribe to settings changes to detect recall toggle
-  if (!settingsUnsub) {
-    settingsUnsub = onSettingsChanged(({ changedSections }) => {
-      if (!changedSections.includes('mcp')) return;
-
-      if (isRecallEnabled()) {
-        // Recall toggled ON — trigger catch-up if not already running
-        if (!running) {
-          runCatchup().catch(err => {
-            log({ level: 'warn', source: 'recall-catchup', summary: `catch-up failed: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
-          });
-        }
-      } else {
-        // Recall toggled OFF — stop any in-progress backfill
-        stopEmbeddingBackfill();
-      }
-    });
-  }
+  // Note: MCP toggle subscriber removed — recall is always enabled since the
+  // plugin bundle migration. The settings subscriber was dead code because
+  // computeChangedSections() never included 'mcp'.
 
   // Don't start if recall is disabled
   if (!isRecallEnabled()) {

@@ -18,7 +18,6 @@ export {
 } from './db-writer.js';
 export type { StageRow } from './db-writer.js';
 
-export type { InternalServerPaths } from './types.js';
 export type {
   TrackerBlock,
   ProjectCreate,

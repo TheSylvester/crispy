@@ -25,19 +25,7 @@ vi.mock('../src/core/session-channel.js', () => ({
 
 // Mock settings module
 vi.mock('../src/core/settings/index.js', () => ({
-  getSettingsSnapshotInternal: () => ({
-    settings: { mcp: { memory: { vscode: true, devServer: true } } },
-    revision: 1,
-    updatedAt: new Date().toISOString(),
-  }),
-  onSettingsChanged: () => () => {},
-  setMcpFactories: () => {},
-}));
-
-// Mock external MCP server
-const mockExternalServer = { type: 'sdk' as const, name: 'memory', instance: {} };
-vi.mock('../src/mcp/servers/external.js', () => ({
-  createExternalServer: () => mockExternalServer,
+  setSessionDefaults: () => {},
 }));
 
 // Mock ClaudeAgentAdapter (imported for instanceof checks)
@@ -96,16 +84,7 @@ function applyInfraMocks() {
     getActiveChannels: () => [],
   }));
   vi.doMock('../src/core/settings/index.js', () => ({
-    getSettingsSnapshotInternal: () => ({
-      settings: { mcp: { memory: { vscode: true, devServer: true } } },
-      revision: 1,
-      updatedAt: new Date().toISOString(),
-    }),
-    onSettingsChanged: () => () => {},
-    setMcpFactories: () => {},
-  }));
-  vi.doMock('../src/mcp/servers/external.js', () => ({
-    createExternalServer: () => mockExternalServer,
+    setSessionDefaults: () => {},
   }));
   vi.doMock('../src/core/adapters/claude/claude-code-adapter.js', () => ({
     ClaudeAgentAdapter: class {},
@@ -378,11 +357,11 @@ describe('registerAllAdapters', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     freshMod.registerAllAdapters(config);
 
-    // Should still register adapters, just without MCP
+    // Should still register adapters
     expect(mockRegisterAdapter).toHaveBeenCalledTimes(1);
-    // Config passed to factory should NOT have mcpServers
+    // Config passed to factory should have plugins (always injected)
     const factoryCall = claude.createFactory as ReturnType<typeof vi.fn>;
     const passedConfig = factoryCall.mock.calls[0][0];
-    expect(passedConfig.mcpServers).toBeUndefined();
+    expect(passedConfig.plugins).toBeDefined();
   });
 });

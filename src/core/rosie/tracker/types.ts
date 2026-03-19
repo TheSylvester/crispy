@@ -67,10 +67,4 @@ export interface TrackerBlock {
 
 // ============================================================================
 // Shared Types
-// ============================================================================
-
-/** Paths for spawning the internal MCP server subprocess. */
-export interface InternalServerPaths {
-  command: string;
-  args: string[];
-}
+// InternalServerPaths removed — internal MCP server replaced by plugin bundle.

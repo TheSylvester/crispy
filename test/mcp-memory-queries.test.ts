@@ -22,7 +22,7 @@ vi.mock('../src/core/log.js', () => ({
 }));
 
 import { getDb, _resetDb } from '../src/core/crispy-db.js';
-import { listSessions } from '../src/mcp/memory-queries.js';
+import { listSessions } from '../src/core/recall/memory-queries.js';
 
 // ============================================================================
 // Test Setup — isolated temp DB

@@ -7,11 +7,10 @@
  * @module settings/provider-sync
  */
 
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import { ClaudeAgentAdapter, getResumeModel, type SettingSource } from '../adapters/claude/claude-code-adapter.js';
 import { registerAdapter, unregisterAdapter, getRegisteredVendors } from '../session-manager.js';
 import { NATIVE_VENDORS, type Vendor } from '../transcript.js';
-import type { VendorDiscovery, SessionOpenSpec } from '../agent-adapter.js';
+import type { VendorDiscovery, SessionOpenSpec, LocalPlugin } from '../agent-adapter.js';
 import type { ProviderConfig } from './types.js';
 import { log } from '../log.js';
 import { codexDiscovery } from '../adapters/codex/codex-discovery.js';
@@ -39,11 +38,11 @@ const registeredDynamic = new Set<string>();
 /** Current providers snapshot — updated by syncProviderAdapters for getModelGroups(). */
 let currentProviders: Record<string, ProviderConfig> = {};
 
-/** MCP server factory — set by adapter-registry for dynamic providers. */
-let mcpServerFactory: ((callerSessionId: string, callerVendor: string) => Record<string, McpServerConfig>) | undefined;
-
 /** System prompt factory — set by adapter-registry for dynamic providers. */
 let systemPromptFactory: (() => string | undefined) | undefined;
+
+/** Plugins — set by adapter-registry for dynamic providers. */
+let sessionPlugins: LocalPlugin[] | undefined;
 
 // ============================================================================
 // Internal Helpers
@@ -56,20 +55,20 @@ export function maskApiKey(key: string): string {
 }
 
 /**
- * Set MCP and system prompt factories for dynamic provider adapters.
+ * Set session defaults for dynamic provider adapters.
  *
  * Called by adapter-registry after creating the factories for native adapters.
- * Dynamic providers share the same MCP servers and system prompt as Claude.
+ * Dynamic providers share the same system prompt and plugins as Claude.
  *
- * @param mcpFactory - Factory that creates fresh MCP server instances per-query
  * @param promptFactory - Factory that returns the system prompt (or undefined when disabled)
+ * @param plugins - Plugins to inject into adapter sessions
  */
-export function setMcpFactories(
-  mcpFactory?: (callerSessionId: string, callerVendor: string) => Record<string, McpServerConfig>,
+export function setSessionDefaults(
   promptFactory?: () => string | undefined,
+  plugins?: LocalPlugin[],
 ): void {
-  mcpServerFactory = mcpFactory;
   systemPromptFactory = promptFactory;
+  sessionPlugins = plugins;
 }
 
 /** Build env dict from a ProviderConfig for ClaudeAgentAdapter. */
@@ -105,18 +104,11 @@ export function buildEnvDict(config: ProviderConfig): Record<string, string> {
 /**
  * Build ephemeral adapter config for Rosie child sessions.
  *
- * skipPersistSession + mcpServers → MCP tools available (tracker, recall)
- * skipPersistSession without mcpServers → single-turn, no tools (summarize)
+ * skipPersistSession controls single-turn behavior for summarize sessions.
+ * permissionMode indicates a CLI dispatch (full agent) — don't restrict.
  */
-function buildEphemeralConfig(spec: SessionOpenSpec & { skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; permissionMode?: string }): Record<string, unknown> {
+function buildEphemeralConfig(spec: SessionOpenSpec & { skipPersistSession?: boolean; permissionMode?: string }): Record<string, unknown> {
   if (!('skipPersistSession' in spec) || !spec.skipPersistSession) return {};
-  if (spec.mcpServers) {
-    return {
-      settingSources: [] as SettingSource[],
-      mcpServers: spec.mcpServers as Record<string, McpServerConfig>,
-      allowedTools: ['mcp__crispy-memory__*'],
-    };
-  }
   // If permissionMode is set, this is a CLI dispatch (full agent), not a
   // Rosie summarize session. Don't restrict tools or turns.
   if (spec.permissionMode) return {};
@@ -124,7 +116,6 @@ function buildEphemeralConfig(spec: SessionOpenSpec & { skipPersistSession?: boo
     maxTurns: 1,
     settingSources: [] as SettingSource[],
     tools: [] as string[],
-    mcpServers: undefined,
   };
 }
 
@@ -146,14 +137,14 @@ export function makeFactory(
 ) {
   const providerEnv = buildEnvDict(config);
   return (spec: SessionOpenSpec) => {
-    // Build base options with MCP factories (same pattern as claude-registration.ts)
+    // Build base options with MCP factories + plugins (same pattern as claude-registration.ts)
     const getBase = () => {
       const prompt = systemPromptFactory?.();
       return {
         ...(base.pathToClaudeCodeExecutable && {
           pathToClaudeCodeExecutable: base.pathToClaudeCodeExecutable,
         }),
-        ...(mcpServerFactory && { mcpServerFactory: mcpServerFactory }),
+        ...(sessionPlugins && { plugins: sessionPlugins }),
         ...(prompt && {
           systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: prompt },
         }),

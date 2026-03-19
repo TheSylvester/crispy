@@ -19,12 +19,12 @@
  * Terms appearing in >15% of indexed messages are dropped before building the
  * final OR query.
  *
- * @module mcp/query-sanitizer
+ * @module core/recall/query-sanitizer
  */
 
-import { getDb } from '../core/crispy-db.js';
-import { dbPath } from '../core/activity-index.js';
-import { log } from '../core/log.js';
+import { getDb } from '../crispy-db.js';
+import { dbPath } from '../activity-index.js';
+import { log } from '../log.js';
 
 /** FTS5 boolean operators that should be preserved when recognized. */
 const FTS5_OPERATORS = /\b(AND|OR|NOT|NEAR)\b/;

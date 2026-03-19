@@ -40,7 +40,6 @@ import { EmbeddingPrompt } from '../EmbeddingPrompt.js';
 import { usePreferences } from '../../context/PreferencesContext.js';
 import { useTransport } from '../../context/TransportContext.js';
 import { useSession } from '../../context/SessionContext.js';
-import { useEnvironment } from '../../context/EnvironmentContext.js';
 import { slugToPath } from '../../hooks/useSessionCwd.js';
 import { useContextUsage } from '../../hooks/useContextUsage.js';
 import { useSessionStatus } from '../../hooks/useSessionStatus.js';
@@ -251,10 +250,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               defaultPermissionModeRef.current = agencyMode;
             }
           }
-          const mcpMem = settingsEvent.snapshot.settings.mcp?.memory;
-          if (mcpMem) {
-            setMcpMemoryEnabled(mcpMem[mcpSettingsKey] ?? true);
-          }
           transport.getModelGroups().then(setModelGroups).catch(console.error);
         }
       });
@@ -332,25 +327,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const handleUpdateRosie = useCallback(async (patch: { enabled?: boolean; model?: string }) => {
       await transport.updateSettings({ rosie: { bot: patch } });
     }, [transport]);
-
-    // --- MCP Memory settings state ---
-    const envKind = useEnvironment();
-    const mcpSettingsKey = envKind === 'vscode' ? 'vscode' : 'devServer';
-    const [mcpMemoryEnabled, setMcpMemoryEnabled] = useState(true); // default ON
-
-    useEffect(() => {
-      transport.getSettings().then((snapshot) => {
-        const mcpMem = snapshot.settings.mcp?.memory;
-        if (mcpMem) {
-          setMcpMemoryEnabled(mcpMem[mcpSettingsKey] ?? true);
-        }
-      }).catch(console.error);
-    }, [transport, mcpSettingsKey]);
-
-    const handleUpdateMcpMemory = useCallback(async (enabled: boolean) => {
-      setMcpMemoryEnabled(enabled);
-      await transport.updateSettings({ mcp: { memory: { [mcpSettingsKey]: enabled } } });
-    }, [transport, mcpSettingsKey]);
 
     // --- Recall catch-up state ---
     const [catchupStatus, setCatchupStatus] = useState<CatchupStatus | null>(null);
@@ -1104,8 +1080,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               rosieEnabled={rosieEnabled}
               rosieModel={rosieModel}
               onUpdateRosie={handleUpdateRosie}
-              mcpMemoryEnabled={mcpMemoryEnabled}
-              onUpdateMcpMemory={handleUpdateMcpMemory}
               catchupStatus={catchupStatus}
               onStartEmbedding={handleStartEmbedding}
               onStopEmbedding={handleStopEmbedding}

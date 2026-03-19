@@ -38,8 +38,6 @@ interface SettingsPopupProps {
   rosieEnabled: boolean;
   rosieModel?: string;
   onUpdateRosie: (patch: { enabled?: boolean; model?: string }) => void;
-  mcpMemoryEnabled: boolean;
-  onUpdateMcpMemory: (enabled: boolean) => void;
   catchupStatus?: CatchupStatus | null;
   onStartEmbedding?: () => void;
   onStopEmbedding?: () => void;
@@ -136,7 +134,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, rosieEnabled, rosieModel, onUpdateRosie, mcpMemoryEnabled, onUpdateMcpMemory, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, rosieEnabled, rosieModel, onUpdateRosie, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -317,15 +315,7 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               onChange={(e) => onUpdateRosie({ enabled: e.target.checked })}
             />
           </label>
-          <label className="crispy-cp-settings__row">
-            <span>Recall</span>
-            <input
-              type="checkbox"
-              checked={mcpMemoryEnabled}
-              onChange={(e) => onUpdateMcpMemory(e.target.checked)}
-            />
-          </label>
-          {mcpMemoryEnabled && catchupStatus && (
+          {catchupStatus && (
             <div className="crispy-cp-settings__recall-status">
               {catchupStatus.phase === 'done' && catchupStatus.gapCount === 0 && (
                 <span className="crispy-cp-settings__recall-ok">

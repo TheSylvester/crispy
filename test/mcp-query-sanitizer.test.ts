@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { sanitizeFts5Query } from '../src/mcp/query-sanitizer.js';
+import { sanitizeFts5Query } from '../src/core/recall/query-sanitizer.js';
 
 describe('sanitizeFts5Query', () => {
   it('passes through a simple word query', () => {

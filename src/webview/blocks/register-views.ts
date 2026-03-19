@@ -29,8 +29,6 @@ import { WebFetchCompactView, WebFetchExpandedView } from './views/webfetch-view
 import { EnterPlanModeCompactView } from './views/enterplanmode-views.js';
 import { TaskOutputCompactView, TaskOutputExpandedView } from './views/taskoutput-views.js';
 import { ChromeCompactView, ChromeExpandedView } from './views/chrome-views.js';
-import { RecallCompactView, RecallExpandedView } from './views/recall-views.js';
-import { ReadConversationCompactView, ReadConversationExpandedView } from './views/read-conversation-views.js';
 import { ToolSearchCompactView, ToolSearchExpandedView } from './views/toolsearch-views.js';
 
 // ============================================================================
@@ -215,27 +213,8 @@ for (const toolName of CHROME_TOOL_NAMES) {
   });
 }
 
-// ============================================================================
-// Register Recall MCP Views (canonical + backward-compat alias)
-// ============================================================================
-
-for (const name of ['mcp__memory__recall_conversations', 'mcp__crispy__recall']) {
-  registerToolViews(name, {
-    compact: RecallCompactView,
-    expanded: RecallExpandedView,
-    inline: DefaultInlineView,
-  });
-}
-
-// ============================================================================
-// Register Read Conversation MCP Views
-// ============================================================================
-
-registerToolViews('mcp__memory__read_conversation', {
-  compact: ReadConversationCompactView,
-  expanded: ReadConversationExpandedView,
-  inline: DefaultInlineView,
-});
+// Recall MCP views removed — MCP servers replaced by plugin bundle.
+// Old transcripts with mcp__memory__* tool calls render with generic tool views.
 
 // ============================================================================
 // Register ToolSearch Views

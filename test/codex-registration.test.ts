@@ -202,16 +202,12 @@ describe('codexRegistration', () => {
       );
     });
 
-    it('applies host-level prompt and MCP defaults to fresh sessions', async () => {
+    it('applies host-level prompt to fresh sessions', async () => {
       mockFindCodexBinary.mockReturnValue('/usr/local/bin/codex');
       const { codexRegistration } = await freshImport();
-      const mcpServerFactory = vi.fn().mockReturnValue({
-        memory: { type: 'stdio', command: 'memory-mcp' },
-      });
-      const systemPromptFactory = vi.fn().mockReturnValue('Host recall prompt');
+      const systemPromptFactory = vi.fn().mockReturnValue('Host skills prompt');
       const config: HostAdapterConfig = {
         cwd: '/workspace',
-        mcpServerFactory,
         systemPromptFactory,
       };
 
@@ -220,15 +216,11 @@ describe('codexRegistration', () => {
       factory({ mode: 'fresh', cwd: '/project' });
 
       expect(systemPromptFactory).toHaveBeenCalled();
-      expect(mcpServerFactory).toHaveBeenCalledWith('', 'codex');
       expect(MockCodexAgentAdapter).toHaveBeenCalledWith(
         expect.objectContaining({
           mode: 'fresh',
           cwd: '/project',
-          systemPrompt: 'Host recall prompt',
-          mcpServers: {
-            memory: { type: 'stdio', command: 'memory-mcp' },
-          },
+          systemPrompt: 'Host skills prompt',
         }),
       );
     });
@@ -238,10 +230,6 @@ describe('codexRegistration', () => {
       const { codexRegistration } = await freshImport();
       const config: HostAdapterConfig = {
         cwd: '/workspace',
-        mcpServerFactory: vi.fn().mockReturnValue({
-          memory: { type: 'stdio', command: 'host-memory' },
-          notes: { type: 'stdio', command: 'host-notes' },
-        }),
         systemPromptFactory: vi.fn().mockReturnValue('Host prompt'),
       };
 
@@ -252,7 +240,6 @@ describe('codexRegistration', () => {
         fromSessionId: 'parent-session',
         systemPrompt: 'Spec prompt',
         mcpServers: {
-          memory: { type: 'stdio', command: 'spec-memory' },
           search: { type: 'stdio', command: 'spec-search' },
         },
       });
@@ -262,39 +249,29 @@ describe('codexRegistration', () => {
           mode: 'fork',
           systemPrompt: 'Spec prompt',
           mcpServers: {
-            memory: { type: 'stdio', command: 'spec-memory' },
-            notes: { type: 'stdio', command: 'host-notes' },
             search: { type: 'stdio', command: 'spec-search' },
           },
         }),
       );
     });
 
-    it('applies host defaults to resume sessions before runtime resume injection', async () => {
+    it('applies host defaults to resume sessions', async () => {
       mockFindCodexBinary.mockReturnValue('/usr/local/bin/codex');
       const { codexRegistration } = await freshImport();
-      const mcpServerFactory = vi.fn().mockReturnValue({
-        memory: { type: 'stdio', command: 'memory-mcp' },
-      });
       const config: HostAdapterConfig = {
         cwd: '/workspace',
-        mcpServerFactory,
-        systemPromptFactory: vi.fn().mockReturnValue('Host recall prompt'),
+        systemPromptFactory: vi.fn().mockReturnValue('Host skills prompt'),
       };
 
       codexRegistration.available(config);
       const factory = codexRegistration.createFactory(config);
       factory({ mode: 'resume', sessionId: 'sess-123' });
 
-      expect(mcpServerFactory).toHaveBeenCalledWith('sess-123', 'codex');
       const callArg = MockCodexAgentAdapter.mock.calls[0][0];
       expect(callArg).toMatchObject({
         mode: 'resume',
         sessionId: 'sess-123',
-        systemPrompt: 'Host recall prompt',
-        mcpServers: {
-          memory: { type: 'stdio', command: 'memory-mcp' },
-        },
+        systemPrompt: 'Host skills prompt',
       });
       // Resume without explicit cwd should NOT inject host cwd
       expect(callArg.cwd).toBeUndefined();

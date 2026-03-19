@@ -94,6 +94,7 @@ export interface RosieSettings {
 // MCP
 // ============================================================================
 
+/** @deprecated MCP servers replaced by plugin bundle. Kept for settings file compat. */
 export interface McpMemorySettings {
   /** Enable memory MCP server on VS Code extension host. */
   vscode: boolean;
@@ -101,6 +102,7 @@ export interface McpMemorySettings {
   devServer: boolean;
 }
 
+/** @deprecated MCP servers replaced by plugin bundle. Kept for settings file compat. */
 export interface McpSettings {
   memory: McpMemorySettings;
 }

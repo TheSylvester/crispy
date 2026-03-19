@@ -75,8 +75,8 @@
     "build:extension": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --external:onnxruntime-node --external:@huggingface/transformers --format=cjs --platform=node --sourcemap --loader:.md=text && cp node_modules/node-sqlite3-wasm/dist/node-sqlite3-wasm.wasm dist/ && cp src/core/rosie/tracker/crispy-tracker.mjs dist/",
     "build:webview": "esbuild src/webview/main.tsx --bundle --outfile=dist/webview/main.js --format=esm --platform=browser --sourcemap --jsx=automatic --loader:.svg=text && cp src/webview/index.html dist/webview/ && cp src/webview/theme-defaults.css dist/webview/ && cp src/webview/styles.css dist/webview/",
     "build:dev-server": "esbuild src/host/dev-server.ts --bundle --outfile=dist/dev-server.js --external:@anthropic-ai/* --external:ws --external:onnxruntime-node --external:@huggingface/transformers --format=esm --platform=node --sourcemap --loader:.md=text",
-    "build:internal-mcp": "esbuild src/mcp/servers/internal-main.ts --bundle --outfile=dist/internal-mcp.js --external:onnxruntime-node --external:@huggingface/transformers --format=cjs --platform=node --sourcemap",
-    "build": "npm run build:extension && npm run build:webview && npm run build:dev-server && npm run build:internal-mcp",
+    "build:crispy-plugin": "rm -rf dist/crispy-plugin && cp -r src/plugin dist/crispy-plugin",
+    "build": "npm run build:extension && npm run build:webview && npm run build:dev-server && npm run build:recall && npm run build:cli && npm run build:crispy-plugin",
     "watch": "npm run build:extension -- --watch",
     "typecheck": "tsc --noEmit",
     "package": "npm run build && vsce package",
@@ -92,6 +92,7 @@
     "smoke:quick": "npx tsx scripts/smoke.ts --skip-embed",
     "dev": "npm run build:webview && node --import tsx src/host/dev-server.ts",
     "build:cli": "esbuild src/cli/crispy-dispatch.ts --bundle --outfile=dist/crispy-dispatch.js --format=esm --platform=node --sourcemap --banner:js='#!/usr/bin/env node'",
+    "build:recall": "esbuild scripts/recall.ts --bundle --outfile=dist/recall.js --external:onnxruntime-node --external:@huggingface/transformers --format=cjs --platform=node --sourcemap --banner:js='#!/usr/bin/env node'",
     "dispatch": "node --import tsx src/cli/crispy-dispatch.ts"
   },
   "categories": [

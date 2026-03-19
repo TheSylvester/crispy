@@ -23,7 +23,7 @@
  * @module session-manager
  */
 
-import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, ChannelMessage, TurnIntent, TurnTarget, TurnSettings, SubagentEntriesResult, EphemeralTargetOptions } from './agent-adapter.js';
+import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, ChannelMessage, TurnIntent, TurnTarget, TurnSettings, SubagentEntriesResult, EphemeralTargetOptions, LocalPlugin } from './agent-adapter.js';
 import type { TranscriptEntry, MessageContent, Vendor, Usage } from './transcript.js';
 import type { SessionChannel, Subscriber, SubscriberMessage } from './session-channel.js';
 import { parseModelOption } from './model-utils.js';
@@ -106,6 +106,8 @@ export interface ChildSessionOptions {
   hydratedHistory?: TranscriptEntry[];
   /** MCP servers to attach to the child session (overrides default). */
   mcpServers?: Record<string, unknown>;
+  /** Plugins to attach to the child session (Claude SDK plugins option). */
+  plugins?: LocalPlugin[];
   /** Environment overrides for the child session. */
   env?: Record<string, string>;
   /** Explicit working directory — overrides parent session's projectPath. */
@@ -1151,6 +1153,7 @@ export async function dispatchChildSession(
   const ephemeral: EphemeralTargetOptions = {
     skipPersistSession,
     ...(options.mcpServers && { mcpServers: options.mcpServers }),
+    ...(options.plugins && { plugins: options.plugins }),
     ...(options.env && { env: options.env }),
     ...(options.systemPrompt && { systemPrompt: options.systemPrompt }),
     ...(options.sessionKind && { sessionKind: options.sessionKind }),

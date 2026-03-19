@@ -19,7 +19,7 @@
 
 import { getDb } from '../crispy-db.js';
 import { dbPath, ensureCrispyDir } from '../activity-index.js';
-import { sanitizeFts5Query } from '../../mcp/query-sanitizer.js';
+import { sanitizeFts5Query } from './query-sanitizer.js';
 import { dotProductQ8 } from './quantize.js';
 
 // ============================================================================

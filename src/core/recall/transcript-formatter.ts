@@ -5,10 +5,10 @@
  * a human-readable, token-efficient format suitable for context windows.
  * Skips metadata entries, summarizes tool blocks, and paginates on character budget.
  *
- * @module mcp/transcript-formatter
+ * @module core/recall/transcript-formatter
  */
 
-import type { ClaudeTranscriptEntry } from '../core/adapters/claude/jsonl-reader.js';
+import type { ClaudeTranscriptEntry } from '../adapters/claude/jsonl-reader.js';
 
 // ============================================================================
 // Types

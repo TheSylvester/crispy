@@ -8,17 +8,17 @@
  *
  * All functions take an explicit dbPath — no process-level singletons.
  *
- * @module mcp/memory-queries
+ * @module core/recall/memory-queries
  */
 
-import { getDb } from '../core/crispy-db.js';
-import { dbPath as crispyDbPath } from '../core/activity-index.js';
-import { readClaudeTurnContent, type TurnContent } from '../core/adapters/claude/jsonl-reader.js';
-import { readCodexTurnContent } from '../core/adapters/codex/codex-jsonl-reader.js';
-import { searchMessagesFtsMeta, getMessageByUuid, getAdjacentMessages, getSessionMessageCount, grepMessages, readSessionMessages, inferRole } from '../core/recall/message-store.js';
-import type { MessageRecord, MessageSearchResult, MessageSearchMeta, GrepMatch, SessionPage } from '../core/recall/message-store.js';
-import { dualPathSearch } from '../core/recall/vector-search.js';
-import type { DualPathSearchResult } from '../core/recall/vector-search.js';
+import { getDb } from '../crispy-db.js';
+import { dbPath as crispyDbPath } from '../activity-index.js';
+import { readClaudeTurnContent, type TurnContent } from '../adapters/claude/jsonl-reader.js';
+import { readCodexTurnContent } from '../adapters/codex/codex-jsonl-reader.js';
+import { searchMessagesFtsMeta, getMessageByUuid, getAdjacentMessages, getSessionMessageCount, grepMessages, readSessionMessages, inferRole } from './message-store.js';
+import type { MessageRecord, MessageSearchResult, MessageSearchMeta, GrepMatch, SessionPage } from './message-store.js';
+import { dualPathSearch } from './vector-search.js';
+import type { DualPathSearchResult } from './vector-search.js';
 
 export type { TurnContent, MessageRecord, MessageSearchResult, MessageSearchMeta, GrepMatch, SessionPage, DualPathSearchResult };
 export { grepMessages, readSessionMessages };
