@@ -245,6 +245,13 @@ const TOOL_DATA: Record<string, ToolDefinitionData> = {
   },
   'mcp__memory__recall_conversations': RECALL_TOOL_DATA,
   'mcp__crispy__recall': RECALL_TOOL_DATA, // backward compat for old transcripts
+  'mcp__memory__read_conversation': {
+    icon: '\uD83D\uDCDC',  // 📜 scroll
+    color: '#bd93f9',
+    activity: { verb: 'Reading session', pastVerb: 'Read session' },
+    inspectorDefault: 'compact',
+    renderCategory: 'block',
+  },
 
   // Deferred tool loading
   ToolSearch: {

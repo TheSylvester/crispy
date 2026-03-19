@@ -30,6 +30,7 @@ import { EnterPlanModeCompactView } from './views/enterplanmode-views.js';
 import { TaskOutputCompactView, TaskOutputExpandedView } from './views/taskoutput-views.js';
 import { ChromeCompactView, ChromeExpandedView } from './views/chrome-views.js';
 import { RecallCompactView, RecallExpandedView } from './views/recall-views.js';
+import { ReadConversationCompactView, ReadConversationExpandedView } from './views/read-conversation-views.js';
 import { ToolSearchCompactView, ToolSearchExpandedView } from './views/toolsearch-views.js';
 
 // ============================================================================
@@ -225,6 +226,16 @@ for (const name of ['mcp__memory__recall_conversations', 'mcp__crispy__recall'])
     inline: DefaultInlineView,
   });
 }
+
+// ============================================================================
+// Register Read Conversation MCP Views
+// ============================================================================
+
+registerToolViews('mcp__memory__read_conversation', {
+  compact: ReadConversationCompactView,
+  expanded: ReadConversationExpandedView,
+  inline: DefaultInlineView,
+});
 
 // ============================================================================
 // Register ToolSearch Views
