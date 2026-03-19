@@ -1,8 +1,0 @@
-{
-  "name": "crispy-agent",
-  "version": "1.0.0",
-  "description": "Unified wrapper around crispy-dispatch for multi-vendor IPC dispatch through the running Crispy host. Supports claude, codex, and other vendors.",
-  "author": {
-    "name": "TheSylvester"
-  }
-}
