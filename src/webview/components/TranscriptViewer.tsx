@@ -129,7 +129,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const annotationEnabled = renderMode === 'blocks' || renderMode === 'icons';
   const annotation = useTranscriptAnnotation({
     scrollRef: transcriptRef,
-    onInsert: (text) => cpCtxRef.current.setPrefillInput({ text }),
+    onInsert: (text) => cpCtxRef.current.setPrefillInput({ text, append: true }),
     enabled: annotationEnabled,
   });
   const annotationClear = annotation.clear;

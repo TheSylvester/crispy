@@ -25,8 +25,8 @@ interface ControlPanelContextValue {
   setBypassEnabled: (enabled: boolean) => void;
 
   /** Pre-fill content for the ChatInput (e.g. ExitPlanMode handoff). */
-  prefillInput: { text: string; autoSend?: boolean } | null;
-  setPrefillInput: (input: { text: string; autoSend?: boolean } | null) => void;
+  prefillInput: { text: string; autoSend?: boolean; append?: boolean } | null;
+  setPrefillInput: (input: { text: string; autoSend?: boolean; append?: boolean } | null) => void;
   /** Clear prefillInput after consumption. */
   consumePrefillInput: () => void;
 
@@ -77,7 +77,7 @@ export function ControlPanelProvider({
   selectedSessionId,
 }: ControlPanelProviderProps): React.JSX.Element {
   const [bypassEnabled, setBypassEnabled] = useState(false);
-  const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean } | null>(null);
+  const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean; append?: boolean } | null>(null);
   const [pendingAgencyMode, setPendingAgencyMode] = useState<{ agencyMode: AgencyMode; bypassEnabled: boolean } | null>(null);
   const [hasForkHistory, setHasForkHistory] = useState(false);
   const [previewEntries, setPreviewEntries] = useState<TranscriptEntry[] | null>(null);

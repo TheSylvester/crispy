@@ -425,16 +425,22 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       ctxSetAgencyMode(state.agencyMode);
     }, [state.agencyMode, ctxSetAgencyMode]);
 
-    // --- Consume prefillInput when provided (ExitPlanMode handoff) ---
+    // --- Consume prefillInput when provided (ExitPlanMode handoff, annotation) ---
     useEffect(() => {
       if (prefillInput) {
-        dispatch({ type: 'SET_INPUT', value: prefillInput.text });
+        if (prefillInput.append) {
+          const ts = getTextareaState();
+          const needsNewline = ts && ts.start > 0 && ts.value[ts.start - 1] !== '\n';
+          insertAtCursor((needsNewline ? '\n' : '') + prefillInput.text);
+        } else {
+          dispatch({ type: 'SET_INPUT', value: prefillInput.text });
+        }
         if (prefillInput.autoSend) {
           setTimeout(() => handleSendRef.current(), 50);
         }
         consumePrefillInput();
       }
-    }, [prefillInput, consumePrefillInput]);
+    }, [prefillInput, consumePrefillInput, getTextareaState, insertAtCursor]);
 
     // --- Consume pendingAgencyMode when provided (ExitPlanMode handoff) ---
     useEffect(() => {
