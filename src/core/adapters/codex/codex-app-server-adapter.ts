@@ -42,6 +42,7 @@ import {
 } from './codex-approval-mapping.js';
 import {
   mapPermissionMode,
+  mapSandboxMode,
   mapThreadConfig,
   mapTokenUsage,
   mapMessageContent,
@@ -448,6 +449,7 @@ export class CodexAgentAdapter implements AgentAdapter {
     }
     if (options.permissionMode) {
       params.approvalPolicy = mapPermissionMode(options.permissionMode);
+      params.sandbox = mapSandboxMode(options.permissionMode);
     }
     if (options.mcpServers && Object.keys(options.mcpServers).length > 0) {
       // Only forward serializable MCP configs (stdio/SSE with command/args).

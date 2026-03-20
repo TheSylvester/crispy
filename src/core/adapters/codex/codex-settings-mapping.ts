@@ -19,6 +19,8 @@
 import type { AdapterSettings, TurnSettings } from '../../agent-adapter.js';
 import type { ContextUsage, MessageContent, MessageContentBlock } from '../../transcript.js';
 import type { AskForApproval } from './protocol/v2/AskForApproval.js';
+import type { SandboxMode } from './protocol/v2/SandboxMode.js';
+import type { SandboxPolicy } from './protocol/v2/SandboxPolicy.js';
 import type { UserInput } from './protocol/v2/UserInput.js';
 
 // ============================================================================
@@ -88,6 +90,35 @@ export function mapApprovalPolicy(
 }
 
 // ============================================================================
+// Permission Mode → Sandbox Mapping
+// ============================================================================
+
+/**
+ * Map Crispy permissionMode → Codex SandboxMode (thread-level).
+ *
+ * | Crispy permissionMode | → Codex sandbox |
+ * |---|---|
+ * | 'bypassPermissions'  | 'danger-full-access' |
+ * | *                     | 'workspace-write' |
+ */
+export function mapSandboxMode(mode: string): SandboxMode {
+  return mode === 'bypassPermissions' ? 'danger-full-access' : 'workspace-write';
+}
+
+/**
+ * Map Crispy permissionMode → Codex SandboxPolicy (turn-level).
+ *
+ * Only overrides for bypassPermissions; returns undefined otherwise
+ * to let the thread-level sandbox stand.
+ */
+export function mapSandboxPolicy(mode: string): SandboxPolicy | undefined {
+  if (mode === 'bypassPermissions') {
+    return { type: 'dangerFullAccess' };
+  }
+  return undefined;
+}
+
+// ============================================================================
 // Turn Settings → Codex Params
 // ============================================================================
 
@@ -106,6 +137,10 @@ export function mapTurnSettings(settings: TurnSettings): Record<string, unknown>
 
   if (settings.permissionMode !== undefined) {
     params.approvalPolicy = mapPermissionMode(settings.permissionMode);
+    const sandboxPolicy = mapSandboxPolicy(settings.permissionMode);
+    if (sandboxPolicy) {
+      params.sandboxPolicy = sandboxPolicy;
+    }
   }
 
   if (settings.outputFormat?.type === 'json_schema') {
