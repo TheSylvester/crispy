@@ -638,6 +638,7 @@ export function _setTestConfigDir(dir: string): () => void {
   providerBase = null;
 
   return () => {
+    stopWatchingSettings();
     restoreRoot();
     providerBase = originalProviderBase;
     currentSettings = {
