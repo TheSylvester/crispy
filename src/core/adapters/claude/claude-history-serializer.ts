@@ -49,7 +49,7 @@ const DEFAULT_GIT_BRANCH = 'main';
  * `/home/user/projects/my-app` → `-home-user-projects-my-app`
  */
 export function cwdToProjectSlug(cwd: string): string {
-  return cwd.replace(/[\\/]/g, '-');
+  return cwd.replace(/[:\/\\]/g, '-');
 }
 
 /**

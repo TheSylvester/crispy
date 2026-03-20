@@ -275,8 +275,8 @@ export class CodexDiscovery implements VendorDiscovery {
   }
 
   private deriveProjectSlug(cwd: string): string {
-    // Match Claude's slug format: replace / or \ with - (keep leading dash)
-    return cwd.replace(/[\\/]/g, '-');
+    // Match Claude's slug format: replace :, / or \ with - (keep leading dash)
+    return cwd.replace(/[:\/\\]/g, '-');
   }
 }
 

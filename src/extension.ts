@@ -14,6 +14,7 @@ import { registerAllAdapters } from './host/adapter-registry.js';
 import { createAgentDispatch } from './host/agent-dispatch.js';
 import { initRosieBot, shutdownRosieBot } from './core/rosie/index.js';
 import { resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { initRecallIngest, shutdownRecallIngest } from './core/recall/ingest-hook.js';
 import { startRecallCatchup, stopEmbeddingBackfill } from './core/recall/catchup-manager.js';
 import { disposeEmbedder } from './core/recall/embedder.js';
@@ -27,7 +28,7 @@ export function activate(context: vscode.ExtensionContext): void {
     return () => console.log(`[crispy] \u2713 ${name} (${(performance.now() - t0).toFixed(0)}ms)`);
   }
 
-  const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+  const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? homedir();
 
   // The extension build bundles the SDK into dist/extension.js, which breaks
   // the SDK's import.meta.url-based resolution of its bundled cli.js.

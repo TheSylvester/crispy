@@ -34,8 +34,12 @@ export interface CwdInfo {
  * retained only as a fallback for sessions that pre-date projectPath extraction.
  */
 export function slugToPath(slug: string): string {
-  // Strip the leading '-' that represents the root '/'
   const stripped = slug.startsWith('-') ? slug.slice(1) : slug;
+  // Windows drive-letter slug: "C--Users-..." → "C:\Users\..."
+  const winMatch = /^([A-Za-z])--(.*)$/.exec(stripped);
+  if (winMatch) {
+    return winMatch[1] + ':\\' + winMatch[2].replace(/-/g, '\\');
+  }
   return '/' + stripped.replace(/-/g, '/');
 }
 
@@ -47,7 +51,8 @@ export function slugToPath(slug: string): string {
  * the slug format used by selectedCwd / projectSlug.
  */
 export function pathToSlug(absPath: string): string {
-  return absPath.replace(/[\\/]/g, '-');
+  // Replace colons too (Windows drive letter C: → C-)
+  return absPath.replace(/[:\/\\]/g, '-');
 }
 
 export function formatCwd(fullPath: string): string {

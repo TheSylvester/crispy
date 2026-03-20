@@ -493,7 +493,7 @@ describe('CodexDiscovery', () => {
       await discovery.refresh();
 
       const sessions = discovery.listSessions();
-      expect(sessions[0].projectSlug).toBe('C:-Users-developer-projects-my-app');
+      expect(sessions[0].projectSlug).toBe('C--Users-developer-projects-my-app');
     });
   });
 });

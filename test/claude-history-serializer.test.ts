@@ -78,13 +78,13 @@ describe('cwdToProjectSlug', () => {
 
   it('replaces Windows backslashes with dashes', () => {
     expect(cwdToProjectSlug('C:\\Users\\user\\projects\\my-app')).toBe(
-      'C:-Users-user-projects-my-app',
+      'C--Users-user-projects-my-app',
     );
   });
 
   it('handles mixed separators (Windows + Unix)', () => {
     expect(cwdToProjectSlug('C:\\Users\\user/projects/my-app')).toBe(
-      'C:-Users-user-projects-my-app',
+      'C--Users-user-projects-my-app',
     );
   });
 });

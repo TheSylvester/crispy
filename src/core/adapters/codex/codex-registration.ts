@@ -42,7 +42,13 @@ function buildEffectiveSpec(
  */
 function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => AgentAdapter {
   return (spec) => {
-    const effectiveCwd = ('cwd' in spec ? spec.cwd : undefined) ?? config.cwd;
+    const sessionId = spec.mode === 'resume' ? spec.sessionId
+      : spec.mode === 'fork' ? spec.fromSessionId
+      : undefined;
+    const discoveredCwd = sessionId
+      ? codexDiscovery.findSession(sessionId)?.projectPath
+      : undefined;
+    const effectiveCwd = ('cwd' in spec ? spec.cwd : undefined) ?? discoveredCwd ?? config.cwd;
     const effectiveSpec = buildEffectiveSpec(spec, config, effectiveCwd);
 
     return new CodexAgentAdapter({

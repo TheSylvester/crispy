@@ -88,8 +88,9 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
     switch (spec.mode) {
       case 'resume': {
         const model = getResumeModel(spec.sessionId);
+        const sessionCwd = claudeDiscovery.findSession(spec.sessionId)?.projectPath ?? config.cwd;
         return new ClaudeAgentAdapter({
-          ...getBase(), cwd: config.cwd, resume: spec.sessionId,
+          ...getBase(), cwd: sessionCwd, resume: spec.sessionId,
           ...(model && { model }),
           ...getTurnDefaultsConfig(),
         });
@@ -107,9 +108,10 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           }),
           ...buildEphemeralConfig(spec),
         });
-      case 'fork':
+      case 'fork': {
+        const forkCwd = claudeDiscovery.findSession(spec.fromSessionId)?.projectPath ?? config.cwd;
         return new ClaudeAgentAdapter({
-          ...getBase(), cwd: config.cwd, resume: spec.fromSessionId, forkSession: true,
+          ...getBase(), cwd: forkCwd, resume: spec.fromSessionId, forkSession: true,
           ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
           ...(spec.skipPersistSession && { skipPersistSession: true }),
           ...(spec.outputFormat && { outputFormat: spec.outputFormat }),
@@ -126,6 +128,7 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           // override permissionMode, so turn defaults come after.
           ...(!spec.skipPersistSession && getTurnDefaultsConfig()),
         });
+      }
       case 'hydrated':
         return new ClaudeAgentAdapter({
           ...getBase(), cwd: spec.cwd,
