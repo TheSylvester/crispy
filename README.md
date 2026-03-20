@@ -9,7 +9,7 @@ Works with Claude Code and Codex. VS Code / Cursor extension.
 [![License](https://img.shields.io/github/license/TheSylvester/crispy)](LICENSE)
 [![Discord](https://img.shields.io/discord/1483243664389177479?color=5865F2&logo=discord&logoColor=white&label=Discord)](https://discord.gg/e2vw4bTPup)
 
-![Crispy — sub-agent running with real-time tool auditing, then forking to side-by-side panels](./media/hero.gif)
+![Crispy — reading project docs, explaining the codebase, and making an edit in one conversation](./media/hero.gif)
 
 **Agent memory** — searchable transcripts across all vendors, fully local.
 **Multi-agent collaboration** — resumable cross-vendor sessions, directed by your agent of choice.
