@@ -68,8 +68,7 @@ const FALLBACK_STAGES: StageRow[] = [
   { name: 'paused', description: 'On hold — record reason in blocked_by', sortOrder: 1, icon: null, color: '#d4a030' },
   { name: 'planning', description: 'Being designed or specced out — not yet started', sortOrder: 2, icon: null, color: '#6878a0' },
   { name: 'ready', description: 'Ready to start — all prerequisites met', sortOrder: 3, icon: null, color: '#50a0d0' },
-  { name: 'committed', description: 'Scheduled for implementation', sortOrder: 4, icon: null, color: '#a070c0' },
-  { name: 'done', description: 'Work is complete — awaiting user review before archiving', sortOrder: 5, icon: null, color: '#22aa66' },
+  { name: 'done', description: 'Work is complete — awaiting user review before archiving', sortOrder: 4, icon: null, color: '#22aa66' },
   { name: 'idea', description: 'A thought or suggestion discussed but not yet committed to', sortOrder: 6, icon: null, color: '#888898' },
   { name: 'archived', description: 'User-managed only. Do NOT move projects here', sortOrder: 7, icon: null, color: '#555568' },
 ];

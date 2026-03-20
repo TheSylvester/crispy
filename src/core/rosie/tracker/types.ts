@@ -12,7 +12,7 @@
 // ============================================================================
 
 /** @deprecated Use getValidStageNames() from db-writer.ts — stages now live in the DB. */
-export const VALID_STAGES = ['active', 'planning', 'ready', 'committed', 'paused', 'archived', 'idea', 'done'] as const;
+export const VALID_STAGES = ['active', 'planning', 'ready', 'paused', 'archived', 'idea', 'done'] as const;
 /** Widened to string — stages are now user-configurable via the DB. */
 export type ProjectStage = string;
 

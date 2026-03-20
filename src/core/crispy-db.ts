@@ -303,9 +303,8 @@ function ensureSchema(db: Database): void {
         ('ready',     'Specced and ready to start',             30, '#60a5fa', '🎯'),
         ('active',    'Currently being worked on',              40, '#34d399', '🔨'),
         ('paused',    'Temporarily on hold',                    50, '#fbbf24', '⏸️'),
-        ('committed', 'Code complete, awaiting merge/deploy',   60, '#f472b6', '✅'),
-        ('done',      'Shipped and verified',                   70, '#6ee7b7', '🎉'),
-        ('archived',  'No longer relevant',                     80, '#6b7280', '📦');
+        ('done',      'Shipped and verified',                   60, '#6ee7b7', '🎉'),
+        ('archived',  'No longer relevant',                     70, '#6b7280', '📦');
     `);
 
     // ====================================================================
