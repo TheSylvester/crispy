@@ -16,7 +16,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { usePanelDisplayIds } from './PanelStateContext.js';
+import { usePanelDisplayIds, usePanelState } from './PanelStateContext.js';
 
 // ============================================================================
 // Types
@@ -33,6 +33,7 @@ interface ConnectorPath {
 
 function useConnectorPaths(): ConnectorPath[] {
   const panelDisplayIds = usePanelDisplayIds();
+  const panelState = usePanelState();
   const [paths, setPaths] = useState<ConnectorPath[]>([]);
   const rafRef = useRef<number>(0);
   const settleRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -255,6 +256,12 @@ function useConnectorPaths(): ConnectorPath[] {
   useEffect(() => {
     computePaths();
   }, [panelDisplayIds, computePaths]);
+
+  // Re-compute when expand/collapse state changes — use scheduleUpdate
+  // (with settle pass) since the DOM needs to re-render with new card heights
+  useEffect(() => {
+    scheduleUpdate();
+  }, [panelState, scheduleUpdate]);
 
   return paths;
 }
