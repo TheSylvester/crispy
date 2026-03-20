@@ -298,7 +298,7 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
           </label>
 
           {/* --- Rosie Section --- */}
-          <div className="crispy-cp-settings__section-header">Rosie</div>
+          <div className="crispy-cp-settings__section-header">Rosie (Experimental)</div>
           <label className="crispy-cp-settings__row">
             <span>Model</span>
             <ModelSelect

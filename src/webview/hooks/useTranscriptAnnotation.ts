@@ -78,9 +78,10 @@ function hasAncestor(node: Node, selector: string): boolean {
 function formatAnnotation(text: string, _isCodeBlock: boolean, comment: string): string {
   let annotation = `\`\`\`\`\n${text}\n\`\`\`\`\n`;
   if (comment) {
-    annotation += `* ${comment}\n`;
+    const lines = comment.split('\n');
+    annotation += lines.map(line => `* ${line}`).join('\n') + '\n';
   }
-  return annotation;
+  return annotation + '\n';
 }
 
 export function useTranscriptAnnotation(opts: UseTranscriptAnnotationOpts): TranscriptAnnotationState {
