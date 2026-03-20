@@ -383,7 +383,8 @@ async function main(): Promise<void> {
 
   try {
     if (args.visible) {
-      await runVisibleMode(router, args, prompt!, settings, outputFile);
+      console.error('[crispy-dispatch] --visible mode is temporarily disabled');
+      process.exit(EXIT_USAGE);
     } else if (args.resume && !args.fork) {
       await runResumeMode(router, args, prompt!, settings, outputFile);
     } else {

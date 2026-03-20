@@ -70,7 +70,6 @@ $CRISPY_AGENT --vendor codex --resume <UUID> "Continue"
 | `-r, --resume <UUID>` | Resume session by ID |
 | `--timeout <ms>` | Override timeout (default: no timeout) |
 | `--auto-close` | Close session on completion (default: kept alive) |
-| `--visible` | Show session in Crispy editor UI |
 | `-f, --fork` | Fork from session (requires `--resume`) |
 | `--resume-at <msg-id>` | Fork at specific message (requires `--fork`) |
 | `--persist` | Save session to disk (default: ephemeral) |
