@@ -84,7 +84,7 @@ function initRosieTracker(d: AgentDispatch): void {
     const rosieModel = snap.settings.rosie.bot.model;
     trackerInflight.add(sessionId);
     try {
-      await runTracker(d, sessionId, info.path, info.vendor, rosieModel);
+      await runTracker(d, sessionId, info.path, info.vendor, rosieModel, info.projectPath);
     } catch (err) {
       log({ source: 'rosie-bot:tracker', level: 'error',
         summary: `Tracker error: ${err instanceof Error ? err.message : String(err)}` });
@@ -107,6 +107,7 @@ async function runTracker(
   sessionPath: string,
   parentVendor: string,
   modelOverride?: string,
+  projectPath?: string,
 ): Promise<void> {
   const parsed = modelOverride ? parseModelOption(modelOverride) : undefined;
   const vendor = parsed?.vendor ?? parentVendor;
@@ -137,7 +138,7 @@ async function runTracker(
   const turnContent = formatTurnContent(latestTurn);
 
   // Build compact project state
-  const projectState = getCompactProjectsForPrompt();
+  const projectState = getCompactProjectsForPrompt(projectPath);
 
   // Read current session title
   const sessionTitle = getSessionTitleFromDb(sessionId);
@@ -199,6 +200,7 @@ async function runTracker(
           CRISPY_TRACKER: trackerScriptPath,
           CRISPY_SOCK: ipcSocketPath,
           CRISPY_PARENT_SESSION_ID: sessionId,
+          CRISPY_PROJECT_PATH: projectPath ?? '',
         },
         timeoutMs: 0,
       });
@@ -236,7 +238,7 @@ async function runTracker(
       costUsd: trackerResult.contextUsage?.totalCostUsd,
     });
 
-    runDedupSweep(d.dispatchChild).catch((err) => {
+    runDedupSweep(d.dispatchChild, projectPath).catch((err) => {
       log({ source: 'rosie-bot:tracker', level: 'warn',
         summary: `Dedup sweep failed: ${err instanceof Error ? err.message : String(err)}` });
     });

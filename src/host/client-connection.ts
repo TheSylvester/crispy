@@ -198,6 +198,29 @@ export interface ClientConnection {
 }
 
 /**
+ * Resolve session file path and project path from RPC params.
+ *
+ * Prefers explicit params, falls back to looking up the parent/caller session.
+ * Uses findSession() as the single source of truth — avoids redundant
+ * listAllSessions() scans.
+ */
+function resolveSessionContext(params: Record<string, unknown>): { sessionFile: string; projectPath: string | undefined } {
+  let sessionFile = (params.sessionFile as string) || '';
+  let projectPath = params.project_path as string | undefined;
+  if (!sessionFile || !projectPath) {
+    const lookupId = (params.parentSessionId as string) || (params.sessionId as string);
+    if (lookupId) {
+      const info = findSession(lookupId);
+      if (info) {
+        if (!sessionFile) sessionFile = info.path;
+        if (!projectPath) projectPath = info.projectPath;
+      }
+    }
+  }
+  return { sessionFile, projectPath };
+}
+
+/**
  * Create a handler bound to a single client connection.
  *
  * @param clientId  Unique ID for this client (used as subscriber ID)
@@ -826,7 +849,7 @@ export function createClientConnection(
       }
 
       case "getProjects": {
-        const rawProjects = getProjectsWithDetails();
+        const rawProjects = getProjectsWithDetails(params.project_path as string | undefined);
         // Enrich session file paths with display data from the session list cache
         const allSessions = listAllSessions();
         const sessionMap = new Map(allSessions.map(s => [s.path, s]));
@@ -888,16 +911,7 @@ export function createClientConnection(
 
       case "createProject": {
         const projectId = randomUUID();
-        // Resolve session file: prefer explicit param, fall back to looking up
-        // parentSessionId (the session being tracked) or sessionId (caller)
-        let sessionFile = (params.sessionFile as string) || '';
-        if (!sessionFile) {
-          const lookupId = (params.parentSessionId as string) || (params.sessionId as string);
-          if (lookupId) {
-            const match = listAllSessions().find(s => s.sessionId === lookupId);
-            if (match) sessionFile = match.path;
-          }
-        }
+        const { sessionFile, projectPath: createProjectPath } = resolveSessionContext(params);
         const block: TrackerBlock = {
           project: {
             action: 'create',
@@ -915,7 +929,7 @@ export function createClientConnection(
           sessionRef: { detected_in: '' },
           files: [],
         };
-        writeTrackerResults([block], sessionFile);
+        writeTrackerResults([block], sessionFile, createProjectPath);
         pushTrackerNotification({
           kind: 'project_created',
           projectTitle: params.title as string,
@@ -928,16 +942,7 @@ export function createClientConnection(
 
       case "trackProject": {
         const projectId = params.projectId as string;
-        // Resolve session file: prefer explicit param, fall back to looking up
-        // parentSessionId (the session being tracked) or sessionId (caller)
-        let trackSessionFile = (params.sessionFile as string) || '';
-        if (!trackSessionFile) {
-          const lookupId = (params.parentSessionId as string) || (params.sessionId as string);
-          if (lookupId) {
-            const match = listAllSessions().find(s => s.sessionId === lookupId);
-            if (match) trackSessionFile = match.path;
-          }
-        }
+        const { sessionFile: trackSessionFile, projectPath: trackProjectPath } = resolveSessionContext(params);
         const block: TrackerBlock = {
           project: {
             action: 'track',
@@ -950,7 +955,7 @@ export function createClientConnection(
           sessionRef: { detected_in: '' },
           files: [],
         };
-        writeTrackerResults([block], trackSessionFile);
+        writeTrackerResults([block], trackSessionFile, trackProjectPath);
         const trackInfo = getProjectTitle(projectId);
         pushTrackerNotification({
           kind: params.stage ? 'stage_change' : 'project_matched',

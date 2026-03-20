@@ -142,6 +142,11 @@ async function callRpc(socketPath, method, params) {
     params.parentSessionId = process.env.CRISPY_PARENT_SESSION_ID;
   }
 
+  // Auto-inject project path for project scoping
+  if (process.env.CRISPY_PROJECT_PATH && !('project_path' in params)) {
+    params.project_path = process.env.CRISPY_PROJECT_PATH;
+  }
+
   return sendRpc(socketPath, method, params);
 }
 

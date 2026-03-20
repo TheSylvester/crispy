@@ -40,6 +40,16 @@ function getTrackerDb() {
   return getDb(dbPath());
 }
 
+/**
+ * SQL fragment + params for optional project_path scoping. Includes legacy NULL rows.
+ * Returns both AND (for appending to existing WHERE) and WHERE (for standalone) forms.
+ */
+function projectPathFilter(projectPath: string | undefined): { and: string; where: string; params: string[] } {
+  if (!projectPath) return { and: '', where: '', params: [] };
+  const cond = `(project_path = ? OR project_path IS NULL)`;
+  return { and: ` AND ${cond}`, where: ` WHERE ${cond}`, params: [projectPath] };
+}
+
 // ============================================================================
 // Stage Queries
 // ============================================================================
@@ -114,7 +124,7 @@ export function getValidStageNames(): string[] {
  * - Non-empty id → UPDATE existing project
  * - UPSERT project_sessions and project_files
  */
-export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string): void {
+export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string, projectPath?: string): void {
   if (blocks.length === 0) return;
 
   const db = getTrackerDb();
@@ -124,8 +134,8 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
   db.exec('BEGIN');
   try {
     const insertProject = db.prepare(
-      `INSERT INTO projects (id, title, stage, status, icon, blocked_by, summary, branch, entities, type, parent_id, created_at, updated_at, last_activity_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+      `INSERT INTO projects (id, title, stage, status, icon, blocked_by, summary, branch, entities, type, parent_id, created_at, updated_at, last_activity_at, project_path)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
     );
     const readProject = db.prepare(
       `SELECT stage, status FROM projects WHERE id = ?`,
@@ -135,7 +145,8 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
          title = COALESCE(?, title), stage = ?, status = ?, icon = COALESCE(?, icon),
          blocked_by = ?, summary = COALESCE(?, summary),
          branch = COALESCE(?, branch), entities = NULL, updated_at = ?, last_activity_at = ?,
-         closed_at = CASE WHEN ? IN ('archived', 'done') THEN ? ELSE closed_at END
+         closed_at = CASE WHEN ? IN ('archived', 'done') THEN ? ELSE closed_at END,
+         project_path = COALESCE(project_path, ?)
        WHERE id = ?`,
     );
     const upsertSession = db.prepare(
@@ -163,7 +174,7 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
             projectId, p.title, p.stage, p.status || null, p.icon || null,
             p.blocked_by || null, p.summary || null,
             p.branch || null, p.type || 'project', p.parent_id || null,
-            now, now, now,
+            now, now, now, projectPath || null,
           ]);
           // Record 'created' activity
           insertActivity.run([projectId, sessionFile, tsNow, 'created', null, p.stage, null, p.status || null, null, 'rosie']);
@@ -187,6 +198,7 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string)
             p.blocked_by ?? null, null, // summary — keep existing
             p.branch ?? null, now, now,
             newStage, now, // for the CASE WHEN closed_at
+            projectPath || null, // repair-on-touch: fill project_path if NULL
             projectId,
           ]);
 
@@ -466,11 +478,13 @@ export function getProjectsForPrompt(): string {
  * Return compact `id | stage | title` lines for non-archived projects.
  * Gen 3 format — progressive disclosure via `crispy-tracker show --id`.
  */
-export function getCompactProjectsForPrompt(): string {
+export function getCompactProjectsForPrompt(projectPath?: string): string {
   try {
     const db = getTrackerDb();
+    const pf = projectPathFilter(projectPath);
     const rows = db.all(
-      `SELECT id, stage, title FROM projects WHERE stage != 'archived' ORDER BY updated_at DESC`,
+      `SELECT id, stage, title FROM projects WHERE stage != 'archived'${pf.and} ORDER BY updated_at DESC`,
+      pf.params,
     ) as Array<{ id: string; stage: string; title: string }>;
 
     if (rows.length === 0) return '';
@@ -490,7 +504,7 @@ export function getCompactProjectsForPrompt(): string {
  * Session enrichment (title, preview, modifiedAt) happens in the RPC handler
  * where the session list cache is available.
  */
-export function getProjectsWithDetails(): Array<{
+export function getProjectsWithDetails(projectPath?: string): Array<{
   id: string;
   title: string;
   stage: string;
@@ -509,9 +523,11 @@ export function getProjectsWithDetails(): Array<{
   try {
     const db = getTrackerDb();
 
+    const pf = projectPathFilter(projectPath);
     const projects = db.all(
       `SELECT id, title, stage, status, icon, sort_order, blocked_by, summary, branch, created_at, closed_at, last_activity_at
-       FROM projects ORDER BY last_activity_at DESC`,
+       FROM projects${pf.where} ORDER BY last_activity_at DESC`,
+      pf.params,
     );
 
     const sessionStmt = db.prepare(
@@ -771,17 +787,20 @@ const AUTO_MERGE_LEVENSHTEIN = 0.2;
  */
 export async function runDedupSweep(
   dispatchChild: AgentDispatch['dispatchChild'],
+  projectPath?: string,
 ): Promise<void> {
   // Concurrency guard
   if (dedupInFlight) return;
   dedupInFlight = true;
 
   try {
-    // Load all non-archived projects with full data for comparison
+    // Load non-archived projects scoped to project_path for comparison
     const db = getTrackerDb();
+    const pf = projectPathFilter(projectPath);
     const rows = db.all(
       `SELECT id, title, stage, type, summary, created_at, updated_at
-       FROM projects WHERE stage != 'archived' ORDER BY updated_at DESC`,
+       FROM projects WHERE stage != 'archived'${pf.and} ORDER BY updated_at DESC`,
+      pf.params,
     );
     const projects: ProjectRow[] = rows.map((r) => {
       const row = r as Record<string, unknown>;

@@ -96,8 +96,27 @@ function ensureSchema(db: Database): void {
     ? (row as Record<string, unknown>).max_ver as number
     : 0;
 
-  // v2 = current schema. Return early — nothing to do.
-  if (currentVersion === 2) return;
+  // v2→v3: add project_path column to projects
+  // Each step is idempotent so partial failures can be retried on next startup.
+  if (currentVersion === 2) {
+    // ALTER TABLE — may already exist from a partial prior migration
+    try {
+      db.exec(`ALTER TABLE projects ADD COLUMN project_path TEXT`);
+    } catch {
+      // "duplicate column" — column already added on a prior attempt
+    }
+    // Index + version record — safe to retry (IF NOT EXISTS / INSERT OR IGNORE)
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_projects_path ON projects(project_path)`);
+    db.run(
+      'INSERT OR IGNORE INTO _migrations (version, description) VALUES (?, ?)',
+      [3, 'add project_path to projects'],
+    );
+    log({ source: 'db', level: 'info', summary: 'DB: applied schema v3 — project_path added' });
+    return;
+  }
+
+  // v3 = current schema. Return early — nothing to do.
+  if (currentVersion >= 3) return;
 
   // Old DBs (v1 or the legacy 24-migration system) — wipe and recreate.
   if (currentVersion >= 1) {
@@ -204,10 +223,12 @@ function ensureSchema(db: Database): void {
         last_activity_at TEXT,
         closed_at        TEXT,
         parent_id        TEXT,
-        type             TEXT NOT NULL DEFAULT 'project'
+        type             TEXT NOT NULL DEFAULT 'project',
+        project_path     TEXT
       );
 
       CREATE INDEX IF NOT EXISTS idx_projects_parent ON projects(parent_id);
+      CREATE INDEX IF NOT EXISTS idx_projects_path ON projects(project_path);
     `);
 
     // ====================================================================
@@ -531,11 +552,11 @@ function ensureSchema(db: Database): void {
     // Record schema version
     db.run(
       'INSERT INTO _migrations (version, description) VALUES (?, ?)',
-      [2, 'remove session_meta, consolidate on messages'],
+      [3, 'add project_path to projects'],
     );
 
     db.exec('COMMIT');
-    log({ source: 'db', level: 'info', summary: 'DB: schema v2 created — session_meta removed, consolidated on messages' });
+    log({ source: 'db', level: 'info', summary: 'DB: schema v3 created — includes project_path on projects' });
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;

@@ -60,6 +60,7 @@ export function listSessions(
   limit: number = 50,
   since?: string,
   excludeSessionId?: string,
+  projectId?: string,
 ): ListResult[] {
   const db = getDb(dbPath);
   const params: (string | number)[] = [];
@@ -74,6 +75,10 @@ export function listSessions(
   if (excludeSessionId) {
     conditions.push('m.session_id != ?');
     params.push(excludeSessionId);
+  }
+  if (projectId) {
+    conditions.push('m.project_id = ?');
+    params.push(projectId);
   }
 
   const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
