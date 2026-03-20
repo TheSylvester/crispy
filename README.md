@@ -4,11 +4,71 @@
 
 Rendered Markdown. Fork and rewind conversations. Multiple agent windows side by side. Audit tool calls and sub-agent work in a dedicated panel. One-click bypass, Chrome, models, and permissions. Execute Markdown files directly as prompts.
 
-VS Code / Cursor extension today. Standalone browser app after v0.1.x.
+VS Code / Cursor extension.
 
+[![Version](https://img.shields.io/open-vsx/v/the-sylvester/crispy?label=OpenVSX&color=blue)](https://open-vsx.org/extension/the-sylvester/crispy)
+[![Downloads](https://img.shields.io/open-vsx/dt/the-sylvester/crispy?color=green)](https://open-vsx.org/extension/the-sylvester/crispy)
+[![License](https://img.shields.io/github/license/TheSylvester/crispy)](LICENSE)
 [![Discord](https://img.shields.io/discord/1483243664389177479?color=5865F2&logo=discord&logoColor=white&label=Discord)](https://discord.gg/e2vw4bTPup)
 
 ![Crispy — sub-agent running with real-time tool auditing, then forking to side-by-side panels](./media/hero.gif)
+
+---
+
+## What's New in v0.2.0
+
+### Agent memory
+
+Every session is indexed locally with full-text and semantic search. Your
+agent can find past decisions, debugging threads, and design discussions
+across Claude Code, Codex, and OpenCode — and read the full conversation
+back. Not summaries. Not rules files. The actual transcripts already saved
+on your machine. No cloud, no API calls, no expiry.
+
+<!-- TODO: ![Recall finding a past session](./media/recall.gif) -->
+
+### Icons render mode (new default)
+
+The new default look. Minor tool calls are collapsed to inline icons that
+flow with the conversation — click any icon to open the full detail in the
+side panel. Keeps the focus on the conversation, not the tool calls.
+
+<!-- TODO: ![Icons mode with inline tool flow](./media/icons-mode.gif) -->
+
+### Voice input
+
+Click-to-record voice input with local VAD and speech-to-text. Your speech
+is transcribed locally and inserted into the chat input. Requires a
+microphone.
+
+<!-- TODO: ![Voice input transcription](./media/voice.gif) -->
+
+### Inline quoting
+
+Select text in any assistant response to quote it into your next message
+with your own commentary. No more copy-pasting to reference something the
+agent said.
+
+### Copy-to-markdown
+
+One-click copy buttons on assistant messages and tool output cards. Copies
+clean, formatted Markdown to your clipboard.
+
+### Multi-agent collaboration
+
+Resumable Claude and Codex agents working together in back-and-forth
+discussions directed by your coding agent of choice. Your agent dispatches
+child sessions across vendors, gets parallel perspectives, and picks up
+where it left off. No external MCP servers or configuration required.
+
+### Project tracker (Experimental)
+
+An AI-powered project tracker that watches your sessions and automatically
+classifies what you're working on, what stage it's in, and what changed. View
+tracked projects in a dedicated sidebar with stage-based grouping. Off by
+default — enable in Settings.
+
+<!-- TODO: ![Projects view with stage grouping](./media/projects.gif) -->
 
 ---
 
@@ -44,13 +104,13 @@ immediately.
 Browse every session across vendors in one place. Filter by Claude or Codex,
 search by title, and jump between conversations grouped by day.
 
-### Three rendering modes
+### Four rendering modes
 
-![Switch between Blocks, YAML, and Compact views on the same conversation](./media/rendering-modes.gif)
+![Switch between Blocks, YAML, Compact, and Icons views on the same conversation](./media/rendering-modes.gif)
 
-**Blocks** for daily use with rich tool cards, **Compact** for skimming dense
-transcripts, **YAML** for raw observability. Switch instantly on the same
-conversation.
+**Blocks** for daily use with rich tool cards, **Icons** for skimming with
+inline tool icons, **Compact** for dense transcripts, **YAML** for raw
+observability. Switch instantly on the same conversation.
 
 ### Four agency modes
 
@@ -58,7 +118,7 @@ conversation.
 
 One click to cycle between **plan**, **ask before edits**, **auto-accept**, and
 **bypass**. Each mode has a distinct border color and icon so you always know
-the agent's leash.
+the agent's leash. Your default mode persists across sessions.
 
 ### Models and custom providers
 
@@ -74,26 +134,30 @@ with their own base URLs, API keys, and model mappings.
 - Fork and rewind conversations
 - Side-by-side agent windows — as many as your editor can tile
 - Dedicated tool panel for auditing tool calls and sub-agent work
+- Cross-session recall with full-text and semantic search
+- Inline quoting — select text to quote into your next message
+- Copy-to-markdown for messages and tool output
 - One-click bypass mode and Chrome toggle
 - Execute Markdown files as prompts from the Explorer
 - Claude and Codex adapters today — Gemini CLI and OpenCode next
 - Custom model providers — route Claude through any Claude-compatible endpoint
   (GLM-4.7, DeepSeek, local models)
-- Plan-to-execution handoff — clear context and start fresh
-- Three rendering modes — Blocks for daily use, Compact for skimming,
-  YAML for observability
-- Agency modes — plan, auto-accept, ask-before-edits, bypass
+- Four rendering modes — Blocks, Icons, Compact, YAML
+- Agency modes — plan, auto-accept, ask-before-edits, bypass (persisted)
 - Session browser with search and vendor filtering
-- Image attachments, @mentions, linkified URLs
+- Voice input with local VAD and speech-to-text
+- Image attachments, @mentions, linkified file paths and URLs
+- Structured log stream for debugging
 - Light, dark, and high-contrast themes
+- **Experimental:** Project tracker — AI-powered project classification (off by default)
 - **Experimental (insecure):** Browser mode at `localhost:3456`
 
 ---
 
 ## Coming Soon
 
-- Cross-vendor memory system
-- Agent delegation across vendors
+- Gemini CLI and OpenCode adapters
+- Standalone browser app
 
 ---
 
@@ -154,6 +218,7 @@ npm run package:win32-arm64
 - VS Code 1.94+ (or any compatible fork)
 - Claude Code CLI installed and authenticated
 - Codex CLI (optional, for Codex sessions)
+- Microphone (optional, for voice input)
 
 ---
 

@@ -112,7 +112,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [renderMode, setRenderModeLocal] = useState<RenderMode>(getInitialRenderMode);
   const [badgeStyle, setBadgeStyleLocal] = useState<BadgeStyle>('frosted');
   const [toolPanelAutoOpen, setToolPanelAutoOpenLocal] = useState(false);
-  const [bashBlockInIcons, setBashBlockInIconsLocal] = useState(false);
+  const [bashBlockInIcons, setBashBlockInIconsLocal] = useState(true);
 
   /** Latest known revision from settings RPC or incoming events. */
   const revisionRef = useRef(0);

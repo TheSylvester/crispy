@@ -206,7 +206,7 @@ export type SettingsPatch = Partial<{
 export const DEFAULT_SETTINGS: CrispySettings = {
   preferences: {
     toolPanelAutoOpen: false,
-    bashBlockInIcons: false,
+    bashBlockInIcons: true,
     renderMode: 'icons',
     badgeStyle: 'frosted',
   },

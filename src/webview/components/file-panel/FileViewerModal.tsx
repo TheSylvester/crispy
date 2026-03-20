@@ -238,12 +238,12 @@ export function FileViewerModal(): React.JSX.Element | null {
             <button
               className="crispy-annotation-popover__btn"
               onClick={handleAnnotateClick}
-              title="Add an annotation to the selected text"
+              title="Quote selected text into chat"
             >
               <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
                 <path d="M14 1H2a1 1 0 00-1 1v8a1 1 0 001 1h3l3 3 3-3h3a1 1 0 001-1V2a1 1 0 00-1-1zM4 4h8v1H4V4zm0 3h6v1H4V7z" />
               </svg>
-              <span>Annotate</span>
+              <span>Quote</span>
             </button>
           ) : (
             <div className="crispy-annotation-popover__input">
@@ -263,7 +263,7 @@ export function FileViewerModal(): React.JSX.Element | null {
                     setAnnotationText('');
                   }
                 }}
-                placeholder="Add your annotation... (Cmd+Enter to submit)"
+                placeholder="Add a comment... (Cmd+Enter to submit)"
                 rows={3}
               />
               <div className="crispy-annotation-popover__actions">

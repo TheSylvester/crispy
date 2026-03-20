@@ -156,7 +156,7 @@ echo "[output_file: $OUTPUT_FILE]" >&2
 # Write prompt to a temp file for PROMPT_FILE passthrough
 PROMPT_TMPFILE=$(mktemp /tmp/crispy-agent-prompt-XXXXXX.md)
 echo "$PROMPT" > "$PROMPT_TMPFILE"
-trap 'rm -f "$PROMPT_TMPFILE"' EXIT
+trap 'rm -f "$PROMPT_TMPFILE" "$STDERR_FILE" 2>/dev/null' EXIT
 
 # Run crispy-dispatch, capture stdout and stderr separately
 STDERR_FILE=$(mktemp /tmp/crispy-agent-stderr-XXXXXX)
