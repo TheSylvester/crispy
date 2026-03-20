@@ -299,6 +299,10 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
 
           {/* --- Rosie Section --- */}
           <div className="crispy-cp-settings__section-header">Rosie (Experimental)</div>
+          <div className="crispy-cp-settings__warn">
+            Very experimental — the tracker agent has broad tool access and may
+            occasionally go off-script. Enable at your own risk.
+          </div>
           <label className="crispy-cp-settings__row">
             <span>Model</span>
             <ModelSelect

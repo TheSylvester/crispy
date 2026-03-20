@@ -59,13 +59,6 @@ agent said.
 One-click copy buttons on assistant messages and tool output cards. Copies
 clean, formatted Markdown to your clipboard.
 
-### Project tracker (Experimental)
-
-An AI-powered project tracker that watches your sessions and automatically
-classifies what you're working on, what stage it's in, and what changed. View
-tracked projects in a dedicated sidebar with stage-based grouping. Off by
-default — enable in Settings.
-
 ---
 
 ## Capabilities
@@ -111,7 +104,6 @@ default — enable in Settings.
 
 ### Experimental
 
-- Project tracker — AI-powered session classification (off by default)
 - Browser mode — full UI at `localhost:3456`, no VS Code required
 
 ---
