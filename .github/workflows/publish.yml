@@ -105,10 +105,15 @@ jobs:
             echo "::error::No VSIX files found — all builds failed"
             exit 1
           fi
+          failed=0
           for f in "${files[@]}"; do
             echo "Publishing $f"
-            npx ovsx publish "$f" -p ${{ secrets.OVSX_TOKEN }}
+            npx ovsx publish "$f" -p ${{ secrets.OVSX_TOKEN }} || { echo "::warning::Failed to publish $f"; failed=$((failed+1)); }
           done
+          if [ $failed -eq ${#files[@]} ]; then
+            echo "::error::All publishes failed"
+            exit 1
+          fi
 
       - uses: softprops/action-gh-release@v2
         with:
