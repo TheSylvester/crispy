@@ -2,7 +2,7 @@
 
 **A coding agent workbench for VS Code — with local agent memory, multi-agent collaboration, and controls you can't get in a terminal.**
 
-Works with Claude Code, Codex, and OpenCode. VS Code / Cursor extension.
+Works with Claude Code and Codex. VS Code / Cursor extension.
 
 [![Version](https://img.shields.io/open-vsx/v/the-sylvester/crispy?label=OpenVSX&color=blue)](https://open-vsx.org/extension/the-sylvester/crispy)
 [![Downloads](https://img.shields.io/open-vsx/dt/the-sylvester/crispy?color=green)](https://open-vsx.org/extension/the-sylvester/crispy)
@@ -23,9 +23,9 @@ Works with Claude Code, Codex, and OpenCode. VS Code / Cursor extension.
 
 Every session is indexed locally with full-text and semantic search. Your
 agent can find past decisions, debugging threads, and design discussions
-across Claude Code, Codex, and OpenCode — and read the full conversation
-back. Not summaries. Not rules files. The actual transcripts already saved
-on your machine. No cloud, no API calls, no expiry.
+across Claude Code and Codex — and read the full conversation back. Not
+summaries. Not rules files. The actual transcripts already saved on your
+machine. No cloud, no API calls, no expiry.
 
 ![Agent memory and multi-agent collaboration — recall searching past sessions while a parallel review runs side-by-side](./media/agent-memory.png)
 
@@ -83,7 +83,7 @@ default — enable in Settings.
 
 - Agent memory — full-text and semantic search across all sessions and vendors
 - Multi-agent collaboration — resumable cross-vendor child sessions
-- Claude Code, Codex, and OpenCode adapters
+- Claude Code and Codex adapters
 
 ### Execution control
 
@@ -118,6 +118,7 @@ default — enable in Settings.
 
 ## Coming Soon
 
+- OpenCode adapter
 - Gemini CLI adapter
 - Standalone browser app — packaged desktop build, no VS Code dependency
 
@@ -180,7 +181,6 @@ npm run package:win32-arm64
 - VS Code 1.94+ (or any compatible fork)
 - Claude Code CLI installed and authenticated
 - Codex CLI (optional, for Codex sessions)
-- OpenCode CLI (optional, for OpenCode sessions)
 - Microphone (optional, for voice input)
 
 ---
