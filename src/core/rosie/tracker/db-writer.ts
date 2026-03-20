@@ -5,8 +5,7 @@
  * tables. All writes in a single transaction. New projects get a random UUID;
  * existing projects are updated in place.
  *
- * Also provides getExistingProjects() for building prompt context, and
- * runDedupSweep() for post-write duplicate detection and merging.
+ * Also provides getExistingProjects() for building prompt context.
  *
  * @module rosie/tracker/db-writer
  */
@@ -15,9 +14,6 @@ import { randomUUID } from 'node:crypto';
 import { getDb } from '../../crispy-db.js';
 import { ensureCrispyDir, dbPath } from '../../activity-index.js';
 import { log } from '../../log.js';
-import { parseModelOption } from '../../model-utils.js';
-import { getSettingsSnapshotInternal } from '../../settings/index.js';
-import type { AgentDispatch } from '../../../host/agent-dispatch.js';
 import { VALID_STAGES } from './types.js';
 import type { TrackerBlock, ProjectStage } from './types.js';
 
@@ -596,9 +592,6 @@ export interface DupCandidate {
   levenshtein: number;
 }
 
-/** Module-level guard — prevents concurrent dedup runs. */
-let dedupInFlight = false;
-
 /** Stage 1 thresholds — either crossing its threshold flags a candidate pair. */
 const CANDIDATE_LEVENSHTEIN_THRESHOLD = 0.3;
 
@@ -769,101 +762,6 @@ export function mergeProjects(
 }
 
 // ============================================================================
-// Dedup Sweep — Orchestrates Stage 1 + Stage 2
-// ============================================================================
-
-/** High-confidence thresholds for auto-merge (skip LLM). */
-const AUTO_MERGE_LEVENSHTEIN = 0.2;
-
-/**
- * Run the full dedup sweep: heuristic candidate detection + LLM adjudication.
- *
- * Auto-merges high-confidence duplicates (Levenshtein ≤ 0.2).
- * For ambiguous candidates, dispatches a Haiku child session for adjudication.
- *
- * Safe to call after every writeTrackerResults() — SQL + string math is cheap.
- * Idempotent — run it 100 times, same result.
- */
-export async function runDedupSweep(
-  dispatchChild: AgentDispatch['dispatchChild'],
-  projectPath?: string,
-): Promise<void> {
-  // Concurrency guard
-  if (dedupInFlight) return;
-  dedupInFlight = true;
-
-  try {
-    // Load non-archived projects scoped to project_path for comparison
-    const db = getTrackerDb();
-    const pf = projectPathFilter(projectPath);
-    const rows = db.all(
-      `SELECT id, title, stage, type, summary, created_at, updated_at
-       FROM projects WHERE stage != 'archived'${pf.and} ORDER BY updated_at DESC`,
-      pf.params,
-    );
-    const projects: ProjectRow[] = rows.map((r) => {
-      const row = r as Record<string, unknown>;
-      return {
-        id: row.id as string,
-        title: row.title as string,
-        stage: row.stage as string,
-        type: (row.type as string) ?? 'project',
-        summary: (row.summary as string) ?? null,
-        created_at: row.created_at as string,
-        updated_at: row.updated_at as string,
-      };
-    });
-
-    if (projects.length < 2) return;
-
-    const candidates = findDupeCandidates(projects);
-    if (candidates.length === 0) return;
-
-    log({ level: 'debug', source: 'rosie.dedup', summary: `Found ${candidates.length} candidate pair(s)` });
-
-    // Track merged IDs so we don't try to merge already-removed projects
-    const merged = new Set<string>();
-
-    for (const candidate of candidates) {
-      if (merged.has(candidate.a.id) || merged.has(candidate.b.id)) continue;
-
-      const isHighConfidence =
-        candidate.levenshtein <= AUTO_MERGE_LEVENSHTEIN;
-
-      if (isHighConfidence) {
-        // Auto-merge: keep the one with more recent updated_at
-        const keepProject = candidate.a.updated_at >= candidate.b.updated_at ? candidate.a : candidate.b;
-        const removeProject = keepProject === candidate.a ? candidate.b : candidate.a;
-        log({ level: 'debug', source: 'rosie.dedup', summary: `Auto-merge: "${removeProject.title}" → "${keepProject.title}" (${candidate.reason})` });
-        mergeProjects(keepProject.id, removeProject.id);
-        merged.add(removeProject.id);
-      } else {
-        // Ambiguous — ask LLM
-        const verdict = await askLlmVerdict(dispatchChild, candidate);
-        if (verdict) {
-          mergeProjects(verdict.keepId, verdict.removeId, verdict.mergedTitle, verdict.mergedSummary);
-          merged.add(verdict.removeId);
-        }
-      }
-    }
-
-    if (merged.size > 0) {
-      log({ level: 'debug', source: 'rosie.dedup', summary: `Sweep complete — merged ${merged.size} duplicate(s)` });
-    }
-  } catch (err) {
-    log({ level: 'warn', source: 'rosie.dedup', summary: `Sweep failed: ${err instanceof Error ? err.message : String(err)}` });
-    log({
-      source: 'tracker',
-      level: 'error',
-      summary: `Dedup sweep failed: ${err instanceof Error ? err.message : String(err)}`,
-      data: { error: String(err) },
-    });
-  } finally {
-    dedupInFlight = false;
-  }
-}
-
-// ============================================================================
 // Semantic Similarity — Lightweight embedding-based duplicate detection
 // ============================================================================
 
@@ -892,121 +790,3 @@ export function getProjectTextsForEmbedding(): Array<{ id: string; title: string
   }
 }
 
-// ============================================================================
-// Stage 2: LLM Adjudication
-// ============================================================================
-
-interface MergeVerdict {
-  keepId: string;
-  removeId: string;
-  mergedTitle?: string;
-  mergedSummary?: string;
-}
-
-/**
- * Ask Haiku whether two projects are duplicates.
- * Returns merge instructions if confirmed, null if distinct.
- * Uses text verdict parsing (no MCP tool needed).
- */
-async function askLlmVerdict(
-  dispatchChild: AgentDispatch['dispatchChild'],
-  candidate: DupCandidate,
-): Promise<MergeVerdict | null> {
-  const { a, b } = candidate;
-
-  const prompt = `You are a dedup adjudicator. Decide whether these two projects are actually the same project tracked under different names.
-
-## Project A
-- ID: ${a.id}
-- Title: ${a.title}
-- Summary: ${a.summary ?? '(none)'}
-
-## Project B
-- ID: ${b.id}
-- Title: ${b.title}
-- Summary: ${b.summary ?? '(none)'}
-
-## Flagged because
-${candidate.reason}
-
-## Instructions
-If these are the SAME project (same goal, same work), respond with EXACTLY:
-MERGE keep=<id-to-keep> remove=<id-to-remove>
-
-Optionally add on the next lines:
-title=<better title if neither is ideal>
-summary=<merged summary if helpful>
-
-If these are DISTINCT projects (different goals despite overlap), respond with EXACTLY:
-DISTINCT
-
-Nothing else. No commentary.`;
-
-  try {
-    const snap = getSettingsSnapshotInternal();
-    const rosieModel = snap.settings.rosie.bot.model;
-    const parsed = rosieModel ? parseModelOption(rosieModel) : undefined;
-
-    const result = await dispatchChild({
-      parentSessionId: `dedup-${randomUUID()}`,
-      vendor: parsed?.vendor ?? 'claude',
-      parentVendor: 'claude',
-      prompt,
-      settings: {
-        ...(parsed?.model && { model: parsed.model }),
-        permissionMode: 'bypassPermissions',
-        allowDangerouslySkipPermissions: true,
-      },
-      forceNew: true,
-      env: {
-        CLAUDECODE: '',
-        CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '30000',
-      },
-      skipPersistSession: true,
-      autoClose: true,
-      timeoutMs: 15_000,
-    });
-
-    if (!result?.text) return null;
-
-    return parseVerdict(result.text, a.id, b.id);
-  } catch (err) {
-    log({ level: 'warn', source: 'rosie.dedup', summary: `LLM adjudication failed: ${err instanceof Error ? err.message : String(err)}` });
-    return null;
-  }
-}
-
-/**
- * Parse the LLM text verdict into a MergeVerdict or null.
- * Exported for testing.
- */
-export function parseVerdict(text: string, idA: string, idB: string): MergeVerdict | null {
-  if (!text || !text.trim()) return null;
-
-  const lines = text.trim().split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
-  if (lines.length === 0) return null;
-
-  if (lines[0] === 'DISTINCT') return null;
-
-  const mergeMatch = lines[0]!.match(/^MERGE\s+keep=(\S+)\s+remove=(\S+)$/);
-  if (!mergeMatch) return null;
-
-  const keepId = mergeMatch[1]!;
-  const removeId = mergeMatch[2]!;
-
-  // Validate the IDs match the candidate pair
-  const validIds = new Set([idA, idB]);
-  if (!validIds.has(keepId) || !validIds.has(removeId) || keepId === removeId) return null;
-
-  const verdict: MergeVerdict = { keepId, removeId };
-
-  // Parse optional title and summary lines
-  for (const line of lines.slice(1)) {
-    const titleMatch = line.match(/^title=(.+)$/);
-    if (titleMatch) verdict.mergedTitle = titleMatch[1]!.trim();
-    const summaryMatch = line.match(/^summary=(.+)$/);
-    if (summaryMatch) verdict.mergedSummary = summaryMatch[1]!.trim();
-  }
-
-  return verdict;
-}

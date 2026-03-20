@@ -7,7 +7,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import { join } from 'node:path';
-import { normalizedLevenshtein, findDupeCandidates, parseVerdict, mergeProjects } from '../src/core/rosie/tracker/db-writer.js';
+import { normalizedLevenshtein, findDupeCandidates, mergeProjects } from '../src/core/rosie/tracker/db-writer.js';
 import { _setTestDir, dbPath } from '../src/core/activity-index.js';
 import { getDb } from '../src/core/crispy-db.js';
 
@@ -58,30 +58,6 @@ describe('findDupeCandidates', () => {
       { ...base, id: '2', title: 'Fix Rosie Tracker Hook Failures' },
     ];
     expect(findDupeCandidates(projects)).toHaveLength(0);
-  });
-});
-
-// ============================================================================
-// Verdict parsing
-// ============================================================================
-
-describe('parseVerdict', () => {
-  const idA = 'aaaa-1111';
-  const idB = 'bbbb-2222';
-
-  it('parses MERGE with optional fields', () => {
-    const text = `MERGE keep=${idA} remove=${idB}\ntitle=Better Title\nsummary=Combined`;
-    expect(parseVerdict(text, idA, idB)).toEqual({
-      keepId: idA, removeId: idB, mergedTitle: 'Better Title', mergedSummary: 'Combined',
-    });
-  });
-
-  it('returns null for DISTINCT, empty, garbage, or invalid IDs', () => {
-    expect(parseVerdict('DISTINCT', idA, idB)).toBeNull();
-    expect(parseVerdict('', idA, idB)).toBeNull();
-    expect(parseVerdict('I think these are the same', idA, idB)).toBeNull();
-    expect(parseVerdict('MERGE keep=xxxx remove=yyyy', idA, idB)).toBeNull();
-    expect(parseVerdict(`MERGE keep=${idA} remove=${idA}`, idA, idB)).toBeNull();
   });
 });
 

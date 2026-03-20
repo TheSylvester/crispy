@@ -3,7 +3,6 @@ export {
   getProjectsWithDetails,
   writeTrackerResults,
   recordTrackerOutcome,
-  runDedupSweep,
   mergeProjects,
   recordProjectActivity,
   updateProjectStage,

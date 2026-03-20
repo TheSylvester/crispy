@@ -16,7 +16,7 @@ import { getSettingsSnapshotInternal } from '../settings/index.js';
 import { parseModelOption } from '../model-utils.js';
 import { closeSession } from '../session-manager.js';
 import { log } from '../log.js';
-import { recordTrackerOutcome, runDedupSweep, getStagesForPrompt, getCompactProjectsForPrompt } from './tracker/db-writer.js';
+import { recordTrackerOutcome, getStagesForPrompt, getCompactProjectsForPrompt } from './tracker/db-writer.js';
 import { VALID_TYPES } from './tracker/types.js';
 import { extractTurnsFromMessages, formatTurnContent } from './tracker/turn-extractor.js';
 import { readSessionMessages, getSessionMessageCount } from '../recall/message-store.js';
@@ -238,10 +238,6 @@ async function runTracker(
       costUsd: trackerResult.contextUsage?.totalCostUsd,
     });
 
-    runDedupSweep(d.dispatchChild, projectPath).catch((err) => {
-      log({ source: 'rosie-bot:tracker', level: 'warn',
-        summary: `Dedup sweep failed: ${err instanceof Error ? err.message : String(err)}` });
-    });
   } catch (err) {
     log({ source: 'rosie-bot:tracker', level: 'error',
       summary: `Tracker error: ${err instanceof Error ? err.message : String(err)}` });
