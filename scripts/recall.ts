@@ -62,10 +62,16 @@ const limit = flagInt('--limit', -1);   // -1 = use mode default
 const offset = flagInt('--offset', 0);
 const context = flagInt('--context', 0);
 const since = flagValue('--since');
+const projectFlag = flagValue('--project');
+const allProjects = hasFlag('--all');
+
+// Project scoping: default to CWD (inherited from parent session's projectPath),
+// --project overrides, --all disables scoping entirely.
+const effectiveProject = allProjects ? undefined : projectFlag ?? process.cwd();
 
 // Collect positional args (skip flags and their values)
-const FLAG_WITH_VALUE = new Set(['--limit', '--offset', '--context', '--since']);
-const FLAG_BOOLEAN = new Set(['--raw', '--help', '-h', '--list']);
+const FLAG_WITH_VALUE = new Set(['--limit', '--offset', '--context', '--since', '--project']);
+const FLAG_BOOLEAN = new Set(['--raw', '--help', '-h', '--list', '--all']);
 
 const positional: string[] = [];
 for (let i = 0; i < argv.length; i++) {
@@ -95,13 +101,19 @@ ARGUMENTS
   message-id    Full or prefix UUID of a message within the session
 
 FLAGS
-  --limit N     Max results (search: 200, list: 50, read: 20)
-  --offset N    Pagination offset (search: sessions, read: messages; default 0)
-  --context N   Extra turns around target message, 0-5 (default 0)
-  --since DATE  Only sessions after this date (list mode only, ISO-8601)
-  --raw         Output raw JSON instead of formatted tables
-  --list        List sessions mode
-  --help, -h    Show this help
+  --limit N       Max results (search: 200, list: 50, read: 20)
+  --offset N      Pagination offset (search: sessions, read: messages; default 0)
+  --context N     Extra turns around target message, 0-5 (default 0)
+  --since DATE    Only sessions after this date (list mode only, ISO-8601)
+  --project PATH  Scope to a specific project path (default: CWD)
+  --all           Search across all projects (disables project scoping)
+  --raw           Output raw JSON instead of formatted tables
+  --list          List sessions mode
+  --help, -h      Show this help
+
+WORKFLOW
+  Search returns session IDs with snippet previews. Read into sessions
+  for full content — snippets alone are not enough for real answers.
 
 EXAMPLES
   recall "MCP server rename"
@@ -168,7 +180,7 @@ function resolveMessageId(sessionId: string, prefix: string): string {
 function runList() {
   initDb();
   const effectiveLimit = limit > 0 ? limit : 50;
-  const sessions = listSessions(getDbPath(), effectiveLimit, since);
+  const sessions = listSessions(getDbPath(), effectiveLimit, since, undefined, effectiveProject);
 
   if (raw) {
     console.log(JSON.stringify(sessions, null, 2));
@@ -294,7 +306,7 @@ function runReadTurn(sessionId: string, messageId: string) {
 async function runSearch(query: string) {
   initDb();
   const ceiling = limit > 0 ? limit : 200;
-  const r = await dualPathSearch(query, { limit: ceiling });
+  const r = await dualPathSearch(query, { limit: ceiling, projectId: effectiveProject });
   let { scored } = r;
 
   // Filter by --since date if provided
