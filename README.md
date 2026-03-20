@@ -27,7 +27,7 @@ across Claude Code and Codex — and read the full conversation back. Not
 summaries. Not rules files. The actual transcripts already saved on your
 machine. No cloud, no API calls, no expiry.
 
-![Agent memory and multi-agent collaboration — recall searching past sessions while a parallel review runs side-by-side](./media/agent-memory.png)
+![Agent memory — recall searching past sessions with skill and agent badges](./media/agent-memory-recall.png)
 
 ### Multi-agent collaboration
 
