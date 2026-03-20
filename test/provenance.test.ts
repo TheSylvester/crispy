@@ -30,7 +30,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  fs.rmSync(tempDir, { recursive: true, force: true });
+  fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 });
 
 function writeTestFile(filename: string, content: string): string {
@@ -278,7 +278,7 @@ describe('provenance store', () => {
 
   afterEach(() => {
     cleanup();
-    fs.rmSync(storeTestDir, { recursive: true, force: true });
+    fs.rmSync(storeTestDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   });
 
   const mut = (overrides: Partial<RawMutation> = {}): RawMutation => ({

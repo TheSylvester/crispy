@@ -36,7 +36,7 @@ beforeEach(() => {
 
 afterEach(() => {
   _resetDb();
-  fs.rmSync(testDir, { recursive: true, force: true });
+  fs.rmSync(testDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 });
 
 // ============================================================================

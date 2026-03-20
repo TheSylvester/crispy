@@ -9,6 +9,10 @@
 # binaries), then package-vsix.mjs prunes to keep only the target platform's
 # native files — with CUDA/TensorRT excluded (CPU-only voice inference).
 #
+# Note: darwin-x64 builds on macos-latest (ARM64). This works because
+# onnxruntime-node ships pre-built binaries for all platforms regardless of
+# the host, and package-vsix.mjs prunes to the target — no native compilation.
+#
 # Usage:
 #   git tag v0.1.5
 #   git push --follow-tags
@@ -37,7 +41,7 @@ jobs:
         include:
           - { os: ubuntu-latest,    target: linux-x64 }
           - { os: ubuntu-24.04-arm, target: linux-arm64 }
-          - { os: macos-13,         target: darwin-x64 }
+          - { os: macos-latest,     target: darwin-x64 }
           - { os: macos-latest,     target: darwin-arm64 }
           - { os: windows-latest,   target: win32-x64 }
           - { os: windows-latest,   target: win32-arm64 }
@@ -74,6 +78,9 @@ jobs:
   # ── Publish: collect all VSIXs and release ───────────────────────────────
   publish:
     needs: build
+    # Run even if some matrix jobs fail — publish whichever VSIXs were built.
+    # Skip only if the entire build was cancelled.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
 
     steps:
@@ -84,11 +91,21 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: vsix
+          pattern: vsix-*
           merge-multiple: true
+
+      - name: List collected artifacts
+        run: ls -lh vsix/ || echo "No artifacts found"
 
       - name: Publish to OpenVSX
         run: |
-          for f in vsix/*.vsix; do
+          shopt -s nullglob
+          files=(vsix/*.vsix)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::No VSIX files found — all builds failed"
+            exit 1
+          fi
+          for f in "${files[@]}"; do
             echo "Publishing $f"
             npx ovsx publish "$f" -p ${{ secrets.OVSX_TOKEN }}
           done

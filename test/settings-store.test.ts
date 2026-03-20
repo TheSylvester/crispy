@@ -48,7 +48,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   // Clean up temp directory
-  fs.rmSync(testDir, { recursive: true, force: true });
+  fs.rmSync(testDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 });
 
 // ============================================================================
@@ -492,7 +492,7 @@ describe('onSettingsChanged', () => {
 // File permissions
 // ============================================================================
 
-describe('file permissions', () => {
+describe.skipIf(process.platform === 'win32')('file permissions', () => {
   it('creates settings file with mode 0600', async () => {
     await initSettings(testBase);
     await updateSettings({ preferences: { toolPanelAutoOpen: false } });

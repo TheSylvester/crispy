@@ -15,6 +15,7 @@ import {
   ensureCrispyDir,
   _setTestDir,
 } from '../src/core/activity-index.js';
+import { _resetDb } from '../src/core/crispy-db.js';
 
 // ============================================================================
 // Test Setup
@@ -32,7 +33,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   // Clean up temp directory
-  fs.rmSync(testDir, { recursive: true, force: true });
+  fs.rmSync(testDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 });
 
 // ============================================================================
@@ -41,7 +42,10 @@ afterEach(() => {
 
 describe('ensureCrispyDir', () => {
   it('creates directory if it does not exist', () => {
-    fs.rmSync(testDir, { recursive: true, force: true });
+    // Close the DB before removing the directory — on Windows, open handles
+    // cause ENOTEMPTY/EPERM even with maxRetries.
+    _resetDb();
+    fs.rmSync(testDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     expect(fs.existsSync(testDir)).toBe(false);
 
     ensureCrispyDir();

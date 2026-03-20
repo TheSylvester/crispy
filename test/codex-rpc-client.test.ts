@@ -310,15 +310,14 @@ describe('CodexRpcClient', () => {
       expect(mockProcess.asChildProcess().killed).toBe(true);
     });
 
-    it('reports alive status correctly', () => {
+    it('reports alive status correctly', async () => {
       expect(client.alive).toBe(true);
 
       mockProcess.exit(0);
 
       // Small delay for event propagation
-      setTimeout(() => {
-        expect(client.alive).toBe(false);
-      }, 10);
+      await new Promise(r => setTimeout(r, 10));
+      expect(client.alive).toBe(false);
     });
 
     it('calls onExit callback when process exits', async () => {
@@ -396,10 +395,14 @@ describe('CodexRpcClient', () => {
       }
     });
 
-    it('does not pass shell option on non-Windows', () => {
-      // capturedSpawnCalls[0] is from the beforeEach createClient() on Linux/macOS
+    it('sets shell option based on platform', () => {
+      // capturedSpawnCalls[0] is from the beforeEach createClient()
       expect(capturedSpawnCalls).toHaveLength(1);
-      expect(capturedSpawnCalls[0].options.shell).toBeUndefined();
+      if (process.platform === 'win32') {
+        expect(capturedSpawnCalls[0].options.shell).toBe(true);
+      } else {
+        expect(capturedSpawnCalls[0].options.shell).toBeUndefined();
+      }
     });
 
     it('merges custom env with process.env', () => {
