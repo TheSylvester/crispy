@@ -223,6 +223,9 @@ export interface AdapterSettings {
  * 'continue' — continue the most recent session in a CWD (future)
  * 'hydrated' — start a new session pre-loaded with cross-vendor history
  */
+// Adapters MUST forward spec.env to the spawned process environment.
+// session-manager injects CRISPY_SESSION_ID and CRISPY_SOCK into spec.env
+// for all session modes (fresh, resume, fork).
 export type SessionOpenSpec =
   | { mode: 'resume'; sessionId: string; cwd?: string; model?: string; permissionMode?: TurnSettings['permissionMode']; mcpServers?: Record<string, unknown>; plugins?: LocalPlugin[]; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' }
   | { mode: 'fresh'; cwd: string; model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; plugins?: LocalPlugin[]; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' }

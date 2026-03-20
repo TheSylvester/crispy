@@ -32,6 +32,7 @@ import { initRecallIngest, shutdownRecallIngest } from '../core/recall/ingest-ho
 import { startRecallCatchup, stopEmbeddingBackfill } from '../core/recall/catchup-manager.js';
 import { disposeEmbedder } from '../core/recall/embedder.js';
 import { startIpcServer, getSocketPath } from './ipc-server.js';
+import { setHostSocketPath } from '../core/session-manager.js';
 
 const PORT = parseInt(process.env.PORT ?? '3456', 10);
 
@@ -175,6 +176,8 @@ done();
 done = phase('register adapters');
 registerAllAdapters({ cwd, hostType: 'dev-server', dispatch });
 done();
+
+setHostSocketPath(getSocketPath());
 
 done = phase('init recall ingest');
 initRecallIngest();

@@ -155,7 +155,9 @@ export function makeFactory(
       case 'resume': {
         const model = getResumeModel(spec.sessionId);
         return new ClaudeAgentAdapter({
-          ...getBase(), cwd: base.cwd, resume: spec.sessionId, vendor: slug, env: providerEnv, ...(model && { model })
+          ...getBase(), cwd: base.cwd, resume: spec.sessionId, vendor: slug,
+          env: { ...providerEnv, ...(spec.env ?? {}) },
+          ...(model && { model }),
         });
       }
       case 'fresh':
@@ -187,7 +189,8 @@ export function makeFactory(
         });
       case 'hydrated':
         return new ClaudeAgentAdapter({
-          ...getBase(), cwd: spec.cwd, vendor: slug, env: providerEnv,
+          ...getBase(), cwd: spec.cwd, vendor: slug,
+          env: { ...providerEnv, ...(spec.env ?? {}) },
           hydratedHistory: spec.history,
           ...(spec.model && { model: spec.model }),
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),

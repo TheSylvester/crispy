@@ -92,6 +92,7 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
         return new ClaudeAgentAdapter({
           ...getBase(), cwd: sessionCwd, resume: spec.sessionId,
           ...(model && { model }),
+          ...(spec.env && { env: spec.env }),
           ...getTurnDefaultsConfig(),
         });
       }
@@ -136,6 +137,7 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           ...(spec.model && { model: spec.model }),
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
           ...(spec.skipPersistSession && { skipPersistSession: true }),
+          ...(spec.env && { env: spec.env }),
           ...(spec.systemPrompt && {
             systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: spec.systemPrompt },
           }),

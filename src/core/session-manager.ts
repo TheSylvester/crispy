@@ -23,6 +23,13 @@
  * @module session-manager
  */
 
+// ---------------------------------------------------------------------------
+// Host socket path — set by host layer so buildSessionEnv() can inject
+// CRISPY_SOCK without importing host code.
+// ---------------------------------------------------------------------------
+let hostSocketPath = '';
+export function setHostSocketPath(path: string): void { hostSocketPath = path; }
+
 import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, ChannelMessage, TurnIntent, TurnTarget, TurnSettings, SubagentEntriesResult, EphemeralTargetOptions, LocalPlugin } from './agent-adapter.js';
 import type { TranscriptEntry, MessageContent, Vendor, Usage } from './transcript.js';
 import type { SessionChannel, Subscriber, SubscriberMessage } from './session-channel.js';
@@ -570,6 +577,19 @@ export interface PendingChannelResult {
 }
 
 /**
+ * Build the env block for a managed session, injecting CRISPY_SESSION_ID
+ * and CRISPY_SOCK so child processes can self-identify and IPC-connect
+ * back to this host.
+ */
+function buildSessionEnv(sessionId: string, extraEnv?: Record<string, string>): Record<string, string> {
+  return {
+    ...extraEnv,
+    CRISPY_SESSION_ID: sessionId,
+    ...(hostSocketPath && { CRISPY_SOCK: hostSocketPath }),
+  };
+}
+
+/**
  * Create a pending channel with automatic re-keying on session_changed.
  *
  * This is the shared boilerplate for createSession(), createForkSession(),
@@ -595,11 +615,12 @@ function createPendingChannel(
 ): PendingChannelResult {
   const pendingId = options?.explicitPendingId ?? `pending:${crypto.randomUUID()}`;
 
-  // Inject CRISPY_SESSION_ID so LLMs in managed sessions can self-identify.
-  // For resume, the real session ID is already known; for fresh/fork, use the
-  // pending ID (resolved later via resolveSessionId()).
+  // Inject CRISPY_SESSION_ID + CRISPY_SOCK so LLMs in managed sessions can
+  // self-identify and IPC-connect back to this host. For resume, the real
+  // session ID is already known; for fresh/fork, use the pending ID (resolved
+  // later via resolveSessionId()).
   const envSessionId = spec.mode === 'resume' ? spec.sessionId! : pendingId;
-  spec = { ...spec, env: { ...spec.env, CRISPY_SESSION_ID: envSessionId } };
+  spec = { ...spec, env: buildSessionEnv(envSessionId, spec.env) };
 
   const channel = openChannel(pendingId, vendor, spec, {
     initialEntries: options?.entries,
@@ -720,7 +741,10 @@ export async function subscribeSession(
         }
       }
 
-      const ch = openChannel(sessionId, info.vendor, { mode: 'resume', sessionId }, {
+      const ch = openChannel(sessionId, info.vendor, {
+        mode: 'resume', sessionId,
+        env: buildSessionEnv(sessionId),
+      }, {
         initialEntries: entries,
       });
       sessions.set(sessionId, ch);
@@ -834,6 +858,7 @@ export async function createForkSession(
       const spec: SessionOpenSpec = {
         mode: 'resume',
         sessionId: realId,
+        env: buildSessionEnv(realId),
       };
       const channel = openChannel(realId, vendor, spec, {
         initialEntries: forkEntries,

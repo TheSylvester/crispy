@@ -96,6 +96,9 @@ events. No direct file I/O or process spawning. **State ownership:** UI-only
 - **Use vendor adapters or SDKs directly.** All LLM operations go through
   `AgentDispatch`. Only adapter registration (`adapter-registry.ts`,
   `provider-sync.ts`) imports vendor code.
+- **Ignore `spec.env` in adapter factories.** Every factory case (fresh,
+  resume, fork) must forward `spec.env` to the adapter constructor.
+  session-manager injects `CRISPY_SESSION_ID` and `CRISPY_SOCK` there.
 - **Create duplicate data structures.** Before adding a map, registry, or
   type union — search for an existing one. Canonical singles:
   `BlocksToolRegistry` (tool pairing), `session-manager.ts` (adapter
