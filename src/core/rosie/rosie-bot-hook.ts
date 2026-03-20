@@ -191,7 +191,7 @@ async function runTracker(
           allowDangerouslySkipPermissions: true,
         },
         forceNew: true,
-        skipPersistSession: true,
+        skipPersistSession: false,
         autoClose: false,
         sessionKind: 'system',
         env: {

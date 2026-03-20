@@ -76,11 +76,16 @@ export function SessionSelector(): React.JSX.Element {
     return sessions.filter(s => s.projectSlug === selectedCwd);
   }, [sessions, selectedCwd]);
 
+  // Stage 1.5: Filter out system sessions (Rosie, etc)
+  const userSessionsOnly = useMemo(() => {
+    return projectFiltered.filter(s => s.sessionKind !== 'system');
+  }, [projectFiltered]);
+
   // Stage 2: Vendor filter
   const vendorFiltered = useMemo(() => {
-    if (activeVendors.size === 0) return projectFiltered;
-    return projectFiltered.filter(s => activeVendors.has(s.vendor));
-  }, [projectFiltered, activeVendors]);
+    if (activeVendors.size === 0) return userSessionsOnly;
+    return userSessionsOnly.filter(s => activeVendors.has(s.vendor));
+  }, [userSessionsOnly, activeVendors]);
 
   // Stage 3: Search filter
   const searchFiltered = useMemo(() => {

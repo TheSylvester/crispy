@@ -58,6 +58,8 @@ export interface SessionInfo {
   isSidechain?: boolean;
   /** Short session title from the session_titles table. */
   title?: string;
+  /** 'user' = user-initiated session, 'system' = internal (Rosie, etc). */
+  sessionKind?: 'user' | 'system';
 }
 
 // ============================================================================
