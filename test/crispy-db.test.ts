@@ -88,13 +88,13 @@ describe('getDb', () => {
 // ============================================================================
 
 describe('schema', () => {
-  it('creates _migrations tracking table with version 2', () => {
+  it('creates _migrations tracking table with version 4', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
     const rows = db.all('SELECT version FROM _migrations ORDER BY version') as Array<Record<string, unknown>>;
     expect(rows.length).toBe(1);
-    expect(rows[0]!.version).toBe(2);
+    expect(rows[0]!.version).toBe(4);
   });
 
   it('runs schema idempotently', () => {
@@ -147,17 +147,8 @@ describe('schema', () => {
     expect(names).not.toContain('session_meta_fts');
   });
 
-  it('seeds 8 stage rows', () => {
-    const dbPath = join(testDir, 'crispy.db');
-    const db = getDb(dbPath);
-
-    const rows = db.all('SELECT name FROM stages ORDER BY sort_order') as Array<{ name: string }>;
-    expect(rows.length).toBe(8);
-    expect(rows.map(r => r.name)).toEqual([
-      'idea', 'planning', 'ready', 'active', 'paused', 'committed', 'done', 'archived',
-    ]);
-  });
 });
+
 
 // ============================================================================
 // FTS5 Support

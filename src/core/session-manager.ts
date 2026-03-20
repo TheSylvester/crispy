@@ -36,6 +36,7 @@ import {
 import { refreshAndNotify, notifyStatusChange } from './session-list-manager.js';
 import { fireResponseComplete } from './lifecycle-hooks.js';
 import { log } from './log.js';
+import { isSystemSession, setSessionKind } from './activity-index.js';
 
 /** Type guard for session_changed notification events. */
 function isSessionChangedEvent(msg: SubscriberMessage): msg is ChannelMessage & { type: 'event'; event: { type: 'notification'; kind: 'session_changed'; sessionId: string } } {
@@ -441,7 +442,7 @@ export function listAllSessions(): SessionInfo[] {
     all.push(...discovery.listSessions());
   }
   const result = all
-    .filter(s => !s.isSidechain)
+    .filter(s => !s.isSidechain && !isSystemSession(s.sessionId))
     .sort((a, b) => b.modifiedAt.getTime() - a.modifiedAt.getTime());
   cachedSessions = result;
   cacheTime = now;
@@ -1445,6 +1446,10 @@ export async function dispatchChildSession(
             childSessions.delete(currentId);
             childSessions.set(realId, { parentSessionId, autoClose, visible: false });
             currentId = realId;
+            // Persist session kind so system sessions stay hidden across restarts
+            if (options.sessionKind) {
+              try { setSessionKind(realId, options.sessionKind); invalidateSessionCache(); } catch { /* best-effort */ }
+            }
           }).catch(() => {});
         }
       })

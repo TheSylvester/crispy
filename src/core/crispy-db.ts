@@ -115,8 +115,23 @@ function ensureSchema(db: Database): void {
     return;
   }
 
-  // v3 = current schema. Return early — nothing to do.
-  if (currentVersion >= 3) return;
+  // v3→v4: add session_kind column to session_titles
+  if (currentVersion === 3) {
+    try {
+      db.exec(`ALTER TABLE session_titles ADD COLUMN session_kind TEXT`);
+    } catch {
+      // "duplicate column" — column already added on a prior attempt
+    }
+    db.run(
+      'INSERT OR IGNORE INTO _migrations (version, description) VALUES (?, ?)',
+      [4, 'add session_kind to session_titles'],
+    );
+    log({ source: 'db', level: 'info', summary: 'DB: applied schema v4 — session_kind added' });
+    return;
+  }
+
+  // v4 = current schema. Return early — nothing to do.
+  if (currentVersion >= 4) return;
 
   // Old DBs (v1 or the legacy 24-migration system) — wipe and recreate.
   if (currentVersion >= 1) {
@@ -198,7 +213,8 @@ function ensureSchema(db: Database): void {
       CREATE TABLE IF NOT EXISTS session_titles (
         session_id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        session_kind TEXT
       );
     `);
 
@@ -551,11 +567,11 @@ function ensureSchema(db: Database): void {
     // Record schema version
     db.run(
       'INSERT INTO _migrations (version, description) VALUES (?, ?)',
-      [3, 'add project_path to projects'],
+      [4, 'add session_kind to session_titles'],
     );
 
     db.exec('COMMIT');
-    log({ source: 'db', level: 'info', summary: 'DB: schema v3 created — includes project_path on projects' });
+    log({ source: 'db', level: 'info', summary: 'DB: schema v4 created — includes session_kind on session_titles' });
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;

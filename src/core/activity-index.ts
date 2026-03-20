@@ -34,6 +34,7 @@ export function _setTestDir(dir: string): () => void {
   _resetDb(); // Close existing DB connection
   const restoreRoot = _setTestRoot(dir);
   sessionTitleCache = null;
+  systemSessionIds = null;
   // Create dir and init DB in test directory
   fs.mkdirSync(dir, { recursive: true });
   getDb(dbPath());
@@ -41,6 +42,7 @@ export function _setTestDir(dir: string): () => void {
     _resetDb(); // Close test DB
     restoreRoot();
     sessionTitleCache = null;
+    systemSessionIds = null;
   };
 }
 
@@ -137,6 +139,44 @@ export function setSessionTitle(sessionId: string, title: string): void {
     [sessionId, title, new Date().toISOString()],
   );
   invalidateSessionTitleCache();
+}
+
+// ============================================================================
+// Session Kind (system vs user)
+// ============================================================================
+
+/** Cache of system session IDs, loaded from session_titles where session_kind = 'system'. */
+let systemSessionIds: Set<string> | null = null;
+
+function buildSystemSessionCache(): Set<string> {
+  try {
+    const db = getDb(dbPath());
+    const rows = db.all(`SELECT session_id FROM session_titles WHERE session_kind = 'system'`) as
+      Array<{ session_id: string }>;
+    return new Set(rows.map(r => r.session_id));
+  } catch {
+    return new Set();
+  }
+}
+
+/** Check if a session is a system session (Rosie tracker, etc.). */
+export function isSystemSession(sessionId: string): boolean {
+  if (!systemSessionIds) {
+    systemSessionIds = buildSystemSessionCache();
+  }
+  return systemSessionIds.has(sessionId);
+}
+
+/** Mark a session as a system session in the database. */
+export function setSessionKind(sessionId: string, kind: 'user' | 'system'): void {
+  const db = getDb(dbPath());
+  db.run(
+    `INSERT INTO session_titles (session_id, title, updated_at, session_kind)
+     VALUES (?, '', ?, ?)
+     ON CONFLICT(session_id) DO UPDATE SET session_kind = excluded.session_kind`,
+    [sessionId, new Date().toISOString(), kind],
+  );
+  systemSessionIds = null; // invalidate cache
 }
 
 // ============================================================================
@@ -301,8 +341,9 @@ export function pruneDeletedFiles(livePaths: Set<string>): number {
       throw e;
     }
 
-    // Invalidate caches — pruned files may have had session titles
+    // Invalidate caches — pruned files may have had session titles or system kind
     sessionTitleCache = null;
+    systemSessionIds = null;
 
     if (stalePaths.length > 0) {
       log({ source: 'scanner', level: 'info', summary: `Index: pruned ${stalePaths.length} deleted sessions`, data: { count: stalePaths.length } });
