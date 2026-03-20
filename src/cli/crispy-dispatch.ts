@@ -472,9 +472,14 @@ async function runVisibleMode(
       if (settled) return;
       const event = evt.event;
 
+      // Unwrap ChannelMessage envelope: EventMessage wraps the real event
+      // as { type: 'event', event: ChannelEvent }, while EntryMessage has
+      // { type: 'entry', entry: TranscriptEntry } — no extra nesting.
+      const inner = event.type === 'event' && event.event ? event.event as Record<string, unknown> : event;
+
       // Track session ID rekey (pending → real)
-      if (event.type === 'notification' && event.kind === 'session_changed' && event.sessionId) {
-        const newId = event.sessionId as string;
+      if (inner.type === 'notification' && inner.kind === 'session_changed' && inner.sessionId) {
+        const newId = inner.sessionId as string;
         if (args.debug) console.error(`[crispy-dispatch] Session rekey: ${sessionId} → ${newId}`);
         sessionId = newId;
       }
@@ -499,7 +504,7 @@ async function runVisibleMode(
       }
 
       // Turn complete
-      if (event.type === 'status' && event.status === 'idle') {
+      if (inner.type === 'status' && inner.status === 'idle') {
         if (args.debug) console.error(`[crispy-dispatch] Session idle — turn complete`);
         settled = true;
         clearTimeout(timer);
@@ -507,18 +512,18 @@ async function runVisibleMode(
       }
 
       // Approval required (fix #5)
-      if (event.type === 'status' && event.status === 'awaiting_approval') {
+      if (inner.type === 'status' && inner.status === 'awaiting_approval') {
         if (args.approval === 'fail') {
           approvalInfo = {
-            toolName: (event.toolName as string) ?? 'unknown',
-            toolUseId: (event.toolUseId as string) ?? '',
+            toolName: (inner.toolName as string) ?? 'unknown',
+            toolUseId: (inner.toolUseId as string) ?? '',
           };
           settled = true;
           clearTimeout(timer);
           resolve('approval_required');
         } else if (args.approval === 'manual') {
           if (args.debug) console.error(
-            `[crispy-dispatch] Awaiting approval for "${event.toolName}". Approve in Crispy UI.`,
+            `[crispy-dispatch] Awaiting approval for "${inner.toolName}". Approve in Crispy UI.`,
           );
           // Don't resolve — wait for idle or timeout
         }
@@ -526,8 +531,8 @@ async function runVisibleMode(
       }
 
       // Error notification
-      if (event.type === 'notification' && event.kind === 'error') {
-        console.error(`[crispy-dispatch] Error: ${(event as { error?: string }).error ?? 'unknown'}`);
+      if (inner.type === 'notification' && inner.kind === 'error') {
+        console.error(`[crispy-dispatch] Error: ${(inner as { error?: string }).error ?? 'unknown'}`);
       }
     });
   });
