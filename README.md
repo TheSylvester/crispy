@@ -104,7 +104,7 @@ clean, formatted Markdown to your clipboard.
 
 ### Standalone mode
 
-- Run `npx crispy` — full UI in your browser, no VS Code required
+- Run `npx crispy-code` — full UI in your browser, no VS Code required
 - Background daemon with `crispy start` / `crispy stop` / `crispy status`
 - Multiple browser tabs for parallel agent sessions
 - Same core features — memory, collaboration, fork, rewind
@@ -123,11 +123,11 @@ clean, formatted Markdown to your clipboard.
 ### Standalone (recommended)
 
 ```bash
-npx crispy
+npx crispy-code
 ```
 
 Opens Crispy in your browser. No VS Code, no extension install, no config.
-Run `npx crispy start` for a background daemon, `npx crispy stop` to shut it down.
+Run `npx crispy-code start` for a background daemon, `npx crispy-code stop` to shut it down.
 
 ### VS Code / Cursor Extension
 
@@ -156,7 +156,7 @@ node dist/crispy-cli.js
 
 ### Standalone
 
-1. Run `npx crispy` — browser opens automatically
+1. Run `npx crispy-code` — browser opens automatically
 2. Browse sessions in the sidebar, or start a new conversation
 3. Use the control panel at the bottom for chat input, model selection, and
    agency mode toggles
