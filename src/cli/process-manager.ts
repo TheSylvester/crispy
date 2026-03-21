@@ -7,7 +7,7 @@
  * @module process-manager
  */
 
-import { readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync, mkdirSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { runDir } from '../core/paths.js';
 
@@ -18,7 +18,9 @@ function filePath(name: string, mode: 'prod' | 'dev'): string {
 
 export function writePidFile(mode: 'prod' | 'dev'): void {
   mkdirSync(runDir(), { recursive: true });
-  writeFileSync(filePath('pid', mode), String(process.pid));
+  const p = filePath('pid', mode);
+  writeFileSync(p, String(process.pid), { mode: 0o600 });
+  try { chmodSync(p, 0o600); } catch { /* Windows */ }
 }
 
 export function readPidFile(mode: 'prod' | 'dev'): number | null {
@@ -29,7 +31,9 @@ export function readPidFile(mode: 'prod' | 'dev'): number | null {
 
 export function writePortFile(port: number, mode: 'prod' | 'dev'): void {
   mkdirSync(runDir(), { recursive: true });
-  writeFileSync(filePath('port', mode), String(port));
+  const p = filePath('port', mode);
+  writeFileSync(p, String(port), { mode: 0o600 });
+  try { chmodSync(p, 0o600); } catch { /* Windows */ }
 }
 
 export function readPortFile(mode: 'prod' | 'dev'): number | null {

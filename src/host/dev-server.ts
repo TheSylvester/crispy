@@ -16,7 +16,7 @@
 
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { join, extname } from 'node:path';
+import { join, extname, resolve, relative } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 
 import { initSettings, startWatchingSettings } from '../core/settings/index.js';
@@ -132,13 +132,22 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
       return;
     }
 
-    // Token exchange: GET /?token=xyz → set cookie, redirect to /
-    const tokenParam = url.searchParams.get('token');
-    if (tokenParam) {
-      if (validateToken(tokenParam)) {
+    // Token exchange: POST /auth with form body → set cookie, redirect to /
+    if (url.pathname === '/auth' && req.method === 'POST') {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      for await (const chunk of req) {
+        size += (chunk as Buffer).length;
+        if (size > 1024) { res.writeHead(413); res.end('Too large'); return; }
+        chunks.push(chunk as Buffer);
+      }
+      const body = Buffer.concat(chunks).toString();
+      const params = new URLSearchParams(body);
+      const token = params.get('token') ?? '';
+      if (validateToken(token)) {
         res.writeHead(302, {
           'Location': '/',
-          'Set-Cookie': setTokenCookie(actualPort, tokenParam),
+          'Set-Cookie': setTokenCookie(actualPort, token),
         });
         res.end();
       } else {
@@ -157,7 +166,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
           <html><body style="font-family: system-ui; max-width: 400px; margin: 100px auto;">
             <h2>Crispy</h2>
             <p>Enter your access token:</p>
-            <form method="GET" action="/">
+            <form method="POST" action="/auth">
               <input name="token" type="password" autofocus style="width: 100%; padding: 8px; font-size: 16px;">
               <button type="submit" style="margin-top: 8px; padding: 8px 16px;">Connect</button>
             </form>
@@ -170,14 +179,13 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
     let filePath = url.pathname === '/' ? '/index.html' : url.pathname;
 
-    // Prevent directory traversal
-    if (filePath.includes('..')) {
+    // Prevent directory traversal — resolve and verify within STATIC_DIR
+    const fullPath = resolve(STATIC_DIR, filePath.slice(1));
+    if (!fullPath.startsWith(STATIC_DIR)) {
       res.writeHead(403);
       res.end('Forbidden');
       return;
     }
-
-    const fullPath = join(STATIC_DIR, filePath);
     const ext = extname(fullPath);
     const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
 

@@ -9,7 +9,7 @@ Works with Claude Code and Codex. Runs standalone in your browser or as a VS Cod
 [![License](https://img.shields.io/github/license/TheSylvester/crispy)](LICENSE)
 [![Discord](https://img.shields.io/discord/1483243664389177479?color=5865F2&logo=discord&logoColor=white&label=Discord)](https://discord.gg/e2vw4bTPup)
 
-![Crispy — reading project docs, explaining the codebase, and making an edit in one conversation](./media/hero.gif)
+![Crispy — reading project docs, explaining the codebase, and making an edit in one conversation](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/hero.gif)
 
 **Agent memory** — searchable transcripts across all vendors, fully local.
 **Multi-agent collaboration** — resumable cross-vendor sessions, directed by your agent of choice.
@@ -17,7 +17,7 @@ Works with Claude Code and Codex. Runs standalone in your browser or as a VS Cod
 
 ---
 
-## What's New in v0.2.0
+## What's New in v0.2
 
 ### Agent memory
 
@@ -25,9 +25,9 @@ Every session is indexed locally with full-text and semantic search. Your
 agent can find past decisions, debugging threads, and design discussions
 across Claude Code and Codex — and read the full conversation back. Not
 summaries. Not rules files. The actual transcripts already saved on your
-machine. No cloud, no API calls, no expiry.
+machine. Runs locally after first-use model download — no cloud services, no expiry.
 
-![Agent memory — recall searching past sessions with skill and agent badges](./media/agent-memory-recall.png)
+![Agent memory — recall searching past sessions with skill and agent badges](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/agent-memory-recall.png)
 
 ### Multi-agent collaboration
 
@@ -65,7 +65,7 @@ clean, formatted Markdown to your clipboard.
 
 ### Conversations
 
-![Fork a conversation into a new side-by-side panel](./media/fork.gif)
+![Fork a conversation into a new side-by-side panel](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/fork.gif)
 
 - Fork and rewind at any point — new session opens side-by-side with full context
 - Side-by-side agent windows — as many as your editor can tile
@@ -80,7 +80,7 @@ clean, formatted Markdown to your clipboard.
 
 ### Execution control
 
-![Cycle through agency modes — plan, ask, accept, bypass](./media/permission-modes.gif)
+![Cycle through agency modes — plan, ask, accept, bypass](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/permission-modes.gif)
 
 - Agency modes — plan, ask-before-edits, auto-accept, bypass (persisted per session)
 - Dedicated tool panel for auditing tool calls and sub-agent work
@@ -96,7 +96,7 @@ clean, formatted Markdown to your clipboard.
 
 ### Providers
 
-![Model selector showing multiple vendors, and the provider configuration form](./media/models.gif)
+![Model selector showing multiple vendors, and the provider configuration form](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/models.gif)
 
 - Custom model providers — route through any Claude-compatible endpoint
   (GLM-4.7, DeepSeek, local models)
@@ -107,14 +107,14 @@ clean, formatted Markdown to your clipboard.
 - Run `npx crispy` — full UI in your browser, no VS Code required
 - Background daemon with `crispy start` / `crispy stop` / `crispy status`
 - Multiple browser tabs for parallel agent sessions
-- Same features as the extension — memory, collaboration, fork, rewind, all of it
+- Same core features — memory, collaboration, fork, rewind
 
 ---
 
 ## Coming Soon
 
-- OpenCode adapter
 - Gemini CLI adapter
+- OpenCode adapter (experimental — available but not yet fully tested)
 
 ---
 

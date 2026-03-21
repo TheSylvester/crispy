@@ -68,7 +68,7 @@ export function parseCookie(cookieHeader: string | undefined, name: string): str
 /** Build a Set-Cookie header value for token auth. */
 export function setTokenCookie(port: number, token: string): string {
   const name = cookieName(port);
-  return `${name}=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${30 * 24 * 60 * 60}`;
+  return `${name}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${30 * 24 * 60 * 60}`;
 }
 
 // ============================================================================
