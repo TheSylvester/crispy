@@ -10,6 +10,7 @@
 // esbuild --loader:.svg=text imports the raw SVG markup as a string
 // @ts-expect-error — no type declarations for raw SVG import
 import crispyLogoSvg from "../../../media/crispy-icon.svg";
+import { CRISPY_VERSION } from "../../core/version.js";
 
 interface WelcomePageProps {
   loading?: boolean;
@@ -29,7 +30,7 @@ export function WelcomePage({ loading }: WelcomePageProps): React.JSX.Element {
             Loading Conversation...
           </p>
         ) : (
-          <p className="crispy-welcome__subtitle">v0.2.1</p>
+          <p className="crispy-welcome__subtitle">v{CRISPY_VERSION}</p>
         )}
       </div>
     </div>
