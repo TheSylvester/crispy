@@ -96,7 +96,17 @@ export function runDir(): string {
   return join(crispyRoot(), 'run');
 }
 
+/** Daemon log directory. */
+export function logsDir(): string {
+  return join(crispyRoot(), 'logs');
+}
+
 /** Cache directory for Silero VAD model. */
 export function vadCacheDir(): string {
   return join(crispyRoot(), 'cache', 'silero-vad');
+}
+
+/** Path to the auth token file. */
+export function tokenPath(): string {
+  return join(crispyRoot(), 'token');
 }

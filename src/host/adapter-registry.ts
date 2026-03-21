@@ -53,7 +53,7 @@ export interface HostAdapterConfig {
   /** Explicit path to the Claude Code binary (extension passes this). */
   pathToClaudeCodeExecutable?: string;
   /** Host type — controls per-host settings like MCP server enablement. */
-  hostType: 'vscode' | 'dev-server';
+  hostType: 'vscode' | 'dev-server' | 'daemon';
   /** Agent dispatch for internal consumers (recall agent, Rosie). */
   dispatch?: AgentDispatch;
   /** Factory that returns the session-level system prompt (or undefined when disabled). */

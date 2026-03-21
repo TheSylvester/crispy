@@ -1,8 +1,8 @@
 # Crispy
 
-**A coding agent workbench for VS Code — with local agent memory, multi-agent collaboration, and controls you can't get in a terminal.**
+**A coding agent workbench — with local agent memory, multi-agent collaboration, and controls you can't get in a terminal.**
 
-Works with Claude Code and Codex. VS Code / Cursor extension.
+Works with Claude Code and Codex. Runs standalone in your browser or as a VS Code / Cursor extension.
 
 [![Version](https://img.shields.io/open-vsx/v/the-sylvester/crispy?label=OpenVSX&color=blue)](https://open-vsx.org/extension/the-sylvester/crispy)
 [![Downloads](https://img.shields.io/open-vsx/dt/the-sylvester/crispy?color=green)](https://open-vsx.org/extension/the-sylvester/crispy)
@@ -102,9 +102,12 @@ clean, formatted Markdown to your clipboard.
   (GLM-4.7, DeepSeek, local models)
 - One-click model switching across vendors
 
-### Experimental
+### Standalone mode
 
-- Browser mode — full UI at `localhost:3456`, no VS Code required
+- Run `npx crispy` — full UI in your browser, no VS Code required
+- Background daemon with `crispy start` / `crispy stop` / `crispy status`
+- Multiple browser tabs for parallel agent sessions
+- Same features as the extension — memory, collaboration, fork, rewind, all of it
 
 ---
 
@@ -112,65 +115,64 @@ clean, formatted Markdown to your clipboard.
 
 - OpenCode adapter
 - Gemini CLI adapter
-- Standalone browser app — packaged desktop build, no VS Code dependency
 
 ---
 
 ## Installation
 
-### Option 1: OpenVSX Marketplace
+### Standalone (recommended)
 
-Search for **"Crispy"** in the VS Code extensions panel and install it
-directly.
+```bash
+npx crispy
+```
 
-### Option 2: CLI
+Opens Crispy in your browser. No VS Code, no extension install, no config.
+Run `npx crispy start` for a background daemon, `npx crispy stop` to shut it down.
+
+### VS Code / Cursor Extension
+
+Search for **"Crispy"** in the extensions panel, or:
 
 ```bash
 code --install-extension the-sylvester.crispy
 ```
 
-Or download the `.vsix` file from the
-[OpenVSX Marketplace](https://open-vsx.org/extension/the-sylvester/crispy) and
-install manually via **Extensions > Install from VSIX**.
+Also available on the
+[OpenVSX Marketplace](https://open-vsx.org/extension/the-sylvester/crispy).
 
-### Option 3: From Source
+### From Source
 
 ```bash
 git clone https://github.com/TheSylvester/crispy.git
 cd crispy
 npm install
 npm run build
-```
-
-Then press `F5` in VS Code to launch the extension development host.
-
-To build a target-specific VSIX that only includes the matching native voice
-runtime, use one of:
-
-```bash
-npm run package:linux-x64
-npm run package:linux-arm64
-npm run package:darwin-x64
-npm run package:darwin-arm64
-npm run package:win32-x64
-npm run package:win32-arm64
+node dist/crispy-cli.js
 ```
 
 ---
 
 ## Usage
 
+### Standalone
+
+1. Run `npx crispy` — browser opens automatically
+2. Browse sessions in the sidebar, or start a new conversation
+3. Use the control panel at the bottom for chat input, model selection, and
+   agency mode toggles
+4. Open multiple tabs for parallel sessions
+
+### VS Code
+
 1. Open VS Code in any project
 2. Run `Crispy: Open` from the command palette (`Ctrl+Shift+Alt+I`)
-3. Browse sessions in the sidebar, or start a new conversation
-4. Use the control panel at the bottom for chat input, model selection, and
-   agency mode toggles
+3. Same UI, embedded in your editor
 
 ---
 
 ## Requirements
 
-- VS Code 1.94+ (or any compatible fork)
+- Node.js 18+ (standalone) or VS Code 1.94+ (extension)
 - Claude Code CLI installed and authenticated
 - Codex CLI (optional, for Codex sessions)
 - Microphone (optional, for voice input)

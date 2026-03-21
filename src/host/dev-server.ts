@@ -1,21 +1,18 @@
 /**
- * Dev Server — Chrome Mode
+ * Dev Server / Standalone Daemon
  *
- * Lightweight HTTP + WebSocket server for developing and testing the
- * Crispy UI in a real browser. Uses node:http + ws (no Express/Fastify).
+ * Serves the Crispy UI over HTTP + WebSocket. Two modes:
  *
- * - Serves static files from dist/webview/
- * - WebSocket upgrade on /ws
- * - Auto-registers all available vendor adapters on startup
+ * - **dev** (`npm run dev`): runs from repo root via tsx, resolves assets
+ *   from `dist/webview/` relative to cwd. Self-run block at the bottom.
+ * - **daemon** (`crispy` CLI): runs from global install, resolves assets
+ *   relative to the compiled bundle location (`__dirname`).
  *
- * Usage: npm run dev
+ * Both modes share the same startup sequence — only path resolution and
+ * IPC socket strategy differ.
  *
  * @module dev-server
  */
-
-// Unblock nested Claude sessions — dev server is often launched from inside
-// Claude Code which sets CLAUDECODE=1, blocking child Claude processes.
-delete process.env.CLAUDECODE;
 
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -33,13 +30,27 @@ import { startRecallCatchup, stopEmbeddingBackfill } from '../core/recall/catchu
 import { disposeEmbedder } from '../core/recall/embedder.js';
 import { startIpcServer, getSocketPath } from './ipc-server.js';
 import { setHostSocketPath } from '../core/session-manager.js';
+import { isLocalConnection, validateToken, parseCookie, cookieName, setTokenCookie, getOrCreateToken } from './auth.js';
 
-const PORT = parseInt(process.env.PORT ?? '3456', 10);
+// __dirname is available in CJS (tsx, tsc). When esbuild bundles to ESM with
+// --platform=node it shims __dirname automatically, so this works in both modes.
 
-// Resolve webview static dir relative to this file's location.
-// When bundled by esbuild to dist/dev-server.js, the webview files
-// are at dist/webview/. When running via tsx, we resolve from cwd.
-const STATIC_DIR = join(process.cwd(), 'dist', 'webview');
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface ServerConfig {
+  port: number;
+  host: string;             // '127.0.0.1' or '0.0.0.0'
+  mode: 'dev' | 'daemon';
+  hostType: 'dev-server' | 'daemon';
+  logFile?: string;         // when set, redirect console to this file
+}
+
+export interface ServerHandle {
+  port: number;             // actual port (may differ if conflict)
+  shutdown(): Promise<void>;
+}
 
 // ============================================================================
 // MIME Types
@@ -56,46 +67,8 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 // ============================================================================
-// HTTP Server — Static Files
+// Helpers
 // ============================================================================
-
-const server = createServer(async (req, res) => {
-  const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
-  let filePath = url.pathname === '/' ? '/index.html' : url.pathname;
-
-  // Prevent directory traversal
-  if (filePath.includes('..')) {
-    res.writeHead(403);
-    res.end('Forbidden');
-    return;
-  }
-
-  const fullPath = join(STATIC_DIR, filePath);
-  const ext = extname(fullPath);
-  const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
-
-  try {
-    const content = await readFile(fullPath);
-    res.writeHead(200, { 'Content-Type': contentType });
-    res.end(content);
-  } catch {
-    res.writeHead(404);
-    res.end('Not Found');
-  }
-});
-
-// ============================================================================
-// WebSocket Server
-// ============================================================================
-
-const wss = new WebSocketServer({ noServer: true });
-
-// ---------------------------------------------------------------------------
-// Origin validation — reject WebSocket upgrades from non-localhost Origins.
-// Blocks CSWSH (cross-site WebSocket hijacking) where a malicious webpage
-// connects to ws://localhost:3456/ws from the user's browser.
-// Same vulnerability class as CVE-2025-52882 / GHSA-w48q-cv73-mx4w.
-// ---------------------------------------------------------------------------
 
 function isLocalhostOrigin(origin: string): boolean {
   if (!origin) return true; // no Origin header → non-browser client (CLI, curl)
@@ -107,137 +80,311 @@ function isLocalhostOrigin(origin: string): boolean {
   }
 }
 
-server.on('upgrade', (req, socket, head) => {
-  const { pathname } = new URL(req.url ?? '/', `http://localhost:${PORT}`);
-  if (pathname !== '/ws') {
-    socket.destroy();
-    return;
+function phase(name: string): () => void {
+  const t0 = performance.now();
+  console.log(`[server] ▸ ${name}...`);
+  return () => console.log(`[server] ✓ ${name} (${(performance.now() - t0).toFixed(0)}ms)`);
+}
+
+// ============================================================================
+// startServer
+// ============================================================================
+
+export async function startServer(config: ServerConfig): Promise<ServerHandle> {
+  const { port, host, mode, hostType, logFile } = config;
+
+  // Log file redirect (for daemon mode)
+  if (logFile) {
+    const { createWriteStream } = await import('node:fs');
+    const stream = createWriteStream(logFile, { flags: 'a' });
+    const write = stream.write.bind(stream);
+    console.log = (...args: unknown[]) => { write(args.map(String).join(' ') + '\n'); };
+    console.warn = (...args: unknown[]) => { write('[warn] ' + args.map(String).join(' ') + '\n'); };
+    console.error = (...args: unknown[]) => { write('[error] ' + args.map(String).join(' ') + '\n'); };
   }
 
-  const origin = req.headers.origin ?? '';
-  if (!isLocalhostOrigin(origin)) {
-    console.warn(`[dev-server] Rejected WebSocket upgrade from origin: ${origin}`);
-    socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-    socket.destroy();
-    return;
+  const bootStart = performance.now();
+
+  // Static dir: resolve relative to this file, not cwd.
+  // dev mode: tsx runs from repo root, assets at dist/webview/ under cwd.
+  // daemon mode: __dirname is dist/, assets at dist/webview/.
+  const STATIC_DIR = mode === 'dev'
+    ? join(process.cwd(), 'dist', 'webview')
+    : join(__dirname, 'webview');
+
+  // Port may be bumped on EADDRINUSE — declare with let so handlers see the
+  // final value via closure.
+  let actualPort = port;
+
+  // Initialize auth token on daemon startup
+  if (mode === 'daemon') {
+    getOrCreateToken();
   }
 
-  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
-});
+  // ---- HTTP Server ----
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url ?? '/', `http://localhost:${actualPort}`);
 
-let connectionCounter = 0;
+    // Health endpoint (unauthenticated — used by CLI status checks)
+    if (url.pathname === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', pid: process.pid, port: actualPort, uptime: process.uptime() }));
+      return;
+    }
 
-wss.on('connection', (ws: WebSocket) => {
-  const clientId = `ws-client-${++connectionCounter}`;
-  console.log(`[dev-server] Client connected: ${clientId}`);
+    // Token exchange: GET /?token=xyz → set cookie, redirect to /
+    const tokenParam = url.searchParams.get('token');
+    if (tokenParam) {
+      if (validateToken(tokenParam)) {
+        res.writeHead(302, {
+          'Location': '/',
+          'Set-Cookie': setTokenCookie(actualPort, tokenParam),
+        });
+        res.end();
+      } else {
+        res.writeHead(401);
+        res.end('Invalid token');
+      }
+      return;
+    }
 
-  const handler = createClientConnection(clientId, (msg) => {
-    if (ws.readyState === ws.OPEN) {
-      ws.send(JSON.stringify(msg));
+    // Auth check (skip for localhost — zero friction for local use)
+    if (!isLocalConnection(req)) {
+      const cookie = parseCookie(req.headers.cookie, cookieName(actualPort));
+      if (!cookie || !validateToken(cookie)) {
+        res.writeHead(401, { 'Content-Type': 'text/html' });
+        res.end(`
+          <html><body style="font-family: system-ui; max-width: 400px; margin: 100px auto;">
+            <h2>Crispy</h2>
+            <p>Enter your access token:</p>
+            <form method="GET" action="/">
+              <input name="token" type="password" autofocus style="width: 100%; padding: 8px; font-size: 16px;">
+              <button type="submit" style="margin-top: 8px; padding: 8px 16px;">Connect</button>
+            </form>
+            <p style="color: #666; font-size: 12px;">Find your token in ~/.crispy/token</p>
+          </body></html>
+        `);
+        return;
+      }
+    }
+
+    let filePath = url.pathname === '/' ? '/index.html' : url.pathname;
+
+    // Prevent directory traversal
+    if (filePath.includes('..')) {
+      res.writeHead(403);
+      res.end('Forbidden');
+      return;
+    }
+
+    const fullPath = join(STATIC_DIR, filePath);
+    const ext = extname(fullPath);
+    const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
+
+    try {
+      const content = await readFile(fullPath);
+      res.writeHead(200, { 'Content-Type': contentType });
+      res.end(content);
+    } catch {
+      res.writeHead(404);
+      res.end('Not Found');
     }
   });
 
-  ws.on('message', (data) => {
-    handler.handleMessage(String(data)).catch((err) => {
-      console.error(`[dev-server] Handler error:`, err);
+  // ---- WebSocket Server ----
+  const wss = new WebSocketServer({ noServer: true });
+
+  server.on('upgrade', (req, socket, head) => {
+    const { pathname } = new URL(req.url ?? '/', `http://localhost:${actualPort}`);
+    if (pathname !== '/ws') {
+      socket.destroy();
+      return;
+    }
+
+    const origin = req.headers.origin ?? '';
+    if (!isLocalhostOrigin(origin)) {
+      // Non-localhost origin: require valid cookie auth
+      const cookie = parseCookie(req.headers.cookie, cookieName(actualPort));
+      if (!cookie || !validateToken(cookie)) {
+        console.warn(`[server] Rejected WebSocket upgrade: invalid auth from origin ${origin}`);
+        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+    }
+
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+  });
+
+  let connectionCounter = 0;
+
+  wss.on('connection', (ws: WebSocket) => {
+    const clientId = `ws-client-${++connectionCounter}`;
+    console.log(`[server] Client connected: ${clientId}`);
+
+    const handler = createClientConnection(clientId, (msg) => {
+      if (ws.readyState === ws.OPEN) {
+        ws.send(JSON.stringify(msg));
+      }
+    });
+
+    ws.on('message', (data) => {
+      handler.handleMessage(String(data)).catch((err) => {
+        console.error(`[server] Handler error:`, err);
+      });
+    });
+
+    ws.on('close', () => {
+      console.log(`[server] Client disconnected: ${clientId}`);
+      handler.dispose();
+    });
+
+    ws.on('error', (err) => {
+      console.error(`[server] WebSocket error (${clientId}):`, err);
+      handler.dispose();
     });
   });
 
-  ws.on('close', () => {
-    console.log(`[dev-server] Client disconnected: ${clientId}`);
-    handler.dispose();
+  // ---- Startup sequence ----
+  let done: () => void;
+
+  done = phase('create agent dispatch');
+  const cwd = process.cwd();
+  const dispatch = createAgentDispatch();
+  done();
+
+  // For daemon mode, resolve extensionPath from __dirname (which is dist/ when bundled).
+  // join(__dirname, '..') gives the package root.
+  const extensionPath = mode === 'dev' ? undefined : join(__dirname, '..');
+
+  done = phase('register adapters');
+  registerAllAdapters({ cwd, hostType, dispatch, extensionPath });
+  done();
+
+  // IPC socket: use stable paths for daemon, PID-based for dev
+  const socketMode = mode === 'daemon' ? 'prod' as const : undefined;
+  setHostSocketPath(getSocketPath(socketMode));
+
+  done = phase('init recall ingest');
+  initRecallIngest();
+  startRecallCatchup('devServer');
+  done();
+
+  done = phase('init rosie bot');
+  // Tracker script: in dev mode it's under src/, in daemon mode it's bundled to dist/
+  const trackerScript = mode === 'dev'
+    ? join(process.cwd(), 'src', 'core', 'rosie', 'tracker', 'crispy-tracker.mjs')
+    : join(__dirname, 'crispy-tracker.mjs');
+  initRosieBot(dispatch, {
+    trackerScript,
+    ipcSocket: getSocketPath(socketMode),
+  });
+  done();
+
+  const settingsDone = phase('init settings');
+  const providerBase = { cwd };
+  initSettings(providerBase)
+    .then(() => {
+      startWatchingSettings();
+      settingsDone();
+    })
+    .catch((err) => {
+      console.error('[server] init settings failed:', err);
+    });
+
+  // ---- Listen with port retry ----
+  await new Promise<void>((resolve, reject) => {
+    let attempts = 0;
+    const tryListen = () => {
+      server.once('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE' && attempts < 10) {
+          attempts++;
+          actualPort++;
+          tryListen();
+        } else {
+          reject(err);
+        }
+      });
+      server.listen(actualPort, host, () => {
+        resolve();
+      });
+    };
+    tryListen();
   });
 
-  ws.on('error', (err) => {
-    console.error(`[dev-server] WebSocket error (${clientId}):`, err);
-    handler.dispose();
-  });
-});
-
-// ============================================================================
-// Startup
-// ============================================================================
-
-function phase(name: string): () => void {
-  const t0 = performance.now();
-  console.log(`[dev-server] ▸ ${name}...`);
-  return () => console.log(`[dev-server] ✓ ${name} (${(performance.now() - t0).toFixed(0)}ms)`);
-}
-
-const bootStart = performance.now();
-
-let done: () => void;
-
-done = phase('create agent dispatch');
-const cwd = process.cwd();
-const dispatch = createAgentDispatch();
-done();
-
-done = phase('register adapters');
-registerAllAdapters({ cwd, hostType: 'dev-server', dispatch });
-done();
-
-setHostSocketPath(getSocketPath());
-
-done = phase('init recall ingest');
-initRecallIngest();
-// llama-embedding binary auto-downloads on first use (ensureBinary in embedder.ts)
-startRecallCatchup('devServer');
-done();
-
-done = phase('init rosie bot');
-initRosieBot(dispatch, {
-  trackerScript: join(process.cwd(), 'src', 'core', 'rosie', 'tracker', 'crispy-tracker.mjs'),
-  ipcSocket: getSocketPath(),
-});
-done();
-
-const settingsDone = phase('init settings');
-const providerBase = { cwd };
-initSettings(providerBase)
-  .then(() => {
-    startWatchingSettings();
-    settingsDone();
-  })
-  .catch((err) => {
-    console.error('[dev-server] ✗ init settings failed:', err);
-  });
-
-const listenDone = phase('listen');
-server.listen(PORT, () => {
-  listenDone();
-
-  console.log(`[dev-server] ──────────────────────────────────────`);
-  console.log(`[dev-server] HTTP:      http://localhost:${PORT}`);
-  console.log(`[dev-server] WebSocket: ws://localhost:${PORT}/ws`);
-  console.log(`[dev-server] Static:    ${STATIC_DIR}`);
-  console.log(`[dev-server] ──────────────────────────────────────`);
+  console.log(`[server] ──────────────────────────────────────`);
+  console.log(`[server] HTTP:      http://${host}:${actualPort}`);
+  console.log(`[server] WebSocket: ws://${host}:${actualPort}/ws`);
+  console.log(`[server] Static:    ${STATIC_DIR}`);
+  console.log(`[server] Mode:      ${mode}`);
+  console.log(`[server] ──────────────────────────────────────`);
 
   startRescan();
 
-  console.log(`[dev-server] ★ ready — accepting connections (${(performance.now() - bootStart).toFixed(0)}ms)`);
-});
+  // Start IPC server
+  let ipcHandle: { close(): void } | null = null;
+  startIpcServer(cwd)
+    .then((h) => { ipcHandle = h; })
+    .catch((err) => console.error('[server] IPC server failed:', err));
 
-// Start IPC server for CLI dispatch (Unix socket / Windows named pipe)
-let ipcHandle: { close(): void } | null = null;
-startIpcServer(cwd)
-  .then((h) => { ipcHandle = h; })
-  .catch((err) => console.error('[dev-server] IPC server failed:', err));
+  // Crash guard — prevent unhandled MCP/SDK rejections from killing the process
+  process.on('unhandledRejection', (reason) => {
+    console.error('[server] Unhandled rejection:', reason);
+  });
 
-// Crash guard — prevent unhandled MCP/SDK rejections from killing the process
-process.on('unhandledRejection', (reason) => {
-  console.error('[dev-server] Unhandled rejection:', reason);
-});
+  console.log(`[server] ★ ready (${(performance.now() - bootStart).toFixed(0)}ms)`);
 
-// Cleanup on shutdown
-function shutdown() {
-  ipcHandle?.close();
-  shutdownRosieBot();
-  shutdownRecallIngest();
-  stopEmbeddingBackfill();
-  disposeEmbedder();
-  dispatch.dispose();
-  process.exit(0);
+  // ---- Shutdown ----
+  async function shutdown(): Promise<void> {
+    // 1. Notify connected WebSocket clients
+    for (const client of wss.clients) {
+      if (client.readyState === 1 /* OPEN */) {
+        client.send(JSON.stringify({ kind: 'event', event: { type: 'shutdown' } }));
+        client.close(1001, 'Server shutting down');
+      }
+    }
+    // 2. Close WebSocket server
+    await new Promise<void>(resolve => wss.close(() => resolve()));
+    // 3. Close HTTP server
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    // 4. Existing cleanup
+    ipcHandle?.close();
+    shutdownRosieBot();
+    shutdownRecallIngest();
+    stopEmbeddingBackfill();
+    disposeEmbedder();
+    dispatch.dispose();
+  }
+
+  // Wire SIGINT/SIGTERM to shutdown
+  const signalHandler = () => {
+    shutdown().then(() => process.exit(0));
+  };
+  process.on('SIGINT', signalHandler);
+  process.on('SIGTERM', signalHandler);
+
+  return { port: actualPort, shutdown };
 }
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+
+// ============================================================================
+// Self-run block — keeps `npm run dev` working
+// ============================================================================
+
+const isSelfRun = process.argv[1] &&
+  (process.argv[1].endsWith('dev-server.ts') || process.argv[1].endsWith('dev-server.js'));
+
+if (isSelfRun) {
+  // Unblock nested Claude sessions — dev server is often launched from inside
+  // Claude Code which sets CLAUDECODE=1, blocking child Claude processes.
+  delete process.env.CLAUDECODE;
+
+  startServer({
+    port: parseInt(process.env.PORT ?? '3456', 10),
+    host: '127.0.0.1',
+    mode: 'dev',
+    hostType: 'dev-server',
+  }).catch(err => {
+    console.error('[dev-server] Fatal:', err);
+    process.exit(1);
+  });
+}

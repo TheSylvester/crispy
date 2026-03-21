@@ -5,8 +5,10 @@
   "description": "A zero-compromise UI for Claude Code, Codex, and more — with controls you can't get in a terminal",
   "version": "0.2.1",
   "publisher": "the-sylvester",
-  "private": true,
   "license": "MIT",
+  "bin": {
+    "crispy": "./dist/crispy-cli.js"
+  },
   "author": "Sylvester Wong",
   "repository": {
     "type": "git",
@@ -33,6 +35,12 @@
     "coding-assistant",
     "vscode"
   ],
+  "files": [
+    "dist/",
+    "media/",
+    "LICENSE",
+    "README.md"
+  ],
   "engines": {
     "vscode": "^1.94.0"
   },
@@ -44,12 +52,14 @@
     "@opencode-ai/sdk": "^1.2.20",
     "extract-zip": "^2.0.1",
     "node-sqlite3-wasm": "^0.8.53",
+    "open": "^10.2.0",
     "prism-react-renderer": "^2.4.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-markdown": "^10.1.0",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
+    "ws": "^8.19.0",
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
@@ -67,16 +77,15 @@
     "esbuild": "^0.20.0",
     "tsx": "^4.21.0",
     "typescript": "^5.0.0",
-    "vitest": "^4.0.18",
-    "ws": "^8.19.0"
+    "vitest": "^4.0.18"
   },
   "scripts": {
     "postinstall": "node scripts/ensure-sharp-stub.mjs",
     "build:extension": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --external:onnxruntime-node --external:@huggingface/transformers --format=cjs --platform=node --sourcemap --loader:.md=text && cp node_modules/node-sqlite3-wasm/dist/node-sqlite3-wasm.wasm dist/ && cp src/core/rosie/tracker/crispy-tracker.mjs dist/",
     "build:webview": "esbuild src/webview/main.tsx --bundle --outfile=dist/webview/main.js --format=esm --platform=browser --sourcemap --jsx=automatic --loader:.svg=text && cp src/webview/index.html dist/webview/ && cp src/webview/theme-defaults.css dist/webview/ && cp src/webview/styles.css dist/webview/",
-    "build:dev-server": "esbuild src/host/dev-server.ts --bundle --outfile=dist/dev-server.js --external:@anthropic-ai/* --external:ws --external:onnxruntime-node --external:@huggingface/transformers --format=esm --platform=node --sourcemap --loader:.md=text",
+    "build:dev-server": "esbuild src/host/dev-server.ts --bundle --outfile=dist/dev-server.js --external:@anthropic-ai/* --external:ws --external:onnxruntime-node --external:@huggingface/transformers --format=esm --platform=node --sourcemap --loader:.md=text && cp node_modules/node-sqlite3-wasm/dist/node-sqlite3-wasm.wasm dist/ && cp src/core/rosie/tracker/crispy-tracker.mjs dist/",
     "build:crispy-plugin": "rm -rf dist/crispy-plugin && cp -r src/plugin dist/crispy-plugin",
-    "build": "npm run build:extension && npm run build:webview && npm run build:dev-server && npm run build:recall && npm run build:cli && npm run build:crispy-plugin",
+    "build": "npm run build:extension && npm run build:webview && npm run build:dev-server && npm run build:recall && npm run build:cli && npm run build:cli-entry && npm run build:crispy-plugin",
     "watch": "npm run build:extension -- --watch",
     "typecheck": "tsc --noEmit",
     "package": "npm run build && vsce package",
@@ -92,8 +101,10 @@
     "smoke:quick": "npx tsx scripts/smoke.ts --skip-embed",
     "dev": "npm run build:webview && node --import tsx src/host/dev-server.ts",
     "build:cli": "esbuild src/cli/crispy-dispatch.ts --bundle --outfile=dist/crispy-dispatch.js --format=esm --platform=node --sourcemap",
+    "build:cli-entry": "esbuild src/cli/crispy-cli.ts --bundle --outfile=dist/crispy-cli.js --external:@anthropic-ai/* --external:ws --external:open --external:onnxruntime-node --external:@huggingface/transformers --format=cjs --platform=node --sourcemap --loader:.md=text --banner:js=\"#!/usr/bin/env node\"",
     "build:recall": "esbuild scripts/recall.ts --bundle --outfile=dist/recall.js --external:onnxruntime-node --external:@huggingface/transformers --format=cjs --platform=node --sourcemap --banner:js=\"#!/usr/bin/env node\"",
-    "dispatch": "node --import tsx src/cli/crispy-dispatch.ts"
+    "dispatch": "node --import tsx src/cli/crispy-dispatch.ts",
+    "prepublishOnly": "npm run build"
   },
   "categories": [
     "AI",

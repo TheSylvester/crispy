@@ -20,7 +20,7 @@ import { platform, userInfo } from 'node:os';
 import { join } from 'node:path';
 import { unlinkSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createClientConnection } from './client-connection.js';
-import { ipcDir, serversFilePath } from '../core/paths.js';
+import { ipcDir, runDir, serversFilePath } from '../core/paths.js';
 
 // ============================================================================
 // Socket Path & Discovery
@@ -33,8 +33,15 @@ interface ServerEntry {
   startedAt: string;
 }
 
-export function getSocketPath(): string {
+export function getSocketPath(mode?: 'prod' | 'dev'): string {
   if (process.env.CRISPY_SOCK) return process.env.CRISPY_SOCK;
+  if (mode) {
+    const suffix = mode === 'dev' ? '-dev' : '';
+    return platform() === 'win32'
+      ? `\\\\.\\pipe\\crispy${suffix}-${userInfo().username}`
+      : join(runDir(), `crispy${suffix}.sock`);
+  }
+  // Legacy: PID-based (for VS Code multi-window compatibility)
   return platform() === 'win32'
     ? `\\\\.\\pipe\\crispy-${userInfo().username}-${process.pid}`
     : join(ipcDir(), `crispy-${process.pid}.sock`);
@@ -94,8 +101,9 @@ let connectionCounter = 0;
 export async function startIpcServer(cwd: string): Promise<{ close(): void }> {
   const socketPath = getSocketPath();
 
-  // Ensure IPC directory exists (use ipcDir() — on win32 socketPath is a pipe path, not a dir)
+  // Ensure IPC and run directories exist (on win32 socketPath is a pipe path, not a dir)
   mkdirSync(ipcDir(), { recursive: true });
+  mkdirSync(runDir(), { recursive: true });
 
   // Remove leftover socket from a previous crash of this same PID (unlikely but possible)
   if (platform() !== 'win32') {
