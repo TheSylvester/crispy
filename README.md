@@ -113,8 +113,8 @@ clean, formatted Markdown to your clipboard.
 
 ## Coming Soon
 
+- OpenCode adapter
 - Gemini CLI adapter
-- OpenCode adapter (experimental — available but not yet fully tested)
 
 ---
 
