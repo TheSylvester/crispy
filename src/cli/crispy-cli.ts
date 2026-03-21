@@ -57,6 +57,8 @@ async function startForeground(): Promise<void> {
     return;
   }
 
+  console.log('Starting Crispy (this may take a moment on first run)...');
+
   delete process.env.CLAUDECODE;
 
   const port = parsePortFlag();
@@ -96,6 +98,7 @@ async function startBackground(): Promise<void> {
     return;
   }
 
+  console.log('Starting Crispy daemon...');
   mkdirSync(logsDir(), { recursive: true });
   const logPath = join(logsDir(), 'crispy.log');
   const logFd = openSync(logPath, 'a');
