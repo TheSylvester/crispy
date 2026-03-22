@@ -90,7 +90,7 @@ function GitBranchIcon(): React.JSX.Element {
   );
 }
 
-/** Git branch indicator — branch name + clean/dirty dot */
+/** Git branch indicator — branch name with * suffix when dirty (VS Code convention) */
 function GitBranchIndicator(): React.JSX.Element | null {
   const gitInfo = useGitInfo();
 
@@ -99,8 +99,7 @@ function GitBranchIndicator(): React.JSX.Element | null {
   return (
     <span className="crispy-titlebar__git" title={`${gitInfo.branch} — ${gitInfo.dirty ? 'uncommitted changes' : 'clean'}`}>
       <GitBranchIcon />
-      <span className="crispy-titlebar__git-branch">{gitInfo.branch}</span>
-      <span className={`crispy-titlebar__git-dot ${gitInfo.dirty ? 'crispy-titlebar__git-dot--dirty' : 'crispy-titlebar__git-dot--clean'}`} />
+      <span className="crispy-titlebar__git-branch">{gitInfo.branch}{gitInfo.dirty ? '*' : ''}</span>
     </span>
   );
 }

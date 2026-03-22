@@ -3729,20 +3729,7 @@ h2 {
   font-size: 11px;
 }
 
-.crispy-titlebar__git-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-full);
-  flex-shrink: 0;
-}
-.crispy-titlebar__git-dot--clean {
-  background: #73c991;
-}
-.crispy-titlebar__git-dot--dirty {
-  background: #e8a020;
-}
-
-/* Narrow viewport: hide git branch text, keep icon + dot */
+/* Narrow viewport: hide git branch text, keep icon only */
 @media (max-width: 560px) {
   .crispy-titlebar__git-branch {
     display: none;
