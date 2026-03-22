@@ -5876,23 +5876,24 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
-  margin-bottom: 12px;
+  width: 110px;
+  height: 110px;
+  margin-bottom: 4px;
 }
 
 .crispy-workspace-picker__logo svg {
-  width: 48px;
-  height: 48px;
+  width: 100px;
+  height: 100px;
 }
 
 .crispy-workspace-picker__title {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 30px;
+  font-weight: 400;
   color: #e8a020;
-  letter-spacing: 1.5px;
+  letter-spacing: 3px;
   text-transform: uppercase;
-  margin: 0 0 4px;
+  font-family: Georgia, 'Times New Roman', 'Noto Serif', serif;
+  margin: 0 0 8px;
 }
 
 .crispy-workspace-picker__subtitle {
