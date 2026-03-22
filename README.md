@@ -17,6 +17,31 @@ Works with Claude Code and Codex. Runs standalone in your browser or as a VS Cod
 
 ---
 
+## What's New in v0.2.3
+
+### File viewer side panel
+
+The file viewer is now a persistent side panel instead of a modal. Includes
+word wrap, markdown preview (auto-enabled for .md files), and quoting from
+preview mode.
+
+### Titlebar
+
+App icon, git branch indicator with dirty-state marker, and compact Crispy
+wordmark. Always visible, no session required.
+
+### Standalone fixes
+
+IPC socket path fix for daemon mode, startup progress messages, Windows
+compatibility for postinstall, and dynamic version on the welcome screen.
+
+### Emoji filename support
+
+Emoji characters now work correctly in the file panel, @-mentions, and
+linkified paths.
+
+---
+
 ## What's New in v0.2
 
 ### Agent memory
