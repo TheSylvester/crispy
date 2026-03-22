@@ -4,6 +4,7 @@
 
 Works with Claude Code and Codex. Runs standalone in your browser or as a VS Code / Cursor extension.
 
+[![npm](https://img.shields.io/npm/v/crispy-code?label=npm&color=blue)](https://www.npmjs.com/package/crispy-code)
 [![Version](https://img.shields.io/open-vsx/v/the-sylvester/crispy?label=OpenVSX&color=blue)](https://open-vsx.org/extension/the-sylvester/crispy)
 [![Downloads](https://img.shields.io/open-vsx/dt/the-sylvester/crispy?color=green)](https://open-vsx.org/extension/the-sylvester/crispy)
 [![License](https://img.shields.io/github/license/TheSylvester/crispy)](LICENSE)
@@ -24,6 +25,16 @@ Works with Claude Code and Codex. Runs standalone in your browser or as a VS Cod
 The file viewer is now a persistent side panel instead of a modal. Includes
 word wrap, markdown preview (auto-enabled for .md files), and quoting from
 preview mode.
+
+![File viewer panel with markdown preview, titlebar with git branch, and file tree](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/file-viewer-panel.png)
+
+### Workspace picker
+
+The standalone landing page now shows all registered workspaces with an Add
+Folder input. URL-based routing supports multiple projects from a single
+daemon.
+
+![Workspace picker — select a project to open in standalone mode](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/workspace-picker.png)
 
 ### Titlebar
 
