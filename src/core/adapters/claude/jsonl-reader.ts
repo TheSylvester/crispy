@@ -126,6 +126,8 @@ export interface ClaudeQuickMeta {
   lastMessage?: string;
   /** Real absolute project path extracted from the `cwd` field of JSONL entries. */
   projectPath?: string;
+  /** ISO timestamp from the most recent transcript entry (for accurate sort order). */
+  lastTimestamp?: string;
 }
 
 /** Structured metadata extracted from the tail (last 32KB) of a JSONL file. */
@@ -133,6 +135,7 @@ export interface TailMetadata {
   lastMessage?: string; // last user/assistant text
   summary?: string; // from type:"summary" entry (AI-generated title)
   slug?: string; // three-word session name from any entry
+  lastTimestamp?: string; // ISO timestamp from most recent entry
 }
 
 // ============================================================================
@@ -1408,6 +1411,7 @@ export function extractMetadataFast(
       isTrivial,
       parentSessionId,
       lastMessage: tail.lastMessage,
+      lastTimestamp: tail.lastTimestamp,
       projectPath,
     };
   } catch {
@@ -1488,6 +1492,11 @@ export function extractTailMetadata(
           result.slug = String((entry as Record<string, unknown>).slug);
         }
 
+        // Extract lastTimestamp from any entry with a timestamp (first hit = most recent)
+        if (!result.lastTimestamp && entry.timestamp) {
+          result.lastTimestamp = entry.timestamp;
+        }
+
         // Extract lastMessage from user/assistant messages with text content
         if (
           !result.lastMessage &&
@@ -1517,7 +1526,7 @@ export function extractTailMetadata(
         }
 
         // Stop early if we've found all fields
-        if (result.lastMessage && result.summary && result.slug) {
+        if (result.lastMessage && result.summary && result.slug && result.lastTimestamp) {
           break;
         }
       } catch {

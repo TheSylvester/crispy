@@ -1786,12 +1786,18 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
 
       const gen3Title = getSessionTitleFromDb(sessionId);
 
+      // Prefer the last transcript entry's timestamp over filesystem mtime
+      // for accurate sort order — mtime can drift due to atomic writes, rsync, etc.
+      const modifiedAt = meta?.lastTimestamp
+        ? new Date(meta.lastTimestamp)
+        : stat.mtime;
+
       sessions.push({
         sessionId,
         path: filePath,
         projectSlug: slug,
         projectPath: meta?.projectPath,
-        modifiedAt: stat.mtime,
+        modifiedAt,
         size: stat.size,
         label: meta?.label,
         lastMessage: meta?.lastMessage,
@@ -1834,13 +1840,16 @@ export function findSession(sessionId: string): SessionInfo | undefined {
 
     const meta = extractMetadataFast(filePath);
     const gen3Title = getSessionTitleFromDb(sessionId);
+    const modifiedAt = meta?.lastTimestamp
+      ? new Date(meta.lastTimestamp)
+      : stat.mtime;
 
     return {
       sessionId,
       path: filePath,
       projectSlug: slug,
       projectPath: meta?.projectPath,
-      modifiedAt: stat.mtime,
+      modifiedAt,
       size: stat.size,
       label: meta?.label,
       lastMessage: meta?.lastMessage,
