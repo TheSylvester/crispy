@@ -16,7 +16,7 @@ export interface GitInfo {
   dirty: boolean;
 }
 
-const POLL_INTERVAL = 10_000;
+const POLL_INTERVAL = 30_000;
 
 export function useGitInfo(): GitInfo | null {
   const transport = useTransport();
