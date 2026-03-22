@@ -85,6 +85,66 @@ function ApprovalBridge({
   );
 }
 
+/**
+ * ToolPanelShell — lightweight glass panel rendered when the tools sidebar
+ * is open but no session is loaded. Provides the glass background so the
+ * reserved margin-right space isn't a blank gap.
+ */
+function ToolPanelShell(): React.JSX.Element {
+  const { setToolPanelOpen, setToolPanelWidthPx } = usePreferences();
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const panel = (e.target as HTMLElement).closest('.crispy-tool-panel');
+    const startWidth = panel?.clientWidth ?? 350;
+    const layout = document.querySelector('.crispy-layout');
+
+    layout?.setAttribute('data-resizing', '');
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaPx = startX - moveEvent.clientX;
+      setToolPanelWidthPx(Math.round(startWidth + deltaPx));
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      layout?.removeAttribute('data-resizing');
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [setToolPanelWidthPx]);
+
+  return (
+    <div className="crispy-tool-panel">
+      <div
+        className="crispy-tool-panel__resize-handle"
+        onMouseDown={handleResizeStart}
+      />
+      <div className="crispy-tool-panel__header">
+        <span className="crispy-tool-panel__title">TOOLS</span>
+        <span className="crispy-tool-panel__count">idle</span>
+        <button
+          className="crispy-tool-panel__close"
+          onClick={() => setToolPanelOpen(false)}
+          title="Close tools panel (Alt+T)"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <line x1="4" y1="4" x2="12" y2="12" />
+            <line x1="12" y1="4" x2="4" y2="12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function TranscriptViewer(): React.JSX.Element {
   const { selectedSessionId, setSelectedSessionId } = useSession();
   const transport = useTransport();
@@ -447,6 +507,7 @@ export function TranscriptViewer(): React.JSX.Element {
   return (
     <>
       {mainContent}
+      {toolPanelOpen && sidebarView === 'tools' && !selectedSessionId && !hasForkHistory && <ToolPanelShell />}
       {toolPanelOpen && sidebarView === 'files' && <FilePanel />}
       <FileViewerPanel />
       <TranscriptAnnotationPopover {...annotation} />
