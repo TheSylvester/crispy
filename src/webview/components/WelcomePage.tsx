@@ -7,9 +7,7 @@
  * @module WelcomePage
  */
 
-// esbuild --loader:.svg=text imports the raw SVG markup as a string
-// @ts-expect-error — no type declarations for raw SVG import
-import crispyLogoSvg from "../../../media/crispy-icon.svg";
+import { animatedLogoSvg } from '../utils/animated-logo.js';
 import { CRISPY_VERSION } from "../../core/version.js";
 
 interface WelcomePageProps {
@@ -22,7 +20,7 @@ export function WelcomePage({ loading }: WelcomePageProps): React.JSX.Element {
       <div className="crispy-welcome__content">
         <div
           className="crispy-welcome__icon"
-          dangerouslySetInnerHTML={{ __html: crispyLogoSvg }}
+          dangerouslySetInnerHTML={{ __html: animatedLogoSvg }}
         />
         <h1 className="crispy-welcome__title">Crispy</h1>
         {loading ? (

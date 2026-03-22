@@ -7,14 +7,12 @@
  * @module WorkspacePicker
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTransport } from '../context/TransportContext.js';
 import { fsPathToUrlPath } from '../../core/url-path-resolver.js';
 import { formatCwd } from '../hooks/useSessionCwd.js';
 import type { WorkspaceInfo } from '../../core/workspace-roots.js';
-// esbuild --loader:.svg=text imports the raw SVG markup as a string
-// @ts-expect-error — no type declarations for raw SVG import
-import crispyLogoSvg from '../../../media/crispy-icon.svg';
+import { animatedLogoSvg } from '../utils/animated-logo.js';
 
 export function WorkspacePicker(): React.JSX.Element {
   const transport = useTransport();
@@ -23,6 +21,22 @@ export function WorkspacePicker(): React.JSX.Element {
   const [newPath, setNewPath] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const logoRef = useRef<HTMLDivElement>(null);
+
+  // 3D coin tilt — track mouse position across the entire viewport
+  useEffect(() => {
+    const MAX_TILT = 14;
+    const onMove = (e: MouseEvent) => {
+      const svg = logoRef.current?.querySelector('svg');
+      if (!svg) return;
+      const nx = (e.clientX / window.innerWidth - 0.5) * 2;
+      const ny = (e.clientY / window.innerHeight - 0.5) * 2;
+      svg.style.setProperty('--logo-ry', (nx * MAX_TILT) + 'deg');
+      svg.style.setProperty('--logo-rx', (-ny * MAX_TILT) + 'deg');
+    };
+    document.addEventListener('mousemove', onMove);
+    return () => document.removeEventListener('mousemove', onMove);
+  }, []);
 
   // Read flash message from URL query
   const flash = new URLSearchParams(window.location.search).get('flash') ?? '';
@@ -75,9 +89,10 @@ export function WorkspacePicker(): React.JSX.Element {
       <div className="crispy-workspace-picker__card">
         <div className="crispy-workspace-picker__header">
           <div
+            ref={logoRef}
             className="crispy-workspace-picker__logo"
             aria-hidden="true"
-            dangerouslySetInnerHTML={{ __html: crispyLogoSvg }}
+            dangerouslySetInnerHTML={{ __html: animatedLogoSvg }}
           />
           <h1 className="crispy-workspace-picker__title">Crispy</h1>
           <p className="crispy-workspace-picker__subtitle">Select a workspace to get started</p>

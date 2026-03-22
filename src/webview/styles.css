@@ -784,12 +784,23 @@ h2 {
 .crispy-welcome__title {
   font-size: 30px;
   font-weight: 400;
-  color: #e8a020;
   margin: 4px 0 4px 0;
   letter-spacing: 3px;
   padding-left: 3px;
   text-transform: uppercase;
   font-family: Georgia, 'Times New Roman', 'Noto Serif', serif;
+  background: linear-gradient(90deg, #c87818, #e8a020, #f0c860, #e8a020, #c87818);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: warm-ember-drift 8s ease-in-out infinite;
+}
+
+@keyframes warm-ember-drift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 
 .crispy-welcome__subtitle {
@@ -4551,9 +4562,15 @@ h2 {
   .crispy-cp-settings__btn,
   .crispy-cp-rosie__btn,
   .crispy-titlebar__dot,
-  .crispy-titlebar__dot-copied-label {
+  .crispy-titlebar__dot-copied-label,
+  .crispy-welcome__title,
+  .crispy-workspace-picker__title {
     animation: none !important;
     transition-duration: 0.01ms !important;
+  }
+  .crispy-welcome__title,
+  .crispy-workspace-picker__title {
+    -webkit-text-fill-color: #e8a020;
   }
 }
 
@@ -5881,21 +5898,43 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   width: 110px;
   height: 110px;
   margin-bottom: 4px;
+  transform-style: preserve-3d;
+  perspective: 400px;
 }
 
 .crispy-workspace-picker__logo svg {
   width: 100px;
   height: 100px;
+  transform: rotateX(var(--logo-rx, 0deg)) rotateY(var(--logo-ry, 0deg));
+  transition: transform 0.12s cubic-bezier(0.23, 1, 0.32, 1), filter 0.3s ease;
+  will-change: transform;
+  filter:
+    drop-shadow(4px 6px 10px rgba(0, 0, 0, 0.7))
+    drop-shadow(-1px -1px 0 rgba(255, 220, 120, 0.15))
+    drop-shadow(1px 2px 0 rgba(0, 0, 0, 0.5));
+}
+
+.crispy-workspace-picker__logo:hover svg {
+  filter:
+    drop-shadow(5px 10px 20px rgba(0, 0, 0, 0.5))
+    drop-shadow(0 0 16px rgba(232, 160, 32, 0.3))
+    drop-shadow(-1px -1px 0 rgba(255, 220, 120, 0.2))
+    drop-shadow(1px 2px 0 rgba(0, 0, 0, 0.4));
 }
 
 .crispy-workspace-picker__title {
   font-size: 30px;
   font-weight: 400;
-  color: #e8a020;
   letter-spacing: 3px;
   text-transform: uppercase;
   font-family: Georgia, 'Times New Roman', 'Noto Serif', serif;
   margin: 0 0 8px;
+  background: linear-gradient(90deg, #c87818, #e8a020, #f0c860, #e8a020, #c87818);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: warm-ember-drift 8s ease-in-out infinite;
 }
 
 .crispy-workspace-picker__subtitle {
