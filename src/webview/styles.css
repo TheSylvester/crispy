@@ -766,7 +766,7 @@ h2 {
 }
 
 .crispy-welcome__icon {
-  margin-bottom: 16px;
+  margin-bottom: 4px;
   flex-shrink: 1;
   display: flex;
   align-items: center;
@@ -782,13 +782,14 @@ h2 {
 }
 
 .crispy-welcome__title {
-  font-size: 28px;
-  font-weight: 500;
-  color: var(--vscode-foreground, #ccc);
-  margin: 8px 0 4px 0;
-  letter-spacing: 0.4em;
-  padding-left: 0.4em;
+  font-size: 30px;
+  font-weight: 400;
+  color: #e8a020;
+  margin: 4px 0 4px 0;
+  letter-spacing: 3px;
+  padding-left: 3px;
   text-transform: uppercase;
+  font-family: Georgia, 'Times New Roman', 'Noto Serif', serif;
 }
 
 .crispy-welcome__subtitle {
@@ -3765,11 +3766,12 @@ h2 {
 
 .crispy-titlebar__wordmark {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 400;
   color: #e8a020;
   letter-spacing: 1.5px;
   line-height: 1;
   text-transform: uppercase;
+  font-family: Georgia, 'Times New Roman', 'Noto Serif', serif;
 }
 
 .crispy-titlebar__brand-sep {
