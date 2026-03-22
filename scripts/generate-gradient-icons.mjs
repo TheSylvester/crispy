@@ -73,11 +73,33 @@ for (const { name, size } of sizes) {
   console.log(`✓ ${name}.png (${size}x${size})`);
 }
 
-// Also generate the ICO-style multi-size favicon using 32px
-// (browsers accept PNG for favicon.ico these days)
-const favicon32Path = join(outDir, 'favicon-32.png');
+// Generate favicon from the original flat SVG (no gradients) — the gradient
+// subtlety is lost at 32px, so the solid fills read cleaner at favicon scale.
+const faviconSize = 32;
+const padding = 2;
+const iconSize = faviconSize - padding * 2;
+const discRadius = 13; // smaller than full (16) — logo edges peek past the disc
+
+const origSvg = readFileSync(join(mediaDir, 'crispy-icon.svg'), 'utf8');
+const hiResOrig = origSvg.replace('width="400"', 'width="1024"').replace('height="400"', 'height="1024"');
+const origBuffer = Buffer.from(hiResOrig);
+
+// Trim whitespace borders from the SVG, then resize to fill the icon area
+const trimmed = await sharp(origBuffer).trim().png().toBuffer();
+const iconRendered = await sharp(trimmed)
+  .resize(iconSize, iconSize, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+  .png()
+  .toBuffer();
+
+const bgCircle = Buffer.from(`<svg width="${faviconSize}" height="${faviconSize}" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="${faviconSize / 2}" cy="${faviconSize / 2}" r="${discRadius}" fill="#626266"/>
+</svg>`);
+
 const faviconDest = join(mediaDir, 'favicon.png');
-await sharp(favicon32Path).toFile(faviconDest);
-console.log(`✓ favicon.png (copied to media/)`);
+await sharp(bgCircle)
+  .composite([{ input: iconRendered, left: padding, top: padding }])
+  .png()
+  .toFile(faviconDest);
+console.log(`✓ favicon.png (${faviconSize}x${faviconSize} with dark background)`);
 
 console.log(`\nAll icons written to ${outDir}/`);
