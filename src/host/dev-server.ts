@@ -271,7 +271,8 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
   // IPC socket: use stable paths for daemon, PID-based for dev
   const socketMode = mode === 'daemon' ? 'prod' as const : undefined;
-  setHostSocketPath(getSocketPath(socketMode));
+  const ipcSocketPath = getSocketPath(socketMode);
+  setHostSocketPath(ipcSocketPath);
 
   done = phase('init recall ingest');
   initRecallIngest();
@@ -285,7 +286,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     : join(__dirname, 'crispy-tracker.mjs');
   initRosieBot(dispatch, {
     trackerScript,
-    ipcSocket: getSocketPath(socketMode),
+    ipcSocket: ipcSocketPath,
   });
   done();
 
@@ -329,9 +330,9 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
   startRescan();
 
-  // Start IPC server
+  // Start IPC server — pass the same path we injected into CRISPY_SOCK
   let ipcHandle: { close(): void } | null = null;
-  startIpcServer(cwd)
+  startIpcServer(cwd, ipcSocketPath)
     .then((h) => { ipcHandle = h; })
     .catch((err) => console.error('[server] IPC server failed:', err));
 

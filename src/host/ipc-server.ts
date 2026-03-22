@@ -98,8 +98,8 @@ function unregister(): void {
 
 let connectionCounter = 0;
 
-export async function startIpcServer(cwd: string): Promise<{ close(): void }> {
-  const socketPath = getSocketPath();
+export async function startIpcServer(cwd: string, overridePath?: string): Promise<{ close(): void }> {
+  const socketPath = overridePath ?? getSocketPath();
 
   // Ensure IPC and run directories exist (on win32 socketPath is a pipe path, not a dir)
   mkdirSync(ipcDir(), { recursive: true });
