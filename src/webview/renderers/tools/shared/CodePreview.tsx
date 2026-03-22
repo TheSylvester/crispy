@@ -19,6 +19,8 @@ interface CodePreviewProps {
   lineNumbers?: boolean;
   /** 1-based line number to scroll to and highlight on mount. */
   targetLine?: number;
+  /** Enable word wrapping. Default false. */
+  wordWrap?: boolean;
 }
 
 export function CodePreview({
@@ -27,6 +29,7 @@ export function CodePreview({
   maxHeight = 400,
   lineNumbers = true,
   targetLine,
+  wordWrap = false,
 }: CodePreviewProps): React.JSX.Element {
   const themeKind = useThemeKind();
   const prismTheme = isLightTheme(themeKind) ? themes.vsLight : themes.vsDark;
@@ -45,7 +48,7 @@ export function CodePreview({
     <div className="crispy-code-preview" style={{ maxHeight }} ref={containerRef}>
       <Highlight theme={prismTheme} code={code} language={language}>
         {({ tokens, getLineProps, getTokenProps, style }) => (
-          <pre style={{ ...style, background: 'transparent', margin: 0, padding: '8px 10px', fontSize: '12px', lineHeight: 1.5 }}>
+          <pre style={{ ...style, background: 'transparent', margin: 0, padding: '8px 10px', fontSize: '12px', lineHeight: 1.5, ...(wordWrap ? { whiteSpace: 'pre-wrap', overflowWrap: 'break-word', overflowX: 'hidden' as const } : {}) }}>
             {tokens.map((line, i) => {
               const lineNum = i + 1;
               const lineProps = getLineProps({ line, key: i });

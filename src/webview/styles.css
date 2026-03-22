@@ -5661,12 +5661,43 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
 }
 
+.crispy-file-viewer-panel__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.crispy-file-viewer-panel__toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  font-size: var(--font-xs);
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.crispy-file-viewer-panel__toolbar-btn:hover {
+  color: var(--vscode-foreground, #ccc);
+  background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+
+.crispy-file-viewer-panel__toolbar-btn--active {
+  color: var(--vscode-foreground, #ccc);
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .crispy-file-viewer-panel__execute {
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  margin-left: auto;
   background: var(--vscode-button-background, #0e639c);
   color: var(--vscode-button-foreground, #fff);
   border: none;
@@ -5691,6 +5722,11 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
 .crispy-file-viewer-panel__body .crispy-code-preview {
   max-height: none;
   overflow: visible;
+}
+
+.crispy-file-viewer__markdown {
+  padding: 16px 24px;
+  max-width: 80ch;
 }
 
 /* Target line highlight */

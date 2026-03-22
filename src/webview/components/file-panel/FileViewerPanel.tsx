@@ -48,6 +48,14 @@ export function FileViewerPanel(): React.JSX.Element | null {
   const [selection, setSelection] = useState<SelectionState | null>(null);
   const [annotationMode, setAnnotationMode] = useState(false);
   const [annotationText, setAnnotationText] = useState('');
+  const [wordWrap, setWordWrap] = useState(true);
+  const [markdownPreview, setMarkdownPreview] = useState(true);
+
+  // Reset markdown preview when switching to a non-markdown file
+  const isMarkdownFile = activeFileView ? /\.(md|markdown)$/i.test(activeFileView.relativePath) : false;
+  useEffect(() => {
+    if (!isMarkdownFile) setMarkdownPreview(false);
+  }, [isMarkdownFile]);
 
   // Escape cascade: annotation → selection → close panel
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -72,7 +80,7 @@ export function FileViewerPanel(): React.JSX.Element | null {
 
   // Detect text selection within the panel body
   useEffect(() => {
-    if (!fileViewerOpen || annotationMode) return;
+    if (!fileViewerOpen || annotationMode || markdownPreview) return;
 
     const handleMouseUp = () => {
       requestAnimationFrame(() => {
@@ -99,7 +107,7 @@ export function FileViewerPanel(): React.JSX.Element | null {
 
     document.addEventListener('mouseup', handleMouseUp);
     return () => document.removeEventListener('mouseup', handleMouseUp);
-  }, [fileViewerOpen, annotationMode]);
+  }, [fileViewerOpen, annotationMode, markdownPreview]);
 
   // Focus textarea when annotation mode opens
   useEffect(() => {
@@ -208,19 +216,43 @@ export function FileViewerPanel(): React.JSX.Element | null {
         <span className="crispy-file-viewer-panel__path">
           {activeFileView?.relativePath ?? (loading ? 'Loading...' : 'Error')}
         </span>
-        {showExecute && (
-          <button
-            className="crispy-file-viewer-panel__execute"
-            onClick={handleExecute}
-            title="Open a new session with this file's content as the prompt"
-            aria-label="Execute in Crispy"
-          >
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M4 2L14 8L4 14Z" />
-            </svg>
-            <span>Execute</span>
-          </button>
-        )}
+        <div className="crispy-file-viewer-panel__toolbar">
+          {activeFileView && (
+            <>
+              <button
+                className={`crispy-file-viewer-panel__toolbar-btn${wordWrap ? ' crispy-file-viewer-panel__toolbar-btn--active' : ''}`}
+                onClick={() => setWordWrap(w => !w)}
+                title="Toggle word wrap"
+                aria-label="Toggle word wrap"
+              >
+                Wrap
+              </button>
+              {isMarkdownFile && (
+                <button
+                  className={`crispy-file-viewer-panel__toolbar-btn${markdownPreview ? ' crispy-file-viewer-panel__toolbar-btn--active' : ''}`}
+                  onClick={() => setMarkdownPreview(p => !p)}
+                  title="Toggle markdown preview"
+                  aria-label="Toggle markdown preview"
+                >
+                  Preview
+                </button>
+              )}
+            </>
+          )}
+          {showExecute && (
+            <button
+              className="crispy-file-viewer-panel__execute"
+              onClick={handleExecute}
+              title="Open a new session with this file's content as the prompt"
+              aria-label="Execute in Crispy"
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M4 2L14 8L4 14Z" />
+              </svg>
+              <span>Execute</span>
+            </button>
+          )}
+        </div>
         <button
           className="crispy-file-viewer-panel__close"
           onClick={closeFile}
@@ -232,7 +264,7 @@ export function FileViewerPanel(): React.JSX.Element | null {
       </div>
       <div className="crispy-file-viewer-panel__body">
         {activeFileView ? (
-          <FileViewer file={activeFileView} error={error} loading={loading} />
+          <FileViewer file={activeFileView} error={error} loading={loading} wordWrap={wordWrap} markdownPreview={markdownPreview} />
         ) : loading ? (
           <div className="crispy-file-viewer">
             <div className="crispy-file-viewer__loading">Loading...</div>

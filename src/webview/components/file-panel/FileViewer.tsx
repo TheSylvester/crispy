@@ -10,11 +10,14 @@
 
 import type { ActiveFileView } from '../../context/FilePanelContext.js';
 import { CodePreview } from '../../renderers/tools/shared/CodePreview.js';
+import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
 
 interface FileViewerProps {
   file: ActiveFileView;
   error?: string | null;
   loading?: boolean;
+  wordWrap?: boolean;
+  markdownPreview?: boolean;
 }
 
 function formatSize(bytes: number): string {
@@ -23,7 +26,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function FileViewer({ file, error, loading }: FileViewerProps): React.JSX.Element {
+export function FileViewer({ file, error, loading, wordWrap, markdownPreview }: FileViewerProps): React.JSX.Element {
   if (loading) {
     return (
       <div className="crispy-file-viewer">
@@ -48,12 +51,19 @@ export function FileViewer({ file, error, loading }: FileViewerProps): React.JSX
         <span className="crispy-file-viewer__lang">{file.language}</span>
         <span className="crispy-file-viewer__size">{formatSize(file.size)}</span>
       </div>
-      <CodePreview
-        code={file.content}
-        language={file.language}
-        maxHeight={99999}
-        targetLine={file.line}
-      />
+      {markdownPreview ? (
+        <div className="crispy-file-viewer__markdown">
+          <CrispyMarkdown>{file.content}</CrispyMarkdown>
+        </div>
+      ) : (
+        <CodePreview
+          code={file.content}
+          language={file.language}
+          maxHeight={99999}
+          targetLine={file.line}
+          wordWrap={wordWrap}
+        />
+      )}
     </div>
   );
 }
