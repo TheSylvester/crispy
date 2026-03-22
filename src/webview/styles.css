@@ -3674,7 +3674,14 @@ h2 {
   /* inherits .crispy-titlebar__btn via dual class */
 }
 
-/* --- App icon (far left, brand presence) --- */
+/* --- App brand (icon + wordmark, far left) --- */
+
+.crispy-titlebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
 
 .crispy-titlebar__app-icon {
   display: flex;
@@ -3699,6 +3706,14 @@ h2 {
 .crispy-titlebar__app-icon svg {
   width: 20px;
   height: 20px;
+}
+
+.crispy-titlebar__wordmark {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e8a020;
+  letter-spacing: 1px;
+  line-height: 1;
 }
 
 /* --- Git branch indicator (right section, passive context) --- */

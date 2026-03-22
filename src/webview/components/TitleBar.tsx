@@ -63,15 +63,18 @@ function PlusIcon(): React.JSX.Element {
   );
 }
 
-/** Crispy logo — uses the same SVG as the welcome page, rendered at 20px */
+/** Crispy logo + wordmark — brand presence in the titlebar */
 function AppIcon(): React.JSX.Element {
   return (
-    <button
-      className="crispy-titlebar__app-icon"
-      title="Crispy"
-      aria-label="Crispy"
-      dangerouslySetInnerHTML={{ __html: crispyLogoSvg }}
-    />
+    <div className="crispy-titlebar__brand">
+      <button
+        className="crispy-titlebar__app-icon"
+        title="Crispy"
+        aria-label="Crispy"
+        dangerouslySetInnerHTML={{ __html: crispyLogoSvg }}
+      />
+      <span className="crispy-titlebar__wordmark">Crispy</span>
+    </div>
   );
 }
 
