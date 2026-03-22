@@ -24,11 +24,12 @@ export function urlPathToFsPath(urlPath: string): string {
   // Strip leading slash to get the raw path content
   const stripped = decoded.startsWith('/') ? decoded.slice(1) : decoded;
 
-  // Tilde: ~/dev/crispy → /home/user/dev/crispy
+  // Tilde: ~/dev/crispy → /home/user/dev/crispy (or C:\Users\user\dev\crispy)
   if (stripped.startsWith('~/') || stripped === '~') {
     const home = homedir();
     const rest = stripped.slice(1); // remove '~', keep leading '/'
-    return home + rest;
+    // Use platform-native separators so round-trip with fsPathToUrlPath works
+    return home + (home.includes('\\') ? rest.replace(/\//g, '\\') : rest);
   }
 
   // Windows drive letter: C:/Users/... → C:\Users\...
