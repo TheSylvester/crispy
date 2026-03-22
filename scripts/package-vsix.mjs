@@ -208,10 +208,25 @@ const pkgJsonRaw = readFileSync(pkgJsonPath, 'utf8');
 cpSync(pkgJsonPath, stashPkgJson);
 
 const pkgJson = JSON.parse(pkgJsonRaw);
+let pkgModified = false;
+
+// Strip "files" — npm uses it for tarball inclusion, vsce uses .vscodeignore
 if (pkgJson.files) {
   delete pkgJson.files;
-  writeFileSync(pkgJsonPath, JSON.stringify(pkgJson, null, 2) + '\n');
+  pkgModified = true;
   console.log('  Stripped: "files" field from package.json (vsce uses .vscodeignore)');
+}
+
+// Restore extension name for VSIX — npm uses "crispy-code" (name "crispy" is
+// taken on npm), but OpenVSX/Marketplace expect "crispy" as the extension ID.
+if (pkgJson.name !== 'crispy') {
+  pkgJson.name = 'crispy';
+  pkgModified = true;
+  console.log('  Restored: name → "crispy" for VSIX extension ID');
+}
+
+if (pkgModified) {
+  writeFileSync(pkgJsonPath, JSON.stringify(pkgJson, null, 2) + '\n');
 }
 
 // ---------------------------------------------------------------------------
