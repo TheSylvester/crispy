@@ -3674,6 +3674,81 @@ h2 {
   /* inherits .crispy-titlebar__btn via dual class */
 }
 
+/* --- App icon (far left, brand presence) --- */
+
+.crispy-titlebar__app-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.crispy-titlebar__app-icon:hover {
+  background: var(--tint-medium);
+}
+.crispy-titlebar__app-icon:active {
+  transform: translateY(0.5px);
+}
+.crispy-titlebar__app-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* --- Git branch indicator (right section, passive context) --- */
+
+.crispy-titlebar__git {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  font-size: var(--font-xs);
+  color: #999;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  cursor: default;
+  transition: color 0.2s;
+}
+.crispy-titlebar__git:hover {
+  color: #bbb;
+}
+
+.crispy-titlebar__git-icon {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.crispy-titlebar__git-branch {
+  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  font-size: 11px;
+}
+
+.crispy-titlebar__git-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+.crispy-titlebar__git-dot--clean {
+  background: #73c991;
+}
+.crispy-titlebar__git-dot--dirty {
+  background: #e8a020;
+}
+
+/* Narrow viewport: hide git branch text, keep icon + dot */
+@media (max-width: 560px) {
+  .crispy-titlebar__git-branch {
+    display: none;
+  }
+}
+
 
 /* ============================================================================
  * Approval Content — rendered inside .crispy-cp via children slot

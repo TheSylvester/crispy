@@ -81,6 +81,53 @@ export async function getGitFiles(cwd: string): Promise<string[]> {
 }
 
 /**
+ * Get current git branch name and dirty status for the given working directory.
+ *
+ * Returns `null` if `cwd` is not inside a git repo. For detached HEAD,
+ * returns the short SHA instead of a branch name.
+ */
+export async function getGitBranchInfo(
+  cwd: string,
+): Promise<{ branch: string; dirty: boolean } | null> {
+  try {
+    const branch = await new Promise<string>((resolve, reject) => {
+      execFile(
+        "git",
+        ["rev-parse", "--abbrev-ref", "HEAD"],
+        { cwd },
+        (err, stdout) => (err ? reject(err) : resolve(stdout.trim())),
+      );
+    });
+
+    // Detached HEAD — rev-parse returns literal "HEAD"
+    const displayBranch =
+      branch === "HEAD"
+        ? await new Promise<string>((resolve, reject) => {
+            execFile(
+              "git",
+              ["rev-parse", "--short", "HEAD"],
+              { cwd },
+              (err, stdout) => (err ? reject(err) : resolve(stdout.trim())),
+            );
+          })
+        : branch;
+
+    const porcelain = await new Promise<string>((resolve, reject) => {
+      execFile(
+        "git",
+        ["status", "--porcelain"],
+        { cwd, maxBuffer: 1024 * 1024 },
+        (err, stdout) => (err ? reject(err) : resolve(stdout)),
+      );
+    });
+
+    return { branch: displayBranch, dirty: porcelain.length > 0 };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Check if a path points to an existing file (not directory).
  */
 export async function fileExists(path: string): Promise<boolean> {

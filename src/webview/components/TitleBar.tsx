@@ -21,6 +21,10 @@ import { useEnvironment } from '../context/EnvironmentContext.js';
 import { useThemeKind, isLightTheme } from '../hooks/useThemeKind.js';
 import { SessionSelector, ProjectsView } from './session-selector/index.js';
 import { useAvailableCwds } from '../hooks/useAvailableCwds.js';
+import { useGitInfo } from '../hooks/useGitInfo.js';
+// esbuild --loader:.svg=text imports the raw SVG markup as a string
+// @ts-expect-error — no type declarations for raw SVG import
+import crispyLogoSvg from '../../../media/crispy-icon.svg';
 import { getSessionDisplayName } from '../utils/session-display.js';
 
 /** SVG chevron — points down, rotates 180° when sidebar is open */
@@ -56,6 +60,48 @@ function PlusIcon(): React.JSX.Element {
     >
       <path d="M6 2V10M2 6H10" />
     </svg>
+  );
+}
+
+/** Crispy logo — uses the same SVG as the welcome page, rendered at 20px */
+function AppIcon(): React.JSX.Element {
+  return (
+    <button
+      className="crispy-titlebar__app-icon"
+      title="Crispy"
+      aria-label="Crispy"
+      dangerouslySetInnerHTML={{ __html: crispyLogoSvg }}
+    />
+  );
+}
+
+/** Git branch icon — fork/branch glyph (12px) */
+function GitBranchIcon(): React.JSX.Element {
+  return (
+    <svg
+      className="crispy-titlebar__git-icon"
+      width="12"
+      height="12"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+    >
+      <path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6.5a.5.5 0 0 1-.5.5H9.15a1.5 1.5 0 0 0-1.342.829L7.1 9.243a3 3 0 0 1-.342.558V5.372a2.25 2.25 0 1 1 1.5 0v1.836l.394-.789A3 3 0 0 1 11.33 5h.42V5.372a2.25 2.25 0 0 1-2.25-2.122zM4.25 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-1.5.75a2.25 2.25 0 1 1 3 2.122V13.5h-.75v-.878a2.25 2.25 0 0 1-2.25-2.122z"/>
+    </svg>
+  );
+}
+
+/** Git branch indicator — branch name + clean/dirty dot */
+function GitBranchIndicator(): React.JSX.Element | null {
+  const gitInfo = useGitInfo();
+
+  if (!gitInfo) return null;
+
+  return (
+    <span className="crispy-titlebar__git" title={`${gitInfo.branch} — ${gitInfo.dirty ? 'uncommitted changes' : 'clean'}`}>
+      <GitBranchIcon />
+      <span className="crispy-titlebar__git-branch">{gitInfo.branch}</span>
+      <span className={`crispy-titlebar__git-dot ${gitInfo.dirty ? 'crispy-titlebar__git-dot--dirty' : 'crispy-titlebar__git-dot--clean'}`} />
+    </span>
   );
 }
 
@@ -332,6 +378,9 @@ export function TitleBar(): React.JSX.Element {
 
   return (
     <header className="crispy-titlebar">
+      {/* App icon — brand presence, no dropdown yet */}
+      <AppIcon />
+
       {/* Left — Projects + Conversations dropdowns share a positioning wrapper */}
       <div className="crispy-session-dropdown-container" ref={dropdownContainerRef}>
         {rosieBotEnabled && (
@@ -376,8 +425,9 @@ export function TitleBar(): React.JSX.Element {
         <ConnectionDot channelState={channelState} sessionId={selectedSessionId} />
       </div>
 
-      {/* Right — Theme toggle (dev server only) + Files + Tools + New button */}
+      {/* Right — Git info + Theme toggle (dev server only) + Files + Tools + New button */}
       <div className="crispy-titlebar__right">
+        <GitBranchIndicator />
         {envKind === 'websocket' && <ThemeToggle />}
         <button
           className={`crispy-titlebar__btn crispy-titlebar__sidebar-btn${toolPanelOpen && sidebarView === 'files' ? ' crispy-titlebar__sidebar-btn--active' : ''}`}

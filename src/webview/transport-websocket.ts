@@ -175,6 +175,7 @@ export function createWebSocketTransport(url: string): SessionService {
     updateProjectSortOrder: (updates) => request<{ ok: boolean }>('updateProjectSortOrder', { updates }),
 
     getGitFiles: (cwd) => request<string[]>('getGitFiles', { cwd }),
+    getGitBranchInfo: (cwd) => request<{ branch: string; dirty: boolean } | null>('getGitBranchInfo', { cwd }),
     fileExists: (path) => request<boolean>('fileExists', { path }),
     readImage: (path) => request<{ data: string; mimeType: string; fileName: string }>('readImage', { path }),
     readFile: (path) => request<{ content: string; fileName: string; size: number }>('readFile', { path }),

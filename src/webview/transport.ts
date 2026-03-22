@@ -110,6 +110,7 @@ export interface SessionService {
   unsubscribeLog(): Promise<void>;
   onEvent(handler: (sessionId: string, event: HostEvent) => void): () => void;
   getGitFiles(cwd: string): Promise<string[]>;
+  getGitBranchInfo(cwd: string): Promise<{ branch: string; dirty: boolean } | null>;
   fileExists(path: string): Promise<boolean>;
   readImage(path: string): Promise<{ data: string; mimeType: string; fileName: string }>;
   readFile(path: string): Promise<{ content: string; fileName: string; size: number }>;
