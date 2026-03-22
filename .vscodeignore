@@ -37,5 +37,11 @@ node_modules/**
 
 # Misc
 *.vsix
+*.tgz
 **/*.map
 vitest.config.ts
+architecture.md
+projects-view-playground.html
+skills-lock.json
+.agents/**
+.tmp/**

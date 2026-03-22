@@ -14,7 +14,7 @@ Works with Claude Code and Codex. Runs standalone in your browser or as a VS Cod
 
 **Agent memory** — searchable transcripts across all vendors, fully local.
 **Multi-agent collaboration** — resumable cross-vendor sessions, directed by your agent of choice.
-**Coding agent workbench** — fork, rewind, agency modes, tool auditing, side-by-side panels.
+**Coding agent workbench** — fork, rewind, agency modes, tool auditing, multiple browser tabs or side-by-side VS Code Editor panels, local voice input, and more.
 
 ---
 
@@ -43,7 +43,7 @@ wordmark. Always visible, no session required.
 
 ### Standalone fixes
 
-IPC socket path fix for daemon mode, startup progress messages, Windows
+IPC socket path fix for daemon mode to enable multi-agent collaboration and other skills, startup progress messages, Windows
 compatibility for postinstall, and dynamic version on the welcome screen.
 
 ### Emoji filename support

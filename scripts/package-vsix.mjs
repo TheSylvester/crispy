@@ -84,6 +84,7 @@ const stashHfDist = join(stash, 'hf-dist-pruned');
 const stashSharp = join(stash, 'sharp-real');
 const stashImg = join(stash, 'img-real');
 const stashIgnore = join(stash, '.vscodeignore.bak');
+const stashPkgJson = join(stash, 'package.json.bak');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -197,7 +198,24 @@ writeFileSync(join(sharpDir, 'index.js'), `function s(){var c={metadata:async()=
 console.log('  Replaced: sharp → stub (voice uses onnxruntime-node, not sharp)');
 
 // ---------------------------------------------------------------------------
-// 4. Augment .vscodeignore
+// 4. Strip "files" field from package.json (conflicts with .vscodeignore)
+// ---------------------------------------------------------------------------
+// npm uses "files" for tarball inclusion; vsce uses .vscodeignore. Both cannot
+// coexist. Temporarily remove "files" for the vsce run, restore after.
+
+const pkgJsonPath = join(cwd, 'package.json');
+const pkgJsonRaw = readFileSync(pkgJsonPath, 'utf8');
+cpSync(pkgJsonPath, stashPkgJson);
+
+const pkgJson = JSON.parse(pkgJsonRaw);
+if (pkgJson.files) {
+  delete pkgJson.files;
+  writeFileSync(pkgJsonPath, JSON.stringify(pkgJson, null, 2) + '\n');
+  console.log('  Stripped: "files" field from package.json (vsce uses .vscodeignore)');
+}
+
+// ---------------------------------------------------------------------------
+// 5. Augment .vscodeignore
 // ---------------------------------------------------------------------------
 
 const baseIgnore = readFileSync(ignoreFile, 'utf8').trimEnd();
@@ -211,7 +229,7 @@ const ignoreSuffix = [
 writeFileSync(ignoreFile, `${baseIgnore}\n${ignoreSuffix.join('\n')}\n`);
 
 // ---------------------------------------------------------------------------
-// 4. Package
+// 6. Package
 // ---------------------------------------------------------------------------
 
 try {
@@ -231,6 +249,9 @@ try {
 } finally {
   // ── Restore everything ──────────────────────────────────────────────
   // Always restore, even on failure, so node_modules isn't left broken.
+
+  // Restore package.json (with "files" field)
+  cpSync(stashPkgJson, pkgJsonPath);
 
   // Restore .vscodeignore
   cpSync(stashIgnore, ignoreFile);
