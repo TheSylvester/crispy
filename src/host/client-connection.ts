@@ -696,6 +696,9 @@ export function createClientConnection(
 
       case "getGitFiles": {
         const cwd = params.cwd as string;
+        // Auto-register CWD as allowed root — the user selected this project,
+        // so file reads within it should be permitted even without an active session.
+        extraAllowedRoots.add(resolve(cwd));
         return getGitFiles(cwd);
       }
 
