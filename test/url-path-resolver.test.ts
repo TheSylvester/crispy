@@ -5,11 +5,12 @@ import { describe, it, expect } from 'vitest';
 import { urlPathToFsPath } from '../src/core/url-path-resolver-server.js';
 import { fsPathToUrlPath, normalizePath } from '../src/core/url-path-resolver.js';
 import { homedir } from 'os';
+import { sep } from 'path';
 
 describe('urlPathToFsPath', () => {
   it('expands tilde-relative paths', () => {
     const result = urlPathToFsPath('/~/dev/crispy');
-    expect(result).toBe(homedir() + '/dev/crispy');
+    expect(result).toBe(homedir() + sep + 'dev' + sep + 'crispy');
   });
 
   it('handles bare tilde', () => {
@@ -29,7 +30,7 @@ describe('urlPathToFsPath', () => {
 
   it('decodes percent-encoded spaces', () => {
     const result = urlPathToFsPath('/~/my%20project');
-    expect(result).toBe(homedir() + '/my project');
+    expect(result).toBe(homedir() + sep + 'my project');
   });
 });
 
