@@ -52,6 +52,7 @@ export function FileViewer({ file, error, loading }: FileViewerProps): React.JSX
         code={file.content}
         language={file.language}
         maxHeight={99999}
+        targetLine={file.line}
       />
     </div>
   );

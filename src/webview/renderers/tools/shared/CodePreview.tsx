@@ -7,6 +7,7 @@
  * @module webview/renderers/tools/shared/CodePreview
  */
 
+import { useEffect, useRef } from 'react';
 import { Highlight, themes } from 'prism-react-renderer';
 import { useThemeKind, isLightTheme } from '../../../hooks/useThemeKind.js';
 
@@ -16,6 +17,8 @@ interface CodePreviewProps {
   maxHeight?: number;
   /** Show line number gutter. Default true. */
   lineNumbers?: boolean;
+  /** 1-based line number to scroll to and highlight on mount. */
+  targetLine?: number;
 }
 
 export function CodePreview({
@@ -23,22 +26,40 @@ export function CodePreview({
   language = 'text',
   maxHeight = 400,
   lineNumbers = true,
+  targetLine,
 }: CodePreviewProps): React.JSX.Element {
   const themeKind = useThemeKind();
   const prismTheme = isLightTheme(themeKind) ? themes.vsLight : themes.vsDark;
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to target line after render
+  useEffect(() => {
+    if (!targetLine || !containerRef.current) return;
+    const el = containerRef.current.querySelector(`[data-line-number="${targetLine}"]`);
+    if (el) {
+      el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    }
+  }, [targetLine]);
 
   return (
-    <div className="crispy-code-preview" style={{ maxHeight }}>
+    <div className="crispy-code-preview" style={{ maxHeight }} ref={containerRef}>
       <Highlight theme={prismTheme} code={code} language={language}>
         {({ tokens, getLineProps, getTokenProps, style }) => (
           <pre style={{ ...style, background: 'transparent', margin: 0, padding: '8px 10px', fontSize: '12px', lineHeight: 1.5 }}>
             {tokens.map((line, i) => {
+              const lineNum = i + 1;
               const lineProps = getLineProps({ line, key: i });
+              const isTarget = targetLine === lineNum;
               return (
-                <span key={i} {...lineProps}>
+                <span
+                  key={i}
+                  {...lineProps}
+                  data-line-number={lineNum}
+                  className={isTarget ? 'crispy-code-preview__target-line' : undefined}
+                >
                   {lineNumbers && (
                     <span style={{ color: 'var(--tint-strong)', display: 'inline-block', width: '3em', textAlign: 'right', marginRight: '1em', userSelect: 'none' }}>
-                      {i + 1}
+                      {lineNum}
                     </span>
                   )}
                   {line.map((token, j) => (

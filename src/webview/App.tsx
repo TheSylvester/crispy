@@ -16,7 +16,7 @@ import { EnvironmentProvider } from './context/EnvironmentContext.js';
 import { SessionProvider, useSession } from './context/SessionContext.js';
 import { FileIndexProvider } from './context/FileIndexContext.js';
 import { PreferencesProvider, usePreferences } from './context/PreferencesContext.js';
-import { FilePanelProvider } from './context/FilePanelContext.js';
+import { FilePanelProvider, useFilePanel } from './context/FilePanelContext.js';
 import { TranscriptViewer } from './components/TranscriptViewer.js';
 import { TitleBar } from './components/TitleBar.js';
 import { SessionStatusProvider, useSessionStatus } from './hooks/useSessionStatus.js';
@@ -67,10 +67,14 @@ const PANEL_RATIO = 0.38;
 /** Below this container width panels switch to overlay mode */
 const OVERLAY_BREAKPOINT_PX = 800;
 
+/** Breakpoint: both sidebar + file viewer get layout space */
+const DUAL_PANEL_BREAKPOINT_PX = 1100;
+
 function AppLayout(): React.JSX.Element {
   const {
-    toolPanelOpen, toolPanelWidthPx,
+    toolPanelOpen, toolPanelWidthPx, fileViewerWidthPx,
   } = usePreferences();
+  const { fileViewerOpen } = useFilePanel();
   const { selectedSessionId } = useSession();
   const { channelState } = useSessionStatus(selectedSessionId);
   const isStreaming = channelState === 'streaming';
@@ -91,24 +95,50 @@ function AppLayout(): React.JSX.Element {
     return () => observer.disconnect();
   }, []);
 
-  // ---- Tool panel width ----
+  // ---- Tool/sidebar panel width ----
   const autoPx = Math.min(Math.max(Math.round(containerWidth * PANEL_RATIO), MIN_PANEL_PX), MAX_PANEL_PX);
   const panelPx = toolPanelWidthPx != null
     ? Math.min(Math.max(toolPanelWidthPx, MIN_PANEL_PX), MAX_PANEL_PX)
     : autoPx;
-  const isOverlay = toolPanelOpen && containerWidth < OVERLAY_BREAKPOINT_PX;
-  const toolPanelWidth = toolPanelOpen && !isOverlay ? panelPx : 0;
+  const isSidebarOverlay = toolPanelOpen && containerWidth < OVERLAY_BREAKPOINT_PX;
+  const toolPanelWidth = toolPanelOpen && !isSidebarOverlay ? panelPx : 0;
+
+  // ---- File viewer panel width ----
+  const fileViewerAutoPx = Math.min(Math.max(Math.round(containerWidth * PANEL_RATIO), MIN_PANEL_PX), MAX_PANEL_PX);
+  const fileViewerPx = fileViewerWidthPx != null
+    ? Math.min(Math.max(fileViewerWidthPx, MIN_PANEL_PX), MAX_PANEL_PX)
+    : fileViewerAutoPx;
+
+  // Determine file viewer overlay state:
+  // - Container < 800px → overlay
+  // - 800-1100px with sidebar open → file viewer overlays
+  // - > 1100px → both get layout space
+  const isFileViewerOverlay = fileViewerOpen && (
+    containerWidth < OVERLAY_BREAKPOINT_PX ||
+    (toolPanelOpen && containerWidth < DUAL_PANEL_BREAKPOINT_PX)
+  );
+  const fileViewerWidth = fileViewerOpen && !isFileViewerOverlay ? fileViewerPx : 0;
+
+  // --right-panels-width = sum of both panels' layout-reserved widths
+  const rightPanelsWidth = toolPanelWidth + fileViewerWidth;
+
+  // File viewer panel state attribute
+  const fileViewerState = fileViewerOpen
+    ? (isFileViewerOverlay ? 'overlay' : 'open')
+    : 'collapsed';
 
   return (
     <ControlPanelProvider selectedSessionId={selectedSessionId}>
       <div
         ref={layoutRef}
         className="crispy-layout"
-        data-tool-panel={toolPanelOpen ? (isOverlay ? 'overlay' : 'open') : 'collapsed'}
+        data-tool-panel={toolPanelOpen ? (isSidebarOverlay ? 'overlay' : 'open') : 'collapsed'}
+        data-file-viewer={fileViewerState}
         style={{
           '--tool-panel-width': `${toolPanelWidth}px`,
           '--tool-panel-actual-width': `${toolPanelOpen ? panelPx : 0}px`,
-          '--right-panels-width': `${toolPanelWidth}px`,
+          '--file-viewer-width': `${fileViewerOpen ? fileViewerPx : 0}px`,
+          '--right-panels-width': `${rightPanelsWidth}px`,
           '--container-width': `${containerWidth}px`,
         } as React.CSSProperties}
       >

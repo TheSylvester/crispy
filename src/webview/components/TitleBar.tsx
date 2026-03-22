@@ -22,6 +22,7 @@ import { useThemeKind, isLightTheme } from '../hooks/useThemeKind.js';
 import { SessionSelector, ProjectsView } from './session-selector/index.js';
 import { useAvailableCwds } from '../hooks/useAvailableCwds.js';
 import { useGitInfo } from '../hooks/useGitInfo.js';
+import { useFilePanel } from '../context/FilePanelContext.js';
 // esbuild --loader:.svg=text imports the raw SVG markup as a string
 // @ts-expect-error — no type declarations for raw SVG import
 import crispyLogoSvg from '../../../media/crispy-icon.svg';
@@ -270,6 +271,7 @@ function truncateLabel(text: string, max: number): string {
 export function TitleBar(): React.JSX.Element {
   const { sessions, selectedSessionId, setSelectedSessionId, selectedCwd, setSelectedCwd } = useSession();
   const { sidebarCollapsed, setSidebarCollapsed, toolPanelOpen, setToolPanelOpen, sidebarView, setSidebarView, rosieBotEnabled } = usePreferences();
+  const { fileViewerOpen, closeFile } = useFilePanel();
   const { channelState } = useSessionStatus(selectedSessionId);
   const dropdownContainerRef = useRef<HTMLDivElement>(null);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
@@ -351,12 +353,15 @@ export function TitleBar(): React.JSX.Element {
         } else if (key === 'f') {
           e.preventDefault();
           handleSidebarButton('files');
+        } else if (key === 'v') {
+          e.preventDefault();
+          if (fileViewerOpen) closeFile();
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleSidebarButton]);
+  }, [handleSidebarButton, fileViewerOpen, closeFile]);
 
   // Click-outside to close dropdowns
   useEffect(() => {

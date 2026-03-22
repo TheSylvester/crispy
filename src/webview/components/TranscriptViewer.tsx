@@ -55,7 +55,7 @@ import { ConnectorLines } from "../blocks/ConnectorLines.js";
 import { PanelStateProvider } from "../blocks/PanelStateContext.js";
 import { BlocksToolPanel } from "../blocks/BlocksToolPanel.js";
 import { FilePanel } from "./file-panel/FilePanel.js";
-import { FileViewerModal } from "./file-panel/FileViewerModal.js";
+import { FileViewerPanel } from "./file-panel/FileViewerPanel.js";
 import { useFilePanel } from "../context/FilePanelContext.js";
 import { useControlPanel } from "../context/ControlPanelContext.js";
 import { useTranscriptAnnotation } from "../hooks/useTranscriptAnnotation.js";
@@ -448,7 +448,7 @@ export function TranscriptViewer(): React.JSX.Element {
     <>
       {mainContent}
       {toolPanelOpen && sidebarView === 'files' && <FilePanel />}
-      <FileViewerModal />
+      <FileViewerPanel />
       <TranscriptAnnotationPopover {...annotation} />
       {selectedSessionId && !error && <StopButton ref={stopButtonRef} />}
       {debugMode && (

@@ -1,10 +1,10 @@
 /**
  * File Panel Context — active file view state and callbacks
  *
- * Owns the transient (session-scoped) state for the file viewer: which file
- * is currently open, plus callbacks to open files and insert text into chat.
- * Separate from PreferencesContext because preferences are persistent user
- * settings; the active file view is ephemeral.
+ * Owns the transient (session-scoped) state for the file viewer panel: which
+ * file is currently open, plus callbacks to open files and insert text into
+ * chat. Separate from PreferencesContext because preferences are persistent
+ * user settings; the active file view is ephemeral.
  *
  * @module FilePanelContext
  */
@@ -24,19 +24,22 @@ export interface ActiveFileView {
   content: string;
   language: string;       // inferred from extension
   size: number;
+  line?: number;          // 1-based line to highlight (Phase 2 will scroll to it)
 }
 
 interface FilePanelContextValue {
   activeFileView: ActiveFileView | null;
-  /** Whether the file viewer modal is open */
-  fileModalOpen: boolean;
-  /** Open a file in the file viewer modal */
+  /** Whether the file viewer panel is open */
+  fileViewerOpen: boolean;
+  /** Open a file in the file viewer panel (relative path, prepends cwd) */
   openFile: (relativePath: string, line?: number) => Promise<void>;
+  /** Open a file by absolute path in the file viewer panel */
+  openFileAbsolute: (absolutePath: string, line?: number) => Promise<void>;
   /** Insert text into the chat input at cursor position */
   insertIntoChat: (text: string) => void;
   /** Register a callback to handle insertIntoChat. Called by TranscriptViewer. */
   registerInsertHandler: (handler: (text: string) => void) => void;
-  /** Close the file viewer modal and clear active file */
+  /** Close the file viewer panel and clear active file */
   closeFile: () => void;
   /** The resolved cwd (absolute path), or null if no project selected */
   cwd: string | null;
@@ -58,7 +61,7 @@ interface FilePanelProviderProps {
 
 export function FilePanelProvider({ children }: FilePanelProviderProps): React.JSX.Element {
   const transport = useTransport();
-  const [fileModalOpen, setFileModalOpen] = useState(false);
+  const [fileViewerOpen, setFileViewerOpen] = useState(false);
   const { fullPath } = useCwd();
   const [activeFileView, setActiveFileView] = useState<ActiveFileView | null>(null);
   const [loading, setLoading] = useState(false);
@@ -72,7 +75,7 @@ export function FilePanelProvider({ children }: FilePanelProviderProps): React.J
     insertHandlerRef.current = handler;
   }, []);
 
-  const openFile = useCallback(async (relativePath: string) => {
+  const openFile = useCallback(async (relativePath: string, line?: number) => {
     if (!fullPath) return;
 
     const absolutePath = `${fullPath}/${relativePath}`;
@@ -87,21 +90,55 @@ export function FilePanelProvider({ children }: FilePanelProviderProps): React.J
         content,
         language: inferLanguage(relativePath),
         size,
+        line,
       });
-      // Open file viewer modal
-      setFileModalOpen(true);
+      // Open file viewer panel
+      setFileViewerOpen(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
-      // Still open modal to show the error
-      setFileModalOpen(true);
+      // Still open panel to show the error
+      setFileViewerOpen(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [fullPath, transport]);
+
+  const openFileAbsolute = useCallback(async (absolutePath: string, line?: number) => {
+    // Derive relativePath by stripping cwd prefix
+    let relativePath: string;
+    if (fullPath && absolutePath.startsWith(fullPath + '/')) {
+      relativePath = absolutePath.slice(fullPath.length + 1);
+    } else {
+      // Outside cwd or no cwd — use filename
+      relativePath = absolutePath.split('/').pop() ?? absolutePath;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { content, size } = await transport.readFile(absolutePath);
+      setActiveFileView({
+        path: absolutePath,
+        relativePath,
+        content,
+        language: inferLanguage(relativePath),
+        size,
+        line,
+      });
+      setFileViewerOpen(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      setFileViewerOpen(true);
     } finally {
       setLoading(false);
     }
   }, [fullPath, transport]);
 
   const closeFile = useCallback(() => {
-    setFileModalOpen(false);
+    setFileViewerOpen(false);
     setActiveFileView(null);
     setError(null);
   }, []);
@@ -112,15 +149,16 @@ export function FilePanelProvider({ children }: FilePanelProviderProps): React.J
 
   const value: FilePanelContextValue = useMemo(() => ({
     activeFileView,
-    fileModalOpen,
+    fileViewerOpen,
     openFile,
+    openFileAbsolute,
     insertIntoChat,
     registerInsertHandler,
     closeFile,
     cwd: fullPath,
     loading,
     error,
-  }), [activeFileView, fileModalOpen, openFile, insertIntoChat, registerInsertHandler, closeFile, fullPath, loading, error]);
+  }), [activeFileView, fileViewerOpen, openFile, openFileAbsolute, insertIntoChat, registerInsertHandler, closeFile, fullPath, loading, error]);
 
   return (
     <FilePanelContext.Provider value={value}>

@@ -5572,30 +5572,54 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
  * File Viewer Modal — overlay on transcript area
  * ============================================================================ */
 
-.crispy-file-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 300;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* --------------------------------------------------------------------------
+   File Viewer Panel — persistent panel alongside the sidebar
+   -------------------------------------------------------------------------- */
 
-.crispy-file-modal {
-  width: 90%;
-  max-width: 800px;
-  max-height: 85%;
+.crispy-file-viewer-panel {
+  position: fixed;
+  top: var(--titlebar-height);
+  right: var(--tool-panel-actual-width, 0px);
+  width: var(--file-viewer-width, 0px);
+  height: calc(100vh - var(--titlebar-height));
   background: var(--vscode-editor-background, #1e1e1e);
-  border: 1px solid var(--border-panel);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  border-left: 1px solid var(--border-panel);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  z-index: 99;
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity var(--sidebar-transition),
+    transform var(--sidebar-transition),
+    width var(--sidebar-transition),
+    right var(--sidebar-transition);
 }
 
-.crispy-file-modal__header {
+/* When sidebar is collapsed, file viewer sits at right: 0 */
+[data-tool-panel="collapsed"] .crispy-file-viewer-panel {
+  right: 0;
+}
+
+/* Hidden state */
+[data-file-viewer="collapsed"] .crispy-file-viewer-panel {
+  opacity: 0;
+  transform: translateX(8px);
+  pointer-events: none;
+}
+
+/* Overlay mode — floats over content */
+[data-file-viewer="overlay"] .crispy-file-viewer-panel {
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+  z-index: 200;
+}
+
+/* When sidebar is overlay and file viewer is open, file viewer sits at right: 0 */
+[data-tool-panel="overlay"] .crispy-file-viewer-panel {
+  right: 0;
+}
+
+.crispy-file-viewer-panel__header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -5605,7 +5629,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   background: var(--vscode-sideBar-background, #252526);
 }
 
-.crispy-file-modal__path {
+.crispy-file-viewer-panel__path {
   flex: 1;
   font-family: var(--font-mono);
   font-size: var(--font-xs);
@@ -5615,7 +5639,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   opacity: 0.8;
 }
 
-.crispy-file-modal__close {
+.crispy-file-viewer-panel__close {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5632,12 +5656,12 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   flex-shrink: 0;
 }
 
-.crispy-file-modal__close:hover {
+.crispy-file-viewer-panel__close:hover {
   color: var(--vscode-foreground, #ccc);
   background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
 }
 
-.crispy-file-modal__execute {
+.crispy-file-viewer-panel__execute {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -5653,18 +5677,29 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   flex-shrink: 0;
 }
 
-.crispy-file-modal__execute:hover {
+.crispy-file-viewer-panel__execute:hover {
   background: var(--vscode-button-hoverBackground, #1177bb);
 }
 
-.crispy-file-modal__body {
+.crispy-file-viewer-panel__body {
   flex: 1;
   min-height: 0;
   overflow: auto;
 }
 
-/* CodePreview inside modal — let it fill available space and scroll with the body */
-.crispy-file-modal__body .crispy-code-preview {
+/* CodePreview inside file viewer panel — fill available space and scroll with body */
+.crispy-file-viewer-panel__body .crispy-code-preview {
   max-height: none;
   overflow: visible;
+}
+
+/* Target line highlight */
+.crispy-code-preview__target-line {
+  background: rgba(255, 213, 79, 0.15);
+  display: inline;
+}
+
+/* Disable transitions on file viewer panel during drag resize */
+[data-resizing] .crispy-file-viewer-panel {
+  transition: none !important;
 }

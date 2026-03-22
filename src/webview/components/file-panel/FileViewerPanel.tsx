@@ -1,17 +1,19 @@
 /**
- * FileViewerModal — modal overlay for file preview on the transcript area
+ * FileViewerPanel — persistent panel for file preview alongside the sidebar
  *
- * Renders when a file is opened from the file tree. Displays as a centered
- * modal over the transcript with close button and Escape-to-dismiss.
- * Supports text selection with a floating annotation popover — highlight text,
- * click Annotate, type a comment, and submit to insert into chat.
+ * Renders as a fixed-position panel to the left of the sidebar (Files/Tools).
+ * Replaces the old FileViewerModal lightbox. Supports text selection with a
+ * floating annotation popover (portaled to document.body), Execute button
+ * for prompt files, scroll-to-line via targetLine, and Escape cascade
+ * (annotation → selection → close panel).
  *
- * @module file-panel/FileViewerModal
+ * @module file-panel/FileViewerPanel
  */
 
 import { useEffect, useCallback, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useFilePanel } from '../../context/FilePanelContext.js';
+import { usePreferences } from '../../context/PreferencesContext.js';
 import { useEnvironment } from '../../context/EnvironmentContext.js';
 import { FileViewer } from './FileViewer.js';
 
@@ -22,7 +24,6 @@ function isExecutable(name: string): boolean {
 
 /** Determine line numbers from a text selection within a code preview container */
 function getLineRange(selectedText: string, fullContent: string): { start: number; end: number } | null {
-  // Find the selected text in the full content
   const idx = fullContent.indexOf(selectedText);
   if (idx === -1) return null;
   const before = fullContent.slice(0, idx);
@@ -36,10 +37,11 @@ interface SelectionState {
   rect: DOMRect;
 }
 
-export function FileViewerModal(): React.JSX.Element | null {
-  const { fileModalOpen, activeFileView, closeFile, insertIntoChat, loading, error } = useFilePanel();
+export function FileViewerPanel(): React.JSX.Element | null {
+  const { fileViewerOpen, activeFileView, closeFile, insertIntoChat, loading, error } = useFilePanel();
+  const { setFileViewerWidthPx } = usePreferences();
   const envKind = useEnvironment();
-  const modalRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -47,6 +49,7 @@ export function FileViewerModal(): React.JSX.Element | null {
   const [annotationMode, setAnnotationMode] = useState(false);
   const [annotationText, setAnnotationText] = useState('');
 
+  // Escape cascade: annotation → selection → close panel
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       if (annotationMode) {
@@ -62,19 +65,16 @@ export function FileViewerModal(): React.JSX.Element | null {
   }, [closeFile, annotationMode, selection]);
 
   useEffect(() => {
-    if (!fileModalOpen) return;
+    if (!fileViewerOpen) return;
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [fileModalOpen, handleKeyDown]);
+  }, [fileViewerOpen, handleKeyDown]);
 
-  // Detect text selection within the modal body.
-  // Only SET selection on valid text highlights — never auto-clear.
-  // Selection is cleared explicitly via Escape, backdrop click, or modal close.
+  // Detect text selection within the panel body
   useEffect(() => {
-    if (!fileModalOpen || annotationMode) return;
+    if (!fileViewerOpen || annotationMode) return;
 
     const handleMouseUp = () => {
-      // Small delay to let browser finalize selection
       requestAnimationFrame(() => {
         const sel = window.getSelection();
         if (!sel || sel.isCollapsed || !sel.rangeCount) return;
@@ -83,29 +83,23 @@ export function FileViewerModal(): React.JSX.Element | null {
         const text = sel.toString().trim();
         if (!text) return;
 
-        // Only handle selections within the modal body (code preview area)
-        const modal = modalRef.current;
-        if (!modal) return;
-        const body = modal.querySelector('.crispy-file-modal__body');
+        // Only handle selections within the panel body (code preview area)
+        const panel = panelRef.current;
+        if (!panel) return;
+        const body = panel.querySelector('.crispy-file-viewer-panel__body');
         if (!body || !body.contains(range.commonAncestorContainer)) {
-          // Clicked outside the code area — clear selection
           setSelection(null);
           return;
         }
 
         const rect = range.getBoundingClientRect();
-
-        // Store viewport-relative rect (popover uses position:fixed)
-        setSelection({
-          text,
-          rect,
-        });
+        setSelection({ text, rect });
       });
     };
 
     document.addEventListener('mouseup', handleMouseUp);
     return () => document.removeEventListener('mouseup', handleMouseUp);
-  }, [fileModalOpen, annotationMode]);
+  }, [fileViewerOpen, annotationMode]);
 
   // Focus textarea when annotation mode opens
   useEffect(() => {
@@ -114,14 +108,14 @@ export function FileViewerModal(): React.JSX.Element | null {
     }
   }, [annotationMode]);
 
-  // Clear state when modal closes
+  // Clear state when panel closes
   useEffect(() => {
-    if (!fileModalOpen) {
+    if (!fileViewerOpen) {
       setSelection(null);
       setAnnotationMode(false);
       setAnnotationText('');
     }
-  }, [fileModalOpen]);
+  }, [fileViewerOpen]);
 
   const handleAnnotateClick = useCallback(() => {
     setAnnotationMode(true);
@@ -164,13 +158,36 @@ export function FileViewerModal(): React.JSX.Element | null {
     closeFile();
   }, [activeFileView, envKind, closeFile]);
 
-  if (!fileModalOpen) return null;
+  // Drag-to-resize (left edge)
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const panel = (e.target as HTMLElement).closest('.crispy-file-viewer-panel');
+    const startWidth = panel?.clientWidth ?? 350;
+    const layout = document.querySelector('.crispy-layout');
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      closeFile();
-    }
-  };
+    layout?.setAttribute('data-resizing', '');
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaPx = startX - moveEvent.clientX;
+      setFileViewerWidthPx(Math.round(startWidth + deltaPx));
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      layout?.removeAttribute('data-resizing');
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [setFileViewerWidthPx]);
+
+  if (!fileViewerOpen) return null;
 
   const showExecute = activeFileView && isExecutable(activeFileView.relativePath);
 
@@ -182,46 +199,49 @@ export function FileViewerModal(): React.JSX.Element | null {
 
   return (
     <>
-    <div className="crispy-file-modal-backdrop" onClick={handleBackdropClick}>
-      <div className="crispy-file-modal" ref={modalRef}>
-        <div className="crispy-file-modal__header">
-          <span className="crispy-file-modal__path">
-            {activeFileView?.relativePath ?? (loading ? 'Loading...' : 'Error')}
-          </span>
-          {showExecute && (
-            <button
-              className="crispy-file-modal__execute"
-              onClick={handleExecute}
-              title="Open a new session with this file's content as the prompt"
-              aria-label="Execute in Crispy"
-            >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M4 2L14 8L4 14Z" />
-              </svg>
-              <span>Execute</span>
-            </button>
-          )}
+    <div className="crispy-file-viewer-panel" ref={panelRef}>
+      <div
+        className="crispy-tool-panel__resize-handle"
+        onMouseDown={handleResizeStart}
+      />
+      <div className="crispy-file-viewer-panel__header">
+        <span className="crispy-file-viewer-panel__path">
+          {activeFileView?.relativePath ?? (loading ? 'Loading...' : 'Error')}
+        </span>
+        {showExecute && (
           <button
-            className="crispy-file-modal__close"
-            onClick={closeFile}
-            aria-label="Close file viewer"
+            className="crispy-file-viewer-panel__execute"
+            onClick={handleExecute}
+            title="Open a new session with this file's content as the prompt"
+            aria-label="Execute in Crispy"
           >
-            &times;
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M4 2L14 8L4 14Z" />
+            </svg>
+            <span>Execute</span>
           </button>
-        </div>
-        <div className="crispy-file-modal__body">
-          {activeFileView ? (
-            <FileViewer file={activeFileView} error={error} loading={loading} />
-          ) : loading ? (
-            <div className="crispy-file-viewer">
-              <div className="crispy-file-viewer__loading">Loading...</div>
-            </div>
-          ) : error ? (
-            <div className="crispy-file-viewer">
-              <div className="crispy-file-viewer__error">{error}</div>
-            </div>
-          ) : null}
-        </div>
+        )}
+        <button
+          className="crispy-file-viewer-panel__close"
+          onClick={closeFile}
+          aria-label="Close file viewer"
+          title="Close file viewer (Alt+V)"
+        >
+          &times;
+        </button>
+      </div>
+      <div className="crispy-file-viewer-panel__body">
+        {activeFileView ? (
+          <FileViewer file={activeFileView} error={error} loading={loading} />
+        ) : loading ? (
+          <div className="crispy-file-viewer">
+            <div className="crispy-file-viewer__loading">Loading...</div>
+          </div>
+        ) : error ? (
+          <div className="crispy-file-viewer">
+            <div className="crispy-file-viewer__error">{error}</div>
+          </div>
+        ) : null}
       </div>
     </div>
 

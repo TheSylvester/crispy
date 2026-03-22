@@ -50,6 +50,8 @@ interface Preferences {
   bashBlockInIcons: boolean;
   /** Which view is shown in the unified right sidebar. */
   sidebarView: SidebarView;
+  /** User-dragged file viewer panel width override (px). null = use auto-computed width. */
+  fileViewerWidthPx: number | null;
   /** Whether the Rosie bot tracker is enabled. Read-only from settings. */
   rosieBotEnabled: boolean;
 }
@@ -60,6 +62,7 @@ interface PreferencesContextValue extends Preferences {
   setSidebarCollapsed: (collapsed: boolean) => void;
   setToolPanelOpen: (open: boolean) => void;
   setToolPanelWidthPx: (px: number | null) => void;
+  setFileViewerWidthPx: (px: number | null) => void;
   setToolPanelMode: (mode: ToolPanelMode) => void;
   setToolViewOverride: (override: ToolViewOverride) => void;
   setDebugMode: (enabled: boolean) => void;
@@ -99,6 +102,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [toolPanelOpen, setToolPanelOpen] = useState(false);
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
+  const [fileViewerWidthPx, setFileViewerWidthPx] = useState<number | null>(null);
   const [toolPanelMode, setToolPanelMode] = useState<ToolPanelMode>('inspector');
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
   const [condensedToolMode, setCondensedToolMode] = useState(false);
@@ -233,6 +237,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     sidebarCollapsed,
     toolPanelOpen,
     toolPanelWidthPx,
+    fileViewerWidthPx,
     toolPanelMode,
     toolViewOverride,
     debugMode,
@@ -247,6 +252,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setSidebarCollapsed,
     setToolPanelOpen,
     setToolPanelWidthPx,
+    setFileViewerWidthPx,
     setToolPanelMode,
     setToolViewOverride,
     setDebugMode,
@@ -261,6 +267,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     sidebarCollapsed,
     toolPanelOpen,
     toolPanelWidthPx,
+    fileViewerWidthPx,
     toolPanelMode,
     toolViewOverride,
     debugMode,
@@ -275,6 +282,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setSidebarCollapsed,
     setToolPanelOpen,
     setToolPanelWidthPx,
+    setFileViewerWidthPx,
     setToolPanelMode,
     setToolViewOverride,
     setDebugMode,
