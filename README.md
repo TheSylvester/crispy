@@ -1,6 +1,6 @@
 # Crispy
 
-**A coding agent workbench — with local agent memory, multi-agent collaboration, and controls you can't get in a terminal.**
+**An agent workbench for Claude Code and Codex — with local agent memory, multi-agent collaboration, and controls you can't get in a terminal.**
 
 Works with Claude Code and Codex. Runs standalone in your browser or as a VS Code / Cursor extension.
 
