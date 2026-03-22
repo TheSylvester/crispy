@@ -51,10 +51,10 @@ export function FileViewerPanel(): React.JSX.Element | null {
   const [wordWrap, setWordWrap] = useState(true);
   const [markdownPreview, setMarkdownPreview] = useState(true);
 
-  // Reset markdown preview when switching to a non-markdown file
+  // Auto-enable markdown preview for .md files, disable for others
   const isMarkdownFile = activeFileView ? /\.(md|markdown)$/i.test(activeFileView.relativePath) : false;
   useEffect(() => {
-    if (!isMarkdownFile) setMarkdownPreview(false);
+    setMarkdownPreview(isMarkdownFile);
   }, [isMarkdownFile]);
 
   // Escape cascade: annotation → selection → close panel
@@ -80,7 +80,7 @@ export function FileViewerPanel(): React.JSX.Element | null {
 
   // Detect text selection within the panel body
   useEffect(() => {
-    if (!fileViewerOpen || annotationMode || markdownPreview) return;
+    if (!fileViewerOpen || annotationMode) return;
 
     const handleMouseUp = () => {
       requestAnimationFrame(() => {
@@ -107,7 +107,7 @@ export function FileViewerPanel(): React.JSX.Element | null {
 
     document.addEventListener('mouseup', handleMouseUp);
     return () => document.removeEventListener('mouseup', handleMouseUp);
-  }, [fileViewerOpen, annotationMode, markdownPreview]);
+  }, [fileViewerOpen, annotationMode]);
 
   // Focus textarea when annotation mode opens
   useEffect(() => {
