@@ -15,6 +15,7 @@ import type { ApprovalExtra } from './components/approval/types.js';
 import type { WireProviderConfig, ProviderConfig, WireSettingsSnapshot, SettingsPatch } from '../core/settings/types.js';
 import type { VendorModelGroup } from './components/control-panel/types.js';
 import type { CatchupStatus } from '../core/recall/catchup-types.js';
+import type { WorkspaceInfo, WorkspaceListResponse } from '../core/workspace-roots.js';
 
 /** Client-side session info — modifiedAt is a string after JSON serialization. */
 export interface WireSessionInfo extends Omit<SessionInfo, 'modifiedAt'> {
@@ -168,6 +169,11 @@ export interface SessionService {
   startEmbeddingBackfill(): Promise<{ ok: boolean }>;
   stopEmbeddingBackfill(): Promise<{ ok: boolean }>;
   getCatchupStatus(): Promise<CatchupStatus>;
+
+  /** Workspace management */
+  listWorkspaces(): Promise<WorkspaceListResponse>;
+  addWorkspaceRoot(path: string): Promise<{ ok: boolean }>;
+  removeWorkspaceRoot(path: string): Promise<{ ok: boolean }>;
 
   dispose(): void;
 

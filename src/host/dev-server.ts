@@ -15,9 +15,14 @@
  */
 
 import { createServer } from 'node:http';
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { join, extname, resolve, relative } from 'node:path';
+import { join, extname, resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { WebSocketServer, type WebSocket } from 'ws';
+import { urlPathToFsPath } from '../core/url-path-resolver-server.js';
+import { isPathAllowed } from '../core/workspace-roots.js';
+import { listAllSessions } from '../core/session-manager.js';
 
 import { initSettings, startWatchingSettings } from '../core/settings/index.js';
 import { createClientConnection } from './client-connection.js';
@@ -80,6 +85,10 @@ function isLocalhostOrigin(origin: string): boolean {
   }
 }
 
+function escapeHtmlAttr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 function phase(name: string): () => void {
   const t0 = performance.now();
   console.log(`[server] ▸ ${name}...`);
@@ -111,6 +120,9 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
   const STATIC_DIR = mode === 'dev'
     ? join(process.cwd(), 'dist', 'webview')
     : join(__dirname, 'webview');
+
+  // Cache index.html at startup — injected with workspace meta tags per-request
+  const indexHtml = readFileSync(join(STATIC_DIR, 'index.html'), 'utf8');
 
   // Port may be bumped on EADDRINUSE — declare with let so handlers see the
   // final value via closure.
@@ -177,26 +189,69 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
       }
     }
 
-    let filePath = url.pathname === '/' ? '/index.html' : url.pathname;
+    const pathname = url.pathname;
 
-    // Prevent directory traversal — resolve and verify within STATIC_DIR
-    const fullPath = resolve(STATIC_DIR, filePath.slice(1));
-    if (!fullPath.startsWith(STATIC_DIR)) {
-      res.writeHead(403);
-      res.end('Forbidden');
+    // ---- Static asset detection ----
+    // Known static prefixes and file extensions must be served as files,
+    // not interpreted as workspace paths.
+    const ext = extname(pathname);
+    const isStaticAsset = pathname.startsWith('/dist/') ||
+      pathname.startsWith('/assets/') ||
+      ['.js', '.css', '.map', '.woff2', '.png', '.svg', '.ico', '.json'].includes(ext);
+
+    if (isStaticAsset) {
+      const filePath = resolve(STATIC_DIR, pathname.slice(1));
+      if (!filePath.startsWith(STATIC_DIR)) {
+        res.writeHead(403);
+        res.end('Forbidden');
+        return;
+      }
+      try {
+        const content = await readFile(filePath);
+        const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
+        res.writeHead(200, { 'Content-Type': contentType });
+        res.end(content);
+      } catch {
+        res.writeHead(404);
+        res.end('Not Found');
+      }
       return;
     }
-    const ext = extname(fullPath);
-    const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
 
-    try {
-      const content = await readFile(fullPath);
-      res.writeHead(200, { 'Content-Type': contentType });
-      res.end(content);
-    } catch {
-      res.writeHead(404);
-      res.end('Not Found');
+    // ---- Workspace routing ----
+    if (pathname === '/') {
+      // Root page: serve index.html without CWD meta tag (picker mode)
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(indexHtml);
+      return;
     }
+
+    // Everything else is a potential workspace path
+    // Strip trailing slash for consistency
+    const cleanPath = pathname.endsWith('/') && pathname.length > 1
+      ? pathname.slice(0, -1)
+      : pathname;
+
+    const resolvedPath = urlPathToFsPath(cleanPath);
+    const sessions = listAllSessions();
+
+    if (!isPathAllowed(resolvedPath, sessions)) {
+      // Redirect to picker with flash message
+      const msg = encodeURIComponent(`${cleanPath.slice(1)} is not a registered workspace.`);
+      res.writeHead(302, { 'Location': `/?flash=${msg}` });
+      res.end();
+      return;
+    }
+
+    // Serve index.html with CWD injected via meta tag.
+    // <base href="/"> ensures relative asset paths (main.js, styles.css) resolve
+    // from root regardless of the deep workspace URL path.
+    const injected = indexHtml.replace(
+      '<meta charset="UTF-8">',
+      `<meta charset="UTF-8">\n    <base href="/">\n    <meta name="crispy-cwd" content="${escapeHtmlAttr(resolvedPath)}">\n    <meta name="crispy-home" content="${escapeHtmlAttr(homedir())}">`,
+    );
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(injected);
   });
 
   // ---- WebSocket Server ----

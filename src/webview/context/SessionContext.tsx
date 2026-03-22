@@ -203,15 +203,27 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     return () => window.removeEventListener('message', onMessage);
   }, [transportKind]);
 
-  // Dev-server MRU fallback: auto-select the most recent project's CWD when
-  // sessions arrive and no CWD is selected yet. Without this, the ControlPanel
-  // silently bails on send because it can't create a session without a CWD.
+  // Dev-server workspace CWD: read from <meta name="crispy-cwd"> tag injected
+  // by the server for workspace-routed URLs. This replaces the MRU fallback.
   const cwdInitialized = useRef(false);
 
   useEffect(() => {
-    if (cwdInitialized.current || sessions.length === 0) return;
-    if (transportKind === 'vscode') return; // VS Code uses workspaceCwd hint
-    if (selectedCwd) return; // Already set (e.g. from session selection)
+    if (cwdInitialized.current) return;
+
+    const cwdMeta = document.querySelector('meta[name="crispy-cwd"]')?.getAttribute('content');
+    if (cwdMeta && transportKind === 'websocket') {
+      // Server injected a workspace CWD — use it directly
+      cwdInitialized.current = true;
+      const slug = pathToSlug(cwdMeta);
+      setSelectedCwd(slug);
+      setWorkspaceCwdPath(cwdMeta);
+      return;
+    }
+
+    // MRU fallback: only when no meta tag AND not VS Code
+    if (sessions.length === 0) return;
+    if (transportKind === 'vscode') return;
+    if (selectedCwd) return;
 
     const firstSlug = sessions[0]?.projectSlug;
     if (firstSlug) {

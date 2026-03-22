@@ -22,6 +22,7 @@ import { useThemeKind, isLightTheme } from '../hooks/useThemeKind.js';
 import { SessionSelector, ProjectsView } from './session-selector/index.js';
 import { useAvailableCwds } from '../hooks/useAvailableCwds.js';
 import { useGitInfo } from '../hooks/useGitInfo.js';
+import { fsPathToUrlPath } from '../../core/url-path-resolver.js';
 import { useFilePanel } from '../context/FilePanelContext.js';
 // esbuild --loader:.svg=text imports the raw SVG markup as a string
 // @ts-expect-error — no type declarations for raw SVG import
@@ -68,10 +69,9 @@ function PlusIcon(): React.JSX.Element {
 function AppIcon(): React.JSX.Element {
   return (
     <div className="crispy-titlebar__brand">
-      <button
+      <div
         className="crispy-titlebar__app-icon"
-        title="Crispy"
-        aria-label="Crispy"
+        aria-hidden="true"
         dangerouslySetInnerHTML={{ __html: crispyLogoSvg }}
       />
       <span className="crispy-titlebar__wordmark">Crispy</span>
@@ -271,6 +271,8 @@ function truncateLabel(text: string, max: number): string {
 
 export function TitleBar(): React.JSX.Element {
   const { sessions, selectedSessionId, setSelectedSessionId, selectedCwd, setSelectedCwd } = useSession();
+  const transport = useTransport();
+  const envKind = useEnvironment();
   const { sidebarCollapsed, setSidebarCollapsed, toolPanelOpen, setToolPanelOpen, sidebarView, setSidebarView, rosieBotEnabled } = usePreferences();
   const { fileViewerOpen, closeFile } = useFilePanel();
   const { channelState } = useSessionStatus(selectedSessionId);
@@ -278,6 +280,20 @@ export function TitleBar(): React.JSX.Element {
   const projectDropdownRef = useRef<HTMLDivElement>(null);
   const [projectsOpen, setProjectsOpen] = useState(false);
   const allCwds = useAvailableCwds();
+
+  // In websocket mode with workspace routing, CWD changes navigate to the new URL
+  const cwdMeta = document.querySelector('meta[name="crispy-cwd"]')?.getAttribute('content');
+  const homeMeta = document.querySelector('meta[name="crispy-home"]')?.getAttribute('content');
+  const handleCwdChange = useCallback((slug: string | null) => {
+    if (envKind === 'websocket' && cwdMeta && slug) {
+      const cwd = allCwds.find(c => c.slug === slug);
+      if (cwd && homeMeta) {
+        window.location.replace(fsPathToUrlPath(cwd.fullPath, homeMeta));
+        return;
+      }
+    }
+    setSelectedCwd(slug);
+  }, [envKind, cwdMeta, homeMeta, allCwds, setSelectedCwd]);
 
   // Cap visible CWDs to keep the native dropdown manageable
   const MAX_CWDS = 15;
@@ -300,9 +316,6 @@ export function TitleBar(): React.JSX.Element {
     : 'Conversations';
 
   // Push session label to host tab title
-  const transport = useTransport();
-  const envKind = useEnvironment();
-
   const TAB_TITLE_MAX = 24;
   const tabTitle = currentSession
     ? truncateLabel(getSessionDisplayName(currentSession), TAB_TITLE_MAX)
@@ -408,7 +421,7 @@ export function TitleBar(): React.JSX.Element {
                   onSelectSession={handleProjectSelect}
                   availableCwds={availableCwds}
                   selectedCwd={selectedCwd}
-                  onCwdChange={setSelectedCwd}
+                  onCwdChange={handleCwdChange}
                 />
               </div>
             )}

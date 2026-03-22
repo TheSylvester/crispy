@@ -3756,15 +3756,7 @@ h2 {
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
-  cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.15s;
-}
-.crispy-titlebar__app-icon:hover {
-  background: var(--tint-medium);
-}
-.crispy-titlebar__app-icon:active {
-  transform: translateY(0.5px);
 }
 .crispy-titlebar__app-icon svg {
   width: 16px;
@@ -5839,4 +5831,167 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
 /* Disable transitions on file viewer panel during drag resize */
 [data-resizing] .crispy-file-viewer-panel {
   transition: none !important;
+}
+
+/* ============================================================================
+ * WorkspacePicker — root page workspace selector
+ * ============================================================================ */
+
+.crispy-workspace-picker {
+  max-width: 560px;
+  margin: 80px auto 0;
+  padding: 0 24px;
+  color: var(--foreground);
+  font-family: var(--font-family);
+}
+
+.crispy-workspace-picker__header {
+  margin-bottom: 24px;
+}
+
+.crispy-workspace-picker__title {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.crispy-workspace-picker__subtitle {
+  font-size: 14px;
+  color: var(--foreground-muted);
+  margin: 0;
+}
+
+.crispy-workspace-picker__flash {
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  border-radius: var(--radius-sm);
+  background: var(--tint-medium);
+  color: var(--foreground-muted);
+  font-size: 13px;
+  border-left: 3px solid var(--warning, #f0ad4e);
+}
+
+.crispy-workspace-picker__error {
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  border-radius: var(--radius-sm);
+  background: var(--tint-medium);
+  color: var(--error, #f44);
+  font-size: 13px;
+}
+
+.crispy-workspace-picker__loading {
+  color: var(--foreground-muted);
+  font-size: 13px;
+}
+
+.crispy-workspace-picker__empty {
+  color: var(--foreground-muted);
+  font-size: 13px;
+  padding: 16px 0;
+}
+
+.crispy-workspace-picker__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 20px;
+}
+
+.crispy-workspace-picker__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.crispy-workspace-picker__item:hover {
+  background: var(--tint-medium);
+}
+
+.crispy-workspace-picker__item-display {
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.crispy-workspace-picker__item-path {
+  font-size: 12px;
+  color: var(--foreground-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.crispy-workspace-picker__item-remove {
+  background: transparent;
+  border: none;
+  color: var(--foreground-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+  flex-shrink: 0;
+}
+
+.crispy-workspace-picker__item:hover .crispy-workspace-picker__item-remove {
+  opacity: 1;
+}
+
+.crispy-workspace-picker__item-remove:hover {
+  color: var(--foreground);
+}
+
+.crispy-workspace-picker__add {
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle, var(--tint-medium));
+}
+
+.crispy-workspace-picker__input {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--input-background, var(--tint-light));
+  border: 1px solid var(--border-subtle, var(--tint-medium));
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  font-size: 13px;
+  font-family: var(--font-family);
+  outline: none;
+}
+
+.crispy-workspace-picker__input:focus {
+  border-color: var(--accent, #4a9eff);
+}
+
+.crispy-workspace-picker__input::placeholder {
+  color: var(--foreground-muted);
+}
+
+.crispy-workspace-picker__add-btn {
+  padding: 8px 16px;
+  background: var(--accent, #4a9eff);
+  color: var(--accent-foreground, #fff);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.12s;
+}
+
+.crispy-workspace-picker__add-btn:hover {
+  opacity: 0.9;
+}
+
+.crispy-workspace-picker__add-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }

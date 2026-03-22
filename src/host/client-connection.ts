@@ -86,6 +86,8 @@ import {
 } from '../core/rosie/tracker/tracker-notifications.js';
 import type { TrackerNotifyEvent, TrackerNotifySubscriber } from '../core/rosie/tracker/tracker-notifications.js';
 import { readResponsePreview } from '../core/adapters/claude/jsonl-reader.js';
+import { addRoot, removeRoot, listAllWorkspaces } from '../core/workspace-roots.js';
+import type { WorkspaceListResponse } from '../core/workspace-roots.js';
 import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-reader.js';
 // Voice module is lazy-loaded to avoid pulling onnxruntime-node native bindings
 // at extension activation time (crashes VS Code's Electron host).
@@ -1032,6 +1034,27 @@ export function createClientConnection(
       case "resolveSessionPrefix": {
         const { sessionId } = params as { sessionId: string };
         return { sessionId: resolveSessionPrefix(sessionId) };
+      }
+
+      case "listWorkspaces": {
+        const sessions = listAllSessions();
+        const workspaces = listAllWorkspaces(sessions);
+        return {
+          home: homedir(),
+          workspaces,
+        } satisfies WorkspaceListResponse;
+      }
+
+      case "addWorkspaceRoot": {
+        const path = params.path as string;
+        addRoot(path);
+        return { ok: true };
+      }
+
+      case "removeWorkspaceRoot": {
+        const path = params.path as string;
+        removeRoot(path);
+        return { ok: true };
       }
 
       default:

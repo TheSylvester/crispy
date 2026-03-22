@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Transport } from './transport.js';
 import type { TransportKind } from './main.js';
 import { TransportProvider } from './context/TransportContext.js';
-import { EnvironmentProvider } from './context/EnvironmentContext.js';
+import { EnvironmentProvider, useEnvironment } from './context/EnvironmentContext.js';
 import { SessionProvider, useSession } from './context/SessionContext.js';
 import { FileIndexProvider } from './context/FileIndexContext.js';
 import { PreferencesProvider, usePreferences } from './context/PreferencesContext.js';
@@ -24,6 +24,7 @@ import { ContentErrorBoundary } from './components/ErrorBoundary.js';
 import { isPerfMode, PerfOverlay, PerfProfiler } from './perf/index.js';
 import { ControlPanelProvider, useControlPanel } from './context/ControlPanelContext.js';
 import { TrackerToast } from './components/notifications/TrackerToast.js';
+import { WorkspacePicker } from './components/WorkspacePicker.js';
 
 interface AppProps {
   transport: Transport;
@@ -75,6 +76,14 @@ const OVERLAY_BREAKPOINT_PX = 800;
 const DUAL_PANEL_BREAKPOINT_PX = 1100;
 
 function AppLayout(): React.JSX.Element {
+  const transportKind = useEnvironment();
+
+  // Picker mode: websocket transport + no crispy-cwd meta tag = root page
+  const isPickerMode = transportKind === 'websocket' &&
+    !document.querySelector('meta[name="crispy-cwd"]')?.getAttribute('content');
+
+  if (isPickerMode) return <WorkspacePicker />;
+
   const {
     toolPanelOpen, toolPanelWidthPx, fileViewerWidthPx,
   } = usePreferences();

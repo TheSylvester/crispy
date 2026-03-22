@@ -9,6 +9,7 @@
 
 import type { HostEvent } from '../host/client-connection.js';
 import type { SessionService, WireSessionInfo, WireProject, WireProjectActivity, WireStage } from './transport.js';
+import type { WorkspaceListResponse } from '../core/workspace-roots.js';
 import type { TranscriptEntry } from '../core/transcript.js';
 import type { TurnReceipt } from '../core/agent-adapter.js';
 import type { WireProviderConfig, WireSettingsSnapshot, SettingsPatch } from '../core/settings/types.js';
@@ -213,6 +214,10 @@ export function createWebSocketTransport(url: string): SessionService {
         if (i >= 0) eventHandlers.splice(i, 1);
       };
     },
+
+    listWorkspaces: () => request<WorkspaceListResponse>('listWorkspaces'),
+    addWorkspaceRoot: (path) => request<{ ok: boolean }>('addWorkspaceRoot', { path }),
+    removeWorkspaceRoot: (path) => request<{ ok: boolean }>('removeWorkspaceRoot', { path }),
 
     dispose() {
       ws.close();

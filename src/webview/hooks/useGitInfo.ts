@@ -1,7 +1,7 @@
 /**
  * useGitInfo — polls git branch name + dirty status for the current CWD
  *
- * Calls `transport.getGitBranchInfo(fullPath)` on mount and every 10 seconds.
+ * Calls `transport.getGitBranchInfo(fullPath)` on mount and every 30 seconds.
  * Returns `null` when CWD is unknown or not a git repo.
  *
  * @module useGitInfo

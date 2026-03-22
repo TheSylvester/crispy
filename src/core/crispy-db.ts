@@ -130,8 +130,24 @@ function ensureSchema(db: Database): void {
     return;
   }
 
-  // v4 = current schema. Return early — nothing to do.
-  if (currentVersion >= 4) return;
+  // v4→v5: add workspace_roots table
+  if (currentVersion === 4) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS workspace_roots (
+        path TEXT PRIMARY KEY,
+        added_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    db.run(
+      'INSERT OR IGNORE INTO _migrations (version, description) VALUES (?, ?)',
+      [5, 'add workspace_roots'],
+    );
+    log({ source: 'db', level: 'info', summary: 'DB: applied schema v5 — workspace_roots added' });
+    return;
+  }
+
+  // v5 = current schema. Return early — nothing to do.
+  if (currentVersion >= 5) return;
 
   // Old DBs (v1 or the legacy 24-migration system) — wipe and recreate.
   if (currentVersion >= 1) {
@@ -564,14 +580,24 @@ function ensureSchema(db: Database): void {
       );
     `);
 
+    // ====================================================================
+    // workspace_roots — explicit workspace directory registry
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS workspace_roots (
+        path TEXT PRIMARY KEY,
+        added_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+
     // Record schema version
     db.run(
       'INSERT INTO _migrations (version, description) VALUES (?, ?)',
-      [4, 'add session_kind to session_titles'],
+      [5, 'add workspace_roots'],
     );
 
     db.exec('COMMIT');
-    log({ source: 'db', level: 'info', summary: 'DB: schema v4 created — includes session_kind on session_titles' });
+    log({ source: 'db', level: 'info', summary: 'DB: schema v5 created — includes workspace_roots' });
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;

@@ -14,9 +14,10 @@
  * @module crispy-cli
  */
 
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { openSync, mkdirSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { logsDir, tokenPath } from '../core/paths.js';
 import { rotateToken } from '../host/auth.js';
 import {
@@ -237,8 +238,36 @@ switch (command) {
   case 'status':  showStatus(); break;
   case 'open':    openBrowser(); break;
   case '_daemon': runDaemon(); break;
+  case 'add': {
+    const target = process.argv[3];
+    if (!target) { console.error('Usage: crispy add <path>'); process.exit(1); }
+    const expanded = target.startsWith('~')
+      ? join(homedir(), target.slice(1))
+      : resolve(target);
+    import('./ipc-client.js').then(async ({ discoverSocket, MessageRouter }) => {
+      const { connect } = await import('node:net');
+      let socketPath: string;
+      try {
+        socketPath = discoverSocket();
+      } catch {
+        console.error('No running Crispy daemon found.');
+        process.exit(1);
+        return;
+      }
+      const conn = connect(socketPath);
+      const router = new MessageRouter(conn);
+      await router.sendRpc('addWorkspaceRoot', { path: expanded });
+      console.log(`Workspace root added: ${expanded}`);
+      router.end();
+      process.exit(0);
+    }).catch((err) => {
+      console.error('Failed to add workspace root:', err);
+      process.exit(1);
+    });
+    break;
+  }
   default:
     console.error(`Unknown command: ${command}`);
-    console.error('Usage: crispy [start|stop|status|open]');
+    console.error('Usage: crispy [start|stop|status|open|add]');
     process.exit(1);
 }

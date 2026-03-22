@@ -88,13 +88,13 @@ describe('getDb', () => {
 // ============================================================================
 
 describe('schema', () => {
-  it('creates _migrations tracking table with version 4', () => {
+  it('creates _migrations tracking table with version 5', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
     const rows = db.all('SELECT version FROM _migrations ORDER BY version') as Array<Record<string, unknown>>;
     expect(rows.length).toBe(1);
-    expect(rows[0]!.version).toBe(4);
+    expect(rows[0]!.version).toBe(5);
   });
 
   it('runs schema idempotently', () => {

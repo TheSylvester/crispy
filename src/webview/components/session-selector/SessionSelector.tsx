@@ -18,10 +18,12 @@
 import { useState, useMemo, useDeferredValue, useCallback, useRef, useEffect } from 'react';
 import { useSession } from '../../context/SessionContext.js';
 import { usePreferences } from '../../context/PreferencesContext.js';
+import { useEnvironment } from '../../context/EnvironmentContext.js';
 import { useSessionStatus } from '../../hooks/useSessionStatus.js';
 import { useAvailableCwds } from '../../hooks/useAvailableCwds.js';
 import { useSessionGrouping } from '../../hooks/useSessionGrouping.js';
 import { useKeyboardNavigation } from '../../hooks/useKeyboardNavigation.js';
+import { fsPathToUrlPath } from '../../../core/url-path-resolver.js';
 import type { WireSessionInfo } from '../../transport.js';
 import { FilterBar } from './FilterBar.js';
 import { SessionGroupHeader } from './SessionGroupHeader.js';
@@ -39,7 +41,22 @@ export function SessionSelector(): React.JSX.Element {
   } = useSession();
   const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
   const { channelState } = useSessionStatus(selectedSessionId);
+  const transportKind = useEnvironment();
   const allCwds = useAvailableCwds();
+
+  // In websocket mode with workspace routing, CWD changes navigate to the new URL
+  const cwdMeta = document.querySelector('meta[name="crispy-cwd"]')?.getAttribute('content');
+  const homeMeta = document.querySelector('meta[name="crispy-home"]')?.getAttribute('content');
+  const handleCwdChange = useCallback((slug: string | null) => {
+    if (transportKind === 'websocket' && cwdMeta && slug) {
+      const cwd = allCwds.find(c => c.slug === slug);
+      if (cwd && homeMeta) {
+        window.location.replace(fsPathToUrlPath(cwd.fullPath, homeMeta));
+        return;
+      }
+    }
+    setSelectedCwd(slug);
+  }, [transportKind, cwdMeta, homeMeta, allCwds, setSelectedCwd]);
 
   // ---- Local UI state ----
   const [searchQuery, setSearchQuery] = useState('');
@@ -238,7 +255,7 @@ export function SessionSelector(): React.JSX.Element {
         <FilterBar
           availableCwds={availableCwds}
           selectedCwd={selectedCwd}
-          onCwdChange={setSelectedCwd}
+          onCwdChange={handleCwdChange}
           availableVendors={availableVendors}
           activeVendors={activeVendors}
           onVendorToggle={handleVendorToggle}
@@ -265,7 +282,7 @@ export function SessionSelector(): React.JSX.Element {
       <FilterBar
         availableCwds={availableCwds}
         selectedCwd={selectedCwd}
-        onCwdChange={setSelectedCwd}
+        onCwdChange={handleCwdChange}
         availableVendors={availableVendors}
         activeVendors={activeVendors}
         onVendorToggle={handleVendorToggle}
