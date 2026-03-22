@@ -52,10 +52,10 @@ h2 {
   --color-send-text: #f0f0f0;
 
   /* --- Text hierarchy (hardcoded — VS Code vars unreliable in webview) --- */
-  --text-primary: #e0e0e0;     /* titles, headings, main content */
-  --text-secondary: #b0b0b0;   /* descriptions, status text */
-  --text-tertiary: #888;       /* timestamps, meta, muted UI */
-  --text-muted: #666;          /* disabled, ultra-muted */
+  --text-primary: #e0e0e0; /* titles, headings, main content */
+  --text-secondary: #b0b0b0; /* descriptions, status text */
+  --text-tertiary: #888; /* timestamps, meta, muted UI */
+  --text-muted: #666; /* disabled, ultra-muted */
 
   /* Agency mode colors */
   --agency-white: #ffffff;
@@ -103,7 +103,9 @@ h2 {
   --glass-border: rgba(255, 255, 255, 0.05);
   --glass-border-md: rgba(255, 255, 255, 0.08);
   --glass-border-strong: rgba(255, 255, 255, 0.15);
-  --glass-inner-glow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 0 20px rgba(255, 255, 255, 0.03);
+  --glass-inner-glow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 20px rgba(255, 255, 255, 0.03);
   --glass-shadow-subtle: 0 2px 12px rgba(0, 0, 0, 0.25);
   --glass-border-frost: rgba(255, 255, 255, 0.12);
 
@@ -335,12 +337,10 @@ h2 {
 }
 
 /* plan-mode → "planning" */
-.crispy-main[data-agency="plan-mode"]
-  .crispy-thinking__label--thinking {
+.crispy-main[data-agency="plan-mode"] .crispy-thinking__label--thinking {
   display: none;
 }
-.crispy-main[data-agency="plan-mode"]
-  .crispy-thinking__label--planning {
+.crispy-main[data-agency="plan-mode"] .crispy-thinking__label--planning {
   display: inline;
 }
 
@@ -478,16 +478,20 @@ h2 {
   margin-bottom: 0.375rem;
 }
 /* Inline icon containers and their children skip block spacing */
-:is([data-render-mode="blocks"], [data-render-mode="icons"]) .crispy-inline-icons [data-run-id] {
+:is([data-render-mode="blocks"], [data-render-mode="icons"])
+  .crispy-inline-icons
+  [data-run-id] {
   margin-bottom: 0;
 }
-:is([data-render-mode="blocks"], [data-render-mode="icons"]) .crispy-inline-icons {
+:is([data-render-mode="blocks"], [data-render-mode="icons"])
+  .crispy-inline-icons {
   margin-bottom: 0.375rem;
 }
 
 :is([data-render-mode="blocks"], [data-render-mode="icons"]) .user-text,
 :is([data-render-mode="blocks"], [data-render-mode="icons"]) .assistant-text,
-:is([data-render-mode="blocks"], [data-render-mode="icons"]) .crispy-blocks-thinking {
+:is([data-render-mode="blocks"], [data-render-mode="icons"])
+  .crispy-blocks-thinking {
   margin-top: 1rem;
   margin-bottom: 1rem;
 }
@@ -626,7 +630,9 @@ h2 {
   display: flex;
   align-items: center;
   gap: 6px;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .crispy-playback__pill:hover {
@@ -716,7 +722,9 @@ h2 {
   font-size: var(--font-xs, 11px);
   font-family: monospace;
   opacity: 0.5;
-  transition: opacity 0.1s, border-color 0.1s;
+  transition:
+    opacity 0.1s,
+    border-color 0.1s;
 }
 
 .crispy-playback__speed-btn:hover {
@@ -1509,7 +1517,10 @@ h2 {
 }
 
 ::highlight(crispy-transcript-annotation) {
-  background-color: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
+  background-color: var(
+    --vscode-editor-findMatchHighlightBackground,
+    rgba(234, 92, 0, 0.33)
+  );
 }
 
 /* --- TodoWrite checklist --- */
@@ -1737,19 +1748,23 @@ h2 {
 /* Agency mode colors — set --frame-highlight and --agency-glow-shadow per mode */
 .crispy-cp[data-agency="ask-before-edits"] {
   --frame-highlight: var(--agency-white);
-  --agency-glow-shadow: 0 0 12px color-mix(in srgb, var(--agency-white) 30%, transparent);
+  --agency-glow-shadow: 0 0 12px
+    color-mix(in srgb, var(--agency-white) 30%, transparent);
 }
 .crispy-cp[data-agency="edit-automatically"] {
   --frame-highlight: var(--agency-blue);
-  --agency-glow-shadow: 0 0 12px color-mix(in srgb, var(--agency-blue) 30%, transparent);
+  --agency-glow-shadow: 0 0 12px
+    color-mix(in srgb, var(--agency-blue) 30%, transparent);
 }
 .crispy-cp[data-agency="plan-mode"] {
   --frame-highlight: var(--agency-teal);
-  --agency-glow-shadow: 0 0 12px color-mix(in srgb, var(--agency-teal) 30%, transparent);
+  --agency-glow-shadow: 0 0 12px
+    color-mix(in srgb, var(--agency-teal) 30%, transparent);
 }
 .crispy-cp[data-agency="bypass-permissions"] {
   --frame-highlight: var(--agency-red);
-  --agency-glow-shadow: 0 0 12px color-mix(in srgb, var(--agency-red) 30%, transparent);
+  --agency-glow-shadow: 0 0 12px
+    color-mix(in srgb, var(--agency-red) 30%, transparent);
 }
 
 @supports not (color: color-mix(in srgb, red 50%, blue)) {
@@ -1826,8 +1841,12 @@ h2 {
   border-radius: var(--radius-sm);
   font-size: 0.85em;
   line-height: 1.3;
-  background: var(--vscode-inputValidation-errorBackground, rgba(244, 135, 113, 0.15));
-  border: 1px solid var(--vscode-inputValidation-errorBorder, rgba(244, 135, 113, 0.4));
+  background: var(
+    --vscode-inputValidation-errorBackground,
+    rgba(244, 135, 113, 0.15)
+  );
+  border: 1px solid
+    var(--vscode-inputValidation-errorBorder, rgba(244, 135, 113, 0.4));
   color: var(--vscode-errorForeground, #f48771);
 }
 
@@ -1867,13 +1886,15 @@ h2 {
    -------------------------------------------------------------------------- */
 
 @property --stop-angle {
-  syntax: '<angle>';
+  syntax: "<angle>";
   initial-value: 0deg;
   inherits: false;
 }
 
 @keyframes crispy-stop-rotate {
-  to { --stop-angle: 360deg; }
+  to {
+    --stop-angle: 360deg;
+  }
 }
 
 .crispy-stop {
@@ -1891,8 +1912,8 @@ h2 {
     transform 0.15s ease-out;
 
   /* Agency color — default white, overridden per mode */
-  --stop-color-dim:    rgba(255, 255, 255, 0.45);
-  --stop-color:        rgba(255, 255, 255, 0.65);
+  --stop-color-dim: rgba(255, 255, 255, 0.45);
+  --stop-color: rgba(255, 255, 255, 0.65);
   --stop-color-bright: rgba(255, 255, 255, 0.85);
 }
 
@@ -1903,11 +1924,11 @@ h2 {
 }
 
 .crispy-stop::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
-  margin: -1px;
-  border-radius: calc(var(--radius-sm) + 1px);
+  margin: -1.22px;
+  border-radius: calc(var(--radius-sm) + 1.22px);
   background: conic-gradient(
     from var(--stop-angle),
     var(--stop-color-dim) 0deg,
@@ -1934,21 +1955,19 @@ h2 {
 }
 
 /* Agency-mode colors — data-agency set directly on .crispy-main via React */
-.crispy-main[data-agency="edit-automatically"]
-  .crispy-stop {
-  --stop-color-dim:    rgba(64, 168, 232, 0.5);
-  --stop-color:        rgba(64, 168, 232, 0.7);
+.crispy-main[data-agency="edit-automatically"] .crispy-stop {
+  --stop-color-dim: rgba(64, 168, 232, 0.5);
+  --stop-color: rgba(64, 168, 232, 0.7);
   --stop-color-bright: rgba(64, 168, 232, 0.9);
 }
 .crispy-main[data-agency="plan-mode"] .crispy-stop {
-  --stop-color-dim:    rgba(71, 152, 140, 0.5);
-  --stop-color:        rgba(71, 152, 140, 0.7);
+  --stop-color-dim: rgba(71, 152, 140, 0.5);
+  --stop-color: rgba(71, 152, 140, 0.7);
   --stop-color-bright: rgba(71, 152, 140, 0.9);
 }
-.crispy-main[data-agency="bypass-permissions"]
-  .crispy-stop {
-  --stop-color-dim:    rgba(232, 64, 64, 0.5);
-  --stop-color:        rgba(232, 64, 64, 0.7);
+.crispy-main[data-agency="bypass-permissions"] .crispy-stop {
+  --stop-color-dim: rgba(232, 64, 64, 0.5);
+  --stop-color: rgba(232, 64, 64, 0.7);
   --stop-color-bright: rgba(232, 64, 64, 0.9);
 }
 
@@ -2081,7 +2100,9 @@ h2 {
   border: none;
   border-radius: 50%;
   cursor: pointer;
-  transition: color 0.15s, background 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s;
   appearance: none;
   -webkit-appearance: none;
   outline: none;
@@ -2116,14 +2137,28 @@ h2 {
 }
 
 @keyframes crispy-cp-mic-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 @keyframes crispy-cp-mic-spin {
-  0% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(0.85); opacity: 0.6; }
-  100% { transform: scale(1); opacity: 1; }
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.85);
+    opacity: 0.6;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 /* --- Send Button --- */
@@ -2190,7 +2225,8 @@ h2 {
 .crispy-cp[data-agency="bypass-permissions"] .crispy-cp-send {
   background: var(--agency-red);
 }
-.crispy-cp[data-agency="bypass-permissions"] .crispy-cp-send:hover:not(:disabled) {
+.crispy-cp[data-agency="bypass-permissions"]
+  .crispy-cp-send:hover:not(:disabled) {
   background: color-mix(in srgb, var(--agency-red) 80%, black);
 }
 
@@ -2825,7 +2861,9 @@ h2 {
   backdrop-filter: blur(20px) saturate(150%);
   border: 1px solid var(--glass-border-frost);
   border-radius: var(--radius-sm);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3), var(--glass-inner-glow);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    var(--glass-inner-glow);
   z-index: 500;
   padding: 10px 14px;
   font-size: var(--font-sm);
@@ -2982,15 +3020,21 @@ h2 {
   align-self: flex-start;
   padding: 2px 10px;
   font-size: 12px;
-  border: 1px solid var(--vscode-button-border, rgba(255,255,255,0.12));
+  border: 1px solid var(--vscode-button-border, rgba(255, 255, 255, 0.12));
   border-radius: var(--radius-sm);
-  background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
+  background: var(
+    --vscode-button-secondaryBackground,
+    rgba(255, 255, 255, 0.08)
+  );
   color: var(--vscode-button-secondaryForeground, #ccc);
   cursor: pointer;
 }
 
 .crispy-cp-settings__recall-btn:hover {
-  background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.14));
+  background: var(
+    --vscode-button-secondaryHoverBackground,
+    rgba(255, 255, 255, 0.14)
+  );
 }
 
 .crispy-cp-settings__recall-progress-bar {
@@ -3025,7 +3069,7 @@ h2 {
 
 .crispy-embedding-prompt__card {
   background: var(--vscode-editor-background, #1e1e1e);
-  border: 1px solid var(--vscode-panel-border, rgba(255,255,255,0.12));
+  border: 1px solid var(--vscode-panel-border, rgba(255, 255, 255, 0.12));
   border-radius: var(--radius-md, 8px);
   padding: 24px 28px;
   max-width: 420px;
@@ -3062,15 +3106,21 @@ h2 {
 .crispy-embedding-prompt__btn {
   padding: 6px 16px;
   font-size: 13px;
-  border: 1px solid var(--vscode-button-border, rgba(255,255,255,0.12));
+  border: 1px solid var(--vscode-button-border, rgba(255, 255, 255, 0.12));
   border-radius: var(--radius-sm, 4px);
-  background: var(--vscode-button-secondaryBackground, rgba(255,255,255,0.08));
+  background: var(
+    --vscode-button-secondaryBackground,
+    rgba(255, 255, 255, 0.08)
+  );
   color: var(--vscode-button-secondaryForeground, #ccc);
   cursor: pointer;
 }
 
 .crispy-embedding-prompt__btn:hover {
-  background: var(--vscode-button-secondaryHoverBackground, rgba(255,255,255,0.14));
+  background: var(
+    --vscode-button-secondaryHoverBackground,
+    rgba(255, 255, 255, 0.14)
+  );
 }
 
 .crispy-embedding-prompt__btn--primary {
@@ -3112,8 +3162,7 @@ h2 {
 }
 
 /* Hover wobble — pure CSS, no React state needed */
-.crispy-cp-rosie:not(.crispy-cp-rosie--pinned):hover
-  .crispy-cp-rosie__btn {
+.crispy-cp-rosie:not(.crispy-cp-rosie--pinned):hover .crispy-cp-rosie__btn {
   color: var(--vscode-foreground, #d4d4d4);
   animation: crispy-cp-rosie-wobble 0.5s ease;
 }
@@ -3307,7 +3356,11 @@ h2 {
   font-size: var(--font-sm);
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  transition: color 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 
 .crispy-cp-fork:hover:not(:disabled) {
@@ -3632,10 +3685,20 @@ h2 {
 }
 
 @keyframes crispy-copied-fade {
-  0% { opacity: 0; transform: translateY(-50%) translateX(-4px); }
-  15% { opacity: 1; transform: translateY(-50%) translateX(0); }
-  70% { opacity: 1; }
-  100% { opacity: 0; }
+  0% {
+    opacity: 0;
+    transform: translateY(-50%) translateX(-4px);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 @keyframes crispy-dot-pulse-green {
@@ -3749,7 +3812,7 @@ h2 {
 }
 
 .crispy-titlebar__git-branch {
-  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
   font-size: 11px;
 }
 
@@ -3759,7 +3822,6 @@ h2 {
     display: none;
   }
 }
-
 
 /* ============================================================================
  * Approval Content — rendered inside .crispy-cp via children slot
@@ -4286,11 +4348,12 @@ h2 {
 
 /* Overlay mode — panel floats over content with shadow, above control panel */
 [data-tool-panel="overlay"] .crispy-tool-panel {
-  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4), var(--glass-inner-glow);
+  box-shadow:
+    -4px 0 24px rgba(0, 0, 0, 0.4),
+    var(--glass-inner-glow);
   border-radius: var(--radius-sm) 0 0 var(--radius-xl);
   z-index: 250;
 }
-
 
 /* --- Resize handle — draggable left edge --- */
 
@@ -4415,7 +4478,9 @@ h2 {
 }
 
 /* Panel Task tools: natural height, no flex-grow. Children scroll if needed. */
-.crispy-tool-panel__scroll > [data-run-id][data-tool-name="Task"] .crispy-blocks-task-children {
+.crispy-tool-panel__scroll
+  > [data-run-id][data-tool-name="Task"]
+  .crispy-blocks-task-children {
   overflow-y: auto;
   max-height: 40vh;
 }
@@ -4435,7 +4500,10 @@ h2 {
 }
 
 /* Panel: first user message in Task children (the prompt echo) — moderate height */
-.crispy-tool-panel .crispy-blocks-task-children > .message.user:first-child .prose {
+.crispy-tool-panel
+  .crispy-blocks-task-children
+  > .message.user:first-child
+  .prose {
   max-height: 10em;
   overflow-y: auto;
 }
@@ -4513,7 +4581,7 @@ h2 {
 .crispy-blocks-tool:hover {
   background: var(--vscode-list-hoverBackground, #2a2d2e);
   border-radius: var(--radius-sm);
-  contain: none;  /* release containment so copy button can overflow below */
+  contain: none; /* release containment so copy button can overflow below */
 }
 
 /* Panel-active highlight: fuzzy glow on tools currently shown in the tool panel.
@@ -4738,7 +4806,10 @@ h2 {
   margin-left: 2px;
   margin-bottom: 0;
 }
-[data-render-mode="icons"] .message--inline-only .crispy-inline-icons [data-run-id] {
+[data-render-mode="icons"]
+  .message--inline-only
+  .crispy-inline-icons
+  [data-run-id] {
   margin-bottom: 0;
 }
 /* When an assistant message is followed by an inline-only entry, make the
@@ -4757,7 +4828,10 @@ h2 {
   margin: -0.25rem 0 0.25rem 0;
   padding: 0;
 }
-[data-render-mode="icons"] .message.assistant > .crispy-inline-icons [data-run-id] {
+[data-render-mode="icons"]
+  .message.assistant
+  > .crispy-inline-icons
+  [data-run-id] {
   margin-bottom: 0;
 }
 
@@ -4773,7 +4847,10 @@ h2 {
 
 /* Preceding assistant text entry: when followed by an inline-only entry,
    make the last prose paragraph inline so icons flow on the same line. */
-[data-render-mode="icons"] .message.assistant:has(+ .message--inline-only) > .assistant-text > :last-child {
+[data-render-mode="icons"]
+  .message.assistant:has(+ .message--inline-only)
+  > .assistant-text
+  > :last-child {
   display: inline;
 }
 
@@ -4810,7 +4887,7 @@ h2 {
   background: rgba(244, 76, 76, 0.12);
 }
 .crispy-inline-icon--error::after {
-  content: '';
+  content: "";
   position: absolute;
   bottom: 1px;
   right: 1px;
@@ -4820,7 +4897,7 @@ h2 {
   background: var(--color-diff-removed);
 }
 .crispy-inline-icon--running::after {
-  content: '';
+  content: "";
   position: absolute;
   bottom: 1px;
   right: 1px;
@@ -4831,8 +4908,13 @@ h2 {
   animation: crispy-pulse 1.2s ease-in-out infinite;
 }
 @keyframes crispy-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
 }
 .crispy-inline-icons {
   display: inline-flex;
@@ -4847,7 +4929,9 @@ h2 {
   margin: 4px 0;
   margin-left: 8px;
   border: 1px solid transparent;
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.06), 0 0 2px rgba(255, 255, 255, 0.04);
+  box-shadow:
+    0 0 8px rgba(255, 255, 255, 0.06),
+    0 0 2px rgba(255, 255, 255, 0.04);
   border-radius: var(--radius-sm);
   padding: 0 10px;
 }
@@ -5000,7 +5084,9 @@ h2 {
   grid-template-rows: 0fr;
   overflow: hidden;
   opacity: 0;
-  transition: grid-template-rows 120ms ease-out, opacity 80ms ease-out;
+  transition:
+    grid-template-rows 120ms ease-out,
+    opacity 80ms ease-out;
 }
 .crispy-blocks-task-child--exiting > * {
   min-height: 0;
@@ -5014,7 +5100,10 @@ h2 {
 }
 
 /* Task children user prompt in main-thread compact — clamp height */
-.crispy-blocks-task-compact > .crispy-blocks-task-children > .message.user:first-child .prose {
+.crispy-blocks-task-compact
+  > .crispy-blocks-task-children
+  > .message.user:first-child
+  .prose {
   max-height: 8em;
   overflow-y: auto;
 }
@@ -5137,7 +5226,7 @@ h2 {
 }
 
 .crispy-blocks-taskoutput-key::after {
-  content: ':';
+  content: ":";
 }
 
 .crispy-blocks-taskoutput-value {
@@ -5261,8 +5350,12 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
 }
 
 @keyframes crispy-lightbox-fadein {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .crispy-lightbox__image {
@@ -5560,7 +5653,6 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
 .crispy-file-viewer__size {
   margin-left: auto;
 }
-
 
 .crispy-file-viewer__loading {
   padding: 24px 12px;
