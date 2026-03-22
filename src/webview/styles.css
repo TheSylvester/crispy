@@ -3679,7 +3679,7 @@ h2 {
 .crispy-titlebar__brand {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   flex-shrink: 0;
 }
 
@@ -3687,8 +3687,8 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   background: transparent;
   border: none;
@@ -3704,16 +3704,25 @@ h2 {
   transform: translateY(0.5px);
 }
 .crispy-titlebar__app-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
 }
 
 .crispy-titlebar__wordmark {
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 600;
   color: #e8a020;
-  letter-spacing: 1px;
+  letter-spacing: 1.5px;
   line-height: 1;
+  text-transform: uppercase;
+}
+
+.crispy-titlebar__brand-sep {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+  margin-left: 3px;
 }
 
 /* --- Git branch indicator (right section, passive context) --- */

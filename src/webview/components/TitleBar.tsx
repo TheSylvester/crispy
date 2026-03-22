@@ -64,7 +64,7 @@ function PlusIcon(): React.JSX.Element {
   );
 }
 
-/** Crispy logo + wordmark — brand presence in the titlebar */
+/** Crispy logo + wordmark + divider — brand presence in the titlebar */
 function AppIcon(): React.JSX.Element {
   return (
     <div className="crispy-titlebar__brand">
@@ -75,6 +75,7 @@ function AppIcon(): React.JSX.Element {
         dangerouslySetInnerHTML={{ __html: crispyLogoSvg }}
       />
       <span className="crispy-titlebar__wordmark">Crispy</span>
+      <span className="crispy-titlebar__brand-sep" />
     </div>
   );
 }
