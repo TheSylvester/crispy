@@ -17,7 +17,13 @@ interface MentionDropdownProps {
   onSelect: (index: number) => void;
 }
 
-/** Highlight matching query substring within a path. */
+/**
+ * Highlight matching query substring within a path.
+ *
+ * Uses the lowercased string's match length (not the query's) for slicing,
+ * so characters whose lowercase form differs in length (e.g. ß→ss, İ→i̇)
+ * don't misalign the highlight boundaries.
+ */
 function highlightMatch(path: string, query: string): React.ReactNode {
   if (!query) return path;
 
@@ -27,11 +33,13 @@ function highlightMatch(path: string, query: string): React.ReactNode {
 
   if (idx === -1) return path;
 
+  // Use lowerQuery.length (matched in lowered space) to slice the original
+  const matchLen = lowerQuery.length;
   return (
     <>
       {path.slice(0, idx)}
-      <mark className="crispy-cp-mention__highlight">{path.slice(idx, idx + query.length)}</mark>
-      {path.slice(idx + query.length)}
+      <mark className="crispy-cp-mention__highlight">{path.slice(idx, idx + matchLen)}</mark>
+      {path.slice(idx + matchLen)}
     </>
   );
 }

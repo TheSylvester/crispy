@@ -51,14 +51,27 @@ function isPathChar(ch: string): boolean {
  * Scan backward from cursor to find the nearest `@` with only valid path chars
  * between it and the cursor. The `@` must be at position 0 or preceded by
  * whitespace to avoid false positives on email-like text.
- * Returns the position of `@`, or -1 if not found.
+ *
+ * Uses a codepoint-to-UTF16-offset map so emoji (surrogate pairs) are handled
+ * as single characters instead of being split into broken half-surrogates.
+ *
+ * Returns the position of `@` (UTF-16 offset), or -1 if not found.
  */
 function findAtTrigger(text: string, cursorPos: number): number {
-  for (let i = cursorPos - 1; i >= 0; i--) {
-    const ch = text[i];
+  // Build array of [codepoint, utf16Offset] up to cursorPos
+  const entries: [string, number][] = [];
+  let offset = 0;
+  for (const ch of text) {
+    if (offset >= cursorPos) break;
+    entries.push([ch, offset]);
+    offset += ch.length; // 1 for BMP, 2 for surrogate pairs
+  }
+
+  // Walk backwards through codepoints
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const [ch, utf16Pos] = entries[i];
     if (ch === '@') {
-      // Require start of text or whitespace before @
-      if (i === 0 || /\s/.test(text[i - 1])) return i;
+      if (i === 0 || /\s/.test(entries[i - 1][0])) return utf16Pos;
       return -1;
     }
     if (!isPathChar(ch)) return -1;

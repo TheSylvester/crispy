@@ -38,6 +38,7 @@ export function buildMatchIndex(gitFiles: string[], cwd: string): FileIndex {
   const root = cwd.endsWith("/") ? cwd.slice(0, -1) : cwd;
 
   // 1. Exact map: full relative path → single FileMatch
+  //    Keys are NFC-normalized so macOS NFD filenames match NFC input text.
   const exactMap = new Map<string, FileMatch>();
 
   // 2. Suffix map: every suffix at `/` boundaries → FileMatch[]
@@ -46,7 +47,9 @@ export function buildMatchIndex(gitFiles: string[], cwd: string): FileIndex {
   // 3. Basename map: filename with extension → FileMatch[]
   const basenameMap = new Map<string, FileMatch[]>();
 
-  for (const rel of gitFiles) {
+  for (const rawRel of gitFiles) {
+    // Normalize to NFC so macOS NFD paths match NFC-typed queries
+    const rel = rawRel.normalize("NFC");
     const fm: FileMatch = {
       relativePath: rel,
       absolutePath: `${root}/${rel}`,
@@ -89,17 +92,20 @@ export function buildMatchIndex(gitFiles: string[], cwd: string): FileIndex {
 
   return {
     match(token: string): FileMatch[] {
+      // NFC-normalize the lookup token to match indexed keys
+      const t = token.normalize("NFC");
+
       // 1. Exact match
-      const exact = exactMap.get(token);
+      const exact = exactMap.get(t);
       if (exact) return [exact];
 
       // 2. Suffix match (also covers exact since suffix includes full paths at boundaries)
-      const suffixHits = suffixMap.get(token);
+      const suffixHits = suffixMap.get(t);
       if (suffixHits && suffixHits.length > 0) return [...suffixHits].sort(byDepth);
 
       // 3. Basename match — only if token has a `.` extension, no `/`, and ≤ MAX matches
-      if (!token.includes("/") && token.includes(".")) {
-        const basenameHits = basenameMap.get(token);
+      if (!t.includes("/") && t.includes(".")) {
+        const basenameHits = basenameMap.get(t);
         if (basenameHits && basenameHits.length > 0 && basenameHits.length <= MAX_BASENAME_MATCHES) {
           return [...basenameHits].sort(byDepth);
         }
@@ -117,7 +123,7 @@ export function buildMatchIndex(gitFiles: string[], cwd: string): FileIndex {
         }
         return results;
       }
-      const lower = query.toLowerCase();
+      const lower = query.normalize("NFC").toLowerCase();
       for (const fm of exactMap.values()) {
         if (fm.relativePath.toLowerCase().includes(lower)) {
           results.push(fm);

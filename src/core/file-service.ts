@@ -19,19 +19,25 @@ import { basename, extname } from "node:path";
  */
 const EXTRA_INDEX_DIRS = [".ai-reference"];
 
-/** Run `git ls-files` with the given args and return non-empty lines. */
+/**
+ * Run `git ls-files` with the given args and return non-empty entries.
+ *
+ * Uses `-z` for NUL-delimited output so filenames containing non-ASCII
+ * characters (emoji, accented letters) are returned verbatim instead of
+ * octal-escaped (git's default `core.quotePath` behavior).
+ */
 function lsFiles(args: string[], cwd: string): Promise<string[]> {
   return new Promise((resolve, reject) => {
     execFile(
       "git",
-      ["ls-files", ...args],
+      ["ls-files", "-z", ...args],
       { cwd, maxBuffer: 10 * 1024 * 1024 },
       (err, stdout) => {
         if (err) {
           reject(err);
           return;
         }
-        resolve(stdout.split("\n").filter((line) => line.length > 0));
+        resolve(stdout.split("\0").filter((entry) => entry.length > 0));
       },
     );
   });
