@@ -278,6 +278,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // Ref mirror so event-handler closures always see the latest value
     // (React state in useEffect closures is stale until the effect re-runs).
     const defaultPermissionModeRef = useRef<AgencyMode>('ask-before-edits');
+    // Gate: prevent sending turns until persisted settings have loaded,
+    // otherwise the first turn races with getSettings() and may use
+    // the wrong permission mode (e.g. bypass=false when user saved bypass=true).
+    const settingsLoadedRef = useRef(false);
 
     // --- Rosie Bot settings state ---
     const [rosieEnabled, setRosieEnabled] = useState(false);
@@ -306,7 +310,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             }
           }
         }
-      }).catch(console.error);
+      }).catch(console.error).finally(() => { settingsLoadedRef.current = true; });
     }, [transport]);
 
     const handleUpdateDefaultModel = useCallback(async (model: string) => {
@@ -575,6 +579,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     // --- Send handler ---
     const handleSend = useCallback(() => {
+      // Block until persisted settings (permission mode, bypass) have loaded
+      // to avoid sending the first turn with stale defaults.
+      if (!settingsLoadedRef.current) return;
+
       const text = state.input.trim();
       const hasImages = state.attachedImages.length > 0;
       if (!text && !hasImages) return;
