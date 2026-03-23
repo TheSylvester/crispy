@@ -212,7 +212,7 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     }
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [setSelectedSessionId]);
+  }, []);
 
   // Dev-server workspace CWD: read from <meta name="crispy-cwd"> tag injected
   // by the server for workspace-routed URLs. This replaces the MRU fallback.

@@ -75,16 +75,14 @@ if (kind === 'websocket') {
 
 const params = new URLSearchParams(window.location.search);
 const openSessionId = params.get('sessionId');
+const forkFrom = params.get('forkFrom');
 if (openSessionId) {
-  // openPanel: open an existing session in this tab
+  // openPanel: open an existing session in this tab (takes priority over fork)
   const delays = [200, 600, 1500];
   for (const delay of delays) {
     setTimeout(() => window.postMessage({ kind: 'openSession', sessionId: openSessionId }, '*'), delay);
   }
-}
-
-const forkFrom = params.get('forkFrom');
-if (forkFrom) {
+} else if (forkFrom) {
   // Simulate the forkConfig message that VS Code host would send.
   // Retry a few times to handle slow React mount — the listener
   // is idempotent (SET_FORK_MODE with same value is a no-op).

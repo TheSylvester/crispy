@@ -78,9 +78,11 @@ const DUAL_PANEL_BREAKPOINT_PX = 1100;
 function AppLayout(): React.JSX.Element {
   const transportKind = useEnvironment();
 
-  // Picker mode: websocket transport + no crispy-cwd meta tag = root page
+  // Picker mode: websocket transport + no crispy-cwd meta tag = root page.
+  // Skip picker if ?sessionId= is present (openPanel bootstrap).
   const isPickerMode = transportKind === 'websocket' &&
-    !document.querySelector('meta[name="crispy-cwd"]')?.getAttribute('content');
+    !document.querySelector('meta[name="crispy-cwd"]')?.getAttribute('content') &&
+    !new URLSearchParams(window.location.search).get('sessionId');
 
   if (isPickerMode) return <WorkspacePicker />;
 
