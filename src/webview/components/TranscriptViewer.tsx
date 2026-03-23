@@ -349,37 +349,41 @@ export function TranscriptViewer(): React.JSX.Element {
       const { clearContext, planContent, ...transportExtra } = extra ?? {};
 
       if (clearContext && selectedSessionId) {
-        // ExitPlanMode with context clear: resolve approval, close old session,
-        // null out selection (clears transcript), and prefill handoff prompt.
+        // ExitPlanMode with context clear: resolve approval, then rotate session
         const handoffPrompt = constructExitPlanHandoffPrompt(planContent, selectedSessionId);
 
-        // Resolve the approval first — SDK needs the PermissionResult before we tear down
+        // Resolve the approval first — SDK needs the PermissionResult before we rotate
         await resolveApproval(optionId, Object.keys(transportExtra).length ? transportExtra : undefined);
 
-        // Close the old session — tears down the adapter and channel
-        try {
-          await transport.close(selectedSessionId);
-        } catch (err) {
-          // Session may already be closed; proceed anyway
-          console.warn('[TranscriptViewer] close session failed:', err);
+        // Extract permission mode to pass to rotation RPC
+        const targetMode = (transportExtra.updatedPermissions?.[0] as { mode?: string })?.mode;
+
+        // Rotate: same channel, fresh adapter, permission mode forwarded
+        if (transport.rotateSession) {
+          const bypassEnabled = targetMode === 'bypassPermissions';
+          const result = await transport.rotateSession({
+            sessionId: selectedSessionId,
+            prompt: handoffPrompt,
+            ...(targetMode && { permissionMode: targetMode }),
+            ...(bypassEnabled && { allowDangerouslySkipPermissions: true }),
+          });
+
+          // Point at the new session (no WelcomePage flash)
+          setSelectedSessionId(result.sessionId);
+        } else {
+          // Fallback: close + prefill (legacy path if rotation unavailable)
+          try { await transport.close(selectedSessionId); } catch { /* may already be closed */ }
+          setSelectedSessionId(null);
+          cpCtxRef.current.setPrefillInput({ text: handoffPrompt, autoSend: true });
         }
 
-        // Null out session selection — clears transcript (useTranscript resets),
-        // clears approval UI (useApprovalRequest clears on session change)
-        setSelectedSessionId(null);
-
-        // Push the chosen permission mode into ControlPanel state so the
-        // new session is created with the correct permissionMode.
-        const targetMode = (transportExtra.updatedPermissions?.[0] as { mode?: string })?.mode;
+        // Push permission mode to ControlPanel state (for UI display)
         if (targetMode) {
           const agencyMode = mapPermissionModeToAgency(targetMode);
           if (agencyMode) {
             cpCtxRef.current.setPendingAgencyMode({ agencyMode, bypassEnabled: targetMode === 'bypassPermissions' });
           }
         }
-
-        // Prefill ChatInput with the handoff prompt and auto-send
-        cpCtxRef.current.setPrefillInput({ text: handoffPrompt, autoSend: true });
         return;
       }
 

@@ -128,6 +128,12 @@ export function createWebSocketTransport(url: string): SessionService {
     sendTurn: (intent, pendingId) =>
       request<TurnReceipt>('sendTurn', { intent, ...(pendingId && { pendingId }) }),
 
+    rotateSession: (params) =>
+      request<{ previousSessionId: string; sessionId: string }>('rotateSession', params),
+
+    switchSession: (params) =>
+      request<{ ok: boolean; sessionId: string }>('switchSession', params),
+
     openPanel: async (params) => {
       const url = new URL(window.location.pathname, window.location.origin);
       url.searchParams.set('sessionId', params.sessionId);

@@ -60,6 +60,8 @@ export function useTranscript(sessionId: string | null): UseTranscriptResult {
         setEntries(prev => [...prev, event.entry]);
       } else if (event.type === 'catchup' && 'entries' in event && event.entries.length > 0) {
         setEntries(event.entries);
+      } else if (event.type === 'event' && event.event.type === 'notification' && event.event.kind === 'session_rotated') {
+        setEntries([]); // Clean slate — old entries flushed by rotation
       }
     });
 

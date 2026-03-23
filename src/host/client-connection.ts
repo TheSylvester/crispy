@@ -15,7 +15,8 @@ import { resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
-import type { TurnIntent, ChannelMessage } from "../core/agent-adapter.js";
+import type { TurnIntent, ChannelMessage, SessionOpenSpec } from "../core/agent-adapter.js";
+import type { Vendor } from "../core/transcript.js";
 import type {
   Subscriber,
   SessionChannel,
@@ -46,6 +47,7 @@ import {
   rekeyChildSession,
   resolveSessionId,
   resolveSessionPrefix,
+  rotateSession,
 } from "../core/session-manager.js";
 import type { ChildSessionOptions, ResumeChildOptions } from "../core/session-manager.js";
 import {
@@ -333,6 +335,26 @@ export function createClientConnection(
     }
   }
 
+  /**
+   * Create a mutable subscriber that allows session ID re-keying.
+   * The rekey() method updates the session ID used in event routing.
+   * Used by sendTurn and rotateSession RPCs for pending → real transitions.
+   */
+  function createMutableSubscriber(initialSessionId: string) {
+    let currentSessionId = initialSessionId;
+    const subscriber: Subscriber = {
+      id: clientId,
+      send(event: SubscriberMessage) {
+        if (disposed) return;
+        sendFn({ kind: "event", sessionId: currentSessionId, event });
+      },
+    };
+    return {
+      subscriber,
+      rekey(newId: string) { currentSessionId = newId; },
+    };
+  }
+
   async function routeMethod(
     method: string,
     params: Record<string, unknown>,
@@ -403,25 +425,6 @@ export function createClientConnection(
           autoClose: boolean;
           visible: boolean;
         } | undefined;
-
-        /**
-         * Create a mutable subscriber that allows session ID re-keying.
-         * The rekey() method updates the session ID used in event routing.
-         */
-        function createMutableSubscriber(initialSessionId: string) {
-          let currentSessionId = initialSessionId;
-          const subscriber: Subscriber = {
-            id: clientId,
-            send(event: SubscriberMessage) {
-              if (disposed) return;
-              sendFn({ kind: "event", sessionId: currentSessionId, event });
-            },
-          };
-          return {
-            subscriber,
-            rekey(newId: string) { currentSessionId = newId; },
-          };
-        }
 
         // For existing sessions — may trigger vendor switch internally
         if (intent.target.kind === 'existing') {
@@ -532,6 +535,88 @@ export function createClientConnection(
         }
 
         return { sessionId: result.sessionId };
+      }
+
+      case "rotateSession": {
+        const sessionId = params.sessionId as string;
+        const prompt = params.prompt as string;
+        if (!sessionId) throw new Error('Missing sessionId');
+        if (!prompt) throw new Error('Missing prompt');
+
+        // Resolve vendor from the current session
+        const sessionInfo = findSession(sessionId);
+        const vendor = (params.vendor as Vendor) ?? sessionInfo?.vendor;
+        if (!vendor) throw new Error(`Cannot determine vendor for session "${sessionId}"`);
+
+        const permissionMode = params.permissionMode as string | undefined;
+        const allowDangerouslySkipPermissions = (params.allowDangerouslySkipPermissions as boolean) || false;
+        const cwd = sessionInfo?.projectPath ?? process.cwd();
+
+        type PermissionMode = TurnIntent['settings']['permissionMode'];
+        const spec: SessionOpenSpec = {
+          mode: 'fresh',
+          cwd,
+          ...(permissionMode && { permissionMode: permissionMode as PermissionMode }),
+        };
+
+        const result = await rotateSession(sessionId, vendor, spec);
+
+        // Replace subscriber with mutable variant (same pattern as sendTurn).
+        // The old subscriber's send() closure captures the old sessionId —
+        // it MUST be replaced or events route under the wrong ID.
+        const oldSub = subscriptions.get(sessionId);
+        if (oldSub) {
+          unsubscribe(result.channel, oldSub.subscriber);
+          subscriptions.delete(sessionId);
+        }
+
+        const mutable = createMutableSubscriber(result.pendingId);
+        subscribe(result.channel, mutable.subscriber);
+        subscriptions.set(result.pendingId, {
+          channel: result.channel, subscriber: mutable.subscriber,
+        });
+
+        // Handle rekey (pending → real) — same pattern as sendTurn
+        result.rekeyPromise
+          .then(realId => {
+            if (disposed) return;
+            mutable.rekey(realId);
+            const entry = subscriptions.get(result.pendingId);
+            if (entry) {
+              subscriptions.delete(result.pendingId);
+              subscriptions.set(realId, entry);
+            }
+          })
+          .catch(() => {
+            subscriptions.delete(result.pendingId);
+          });
+
+        // Build intent and send the handoff prompt as the first turn
+        const rotationIntent: TurnIntent = {
+          clientMessageId: randomUUID(),
+          content: [{ type: 'text', text: prompt }],
+          target: { kind: 'existing', sessionId: result.pendingId },
+          settings: {
+            ...(permissionMode && { permissionMode: permissionMode as PermissionMode }),
+            ...(allowDangerouslySkipPermissions && { allowDangerouslySkipPermissions }),
+          },
+        };
+        await sendTurn(rotationIntent, mutable.subscriber);
+
+        return {
+          previousSessionId: result.previousSessionId,
+          sessionId: result.pendingId,
+        };
+      }
+
+      case "switchSession": {
+        const targetSessionId = params.targetSessionId as string;
+        if (!targetSessionId) throw new Error('Missing targetSessionId');
+
+        const session = findSession(targetSessionId);
+        if (!session) throw new Error(`Session "${targetSessionId}" not found`);
+
+        return { ok: true, sessionId: session.sessionId };
       }
 
       case "resolveApproval": {

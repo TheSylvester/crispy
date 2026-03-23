@@ -37,7 +37,7 @@ import { parseModelOption } from './model-utils.js';
 
 import {
   createChannel, setAdapter, subscribe, unsubscribe,
-  destroyChannel, rekeyChannel, getChannel,
+  destroyChannel, rekeyChannel, getChannel, rotateAdapter,
   broadcastUserEntry as channelBroadcastUserEntry,
 } from './session-channel.js';
 import { refreshAndNotify, notifyStatusChange } from './session-list-manager.js';
@@ -491,6 +491,46 @@ function evictIfDead(sessionId: string): void {
 }
 
 /**
+ * Wire lifecycle hooks on a channel — onIdle and onStatusChange.
+ *
+ * Shared by openChannel() and rotateSession(). The closures read
+ * channel.adapter?.sessionId at call time, so they automatically
+ * pick up the current adapter after rotation.
+ */
+function wireLifecycleHooks(channel: SessionChannel): void {
+  channel.onIdle = () => {
+    const sessionId = channel.adapter?.sessionId;
+    if (!sessionId) return;
+    const childMeta = childSessions.get(sessionId);
+    if (childMeta && !childMeta.visible) return;
+    if (childMeta?.visible) {
+      setTimeout(() => {
+        const currentId = channel.adapter?.sessionId ?? sessionId;
+        refreshAndNotify(currentId);
+        if (childMeta.autoClose) {
+          closeSession(currentId);
+          childSessions.delete(currentId);
+          if (currentId !== sessionId) childSessions.delete(sessionId);
+        }
+      }, 150);
+      return;
+    }
+    setTimeout(() => {
+      refreshAndNotify(sessionId);
+      fireResponseComplete(sessionId);
+    }, 150);
+  };
+
+  channel.onStatusChange = (state) => {
+    const sessionId = channel.adapter?.sessionId;
+    if (!sessionId) return;
+    const childMeta = childSessions.get(sessionId);
+    if (childMeta && !childMeta.visible) return;
+    notifyStatusChange(sessionId, state);
+  };
+}
+
+/**
  * Create a channel for a session using a factory-created adapter.
  * Internal — not exported. Uses sessionId as channelId (1:1 mapping).
  *
@@ -511,56 +551,7 @@ function openChannel(
   const liveAdapter = registration.createAdapter(spec);
   const channel = createChannel(channelId, options?.initialEntries);
 
-  // Wire idle hook: when the channel transitions to idle (end of turn),
-  // re-read session metadata from disk and push an upsert to all
-  // session-list subscribers (title/lastMessage/timestamp may have changed).
-  channel.onIdle = () => {
-    const sessionId = channel.adapter?.sessionId;
-    if (!sessionId) return;
-    // Child sessions (internal dispatches) don't fire lifecycle hooks.
-    // Check here — before broadcast delivers the idle event to subscribers
-    // whose cleanup() would delete the childSessions entry. The existing
-    // guard in fireResponseComplete is defense-in-depth but races with cleanup.
-    const childMeta = childSessions.get(sessionId);
-    if (childMeta && !childMeta.visible) return; // hidden child: skip everything
-    if (childMeta?.visible) {
-      // Visible child: notify session list (appears in editor UI) but
-      // still skip lifecycle hooks (Rosie won't process it).
-      // Re-resolve sessionId inside setTimeout to handle pending→real rekey
-      // that may have happened since idle fired (fix #3: stale-ID race).
-      setTimeout(() => {
-        const currentId = channel.adapter?.sessionId ?? sessionId;
-        refreshAndNotify(currentId);
-        if (childMeta.autoClose) {
-          closeSession(currentId);
-          childSessions.delete(currentId);
-          if (currentId !== sessionId) childSessions.delete(sessionId);
-        }
-      }, 150);
-      return;
-    }
-    // Small grace period: the adapter emits idle synchronously when the SDK
-    // yields the result message, but the SDK may not have flushed the JSONL
-    // file to disk yet. 150ms is enough for the OS write buffer to flush.
-    // The 30s rescan is a fallback either way.
-    setTimeout(() => {
-      refreshAndNotify(sessionId);
-      // Fire lifecycle hooks (Rosie, future features). Fire-and-forget —
-      // handlers are error-isolated and run concurrently.
-      fireResponseComplete(sessionId);
-    }, 150);
-  };
-
-  channel.onStatusChange = (state) => {
-    const sessionId = channel.adapter?.sessionId;
-    if (!sessionId) return;
-    const childMeta = childSessions.get(sessionId);
-    // Hidden children skip status notifications entirely.
-    // Visible children broadcast status so the editor UI can show live state.
-    if (childMeta && !childMeta.visible) return;
-    notifyStatusChange(sessionId, state);
-  };
-
+  wireLifecycleHooks(channel);
   setAdapter(channel, liveAdapter);
   return channel;
 }
@@ -677,6 +668,113 @@ function createPendingChannel(
   });
 
   return { pendingId, channel, rekeyPromise };
+}
+
+// ============================================================================
+// Session Rotation
+// ============================================================================
+
+/** Result from rotating a session on an existing channel. */
+export interface RotateSessionResult {
+  previousSessionId: string;
+  pendingId: string;
+  channel: SessionChannel;
+  rekeyPromise: Promise<string>;
+}
+
+/**
+ * Rotate the session — swap the adapter on the channel, rekey to the
+ * new session ID, preserve the old session in the session list.
+ *
+ * The channel object survives with all its subscribers. Old entries are
+ * flushed, the old session is preserved, and a new session begins
+ * streaming into the same channel.
+ */
+export async function rotateSession(
+  currentSessionId: string,
+  vendor: Vendor,
+  spec: SessionOpenSpec,
+): Promise<RotateSessionResult> {
+  if (currentSessionId.startsWith('pending:')) {
+    throw new Error('Cannot rotate a session that is still initializing.');
+  }
+
+  const channel = requireChannel(currentSessionId);
+  const previousSessionId = channel.adapter?.sessionId ?? currentSessionId;
+
+  // Close old adapter, flush entries, reset state
+  await rotateAdapter(channel);
+
+  // Fire old-session lifecycle hooks (same 150ms delay as openChannel's onIdle)
+  setTimeout(() => {
+    refreshAndNotify(previousSessionId);
+    fireResponseComplete(previousSessionId);
+  }, 150);
+
+  // Generate pending ID and rekey channel
+  const pendingId = `pending:${crypto.randomUUID()}`;
+  rekeyChannel(currentSessionId, pendingId);
+  sessions.delete(currentSessionId);
+  sessions.set(pendingId, channel);
+
+  // Inject env (CRISPY_SESSION_ID + CRISPY_SOCK)
+  spec = { ...spec, env: buildSessionEnv(pendingId, spec.env) };
+
+  // Create new adapter
+  const registration = adapters.get(vendor);
+  if (!registration) {
+    throw new Error(`No adapter registered for vendor "${vendor}".`);
+  }
+  const newAdapter = registration.createAdapter(spec);
+
+  // Re-wire lifecycle hooks (same closures as openChannel — reads adapter.sessionId at call time)
+  wireLifecycleHooks(channel);
+
+  // Install new adapter — starts consumption loop
+  setAdapter(channel, newAdapter);
+
+  // One-shot list-notify subscriber (same pattern as createPendingChannel)
+  const listNotifySubscriber: Subscriber = {
+    id: `__list_notify__${pendingId}`,
+    send(msg) {
+      if (isSessionChangedEvent(msg)) {
+        refreshAndNotify(msg.event.sessionId);
+        unsubscribe(channel, listNotifySubscriber);
+      }
+    },
+  };
+  subscribe(channel, listNotifySubscriber);
+
+  // One-shot rekey subscriber (pending → real)
+  const rekeyPromise = new Promise<string>((resolve, reject) => {
+    let settled = false;
+    const rekeySubscriber: Subscriber = {
+      id: `__rekey__${pendingId}`,
+      send(msg) {
+        if (isSessionChangedEvent(msg)) {
+          settled = true;
+          const realId = msg.event.sessionId;
+          rekeyChannel(pendingId, realId);
+          log({ source: 'session', level: 'info', summary: `Session rotation: re-keyed ${pendingId.slice(0, 20)}… → ${realId.slice(0, 12)}…`, data: { pendingId, realId } });
+          sessions.delete(pendingId);
+          sessions.set(realId, channel);
+          pendingToReal.set(pendingId, realId);
+          unsubscribe(channel, rekeySubscriber);
+          resolve(realId);
+        }
+      },
+    };
+    subscribe(channel, rekeySubscriber);
+
+    setTimeout(() => {
+      if (settled) return;
+      unsubscribe(channel, rekeySubscriber);
+      log({ source: 'session', level: 'error', summary: `Rotation re-key timeout: ${pendingId.slice(0, 20)}… (15s)`, data: { pendingId } });
+      reject(new Error(`Rotation timed out: session re-key did not complete within 15 seconds (${pendingId})`));
+    }, 15_000);
+  });
+
+  return { previousSessionId, pendingId, channel, rekeyPromise };
 }
 
 // ============================================================================

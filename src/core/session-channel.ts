@@ -22,7 +22,8 @@
  * - State transitions are adapter-driven: after resolveApproval(), the
  *   channel waits for the adapter's 'active' status event rather than
  *   manually transitioning to streaming.
- * - No replaceAdapter — to switch adapters, destroyChannel + createChannel.
+ * - rotateAdapter() swaps the adapter on a live channel for session rotation.
+ *   Closes the old adapter, flushes entries, resets state so setAdapter() works.
  *
  * @module session-channel
  */
@@ -448,6 +449,55 @@ export function broadcastUserEntry(
 ): void {
   const msg: ChannelMessage = { type: 'entry', entry };
   broadcastAndTrack(channel, msg);
+}
+
+// ============================================================================
+// Rotation
+// ============================================================================
+
+/**
+ * Rotate the adapter on a live channel — close the old adapter, flush
+ * entries, reset state so a new adapter can be installed via setAdapter().
+ *
+ * Subscribers are preserved. The channel stays in the registry (under
+ * whatever key it currently has). The old adapter's consumption loop
+ * exits naturally when close() terminates its message stream.
+ *
+ * Call setAdapter() after this returns to install the new adapter.
+ */
+export async function rotateAdapter(channel: SessionChannel): Promise<void> {
+  // 1. Save and null onIdle — prevents lifecycle hooks firing during close
+  const savedOnIdle = channel.onIdle;
+  channel.onIdle = undefined;
+
+  // 2. Close the old adapter
+  if (channel.adapter) {
+    try {
+      channel.adapter.close();
+    } catch {
+      // If close() throws, proceed anyway — state reset must happen
+    }
+  }
+
+  // 3. Wait for consumption loop to exit
+  if (channel.loopDone) {
+    await channel.loopDone.catch(() => {});
+  }
+
+  // 4. Reset channel state atomically
+  channel.adapter = null;
+  channel.entries = [];
+  channel.entryIndex = 0;
+  channel.pendingApprovals.clear();
+  channel.state = 'idle'; // NOT 'unattached' — prevents evictIfDead race
+  channel.loopDone = null;
+  channel.onIdle = savedOnIdle;
+
+  // 5. Notify subscribers that rotation occurred — entries have been flushed
+  broadcast(channel, {
+    type: 'event',
+    event: { type: 'notification', kind: 'session_rotated' },
+  });
 }
 
 // ============================================================================
