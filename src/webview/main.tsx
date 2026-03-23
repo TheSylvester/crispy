@@ -74,6 +74,15 @@ if (kind === 'websocket') {
 // ============================================================================
 
 const params = new URLSearchParams(window.location.search);
+const openSessionId = params.get('sessionId');
+if (openSessionId) {
+  // openPanel: open an existing session in this tab
+  const delays = [200, 600, 1500];
+  for (const delay of delays) {
+    setTimeout(() => window.postMessage({ kind: 'openSession', sessionId: openSessionId }, '*'), delay);
+  }
+}
+
 const forkFrom = params.get('forkFrom');
 if (forkFrom) {
   // Simulate the forkConfig message that VS Code host would send.

@@ -128,6 +128,13 @@ export function createWebSocketTransport(url: string): SessionService {
     sendTurn: (intent, pendingId) =>
       request<TurnReceipt>('sendTurn', { intent, ...(pendingId && { pendingId }) }),
 
+    openPanel: async (params) => {
+      const url = new URL(window.location.pathname, window.location.origin);
+      url.searchParams.set('sessionId', params.sessionId);
+      window.open(url.toString(), '_blank');
+      return { ok: true };
+    },
+
     forkToNewPanel: async (params) => {
       // Browser dev-server: open fork in a new tab via window.open()
       const url = new URL(window.location.pathname, window.location.origin);

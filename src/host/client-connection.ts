@@ -94,6 +94,7 @@ import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-rea
 // at extension activation time (crashes VS Code's Electron host).
 // import { transcribeAudio } from '../core/voice/index.js'; // <-- lazy below
 import { startCapture, stopCapture, cancelCapture, cleanupOrphanedVoiceFiles } from './audio-capture.js';
+import { openPanel as openPanelFn } from './panel-opener.js';
 
 // Clean up any orphaned voice temp files from previous sessions on module load.
 cleanupOrphanedVoiceFiles();
@@ -735,6 +736,29 @@ export function createClientConnection(
         const filePath = params.path as string;
         assertPathAllowed(filePath);
         return readTextFile(filePath);
+      }
+
+      case "openPanel": {
+        let sessionId = params.sessionId as string;
+        if (!sessionId) throw new Error('Missing sessionId');
+
+        if (sessionId.startsWith('pending:')) {
+          const resolved = resolveSessionId(sessionId);
+          if (resolved === sessionId) {
+            throw new Error(
+              `Session "${sessionId}" is still initializing. ` +
+              'Wait for the real session ID before calling openPanel.',
+            );
+          }
+          sessionId = resolved;
+        }
+
+        const session = findSession(sessionId);
+        if (!session) throw new Error(`Session "${sessionId}" not found`);
+        sessionId = session.sessionId;
+
+        openPanelFn(sessionId);
+        return { ok: true, sessionId };
       }
 
       case "forkToNewPanel":

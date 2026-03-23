@@ -203,6 +203,17 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     return () => window.removeEventListener('message', onMessage);
   }, [transportKind]);
 
+  // Handle openSession bootstrap message (from openPanel RPC)
+  useEffect(() => {
+    function handleMessage(ev: MessageEvent) {
+      if (ev.data?.kind === 'openSession' && ev.data.sessionId) {
+        setSelectedSessionId(ev.data.sessionId);
+      }
+    }
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [setSelectedSessionId]);
+
   // Dev-server workspace CWD: read from <meta name="crispy-cwd"> tag injected
   // by the server for workspace-routed URLs. This replaces the MRU fallback.
   const cwdInitialized = useRef(false);

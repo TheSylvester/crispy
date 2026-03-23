@@ -89,6 +89,8 @@ export interface SessionService {
    */
   sendTurn(intent: TurnIntent, pendingId?: string): Promise<TurnReceipt>;
 
+  openPanel?(params: { sessionId: string }): Promise<{ ok: boolean }>;
+
   forkToNewPanel?(params: {
     fromSessionId: string;
     atMessageId?: string;
