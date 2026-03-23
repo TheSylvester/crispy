@@ -150,6 +150,7 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
   process.env.CRISPY_DISPATCH = resolve(extBase, 'dist', 'crispy-dispatch.js');
   process.env.CRISPY_TRACKER = resolve(extBase, 'dist', 'crispy-tracker.mjs');
   process.env.CRISPY_AGENT = resolve(pluginPath, 'scripts', 'crispy-agent');
+  process.env.CRISPY_ROTATE = resolve(pluginPath, 'scripts', 'crispy-rotate');
   console.error(`[adapter-registry] Plugin path: ${pluginPath}`);
 
   // System prompt factory — skills hint (always active when dispatch is available).

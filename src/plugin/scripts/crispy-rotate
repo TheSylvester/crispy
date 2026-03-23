@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# crispy-rotate: Rotate the current session with a new prompt.
+#
+# Saves the prompt to .ai-reference/prompts/ for a paper trail,
+# then calls rotateSession RPC to start a fresh session with
+# "Execute this plan: " prefixed to the prompt contents.
+#
+# Usage:
+#   crispy-rotate <prompt>                    # Args as prompt
+#   PROMPT_FILE=handoff.md crispy-rotate      # Read from file
+#   cat handoff.md | crispy-rotate            # Read from stdin
+#   crispy-rotate --no-save <prompt>          # Skip saving to .ai-reference/
+#
+# Environment variables:
+#   PROMPT_FILE          - Read prompt from this file
+#   CRISPY_SOCK          - Override socket path (skip discovery)
+
+set -euo pipefail
+
+# Use pre-built dispatch binary via env var (set by Crispy host at startup)
+if [[ -z "${CRISPY_DISPATCH:-}" ]]; then
+  echo "Error: CRISPY_DISPATCH env var not set. This script must be run from a Crispy-managed session." >&2
+  exit 13
+fi
+DISPATCH_BIN="node $CRISPY_DISPATCH"
+
+# Defaults
+SAVE_PROMPT=true
+PREFIX="Execute this plan: "
+
+# Parse flags
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --no-save)
+      SAVE_PROMPT=false
+      shift
+      ;;
+    --no-prefix)
+      PREFIX=""
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+# Determine prompt source: PROMPT_FILE > args > stdin
+HAS_STDIN=false
+[[ ! -t 0 ]] && HAS_STDIN=true
+
+if [[ -n "${PROMPT_FILE:-}" ]]; then
+  PROMPT="$(cat "$PROMPT_FILE")"
+elif [[ $# -gt 0 ]]; then
+  PROMPT="$*"
+elif [[ "$HAS_STDIN" == "true" ]]; then
+  PROMPT="$(cat || true)"
+else
+  echo "Usage: crispy-rotate [--no-save] [--no-prefix] <prompt>" >&2
+  echo "       PROMPT_FILE=handoff.md crispy-rotate" >&2
+  echo "       cat handoff.md | crispy-rotate" >&2
+  exit 1
+fi
+
+# Validate prompt
+if [[ -z "${PROMPT//[$' \t\r\n']/}" ]]; then
+  echo "Error: prompt is empty" >&2
+  exit 1
+fi
+
+# Save prompt to .ai-reference/prompts/ for paper trail
+if [[ "$SAVE_PROMPT" == "true" ]]; then
+  PROMPTS_DIR=".ai-reference/prompts"
+  mkdir -p "$PROMPTS_DIR"
+  SLUG=$(echo "$PROMPT" | head -c 60 | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
+  SAVED_FILE="${PROMPTS_DIR}/$(date +%Y%m%d-%H%M%S)-handoff-${SLUG:0:40}.md"
+  echo "$PROMPT" > "$SAVED_FILE"
+  echo "[saved: $SAVED_FILE]" >&2
+fi
+
+# Build the full prompt with prefix
+FULL_PROMPT="${PREFIX}${PROMPT}"
+
+# Build JSON params using jq for safe escaping
+PARAMS=$(jq -n --arg prompt "$FULL_PROMPT" '{prompt: $prompt}')
+
+# Call rotateSession RPC
+$DISPATCH_BIN rpc rotateSession "$PARAMS"

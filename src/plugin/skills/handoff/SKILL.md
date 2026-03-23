@@ -10,119 +10,106 @@ description: >
 # Handoff
 
 Reflect on the full conversation, distill everything a fresh agent needs into
-a self-contained prompt, confirm with the user, then rotate into a new session.
+a self-contained prompt, save it, confirm with the user, then rotate into a
+fresh session that executes it.
 
 ## Usage
 
 ```
-/handoff                     — reflect, distill, and rotate
+/handoff                     — reflect, distill, save, and rotate
 /handoff <next-task>         — focus the new session on a specific task
 ```
 
 ## Instructions
 
-### Phase 1: Reflect
+### Phase 1: Reflect & Distill
 
-Scan the full conversation and extract:
+Write a self-contained prompt for an agent with an empty context window.
+If the user provided a specific task via arguments, use that. Otherwise,
+derive the natural next step from the conversation.
 
-**Decisions & Design**
+Cover all relevant insights and specifications from the conversation.
+
+#### Prompt Structure
+
+##### 1. Task
+One paragraph: exactly what to do next and why.
+
+##### 2. Context & Constraints
+- Key decisions, constraints, architectural choices, and their rationale
+- Success criteria
+- User preferences observed during the conversation
+
+##### 3. Inputs & Resources
+
+**Files to Create/Modify**
+- Paths of files the agent will create or change
+
+**Files to Reference (Read-Only)**
+- Paths of files for context without modification
+
+**Key Code Patterns**
+- Inline snippets showing expected patterns (only non-obvious ones)
+
+**Build & Test Commands**
+- Exact commands to run (e.g., `npm run typecheck && npm test`)
+
+##### 4. Execution Guidelines
+- Numbered implementation steps
+- Style and code standards to follow
+
+##### 5. Verification
+How to verify the work: test commands, typecheck, specific scenarios.
+
+#### What to include
+
 - Architectural choices made and their rationale
 - Constraints agreed upon (performance, compatibility, style)
-- Design patterns chosen or rejected, and why
-
-**Work Product**
-- Files created or modified, with a one-line summary of each change
+- Files created or modified, with one-line summaries
 - Key code patterns introduced (types, interfaces, function signatures)
-- Tests added or modified
-
-**Current State**
 - What's done and verified
-- What's in progress or partially complete
-- What's blocked, broken, or needs attention
-- Any errors, edge cases, or open questions
-
-**User Preferences**
-- Coding style, communication preferences, or workflow choices observed
+- What's in progress, blocked, or needs attention
 - Anything the user corrected or emphasized
 
-Discard:
+#### What to discard
+
 - Exploration that led nowhere
 - Superseded approaches and abandoned designs
 - Verbose tool outputs and intermediate research
 - Completed sub-tasks that don't inform the next task
 
-### Phase 2: Distill
+#### Quality bar
 
-Build a self-contained handoff prompt. The receiving agent has an empty context
-window — it knows nothing about this conversation. Include ALL domain knowledge,
-technical background, and design rationale it needs.
+A senior engineer reading this prompt cold should be able to continue
+the work without asking clarifying questions.
 
-Structure:
+### Phase 2: Save
 
-```markdown
-## Task
+Save the prompt to `.ai-reference/prompts/`:
 
-[One paragraph: exactly what to do next and why. If the user provided a
-specific task via arguments, use that. Otherwise, derive the natural next
-step from the conversation.]
-
-## Context & Decisions
-
-[3-8 bullet points: key decisions, constraints, architectural choices,
-and their rationale. Not what was done — what the next agent needs to
-know to continue correctly.]
-
-## Current State
-
-### Files Modified
-[File paths with one-line descriptions of changes made this session]
-
-### Work Completed
-[Bullet list of what's done and verified]
-
-### In Progress / Remaining
-[What still needs to be done, with enough detail to act on]
-
-## Key Code Patterns
-
-[Inline snippets of critical types, interfaces, or function signatures
-the next agent must match. Only include patterns that are non-obvious
-or were specifically designed during this session.]
-
-## Constraints & Preferences
-
-[Style rules, user preferences, things to avoid, project-specific
-conventions discovered during the conversation]
-
-## Verification
-
-[How to verify the work: test commands, typecheck, specific scenarios
-to confirm]
+```
+.ai-reference/prompts/YYYYMMDD-HHMMSS-handoff-<task-slug>.md
 ```
 
-**Quality bar:** A senior engineer reading this prompt cold should be able
-to continue the work without asking clarifying questions.
+Use the current date/time and a short slug derived from the task.
+Start the file directly with the prompt content — no title header.
 
 ### Phase 3: Confirm
 
-Show the distilled prompt to the user and ask:
+Show the saved file path and a summary to the user:
 
-> Ready to hand off to a fresh session with this context?
+> Handoff prompt saved to `<path>`. Ready to rotate into a fresh session
+> and execute? Use `/clear-and-execute` to rotate now, or edit the file first.
 
-Wait for explicit confirmation. The user may want to adjust the prompt,
-add context, or change the task focus.
+Wait for explicit confirmation.
 
 ### Phase 4: Rotate
 
-Execute the rotation via the `rotateSession` RPC:
+After the user confirms, invoke `/clear-and-execute` with the saved prompt
+file. This clears the current session and starts a fresh one that executes
+the handoff prompt.
 
-```bash
-crispy-dispatch rpc rotateSession "{\"prompt\": \"$(cat <<'PROMPT'
-<the distilled handoff prompt>
-PROMPT
-)\"}"
-```
-
-The `$CRISPY_SESSION_ID` environment variable is auto-injected by rpc-pipe.ts,
-so you don't need to specify the current session ID. The old session is
-preserved in the session list.
+Alternatively, the user can:
+- Edit the saved `.md` file and then manually invoke `/clear-and-execute`
+- Copy the prompt to a different agent or session
+- Save it for later execution

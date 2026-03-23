@@ -1,43 +1,38 @@
 ---
 name: clear-and-execute
 description: >
-  Clear the current context and continue in a fresh session with distilled context.
+  Clear the current context and continue in a fresh session with a prompt.
   Use when the user says "clear and execute", "fresh context", "clean slate",
   "start fresh with this context", "context is getting long", or when an agent
-  proposes transitioning to a new session to shed context bloat.
+  proposes transitioning to a new session to shed context bloat. Accepts a
+  prompt file path as argument, or distills one from the conversation.
 ---
 
 # Clear and Execute
 
-Distill the current conversation into only the context needed for the next topic,
-then rotate into a fresh session with that context.
+Clear the current session and rotate into a fresh one that executes a prompt.
+If a prompt file is provided, use it directly. Otherwise, distill one from
+the conversation first.
 
 ## Usage
 
 ```
-/clear-and-execute                    — distill and rotate automatically
-/clear-and-execute <specific-task>    — focus the new session on a specific task
+/clear-and-execute <prompt-file>     — rotate and execute the given prompt file
+/clear-and-execute                   — distill from conversation, then rotate
+/clear-and-execute <specific-task>   — distill focused on a specific task
 ```
 
 ## Instructions
 
-### 1. Analyze the current conversation
+### If a prompt file path is provided
 
-Identify:
-- **Decisions made** — architectural choices, design decisions, constraints agreed upon
-- **Files touched** — paths of files created or modified (not their full contents)
-- **Current task** — what the user is working on right now, or the task specified as an argument
-- **Blocking context** — any errors, edge cases, or state that the next session needs to know about
+Skip straight to the rotation step — the prompt is already written.
 
-Discard:
-- Exploration that led nowhere
-- Superseded approaches
-- Verbose tool outputs
-- Completed sub-tasks that don't inform the current task
+### If no prompt file is provided
 
-### 2. Build the handoff prompt
+#### 1. Distill the conversation
 
-Construct a concise prompt that gives the next session everything it needs:
+Build a concise prompt that gives the next session everything it needs:
 
 ```
 ## Context
@@ -57,22 +52,31 @@ Construct a concise prompt that gives the next session everything it needs:
 [Any constraints or preferences from the conversation]
 ```
 
-### 3. Confirm with the user
+Discard exploration that led nowhere, superseded approaches, verbose tool
+outputs, and completed sub-tasks that don't inform the current task.
 
-Show the distilled prompt and ask: "Ready to clear context and continue with this? I'll rotate to a fresh session."
+#### 2. Save the prompt
 
-Wait for user confirmation before proceeding.
+Save to `.ai-reference/prompts/`:
 
-### 4. Execute rotation
-
-Call the `rotateSession` RPC:
-
-```bash
-crispy-dispatch rpc rotateSession "{\"prompt\": \"$(cat <<'PROMPT'
-<the distilled prompt>
-PROMPT
-)\"}"
+```
+.ai-reference/prompts/YYYYMMDD-HHMMSS-clear-execute-<task-slug>.md
 ```
 
-The `$CRISPY_SESSION_ID` environment variable is auto-injected by rpc-pipe.ts,
-so you don't need to specify the current session ID.
+#### 3. Confirm with the user
+
+Show the prompt and ask: "Ready to clear context and continue with this?"
+
+Wait for confirmation before proceeding.
+
+### Execute rotation
+
+Use `crispy-rotate` to rotate the session:
+
+```bash
+PROMPT_FILE="<prompt-file>" $CRISPY_ROTATE
+```
+
+The script handles JSON escaping, prefixes with "Execute this plan: ",
+and auto-injects `$CRISPY_SESSION_ID` via rpc-pipe. The old session is
+preserved in the session list.
