@@ -18,6 +18,23 @@ Works with Claude Code and Codex. Runs standalone in your browser or as a VS Cod
 
 ---
 
+## What's New in v0.2.4
+
+### Git diff panel
+
+The sidebar now includes a Git panel showing your working tree changes —
+staged, modified, and untracked files grouped by status. Click any file to
+see a syntax-highlighted diff preview.
+
+### Fixes
+
+- File links in VS Code / Cursor now open in the native editor again instead
+  of routing through the built-in file viewer
+- Fixed a race where the first turn could ignore your persisted agency mode
+  if submitted before settings finished loading
+
+---
+
 ## What's New in v0.2.3
 
 ### File viewer side panel
