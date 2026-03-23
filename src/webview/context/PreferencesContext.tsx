@@ -25,7 +25,7 @@ export type ToolPanelMode = 'inspector' | 'viewport';
 export type BadgeStyle = 'solid' | 'tinted' | 'frosted';
 
 /** Which view is shown in the unified right sidebar. */
-export type SidebarView = 'files' | 'tools';
+export type SidebarView = 'files' | 'tools' | 'git';
 
 interface Preferences {
   renderMode: RenderMode;

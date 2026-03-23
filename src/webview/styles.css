@@ -3795,39 +3795,6 @@ h2 {
 
 /* --- Git branch indicator (right section, passive context) --- */
 
-.crispy-titlebar__git {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  font-size: var(--font-xs);
-  color: #999;
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
-  cursor: default;
-  transition: color 0.2s;
-}
-.crispy-titlebar__git:hover {
-  color: #bbb;
-}
-
-.crispy-titlebar__git-icon {
-  flex-shrink: 0;
-  opacity: 0.7;
-}
-
-.crispy-titlebar__git-branch {
-  font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
-  font-size: 11px;
-}
-
-/* Narrow viewport: hide git branch text, keep icon only */
-@media (max-width: 560px) {
-  .crispy-titlebar__git-branch {
-    display: none;
-  }
-}
-
 /* ============================================================================
  * Approval Content — rendered inside .crispy-cp via children slot
  *
@@ -4542,6 +4509,7 @@ h2 {
 
 [data-resizing] .crispy-tool-panel,
 [data-resizing] .crispy-file-panel,
+[data-resizing] .crispy-git-panel,
 [data-resizing] .crispy-main,
 [data-resizing] .crispy-scroll-nav,
 [data-resizing] .crispy-cp,
@@ -6092,4 +6060,268 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   .crispy-workspace-picker__card {
     padding: 24px 16px;
   }
+}
+
+/* ============================================================================
+ * Git Panel — working tree diff viewer
+ * ============================================================================ */
+
+.crispy-git-panel {
+  position: fixed;
+  top: var(--titlebar-height);
+  right: 0;
+  width: var(--tool-panel-actual-width, var(--tool-panel-width, 0px));
+  height: calc(100vh - var(--titlebar-height));
+  background: var(--vscode-sideBar-background, #252526);
+  border-left: 1px solid var(--border-panel);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity var(--sidebar-transition),
+    transform var(--sidebar-transition),
+    width var(--sidebar-transition);
+}
+
+[data-tool-panel="collapsed"] .crispy-git-panel {
+  opacity: 0;
+  transform: translateX(8px);
+  pointer-events: none;
+}
+
+[data-tool-panel="overlay"] .crispy-git-panel {
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+  z-index: 250;
+}
+
+/* --- Git panel header --- */
+
+.crispy-git-panel__header {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px 6px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-panel);
+  gap: 2px;
+}
+
+.crispy-git-panel__branch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crispy-git-panel__branch {
+  font-size: var(--font-sm);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crispy-git-panel__dirty {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.crispy-git-panel__dirty--yes {
+  color: #e2c08d;
+  background: rgba(226, 192, 141, 0.12);
+}
+.crispy-git-panel__dirty--clean {
+  color: #73c991;
+  background: rgba(115, 201, 145, 0.12);
+}
+
+.crispy-git-panel__summary-row {
+  display: flex;
+  align-items: center;
+}
+
+.crispy-git-panel__count {
+  font-size: var(--font-xs);
+  opacity: 0.5;
+}
+
+.crispy-git-panel__refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.crispy-git-panel__refresh-btn:hover {
+  opacity: 1;
+  background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
+}
+
+/* --- File list --- */
+
+.crispy-git-panel__file-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  border-bottom: 1px solid var(--border-panel);
+}
+
+.crispy-git-panel__group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 12px;
+  background: transparent;
+  border: none;
+  color: var(--vscode-foreground, #ccc);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.crispy-git-panel__group-header:hover {
+  opacity: 1;
+  background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.04));
+}
+
+.crispy-git-panel__group-chevron {
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.crispy-git-panel__group-chevron--open {
+  transform: rotate(90deg);
+}
+
+.crispy-git-panel__group-label {
+  flex: 1;
+  text-align: left;
+}
+
+.crispy-git-panel__group-count {
+  opacity: 0.5;
+  font-weight: 400;
+}
+
+/* --- File row --- */
+
+.crispy-git-panel__file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 12px 3px 24px;
+  background: transparent;
+  border: none;
+  color: var(--vscode-foreground, #ccc);
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.crispy-git-panel__file-row:hover {
+  background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.04));
+}
+
+.crispy-git-panel__file-row--selected {
+  background: var(--vscode-list-activeSelectionBackground, #094771);
+  color: var(--vscode-list-activeSelectionForeground, #fff);
+}
+
+.crispy-git-panel__status-badge {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 10px;
+  line-height: 14px;
+  border-radius: 2px;
+}
+
+.crispy-git-panel__status-badge--modified  { color: #e2c08d; }
+.crispy-git-panel__status-badge--added     { color: #73c991; }
+.crispy-git-panel__status-badge--deleted   { color: #f14c4c; }
+.crispy-git-panel__status-badge--renamed   { color: #6eb3f7; }
+.crispy-git-panel__status-badge--untracked { color: #888; }
+
+.crispy-git-panel__file-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+/* --- Preview area --- */
+
+.crispy-git-panel__preview {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.crispy-git-panel__preview-header {
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border-panel);
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.crispy-git-panel__preview-path {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.crispy-git-panel__preview-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+  min-height: 0;
+}
+
+/* --- Empty/loading states --- */
+
+.crispy-git-panel__empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: var(--font-sm);
+  font-style: italic;
+}
+
+/* --- Hunk header --- */
+
+.crispy-git-diff__hunk-header {
+  padding: 2px 8px;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+  background: var(--vscode-diffEditor-unchangedRegionBackground, rgba(90, 93, 94, 0.12));
+  border-top: 1px solid var(--border-panel);
+  opacity: 0.7;
 }

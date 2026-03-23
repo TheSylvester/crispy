@@ -21,7 +21,6 @@ import { useEnvironment } from '../context/EnvironmentContext.js';
 import { useThemeKind, isLightTheme } from '../hooks/useThemeKind.js';
 import { SessionSelector, ProjectsView } from './session-selector/index.js';
 import { useAvailableCwds } from '../hooks/useAvailableCwds.js';
-import { useGitInfo } from '../hooks/useGitInfo.js';
 import { fsPathToUrlPath } from '../../core/url-path-resolver.js';
 import { useFilePanel } from '../context/FilePanelContext.js';
 // esbuild --loader:.svg=text imports the raw SVG markup as a string
@@ -80,32 +79,25 @@ function AppIcon(): React.JSX.Element {
   );
 }
 
-/** Git branch icon — fork/branch glyph (12px) */
+/** Git branch icon — stroke-based branch glyph (12px) */
 function GitBranchIcon(): React.JSX.Element {
   return (
     <svg
-      className="crispy-titlebar__git-icon"
       width="12"
       height="12"
       viewBox="0 0 16 16"
-      fill="currentColor"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
     >
-      <path d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6.5a.5.5 0 0 1-.5.5H9.15a1.5 1.5 0 0 0-1.342.829L7.1 9.243a3 3 0 0 1-.342.558V5.372a2.25 2.25 0 1 1 1.5 0v1.836l.394-.789A3 3 0 0 1 11.33 5h.42V5.372a2.25 2.25 0 0 1-2.25-2.122zM4.25 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5zm-1.5.75a2.25 2.25 0 1 1 3 2.122V13.5h-.75v-.878a2.25 2.25 0 0 1-2.25-2.122z"/>
+      <line x1="6" y1="3" x2="6" y2="13" />
+      <circle cx="6" cy="3" r="2" />
+      <circle cx="6" cy="13" r="2" />
+      <circle cx="12" cy="5" r="2" />
+      <path d="M12 7c0 2-2 3-6 4" />
     </svg>
-  );
-}
-
-/** Git branch indicator — branch name with * suffix when dirty (VS Code convention) */
-function GitBranchIndicator(): React.JSX.Element | null {
-  const gitInfo = useGitInfo();
-
-  if (!gitInfo) return null;
-
-  return (
-    <span className="crispy-titlebar__git" title={`${gitInfo.branch} — ${gitInfo.dirty ? 'uncommitted changes' : 'clean'}`}>
-      <GitBranchIcon />
-      <span className="crispy-titlebar__git-branch">{gitInfo.branch}{gitInfo.dirty ? '*' : ''}</span>
-    </span>
   );
 }
 
@@ -367,6 +359,9 @@ export function TitleBar(): React.JSX.Element {
         } else if (key === 'f') {
           e.preventDefault();
           handleSidebarButton('files');
+        } else if (key === 'g') {
+          e.preventDefault();
+          handleSidebarButton('git');
         } else if (key === 'v') {
           e.preventDefault();
           if (fileViewerOpen) closeFile();
@@ -446,10 +441,18 @@ export function TitleBar(): React.JSX.Element {
         <ConnectionDot channelState={channelState} sessionId={selectedSessionId} />
       </div>
 
-      {/* Right — Git info + Theme toggle (dev server only) + Files + Tools + New button */}
+      {/* Right — Theme toggle (dev server only) + Git + Files + Tools + New button */}
       <div className="crispy-titlebar__right">
-        <GitBranchIndicator />
         {envKind === 'websocket' && <ThemeToggle />}
+        <button
+          className={`crispy-titlebar__btn crispy-titlebar__sidebar-btn${toolPanelOpen && sidebarView === 'git' ? ' crispy-titlebar__sidebar-btn--active' : ''}`}
+          onClick={() => handleSidebarButton('git')}
+          title="Toggle git panel (Alt+G)"
+          aria-label={toolPanelOpen && sidebarView === 'git' ? 'Close git panel' : 'Open git panel'}
+        >
+          <GitBranchIcon />
+          <span className="crispy-titlebar__btn-label">Git</span>
+        </button>
         <button
           className={`crispy-titlebar__btn crispy-titlebar__sidebar-btn${toolPanelOpen && sidebarView === 'files' ? ' crispy-titlebar__sidebar-btn--active' : ''}`}
           onClick={() => handleSidebarButton('files')}

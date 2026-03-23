@@ -73,6 +73,7 @@ import {
 } from '../core/recall/catchup-manager.js';
 import { readSessionMessages } from '../core/recall/message-store.js';
 import { getGitFiles, getGitBranchInfo, fileExists, readImage, readTextFile } from "../core/file-service.js";
+import { getGitDiff } from "../core/git-diff-service.js";
 import { getLineage, getChildSessions, getLineageGraph, dbPath, setSessionTitle } from '../core/activity-index.js';
 import { refreshAndNotify } from '../core/session-list-manager.js';
 import { getProjectsWithDetails, getProjectActivity, updateProjectStage, updateProjectSortOrder, reorderProjectsInStage, getStages, getValidStageNames, writeTrackerResults, mergeProjects, extractTurnsFromMessages, getProjectTitle } from '../core/rosie/tracker/index.js';
@@ -707,6 +708,11 @@ export function createClientConnection(
       case "getGitBranchInfo": {
         const cwd = params.cwd as string;
         return getGitBranchInfo(cwd);
+      }
+
+      case "getGitDiff": {
+        const cwd = params.cwd as string;
+        return getGitDiff(cwd);
       }
 
       case "fileExists": {
