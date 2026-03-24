@@ -60,7 +60,7 @@ export function activate(context: vscode.ExtensionContext): void {
   done();
   context.subscriptions.push({ dispose: disposeAdapters });
 
-  setHostSocketPath(getSocketPath());
+  setHostSocketPath(getSocketPath(undefined, 'server'));
 
   const workspaceOpts = { workspaceCwd: cwd };
 
@@ -106,7 +106,7 @@ export function activate(context: vscode.ExtensionContext): void {
   done = phase('initRosieBot');
   initRosieBot(dispatch, {
     trackerScript: resolve(context.extensionPath, 'dist', 'crispy-tracker.mjs'),
-    ipcSocket: getSocketPath(),
+    ipcSocket: getSocketPath(undefined, 'server'),
   });
   done();
   context.subscriptions.push({

@@ -333,7 +333,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
   // IPC socket: use stable paths for daemon, PID-based for dev
   const socketMode = mode === 'daemon' ? 'prod' as const : undefined;
-  const ipcSocketPath = getSocketPath(socketMode);
+  const ipcSocketPath = getSocketPath(socketMode, 'server');
   setHostSocketPath(ipcSocketPath);
 
   done = phase('init recall ingest');
