@@ -75,6 +75,8 @@ RULES:
 // ---------------------------------------------------------------------------
 
 let conciergeSessionId: string | null = null;
+/** All session IDs associated with the concierge (pending + real) — used to block auto-watch. */
+const conciergeSessionIds = new Set<string>();
 let conciergeLastActivity = 0;
 let conciergeReady: Promise<void> | null = null;
 let conciergeReadyResolve: (() => void) | null = null;
@@ -111,8 +113,9 @@ export function initConcierge(config: ConciergeConfig): void {
   log({ source: SOURCE, level: 'info', summary: `concierge initialized (model: ${conciergeModel})` });
 }
 
-export function getConciergeSessionId(): string | null {
-  return conciergeSessionId;
+/** Check if a session ID belongs to the concierge (pending or real). */
+export function isConciergeSession(sessionId: string): boolean {
+  return conciergeSessionIds.has(sessionId);
 }
 
 export function shutdownConcierge(): void {
@@ -181,7 +184,11 @@ async function createConciergeSession(dmChannelId: string, firstMessage: string)
 
   try {
     const result = await sendTurn(intent, subscriber);
+    // Block auto-watch immediately — add pending ID, then real ID after rekey
+    conciergeSessionIds.add(result.sessionId);
+    conciergeSessionId = result.sessionId;
     const realId = result.rekeyPromise ? await result.rekeyPromise : result.sessionId;
+    conciergeSessionIds.add(realId);
     conciergeSessionId = realId;
     log({ source: SOURCE, level: 'info', summary: `concierge session created: ${realId.slice(0, 12)}` });
   } catch (err) {

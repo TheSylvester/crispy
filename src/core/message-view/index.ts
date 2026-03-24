@@ -46,7 +46,7 @@ import {
 } from './discord-transport.js';
 import type { GatewayEventHandler } from './discord-transport.js';
 import type { DiscordProviderConfig, MessageProviderConfig } from './config.js';
-import { initConcierge, shutdownConcierge, routeToConcierge, checkConciergeTimeout, getConciergeSessionId } from './concierge.js';
+import { initConcierge, shutdownConcierge, routeToConcierge, checkConciergeTimeout, isConciergeSession } from './concierge.js';
 import { createBuffer, getOrCreateSection, getLastSection, appendSection, updateSection, clearBuffer } from './buffer.js';
 import type { MessageBuffer } from './buffer.js';
 import { createProjection, syncOneDirtySection, clearProjection } from './projection.js';
@@ -222,7 +222,7 @@ function startUp(config: DiscordProviderConfig): void {
         if (event.type === 'session_list_upsert') {
           const session = event.session;
           if (session.sessionKind === 'system') return;
-          if (session.sessionId === getConciergeSessionId()) return;
+          if (isConciergeSession(session.sessionId)) return;
           if (watchedSessions.has(session.sessionId)) return;
           if (knownSubagentSessions.has(session.sessionId)) return;
           const ageMs = Date.now() - session.modifiedAt.getTime();
