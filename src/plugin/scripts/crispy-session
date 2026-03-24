@@ -139,12 +139,12 @@ HAS_STDIN=false
 [[ ! -t 0 ]] && HAS_STDIN=true
 
 # Resume-only mode: switch to an existing session with no prompt
+# Note: skip stdin check here — non-tty stdin (pipes from tool calls) doesn't
+# mean there's actual prompt data. Stdin is only consumed below if we fall through.
 if [[ -n "$TARGET_SESSION" ]] && [[ -z "${PROMPT_FILE:-}" ]] && [[ $# -eq 0 ]]; then
-  if [[ "$HAS_STDIN" == "false" ]]; then
-    PARAMS=$(jq -n --arg targetSessionId "$TARGET_SESSION" '{targetSessionId: $targetSessionId}')
-    $DISPATCH_BIN rpc --subscribe-first switchSession "$PARAMS"
-    exit 0
-  fi
+  PARAMS=$(jq -n --arg targetSessionId "$TARGET_SESSION" '{targetSessionId: $targetSessionId}')
+  $DISPATCH_BIN rpc --subscribe-first switchSession "$PARAMS"
+  exit 0
 fi
 
 # Determine prompt source: PROMPT_FILE > args > stdin

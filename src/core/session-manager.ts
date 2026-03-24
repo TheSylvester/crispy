@@ -46,6 +46,7 @@ import {
   createChannel, setAdapter, subscribe, unsubscribe,
   destroyChannel, rekeyChannel, getChannel, rotateAdapter,
   broadcastUserEntry as channelBroadcastUserEntry,
+  broadcastEvent,
 } from './session-channel.js';
 import { refreshAndNotify, notifyStatusChange } from './session-list-manager.js';
 import { fireResponseComplete } from './lifecycle-hooks.js';
@@ -717,12 +718,14 @@ export async function switchSession(
     throw new Error('Cannot rotate a session that is still initializing.');
   }
 
-  // Preflight: reject if resume target already has an active channel
-  if (spec.mode === 'resume') {
-    const targetChannelExists = sessions.has(spec.sessionId);
-    if (targetChannelExists) {
-      throw new Error(`Cannot rotate to session "${spec.sessionId}": it already has an active channel`);
-    }
+  // If resume target already has a channel, detach it so this one can take over.
+  // This happens when a previous switch left a stale channel attached, or when
+  // multiple clients race to open the same session.
+  if (spec.mode === 'resume' && sessions.has(spec.sessionId)) {
+    const staleChannel = sessions.get(spec.sessionId)!;
+    await rotateAdapter(staleChannel);
+    destroyChannel(spec.sessionId);
+    sessions.delete(spec.sessionId);
   }
 
   const channel = requireChannel(currentSessionId);
@@ -763,6 +766,20 @@ export async function switchSession(
     const history = await registration.discovery.loadHistory(realId);
     channel.entries = history;
     channel.entryIndex = history.length;
+
+    // Notify all subscribers (including other clients like the webview) that
+    // this channel switched to a different session. Emitted AFTER history
+    // loading so catchup has entries when the webview re-subscribes.
+    // Subscribers still receive this tagged with the old sessionId (their
+    // send() closure captured it at subscribe time), so the webview's
+    // session_changed handler in SessionContext.tsx matches and updates
+    // selectedSessionId correctly.
+    broadcastEvent(channel, {
+      type: 'notification',
+      kind: 'session_changed',
+      sessionId: realId,
+      previousSessionId: currentSessionId,
+    });
 
     const newAdapter = registration.createAdapter(spec);
 

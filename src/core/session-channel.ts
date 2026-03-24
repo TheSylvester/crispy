@@ -33,6 +33,7 @@ import { log } from './log.js';
 import type { TranscriptEntry } from './transcript.js';
 import type {
   ChannelCatchupMessage,
+  ChannelEvent,
   PendingApprovalInfo,
 } from './channel-events.js';
 
@@ -449,6 +450,19 @@ export function broadcastUserEntry(
 ): void {
   const msg: ChannelMessage = { type: 'entry', entry };
   broadcastAndTrack(channel, msg);
+}
+
+/**
+ * Broadcast a channel event to all subscribers.
+ *
+ * Used by session-manager to emit synthetic events (e.g. session_changed
+ * during resume-mode rotation) that don't originate from an adapter.
+ */
+export function broadcastEvent(
+  channel: SessionChannel,
+  event: ChannelEvent,
+): void {
+  broadcast(channel, { type: 'event', event });
 }
 
 // ============================================================================
