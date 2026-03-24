@@ -52,8 +52,8 @@ import { createProjection, syncOneDirtySection, clearProjection } from './projec
 import type { ProjectionState } from './projection.js';
 
 const SOURCE = 'message-view';
-const SECTION_SOFT_LIMIT = 1800;
-const DISCORD_MAX_LENGTH = 2000;
+const SECTION_SOFT_LIMIT = 3800;
+const DISCORD_MAX_LENGTH = 4000;
 const MAX_CONCURRENT_PROMPTS = 3;
 const MIN_PROMPT_LENGTH = 3;
 
@@ -82,8 +82,19 @@ interface PendingInteraction {
   emojiToOptionId: Map<string, string>;
 }
 
-interface ToolLineEntry {
-  line: string;
+/** A fragment within a content section — either prose or a tool line. */
+interface ContentFragment {
+  kind: 'text' | 'tool';
+  /** For tool fragments: the tool_use_id (for pairing on result). */
+  toolId?: string;
+  /** The rendered text of this fragment. */
+  text: string;
+}
+
+/** A running content section — rendered by joining fragments. */
+interface ContentSectionState {
+  sectionId: string;
+  fragments: ContentFragment[];
 }
 
 interface WatchState {
@@ -93,14 +104,15 @@ interface WatchState {
   channel: SessionChannel;
   buffer: MessageBuffer;
   projection: ProjectionState;
-  turnCounter: number;
-  toolLines: Map<string, ToolLineEntry>;
-  toolLineOrder: string[];
   pendingInteractions: Map<string, PendingInteraction>;
-  /** Force next assistant text into a new section (set on user turn boundary). */
+  /** Ordered list of running content sections. */
+  contentSections: ContentSectionState[];
+  /** Reverse index: toolId → sectionId (for fast tool pairing). */
+  toolIndex: Map<string, string>;
+  /** Monotonic counter for content section IDs. */
+  sectionCounter: number;
+  /** Force next content into a new section (set on user turn boundary). */
   newTurn: boolean;
-  /** Current turn's tools section ID (incremented per turn for ordering). */
-  toolsSectionId: string;
   /** Set on sub-agent posts — the parent session ID that spawned this. */
   parentSessionId?: string;
 }
@@ -572,12 +584,11 @@ function registerWatchState(
     channel: channel!,
     buffer,
     projection,
-    turnCounter: 0,
-    toolLines: new Map(),
-    toolLineOrder: [],
     pendingInteractions: new Map(),
+    contentSections: [],
+    toolIndex: new Map(),
+    sectionCounter: 0,
     newTurn: false,
-    toolsSectionId: 'tools-0',
   };
   watchedSessions.set(sessionId, state);
   channelToSession.set(discordChannelId, sessionId);
@@ -763,30 +774,107 @@ async function postApprovalInteraction(
 }
 
 // ---------------------------------------------------------------------------
-// Buffer Rendering — conversation-first layout with tool pairing
+// Buffer Rendering — running content sections with inline tool pairing
 // ---------------------------------------------------------------------------
+
+/** Compute the rendered length of a content section. */
+function contentSectionLength(cs: ContentSectionState): number {
+  let len = 0;
+  for (let i = 0; i < cs.fragments.length; i++) {
+    if (i > 0) len += 1; // newline separator
+    len += cs.fragments[i].text.length;
+  }
+  return len;
+}
+
+/** Render a content section's fragments to a string. */
+function renderContentSection(cs: ContentSectionState): string {
+  return cs.fragments.map(f => f.text).join('\n');
+}
+
+/** Re-render a content section into the MessageBuffer, marking it dirty. */
+function syncContentToBuffer(cs: ContentSectionState, buffer: MessageBuffer): void {
+  const section = getOrCreateSection(buffer, cs.sectionId, '');
+  updateSection(section, truncateAtNewline(renderContentSection(cs), SECTION_SOFT_LIMIT));
+}
+
+/**
+ * Get the tail content section, or create a new one.
+ * Forces a new section on user turn boundaries or when approaching the char limit.
+ */
+function getCurrentContentSection(
+  state: WatchState,
+  buffer: MessageBuffer,
+  incomingLength: number,
+): ContentSectionState {
+  const forceNew = state.newTurn;
+  if (forceNew) state.newTurn = false;
+
+  const tail = state.contentSections[state.contentSections.length - 1];
+
+  if (!forceNew && tail) {
+    const projected = contentSectionLength(tail) + 1 + incomingLength;
+    if (projected <= SECTION_SOFT_LIMIT) {
+      return tail;
+    }
+  }
+
+  // Create new content section
+  state.sectionCounter++;
+  const sectionId = `content-${state.sectionCounter}`;
+  const cs: ContentSectionState = { sectionId, fragments: [] };
+  state.contentSections.push(cs);
+  appendSection(buffer, sectionId, '');
+  return cs;
+}
+
+/** Append a text fragment to the running content. */
+function appendTextFragment(state: WatchState, buffer: MessageBuffer, text: string): void {
+  const rendered = text.slice(0, 3000); // truncate huge single blocks
+  const cs = getCurrentContentSection(state, buffer, rendered.length);
+  cs.fragments.push({ kind: 'text', text: rendered });
+  syncContentToBuffer(cs, buffer);
+}
+
+/** Append a tool_use fragment to the running content. */
+function appendToolFragment(state: WatchState, buffer: MessageBuffer, toolId: string, line: string): void {
+  const cs = getCurrentContentSection(state, buffer, line.length);
+  cs.fragments.push({ kind: 'tool', toolId, text: line });
+  state.toolIndex.set(toolId, cs.sectionId);
+  syncContentToBuffer(cs, buffer);
+}
+
+/**
+ * Update a tool line's status emoji when tool_result arrives.
+ * Finds the fragment via toolIndex, mutates it, re-renders the section.
+ */
+function completeToolLine(state: WatchState, buffer: MessageBuffer, toolId: string, isError: boolean): void {
+  const sectionId = state.toolIndex.get(toolId);
+  if (!sectionId) return;
+
+  const cs = state.contentSections.find(s => s.sectionId === sectionId);
+  if (!cs) return;
+
+  const frag = cs.fragments.find(f => f.kind === 'tool' && f.toolId === toolId);
+  if (!frag) return;
+
+  const status = isError ? '\u{2717}' : '\u{2713}';
+  frag.text = frag.text.replace('\u{23F3}', status);
+  syncContentToBuffer(cs, buffer);
+}
 
 function renderEntryToBuffer(buffer: MessageBuffer, entry: TranscriptEntry, state: WatchState | undefined): void {
   const content = entry.message?.content;
   if (!content) return;
 
   if (entry.type === 'user') {
-    // Process tool_result blocks BEFORE resetting tool state (they arrive on user entries)
-    if (Array.isArray(content)) {
-      let toolResultSeen = false;
+    // Process tool_result blocks BEFORE marking turn boundary (they arrive on user entries)
+    if (Array.isArray(content) && state) {
       for (const block of content) {
-        if (block.type === 'tool_result' && 'tool_use_id' in block && state) {
+        if (block.type === 'tool_result' && 'tool_use_id' in block) {
           const toolResult = block as { type: 'tool_result'; tool_use_id: string; is_error?: boolean };
-          const existing = state.toolLines.get(toolResult.tool_use_id);
-          if (existing) {
-            const status = toolResult.is_error ? '\u{2717}' : '\u{2713}';
-            existing.line = existing.line.replace('\u{23F3}', status);
-            toolResultSeen = true;
-          }
+          completeToolLine(state, buffer, toolResult.tool_use_id, !!toolResult.is_error);
         }
-      }
-      if (toolResultSeen) {
-        rebuildToolsSection(buffer, state!);
       }
     }
 
@@ -795,12 +883,9 @@ function renderEntryToBuffer(buffer: MessageBuffer, entry: TranscriptEntry, stat
       handleSubagentResult(state, entry.toolUseResult, content);
     }
 
-    // Turn boundary — reset tool tracking and force new sections for next turn
+    // Turn boundary — force new section so next output appears after user's Discord message
     if (state) {
-      state.toolLines = new Map();
-      state.toolLineOrder = [];
       state.newTurn = true;
-      state.toolsSectionId = `tools-${state.turnCounter + 1}`;
     }
     return;
   }
@@ -818,83 +903,38 @@ function renderAssistantToBuffer(
   content: string | ContentBlock[],
   state: WatchState | undefined,
 ): void {
+  if (!state) {
+    // Fallback for stateless catchup — dump into a simple section
+    if (typeof content === 'string' && content) {
+      appendSection(buffer, `catchup-${Date.now()}`, truncateAtNewline(content, SECTION_SOFT_LIMIT));
+    }
+    return;
+  }
+
   if (typeof content === 'string') {
-    if (!content) return;
-    appendConversationText(buffer, content, state);
+    if (content) appendTextFragment(state, buffer, content);
     return;
   }
 
   for (const block of content) {
     switch (block.type) {
       case 'text': {
-        if (block.text) {
-          appendConversationText(buffer, block.text, state);
-        }
+        if (block.text) appendTextFragment(state, buffer, block.text);
         break;
       }
       case 'tool_use': {
         const input = (block.input ?? {}) as Record<string, unknown>;
-        const toolId = block.id;
         const line = renderToolUse(block.name, input);
-
-        if (state && toolId) {
-          state.toolLines.set(toolId, { line });
-          state.toolLineOrder.push(toolId);
-          rebuildToolsSection(buffer, state);
+        if (block.id) {
+          appendToolFragment(state, buffer, block.id, line);
         } else {
-          appendToolLineFallback(buffer, line);
+          appendTextFragment(state, buffer, line);
         }
         break;
       }
       // tool_result, thinking, image — skip
     }
   }
-}
-
-/** Rebuild the tools section from the ordered toolLines map. */
-function rebuildToolsSection(buffer: MessageBuffer, state: WatchState): void {
-  const lines: string[] = [];
-  for (const toolId of state.toolLineOrder) {
-    const entry = state.toolLines.get(toolId);
-    if (entry) lines.push(entry.line);
-  }
-  const toolContent = lines.join('\n');
-  const toolSection = getOrCreateSection(buffer, state.toolsSectionId, '');
-  updateSection(toolSection, truncate(toolContent, SECTION_SOFT_LIMIT));
-}
-
-function appendConversationText(buffer: MessageBuffer, text: string, state: WatchState | undefined): void {
-  const rendered = truncate(text.slice(0, 1500), SECTION_SOFT_LIMIT);
-  const last = getLastSection(buffer);
-
-  // Force a new section after a user turn boundary so messages stay ordered
-  const forceNew = state?.newTurn ?? false;
-  if (forceNew && state) state.newTurn = false;
-
-  const isNonConversation = !last || last.id === 'status' || last.id === 'tools';
-  if (forceNew || isNonConversation || (last.content.length + rendered.length + 1) > SECTION_SOFT_LIMIT) {
-    const turnId = nextTurnId(state);
-    appendSection(buffer, turnId, rendered);
-    return;
-  }
-
-  const newContent = last.content ? `${last.content}\n\n${rendered}` : rendered;
-  updateSection(last, newContent);
-}
-
-/** Fallback for tool lines during catchup before WatchState exists. */
-function appendToolLineFallback(buffer: MessageBuffer, line: string): void {
-  const toolSection = getOrCreateSection(buffer, 'tools', '');
-  const newContent = toolSection.content ? `${toolSection.content}\n${line}` : line;
-  updateSection(toolSection, truncate(newContent, SECTION_SOFT_LIMIT));
-}
-
-function nextTurnId(state: WatchState | undefined): string {
-  if (state) {
-    state.turnCounter++;
-    return `conv-${state.turnCounter}`;
-  }
-  return `conv-${Date.now()}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1038,10 +1078,10 @@ async function createSubagentPost(
     return;
   }
 
-  // Derive post name from the parent tool line description
-  const toolEntry = parentState.toolLines.get(parentToolUseId);
-  const rawDesc = toolEntry
-    ? toolEntry.line.replace(/[⏳✓✗]/g, '').replace(/\*\*/g, '').trim()
+  // Derive post name from the parent tool fragment description
+  const frag = findToolFragment(parentState, parentToolUseId);
+  const rawDesc = frag
+    ? frag.text.replace(/[⏳✓✗]/g, '').replace(/\*\*/g, '').trim()
     : 'sub-agent';
   const postName = `\u{2192} ${rawDesc}`.slice(0, 100);
 
@@ -1078,28 +1118,39 @@ async function createSubagentPost(
   log({ source: SOURCE, level: 'info', summary: `sub-agent post created for ${agentSessionId.slice(0, 8)} in "${postName}"` });
 }
 
+/** Find a tool fragment by toolId across all content sections. */
+function findToolFragment(state: WatchState, toolId: string): ContentFragment | undefined {
+  const sectionId = state.toolIndex.get(toolId);
+  if (!sectionId) return undefined;
+  const cs = state.contentSections.find(s => s.sectionId === sectionId);
+  if (!cs) return undefined;
+  return cs.fragments.find(f => f.kind === 'tool' && f.toolId === toolId);
+}
+
 /** Update a parent tool line to include a clickable link to the sub-agent post. */
 function linkParentToolLine(
   parentState: WatchState,
   parentToolUseId: string,
   subagentChannelId: string,
 ): void {
-  const toolEntry = parentState.toolLines.get(parentToolUseId);
-  if (!toolEntry) return;
+  const frag = findToolFragment(parentState, parentToolUseId);
+  if (!frag) return;
 
   const guildId = activeConfig?.guildId ?? '';
   const link = `https://discord.com/channels/${guildId}/${subagentChannelId}`;
 
-  // Extract the description part (everything between ** markers and the status emoji)
-  // e.g. "🤖 **agent** [Explore]  find auth module  ✓" → wrap description with link
-  const line = toolEntry.line;
   // Match pattern: (icon **name** optional-badge)  (description)  (status)
-  const match = line.match(/^(.+\*\*\s*)(.+?)(\s+[⏳✓✗])$/);
+  const match = frag.text.match(/^(.+\*\*\s*)(.+?)(\s+[⏳✓✗])$/);
   if (match) {
-    toolEntry.line = `${match[1]}[\u{2192} ${match[2]}](${link})${match[3]}`;
+    frag.text = `${match[1]}[\u{2192} ${match[2]}](${link})${match[3]}`;
   }
 
-  rebuildToolsSection(parentState.buffer, parentState);
+  // Re-render the content section containing this fragment
+  const sectionId = parentState.toolIndex.get(parentToolUseId);
+  if (sectionId) {
+    const cs = parentState.contentSections.find(s => s.sectionId === sectionId);
+    if (cs) syncContentToBuffer(cs, parentState.buffer);
+  }
 }
 
 /** Check if a watch state represents a sub-agent post. */
@@ -1118,6 +1169,16 @@ async function addCleanupReaction(state: WatchState): Promise<void> {
 
 function truncate(str: string, max: number): string {
   if (str.length <= max) return str;
+  return str.slice(0, max - 3) + '...';
+}
+
+/** Truncate at the last newline before the limit, so we don't cut mid-line. */
+function truncateAtNewline(str: string, max: number): string {
+  if (str.length <= max) return str;
+  const breakPoint = str.lastIndexOf('\n', max);
+  if (breakPoint > max * 0.5) {
+    return str.slice(0, breakPoint);
+  }
   return str.slice(0, max - 3) + '...';
 }
 

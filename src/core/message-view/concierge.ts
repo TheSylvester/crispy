@@ -262,7 +262,7 @@ function buildConciergeSubscriber(dmChannelId: string): Subscriber {
           // Plain text response — send to DM
           const trimmed = fullText.trim();
           if (trimmed) {
-            void sendMessage(dmChannelId, trimmed.slice(0, 2000)).catch(() => {});
+            void sendMessage(dmChannelId, trimmed.slice(0, 4000)).catch(() => {});
           }
         }
       }
@@ -272,7 +272,7 @@ function buildConciergeSubscriber(dmChannelId: string): Subscriber {
         if (evt.type === 'status' && evt.status === 'idle') {
           // Turn complete — flush any pending text
           if (pendingText) {
-            void sendMessage(dmChannelId, pendingText.slice(0, 2000)).catch(() => {});
+            void sendMessage(dmChannelId, pendingText.slice(0, 4000)).catch(() => {});
             pendingText = '';
           }
         }
@@ -332,7 +332,7 @@ async function executeCommand(dmChannelId: string, jsonStr: string, prefixText: 
 
   // Send the prefix text + result to the DM, and also feed result back to session
   if (prefixText) {
-    await sendMessage(dmChannelId, prefixText.slice(0, 2000)).catch(() => {});
+    await sendMessage(dmChannelId, prefixText.slice(0, 4000)).catch(() => {});
   }
 
   await sendResultToSession(dmChannelId, result);
@@ -354,7 +354,7 @@ async function sendResultToSession(dmChannelId: string, result: string): Promise
   } catch (err) {
     log({ source: SOURCE, level: 'error', summary: 'failed to send command result to concierge', data: err });
     // Fall back: send raw result directly to DM
-    await sendMessage(dmChannelId, result.slice(0, 2000)).catch(() => {});
+    await sendMessage(dmChannelId, result.slice(0, 4000)).catch(() => {});
   }
 }
 

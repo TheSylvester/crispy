@@ -14,7 +14,7 @@ import { sendMessage, editMessage } from './discord-transport.js';
 import type { MessageBuffer } from './buffer.js';
 
 const SOURCE = 'message-view/projection';
-const DISCORD_MAX_LENGTH = 2000;
+const DISCORD_MAX_LENGTH = 4000;
 
 export interface ProjectionState {
   discordChannelId: string;
