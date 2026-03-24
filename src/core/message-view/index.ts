@@ -306,56 +306,42 @@ async function ensureForumChannel(guildId: string, botId: string, ownerId: strin
 
 /**
  * Reconnect to existing forum posts from a previous bot lifetime.
- * Scans active threads in the forum channel, matches session IDs from post names,
- * and re-subscribes to any that are still valid sessions.
+ * Scans active threads in the forum, matches session IDs from post names,
+ * and re-subscribes in parallel via watchSession.
  */
 async function reconnectExistingPosts(guildId: string, forumId: string): Promise<void> {
   const threads = await getActiveThreads(guildId);
   const forumThreads = threads.filter(t => t.parent_id === forumId);
-
   if (forumThreads.length === 0) return;
 
-  // Build a set of known session ID prefixes for fast matching
   const allSessions = listAllSessions();
   const sessionsByPrefix = new Map<string, string>();
   for (const s of allSessions) {
     sessionsByPrefix.set(s.sessionId.slice(0, 8), s.sessionId);
   }
 
-  let reconnected = 0;
+  // Match forum posts to sessions and reconnect in parallel
+  const reconnectTasks: Promise<void>[] = [];
   for (const thread of forumThreads) {
-    // Forum post names follow "session-{prefix}" or the prompt text
-    // Extract the 8-char prefix from "session-abc12345" pattern
     const match = thread.name.match(/^session-([a-f0-9]{8})/);
-    if (!match) continue;
-
-    const prefix = match[1];
-    const fullId = sessionsByPrefix.get(prefix);
-    if (!fullId) continue;
-
-    // Skip if already watching (shouldn't happen on fresh startup, but guard against it)
-    if (watchedSessions.has(fullId)) continue;
-
-    try {
-      const discordChannelId = thread.id;
-      const buffer = createBuffer();
-      const projection = createProjection(discordChannelId);
-      appendSection(buffer, 'status', '\u{1F504} Reconnecting\u{2026}');
-
-      const subscriber = buildWatchSubscriber(fullId, buffer);
-      const state = registerWatchState(fullId, discordChannelId, subscriber, null, buffer, projection);
-
-      state.channel = await subscribeSession(fullId, subscriber);
-      reconnected++;
-    } catch (err) {
-      log({ source: SOURCE, level: 'warn', summary: `reconnect failed for ${prefix}`, data: err });
-      // Clean up failed registration
-      watchedSessions.delete(fullId);
+    if (!match) {
+      log({ source: SOURCE, level: 'debug', summary: `skipping unmatched post: ${thread.name}` });
+      continue;
     }
+
+    const fullId = sessionsByPrefix.get(match[1]);
+    if (!fullId || watchedSessions.has(fullId)) continue;
+
+    reconnectTasks.push(
+      watchSession(fullId, { auto: true, existingPostId: thread.id }).catch(err => {
+        log({ source: SOURCE, level: 'warn', summary: `reconnect failed for ${match[1]}`, data: err });
+      }),
+    );
   }
 
-  if (reconnected > 0) {
-    log({ source: SOURCE, level: 'info', summary: `reconnected to ${reconnected} existing forum post${reconnected > 1 ? 's' : ''}` });
+  await Promise.all(reconnectTasks);
+  if (reconnectTasks.length > 0) {
+    log({ source: SOURCE, level: 'info', summary: `reconnected to ${reconnectTasks.length} existing forum post${reconnectTasks.length > 1 ? 's' : ''}` });
   }
 }
 
@@ -550,6 +536,8 @@ async function conciergeOpenSession(prefix: string): Promise<string> {
 
 interface WatchSessionOpts {
   auto: boolean;
+  /** If set, reuse an existing forum post instead of creating a new one. */
+  existingPostId?: string;
 }
 
 async function watchSession(sessionId: string, opts: WatchSessionOpts): Promise<void> {
@@ -557,19 +545,24 @@ async function watchSession(sessionId: string, opts: WatchSessionOpts): Promise<
 
   if (watchedSessions.has(sessionId)) return;
 
-  const postName = `session-${sessionId.slice(0, 8)}`;
-  const anchorText = opts.auto
-    ? `\u{1F4E1} Auto-watching session \`${sessionId.slice(0, 8)}\``
-    : `\u{1F4E1} Watching session \`${sessionId.slice(0, 8)}\``;
+  let discordChannelId: string;
+  if (opts.existingPostId) {
+    discordChannelId = opts.existingPostId;
+  } else {
+    const postName = `session-${sessionId.slice(0, 8)}`;
+    const anchorText = opts.auto
+      ? `\u{1F4E1} Auto-watching session \`${sessionId.slice(0, 8)}\``
+      : `\u{1F4E1} Watching session \`${sessionId.slice(0, 8)}\``;
+    const post = await createForumPost(forumChannelId, postName, anchorText, {
+      autoArchiveDuration: 1440,
+    });
+    discordChannelId = post.id;
+  }
 
-  const post = await createForumPost(forumChannelId, postName, anchorText, {
-    autoArchiveDuration: 1440,
-  });
-
-  const discordChannelId = post.id;
+  const statusText = opts.existingPostId ? '\u{1F504} Reconnecting\u{2026}' : '\u{23F3} Connecting\u{2026}';
   const buffer = createBuffer();
   const projection = createProjection(discordChannelId);
-  appendSection(buffer, 'status', '\u{23F3} Connecting\u{2026}');
+  appendSection(buffer, 'status', statusText);
 
   const subscriber = buildWatchSubscriber(sessionId, buffer);
 
@@ -582,12 +575,11 @@ async function watchSession(sessionId: string, opts: WatchSessionOpts): Promise<
     // Roll back pre-registration
     watchedSessions.delete(sessionId);
     channelToSession.delete(discordChannelId);
-    const msg = err instanceof Error ? err.message : String(err);
-    archiveThread(discordChannelId).catch(() => {});
+    if (!opts.existingPostId) archiveThread(discordChannelId).catch(() => {});
     throw err;
   }
 
-  log({ source: SOURCE, level: 'info', summary: `${opts.auto ? 'auto-' : ''}watching session ${sessionId.slice(0, 12)}\u{2026} in forum post ${postName}` });
+  log({ source: SOURCE, level: 'info', summary: `${opts.existingPostId ? 're' : opts.auto ? 'auto-' : ''}watching session ${sessionId.slice(0, 12)}\u{2026}` });
 }
 
 // ---------------------------------------------------------------------------

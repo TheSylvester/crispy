@@ -335,7 +335,9 @@ async function executeCommand(dmChannelId: string, jsonStr: string, prefixText: 
   await sendMessage(dmChannelId, dmText.slice(0, 4000)).catch(() => {});
 
   // Also feed result back to the concierge session for context continuity
-  void sendResultToSession(dmChannelId, result).catch(() => {});
+  void sendResultToSession(dmChannelId, result).catch((err) => {
+    log({ source: SOURCE, level: 'debug', summary: 'concierge context update failed', data: err });
+  });
 }
 
 async function sendResultToSession(dmChannelId: string, result: string): Promise<void> {
