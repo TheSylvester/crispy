@@ -499,9 +499,27 @@ function evictIfDead(sessionId: string): void {
 }
 
 /**
+ * Attach a one-shot subscriber that notifies the session list when the
+ * real session ID resolves (via session_changed event). Used by
+ * createPendingChannel() and switchSession() fresh mode.
+ */
+function attachListNotifySubscriber(channel: SessionChannel, id: string): void {
+  const sub: Subscriber = {
+    id: `__list_notify__${id}`,
+    send(msg) {
+      if (isSessionChangedEvent(msg)) {
+        refreshAndNotify(msg.event.sessionId);
+        unsubscribe(channel, sub);
+      }
+    },
+  };
+  subscribe(channel, sub);
+}
+
+/**
  * Wire lifecycle hooks on a channel — onIdle and onStatusChange.
  *
- * Shared by openChannel() and rotateSession(). The closures read
+ * Shared by openChannel() and switchSession(). The closures read
  * channel.adapter?.sessionId at call time, so they automatically
  * pick up the current adapter after rotation.
  */
@@ -631,16 +649,7 @@ function createPendingChannel(
   subscribe(channel, subscriber);
 
   // One-shot session-list notifier: pushes upsert when the real session ID resolves
-  const listNotifySubscriber: Subscriber = {
-    id: `__list_notify__${pendingId}`,
-    send(msg) {
-      if (isSessionChangedEvent(msg)) {
-        refreshAndNotify(msg.event.sessionId);
-        unsubscribe(channel, listNotifySubscriber);
-      }
-    },
-  };
-  subscribe(channel, listNotifySubscriber);
+  attachListNotifySubscriber(channel, pendingId);
 
   // One-shot re-key subscriber: swaps pending → real ID on session_changed
   // Also resolves the rekeyPromise with the real session ID.
@@ -699,13 +708,21 @@ export interface RotateSessionResult {
  * flushed, the old session is preserved, and a new session begins
  * streaming into the same channel.
  */
-export async function rotateSession(
+export async function switchSession(
   currentSessionId: string,
   vendor: Vendor,
   spec: SessionOpenSpec,
 ): Promise<RotateSessionResult> {
   if (currentSessionId.startsWith('pending:')) {
     throw new Error('Cannot rotate a session that is still initializing.');
+  }
+
+  // Preflight: reject if resume target already has an active channel
+  if (spec.mode === 'resume') {
+    const targetChannelExists = sessions.has(spec.sessionId);
+    if (targetChannelExists) {
+      throw new Error(`Cannot rotate to session "${spec.sessionId}": it already has an active channel`);
+    }
   }
 
   const channel = requireChannel(currentSessionId);
@@ -724,7 +741,47 @@ export async function rotateSession(
     fireResponseComplete(previousSessionId);
   }, 150);
 
-  // Generate pending ID and rekey channel
+  // Resume mode: skip the pending ID dance — use the real target ID directly.
+  // Resumed sessions pre-seed _sessionId, so session_changed never fires and
+  // the pending→real rekey would time out. Instead, rekey straight to the
+  // target ID and return an already-resolved rekeyPromise.
+  if (spec.mode === 'resume') {
+    const realId = spec.sessionId;
+
+    rekeyChannel(currentSessionId, realId);
+    sessions.delete(currentSessionId);
+    sessions.set(realId, channel);
+
+    // Inject env with the REAL session ID (not a pending one)
+    spec = { ...spec, env: buildSessionEnv(realId, spec.env) };
+
+    const registration = adapters.get(vendor);
+    if (!registration) throw new Error(`No adapter registered for vendor "${vendor}".`);
+
+    // Load history so the channel has entries for subscriber catchup.
+    // rotateAdapter() flushed channel.entries — we must re-seed them.
+    const history = await registration.discovery.loadHistory(realId);
+    channel.entries = history;
+    channel.entryIndex = history.length;
+
+    const newAdapter = registration.createAdapter(spec);
+
+    wireLifecycleHooks(channel);
+    setAdapter(channel, newAdapter);
+
+    // For resume, session_changed won't fire (adapter pre-seeds _sessionId),
+    // so notify the session list directly instead of subscribing a one-shot.
+    refreshAndNotify(realId);
+
+    return {
+      previousSessionId,
+      pendingId: realId,
+      channel,
+      rekeyPromise: Promise.resolve(realId),
+    };
+  }
+
+  // Fresh mode: generate pending ID and rekey channel
   const pendingId = `pending:${crypto.randomUUID()}`;
   rekeyChannel(currentSessionId, pendingId);
   sessions.delete(currentSessionId);
@@ -759,16 +816,7 @@ export async function rotateSession(
   setAdapter(channel, newAdapter);
 
   // One-shot list-notify subscriber (same pattern as createPendingChannel)
-  const listNotifySubscriber: Subscriber = {
-    id: `__list_notify__${pendingId}`,
-    send(msg) {
-      if (isSessionChangedEvent(msg)) {
-        refreshAndNotify(msg.event.sessionId);
-        unsubscribe(channel, listNotifySubscriber);
-      }
-    },
-  };
-  subscribe(channel, listNotifySubscriber);
+  attachListNotifySubscriber(channel, pendingId);
 
   // One-shot rekey subscriber (pending → real)
   const rekeyPromise = new Promise<string>((resolve, reject) => {

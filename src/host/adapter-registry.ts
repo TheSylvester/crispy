@@ -151,7 +151,7 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
     CRISPY_DISPATCH: resolve(extBase, 'dist', 'crispy-dispatch.js'),
     CRISPY_TRACKER: resolve(extBase, 'dist', 'crispy-tracker.mjs'),
     CRISPY_AGENT: resolve(pluginPath, 'scripts', 'crispy-agent'),
-    CRISPY_ROTATE: resolve(pluginPath, 'scripts', 'crispy-rotate'),
+    CRISPY_SESSION: resolve(pluginPath, 'scripts', 'crispy-session'),
   });
   console.error(`[adapter-registry] Plugin path: ${pluginPath}`);
 

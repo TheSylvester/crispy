@@ -47,7 +47,7 @@ import {
   rekeyChildSession,
   resolveSessionId,
   resolveSessionPrefix,
-  rotateSession,
+  switchSession,
 } from "../core/session-manager.js";
 import type { ChildSessionOptions, ResumeChildOptions } from "../core/session-manager.js";
 import {
@@ -338,7 +338,7 @@ export function createClientConnection(
   /**
    * Create a mutable subscriber that allows session ID re-keying.
    * The rekey() method updates the session ID used in event routing.
-   * Used by sendTurn and rotateSession RPCs for pending → real transitions.
+   * Used by sendTurn and switchSession RPCs for pending → real transitions.
    */
   function createMutableSubscriber(initialSessionId: string) {
     let currentSessionId = initialSessionId;
@@ -537,11 +537,12 @@ export function createClientConnection(
         return { sessionId: result.sessionId };
       }
 
-      case "rotateSession": {
+      case "switchSession": {
         const sessionId = params.sessionId as string;
-        const prompt = params.prompt as string;
+        const prompt = params.prompt as string | undefined;
+        const targetSessionId = params.targetSessionId as string | undefined;
         if (!sessionId) throw new Error('Missing sessionId');
-        if (!prompt) throw new Error('Missing prompt');
+        if (!prompt && !targetSessionId) throw new Error('Missing prompt or targetSessionId (or both)');
 
         // Caller must hold a subscription to the session being rotated.
         // This ensures the rekey (pending → real) always updates the right
@@ -550,23 +551,95 @@ export function createClientConnection(
           throw new Error(`Cannot rotate session "${sessionId}": caller must be subscribed first`);
         }
 
-        // Resolve vendor from the current session
+        const permissionMode = params.permissionMode as string | undefined;
+        const allowDangerouslySkipPermissions = (params.allowDangerouslySkipPermissions as boolean) || false;
+        type PermissionMode = TurnIntent['settings']['permissionMode'];
+
+        if (targetSessionId) {
+          // ── Resume mode: rotate to an existing session ──
+          const targetInfo = findSession(targetSessionId);
+          if (!targetInfo) throw new Error(`Target session "${targetSessionId}" not found`);
+
+          // Same session — skip the switch but still send prompt if provided
+          if (targetInfo.sessionId === sessionId) {
+            if (prompt) {
+              const sub = subscriptions.get(sessionId);
+              if (sub) {
+                const intent: TurnIntent = {
+                  clientMessageId: randomUUID(),
+                  content: [{ type: 'text', text: prompt }],
+                  target: { kind: 'existing', sessionId },
+                  settings: {
+                    ...(permissionMode && { permissionMode: permissionMode as PermissionMode }),
+                    allowDangerouslySkipPermissions,
+                  },
+                };
+                await sendTurn(intent, sub.subscriber);
+              }
+            }
+            return { previousSessionId: sessionId, sessionId };
+          }
+
+          // Resolve vendor from the TARGET session
+          const vendor = targetInfo.vendor;
+
+          const spec: SessionOpenSpec = {
+            mode: 'resume',
+            sessionId: targetInfo.sessionId,
+            ...(permissionMode && { permissionMode: permissionMode as PermissionMode }),
+          };
+
+          const result = await switchSession(sessionId, vendor, spec);
+
+          // Replace subscriber — same pattern as fresh mode
+          const oldSub = subscriptions.get(sessionId);
+          if (oldSub) {
+            unsubscribe(result.channel, oldSub.subscriber);
+            subscriptions.delete(sessionId);
+          }
+
+          const mutable = createMutableSubscriber(result.pendingId);
+          subscribe(result.channel, mutable.subscriber);
+          subscriptions.set(result.pendingId, {
+            channel: result.channel, subscriber: mutable.subscriber,
+          });
+
+          // No rekey needed — pendingId is already the real session ID for resume.
+
+          // Optionally send a prompt as the first turn in the resumed session
+          if (prompt) {
+            const resumeIntent: TurnIntent = {
+              clientMessageId: randomUUID(),
+              content: [{ type: 'text', text: prompt }],
+              target: { kind: 'existing', sessionId: result.pendingId },
+              settings: {
+                ...(permissionMode && { permissionMode: permissionMode as PermissionMode }),
+                allowDangerouslySkipPermissions,
+              },
+            };
+            await sendTurn(resumeIntent, mutable.subscriber);
+          }
+
+          return {
+            previousSessionId: result.previousSessionId,
+            sessionId: result.pendingId,
+          };
+        }
+
+        // ── Fresh mode: start a new session with a prompt ──
         const sessionInfo = findSession(sessionId);
         const vendor = (params.vendor as Vendor) ?? sessionInfo?.vendor;
         if (!vendor) throw new Error(`Cannot determine vendor for session "${sessionId}"`);
 
-        const permissionMode = params.permissionMode as string | undefined;
-        const allowDangerouslySkipPermissions = (params.allowDangerouslySkipPermissions as boolean) || false;
         const cwd = sessionInfo?.projectPath ?? process.cwd();
 
-        type PermissionMode = TurnIntent['settings']['permissionMode'];
         const spec: SessionOpenSpec = {
           mode: 'fresh',
           cwd,
           ...(permissionMode && { permissionMode: permissionMode as PermissionMode }),
         };
 
-        const result = await rotateSession(sessionId, vendor, spec);
+        const result = await switchSession(sessionId, vendor, spec);
 
         // Replace subscriber with mutable variant (same pattern as sendTurn).
         // The old subscriber's send() closure captures the old sessionId —
@@ -601,7 +674,7 @@ export function createClientConnection(
         // Build intent and send the handoff prompt as the first turn
         const rotationIntent: TurnIntent = {
           clientMessageId: randomUUID(),
-          content: [{ type: 'text', text: prompt }],
+          content: [{ type: 'text', text: prompt! }],
           target: { kind: 'existing', sessionId: result.pendingId },
           settings: {
             ...(permissionMode && { permissionMode: permissionMode as PermissionMode }),
@@ -614,16 +687,6 @@ export function createClientConnection(
           previousSessionId: result.previousSessionId,
           sessionId: result.pendingId,
         };
-      }
-
-      case "switchSession": {
-        const targetSessionId = params.targetSessionId as string;
-        if (!targetSessionId) throw new Error('Missing targetSessionId');
-
-        const session = findSession(targetSessionId);
-        if (!session) throw new Error(`Session "${targetSessionId}" not found`);
-
-        return { ok: true, sessionId: session.sessionId };
       }
 
       case "resolveApproval": {

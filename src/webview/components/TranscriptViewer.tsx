@@ -359,9 +359,9 @@ export function TranscriptViewer(): React.JSX.Element {
         const targetMode = (transportExtra.updatedPermissions?.[0] as { mode?: string })?.mode;
 
         // Rotate: same channel, fresh adapter, permission mode forwarded
-        if (transport.rotateSession) {
+        if (transport.switchSession) {
           const bypassEnabled = targetMode === 'bypassPermissions';
-          const result = await transport.rotateSession({
+          const result = await transport.switchSession({
             sessionId: selectedSessionId,
             prompt: handoffPrompt,
             ...(targetMode && { permissionMode: targetMode }),

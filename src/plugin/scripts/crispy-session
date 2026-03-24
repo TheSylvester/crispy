@@ -1,0 +1,204 @@
+#!/usr/bin/env bash
+# crispy-session: Unified session CLI — list, switch, or start sessions.
+#
+# Subcommands:
+#   crispy-session list [--all] [--limit N] [--json]   # List sessions
+#   crispy-session --session <id>                       # Resume existing session (idle)
+#   crispy-session --session <id> <prompt>              # Resume + send prompt
+#   crispy-session <prompt>                             # New session with prompt
+#   PROMPT_FILE=handoff.md crispy-session               # New session from file (adds prefix)
+#   PROMPT_FILE=task.md crispy-session --session <id>   # Resume + send file prompt
+#   TARGET_SESSION_ID=abc123 crispy-session             # Resume from env var
+#   cat handoff.md | crispy-session                     # Read from stdin
+#   crispy-session --no-save <prompt>                   # Skip saving to .ai-reference/
+#
+# Environment variables:
+#   PROMPT_FILE          - Read prompt from this file
+#   TARGET_SESSION_ID    - Resume this session (alternative to --session)
+#   CRISPY_SOCK          - Override socket path (skip discovery)
+
+set -euo pipefail
+
+# Use pre-built dispatch binary via env var (set by Crispy host at startup)
+if [[ -z "${CRISPY_DISPATCH:-}" ]]; then
+  echo "Error: CRISPY_DISPATCH env var not set. This script must be run from a Crispy-managed session." >&2
+  exit 13
+fi
+DISPATCH_BIN="node $CRISPY_DISPATCH"
+
+# ── list subcommand ──────────────────────────────────────────────────────────
+if [[ "${1:-}" == "list" ]]; then
+  shift
+  LIMIT=10
+  OFFSET=0
+  JSON_MODE=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --all)     LIMIT=0; shift ;;
+      --limit)   LIMIT="$2"; shift 2 ;;
+      --offset)  OFFSET="$2"; shift 2 ;;
+      --json)    JSON_MODE=true; shift ;;
+      *)         echo "Unknown flag: $1" >&2; exit 1 ;;
+    esac
+  done
+
+  RAW=$($DISPATCH_BIN rpc listSessions '{}') || { echo "Failed to list sessions — is Crispy running?" >&2; exit 1; }
+
+  if [[ "$JSON_MODE" == "true" ]]; then
+    if [[ "$LIMIT" -gt 0 ]]; then
+      echo "$RAW" | jq ".[$OFFSET:$((OFFSET + LIMIT))]"
+    else
+      echo "$RAW" | jq ".[$OFFSET:]"
+    fi
+    exit 0
+  fi
+
+  # Human-readable table with pagination
+  echo "$RAW" | jq -r --argjson limit "$LIMIT" --argjson offset "$OFFSET" '
+    def age:
+      # modifiedAt arrives as ISO 8601 string; strip fractional seconds for fromdate
+      (if type == "string" then sub("\\.[0-9]+Z$"; "Z") | fromdate
+       elif type == "number" then . / 1000
+       else 0 end) as $epoch |
+      (now - $epoch) |
+      if . < 60 then "\(. | floor)s ago"
+      elif . < 3600 then "\(. / 60 | floor)m ago"
+      elif . < 86400 then "\(. / 3600 | floor)h ago"
+      else "\(. / 86400 | floor)d ago"
+      end;
+
+    def trunc(n): if length > n then .[:n] + "…" else . end;
+
+    (length) as $total |
+    (if $limit > 0 then .[$offset:$offset+$limit] else .[$offset:] end) as $items |
+    ($items | length) as $shown |
+    ($offset + 1) as $from |
+    ($offset + $shown) as $to |
+
+    # Header
+    "ID        VENDOR  AGE      TITLE",
+    "────────  ──────  ───────  ─────────────────────────────────────────",
+
+    # Rows
+    ($items[] |
+      (.sessionId[:8]) + "  " +
+      (.vendor // "?" | trunc(6) | . + (" " * (6 - length))) + "  " +
+      ((.modifiedAt // 0) | age | . + (" " * (7 - length))) + "  " +
+      ((.title // .lastMessage // "(untitled)") | trunc(45))
+    ),
+
+    # Footer
+    (if $shown == 0 then "(no sessions)"
+     elif $to < $total then
+       "\n(showing \($from)-\($to) of \($total) — next: crispy-session list --offset \($to))"
+     elif $offset > 0 then
+       "\n(showing \($from)-\($to) of \($total))"
+     else "" end)
+  '
+  exit 0
+fi
+
+# ── switch/new session ───────────────────────────────────────────────────────
+
+# Defaults
+SAVE_PROMPT=true
+PREFIX="Execute this plan: "
+TARGET_SESSION=""
+
+# Parse flags
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --no-save)
+      SAVE_PROMPT=false
+      shift
+      ;;
+    --no-prefix)
+      PREFIX=""
+      shift
+      ;;
+    --session)
+      TARGET_SESSION="$2"
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+# Session mode: --session flag or TARGET_SESSION_ID env var
+TARGET_SESSION="${TARGET_SESSION:-${TARGET_SESSION_ID:-}}"
+
+# Check for stdin
+HAS_STDIN=false
+[[ ! -t 0 ]] && HAS_STDIN=true
+
+# Resume-only mode: switch to an existing session with no prompt
+if [[ -n "$TARGET_SESSION" ]] && [[ -z "${PROMPT_FILE:-}" ]] && [[ $# -eq 0 ]]; then
+  if [[ "$HAS_STDIN" == "false" ]]; then
+    PARAMS=$(jq -n --arg targetSessionId "$TARGET_SESSION" '{targetSessionId: $targetSessionId}')
+    $DISPATCH_BIN rpc --subscribe-first switchSession "$PARAMS"
+    exit 0
+  fi
+fi
+
+# Determine prompt source: PROMPT_FILE > args > stdin
+PROMPT_SOURCE=""
+if [[ -n "${PROMPT_FILE:-}" ]]; then
+  PROMPT="$(cat "$PROMPT_FILE")"
+  PROMPT_SOURCE="file"
+elif [[ $# -gt 0 ]]; then
+  PROMPT="$*"
+  PROMPT_SOURCE="args"
+elif [[ "$HAS_STDIN" == "true" ]]; then
+  PROMPT="$(cat || true)"
+  PROMPT_SOURCE="stdin"
+else
+  echo "Usage: crispy-session list [--all] [--limit N] [--json]" >&2
+  echo "       crispy-session [--no-save] [--no-prefix] <prompt>" >&2
+  echo "       crispy-session --session <session-id> [<prompt>]" >&2
+  echo "       PROMPT_FILE=handoff.md crispy-session" >&2
+  echo "       TARGET_SESSION_ID=abc123 crispy-session" >&2
+  echo "       cat handoff.md | crispy-session" >&2
+  exit 1
+fi
+
+# Validate prompt
+if [[ -z "${PROMPT//[$' \t\r\n']/}" ]]; then
+  echo "Error: prompt is empty" >&2
+  exit 1
+fi
+
+# Save prompt to .ai-reference/prompts/ for paper trail
+if [[ "$SAVE_PROMPT" == "true" ]]; then
+  PROMPTS_DIR=".ai-reference/prompts"
+  mkdir -p "$PROMPTS_DIR"
+  SLUG=$(echo "$PROMPT" | head -c 60 | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
+  SAVED_FILE="${PROMPTS_DIR}/$(date +%Y%m%d-%H%M%S)-handoff-${SLUG:0:40}.md"
+  echo "$PROMPT" > "$SAVED_FILE"
+  echo "[saved: $SAVED_FILE]" >&2
+fi
+
+# Build the full prompt with prefix (only for file-sourced fresh sessions)
+if [[ "$PROMPT_SOURCE" == "file" ]] && [[ -z "$TARGET_SESSION" ]]; then
+  FULL_PROMPT="${PREFIX}${PROMPT}"
+else
+  FULL_PROMPT="${PROMPT}"
+fi
+
+# Build JSON params using jq for safe escaping
+if [[ -n "$TARGET_SESSION" ]]; then
+  PARAMS=$(jq -n --arg prompt "$FULL_PROMPT" --arg targetSessionId "$TARGET_SESSION" \
+    '{prompt: $prompt, targetSessionId: $targetSessionId}')
+else
+  PARAMS=$(jq -n --arg prompt "$FULL_PROMPT" '{prompt: $prompt}')
+fi
+
+# Call switchSession RPC — --subscribe-first ensures this connection holds
+# a subscription before rotating (required for correct pending→real rekey).
+$DISPATCH_BIN rpc --subscribe-first switchSession "$PARAMS"

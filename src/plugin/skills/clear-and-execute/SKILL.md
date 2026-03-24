@@ -71,10 +71,10 @@ Wait for confirmation before proceeding.
 
 ### Execute rotation
 
-Use `crispy-rotate` to rotate the session:
+Use `crispy-session` to rotate the session:
 
 ```bash
-PROMPT_FILE="<prompt-file>" $CRISPY_ROTATE
+PROMPT_FILE="<prompt-file>" $CRISPY_SESSION
 ```
 
 The script handles JSON escaping, prefixes with "Execute this plan: ",

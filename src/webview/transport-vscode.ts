@@ -100,11 +100,8 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     sendTurn: (intent, pendingId) =>
       request<TurnReceipt>('sendTurn', { intent, ...(pendingId && { pendingId }) }),
 
-    rotateSession: (params) =>
-      request<{ previousSessionId: string; sessionId: string }>('rotateSession', params),
-
     switchSession: (params) =>
-      request<{ ok: boolean; sessionId: string }>('switchSession', params),
+      request<{ previousSessionId: string; sessionId: string }>('switchSession', params),
 
     openPanel: (params) =>
       request<{ ok: boolean }>('openPanel', params),

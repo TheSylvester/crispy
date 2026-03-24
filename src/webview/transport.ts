@@ -89,14 +89,14 @@ export interface SessionService {
    */
   sendTurn(intent: TurnIntent, pendingId?: string): Promise<TurnReceipt>;
 
-  rotateSession?(params: {
+  switchSession?(params: {
     sessionId: string;
-    prompt: string;
+    prompt?: string;
+    targetSessionId?: string;
+    vendor?: string;
     permissionMode?: string;
     allowDangerouslySkipPermissions?: boolean;
   }): Promise<{ previousSessionId: string; sessionId: string }>;
-
-  switchSession?(params: { targetSessionId: string }): Promise<{ ok: boolean; sessionId: string }>;
 
   openPanel?(params: { sessionId: string }): Promise<{ ok: boolean }>;
 

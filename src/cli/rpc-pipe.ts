@@ -102,7 +102,7 @@ export async function runRpcPipe(argv: string[]): Promise<void> {
 
     // Subscribe to the session first if requested — ensures the caller
     // holds a subscription on this connection before the main RPC.
-    // Required by rotateSession which guards against cross-client rekey bugs.
+    // Required by switchSession which guards against cross-client rekey bugs.
     if (subscribeFirst && sessionId) {
       await router.sendRpc('subscribe', { sessionId });
     }
