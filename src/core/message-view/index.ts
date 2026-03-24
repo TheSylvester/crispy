@@ -978,10 +978,10 @@ function renderEntryToBuffer(buffer: MessageBuffer, entry: TranscriptEntry, stat
       }
     }
 
-    // Check for sub-agent result (toolUseResult with agentId)
-    if (state && entry.toolUseResult) {
-      handleSubagentResult(state, entry.toolUseResult, content);
-    }
+    // Sub-agent forum posts disabled for now — too noisy
+    // if (state && entry.toolUseResult) {
+    //   handleSubagentResult(state, entry.toolUseResult, content);
+    // }
 
     // Turn boundary — force new section so next output appears after user's Discord message
     if (state) {
