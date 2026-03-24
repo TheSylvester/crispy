@@ -675,8 +675,16 @@ function findWatchStateBySubscriber(sub: Subscriber): WatchState | undefined {
  */
 async function flushAllDirtySections(state: WatchState): Promise<void> {
   let synced = 0;
+  // Cap iterations to prevent infinite loops on persistent API failures
+  // (syncOneDirtySection returns true but leaves section dirty on error)
+  const maxIterations = state.buffer.sections.length + 5;
+  let iterations = 0;
   while (await syncOneDirtySection(state.projection, state.buffer)) {
     synced++;
+    if (++iterations >= maxIterations) {
+      log({ source: SOURCE, level: 'warn', summary: `flush capped at ${iterations} iterations for ${state.sessionId.slice(0, 8)} — remaining sections will sync via heartbeat` });
+      break;
+    }
   }
   if (synced > 0) {
     log({ source: SOURCE, level: 'info', summary: `flushed ${synced} sections for ${state.sessionId.slice(0, 8)}` });
