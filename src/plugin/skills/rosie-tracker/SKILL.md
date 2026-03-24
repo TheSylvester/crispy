@@ -12,7 +12,7 @@ CLI interface to the Rosie project tracker. View tracked state, inspect decision
 
 ```bash
 # Full usage reference
-Bash(command: "node $CRISPY_TRACKER --help")
+Bash(command: "$CRISPY_TRACKER --help")
 ```
 
 Refer to `--help` output for available commands and options.

@@ -30,9 +30,9 @@ const CRISPY_SKILLS_PROMPT =
   'Proactively use /recall at the start of non-trivial tasks, before architectural ' +
   'decisions, and whenever prior context could inform your approach — not just ' +
   'when the user explicitly references past conversations.\n\n' +
-  'The recall CLI (`node $RECALL_CLI`) supports two modes:\n' +
-  '- Search: `node $RECALL_CLI "query"` — finds sessions by topic\n' +
-  '- Read: `node $RECALL_CLI <session-id>` — reads full session content (paginated)\n' +
+  'The recall CLI (`$RECALL_CLI`) supports two modes:\n' +
+  '- Search: `$RECALL_CLI "query"` — finds sessions by topic\n' +
+  '- Read: `$RECALL_CLI <session-id>` — reads full session content (paginated)\n' +
   'Always read into promising search results — snippets are just previews.\n\n' +
   'Your Crispy session ID is available in the $CRISPY_SESSION_ID environment variable.';
 

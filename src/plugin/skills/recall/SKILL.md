@@ -12,13 +12,13 @@ Unified tool for session transcript memory — search, read, and browse.
 
 ```bash
 # Search for sessions about a topic
-node $RECALL_CLI "your query here"
+$RECALL_CLI "your query here"
 
 # Read a specific session by ID (paginated)
-node $RECALL_CLI <session-id>
+$RECALL_CLI <session-id>
 
 # Full CLI usage (pagination, filtering, context, and more)
-node $RECALL_CLI --help
+$RECALL_CLI --help
 ```
 
 Always read into promising search results — snippets are just previews.
@@ -30,10 +30,10 @@ The agent prompt **must** include full CLI instructions — sub-agents don't see
 
 ```
 Agent(prompt: "You have a recall CLI for searching and reading past session transcripts.
-Use ONLY `node $RECALL_CLI` for all transcript access — do NOT read .jsonl files directly,
+Use ONLY `$RECALL_CLI` for all transcript access — do NOT read .jsonl files directly,
 do NOT use Grep/Glob/find to locate transcripts.
 
-First run `node $RECALL_CLI --help` to learn the full CLI usage.
+First run `$RECALL_CLI --help` to learn the full CLI usage.
 Then: search first, read into promising sessions for real content (snippets are just previews).
 
 Task: [describe what to find]. Run these searches: [list queries].
