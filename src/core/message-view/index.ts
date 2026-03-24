@@ -745,8 +745,9 @@ function renderEntry(entry: TranscriptEntry): string | null {
 }
 
 /**
- * Render assistant content blocks. May produce multiple lines for tool_use,
- * but we return a single concatenated string.
+ * Render assistant content blocks. Text blocks get the Assistant prefix;
+ * tool_use blocks render as `icon name subject [meta] status`;
+ * tool_result blocks are skipped (status updates are a later refinement).
  */
 function renderAssistantEntry(content: string | ContentBlock[]): string | null {
   if (typeof content === 'string') {
@@ -765,23 +766,115 @@ function renderAssistantEntry(content: string | ContentBlock[]): string | null {
         break;
       }
       case 'tool_use': {
-        const inputStr = JSON.stringify(block.input).slice(0, 100);
-        parts.push(`**\u{1F527} ${block.name}** — ${inputStr}`);
+        const input = (block.input ?? {}) as Record<string, unknown>;
+        parts.push(renderToolUse(block.name, input));
         break;
       }
-      case 'tool_result': {
-        const resultText = typeof block.content === 'string'
-          ? block.content.slice(0, 200)
-          : extractText(block.content).slice(0, 200);
-        parts.push(`**\u{1F4CB} Result** — ${resultText}`);
+      case 'tool_result':
+        // Skip — the tool_use line with ⏳ is sufficient for now.
+        // Status updates (⏳→✓) require tool pairing, which is a later refinement.
         break;
-      }
       // thinking, image — skip
     }
   }
 
   if (parts.length === 0) return null;
   return truncate(parts.join('\n'), DISCORD_MAX_LENGTH);
+}
+
+// ---------------------------------------------------------------------------
+// Tool Rendering
+// ---------------------------------------------------------------------------
+
+/** Shorten a file path to last 2 segments (parent/filename). */
+function shortPath(filePath: string): string {
+  const parts = filePath.split('/');
+  return parts.length > 2 ? parts.slice(-2).join('/') : filePath;
+}
+
+/** Extract a display subject from tool input using the priority chain. */
+function extractSubject(input: Record<string, unknown>): string {
+  const fields = ['file_path', 'command', 'pattern', 'path', 'description', 'prompt', 'url', 'query', 'skill', 'task_id', 'name'];
+  for (const field of fields) {
+    const val = input[field];
+    if (typeof val === 'string' && val) {
+      return val.split('\n')[0].slice(0, 50);
+    }
+  }
+  return '';
+}
+
+/**
+ * Render a tool_use block as: icon name subject [meta] status
+ */
+function renderToolUse(name: string, input: Record<string, unknown>): string {
+  switch (name.toLowerCase()) {
+    case 'bash': {
+      const desc = input.description as string | undefined;
+      const cmd = (input.command as string ?? '').split('\n')[0].slice(0, 50);
+      const subject = desc ? desc.slice(0, 50) : cmd;
+      const badges: string[] = [];
+      if (input.run_in_background) badges.push('[background]');
+      if (input.timeout) badges.push(`[\u{23F1} ${Math.round((input.timeout as number) / 1000)}s]`);
+      const meta = badges.length ? ` ${badges.join(' ')}` : '';
+      return `\u{1F4BB} **bash**${meta}  \`${subject}\`  \u{23F3}`;
+    }
+    case 'read': {
+      const path = shortPath(input.file_path as string ?? '');
+      const range = input.offset ? `:${input.offset}-${(input.offset as number) + (input.limit as number ?? 100)}` : '';
+      return `\u{1F4C4} **read**  \`${path}${range}\`  \u{23F3}`;
+    }
+    case 'write': {
+      const path = shortPath(input.file_path as string ?? '');
+      const lines = typeof input.content === 'string' ? input.content.split('\n').length : 0;
+      return `\u{270E} **write**  \`${path}\` (${lines} lines)  \u{23F3}`;
+    }
+    case 'edit': {
+      const path = shortPath(input.file_path as string ?? '');
+      const addLines = typeof input.new_string === 'string' ? input.new_string.split('\n').length : 0;
+      const delLines = typeof input.old_string === 'string' ? input.old_string.split('\n').length : 0;
+      return `\u{1F4DD} **edit**  \`${path}\` +${addLines} -${delLines}  \u{23F3}`;
+    }
+    case 'grep': {
+      const pattern = (input.pattern as string ?? '').slice(0, 40);
+      const scope = input.path ?? input.glob ?? input.type ?? '';
+      const scopeStr = scope ? ` in ${String(scope).slice(0, 30)}` : '';
+      return `\u{1F50D} **grep**  \`${pattern}\`${scopeStr}  \u{23F3}`;
+    }
+    case 'glob': {
+      const pattern = (input.pattern as string ?? '').slice(0, 40);
+      const scope = input.path ? ` in ${String(input.path).slice(0, 30)}` : '';
+      return `\u{1F4C2} **glob**  \`${pattern}\`${scope}  \u{23F3}`;
+    }
+    case 'agent': {
+      const desc = (input.description as string ?? input.prompt as string ?? '').split('\n')[0].slice(0, 50);
+      const badge = input.subagent_type ? ` [${input.subagent_type}]` : '';
+      return `\u{1F916} **agent**${badge}  ${desc}  \u{23F3}`;
+    }
+    case 'skill': {
+      const skill = input.skill as string ?? '';
+      return `\u{2728} **skill**  ${skill}  \u{23F3}`;
+    }
+    case 'todowrite':
+      return `\u{1F4CB} **todos**  updated  \u{23F3}`;
+    case 'websearch': {
+      const query = (input.query as string ?? '').slice(0, 40);
+      return `\u{1F310} **websearch**  \`${query}\`  \u{23F3}`;
+    }
+    case 'webfetch': {
+      const url = (input.url as string ?? '').slice(0, 60);
+      return `\u{1F30E} **webfetch**  \`${url}\`  \u{23F3}`;
+    }
+    default: {
+      if (name.startsWith('mcp__')) {
+        const shortName = name.replace('mcp__', '').replace(/__/g, '/');
+        const subject = extractSubject(input);
+        return `\u{1F50C} **${shortName}**  ${subject}  \u{23F3}`;
+      }
+      const subject = extractSubject(input);
+      return `\u{1F527} **${name}**  ${subject}  \u{23F3}`;
+    }
+  }
 }
 
 /**
