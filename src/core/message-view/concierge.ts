@@ -111,6 +111,10 @@ export function initConcierge(config: ConciergeConfig): void {
   log({ source: SOURCE, level: 'info', summary: `concierge initialized (model: ${conciergeModel})` });
 }
 
+export function getConciergeSessionId(): string | null {
+  return conciergeSessionId;
+}
+
 export function shutdownConcierge(): void {
   conciergeSessionId = null;
   conciergeLastActivity = 0;
