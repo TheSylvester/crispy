@@ -965,7 +965,7 @@ export function createSession(
   vendor: Vendor,
   cwd: string,
   subscriber: Subscriber,
-  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string>; systemPrompt?: string },
+  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' },
   explicitPendingId?: string,
 ): PendingChannelResult {
   if (!adapters.has(vendor)) {
@@ -982,6 +982,7 @@ export function createSession(
     ...(options?.mcpServers && { mcpServers: options.mcpServers }),
     ...(options?.env && { env: options.env }),
     ...(options?.systemPrompt && { systemPrompt: options.systemPrompt }),
+    ...(options?.sessionKind && { sessionKind: options.sessionKind }),
   };
 
   return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
@@ -1011,6 +1012,7 @@ export async function createForkSession(
     mcpServers?: Record<string, unknown>;
     env?: Record<string, string>;
     systemPrompt?: string;
+    sessionKind?: 'user' | 'system';
   },
   explicitPendingId?: string,
 ): Promise<PendingChannelResult> {
@@ -1076,6 +1078,7 @@ export async function createForkSession(
     ...(options?.mcpServers && { mcpServers: options.mcpServers }),
     ...(options?.env && { env: options.env }),
     ...(options?.systemPrompt && { systemPrompt: options.systemPrompt }),
+    ...(options?.sessionKind && { sessionKind: options.sessionKind }),
   };
 
   return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
@@ -1192,6 +1195,7 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
           ...(intent.target.mcpServers && { mcpServers: intent.target.mcpServers }),
           ...(intent.target.env && { env: intent.target.env }),
           ...(intent.target.systemPrompt && { systemPrompt: intent.target.systemPrompt }),
+          ...(intent.target.sessionKind && { sessionKind: intent.target.sessionKind }),
         },
         pendingId,
       );
@@ -1213,6 +1217,7 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
           ...(intent.target.mcpServers && { mcpServers: intent.target.mcpServers }),
           ...(intent.target.env && { env: intent.target.env }),
           ...(intent.target.systemPrompt && { systemPrompt: intent.target.systemPrompt }),
+          ...(intent.target.sessionKind && { sessionKind: intent.target.sessionKind }),
         },
         pendingId,
       );
@@ -1233,6 +1238,7 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
         ...(intent.settings.permissionMode && { permissionMode: intent.settings.permissionMode }),
         ...(intent.target.skipPersistSession && { skipPersistSession: true }),
         ...(intent.target.systemPrompt && { systemPrompt: intent.target.systemPrompt }),
+        ...(intent.target.sessionKind && { sessionKind: intent.target.sessionKind }),
       };
 
       const result = createPendingChannel(intent.target.vendor, spec, subscriber, {
@@ -1282,6 +1288,14 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
   };
   for (const [, sub] of channel.subscribers) {
     try { sub.send(settingsMsg); } catch { /* swallow */ }
+  }
+
+  // Persist sessionKind after rekey so system sessions stay hidden across restarts
+  const targetSessionKind = 'sessionKind' in intent.target ? (intent.target as { sessionKind?: 'user' | 'system' }).sessionKind : undefined;
+  if (targetSessionKind && rekeyPromise) {
+    rekeyPromise.then((realId) => {
+      try { setSessionKind(realId, targetSessionKind); invalidateSessionCache(); } catch { /* best-effort */ }
+    }).catch(() => {});
   }
 
   return { sessionId, channel, rekeyPromise };

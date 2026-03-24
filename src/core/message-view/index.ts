@@ -1,11 +1,14 @@
 /**
- * Message View — Init/shutdown, command polling, and session projection
+ * Message View — Forum-post-based Discord bot with concierge session
  *
- * Spike 3: Text buffer + projection sync.
+ * Primary flow: user DMs the bot or @mentions it → concierge Claude session
+ * interprets the request → creates/loads/lists sessions via text commands →
+ * forum posts in #crispy-sessions host sessions. User messages in posts
+ * become follow-up turns.
+ *
  * Session events render into a MessageBuffer (instant, no API calls).
  * A heartbeat syncs dirty sections to Discord via the projection layer
- * (at most 1 section per session per tick). Catchup replays hundreds of
- * entries instantly to the buffer — the heartbeat drains naturally at ~1 msg/3s.
+ * (at most 1 section per session per tick).
  *
  * @module message-view/index
  */
@@ -14,35 +17,44 @@ import { readFileSync } from 'node:fs';
 import { log } from '../log.js';
 import { onSettingsChanged } from '../settings/index.js';
 import { settingsPath } from '../paths.js';
-import { listAllSessions, resolveSessionPrefix, subscribeSession, interruptSession, getRegisteredVendors, sendTurn } from '../session-manager.js';
+import { resolveSessionPrefix, subscribeSession, sendTurn } from '../session-manager.js';
 import { subscribeSessionList, unsubscribeSessionList } from '../session-list-manager.js';
 import type { SessionListSubscriber } from '../session-list-manager.js';
 import type { SessionListEvent } from '../session-list-events.js';
-import { getActiveChannels, unsubscribe, resolveApproval } from '../session-channel.js';
+import { unsubscribe, resolveApproval } from '../session-channel.js';
 import type { Subscriber, SubscriberMessage, SessionChannel } from '../session-channel.js';
-import type { TranscriptEntry, ContentBlock, Vendor } from '../transcript.js';
+import type { TranscriptEntry, ContentBlock, ToolResult, Vendor } from '../transcript.js';
+import { isTaskResult } from '../transcript.js';
 import type { ApprovalOption, PendingApprovalInfo } from '../channel-events.js';
 import type { TurnIntent } from '../agent-adapter.js';
 import {
   initTransport,
   shutdownTransport,
   sendMessage,
-  getMessages,
-  createThread,
-  archiveThread,
-  addReaction,
-  getReactions,
   editMessage,
+  addReaction,
+  createChannel,
+  createForumPost,
+  archiveThread,
+  connectGateway,
+  disconnectGateway,
+  getBotUserId,
+  getGuildChannels,
+  discordFetch,
 } from './discord-transport.js';
+import type { GatewayEventHandler } from './discord-transport.js';
 import type { DiscordProviderConfig, MessageProviderConfig } from './config.js';
+import { initConcierge, shutdownConcierge, routeToConcierge, checkConciergeTimeout } from './concierge.js';
 import { createBuffer, getOrCreateSection, getLastSection, appendSection, updateSection, clearBuffer } from './buffer.js';
 import type { MessageBuffer } from './buffer.js';
 import { createProjection, syncOneDirtySection, clearProjection } from './projection.js';
 import type { ProjectionState } from './projection.js';
 
 const SOURCE = 'message-view';
+const SECTION_SOFT_LIMIT = 1800;
 const DISCORD_MAX_LENGTH = 2000;
-const SECTION_SOFT_LIMIT = 1800; // leave headroom for Discord's 2000 limit
+const MAX_CONCURRENT_PROMPTS = 3;
+const MIN_PROMPT_LENGTH = 3;
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -50,10 +62,12 @@ const SECTION_SOFT_LIMIT = 1800; // leave headroom for Discord's 2000 limit
 
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let activeConfig: DiscordProviderConfig | null = null;
-let commandChannelLastMessageId: string | null = null;
 let unsubSettings: (() => void) | null = null;
 let unsubSessionList: (() => void) | null = null;
 let startTime: number = 0;
+let promptsInFlight = 0;
+let forumChannelId: string | null = null;
+let ownerUserId: string | null = null;
 
 // ---------------------------------------------------------------------------
 // Watch state — session projection
@@ -67,6 +81,10 @@ interface PendingInteraction {
   emojiToOptionId: Map<string, string>;
 }
 
+interface ToolLineEntry {
+  line: string;
+}
+
 interface WatchState {
   sessionId: string;
   discordChannelId: string;
@@ -75,13 +93,17 @@ interface WatchState {
   buffer: MessageBuffer;
   projection: ProjectionState;
   turnCounter: number;
+  toolLines: Map<string, ToolLineEntry>;
+  toolLineOrder: string[];
   pendingInteractions: Map<string, PendingInteraction>;
+  /** Set on sub-agent posts — the parent session ID that spawned this. */
+  parentSessionId?: string;
 }
 
 /** Maps sessionId → watch state for active projections. */
 const watchedSessions = new Map<string, WatchState>();
 
-/** Reverse map: discordChannelId → sessionId (for cleanup lookups). */
+/** Reverse map: discordChannelId → sessionId (for routing post messages). */
 const channelToSession = new Map<string, string>();
 
 // ---------------------------------------------------------------------------
@@ -103,8 +125,7 @@ export function initMessageView(): void {
       if (activeConfig) tearDown();
       return;
     }
-    // Config changed — restart
-    if (activeConfig && (next.token !== activeConfig.token || next.commandChannelId !== activeConfig.commandChannelId)) {
+    if (activeConfig && (next.token !== activeConfig.token || next.guildId !== activeConfig.guildId)) {
       tearDown();
       startUp(next);
     } else if (!activeConfig) {
@@ -126,9 +147,6 @@ export function shutdownMessageView(): void {
 // ---------------------------------------------------------------------------
 
 function findEnabledDiscordProvider(): DiscordProviderConfig | null {
-  // Read messageProviders directly from settings.json.
-  // getSettingsSnapshotInternal() constructs a new object from known fields,
-  // which strips messageProviders since it's not in the typed schema yet.
   try {
     const raw = JSON.parse(readFileSync(settingsPath(), 'utf-8'));
     const providers = raw.messageProviders as MessageProviderConfig[] | undefined;
@@ -143,13 +161,34 @@ function findEnabledDiscordProvider(): DiscordProviderConfig | null {
 function startUp(config: DiscordProviderConfig): void {
   activeConfig = config;
   startTime = Date.now();
+  promptsInFlight = 0;
+  forumChannelId = null;
+  ownerUserId = null;
   initTransport(config.token);
 
-  log({ source: SOURCE, level: 'info', summary: `message view online — polling #${config.commandChannelId}` });
+  log({ source: SOURCE, level: 'info', summary: 'message view starting — connecting Gateway' });
 
-  // Send startup message (fire-and-forget)
-  sendMessage(config.commandChannelId, '\u{1F7E2} Crispy Message View online').catch((err) => {
-    log({ source: SOURCE, level: 'error', summary: 'failed to send startup message', data: err });
+  // Wire up Gateway event handlers
+  const handler: GatewayEventHandler = {
+    onMessage(channelId, message) {
+      handleGatewayMessage(channelId, message).catch((err) => {
+        log({ source: SOURCE, level: 'error', summary: 'gateway message handler error', data: err });
+      });
+    },
+    onReactionAdd(channelId, messageId, userId, emoji) {
+      handleGatewayReaction(channelId, messageId, userId, emoji);
+    },
+    onReady() {
+      log({ source: SOURCE, level: 'info', summary: 'Gateway ready — discovering forum channel' });
+      // Forum channel setup after Gateway is ready (bot ID is now available)
+      initForumChannel().catch((err) => {
+        log({ source: SOURCE, level: 'error', summary: 'forum channel setup failed', data: err });
+      });
+    },
+  };
+
+  connectGateway(handler).catch((err) => {
+    log({ source: SOURCE, level: 'error', summary: 'Gateway connection failed', data: err });
   });
 
   // Auto-watch: subscribe to session list events so new sessions are watched automatically
@@ -161,10 +200,9 @@ function startUp(config: DiscordProviderConfig): void {
           const session = event.session;
           if (session.sessionKind === 'system') return;
           if (watchedSessions.has(session.sessionId)) return;
-          // Skip stale sessions on startup — only auto-watch sessions modified in last 10 minutes
           const ageMs = Date.now() - session.modifiedAt.getTime();
           if (ageMs > 10 * 60 * 1000) return;
-          void watchSession(session.sessionId, true).catch(err => {
+          void watchSession(session.sessionId, { auto: true }).catch(err => {
             log({ source: SOURCE, level: 'error', summary: `auto-watch failed for ${session.sessionId.slice(0, 8)}`, data: err });
           });
         }
@@ -175,24 +213,77 @@ function startUp(config: DiscordProviderConfig): void {
     log({ source: SOURCE, level: 'info', summary: 'auto-watch enabled — subscribing to session list' });
   }
 
+  // Projection heartbeat — sync dirty sections + concierge timeout check
   heartbeatTimer = setInterval(() => {
-    pollCommands().catch((err) => {
-      log({ source: SOURCE, level: 'error', summary: 'poll error', data: err });
-    });
-    // Sync one dirty section per watched session per tick
+    checkConciergeTimeout();
     for (const state of watchedSessions.values()) {
       syncOneDirtySection(state.projection, state.buffer).catch((err) => {
         log({ source: SOURCE, level: 'error', summary: `projection sync error for ${state.sessionId.slice(0, 8)}`, data: err });
       });
     }
-    // Poll pending interactions for user reactions (one per tick across all sessions)
-    pollOneInteraction().catch((err) => {
-      log({ source: SOURCE, level: 'error', summary: 'interaction poll error', data: err });
-    });
   }, 3000);
 }
 
+/** Discover or create the forum channel + resolve the application owner. */
+async function initForumChannel(): Promise<void> {
+  if (!activeConfig) return;
+  const botId = getBotUserId();
+  if (!botId) {
+    log({ source: SOURCE, level: 'error', summary: 'bot user ID not available after Gateway ready' });
+    return;
+  }
+
+  // Discover the application owner
+  try {
+    const app = await discordFetch('GET', '/oauth2/applications/@me') as { owner?: { id: string } };
+    ownerUserId = app.owner?.id ?? null;
+  } catch (err) {
+    log({ source: SOURCE, level: 'warn', summary: 'failed to discover application owner', data: err });
+  }
+
+  forumChannelId = await ensureForumChannel(activeConfig.guildId, botId, ownerUserId);
+  log({ source: SOURCE, level: 'info', summary: `forum channel ready: ${forumChannelId}` });
+
+  // Initialize concierge with callbacks that create forum posts
+  initConcierge({
+    model: activeConfig.conciergeModel ?? 'haiku',
+    guildId: activeConfig.guildId,
+    startTime,
+    createSession: async (vendor, prompt) => {
+      if (!forumChannelId) throw new Error('Forum channel not ready');
+      return await conciergeCreateSession(vendor, prompt);
+    },
+    openSession: async (prefix) => {
+      return await conciergeOpenSession(prefix);
+    },
+  });
+}
+
+/** Find or create the #crispy-sessions forum channel. */
+async function ensureForumChannel(guildId: string, botId: string, ownerId: string | null): Promise<string> {
+  const channels = await getGuildChannels(guildId);
+  const existing = channels.find(c => c.name === 'crispy-sessions' && c.type === 15);
+  if (existing) return existing.id;
+
+  const permissionOverwrites: unknown[] = [
+    { id: guildId, type: 0, deny: '1024' },       // deny @everyone VIEW_CHANNEL
+    { id: botId, type: 1, allow: '3072' },         // allow bot VIEW_CHANNEL + SEND_MESSAGES
+  ];
+  if (ownerId) {
+    permissionOverwrites.push({ id: ownerId, type: 1, allow: '3072' }); // owner: VIEW + SEND
+  }
+
+  const forum = await createChannel(guildId, 'crispy-sessions', {
+    type: 15,
+    permissionOverwrites,
+  });
+  log({ source: SOURCE, level: 'info', summary: `created forum channel: ${forum.id}` });
+  return forum.id;
+}
+
 function tearDown(): void {
+  shutdownConcierge();
+
   if (unsubSessionList) {
     unsubSessionList();
     unsubSessionList = null;
@@ -203,7 +294,6 @@ function tearDown(): void {
     heartbeatTimer = null;
   }
 
-  // Clean up all active watches
   for (const [sessionId, state] of watchedSessions) {
     try {
       unsubscribe(state.channel, state.subscriber);
@@ -215,375 +305,312 @@ function tearDown(): void {
     watchedSessions.delete(sessionId);
   }
 
-  if (activeConfig) {
-    // Send shutdown message (best-effort)
-    sendMessage(activeConfig.commandChannelId, '\u{1F534} Crispy Message View offline').catch(() => {});
-  }
+  disconnectGateway();
   activeConfig = null;
-  commandChannelLastMessageId = null;
+  forumChannelId = null;
+  ownerUserId = null;
+  promptsInFlight = 0;
   shutdownTransport();
 }
 
-async function pollCommands(): Promise<void> {
-  if (!activeConfig) return;
-
-  const opts: { after?: string; limit?: number } = { limit: 50 };
-  if (commandChannelLastMessageId) opts.after = commandChannelLastMessageId;
-
-  const messages = await getMessages(activeConfig.commandChannelId, opts);
-  if (!messages.length) return;
-
-  // Discord returns newest first — reverse to process chronologically
-  const sorted = [...messages].reverse();
-
-  // Update the high-water mark to the newest message ID
-  commandChannelLastMessageId = sorted[sorted.length - 1].id;
-
-  for (const msg of sorted) {
-    // Skip our own messages (check author ID, not bot flag — webhooks have bot=true too)
-    if (msg.author.id === '1483229916869693500') continue;
-    // Only process ! commands
-    if (!msg.content.startsWith('!')) continue;
-
-    const [command, ...args] = msg.content.slice(1).trim().split(/\s+/);
-    try {
-      await handleCommand(command.toLowerCase(), args);
-    } catch (err) {
-      log({ source: SOURCE, level: 'error', summary: `command !${command} failed`, data: err });
-    }
-  }
-}
-
-async function handleCommand(command: string, args: string[]): Promise<void> {
-  if (!activeConfig) return;
-  const channelId = activeConfig.commandChannelId;
-
-  switch (command) {
-    case 'status': {
-      const uptimeMs = Date.now() - startTime;
-      const uptimeMin = Math.floor(uptimeMs / 60000);
-      const activeCount = getActiveChannels().length;
-      const watchCount = watchedSessions.size;
-      await sendMessage(channelId, `Crispy is alive. Uptime: ${uptimeMin}m. Sessions: ${activeCount} active. Watching: ${watchCount}.`);
-      break;
-    }
-
-    case 'sessions': {
-      const allSessions = listAllSessions();
-      const recent = allSessions
-        .filter((s) => s.sessionKind !== 'system')
-        .slice(0, 10);
-
-      if (recent.length === 0) {
-        await sendMessage(channelId, 'No sessions found.');
-        break;
-      }
-
-      const lines: string[] = [];
-      let totalLen = 30; // header length estimate
-      for (const s of recent) {
-        const prefix = s.sessionId.slice(0, 8);
-        const title = (s.title ?? s.label ?? '(untitled)').slice(0, 60);
-        const ago = formatRelativeTime(s.modifiedAt);
-        const watching = watchedSessions.has(s.sessionId) ? ' \u{1F441}' : '';
-        const line = `\`${prefix}\` **${s.vendor}** — ${title} (${ago})${watching}`;
-        if (totalLen + line.length + 1 > 1900) break; // leave headroom
-        lines.push(line);
-        totalLen += line.length + 1;
-      }
-      await sendMessage(channelId, `**Recent sessions (${lines.length}):**\n${lines.join('\n')}`);
-      break;
-    }
-
-    case 'watch': {
-      await handleWatch(args);
-      break;
-    }
-
-    case 'unwatch': {
-      await handleUnwatch(args);
-      break;
-    }
-
-    case 'stop': {
-      if (args.length === 0) {
-        await sendMessage(channelId, 'Usage: `!stop <session-id-prefix>`');
-        break;
-      }
-      try {
-        const resolvedId = resolveSessionPrefix(args[0]);
-        await interruptSession(resolvedId);
-        await sendMessage(channelId, `Interrupted session \`${resolvedId.slice(0, 8)}\``);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        await sendMessage(channelId, `Failed to stop session: ${msg}`);
-      }
-      break;
-    }
-
-    case 'new': {
-      if (args.length < 2) {
-        await sendMessage(channelId, 'Usage: `!new <vendor> <prompt>`');
-        break;
-      }
-      const vendor = args[0];
-      const prompt = args.slice(1).join(' ');
-      try {
-        await handleNew(vendor, prompt);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        await sendMessage(channelId, `Failed to create session: ${msg}`);
-      }
-      break;
-    }
-
-    default:
-      await sendMessage(channelId, `Unknown command \`!${command}\`. Available: \`!status\`, \`!sessions\`, \`!watch <id>\`, \`!unwatch <id>\`, \`!stop <id>\`, \`!new <vendor> <prompt>\``);
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Watch / Unwatch
+// Gateway Event Handlers
 // ---------------------------------------------------------------------------
 
-async function handleWatch(args: string[]): Promise<void> {
-  if (!activeConfig) return;
-  const channelId = activeConfig.commandChannelId;
+async function handleGatewayMessage(
+  channelId: string,
+  message: {
+    id: string;
+    content: string;
+    author: { id: string; bot?: boolean };
+    guild_id?: string;
+    mentions?: Array<{ id: string }>;
+  },
+): Promise<void> {
+  const botId = getBotUserId();
+  if (!botId) return;
 
-  if (args.length === 0) {
-    await sendMessage(channelId, 'Usage: `!watch <session-id-prefix>`');
+  // Ignore our own messages
+  if (message.author.id === botId) return;
+
+  // Route 1: message in a session post → follow-up turn
+  if (channelToSession.has(channelId)) {
+    await handlePostMessage(channelId, message);
     return;
   }
 
-  const prefix = args[0];
+  // Route 2: DM (no guild_id) → route to concierge
+  if (!message.guild_id) {
+    const text = message.content.trim();
+    if (text) {
+      await routeToConcierge(channelId, text);
+    }
+    return;
+  }
 
-  // Resolve the session ID prefix
-  let resolvedId: string;
+  // Route 3: @mention in a guild channel → route to concierge
+  if (message.mentions?.some(m => m.id === botId)) {
+    const content = message.content.replace(/<@!?\d+>\s*/g, '').trim();
+    if (content) {
+      await routeToConcierge(channelId, content);
+    }
+    return;
+  }
+}
+
+function handleGatewayReaction(
+  channelId: string,
+  messageId: string,
+  userId: string,
+  emoji: string,
+): void {
+  const botId = getBotUserId();
+  if (!botId || userId === botId) return;
+
+  // Find the session that owns this channel
+  const sessionId = channelToSession.get(channelId);
+  if (!sessionId) return;
+  const state = watchedSessions.get(sessionId);
+  if (!state) return;
+
+  // Check all pending interactions for a match on messageId + emoji
+  for (const [toolUseId, interaction] of state.pendingInteractions) {
+    if (interaction.discordMessageId !== messageId) continue;
+
+    const optionId = interaction.emojiToOptionId.get(emoji);
+    if (!optionId) continue;
+
+    // Resolve the approval
+    resolveApproval(state.channel, toolUseId, optionId);
+    state.pendingInteractions.delete(toolUseId);
+
+    const opt = interaction.options.find(o => o.id === optionId);
+    editMessage(
+      state.discordChannelId,
+      interaction.discordMessageId,
+      `${emoji} **${interaction.toolName}** — ${opt?.label ?? optionId}`,
+    ).catch(() => { /* best-effort */ });
+
+    log({
+      source: SOURCE,
+      level: 'info',
+      summary: `approval resolved: ${interaction.toolName} → ${optionId}`,
+    });
+    return;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Concierge Callbacks — create/open sessions with forum posts
+// ---------------------------------------------------------------------------
+
+async function conciergeCreateSession(vendor: Vendor, promptText: string): Promise<{ sessionId: string; link: string }> {
+  if (!activeConfig || !forumChannelId) throw new Error('Forum channel not ready');
+
+  if (promptsInFlight >= MAX_CONCURRENT_PROMPTS) {
+    throw new Error('Too many sessions starting concurrently — try again in a moment.');
+  }
+
+  promptsInFlight++;
   try {
-    resolvedId = resolveSessionPrefix(prefix);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    await sendMessage(channelId, `Failed to resolve session: ${msg}`);
-    return;
-  }
+    const postName = promptText.slice(0, 100).replace(/\n/g, ' ').trim() || `session-${Date.now()}`;
+    const post = await createForumPost(forumChannelId, postName, '\u{23F3} Starting session\u{2026}', {
+      autoArchiveDuration: 1440,
+    });
 
-  // Check if already watching
+    const discordChannelId = post.id;
+    const buffer = createBuffer();
+    const projection = createProjection(discordChannelId);
+    appendSection(buffer, 'status', '\u{23F3} Working\u{2026}');
+
+    const cwd = process.cwd();
+    const intent: TurnIntent = {
+      target: { kind: 'new', vendor, cwd },
+      content: [{ type: 'text', text: promptText }],
+      clientMessageId: crypto.randomUUID(),
+      settings: {},
+    };
+
+    const tempSessionId = `prompt-${Date.now()}`;
+    const subscriber = buildWatchSubscriber(tempSessionId, buffer);
+
+    const result = await sendTurn(intent, subscriber);
+    const realId = result.rekeyPromise ? await result.rekeyPromise : result.sessionId;
+
+    const state = registerWatchState(realId, discordChannelId, subscriber, null, buffer, projection);
+    state.channel = await subscribeSession(realId, subscriber);
+
+    const link = `https://discord.com/channels/${activeConfig.guildId}/${discordChannelId}`;
+    log({ source: SOURCE, level: 'info', summary: `concierge created session ${realId.slice(0, 12)} in "${postName}"` });
+    return { sessionId: realId, link };
+  } finally {
+    promptsInFlight--;
+  }
+}
+
+async function conciergeOpenSession(prefix: string): Promise<string> {
+  if (!activeConfig || !forumChannelId) throw new Error('Forum channel not ready');
+
+  const resolvedId = resolveSessionPrefix(prefix);
+
   if (watchedSessions.has(resolvedId)) {
     const state = watchedSessions.get(resolvedId)!;
-    await sendMessage(channelId, `Already watching session \`${resolvedId.slice(0, 8)}\` in <#${state.discordChannelId}>`);
-    return;
+    return `https://discord.com/channels/${activeConfig.guildId}/${state.discordChannelId}`;
   }
 
-  await watchSession(resolvedId, false);
+  await watchSession(resolvedId, { auto: false });
+  const state = watchedSessions.get(resolvedId);
+  if (!state) throw new Error('Failed to watch session');
+  return `https://discord.com/channels/${activeConfig.guildId}/${state.discordChannelId}`;
 }
 
-/**
- * Core watch logic — creates a Discord thread, subscribes to the session,
- * and sets up buffer/projection. Used by both !watch and auto-watch.
- */
-async function watchSession(sessionId: string, auto: boolean): Promise<void> {
-  if (!activeConfig) return;
-  const channelId = activeConfig.commandChannelId;
+// ---------------------------------------------------------------------------
+// Watch Session — create forum post, subscribe, project
+// ---------------------------------------------------------------------------
 
-  // Double-check (race between auto-watch events)
+interface WatchSessionOpts {
+  auto: boolean;
+}
+
+async function watchSession(sessionId: string, opts: WatchSessionOpts): Promise<void> {
+  if (!activeConfig || !forumChannelId) return;
+
   if (watchedSessions.has(sessionId)) return;
 
-  // Create a thread in the command channel for the session feed.
-  // Post an anchor message first, then create a thread on it.
-  const threadName = `session-${sessionId.slice(0, 8)}`;
-  const anchorText = auto
+  const postName = `session-${sessionId.slice(0, 8)}`;
+  const anchorText = opts.auto
     ? `\u{1F4E1} Auto-watching session \`${sessionId.slice(0, 8)}\``
-    : `\u{1F4E1} Watching session \`${sessionId.slice(0, 8)}\`\u{2026}`;
-  let discordChannel: { id: string; name: string };
-  try {
-    const anchor = await sendMessage(channelId, anchorText);
-    discordChannel = await createThread(channelId, anchor.id, threadName);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!auto) await sendMessage(channelId, `Failed to create thread: ${msg}`);
-    throw err;
-  }
+    : `\u{1F4E1} Watching session \`${sessionId.slice(0, 8)}\``;
 
-  // Build buffer and projection for this session
-  const discordChannelId = discordChannel.id;
+  const post = await createForumPost(forumChannelId, postName, anchorText, {
+    autoArchiveDuration: 1440,
+  });
+
+  const discordChannelId = post.id;
   const buffer = createBuffer();
   const projection = createProjection(discordChannelId);
-
-  // Create the status section as the first section
   appendSection(buffer, 'status', '\u{23F3} Connecting\u{2026}');
 
-  // Build the subscriber that renders session events into the buffer
   const subscriber = buildWatchSubscriber(sessionId, buffer);
 
-  // Subscribe to the session — this creates a channel if needed, loads
-  // history, and immediately sends a catchup message to our subscriber.
-  let sessionChannel: SessionChannel;
+  // Pre-register so catchup (delivered synchronously by subscribe) can find the state
+  const state = registerWatchState(sessionId, discordChannelId, subscriber, null, buffer, projection);
+
   try {
-    sessionChannel = await subscribeSession(sessionId, subscriber);
+    state.channel = await subscribeSession(sessionId, subscriber);
   } catch (err) {
+    // Roll back pre-registration
+    watchedSessions.delete(sessionId);
+    channelToSession.delete(discordChannelId);
     const msg = err instanceof Error ? err.message : String(err);
-    // Archive the thread we just created
     archiveThread(discordChannelId).catch(() => {});
-    if (!auto) await sendMessage(channelId, `Failed to subscribe to session: ${msg}`);
     throw err;
   }
 
-  // Store watch state
-  const state: WatchState = {
-    sessionId,
-    discordChannelId,
-    subscriber,
-    channel: sessionChannel,
-    buffer,
-    projection,
-    turnCounter: 0,
-    pendingInteractions: new Map(),
-  };
-  watchedSessions.set(sessionId, state);
-  channelToSession.set(discordChannelId, sessionId);
-
-  log({ source: SOURCE, level: 'info', summary: `${auto ? 'auto-' : ''}watching session ${sessionId.slice(0, 12)}\u{2026} in thread ${threadName}` });
-}
-
-async function handleUnwatch(args: string[]): Promise<void> {
-  if (!activeConfig) return;
-  const channelId = activeConfig.commandChannelId;
-
-  if (args.length === 0) {
-    await sendMessage(channelId, 'Usage: `!unwatch <session-id-prefix>`');
-    return;
-  }
-
-  const prefix = args[0];
-
-  // Find the watched session matching this prefix
-  let matchedId: string | null = null;
-  for (const sessionId of watchedSessions.keys()) {
-    if (sessionId.startsWith(prefix)) {
-      matchedId = sessionId;
-      break;
-    }
-  }
-
-  if (!matchedId) {
-    await sendMessage(channelId, `No watched session matching prefix \`${prefix}\``);
-    return;
-  }
-
-  const state = watchedSessions.get(matchedId)!;
-
-  // Unsubscribe from the session channel
-  try {
-    unsubscribe(state.channel, state.subscriber);
-  } catch { /* best-effort */ }
-
-  // Archive the thread (preserves history, hides from channel list)
-  try {
-    await archiveThread(state.discordChannelId);
-  } catch (err) {
-    log({ source: SOURCE, level: 'warn', summary: `failed to archive thread for unwatch`, data: err });
-  }
-
-  // Clean up state
-  clearBuffer(state.buffer);
-  clearProjection(state.projection);
-  channelToSession.delete(state.discordChannelId);
-  watchedSessions.delete(matchedId);
-
-  log({ source: SOURCE, level: 'info', summary: `unwatched session ${matchedId.slice(0, 12)}…` });
-  await sendMessage(channelId, `Unwatched session \`${matchedId.slice(0, 8)}\``);
+  log({ source: SOURCE, level: 'info', summary: `${opts.auto ? 'auto-' : ''}watching session ${sessionId.slice(0, 12)}\u{2026} in forum post ${postName}` });
 }
 
 // ---------------------------------------------------------------------------
-// New Session
+// Bidirectional — user message in post → follow-up turn
 // ---------------------------------------------------------------------------
 
-async function handleNew(vendor: string, prompt: string): Promise<void> {
-  if (!activeConfig) return;
-  const channelId = activeConfig.commandChannelId;
+async function handlePostMessage(
+  postId: string,
+  message: { id: string; content: string; author: { id: string } },
+): Promise<void> {
+  const sessionId = channelToSession.get(postId);
+  if (!sessionId) return;
+  const state = watchedSessions.get(sessionId);
+  if (!state) return;
 
-  // Validate vendor
-  const registeredVendors = getRegisteredVendors();
-  if (!registeredVendors.has(vendor)) {
-    await sendMessage(channelId, `Unknown vendor \`${vendor}\`. Available: ${[...registeredVendors].join(', ')}`);
-    return;
-  }
+  const text = message.content.trim();
+  if (text.length < MIN_PROMPT_LENGTH) return;
+  if (!/[a-zA-Z0-9]/.test(text)) return;
 
-  // Build the TurnIntent for a new session
-  const cwd = process.cwd();
   const intent: TurnIntent = {
-    target: { kind: 'new', vendor: vendor as Vendor, cwd },
-    content: [{ type: 'text', text: prompt }],
+    target: { kind: 'existing', sessionId },
+    content: [{ type: 'text', text }],
     clientMessageId: crypto.randomUUID(),
     settings: {},
   };
 
-  // Temporary subscriber — sendTurn requires one for the pending channel
-  const tempSubscriber: Subscriber = {
-    id: `message-view-new-${Date.now()}`,
-    send() { /* buffer/projection handles rendering via watchSession */ },
-  };
-
-  await sendMessage(channelId, `Creating ${vendor} session\u{2026}`);
-
-  const result = await sendTurn(intent, tempSubscriber);
-
-  // For new sessions, wait for the real session ID via rekeyPromise
-  const realId = result.rekeyPromise
-    ? await result.rekeyPromise
-    : result.sessionId;
-
-  // Auto-watch the new session
-  await watchSession(realId, true);
-  await sendMessage(channelId, `Created and watching session \`${realId.slice(0, 8)}\``);
+  try {
+    await sendTurn(intent, state.subscriber);
+  } catch (err) {
+    log({ source: SOURCE, level: 'error', summary: `follow-up turn failed for ${sessionId.slice(0, 8)}`, data: err });
+    try {
+      await sendMessage(postId, `\u{274C} Failed to send turn: ${err instanceof Error ? err.message : String(err)}`);
+    } catch { /* best-effort */ }
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Session Event Subscriber
 // ---------------------------------------------------------------------------
 
-/**
- * Build a Subscriber that renders session events into a MessageBuffer.
- *
- * The send() method is synchronous (called by the session channel's broadcast).
- * No Discord API calls happen here — the heartbeat drains dirty sections.
- */
+function registerWatchState(
+  sessionId: string,
+  discordChannelId: string,
+  subscriber: Subscriber,
+  channel: SessionChannel | null,
+  buffer: MessageBuffer,
+  projection: ProjectionState,
+): WatchState {
+  const state: WatchState = {
+    sessionId,
+    discordChannelId,
+    subscriber,
+    channel: channel!,
+    buffer,
+    projection,
+    turnCounter: 0,
+    toolLines: new Map(),
+    toolLineOrder: [],
+    pendingInteractions: new Map(),
+  };
+  watchedSessions.set(sessionId, state);
+  channelToSession.set(discordChannelId, sessionId);
+  return state;
+}
+
 function buildWatchSubscriber(sessionId: string, buffer: MessageBuffer): Subscriber {
   return {
     id: `message-view-watch-${sessionId.slice(0, 12)}`,
     send(event: SubscriberMessage): void {
       try {
-        // Look up WatchState to get the turn counter
-        const state = watchedSessions.get(sessionId);
+        const state = watchedSessions.get(sessionId) ?? findWatchStateBySubscriber(this as Subscriber);
         handleWatchEvent(buffer, event, state);
       } catch (err) {
-        log({ source: SOURCE, level: 'error', summary: `watch subscriber error for ${sessionId.slice(0, 12)}…`, data: err });
+        log({ source: SOURCE, level: 'error', summary: `watch subscriber error for ${sessionId.slice(0, 12)}\u{2026}`, data: err });
       }
     },
   };
 }
 
-/**
- * Route a session event into the buffer. No Discord API calls —
- * the heartbeat syncs dirty sections via the projection layer.
- */
+function findWatchStateBySubscriber(sub: Subscriber): WatchState | undefined {
+  for (const state of watchedSessions.values()) {
+    if (state.subscriber === sub) return state;
+  }
+  return undefined;
+}
+
 function handleWatchEvent(buffer: MessageBuffer, event: SubscriberMessage, state: WatchState | undefined): void {
   switch (event.type) {
     case 'catchup': {
-      // Render all historical entries into buffer sections
       for (const entry of event.entries) {
         renderEntryToBuffer(buffer, entry, state);
       }
-      // Update the status section with current state
       const statusSection = getOrCreateSection(buffer, 'status', '');
       if (event.state === 'streaming' || event.state === 'active') {
-        updateSection(statusSection, '\u{23F3} Active');
+        updateSection(statusSection, '\u{23F3} Working\u{2026}');
       } else if (event.state === 'idle') {
-        updateSection(statusSection, '\u{2705} Idle');
+        updateSection(statusSection, '\u{2705} Done');
+        if (state && isSubagentPost(state)) {
+          void addCleanupReaction(state).catch(() => {});
+        }
       } else if (event.state === 'awaiting_approval' && event.pendingApprovals.length > 0) {
-        const tools = event.pendingApprovals.map((a) => a.toolName).join(', ');
+        const tools = event.pendingApprovals.map(a => a.toolName).join(', ');
         updateSection(statusSection, `\u{26A0}\u{FE0F} Awaiting approval: ${tools}`);
-        // Post approval interactions for each pending approval (catchup)
         if (state) {
           for (const approval of event.pendingApprovals) {
             if (!state.pendingInteractions.has(approval.toolUseId)) {
@@ -608,10 +635,14 @@ function handleWatchEvent(buffer: MessageBuffer, event: SubscriberMessage, state
         const statusSection = getOrCreateSection(buffer, 'status', '');
         switch (evt.status) {
           case 'active':
-            updateSection(statusSection, '\u{23F3} Active');
+            updateSection(statusSection, '\u{23F3} Working\u{2026}');
             break;
           case 'idle':
-            updateSection(statusSection, '\u{2705} Idle');
+            updateSection(statusSection, '\u{2705} Done');
+            // Add ✅ reaction on sub-agent completion for manual cleanup
+            if (state && isSubagentPost(state)) {
+              void addCleanupReaction(state).catch(() => {});
+            }
             break;
           case 'awaiting_approval':
             updateSection(statusSection, `\u{26A0}\u{FE0F} Awaiting approval: ${evt.toolName}`);
@@ -632,7 +663,6 @@ function handleWatchEvent(buffer: MessageBuffer, event: SubscriberMessage, state
             break;
         }
       }
-      // Other event types (notification) — ignore silently
       break;
     }
   }
@@ -642,14 +672,8 @@ function handleWatchEvent(buffer: MessageBuffer, event: SubscriberMessage, state
 // Approval Interactions
 // ---------------------------------------------------------------------------
 
-const BOT_USER_ID = '1483229916869693500';
 const NUMBERED_EMOJI = ['1\u{FE0F}\u{20E3}', '2\u{FE0F}\u{20E3}', '3\u{FE0F}\u{20E3}', '4\u{FE0F}\u{20E3}', '5\u{FE0F}\u{20E3}'];
 
-/**
- * Build emoji → optionId mapping from approval options.
- * Known patterns: allow → ✅, allow_session → 🔁, deny → ❌.
- * Unknown patterns fall back to numbered emoji.
- */
 function buildEmojiMap(options: ApprovalOption[]): Map<string, string> {
   const map = new Map<string, string>();
   let numberedIdx = 0;
@@ -657,13 +681,12 @@ function buildEmojiMap(options: ApprovalOption[]): Map<string, string> {
   for (const opt of options) {
     const id = opt.id.toLowerCase();
     if (id.includes('deny')) {
-      map.set('\u{274C}', opt.id); // ❌
+      map.set('\u{274C}', opt.id);
     } else if (id.includes('allow') && id.includes('session')) {
-      map.set('\u{1F501}', opt.id); // 🔁
+      map.set('\u{1F501}', opt.id);
     } else if (id.includes('allow')) {
-      map.set('\u{2705}', opt.id); // ✅
+      map.set('\u{2705}', opt.id);
     } else {
-      // Fallback to numbered emoji
       const emoji = NUMBERED_EMOJI[numberedIdx] ?? `${numberedIdx + 1}\u{FE0F}\u{20E3}`;
       map.set(emoji, opt.id);
       numberedIdx++;
@@ -673,9 +696,6 @@ function buildEmojiMap(options: ApprovalOption[]): Map<string, string> {
   return map;
 }
 
-/**
- * Build the approval message text for Discord.
- */
 function buildApprovalMessage(
   approval: PendingApprovalInfo,
   emojiToOptionId: Map<string, string>,
@@ -687,7 +707,7 @@ function buildApprovalMessage(
 
   const optionLabels: string[] = [];
   for (const [emoji, optionId] of emojiToOptionId) {
-    const opt = approval.options.find((o) => o.id === optionId);
+    const opt = approval.options.find(o => o.id === optionId);
     optionLabels.push(`${emoji} ${opt?.label ?? optionId}`);
   }
 
@@ -697,15 +717,10 @@ function buildApprovalMessage(
   );
 }
 
-/**
- * Post an approval interaction to Discord (async, fire-and-forget from subscriber).
- * Sends the message, adds emoji reactions, and stores the PendingInteraction.
- */
 async function postApprovalInteraction(
   state: WatchState,
   approval: PendingApprovalInfo,
 ): Promise<void> {
-  // Skip if we already have a pending interaction for this toolUseId
   if (state.pendingInteractions.has(approval.toolUseId)) return;
 
   const emojiToOptionId = buildEmojiMap(approval.options);
@@ -713,7 +728,6 @@ async function postApprovalInteraction(
 
   const msg = await sendMessage(state.discordChannelId, text);
 
-  // Add reactions in sequence (Discord requires sequential reaction adds)
   for (const emoji of emojiToOptionId.keys()) {
     try {
       await addReaction(state.discordChannelId, msg.id, emoji);
@@ -737,188 +751,144 @@ async function postApprovalInteraction(
   });
 }
 
-/**
- * Poll at most one pending interaction across all watched sessions.
- * Checks reactions for user input and resolves the approval if found.
- */
-async function pollOneInteraction(): Promise<void> {
-  for (const state of watchedSessions.values()) {
-    for (const [toolUseId, interaction] of state.pendingInteractions) {
-      // If the approval is no longer pending in the channel, clean up
-      if (!state.channel.pendingApprovals.has(toolUseId)) {
-        state.pendingInteractions.delete(toolUseId);
-        try {
-          await editMessage(
-            state.discordChannelId,
-            interaction.discordMessageId,
-            `\u{2705} **${interaction.toolName}** — resolved externally`,
-          );
-        } catch { /* best-effort */ }
-        return; // one per tick
-      }
+// ---------------------------------------------------------------------------
+// Buffer Rendering — conversation-first layout with tool pairing
+// ---------------------------------------------------------------------------
 
-      // Check each emoji for non-bot reactions
-      for (const [emoji, optionId] of interaction.emojiToOptionId) {
-        try {
-          const reactions = await getReactions(state.discordChannelId, interaction.discordMessageId, emoji);
-          const userReaction = reactions.find((r) => r.id !== BOT_USER_ID);
-          if (userReaction) {
-            // Resolve the approval
-            resolveApproval(state.channel, toolUseId, optionId);
-            state.pendingInteractions.delete(toolUseId);
+function renderEntryToBuffer(buffer: MessageBuffer, entry: TranscriptEntry, state: WatchState | undefined): void {
+  const content = entry.message?.content;
+  if (!content) return;
 
-            const opt = interaction.options.find((o) => o.id === optionId);
-            try {
-              await editMessage(
-                state.discordChannelId,
-                interaction.discordMessageId,
-                `${emoji} **${interaction.toolName}** — ${opt?.label ?? optionId}`,
-              );
-            } catch { /* best-effort */ }
-
-            log({
-              source: SOURCE,
-              level: 'info',
-              summary: `approval resolved: ${interaction.toolName} → ${optionId}`,
-            });
-            return; // one per tick
+  if (entry.type === 'user') {
+    // Process tool_result blocks BEFORE resetting tool state (they arrive on user entries)
+    if (Array.isArray(content)) {
+      let toolResultSeen = false;
+      for (const block of content) {
+        if (block.type === 'tool_result' && 'tool_use_id' in block && state) {
+          const toolResult = block as { type: 'tool_result'; tool_use_id: string; is_error?: boolean };
+          const existing = state.toolLines.get(toolResult.tool_use_id);
+          if (existing) {
+            const status = toolResult.is_error ? '\u{2717}' : '\u{2713}';
+            existing.line = existing.line.replace('\u{23F3}', status);
+            toolResultSeen = true;
           }
-        } catch (err) {
-          // 404 or other error — approval may be gone, clean up
-          log({ source: SOURCE, level: 'debug', summary: `reaction poll error for ${emoji}`, data: err });
-          state.pendingInteractions.delete(toolUseId);
-          return; // one per tick
         }
       }
-
-      return; // only poll one interaction per tick (rate limit awareness)
+      if (toolResultSeen) {
+        rebuildToolsSection(buffer, state!);
+      }
     }
-  }
-}
 
-// ---------------------------------------------------------------------------
-// Buffer Rendering
-// ---------------------------------------------------------------------------
+    // Check for sub-agent result (toolUseResult with agentId)
+    if (state && entry.toolUseResult) {
+      handleSubagentResult(state, entry.toolUseResult, content);
+    }
 
-/**
- * Render a transcript entry into the buffer. Appends to the current section
- * or creates a new one at logical boundaries / size limits.
- */
-function renderEntryToBuffer(buffer: MessageBuffer, entry: TranscriptEntry, state: WatchState | undefined): void {
-  const rendered = renderEntry(entry);
-  if (!rendered) return;
-
-  // User messages always start a new section
-  if (entry.type === 'user') {
-    const turnId = nextTurnId(state);
-    appendSection(buffer, turnId, rendered);
+    // Turn boundary — reset tool tracking for next assistant turn
+    if (state) {
+      state.toolLines = new Map();
+      state.toolLineOrder = [];
+    }
     return;
-  }
-
-  // Assistant entries: append to current section or create new one
-  const last = getLastSection(buffer);
-
-  // Create a new section if:
-  // - No existing content section (only status)
-  // - Current section is the status section
-  // - Adding would exceed soft limit
-  if (!last || last.id === 'status' || (last.content.length + rendered.length + 1) > SECTION_SOFT_LIMIT) {
-    const turnId = nextTurnId(state);
-    appendSection(buffer, turnId, rendered);
-    return;
-  }
-
-  // Append to existing section
-  const newContent = last.content ? `${last.content}\n${rendered}` : rendered;
-  updateSection(last, newContent);
-}
-
-/** Generate a monotonically increasing turn section ID. */
-function nextTurnId(state: WatchState | undefined): string {
-  if (state) {
-    state.turnCounter++;
-    return `turn-${state.turnCounter}`;
-  }
-  // Fallback for catchup before WatchState is registered
-  return `turn-${Date.now()}`;
-}
-
-// ---------------------------------------------------------------------------
-// Entry Rendering
-// ---------------------------------------------------------------------------
-
-/**
- * Render a TranscriptEntry as a simple markdown string for Discord.
- * Returns null if the entry has no renderable content.
- */
-function renderEntry(entry: TranscriptEntry): string | null {
-  const content = entry.message?.content;
-  if (!content) return null;
-
-  // Determine role from the entry type
-  if (entry.type === 'user') {
-    const text = extractText(content);
-    if (!text) return null;
-    return truncate(`**User:** ${text}`, DISCORD_MAX_LENGTH);
   }
 
   if (entry.type === 'assistant') {
-    return renderAssistantEntry(content);
+    renderAssistantToBuffer(buffer, content, state);
+    return;
   }
 
   // result, system, etc. — skip
-  return null;
 }
 
-/**
- * Render assistant content blocks. Text blocks get the Assistant prefix;
- * tool_use blocks render as `icon name subject [meta] status`;
- * tool_result blocks are skipped (status updates are a later refinement).
- */
-function renderAssistantEntry(content: string | ContentBlock[]): string | null {
+function renderAssistantToBuffer(
+  buffer: MessageBuffer,
+  content: string | ContentBlock[],
+  state: WatchState | undefined,
+): void {
   if (typeof content === 'string') {
-    if (!content) return null;
-    return truncate(`**Assistant:** ${content.slice(0, 500)}`, DISCORD_MAX_LENGTH);
+    if (!content) return;
+    appendConversationText(buffer, content, state);
+    return;
   }
-
-  const parts: string[] = [];
 
   for (const block of content) {
     switch (block.type) {
       case 'text': {
         if (block.text) {
-          parts.push(`**Assistant:** ${block.text.slice(0, 500)}`);
+          appendConversationText(buffer, block.text, state);
         }
         break;
       }
       case 'tool_use': {
         const input = (block.input ?? {}) as Record<string, unknown>;
-        parts.push(renderToolUse(block.name, input));
+        const toolId = block.id;
+        const line = renderToolUse(block.name, input);
+
+        if (state && toolId) {
+          state.toolLines.set(toolId, { line });
+          state.toolLineOrder.push(toolId);
+          rebuildToolsSection(buffer, state);
+        } else {
+          appendToolLineFallback(buffer, line);
+        }
         break;
       }
-      case 'tool_result':
-        // Skip — the tool_use line with ⏳ is sufficient for now.
-        // Status updates (⏳→✓) require tool pairing, which is a later refinement.
-        break;
-      // thinking, image — skip
+      // tool_result, thinking, image — skip
     }
   }
+}
 
-  if (parts.length === 0) return null;
-  return truncate(parts.join('\n'), DISCORD_MAX_LENGTH);
+/** Rebuild the tools section from the ordered toolLines map. */
+function rebuildToolsSection(buffer: MessageBuffer, state: WatchState): void {
+  const lines: string[] = [];
+  for (const toolId of state.toolLineOrder) {
+    const entry = state.toolLines.get(toolId);
+    if (entry) lines.push(entry.line);
+  }
+  const toolContent = lines.join('\n');
+  const toolSection = getOrCreateSection(buffer, 'tools', '');
+  updateSection(toolSection, truncate(toolContent, SECTION_SOFT_LIMIT));
+}
+
+function appendConversationText(buffer: MessageBuffer, text: string, state: WatchState | undefined): void {
+  const rendered = truncate(text.slice(0, 1500), SECTION_SOFT_LIMIT);
+  const last = getLastSection(buffer);
+
+  const isNonConversation = !last || last.id === 'status' || last.id === 'tools';
+  if (isNonConversation || (last.content.length + rendered.length + 1) > SECTION_SOFT_LIMIT) {
+    const turnId = nextTurnId(state);
+    appendSection(buffer, turnId, rendered);
+    return;
+  }
+
+  const newContent = last.content ? `${last.content}\n\n${rendered}` : rendered;
+  updateSection(last, newContent);
+}
+
+/** Fallback for tool lines during catchup before WatchState exists. */
+function appendToolLineFallback(buffer: MessageBuffer, line: string): void {
+  const toolSection = getOrCreateSection(buffer, 'tools', '');
+  const newContent = toolSection.content ? `${toolSection.content}\n${line}` : line;
+  updateSection(toolSection, truncate(newContent, SECTION_SOFT_LIMIT));
+}
+
+function nextTurnId(state: WatchState | undefined): string {
+  if (state) {
+    state.turnCounter++;
+    return `conv-${state.turnCounter}`;
+  }
+  return `conv-${Date.now()}`;
 }
 
 // ---------------------------------------------------------------------------
 // Tool Rendering
 // ---------------------------------------------------------------------------
 
-/** Shorten a file path to last 2 segments (parent/filename). */
 function shortPath(filePath: string): string {
   const parts = filePath.split('/');
   return parts.length > 2 ? parts.slice(-2).join('/') : filePath;
 }
 
-/** Extract a display subject from tool input using the priority chain. */
 function extractSubject(input: Record<string, unknown>): string {
   const fields = ['file_path', 'command', 'pattern', 'path', 'description', 'prompt', 'url', 'query', 'skill', 'task_id', 'name'];
   for (const field of fields) {
@@ -930,9 +900,6 @@ function extractSubject(input: Record<string, unknown>): string {
   return '';
 }
 
-/**
- * Render a tool_use block as: icon name subject [meta] status
- */
 function renderToolUse(name: string, input: Record<string, unknown>): string {
   switch (name.toLowerCase()) {
     case 'bash': {
@@ -1003,39 +970,137 @@ function renderToolUse(name: string, input: Record<string, unknown>): string {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Sub-agent Forum Posts
+// ---------------------------------------------------------------------------
+
 /**
- * Extract plain text from content (string or ContentBlock[]).
+ * Handle a tool_result entry that may contain a sub-agent agentId.
+ * Creates a linked forum post for the sub-agent and updates the parent tool line.
  */
-function extractText(content: string | ContentBlock[]): string {
-  if (typeof content === 'string') return content.slice(0, 500);
-  const texts: string[] = [];
+function handleSubagentResult(
+  parentState: WatchState,
+  result: ToolResult,
+  content: string | ContentBlock[] | undefined,
+): void {
+  if (!isTaskResult(result)) return;
+
+  const agentId = result.agentId;
+  if (!agentId) return;
+
+  // Find the parent tool_use_id from tool_result content blocks
+  if (!Array.isArray(content)) return;
+
   for (const block of content) {
-    if (block.type === 'text' && block.text) {
-      texts.push(block.text);
+    if (block.type === 'tool_result' && 'tool_use_id' in block) {
+      const toolUseId = (block as { tool_use_id: string }).tool_use_id;
+      void createSubagentPost(parentState, toolUseId, agentId).catch(err => {
+        log({ source: SOURCE, level: 'error', summary: 'sub-agent post creation failed', data: err });
+      });
+      break;
     }
   }
-  return texts.join(' ').slice(0, 500);
 }
 
 /**
- * Truncate a string to the given max length.
+ * Create a forum post for a sub-agent session, subscribe to it,
+ * and update the parent tool line with a clickable link.
  */
+async function createSubagentPost(
+  parentState: WatchState,
+  parentToolUseId: string,
+  agentSessionId: string,
+): Promise<void> {
+  if (!forumChannelId || !activeConfig) return;
+
+  // Don't create duplicate posts for already-watched sub-agents
+  if (watchedSessions.has(agentSessionId)) {
+    // Still update the parent tool line with a link to the existing post
+    const existingState = watchedSessions.get(agentSessionId)!;
+    linkParentToolLine(parentState, parentToolUseId, existingState.discordChannelId);
+    return;
+  }
+
+  // Derive post name from the parent tool line description
+  const toolEntry = parentState.toolLines.get(parentToolUseId);
+  const rawDesc = toolEntry
+    ? toolEntry.line.replace(/[⏳✓✗]/g, '').replace(/\*\*/g, '').trim()
+    : 'sub-agent';
+  const postName = `\u{2192} ${rawDesc}`.slice(0, 100);
+
+  const post = await createForumPost(forumChannelId, postName, '\u{23F3} Loading sub-agent\u{2026}', {
+    autoArchiveDuration: 60,
+  });
+
+  const discordChannelId = post.id;
+  const buffer = createBuffer();
+  const projection = createProjection(discordChannelId);
+  appendSection(buffer, 'status', '\u{23F3} Loading\u{2026}');
+
+  const subscriber = buildWatchSubscriber(agentSessionId, buffer);
+
+  // Pre-register so catchup events can find the state
+  const subState = registerWatchState(agentSessionId, discordChannelId, subscriber, null, buffer, projection);
+  subState.parentSessionId = parentState.sessionId;
+
+  try {
+    subState.channel = await subscribeSession(agentSessionId, subscriber);
+  } catch (err) {
+    // Roll back pre-registration
+    watchedSessions.delete(agentSessionId);
+    channelToSession.delete(discordChannelId);
+    const msg = err instanceof Error ? err.message : String(err);
+    log({ source: SOURCE, level: 'error', summary: `sub-agent subscribe failed: ${msg}` });
+    await sendMessage(discordChannelId, `\u{274C} Failed to load sub-agent: ${msg}`).catch(() => {});
+    return;
+  }
+
+  // Update parent tool line with clickable link
+  linkParentToolLine(parentState, parentToolUseId, discordChannelId);
+
+  log({ source: SOURCE, level: 'info', summary: `sub-agent post created for ${agentSessionId.slice(0, 8)} in "${postName}"` });
+}
+
+/** Update a parent tool line to include a clickable link to the sub-agent post. */
+function linkParentToolLine(
+  parentState: WatchState,
+  parentToolUseId: string,
+  subagentChannelId: string,
+): void {
+  const toolEntry = parentState.toolLines.get(parentToolUseId);
+  if (!toolEntry) return;
+
+  const guildId = activeConfig?.guildId ?? '';
+  const link = `https://discord.com/channels/${guildId}/${subagentChannelId}`;
+
+  // Extract the description part (everything between ** markers and the status emoji)
+  // e.g. "🤖 **agent** [Explore]  find auth module  ✓" → wrap description with link
+  const line = toolEntry.line;
+  // Match pattern: (icon **name** optional-badge)  (description)  (status)
+  const match = line.match(/^(.+\*\*\s*)(.+?)(\s+[⏳✓✗])$/);
+  if (match) {
+    toolEntry.line = `${match[1]}[\u{2192} ${match[2]}](${link})${match[3]}`;
+  }
+
+  rebuildToolsSection(parentState.buffer, parentState);
+}
+
+/** Check if a watch state represents a sub-agent post. */
+function isSubagentPost(state: WatchState): boolean {
+  return state.parentSessionId != null;
+}
+
+/** Add a ✅ reaction to the last message in a sub-agent post for manual cleanup. */
+async function addCleanupReaction(state: WatchState): Promise<void> {
+  const last = getLastSection(state.buffer);
+  if (!last) return;
+  const lastMessageId = state.projection.sectionToMessageId.get(last.id);
+  if (!lastMessageId) return;
+  await addReaction(state.discordChannelId, lastMessageId, '\u{2705}');
+}
+
 function truncate(str: string, max: number): string {
   if (str.length <= max) return str;
   return str.slice(0, max - 3) + '...';
 }
 
-// ---------------------------------------------------------------------------
-// Utilities
-// ---------------------------------------------------------------------------
-
-function formatRelativeTime(date: Date): string {
-  const diffMs = Date.now() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDays = Math.floor(diffHr / 24);
-  return `${diffDays}d ago`;
-}

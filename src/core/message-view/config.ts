@@ -13,9 +13,10 @@ export interface DiscordProviderConfig {
   enabled: boolean;
   token: string;
   guildId: string;
-  commandChannelId: string;
-  /** 'all' = auto-watch new sessions, 'manual' = only via !watch */
+  /** 'all' = auto-watch new sessions, 'manual' = only via !open */
   sessions: 'all' | 'manual';
+  /** Model for the concierge session (default: 'haiku'). */
+  conciergeModel?: string;
 }
 
 export type MessageProviderConfig = DiscordProviderConfig;
