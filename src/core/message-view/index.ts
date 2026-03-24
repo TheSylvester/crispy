@@ -126,6 +126,9 @@ const watchedSessions = new Map<string, WatchState>();
 /** Reverse map: discordChannelId → sessionId (for routing post messages). */
 const channelToSession = new Map<string, string>();
 
+/** Sessions known to be sub-agents — skip auto-watch, let parent claim them. */
+const knownSubagentSessions = new Set<string>();
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -220,6 +223,7 @@ function startUp(config: DiscordProviderConfig): void {
           const session = event.session;
           if (session.sessionKind === 'system') return;
           if (watchedSessions.has(session.sessionId)) return;
+          if (knownSubagentSessions.has(session.sessionId)) return;
           const ageMs = Date.now() - session.modifiedAt.getTime();
           if (ageMs > 10 * 60 * 1000) return;
           void watchSession(session.sessionId, { auto: true }).catch(err => {
@@ -1140,6 +1144,9 @@ function handleSubagentResult(
 
   const agentId = result.agentId;
   if (!agentId) return;
+
+  // Mark immediately so auto-watch doesn't claim it before createSubagentPost runs
+  knownSubagentSessions.add(agentId);
 
   // Find the parent tool_use_id from tool_result content blocks
   if (!Array.isArray(content)) return;
