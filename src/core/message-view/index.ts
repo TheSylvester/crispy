@@ -15,6 +15,9 @@ import { log } from '../log.js';
 import { onSettingsChanged } from '../settings/index.js';
 import { settingsPath } from '../paths.js';
 import { listAllSessions, resolveSessionPrefix, subscribeSession } from '../session-manager.js';
+import { subscribeSessionList, unsubscribeSessionList } from '../session-list-manager.js';
+import type { SessionListSubscriber } from '../session-list-manager.js';
+import type { SessionListEvent } from '../session-list-events.js';
 import { getActiveChannels, unsubscribe, resolveApproval } from '../session-channel.js';
 import type { Subscriber, SubscriberMessage, SessionChannel } from '../session-channel.js';
 import type { TranscriptEntry, ContentBlock } from '../transcript.js';
@@ -48,6 +51,7 @@ let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let activeConfig: DiscordProviderConfig | null = null;
 let commandChannelLastMessageId: string | null = null;
 let unsubSettings: (() => void) | null = null;
+let unsubSessionList: (() => void) | null = null;
 let startTime: number = 0;
 
 // ---------------------------------------------------------------------------
@@ -147,6 +151,29 @@ function startUp(config: DiscordProviderConfig): void {
     log({ source: SOURCE, level: 'error', summary: 'failed to send startup message', data: err });
   });
 
+  // Auto-watch: subscribe to session list events so new sessions are watched automatically
+  if (config.sessions === 'all') {
+    const sessionListSub: SessionListSubscriber = {
+      id: 'message-view-session-list',
+      send(event: SessionListEvent) {
+        if (event.type === 'session_list_upsert') {
+          const session = event.session;
+          if (session.sessionKind === 'system') return;
+          if (watchedSessions.has(session.sessionId)) return;
+          // Skip stale sessions on startup — only auto-watch sessions modified in last 10 minutes
+          const ageMs = Date.now() - session.modifiedAt.getTime();
+          if (ageMs > 10 * 60 * 1000) return;
+          void watchSession(session.sessionId, true).catch(err => {
+            log({ source: SOURCE, level: 'error', summary: `auto-watch failed for ${session.sessionId.slice(0, 8)}`, data: err });
+          });
+        }
+      },
+    };
+    subscribeSessionList(sessionListSub);
+    unsubSessionList = () => unsubscribeSessionList(sessionListSub);
+    log({ source: SOURCE, level: 'info', summary: 'auto-watch enabled — subscribing to session list' });
+  }
+
   heartbeatTimer = setInterval(() => {
     pollCommands().catch((err) => {
       log({ source: SOURCE, level: 'error', summary: 'poll error', data: err });
@@ -165,6 +192,11 @@ function startUp(config: DiscordProviderConfig): void {
 }
 
 function tearDown(): void {
+  if (unsubSessionList) {
+    unsubSessionList();
+    unsubSessionList = null;
+  }
+
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = null;
@@ -309,17 +341,34 @@ async function handleWatch(args: string[]): Promise<void> {
     return;
   }
 
+  await watchSession(resolvedId, false);
+}
+
+/**
+ * Core watch logic — creates a Discord thread, subscribes to the session,
+ * and sets up buffer/projection. Used by both !watch and auto-watch.
+ */
+async function watchSession(sessionId: string, auto: boolean): Promise<void> {
+  if (!activeConfig) return;
+  const channelId = activeConfig.commandChannelId;
+
+  // Double-check (race between auto-watch events)
+  if (watchedSessions.has(sessionId)) return;
+
   // Create a thread in the command channel for the session feed.
   // Post an anchor message first, then create a thread on it.
-  const threadName = `session-${resolvedId.slice(0, 8)}`;
+  const threadName = `session-${sessionId.slice(0, 8)}`;
+  const anchorText = auto
+    ? `\u{1F4E1} Auto-watching session \`${sessionId.slice(0, 8)}\``
+    : `\u{1F4E1} Watching session \`${sessionId.slice(0, 8)}\`\u{2026}`;
   let discordChannel: { id: string; name: string };
   try {
-    const anchor = await sendMessage(channelId, `\u{1F4E1} Watching session \`${resolvedId.slice(0, 8)}\`…`);
+    const anchor = await sendMessage(channelId, anchorText);
     discordChannel = await createThread(channelId, anchor.id, threadName);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await sendMessage(channelId, `Failed to create thread: ${msg}`);
-    return;
+    if (!auto) await sendMessage(channelId, `Failed to create thread: ${msg}`);
+    throw err;
   }
 
   // Build buffer and projection for this session
@@ -331,24 +380,24 @@ async function handleWatch(args: string[]): Promise<void> {
   appendSection(buffer, 'status', '\u{23F3} Connecting\u{2026}');
 
   // Build the subscriber that renders session events into the buffer
-  const subscriber = buildWatchSubscriber(resolvedId, buffer);
+  const subscriber = buildWatchSubscriber(sessionId, buffer);
 
   // Subscribe to the session — this creates a channel if needed, loads
   // history, and immediately sends a catchup message to our subscriber.
   let sessionChannel: SessionChannel;
   try {
-    sessionChannel = await subscribeSession(resolvedId, subscriber);
+    sessionChannel = await subscribeSession(sessionId, subscriber);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     // Archive the thread we just created
     archiveThread(discordChannelId).catch(() => {});
-    await sendMessage(channelId, `Failed to subscribe to session: ${msg}`);
-    return;
+    if (!auto) await sendMessage(channelId, `Failed to subscribe to session: ${msg}`);
+    throw err;
   }
 
   // Store watch state
   const state: WatchState = {
-    sessionId: resolvedId,
+    sessionId,
     discordChannelId,
     subscriber,
     channel: sessionChannel,
@@ -357,10 +406,10 @@ async function handleWatch(args: string[]): Promise<void> {
     turnCounter: 0,
     pendingInteractions: new Map(),
   };
-  watchedSessions.set(resolvedId, state);
-  channelToSession.set(discordChannelId, resolvedId);
+  watchedSessions.set(sessionId, state);
+  channelToSession.set(discordChannelId, sessionId);
 
-  log({ source: SOURCE, level: 'info', summary: `watching session ${resolvedId.slice(0, 12)}… in thread ${threadName}` });
+  log({ source: SOURCE, level: 'info', summary: `${auto ? 'auto-' : ''}watching session ${sessionId.slice(0, 12)}\u{2026} in thread ${threadName}` });
 }
 
 async function handleUnwatch(args: string[]): Promise<void> {
