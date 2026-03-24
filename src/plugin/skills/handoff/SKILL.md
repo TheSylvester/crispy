@@ -9,107 +9,43 @@ description: >
 
 # Handoff
 
-Reflect on the full conversation, distill everything a fresh agent needs into
-a self-contained prompt, save it, confirm with the user, then rotate into a
-fresh session that executes it.
+Distill, verify, and rotate — composing three skills in sequence.
+
+A "new topic" argument is **required**. If the user didn't provide one,
+ask: "What should the fresh session work on?"
 
 ## Usage
 
 ```
-/handoff                     — reflect, distill, save, and rotate
-/handoff <next-task>         — focus the new session on a specific task
+/handoff <next-task>         — distill, reflect, and rotate
+/handoff                     — asks what the next task should be
 ```
 
-## Instructions
+## Flow
 
-### Phase 1: Reflect & Distill
+### Step 1: Distill — `/handoff-prompt-to <next-task>`
 
-Write a self-contained prompt for an agent with an empty context window.
-If the user provided a specific task via arguments, use that. Otherwise,
-derive the natural next step from the conversation.
+Invoke the `handoff-prompt-to` skill with the user's task description.
+This produces a self-contained prompt file saved to `.ai-reference/prompts/`.
 
-Cover all relevant insights and specifications from the conversation.
+### Step 2: Verify — `/reflect`
 
-#### Prompt Structure
+Invoke the `reflect` skill against the prompt file just generated.
+This validates paths, captures missing decisions, and catches gaps.
 
-##### 1. Task
-One paragraph: exactly what to do next and why.
+### Step 3: Confirm
 
-##### 2. Context & Constraints
-- Key decisions, constraints, architectural choices, and their rationale
-- Success criteria
-- User preferences observed during the conversation
+Show the user the saved file path and a brief summary:
 
-##### 3. Inputs & Resources
+> Handoff prompt saved to `<path>` and verified. Ready to rotate into a
+> fresh session and execute?
 
-**Files to Create/Modify**
-- Paths of files the agent will create or change
+Wait for explicit confirmation. The user may want to:
+- Edit the prompt file before continuing
+- Copy it to a different agent
+- Save it for later
 
-**Files to Reference (Read-Only)**
-- Paths of files for context without modification
+### Step 4: Rotate — `/clear-and-execute <prompt-file>`
 
-**Key Code Patterns**
-- Inline snippets showing expected patterns (only non-obvious ones)
-
-**Build & Test Commands**
-- Exact commands to run (e.g., `npm run typecheck && npm test`)
-
-##### 4. Execution Guidelines
-- Numbered implementation steps
-- Style and code standards to follow
-
-##### 5. Verification
-How to verify the work: test commands, typecheck, specific scenarios.
-
-#### What to include
-
-- Architectural choices made and their rationale
-- Constraints agreed upon (performance, compatibility, style)
-- Files created or modified, with one-line summaries
-- Key code patterns introduced (types, interfaces, function signatures)
-- What's done and verified
-- What's in progress, blocked, or needs attention
-- Anything the user corrected or emphasized
-
-#### What to discard
-
-- Exploration that led nowhere
-- Superseded approaches and abandoned designs
-- Verbose tool outputs and intermediate research
-- Completed sub-tasks that don't inform the next task
-
-#### Quality bar
-
-A senior engineer reading this prompt cold should be able to continue
-the work without asking clarifying questions.
-
-### Phase 2: Save
-
-Save the prompt to `.ai-reference/prompts/`:
-
-```
-.ai-reference/prompts/YYYYMMDD-HHMMSS-handoff-<task-slug>.md
-```
-
-Use the current date/time and a short slug derived from the task.
-Start the file directly with the prompt content — no title header.
-
-### Phase 3: Confirm
-
-Show the saved file path and a summary to the user:
-
-> Handoff prompt saved to `<path>`. Ready to rotate into a fresh session
-> and execute? Use `/clear-and-execute` to rotate now, or edit the file first.
-
-Wait for explicit confirmation.
-
-### Phase 4: Rotate
-
-After the user confirms, invoke `/clear-and-execute` with the saved prompt
-file. This clears the current session and starts a fresh one that executes
-the handoff prompt.
-
-Alternatively, the user can:
-- Edit the saved `.md` file and then manually invoke `/clear-and-execute`
-- Copy the prompt to a different agent or session
-- Save it for later execution
+After confirmation, invoke the `clear-and-execute` skill with the saved
+prompt file path. This clears the current session and starts a fresh one.
