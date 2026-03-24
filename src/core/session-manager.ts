@@ -30,6 +30,13 @@
 let hostSocketPath = '';
 export function setHostSocketPath(path: string): void { hostSocketPath = path; }
 
+// ---------------------------------------------------------------------------
+// Tool env vars — set by adapter-registry so buildSessionEnv() can inject
+// tool paths (RECALL_CLI, CRISPY_DISPATCH, etc.) without polluting process.env.
+// ---------------------------------------------------------------------------
+let toolEnv: Record<string, string> = {};
+export function setToolEnv(env: Record<string, string>): void { toolEnv = env; }
+
 import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, ChannelMessage, TurnIntent, TurnTarget, TurnSettings, SubagentEntriesResult, EphemeralTargetOptions, LocalPlugin } from './agent-adapter.js';
 import type { TranscriptEntry, MessageContent, Vendor, Usage } from './transcript.js';
 import type { SessionChannel, Subscriber, SubscriberMessage } from './session-channel.js';
@@ -321,6 +328,7 @@ export function _resetRegistry(): void {
   sessions.clear();
   pending.clear();
   adapters.clear();
+  toolEnv = {};
   invalidateSessionCache();
 }
 
@@ -574,6 +582,7 @@ export interface PendingChannelResult {
  */
 function buildSessionEnv(sessionId: string, extraEnv?: Record<string, string>): Record<string, string> {
   return {
+    ...toolEnv,
     ...extraEnv,
     CRISPY_SESSION_ID: sessionId,
     ...(hostSocketPath && { CRISPY_SOCK: hostSocketPath }),

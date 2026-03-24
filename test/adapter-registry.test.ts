@@ -16,6 +16,7 @@ const mockUnregisterAdapter = vi.fn();
 vi.mock('../src/core/session-manager.js', () => ({
   registerAdapter: (...args: unknown[]) => mockRegisterAdapter(...args),
   unregisterAdapter: (...args: unknown[]) => mockUnregisterAdapter(...args),
+  setToolEnv: vi.fn(),
 }));
 
 // Mock session-channel (getActiveChannels used by settings change listener)
@@ -79,6 +80,7 @@ function applyInfraMocks() {
   vi.doMock('../src/core/session-manager.js', () => ({
     registerAdapter: (...args: unknown[]) => mockRegisterAdapter(...args),
     unregisterAdapter: (...args: unknown[]) => mockUnregisterAdapter(...args),
+    setToolEnv: vi.fn(),
   }));
   vi.doMock('../src/core/session-channel.js', () => ({
     getActiveChannels: () => [],

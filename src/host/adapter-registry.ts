@@ -15,7 +15,7 @@
 import { resolve } from 'node:path';
 import type { AgentAdapter, VendorDiscovery, SessionOpenSpec, LocalPlugin } from '../core/agent-adapter.js';
 import type { Vendor } from '../core/transcript.js';
-import { registerAdapter, unregisterAdapter } from '../core/session-manager.js';
+import { registerAdapter, unregisterAdapter, setToolEnv } from '../core/session-manager.js';
 import { setSessionDefaults } from '../core/settings/index.js';
 import type { AgentDispatch } from './agent-dispatch.js';
 
@@ -145,12 +145,14 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
     : resolve(process.cwd(), 'src', 'plugin');
   const plugins: LocalPlugin[] = [{ type: 'local', path: pluginPath }];
 
-  // Set env vars so skill Bash commands can find bundled CLIs
-  process.env.RECALL_CLI = resolve(extBase, 'dist', 'recall.js');
-  process.env.CRISPY_DISPATCH = resolve(extBase, 'dist', 'crispy-dispatch.js');
-  process.env.CRISPY_TRACKER = resolve(extBase, 'dist', 'crispy-tracker.mjs');
-  process.env.CRISPY_AGENT = resolve(pluginPath, 'scripts', 'crispy-agent');
-  process.env.CRISPY_ROTATE = resolve(pluginPath, 'scripts', 'crispy-rotate');
+  // Flow tool paths through spec.env instead of polluting process.env
+  setToolEnv({
+    RECALL_CLI: resolve(extBase, 'dist', 'recall.js'),
+    CRISPY_DISPATCH: resolve(extBase, 'dist', 'crispy-dispatch.js'),
+    CRISPY_TRACKER: resolve(extBase, 'dist', 'crispy-tracker.mjs'),
+    CRISPY_AGENT: resolve(pluginPath, 'scripts', 'crispy-agent'),
+    CRISPY_ROTATE: resolve(pluginPath, 'scripts', 'crispy-rotate'),
+  });
   console.error(`[adapter-registry] Plugin path: ${pluginPath}`);
 
   // System prompt factory — skills hint (always active when dispatch is available).
