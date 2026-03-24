@@ -15,9 +15,10 @@ import { log } from '../log.js';
 import { onSettingsChanged } from '../settings/index.js';
 import { settingsPath } from '../paths.js';
 import { listAllSessions, resolveSessionPrefix, subscribeSession } from '../session-manager.js';
-import { getActiveChannels, unsubscribe } from '../session-channel.js';
+import { getActiveChannels, unsubscribe, resolveApproval } from '../session-channel.js';
 import type { Subscriber, SubscriberMessage, SessionChannel } from '../session-channel.js';
 import type { TranscriptEntry, ContentBlock } from '../transcript.js';
+import type { ApprovalOption, PendingApprovalInfo } from '../channel-events.js';
 import {
   initTransport,
   shutdownTransport,
@@ -25,6 +26,9 @@ import {
   getMessages,
   createThread,
   archiveThread,
+  addReaction,
+  getReactions,
+  editMessage,
 } from './discord-transport.js';
 import type { DiscordProviderConfig, MessageProviderConfig } from './config.js';
 import { createBuffer, getOrCreateSection, getLastSection, appendSection, updateSection, clearBuffer } from './buffer.js';
@@ -50,6 +54,14 @@ let startTime: number = 0;
 // Watch state — session projection
 // ---------------------------------------------------------------------------
 
+interface PendingInteraction {
+  discordMessageId: string;
+  toolUseId: string;
+  toolName: string;
+  options: ApprovalOption[];
+  emojiToOptionId: Map<string, string>;
+}
+
 interface WatchState {
   sessionId: string;
   discordChannelId: string;
@@ -58,6 +70,7 @@ interface WatchState {
   buffer: MessageBuffer;
   projection: ProjectionState;
   turnCounter: number;
+  pendingInteractions: Map<string, PendingInteraction>;
 }
 
 /** Maps sessionId → watch state for active projections. */
@@ -144,6 +157,10 @@ function startUp(config: DiscordProviderConfig): void {
         log({ source: SOURCE, level: 'error', summary: `projection sync error for ${state.sessionId.slice(0, 8)}`, data: err });
       });
     }
+    // Poll pending interactions for user reactions (one per tick across all sessions)
+    pollOneInteraction().catch((err) => {
+      log({ source: SOURCE, level: 'error', summary: 'interaction poll error', data: err });
+    });
   }, 3000);
 }
 
@@ -338,6 +355,7 @@ async function handleWatch(args: string[]): Promise<void> {
     buffer,
     projection,
     turnCounter: 0,
+    pendingInteractions: new Map(),
   };
   watchedSessions.set(resolvedId, state);
   channelToSession.set(discordChannelId, resolvedId);
@@ -439,6 +457,16 @@ function handleWatchEvent(buffer: MessageBuffer, event: SubscriberMessage, state
       } else if (event.state === 'awaiting_approval' && event.pendingApprovals.length > 0) {
         const tools = event.pendingApprovals.map((a) => a.toolName).join(', ');
         updateSection(statusSection, `\u{26A0}\u{FE0F} Awaiting approval: ${tools}`);
+        // Post approval interactions for each pending approval (catchup)
+        if (state) {
+          for (const approval of event.pendingApprovals) {
+            if (!state.pendingInteractions.has(approval.toolUseId)) {
+              void postApprovalInteraction(state, approval).catch((err) => {
+                log({ source: SOURCE, level: 'error', summary: 'failed to post catchup approval', data: err });
+              });
+            }
+          }
+        }
       }
       break;
     }
@@ -461,6 +489,17 @@ function handleWatchEvent(buffer: MessageBuffer, event: SubscriberMessage, state
             break;
           case 'awaiting_approval':
             updateSection(statusSection, `\u{26A0}\u{FE0F} Awaiting approval: ${evt.toolName}`);
+            if (state) {
+              void postApprovalInteraction(state, {
+                toolUseId: evt.toolUseId,
+                toolName: evt.toolName,
+                input: evt.input,
+                reason: evt.reason,
+                options: evt.options,
+              }).catch((err) => {
+                log({ source: SOURCE, level: 'error', summary: 'failed to post approval', data: err });
+              });
+            }
             break;
           case 'background':
             updateSection(statusSection, '\u{1F504} Background');
@@ -469,6 +508,164 @@ function handleWatchEvent(buffer: MessageBuffer, event: SubscriberMessage, state
       }
       // Other event types (notification) — ignore silently
       break;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Approval Interactions
+// ---------------------------------------------------------------------------
+
+const BOT_USER_ID = '1483229916869693500';
+const NUMBERED_EMOJI = ['1\u{FE0F}\u{20E3}', '2\u{FE0F}\u{20E3}', '3\u{FE0F}\u{20E3}', '4\u{FE0F}\u{20E3}', '5\u{FE0F}\u{20E3}'];
+
+/**
+ * Build emoji → optionId mapping from approval options.
+ * Known patterns: allow → ✅, allow_session → 🔁, deny → ❌.
+ * Unknown patterns fall back to numbered emoji.
+ */
+function buildEmojiMap(options: ApprovalOption[]): Map<string, string> {
+  const map = new Map<string, string>();
+  let numberedIdx = 0;
+
+  for (const opt of options) {
+    const id = opt.id.toLowerCase();
+    if (id.includes('deny')) {
+      map.set('\u{274C}', opt.id); // ❌
+    } else if (id.includes('allow') && id.includes('session')) {
+      map.set('\u{1F501}', opt.id); // 🔁
+    } else if (id.includes('allow')) {
+      map.set('\u{2705}', opt.id); // ✅
+    } else {
+      // Fallback to numbered emoji
+      const emoji = NUMBERED_EMOJI[numberedIdx] ?? `${numberedIdx + 1}\u{FE0F}\u{20E3}`;
+      map.set(emoji, opt.id);
+      numberedIdx++;
+    }
+  }
+
+  return map;
+}
+
+/**
+ * Build the approval message text for Discord.
+ */
+function buildApprovalMessage(
+  approval: PendingApprovalInfo,
+  emojiToOptionId: Map<string, string>,
+): string {
+  const inputStr = typeof approval.input === 'string'
+    ? approval.input.slice(0, 300)
+    : JSON.stringify(approval.input).slice(0, 300);
+  const reason = approval.reason ? `> ${approval.reason}\n\n` : '';
+
+  const optionLabels: string[] = [];
+  for (const [emoji, optionId] of emojiToOptionId) {
+    const opt = approval.options.find((o) => o.id === optionId);
+    optionLabels.push(`${emoji} ${opt?.label ?? optionId}`);
+  }
+
+  return truncate(
+    `\u{26A0}\u{FE0F} **Approval Required: ${approval.toolName}**\n\`${inputStr}\`\n${reason}${optionLabels.join('  |  ')}`,
+    DISCORD_MAX_LENGTH,
+  );
+}
+
+/**
+ * Post an approval interaction to Discord (async, fire-and-forget from subscriber).
+ * Sends the message, adds emoji reactions, and stores the PendingInteraction.
+ */
+async function postApprovalInteraction(
+  state: WatchState,
+  approval: PendingApprovalInfo,
+): Promise<void> {
+  // Skip if we already have a pending interaction for this toolUseId
+  if (state.pendingInteractions.has(approval.toolUseId)) return;
+
+  const emojiToOptionId = buildEmojiMap(approval.options);
+  const text = buildApprovalMessage(approval, emojiToOptionId);
+
+  const msg = await sendMessage(state.discordChannelId, text);
+
+  // Add reactions in sequence (Discord requires sequential reaction adds)
+  for (const emoji of emojiToOptionId.keys()) {
+    try {
+      await addReaction(state.discordChannelId, msg.id, emoji);
+    } catch (err) {
+      log({ source: SOURCE, level: 'warn', summary: `failed to add reaction ${emoji}`, data: err });
+    }
+  }
+
+  state.pendingInteractions.set(approval.toolUseId, {
+    discordMessageId: msg.id,
+    toolUseId: approval.toolUseId,
+    toolName: approval.toolName,
+    options: approval.options,
+    emojiToOptionId,
+  });
+
+  log({
+    source: SOURCE,
+    level: 'info',
+    summary: `posted approval interaction for ${approval.toolName} (${approval.toolUseId.slice(0, 8)})`,
+  });
+}
+
+/**
+ * Poll at most one pending interaction across all watched sessions.
+ * Checks reactions for user input and resolves the approval if found.
+ */
+async function pollOneInteraction(): Promise<void> {
+  for (const state of watchedSessions.values()) {
+    for (const [toolUseId, interaction] of state.pendingInteractions) {
+      // If the approval is no longer pending in the channel, clean up
+      if (!state.channel.pendingApprovals.has(toolUseId)) {
+        state.pendingInteractions.delete(toolUseId);
+        try {
+          await editMessage(
+            state.discordChannelId,
+            interaction.discordMessageId,
+            `\u{2705} **${interaction.toolName}** — resolved externally`,
+          );
+        } catch { /* best-effort */ }
+        return; // one per tick
+      }
+
+      // Check each emoji for non-bot reactions
+      for (const [emoji, optionId] of interaction.emojiToOptionId) {
+        try {
+          const reactions = await getReactions(state.discordChannelId, interaction.discordMessageId, emoji);
+          const userReaction = reactions.find((r) => r.id !== BOT_USER_ID);
+          if (userReaction) {
+            // Resolve the approval
+            resolveApproval(state.channel, toolUseId, optionId);
+            state.pendingInteractions.delete(toolUseId);
+
+            const opt = interaction.options.find((o) => o.id === optionId);
+            try {
+              await editMessage(
+                state.discordChannelId,
+                interaction.discordMessageId,
+                `${emoji} **${interaction.toolName}** — ${opt?.label ?? optionId}`,
+              );
+            } catch { /* best-effort */ }
+
+            log({
+              source: SOURCE,
+              level: 'info',
+              summary: `approval resolved: ${interaction.toolName} → ${optionId}`,
+            });
+            return; // one per tick
+          }
+        } catch (err) {
+          // 404 or other error — approval may be gone, clean up
+          log({ source: SOURCE, level: 'debug', summary: `reaction poll error for ${emoji}`, data: err });
+          state.pendingInteractions.delete(toolUseId);
+          return; // one per tick
+        }
+      }
+
+      return; // only poll one interaction per tick (rate limit awareness)
     }
   }
 }
