@@ -13,6 +13,7 @@
  * @module crispy-db
  */
 
+import { rmSync, existsSync } from 'node:fs';
 import { log } from './log.js';
 import type { Database } from 'node-sqlite3-wasm';
 import { Database as DatabaseConstructor } from 'node-sqlite3-wasm';
@@ -38,6 +39,14 @@ export function getDb(dbPath: string): Database {
   if (db) {
     closeDb();
   }
+
+  // node-sqlite3-wasm uses a directory (${dbPath}.lock) as a filesystem
+  // semaphore. If a prior process crashed without calling db.close(), the
+  // lock directory is left behind and every subsequent open enters an
+  // emscripten busy-wait spin (100% CPU, no recovery). Since getDb() is a
+  // singleton — we haven't opened the DB yet in this process — any existing
+  // lock is orphaned. Safe to remove.
+  clearStaleLock(dbPath);
 
   db = new DatabaseConstructor(dbPath);
   currentDbPath = dbPath;
@@ -74,6 +83,40 @@ export function closeDb(): void {
  */
 export function _resetDb(): void {
   closeDb();
+}
+
+// ============================================================================
+// Stale lock cleanup
+// ============================================================================
+
+/**
+ * Remove an orphaned lock directory left by a crashed process.
+ *
+ * node-sqlite3-wasm's VFS uses `mkdirSync("${dbPath}.lock")` to acquire and
+ * `rmdirSync(…)` to release. A crash leaves the directory behind, and every
+ * future open spins at 100% CPU in an emscripten busy-wait loop.
+ *
+ * Called once per getDb() init, before the DatabaseConstructor runs —
+ * so the lock cannot belong to *this* process.
+ */
+function clearStaleLock(dbPath: string): void {
+  const lockDir = `${dbPath}.lock`;
+  if (!existsSync(lockDir)) return;
+
+  try {
+    rmSync(lockDir, { recursive: true, force: true });
+    log({
+      source: 'db',
+      level: 'warn',
+      summary: `DB: removed stale lock directory (${lockDir}) — likely from a crashed process`,
+    });
+  } catch (err) {
+    log({
+      source: 'db',
+      level: 'error',
+      summary: `DB: failed to remove stale lock directory: ${err}`,
+    });
+  }
 }
 
 // ============================================================================
