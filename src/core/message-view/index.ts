@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 import { log } from '../log.js';
 import { onSettingsChanged } from '../settings/index.js';
 import { settingsPath } from '../paths.js';
-import { resolveSessionPrefix, subscribeSession, sendTurn } from '../session-manager.js';
+import { resolveSessionPrefix, subscribeSession, sendTurn, listAllSessions } from '../session-manager.js';
 import { subscribeSessionList, unsubscribeSessionList } from '../session-list-manager.js';
 import type { SessionListSubscriber } from '../session-list-manager.js';
 import type { SessionListEvent } from '../session-list-events.js';
@@ -40,6 +40,7 @@ import {
   disconnectGateway,
   getBotUserId,
   getGuildChannels,
+  getActiveThreads,
   discordFetch,
   triggerTyping,
 } from './discord-transport.js';
@@ -261,6 +262,11 @@ async function initForumChannel(): Promise<void> {
   forumChannelId = await ensureForumChannel(activeConfig.guildId, botId, ownerUserId);
   log({ source: SOURCE, level: 'info', summary: `forum channel ready: ${forumChannelId}` });
 
+  // Reconnect to existing forum posts from previous sessions
+  await reconnectExistingPosts(activeConfig.guildId, forumChannelId).catch((err) => {
+    log({ source: SOURCE, level: 'warn', summary: 'reconnect to existing posts failed', data: err });
+  });
+
   // Initialize concierge with callbacks that create forum posts
   initConcierge({
     model: activeConfig.conciergeModel ?? 'haiku',
@@ -296,6 +302,61 @@ async function ensureForumChannel(guildId: string, botId: string, ownerId: strin
   });
   log({ source: SOURCE, level: 'info', summary: `created forum channel: ${forum.id}` });
   return forum.id;
+}
+
+/**
+ * Reconnect to existing forum posts from a previous bot lifetime.
+ * Scans active threads in the forum channel, matches session IDs from post names,
+ * and re-subscribes to any that are still valid sessions.
+ */
+async function reconnectExistingPosts(guildId: string, forumId: string): Promise<void> {
+  const threads = await getActiveThreads(guildId);
+  const forumThreads = threads.filter(t => t.parent_id === forumId);
+
+  if (forumThreads.length === 0) return;
+
+  // Build a set of known session ID prefixes for fast matching
+  const allSessions = listAllSessions();
+  const sessionsByPrefix = new Map<string, string>();
+  for (const s of allSessions) {
+    sessionsByPrefix.set(s.sessionId.slice(0, 8), s.sessionId);
+  }
+
+  let reconnected = 0;
+  for (const thread of forumThreads) {
+    // Forum post names follow "session-{prefix}" or the prompt text
+    // Extract the 8-char prefix from "session-abc12345" pattern
+    const match = thread.name.match(/^session-([a-f0-9]{8})/);
+    if (!match) continue;
+
+    const prefix = match[1];
+    const fullId = sessionsByPrefix.get(prefix);
+    if (!fullId) continue;
+
+    // Skip if already watching (shouldn't happen on fresh startup, but guard against it)
+    if (watchedSessions.has(fullId)) continue;
+
+    try {
+      const discordChannelId = thread.id;
+      const buffer = createBuffer();
+      const projection = createProjection(discordChannelId);
+      appendSection(buffer, 'status', '\u{1F504} Reconnecting\u{2026}');
+
+      const subscriber = buildWatchSubscriber(fullId, buffer);
+      const state = registerWatchState(fullId, discordChannelId, subscriber, null, buffer, projection);
+
+      state.channel = await subscribeSession(fullId, subscriber);
+      reconnected++;
+    } catch (err) {
+      log({ source: SOURCE, level: 'warn', summary: `reconnect failed for ${prefix}`, data: err });
+      // Clean up failed registration
+      watchedSessions.delete(fullId);
+    }
+  }
+
+  if (reconnected > 0) {
+    log({ source: SOURCE, level: 'info', summary: `reconnected to ${reconnected} existing forum post${reconnected > 1 ? 's' : ''}` });
+  }
 }
 
 function tearDown(): void {
