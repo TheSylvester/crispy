@@ -1,0 +1,625 @@
+/**
+ * Message View — Init/shutdown, command polling, and session projection
+ *
+ * Spike 3: Text buffer + projection sync.
+ * Session events render into a MessageBuffer (instant, no API calls).
+ * A heartbeat syncs dirty sections to Discord via the projection layer
+ * (at most 1 section per session per tick). Catchup replays hundreds of
+ * entries instantly to the buffer — the heartbeat drains naturally at ~1 msg/3s.
+ *
+ * @module message-view/index
+ */
+
+import { readFileSync } from 'node:fs';
+import { log } from '../log.js';
+import { onSettingsChanged } from '../settings/index.js';
+import { settingsPath } from '../paths.js';
+import { listAllSessions, resolveSessionPrefix, subscribeSession } from '../session-manager.js';
+import { getActiveChannels, unsubscribe } from '../session-channel.js';
+import type { Subscriber, SubscriberMessage, SessionChannel } from '../session-channel.js';
+import type { TranscriptEntry, ContentBlock } from '../transcript.js';
+import {
+  initTransport,
+  shutdownTransport,
+  sendMessage,
+  getMessages,
+  createThread,
+  archiveThread,
+} from './discord-transport.js';
+import type { DiscordProviderConfig, MessageProviderConfig } from './config.js';
+import { createBuffer, getOrCreateSection, getLastSection, appendSection, updateSection, clearBuffer } from './buffer.js';
+import type { MessageBuffer } from './buffer.js';
+import { createProjection, syncOneDirtySection, clearProjection } from './projection.js';
+import type { ProjectionState } from './projection.js';
+
+const SOURCE = 'message-view';
+const DISCORD_MAX_LENGTH = 2000;
+const SECTION_SOFT_LIMIT = 1800; // leave headroom for Discord's 2000 limit
+
+// ---------------------------------------------------------------------------
+// Module state
+// ---------------------------------------------------------------------------
+
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let activeConfig: DiscordProviderConfig | null = null;
+let commandChannelLastMessageId: string | null = null;
+let unsubSettings: (() => void) | null = null;
+let startTime: number = 0;
+
+// ---------------------------------------------------------------------------
+// Watch state — session projection
+// ---------------------------------------------------------------------------
+
+interface WatchState {
+  sessionId: string;
+  discordChannelId: string;
+  subscriber: Subscriber;
+  channel: SessionChannel;
+  buffer: MessageBuffer;
+  projection: ProjectionState;
+  turnCounter: number;
+}
+
+/** Maps sessionId → watch state for active projections. */
+const watchedSessions = new Map<string, WatchState>();
+
+/** Reverse map: discordChannelId → sessionId (for cleanup lookups). */
+const channelToSession = new Map<string, string>();
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export function initMessageView(): void {
+  const config = findEnabledDiscordProvider();
+  if (!config) {
+    log({ source: SOURCE, level: 'info', summary: 'no enabled discord provider found — skipping init' });
+    return;
+  }
+
+  startUp(config);
+
+  unsubSettings = onSettingsChanged(() => {
+    const next = findEnabledDiscordProvider();
+    if (!next) {
+      if (activeConfig) tearDown();
+      return;
+    }
+    // Config changed — restart
+    if (activeConfig && (next.token !== activeConfig.token || next.commandChannelId !== activeConfig.commandChannelId)) {
+      tearDown();
+      startUp(next);
+    } else if (!activeConfig) {
+      startUp(next);
+    }
+  });
+}
+
+export function shutdownMessageView(): void {
+  if (unsubSettings) {
+    unsubSettings();
+    unsubSettings = null;
+  }
+  tearDown();
+}
+
+// ---------------------------------------------------------------------------
+// Internals
+// ---------------------------------------------------------------------------
+
+function findEnabledDiscordProvider(): DiscordProviderConfig | null {
+  // Read messageProviders directly from settings.json.
+  // getSettingsSnapshotInternal() constructs a new object from known fields,
+  // which strips messageProviders since it's not in the typed schema yet.
+  try {
+    const raw = JSON.parse(readFileSync(settingsPath(), 'utf-8'));
+    const providers = raw.messageProviders as MessageProviderConfig[] | undefined;
+    if (!providers) return null;
+    const discord = providers.find((p: MessageProviderConfig) => p.type === 'discord' && p.enabled);
+    return discord ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function startUp(config: DiscordProviderConfig): void {
+  activeConfig = config;
+  startTime = Date.now();
+  initTransport(config.token);
+
+  log({ source: SOURCE, level: 'info', summary: `message view online — polling #${config.commandChannelId}` });
+
+  // Send startup message (fire-and-forget)
+  sendMessage(config.commandChannelId, '\u{1F7E2} Crispy Message View online').catch((err) => {
+    log({ source: SOURCE, level: 'error', summary: 'failed to send startup message', data: err });
+  });
+
+  heartbeatTimer = setInterval(() => {
+    pollCommands().catch((err) => {
+      log({ source: SOURCE, level: 'error', summary: 'poll error', data: err });
+    });
+    // Sync one dirty section per watched session per tick
+    for (const state of watchedSessions.values()) {
+      syncOneDirtySection(state.projection, state.buffer).catch((err) => {
+        log({ source: SOURCE, level: 'error', summary: `projection sync error for ${state.sessionId.slice(0, 8)}`, data: err });
+      });
+    }
+  }, 3000);
+}
+
+function tearDown(): void {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+
+  // Clean up all active watches
+  for (const [sessionId, state] of watchedSessions) {
+    try {
+      unsubscribe(state.channel, state.subscriber);
+    } catch { /* best-effort */ }
+    clearBuffer(state.buffer);
+    clearProjection(state.projection);
+    archiveThread(state.discordChannelId).catch(() => {});
+    channelToSession.delete(state.discordChannelId);
+    watchedSessions.delete(sessionId);
+  }
+
+  if (activeConfig) {
+    // Send shutdown message (best-effort)
+    sendMessage(activeConfig.commandChannelId, '\u{1F534} Crispy Message View offline').catch(() => {});
+  }
+  activeConfig = null;
+  commandChannelLastMessageId = null;
+  shutdownTransport();
+}
+
+async function pollCommands(): Promise<void> {
+  if (!activeConfig) return;
+
+  const opts: { after?: string; limit?: number } = { limit: 50 };
+  if (commandChannelLastMessageId) opts.after = commandChannelLastMessageId;
+
+  const messages = await getMessages(activeConfig.commandChannelId, opts);
+  if (!messages.length) return;
+
+  // Discord returns newest first — reverse to process chronologically
+  const sorted = [...messages].reverse();
+
+  // Update the high-water mark to the newest message ID
+  commandChannelLastMessageId = sorted[sorted.length - 1].id;
+
+  for (const msg of sorted) {
+    // Skip our own messages (check author ID, not bot flag — webhooks have bot=true too)
+    if (msg.author.id === '1483229916869693500') continue;
+    // Only process ! commands
+    if (!msg.content.startsWith('!')) continue;
+
+    const [command, ...args] = msg.content.slice(1).trim().split(/\s+/);
+    try {
+      await handleCommand(command.toLowerCase(), args);
+    } catch (err) {
+      log({ source: SOURCE, level: 'error', summary: `command !${command} failed`, data: err });
+    }
+  }
+}
+
+async function handleCommand(command: string, args: string[]): Promise<void> {
+  if (!activeConfig) return;
+  const channelId = activeConfig.commandChannelId;
+
+  switch (command) {
+    case 'status': {
+      const uptimeMs = Date.now() - startTime;
+      const uptimeMin = Math.floor(uptimeMs / 60000);
+      const activeCount = getActiveChannels().length;
+      const watchCount = watchedSessions.size;
+      await sendMessage(channelId, `Crispy is alive. Uptime: ${uptimeMin}m. Sessions: ${activeCount} active. Watching: ${watchCount}.`);
+      break;
+    }
+
+    case 'sessions': {
+      const allSessions = listAllSessions();
+      const recent = allSessions
+        .filter((s) => s.sessionKind !== 'system')
+        .slice(0, 10);
+
+      if (recent.length === 0) {
+        await sendMessage(channelId, 'No sessions found.');
+        break;
+      }
+
+      const lines: string[] = [];
+      let totalLen = 30; // header length estimate
+      for (const s of recent) {
+        const prefix = s.sessionId.slice(0, 8);
+        const title = (s.title ?? s.label ?? '(untitled)').slice(0, 60);
+        const ago = formatRelativeTime(s.modifiedAt);
+        const watching = watchedSessions.has(s.sessionId) ? ' \u{1F441}' : '';
+        const line = `\`${prefix}\` **${s.vendor}** — ${title} (${ago})${watching}`;
+        if (totalLen + line.length + 1 > 1900) break; // leave headroom
+        lines.push(line);
+        totalLen += line.length + 1;
+      }
+      await sendMessage(channelId, `**Recent sessions (${lines.length}):**\n${lines.join('\n')}`);
+      break;
+    }
+
+    case 'watch': {
+      await handleWatch(args);
+      break;
+    }
+
+    case 'unwatch': {
+      await handleUnwatch(args);
+      break;
+    }
+
+    default:
+      await sendMessage(channelId, `Unknown command \`!${command}\`. Available: \`!status\`, \`!sessions\`, \`!watch <id>\`, \`!unwatch <id>\``);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Watch / Unwatch
+// ---------------------------------------------------------------------------
+
+async function handleWatch(args: string[]): Promise<void> {
+  if (!activeConfig) return;
+  const channelId = activeConfig.commandChannelId;
+
+  if (args.length === 0) {
+    await sendMessage(channelId, 'Usage: `!watch <session-id-prefix>`');
+    return;
+  }
+
+  const prefix = args[0];
+
+  // Resolve the session ID prefix
+  let resolvedId: string;
+  try {
+    resolvedId = resolveSessionPrefix(prefix);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await sendMessage(channelId, `Failed to resolve session: ${msg}`);
+    return;
+  }
+
+  // Check if already watching
+  if (watchedSessions.has(resolvedId)) {
+    const state = watchedSessions.get(resolvedId)!;
+    await sendMessage(channelId, `Already watching session \`${resolvedId.slice(0, 8)}\` in <#${state.discordChannelId}>`);
+    return;
+  }
+
+  // Create a thread in the command channel for the session feed.
+  // Post an anchor message first, then create a thread on it.
+  const threadName = `session-${resolvedId.slice(0, 8)}`;
+  let discordChannel: { id: string; name: string };
+  try {
+    const anchor = await sendMessage(channelId, `\u{1F4E1} Watching session \`${resolvedId.slice(0, 8)}\`…`);
+    discordChannel = await createThread(channelId, anchor.id, threadName);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await sendMessage(channelId, `Failed to create thread: ${msg}`);
+    return;
+  }
+
+  // Build buffer and projection for this session
+  const discordChannelId = discordChannel.id;
+  const buffer = createBuffer();
+  const projection = createProjection(discordChannelId);
+
+  // Create the status section as the first section
+  appendSection(buffer, 'status', '\u{23F3} Connecting\u{2026}');
+
+  // Build the subscriber that renders session events into the buffer
+  const subscriber = buildWatchSubscriber(resolvedId, buffer);
+
+  // Subscribe to the session — this creates a channel if needed, loads
+  // history, and immediately sends a catchup message to our subscriber.
+  let sessionChannel: SessionChannel;
+  try {
+    sessionChannel = await subscribeSession(resolvedId, subscriber);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Archive the thread we just created
+    archiveThread(discordChannelId).catch(() => {});
+    await sendMessage(channelId, `Failed to subscribe to session: ${msg}`);
+    return;
+  }
+
+  // Store watch state
+  const state: WatchState = {
+    sessionId: resolvedId,
+    discordChannelId,
+    subscriber,
+    channel: sessionChannel,
+    buffer,
+    projection,
+    turnCounter: 0,
+  };
+  watchedSessions.set(resolvedId, state);
+  channelToSession.set(discordChannelId, resolvedId);
+
+  log({ source: SOURCE, level: 'info', summary: `watching session ${resolvedId.slice(0, 12)}… in thread ${threadName}` });
+}
+
+async function handleUnwatch(args: string[]): Promise<void> {
+  if (!activeConfig) return;
+  const channelId = activeConfig.commandChannelId;
+
+  if (args.length === 0) {
+    await sendMessage(channelId, 'Usage: `!unwatch <session-id-prefix>`');
+    return;
+  }
+
+  const prefix = args[0];
+
+  // Find the watched session matching this prefix
+  let matchedId: string | null = null;
+  for (const sessionId of watchedSessions.keys()) {
+    if (sessionId.startsWith(prefix)) {
+      matchedId = sessionId;
+      break;
+    }
+  }
+
+  if (!matchedId) {
+    await sendMessage(channelId, `No watched session matching prefix \`${prefix}\``);
+    return;
+  }
+
+  const state = watchedSessions.get(matchedId)!;
+
+  // Unsubscribe from the session channel
+  try {
+    unsubscribe(state.channel, state.subscriber);
+  } catch { /* best-effort */ }
+
+  // Archive the thread (preserves history, hides from channel list)
+  try {
+    await archiveThread(state.discordChannelId);
+  } catch (err) {
+    log({ source: SOURCE, level: 'warn', summary: `failed to archive thread for unwatch`, data: err });
+  }
+
+  // Clean up state
+  clearBuffer(state.buffer);
+  clearProjection(state.projection);
+  channelToSession.delete(state.discordChannelId);
+  watchedSessions.delete(matchedId);
+
+  log({ source: SOURCE, level: 'info', summary: `unwatched session ${matchedId.slice(0, 12)}…` });
+  await sendMessage(channelId, `Unwatched session \`${matchedId.slice(0, 8)}\``);
+}
+
+// ---------------------------------------------------------------------------
+// Session Event Subscriber
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a Subscriber that renders session events into a MessageBuffer.
+ *
+ * The send() method is synchronous (called by the session channel's broadcast).
+ * No Discord API calls happen here — the heartbeat drains dirty sections.
+ */
+function buildWatchSubscriber(sessionId: string, buffer: MessageBuffer): Subscriber {
+  return {
+    id: `message-view-watch-${sessionId.slice(0, 12)}`,
+    send(event: SubscriberMessage): void {
+      try {
+        // Look up WatchState to get the turn counter
+        const state = watchedSessions.get(sessionId);
+        handleWatchEvent(buffer, event, state);
+      } catch (err) {
+        log({ source: SOURCE, level: 'error', summary: `watch subscriber error for ${sessionId.slice(0, 12)}…`, data: err });
+      }
+    },
+  };
+}
+
+/**
+ * Route a session event into the buffer. No Discord API calls —
+ * the heartbeat syncs dirty sections via the projection layer.
+ */
+function handleWatchEvent(buffer: MessageBuffer, event: SubscriberMessage, state: WatchState | undefined): void {
+  switch (event.type) {
+    case 'catchup': {
+      // Render all historical entries into buffer sections
+      for (const entry of event.entries) {
+        renderEntryToBuffer(buffer, entry, state);
+      }
+      // Update the status section with current state
+      const statusSection = getOrCreateSection(buffer, 'status', '');
+      if (event.state === 'streaming' || event.state === 'active') {
+        updateSection(statusSection, '\u{23F3} Active');
+      } else if (event.state === 'idle') {
+        updateSection(statusSection, '\u{2705} Idle');
+      } else if (event.state === 'awaiting_approval' && event.pendingApprovals.length > 0) {
+        const tools = event.pendingApprovals.map((a) => a.toolName).join(', ');
+        updateSection(statusSection, `\u{26A0}\u{FE0F} Awaiting approval: ${tools}`);
+      }
+      break;
+    }
+
+    case 'entry': {
+      renderEntryToBuffer(buffer, event.entry, state);
+      break;
+    }
+
+    case 'event': {
+      const evt = event.event;
+      if (evt.type === 'status') {
+        const statusSection = getOrCreateSection(buffer, 'status', '');
+        switch (evt.status) {
+          case 'active':
+            updateSection(statusSection, '\u{23F3} Active');
+            break;
+          case 'idle':
+            updateSection(statusSection, '\u{2705} Idle');
+            break;
+          case 'awaiting_approval':
+            updateSection(statusSection, `\u{26A0}\u{FE0F} Awaiting approval: ${evt.toolName}`);
+            break;
+          case 'background':
+            updateSection(statusSection, '\u{1F504} Background');
+            break;
+        }
+      }
+      // Other event types (notification) — ignore silently
+      break;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Buffer Rendering
+// ---------------------------------------------------------------------------
+
+/**
+ * Render a transcript entry into the buffer. Appends to the current section
+ * or creates a new one at logical boundaries / size limits.
+ */
+function renderEntryToBuffer(buffer: MessageBuffer, entry: TranscriptEntry, state: WatchState | undefined): void {
+  const rendered = renderEntry(entry);
+  if (!rendered) return;
+
+  // User messages always start a new section
+  if (entry.type === 'user') {
+    const turnId = nextTurnId(state);
+    appendSection(buffer, turnId, rendered);
+    return;
+  }
+
+  // Assistant entries: append to current section or create new one
+  const last = getLastSection(buffer);
+
+  // Create a new section if:
+  // - No existing content section (only status)
+  // - Current section is the status section
+  // - Adding would exceed soft limit
+  if (!last || last.id === 'status' || (last.content.length + rendered.length + 1) > SECTION_SOFT_LIMIT) {
+    const turnId = nextTurnId(state);
+    appendSection(buffer, turnId, rendered);
+    return;
+  }
+
+  // Append to existing section
+  const newContent = last.content ? `${last.content}\n${rendered}` : rendered;
+  updateSection(last, newContent);
+}
+
+/** Generate a monotonically increasing turn section ID. */
+function nextTurnId(state: WatchState | undefined): string {
+  if (state) {
+    state.turnCounter++;
+    return `turn-${state.turnCounter}`;
+  }
+  // Fallback for catchup before WatchState is registered
+  return `turn-${Date.now()}`;
+}
+
+// ---------------------------------------------------------------------------
+// Entry Rendering
+// ---------------------------------------------------------------------------
+
+/**
+ * Render a TranscriptEntry as a simple markdown string for Discord.
+ * Returns null if the entry has no renderable content.
+ */
+function renderEntry(entry: TranscriptEntry): string | null {
+  const content = entry.message?.content;
+  if (!content) return null;
+
+  // Determine role from the entry type
+  if (entry.type === 'user') {
+    const text = extractText(content);
+    if (!text) return null;
+    return truncate(`**User:** ${text}`, DISCORD_MAX_LENGTH);
+  }
+
+  if (entry.type === 'assistant') {
+    return renderAssistantEntry(content);
+  }
+
+  // result, system, etc. — skip
+  return null;
+}
+
+/**
+ * Render assistant content blocks. May produce multiple lines for tool_use,
+ * but we return a single concatenated string.
+ */
+function renderAssistantEntry(content: string | ContentBlock[]): string | null {
+  if (typeof content === 'string') {
+    if (!content) return null;
+    return truncate(`**Assistant:** ${content.slice(0, 500)}`, DISCORD_MAX_LENGTH);
+  }
+
+  const parts: string[] = [];
+
+  for (const block of content) {
+    switch (block.type) {
+      case 'text': {
+        if (block.text) {
+          parts.push(`**Assistant:** ${block.text.slice(0, 500)}`);
+        }
+        break;
+      }
+      case 'tool_use': {
+        const inputStr = JSON.stringify(block.input).slice(0, 100);
+        parts.push(`**\u{1F527} ${block.name}** — ${inputStr}`);
+        break;
+      }
+      case 'tool_result': {
+        const resultText = typeof block.content === 'string'
+          ? block.content.slice(0, 200)
+          : extractText(block.content).slice(0, 200);
+        parts.push(`**\u{1F4CB} Result** — ${resultText}`);
+        break;
+      }
+      // thinking, image — skip
+    }
+  }
+
+  if (parts.length === 0) return null;
+  return truncate(parts.join('\n'), DISCORD_MAX_LENGTH);
+}
+
+/**
+ * Extract plain text from content (string or ContentBlock[]).
+ */
+function extractText(content: string | ContentBlock[]): string {
+  if (typeof content === 'string') return content.slice(0, 500);
+  const texts: string[] = [];
+  for (const block of content) {
+    if (block.type === 'text' && block.text) {
+      texts.push(block.text);
+    }
+  }
+  return texts.join(' ').slice(0, 500);
+}
+
+/**
+ * Truncate a string to the given max length.
+ */
+function truncate(str: string, max: number): string {
+  if (str.length <= max) return str;
+  return str.slice(0, max - 3) + '...';
+}
+
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
+
+function formatRelativeTime(date: Date): string {
+  const diffMs = Date.now() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDays = Math.floor(diffHr / 24);
+  return `${diffDays}d ago`;
+}

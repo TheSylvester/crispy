@@ -14,6 +14,7 @@ import { findClaudeBinary } from './core/find-claude-binary.js';
 import { registerAllAdapters } from './host/adapter-registry.js';
 import { createAgentDispatch } from './host/agent-dispatch.js';
 import { initRosieBot, shutdownRosieBot } from './core/rosie/index.js';
+import { initMessageView, shutdownMessageView } from './core/message-view/index.js';
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { initRecallIngest, shutdownRecallIngest } from './core/recall/ingest-hook.js';
@@ -92,7 +93,14 @@ export function activate(context: vscode.ExtensionContext): void {
   const providerBase = pathToClaudeCodeExecutable
     ? { cwd, pathToClaudeCodeExecutable }
     : { cwd };
-  initSettings(providerBase).catch((err) => console.error('[crispy] Failed to load settings:', err));
+  initSettings(providerBase)
+    .then(() => {
+      // Message view reads settings on init — must come after settings are loaded
+      const mvDone = phase('initMessageView');
+      initMessageView();
+      mvDone();
+    })
+    .catch((err) => console.error('[crispy] Failed to load settings:', err));
   startWatchingSettings();
 
   // Wire up lifecycle hooks:
@@ -111,6 +119,7 @@ export function activate(context: vscode.ExtensionContext): void {
   done();
   context.subscriptions.push({
     dispose: () => {
+      shutdownMessageView();
       shutdownRosieBot();
       shutdownRecallIngest();
       stopEmbeddingBackfill();
