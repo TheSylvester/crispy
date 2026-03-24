@@ -14,14 +14,15 @@ import { readFileSync } from 'node:fs';
 import { log } from '../log.js';
 import { onSettingsChanged } from '../settings/index.js';
 import { settingsPath } from '../paths.js';
-import { listAllSessions, resolveSessionPrefix, subscribeSession } from '../session-manager.js';
+import { listAllSessions, resolveSessionPrefix, subscribeSession, interruptSession, getRegisteredVendors, sendTurn } from '../session-manager.js';
 import { subscribeSessionList, unsubscribeSessionList } from '../session-list-manager.js';
 import type { SessionListSubscriber } from '../session-list-manager.js';
 import type { SessionListEvent } from '../session-list-events.js';
 import { getActiveChannels, unsubscribe, resolveApproval } from '../session-channel.js';
 import type { Subscriber, SubscriberMessage, SessionChannel } from '../session-channel.js';
-import type { TranscriptEntry, ContentBlock } from '../transcript.js';
+import type { TranscriptEntry, ContentBlock, Vendor } from '../transcript.js';
 import type { ApprovalOption, PendingApprovalInfo } from '../channel-events.js';
+import type { TurnIntent } from '../agent-adapter.js';
 import {
   initTransport,
   shutdownTransport,
@@ -304,8 +305,40 @@ async function handleCommand(command: string, args: string[]): Promise<void> {
       break;
     }
 
+    case 'stop': {
+      if (args.length === 0) {
+        await sendMessage(channelId, 'Usage: `!stop <session-id-prefix>`');
+        break;
+      }
+      try {
+        const resolvedId = resolveSessionPrefix(args[0]);
+        await interruptSession(resolvedId);
+        await sendMessage(channelId, `Interrupted session \`${resolvedId.slice(0, 8)}\``);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await sendMessage(channelId, `Failed to stop session: ${msg}`);
+      }
+      break;
+    }
+
+    case 'new': {
+      if (args.length < 2) {
+        await sendMessage(channelId, 'Usage: `!new <vendor> <prompt>`');
+        break;
+      }
+      const vendor = args[0];
+      const prompt = args.slice(1).join(' ');
+      try {
+        await handleNew(vendor, prompt);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await sendMessage(channelId, `Failed to create session: ${msg}`);
+      }
+      break;
+    }
+
     default:
-      await sendMessage(channelId, `Unknown command \`!${command}\`. Available: \`!status\`, \`!sessions\`, \`!watch <id>\`, \`!unwatch <id>\``);
+      await sendMessage(channelId, `Unknown command \`!${command}\`. Available: \`!status\`, \`!sessions\`, \`!watch <id>\`, \`!unwatch <id>\`, \`!stop <id>\`, \`!new <vendor> <prompt>\``);
   }
 }
 
@@ -459,6 +492,50 @@ async function handleUnwatch(args: string[]): Promise<void> {
 
   log({ source: SOURCE, level: 'info', summary: `unwatched session ${matchedId.slice(0, 12)}…` });
   await sendMessage(channelId, `Unwatched session \`${matchedId.slice(0, 8)}\``);
+}
+
+// ---------------------------------------------------------------------------
+// New Session
+// ---------------------------------------------------------------------------
+
+async function handleNew(vendor: string, prompt: string): Promise<void> {
+  if (!activeConfig) return;
+  const channelId = activeConfig.commandChannelId;
+
+  // Validate vendor
+  const registeredVendors = getRegisteredVendors();
+  if (!registeredVendors.has(vendor)) {
+    await sendMessage(channelId, `Unknown vendor \`${vendor}\`. Available: ${[...registeredVendors].join(', ')}`);
+    return;
+  }
+
+  // Build the TurnIntent for a new session
+  const cwd = process.cwd();
+  const intent: TurnIntent = {
+    target: { kind: 'new', vendor: vendor as Vendor, cwd },
+    content: [{ type: 'text', text: prompt }],
+    clientMessageId: crypto.randomUUID(),
+    settings: {},
+  };
+
+  // Temporary subscriber — sendTurn requires one for the pending channel
+  const tempSubscriber: Subscriber = {
+    id: `message-view-new-${Date.now()}`,
+    send() { /* buffer/projection handles rendering via watchSession */ },
+  };
+
+  await sendMessage(channelId, `Creating ${vendor} session\u{2026}`);
+
+  const result = await sendTurn(intent, tempSubscriber);
+
+  // For new sessions, wait for the real session ID via rekeyPromise
+  const realId = result.rekeyPromise
+    ? await result.rekeyPromise
+    : result.sessionId;
+
+  // Auto-watch the new session
+  await watchSession(realId, true);
+  await sendMessage(channelId, `Created and watching session \`${realId.slice(0, 8)}\``);
 }
 
 // ---------------------------------------------------------------------------
