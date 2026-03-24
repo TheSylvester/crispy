@@ -88,5 +88,6 @@ FULL_PROMPT="${PREFIX}${PROMPT}"
 # Build JSON params using jq for safe escaping
 PARAMS=$(jq -n --arg prompt "$FULL_PROMPT" '{prompt: $prompt}')
 
-# Call rotateSession RPC
-$DISPATCH_BIN rpc rotateSession "$PARAMS"
+# Call rotateSession RPC — --subscribe-first ensures this connection holds
+# a subscription before rotating (required for correct pending→real rekey).
+$DISPATCH_BIN rpc --subscribe-first rotateSession "$PARAMS"

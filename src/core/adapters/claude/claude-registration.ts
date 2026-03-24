@@ -101,6 +101,7 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           ...getBase(), cwd: spec.cwd,
           ...(spec.model && { model: spec.model }),
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+          ...(spec.allowDangerouslySkipPermissions && { allowDangerouslySkipPermissions: true }),
           ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
           ...(spec.skipPersistSession && { skipPersistSession: true }),
           ...(spec.env && { env: spec.env }),

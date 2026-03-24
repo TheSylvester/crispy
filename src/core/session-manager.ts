@@ -702,6 +702,10 @@ export async function rotateSession(
   const channel = requireChannel(currentSessionId);
   const previousSessionId = channel.adapter?.sessionId ?? currentSessionId;
 
+  // Capture current adapter settings before rotation destroys the adapter.
+  // These become defaults for the new session — caller-provided values take precedence.
+  const inheritedSettings = channel.adapter?.settings;
+
   // Close old adapter, flush entries, reset state
   await rotateAdapter(channel);
 
@@ -716,6 +720,18 @@ export async function rotateSession(
   rekeyChannel(currentSessionId, pendingId);
   sessions.delete(currentSessionId);
   sessions.set(pendingId, channel);
+
+  // Inherit settings from previous adapter (caller-provided values win)
+  if (inheritedSettings && spec.mode === 'fresh') {
+    type FreshSpec = Extract<SessionOpenSpec, { mode: 'fresh' }>;
+    spec = {
+      ...spec,
+      model: spec.model ?? inheritedSettings.model,
+      permissionMode: spec.permissionMode ?? inheritedSettings.permissionMode as FreshSpec['permissionMode'],
+      allowDangerouslySkipPermissions: spec.allowDangerouslySkipPermissions ?? inheritedSettings.allowDangerouslySkipPermissions,
+      extraArgs: spec.extraArgs ?? inheritedSettings.extraArgs,
+    };
+  }
 
   // Inject env (CRISPY_SESSION_ID + CRISPY_SOCK)
   spec = { ...spec, env: buildSessionEnv(pendingId, spec.env) };

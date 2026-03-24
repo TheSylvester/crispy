@@ -166,6 +166,7 @@ export function makeFactory(
           env: { ...providerEnv, ...(spec.env ?? {}) },
           ...(spec.model && { model: spec.model }),
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
+          ...(spec.allowDangerouslySkipPermissions && { allowDangerouslySkipPermissions: true }),
           ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
           ...(spec.skipPersistSession && { skipPersistSession: true }),
           ...(spec.systemPrompt && {

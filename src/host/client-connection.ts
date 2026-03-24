@@ -543,6 +543,13 @@ export function createClientConnection(
         if (!sessionId) throw new Error('Missing sessionId');
         if (!prompt) throw new Error('Missing prompt');
 
+        // Caller must hold a subscription to the session being rotated.
+        // This ensures the rekey (pending → real) always updates the right
+        // subscriber — prevents cross-client stale-subscriber bugs.
+        if (!subscriptions.has(sessionId)) {
+          throw new Error(`Cannot rotate session "${sessionId}": caller must be subscribed first`);
+        }
+
         // Resolve vendor from the current session
         const sessionInfo = findSession(sessionId);
         const vendor = (params.vendor as Vendor) ?? sessionInfo?.vendor;
