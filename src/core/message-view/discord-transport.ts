@@ -562,6 +562,11 @@ function scheduleGatewayReconnect(): void {
 // Convenience wrappers — REST
 // ---------------------------------------------------------------------------
 
+/** Trigger the "Bot is typing..." indicator for up to 10 seconds. Fire-and-forget. */
+export async function triggerTyping(channelId: string): Promise<void> {
+  await discordFetch('POST', `/channels/${channelId}/typing`);
+}
+
 export async function sendMessage(channelId: string, content: string): Promise<{ id: string }> {
   return discordFetch('POST', `/channels/${channelId}/messages`, { content }) as Promise<{ id: string }>;
 }

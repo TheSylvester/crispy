@@ -41,6 +41,7 @@ import {
   getBotUserId,
   getGuildChannels,
   discordFetch,
+  triggerTyping,
 } from './discord-transport.js';
 import type { GatewayEventHandler } from './discord-transport.js';
 import type { DiscordProviderConfig, MessageProviderConfig } from './config.js';
@@ -96,6 +97,10 @@ interface WatchState {
   toolLines: Map<string, ToolLineEntry>;
   toolLineOrder: string[];
   pendingInteractions: Map<string, PendingInteraction>;
+  /** Force next assistant text into a new section (set on user turn boundary). */
+  newTurn: boolean;
+  /** Current turn's tools section ID (incremented per turn for ordering). */
+  toolsSectionId: string;
   /** Set on sub-agent posts — the parent session ID that spawned this. */
   parentSessionId?: string;
 }
@@ -343,6 +348,7 @@ async function handleGatewayMessage(
   if (!message.guild_id) {
     const text = message.content.trim();
     if (text) {
+      triggerTyping(channelId).catch(() => {});
       await routeToConcierge(channelId, text);
     }
     return;
@@ -352,6 +358,7 @@ async function handleGatewayMessage(
   if (message.mentions?.some(m => m.id === botId)) {
     const content = message.content.replace(/<@!?\d+>\s*/g, '').trim();
     if (content) {
+      triggerTyping(channelId).catch(() => {});
       await routeToConcierge(channelId, content);
     }
     return;
@@ -527,6 +534,8 @@ async function handlePostMessage(
   if (text.length < MIN_PROMPT_LENGTH) return;
   if (!/[a-zA-Z0-9]/.test(text)) return;
 
+  triggerTyping(postId).catch(() => {});
+
   const intent: TurnIntent = {
     target: { kind: 'existing', sessionId },
     content: [{ type: 'text', text }],
@@ -567,6 +576,8 @@ function registerWatchState(
     toolLines: new Map(),
     toolLineOrder: [],
     pendingInteractions: new Map(),
+    newTurn: false,
+    toolsSectionId: 'tools-0',
   };
   watchedSessions.set(sessionId, state);
   channelToSession.set(discordChannelId, sessionId);
@@ -784,10 +795,12 @@ function renderEntryToBuffer(buffer: MessageBuffer, entry: TranscriptEntry, stat
       handleSubagentResult(state, entry.toolUseResult, content);
     }
 
-    // Turn boundary — reset tool tracking for next assistant turn
+    // Turn boundary — reset tool tracking and force new sections for next turn
     if (state) {
       state.toolLines = new Map();
       state.toolLineOrder = [];
+      state.newTurn = true;
+      state.toolsSectionId = `tools-${state.turnCounter + 1}`;
     }
     return;
   }
@@ -846,7 +859,7 @@ function rebuildToolsSection(buffer: MessageBuffer, state: WatchState): void {
     if (entry) lines.push(entry.line);
   }
   const toolContent = lines.join('\n');
-  const toolSection = getOrCreateSection(buffer, 'tools', '');
+  const toolSection = getOrCreateSection(buffer, state.toolsSectionId, '');
   updateSection(toolSection, truncate(toolContent, SECTION_SOFT_LIMIT));
 }
 
@@ -854,8 +867,12 @@ function appendConversationText(buffer: MessageBuffer, text: string, state: Watc
   const rendered = truncate(text.slice(0, 1500), SECTION_SOFT_LIMIT);
   const last = getLastSection(buffer);
 
+  // Force a new section after a user turn boundary so messages stay ordered
+  const forceNew = state?.newTurn ?? false;
+  if (forceNew && state) state.newTurn = false;
+
   const isNonConversation = !last || last.id === 'status' || last.id === 'tools';
-  if (isNonConversation || (last.content.length + rendered.length + 1) > SECTION_SOFT_LIMIT) {
+  if (forceNew || isNonConversation || (last.content.length + rendered.length + 1) > SECTION_SOFT_LIMIT) {
     const turnId = nextTurnId(state);
     appendSection(buffer, turnId, rendered);
     return;
