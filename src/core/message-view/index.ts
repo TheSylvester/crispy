@@ -114,6 +114,8 @@ interface WatchState {
   sectionCounter: number;
   /** Force next content into a new section (set on user turn boundary). */
   newTurn: boolean;
+  /** When true, catchup builds state but skips Discord flush (old messages already exist). */
+  reconnecting: boolean;
   /** Set on sub-agent posts — the parent session ID that spawned this. */
   parentSessionId?: string;
 }
@@ -568,9 +570,12 @@ async function watchSession(sessionId: string, opts: WatchSessionOpts): Promise<
 
   // Pre-register so catchup (delivered synchronously by subscribe) can find the state
   const state = registerWatchState(sessionId, discordChannelId, subscriber, null, buffer, projection);
+  if (opts.existingPostId) state.reconnecting = true;
 
   try {
     state.channel = await subscribeSession(sessionId, subscriber);
+    // After subscribe completes, clear reconnecting so future events project normally
+    state.reconnecting = false;
   } catch (err) {
     // Roll back pre-registration
     watchedSessions.delete(sessionId);
@@ -642,6 +647,7 @@ function registerWatchState(
     toolIndex: new Map(),
     sectionCounter: 0,
     newTurn: false,
+    reconnecting: false,
   };
   watchedSessions.set(sessionId, state);
   channelToSession.set(discordChannelId, sessionId);
@@ -719,8 +725,16 @@ function handleWatchEvent(buffer: MessageBuffer, event: SubscriberMessage, state
           }
         }
       }
-      // Flush all dirty sections immediately — don't wait for the 3s heartbeat
-      if (state) {
+      // On reconnect: old messages already exist in Discord — just clear dirty flags
+      // and only project the status section. On fresh watch: flush everything.
+      if (state?.reconnecting) {
+        for (const section of buffer.sections) {
+          if (section.id !== 'status') section.dirty = false;
+        }
+        // Only sync the status section so it shows current state
+        void syncOneDirtySection(state.projection, state.buffer).catch(() => {});
+        log({ source: SOURCE, level: 'info', summary: `reconnect catchup: built state from ${event.entries.length} entries, skipped flush` });
+      } else if (state) {
         void flushAllDirtySections(state).catch((err) => {
           log({ source: SOURCE, level: 'error', summary: 'catchup flush failed', data: err });
         });
