@@ -677,9 +677,24 @@ function findWatchStateBySubscriber(sub: Subscriber): WatchState | undefined {
   return undefined;
 }
 
+/**
+ * Flush ALL dirty sections to Discord immediately (used after catchup).
+ * Sections sync sequentially to preserve message ordering in the post.
+ */
+async function flushAllDirtySections(state: WatchState): Promise<void> {
+  let synced = 0;
+  while (await syncOneDirtySection(state.projection, state.buffer)) {
+    synced++;
+  }
+  if (synced > 0) {
+    log({ source: SOURCE, level: 'info', summary: `flushed ${synced} sections for ${state.sessionId.slice(0, 8)}` });
+  }
+}
+
 function handleWatchEvent(buffer: MessageBuffer, event: SubscriberMessage, state: WatchState | undefined): void {
   switch (event.type) {
     case 'catchup': {
+      // Render ALL entries into the buffer first (synchronous, no API calls)
       for (const entry of event.entries) {
         renderEntryToBuffer(buffer, entry, state);
       }
@@ -703,6 +718,12 @@ function handleWatchEvent(buffer: MessageBuffer, event: SubscriberMessage, state
             }
           }
         }
+      }
+      // Flush all dirty sections immediately — don't wait for the 3s heartbeat
+      if (state) {
+        void flushAllDirtySections(state).catch((err) => {
+          log({ source: SOURCE, level: 'error', summary: 'catchup flush failed', data: err });
+        });
       }
       break;
     }

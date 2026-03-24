@@ -330,12 +330,12 @@ async function executeCommand(dmChannelId: string, jsonStr: string, prefixText: 
     result = `Error: ${err instanceof Error ? err.message : String(err)}`;
   }
 
-  // Send the prefix text + result to the DM, and also feed result back to session
-  if (prefixText) {
-    await sendMessage(dmChannelId, prefixText.slice(0, 4000)).catch(() => {});
-  }
+  // Send prefix text + result directly to the DM so the user gets immediate feedback
+  const dmText = prefixText ? `${prefixText}\n\n${result}` : result;
+  await sendMessage(dmChannelId, dmText.slice(0, 4000)).catch(() => {});
 
-  await sendResultToSession(dmChannelId, result);
+  // Also feed result back to the concierge session for context continuity
+  void sendResultToSession(dmChannelId, result).catch(() => {});
 }
 
 async function sendResultToSession(dmChannelId: string, result: string): Promise<void> {
