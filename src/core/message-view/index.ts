@@ -96,6 +96,8 @@ interface ContentFragment {
 interface ContentSectionState {
   sectionId: string;
   fragments: ContentFragment[];
+  /** True when fragments changed since last render to buffer. */
+  needsRender: boolean;
 }
 
 interface WatchState {
@@ -243,10 +245,13 @@ function startUp(config: DiscordProviderConfig): void {
     log({ source: SOURCE, level: 'info', summary: 'auto-watch enabled — subscribing to session list' });
   }
 
-  // Projection heartbeat — sync dirty sections + concierge timeout check
+  // Projection heartbeat — render pending fragments, then sync dirty sections
   heartbeatTimer = setInterval(() => {
     checkConciergeTimeout();
     for (const state of watchedSessions.values()) {
+      // Stage 1: render any content sections with new fragments into the buffer
+      renderPendingContentSections(state);
+      // Stage 2: sync one dirty buffer section to Discord
       syncOneDirtySection(state.projection, state.buffer).catch((err) => {
         log({ source: SOURCE, level: 'error', summary: `projection sync error for ${state.sessionId.slice(0, 8)}`, data: err });
       });
@@ -735,6 +740,9 @@ function handleWatchEvent(buffer: MessageBuffer, event: SubscriberMessage, state
           }
         }
       }
+      // Render all content sections once (catchup appended fragments without rendering)
+      if (state) renderPendingContentSections(state);
+
       // On reconnect: old messages already exist in Discord — just clear dirty flags
       // and only project the status section. On fresh watch: flush everything.
       if (state?.reconnecting) {
@@ -902,6 +910,19 @@ function renderContentSection(cs: ContentSectionState): string {
 function syncContentToBuffer(cs: ContentSectionState, buffer: MessageBuffer): void {
   const section = getOrCreateSection(buffer, cs.sectionId, '');
   updateSection(section, truncateAtNewline(renderContentSection(cs), SECTION_SOFT_LIMIT));
+  cs.needsRender = false;
+}
+
+/**
+ * Render all content sections that have pending fragment changes into the buffer.
+ * Called once per heartbeat tick — decouples fragment appends from Discord sync.
+ */
+function renderPendingContentSections(state: WatchState): void {
+  for (const cs of state.contentSections) {
+    if (cs.needsRender) {
+      syncContentToBuffer(cs, state.buffer);
+    }
+  }
 }
 
 /**
@@ -928,26 +949,26 @@ function getCurrentContentSection(
   // Create new content section
   state.sectionCounter++;
   const sectionId = `content-${state.sectionCounter}`;
-  const cs: ContentSectionState = { sectionId, fragments: [] };
+  const cs: ContentSectionState = { sectionId, fragments: [], needsRender: false };
   state.contentSections.push(cs);
   appendSection(buffer, sectionId, '');
   return cs;
 }
 
-/** Append a text fragment to the running content. */
+/** Append a text fragment to the running content (no render — deferred to heartbeat). */
 function appendTextFragment(state: WatchState, buffer: MessageBuffer, text: string): void {
   const rendered = text.slice(0, 3000); // truncate huge single blocks
   const cs = getCurrentContentSection(state, buffer, rendered.length);
   cs.fragments.push({ kind: 'text', text: rendered });
-  syncContentToBuffer(cs, buffer);
+  cs.needsRender = true;
 }
 
-/** Append a tool_use fragment to the running content. */
+/** Append a tool_use fragment to the running content (no render — deferred to heartbeat). */
 function appendToolFragment(state: WatchState, buffer: MessageBuffer, toolId: string, line: string): void {
   const cs = getCurrentContentSection(state, buffer, line.length);
   cs.fragments.push({ kind: 'tool', toolId, text: line });
   state.toolIndex.set(toolId, cs.sectionId);
-  syncContentToBuffer(cs, buffer);
+  cs.needsRender = true;
 }
 
 /**
@@ -966,7 +987,7 @@ function completeToolLine(state: WatchState, buffer: MessageBuffer, toolId: stri
 
   const status = isError ? '\u{2717}' : '\u{2713}';
   frag.text = frag.text.replace('\u{23F3}', status);
-  syncContentToBuffer(cs, buffer);
+  cs.needsRender = true;
 }
 
 function renderEntryToBuffer(buffer: MessageBuffer, entry: TranscriptEntry, state: WatchState | undefined): void {
