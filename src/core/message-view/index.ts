@@ -560,16 +560,21 @@ async function conciergeOpenSession(prefix: string): Promise<string> {
   if (!activeConfig || !forumChannelId) throw new Error('Forum channel not ready');
 
   const resolvedId = resolveSessionPrefix(prefix);
+  log({ source: SOURCE, level: 'info', summary: `concierge open: resolved "${prefix.slice(0, 12)}" → "${resolvedId.slice(0, 12)}"` });
 
   if (watchedSessions.has(resolvedId)) {
     const state = watchedSessions.get(resolvedId)!;
-    return `https://discord.com/channels/${activeConfig.guildId}/${state.discordChannelId}`;
+    const link = `https://discord.com/channels/${activeConfig.guildId}/${state.discordChannelId}`;
+    log({ source: SOURCE, level: 'info', summary: `concierge open: already watched, returning ${link}` });
+    return link;
   }
 
   await watchSession(resolvedId, { auto: false });
   const state = watchedSessions.get(resolvedId);
   if (!state) throw new Error('Failed to watch session');
-  return `https://discord.com/channels/${activeConfig.guildId}/${state.discordChannelId}`;
+  const link = `https://discord.com/channels/${activeConfig.guildId}/${state.discordChannelId}`;
+  log({ source: SOURCE, level: 'info', summary: `concierge open: new watch created, post ${state.discordChannelId}` });
+  return link;
 }
 
 // ---------------------------------------------------------------------------
