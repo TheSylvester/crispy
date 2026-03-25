@@ -35,6 +35,7 @@ import {
   getGuildChannels,
   discordFetch,
   triggerTyping,
+  getActiveThreads,
 } from './discord-transport.js';
 import type { GatewayEventHandler } from './discord-transport.js';
 import type { DiscordProviderConfig, MessageProviderConfig } from './config.js';
@@ -259,6 +260,40 @@ async function initForumChannel(): Promise<void> {
 
   forumChannelId = await ensureForumChannel(activeConfig.guildId, botId, ownerUserId);
   log({ source: SOURCE, level: 'info', summary: `forum channel ready: ${forumChannelId}` });
+  await rejoinForumThreads(activeConfig.guildId, forumChannelId);
+}
+
+async function rejoinForumThreads(guildId: string, forumId: string): Promise<void> {
+  // Active (non-archived) threads — guild-level endpoint
+  const active = await getActiveThreads(guildId);
+  const activeForum = active.filter(t => t.parent_id === forumId);
+
+  // Archived threads — channel-level endpoint (tearDown archives all watched threads)
+  let archivedForum: Array<{ id: string }> = [];
+  try {
+    const archived = await discordFetch('GET', `/channels/${forumId}/threads/archived/public`) as {
+      threads?: Array<{ id: string; parent_id: string }>;
+    };
+    archivedForum = archived.threads ?? [];
+  } catch (err) {
+    log({ source: SOURCE, level: 'warn', summary: 'failed to fetch archived forum threads', data: err });
+  }
+
+  // Deduplicate by thread ID
+  const seen = new Set<string>();
+  const allThreads: Array<{ id: string }> = [];
+  for (const t of [...activeForum, ...archivedForum]) {
+    if (!seen.has(t.id)) { seen.add(t.id); allThreads.push(t); }
+  }
+  if (allThreads.length === 0) return;
+
+  const joinTasks = allThreads.map(t =>
+    discordFetch('PUT', `/channels/${t.id}/thread-members/@me`).catch((err) => {
+      log({ source: SOURCE, level: 'debug', summary: `failed to join thread ${t.id}`, data: err });
+    })
+  );
+  await Promise.all(joinTasks);
+  log({ source: SOURCE, level: 'info', summary: `re-joined ${allThreads.length} forum thread${allThreads.length > 1 ? 's' : ''} (${activeForum.length} active, ${archivedForum.length} archived)` });
 }
 
 const FORUM_ALLOW_BITS = '76864'; // VIEW_CHANNEL + SEND_MESSAGES + READ_MESSAGE_HISTORY + MANAGE_MESSAGES + ADD_REACTIONS
@@ -451,7 +486,7 @@ async function createWatchedSession(
   const realId = result.rekeyPromise ? await result.rekeyPromise : result.sessionId;
   commandSessionIds.add(realId);
 
-  // Rename post to session-{prefix} so reconnectExistingPosts can find it
+  // Rename post to canonical session-{prefix} format
   const canonicalName = `session-${realId.slice(0, 8)}`;
   discordFetch('PATCH', `/channels/${discordChannelId}`, { name: canonicalName }).catch((err) => {
     log({ source: SOURCE, level: 'warn', summary: `failed to rename post to ${canonicalName}`, data: err });
@@ -660,6 +695,7 @@ async function syncSession(state: WatchState): Promise<void> {
 
   try {
   const chunks = renderSession(state.entries, state.toolResults, getStatusLine(state.status));
+  log({ source: SOURCE, level: 'info', summary: `sync ${state.sessionId.slice(0, 8)}: ${chunks.length} chunks from ${state.entries.length} entries (msgs=${state.messageIds.length}, status=${state.status})` });
 
   const maxLen = Math.max(chunks.length, state.currentChunks.length);
   for (let i = 0; i < maxLen; i++) {
@@ -693,6 +729,7 @@ async function syncSession(state: WatchState): Promise<void> {
   }
 
   state.currentChunks = chunks;
+  log({ source: SOURCE, level: 'info', summary: `sync ${state.sessionId.slice(0, 8)}: complete (${chunks.length} chunks, dirty=${state.dirty})` });
   } finally {
     state.syncing = false;
   }

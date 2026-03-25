@@ -167,14 +167,14 @@ describe('renderSession', () => {
     expect(chunks[0]).toContain('\u{2717}'); // cross mark
   });
 
-  it('skips user entries (no user text in output)', () => {
+  it('renders user entries with bold prefix', () => {
     const entries: TranscriptEntry[] = [
       { type: 'user', message: { content: 'Fix the tests please' } },
       makeAssistantEntry('Sure, I will fix them.'),
     ];
     const chunks = renderSession(entries, new Map());
     expect(chunks).toHaveLength(1);
-    expect(chunks[0]).not.toContain('Fix the tests please');
+    expect(chunks[0]).toContain('**User:** Fix the tests please');
     expect(chunks[0]).toContain('Sure, I will fix them.');
   });
 

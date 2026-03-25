@@ -87,10 +87,11 @@ export async function handleCommand(channelId: string, text: string, ctx: Comman
 // ---------------------------------------------------------------------------
 
 async function handleNew(channelId: string, args: string, ctx: CommandContext): Promise<void> {
-  let vendor: Vendor = 'claude';
-  let prompt = args;
-
   const registeredVendors = getRegisteredVendors();
+  let vendor: Vendor = registeredVendors.size === 1
+    ? [...registeredVendors][0]
+    : 'claude';
+  let prompt = args;
   const firstWord = args.split(/\s+/)[0]?.toLowerCase();
   if (firstWord && registeredVendors.has(firstWord)) {
     vendor = firstWord;

@@ -9,7 +9,7 @@
 
 import type { TranscriptEntry } from '../transcript.js';
 
-export const DISCORD_MAX_LENGTH = 4000;
+export const DISCORD_MAX_LENGTH = 2000;
 
 export type WatchStatus = 'connecting' | 'working' | 'idle' | 'background' | 'approval';
 
@@ -31,6 +31,11 @@ export function renderSession(
   if (statusLine) lines.push(statusLine);
 
   for (const entry of entries) {
+    if (entry.type === 'user') {
+      const userText = extractUserText(entry);
+      if (userText) lines.push(`\n**User:** ${userText}`);
+      continue;
+    }
     if (entry.type !== 'assistant') continue;
     const content = entry.message?.content;
     if (!content) continue;
@@ -93,6 +98,22 @@ export function getStatusLine(status: WatchStatus): string {
 export function truncate(str: string, max: number): string {
   if (str.length <= max) return str;
   return str.slice(0, max - 3) + '...';
+}
+
+// ---------------------------------------------------------------------------
+// User prompt extraction
+// ---------------------------------------------------------------------------
+
+function extractUserText(entry: TranscriptEntry): string {
+  const content = entry.message?.content;
+  if (!content) return '';
+  if (typeof content === 'string') return content.split('\n')[0].slice(0, 200);
+  for (const block of content) {
+    if (block.type === 'text' && block.text) {
+      return block.text.split('\n')[0].slice(0, 200);
+    }
+  }
+  return '';
 }
 
 // ---------------------------------------------------------------------------
