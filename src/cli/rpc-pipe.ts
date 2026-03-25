@@ -100,6 +100,12 @@ export async function runRpcPipe(argv: string[]): Promise<void> {
       params.sessionId = sessionId;
     }
 
+    // Auto-inject cwd for switchSession so the new session inherits the
+    // caller's working directory rather than the host process's cwd
+    if (method === 'switchSession' && !('cwd' in params)) {
+      params.cwd = process.cwd();
+    }
+
     // Subscribe to the session first if requested — ensures the caller
     // holds a subscription on this connection before the main RPC.
     // Required by switchSession which guards against cross-client rekey bugs.
