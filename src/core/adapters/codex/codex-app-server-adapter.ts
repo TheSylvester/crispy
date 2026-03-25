@@ -15,6 +15,8 @@
  * - Perform session discovery (codexDiscovery handles that)
  */
 
+import { existsSync } from 'node:fs';
+import { isAbsolute, relative, resolve } from 'node:path';
 import type {
   AgentAdapter,
   ChannelMessage,
@@ -46,10 +48,14 @@ import {
   mapThreadConfig,
   mapTokenUsage,
   mapMessageContent,
+  hasExplicitCodexSkillReference,
   mapTurnSettings,
+  type ResolvedCodexSkillReference,
 } from './codex-settings-mapping.js';
 import { codexDiscovery } from './codex-discovery.js';
+import type { SkillsListResponse } from './protocol/v2/SkillsListResponse.js';
 import type { ThreadItem } from './protocol/v2/ThreadItem.js';
+import type { UserInput } from './protocol/v2/UserInput.js';
 
 // ============================================================================
 // Types
@@ -102,9 +108,26 @@ export class CodexAgentAdapter implements AgentAdapter {
   private streamingEmitTimer: ReturnType<typeof setTimeout> | null = null;
   /** Minimum interval between streaming_content emissions (ms). */
   private static readonly STREAMING_EMIT_INTERVAL = 16; // ~60fps
-  private readonly spec: SessionOpenSpec & { cwd?: string; command?: string; args?: string[] };
+  private bundledSkillCache = new Map<string, ResolvedCodexSkillReference>();
+  private bundledSkillDiscoveryPromise: Promise<Map<string, ResolvedCodexSkillReference>> | null = null;
+  private bundledSkillDiscoveryLoaded = false;
+  private bundledSkillDiscoveryNeedsReload = true;
+  private bundledSkillDiscoveryGeneration = 0;
+  private readonly spec: SessionOpenSpec & {
+    cwd?: string;
+    command?: string;
+    args?: string[];
+    bundledSkillRoot?: string;
+    effectiveCwd?: string;
+  };
 
-  constructor(spec: SessionOpenSpec & { cwd?: string; command?: string; args?: string[] }) {
+  constructor(spec: SessionOpenSpec & {
+    cwd?: string;
+    command?: string;
+    args?: string[];
+    bundledSkillRoot?: string;
+    effectiveCwd?: string;
+  }) {
     this.spec = spec;
     this._settings = {
       vendor: 'codex',
@@ -279,6 +302,12 @@ export class CodexAgentAdapter implements AgentAdapter {
   private async start(): Promise<void> {
     if (this.client) return;
 
+    this.bundledSkillDiscoveryPromise = null;
+    this.bundledSkillDiscoveryLoaded = false;
+    this.bundledSkillDiscoveryNeedsReload = true;
+    this.bundledSkillDiscoveryGeneration = 0;
+    this.bundledSkillCache.clear();
+
     // Create RPC client
     this.client = new CodexRpcClient({
       ...(this.spec.command && { command: this.spec.command }),
@@ -410,7 +439,7 @@ export class CodexAgentAdapter implements AgentAdapter {
       throw new Error('Client not ready');
     }
 
-    const input = mapMessageContent(content);
+    const input = await this.buildTurnInput(content);
     const overrides = mapTurnSettings({
       model: this._settings.model,
       permissionMode: this._settings.permissionMode as TurnSettings['permissionMode'],
@@ -431,6 +460,137 @@ export class CodexAgentAdapter implements AgentAdapter {
 
   /** Stored outputFormat for passing to turn/start. */
   private _outputFormat: TurnSettings['outputFormat'];
+
+  private async buildTurnInput(content: MessageContent): Promise<UserInput[]> {
+    if (!hasExplicitCodexSkillReference(content)) {
+      return mapMessageContent(content);
+    }
+
+    const bundledSkills = await this.getBundledSkills();
+    const unresolvedSkills = new Set<string>();
+    const input = mapMessageContent(content, (name) => {
+      const resolvedSkill = bundledSkills.get(name);
+      if (!resolvedSkill) {
+        unresolvedSkills.add(name);
+      }
+      return resolvedSkill;
+    });
+
+    for (const skillName of unresolvedSkills) {
+      log({
+        level: 'debug',
+        source: 'codex-adapter',
+        summary: `Bundled Crispy skill not found for Codex turn: ${skillName}`,
+        data: { skillName },
+      });
+    }
+
+    return input;
+  }
+
+  private async getBundledSkills(): Promise<Map<string, ResolvedCodexSkillReference>> {
+    const bundledSkillRoot = this.spec.bundledSkillRoot;
+    const effectiveCwd = this.spec.effectiveCwd ?? this.spec.cwd;
+
+    if (!this.client?.alive || !bundledSkillRoot || !effectiveCwd) {
+      return this.bundledSkillCache;
+    }
+
+    if (!existsSync(bundledSkillRoot)) {
+      log({
+        level: 'debug',
+        source: 'codex-adapter',
+        summary: `Bundled Crispy skill root missing for Codex discovery: ${bundledSkillRoot}`,
+      });
+      return this.bundledSkillCache;
+    }
+
+    if (this.bundledSkillDiscoveryLoaded && !this.bundledSkillDiscoveryNeedsReload) {
+      return this.bundledSkillCache;
+    }
+
+    if (this.bundledSkillDiscoveryPromise) {
+      return this.bundledSkillDiscoveryPromise;
+    }
+
+    this.bundledSkillDiscoveryPromise = this.discoverBundledSkills(bundledSkillRoot, effectiveCwd)
+      .finally(() => {
+        this.bundledSkillDiscoveryPromise = null;
+      });
+
+    return this.bundledSkillDiscoveryPromise;
+  }
+
+  private async discoverBundledSkills(
+    bundledSkillRoot: string,
+    effectiveCwd: string,
+  ): Promise<Map<string, ResolvedCodexSkillReference>> {
+    if (!this.client) {
+      return this.bundledSkillCache;
+    }
+
+    try {
+      const discoveryGeneration = this.bundledSkillDiscoveryGeneration;
+      const forceReload = this.bundledSkillDiscoveryNeedsReload;
+      const response = await this.client.request<SkillsListResponse>('skills/list', {
+        cwds: [effectiveCwd],
+        forceReload,
+        perCwdExtraUserRoots: [{
+          cwd: effectiveCwd,
+          extraUserRoots: [bundledSkillRoot],
+        }],
+      });
+
+      const inventory = new Map<string, ResolvedCodexSkillReference>();
+      const entry = response.data.find((item) => item.cwd === effectiveCwd) ?? response.data[0];
+
+      for (const skill of entry?.skills ?? []) {
+        if (!skill.enabled) {
+          continue;
+        }
+
+        if (!this.isBundledSkillPath(bundledSkillRoot, skill.path)) {
+          continue;
+        }
+
+        if (inventory.has(skill.name)) {
+          log({
+            level: 'debug',
+            source: 'codex-adapter',
+            summary: `Duplicate bundled Codex skill ignored: ${skill.name}`,
+            data: { skillName: skill.name, path: skill.path },
+          });
+          continue;
+        }
+
+        inventory.set(skill.name, {
+          name: skill.name,
+          path: skill.path,
+        });
+      }
+
+      this.bundledSkillCache = inventory;
+      this.bundledSkillDiscoveryLoaded = true;
+      if (this.bundledSkillDiscoveryGeneration === discoveryGeneration) {
+        this.bundledSkillDiscoveryNeedsReload = false;
+      }
+      return inventory;
+    } catch (err) {
+      log({
+        level: 'warn',
+        source: 'codex-adapter',
+        summary: `Failed to discover bundled Codex skills: ${err instanceof Error ? err.message : String(err)}`,
+        data: { error: String(err), bundledSkillRoot, effectiveCwd },
+      });
+      return this.bundledSkillCache;
+    }
+  }
+
+  private isBundledSkillPath(root: string, candidate: string): boolean {
+    const resolvedRoot = resolve(root);
+    const rel = relative(resolvedRoot, resolve(candidate));
+    return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  }
 
   private buildThreadConfigParams(options: {
     cwd?: string;
@@ -636,6 +796,12 @@ export class CodexAgentAdapter implements AgentAdapter {
           type: 'event',
           event: { type: 'notification', kind: 'compacting' },
         });
+        break;
+      }
+
+      case 'skills/changed': {
+        this.bundledSkillDiscoveryGeneration += 1;
+        this.bundledSkillDiscoveryNeedsReload = true;
         break;
       }
 

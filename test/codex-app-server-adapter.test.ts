@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { resolve } from 'node:path';
 import { MockCodexProcess } from './helpers/mock-codex-process.js';
 import type { ChildProcess, SpawnOptionsWithoutStdio } from 'child_process';
 import type { ChannelMessage, SessionOpenSpec } from '../src/core/agent-adapter.js';
@@ -225,6 +226,208 @@ describe('CodexAgentAdapter', () => {
       if (sessionChangedEvent?.type === 'event' && 'sessionId' in sessionChangedEvent.event) {
         expect((sessionChangedEvent.event as any).sessionId).toBe('new-session-id');
       }
+
+      adapter.close();
+    });
+
+    it('discovers bundled Crispy skills and injects resolved Codex skill inputs', async () => {
+      const bundledSkillRoot = resolve(process.cwd(), 'src', 'plugin', 'skills');
+      const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test/project' };
+      const adapter = new CodexAgentAdapter({
+        ...spec,
+        effectiveCwd: '/test/project',
+        bundledSkillRoot,
+      });
+
+      adapter.sendTurn('Use $recall before coding.', {});
+
+      const initMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(initMsg.id, { userAgent: 'codex/0.1.0' });
+
+      const startMsg = await mockProcess.getNextClientMessage();
+      expect(startMsg.method).toBe('thread/start');
+      mockProcess.pushResponse(startMsg.id, {
+        thread: { id: 'thread-123', status: 'idle', turns: [] },
+        model: 'o3',
+      });
+
+      const skillsListMsg = await mockProcess.getNextClientMessage();
+      expect(skillsListMsg.method).toBe('skills/list');
+      expect((skillsListMsg.params as any)).toEqual({
+        cwds: ['/test/project'],
+        forceReload: true,
+        perCwdExtraUserRoots: [{
+          cwd: '/test/project',
+          extraUserRoots: [bundledSkillRoot],
+        }],
+      });
+      mockProcess.pushResponse(skillsListMsg.id, {
+        data: [{
+          cwd: '/test/project',
+          skills: [{
+            name: 'recall',
+            description: 'Recall past sessions',
+            path: `${bundledSkillRoot}/recall/SKILL.md`,
+            scope: 'user',
+            enabled: true,
+          }],
+          errors: [],
+        }],
+      });
+
+      const turnMsg = await mockProcess.getNextClientMessage();
+      expect(turnMsg.method).toBe('turn/start');
+      expect((turnMsg.params as any).input).toEqual([
+        { type: 'text', text: 'Use ', text_elements: [] },
+        { type: 'skill', name: 'recall', path: `${bundledSkillRoot}/recall/SKILL.md` },
+        { type: 'text', text: ' before coding.', text_elements: [] },
+      ]);
+      mockProcess.pushResponse(turnMsg.id, { turn: { id: 'turn-1' } });
+
+      adapter.close();
+    });
+
+    it('skips bundled skill discovery when the turn has no $skill references', async () => {
+      const bundledSkillRoot = resolve(process.cwd(), 'src', 'plugin', 'skills');
+      const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test/project' };
+      const adapter = new CodexAgentAdapter({
+        ...spec,
+        effectiveCwd: '/test/project',
+        bundledSkillRoot,
+      });
+
+      adapter.sendTurn('Plain text only', {});
+
+      const initMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(initMsg.id, { userAgent: 'codex/0.1.0' });
+
+      const startMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(startMsg.id, {
+        thread: { id: 'thread-123', status: 'idle', turns: [] },
+        model: 'o3',
+      });
+
+      const turnMsg = await mockProcess.getNextClientMessage();
+      expect(turnMsg.method).toBe('turn/start');
+      expect((turnMsg.params as any).input).toEqual([
+        { type: 'text', text: 'Plain text only', text_elements: [] },
+      ]);
+      mockProcess.pushResponse(turnMsg.id, { turn: { id: 'turn-1' } });
+
+      adapter.close();
+    });
+
+    it('preserves skills/changed invalidation that arrives during in-flight discovery', async () => {
+      const bundledSkillRoot = resolve(process.cwd(), 'src', 'plugin', 'skills');
+      const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test/project' };
+      const adapter = new CodexAgentAdapter({
+        ...spec,
+        effectiveCwd: '/test/project',
+        bundledSkillRoot,
+      });
+
+      adapter.sendTurn('Use $recall before coding.', {});
+
+      const initMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(initMsg.id, { userAgent: 'codex/0.1.0' });
+
+      const startMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(startMsg.id, {
+        thread: { id: 'thread-123', status: 'idle', turns: [] },
+        model: 'o3',
+      });
+
+      const firstSkillsListMsg = await mockProcess.getNextClientMessage();
+      expect(firstSkillsListMsg.method).toBe('skills/list');
+      mockProcess.pushNotification('skills/changed', {});
+      mockProcess.pushResponse(firstSkillsListMsg.id, {
+        data: [{
+          cwd: '/test/project',
+          skills: [],
+          errors: [],
+        }],
+      });
+
+      const firstTurnMsg = await mockProcess.getNextClientMessage();
+      expect(firstTurnMsg.method).toBe('turn/start');
+      expect((firstTurnMsg.params as any).input).toEqual([
+        { type: 'text', text: 'Use $recall before coding.', text_elements: [] },
+      ]);
+      mockProcess.pushResponse(firstTurnMsg.id, { turn: { id: 'turn-1' } });
+
+      adapter.sendTurn('Use $recall again.', {});
+
+      const secondSkillsListMsg = await mockProcess.getNextClientMessage();
+      expect(secondSkillsListMsg.method).toBe('skills/list');
+      expect((secondSkillsListMsg.params as any).forceReload).toBe(true);
+      mockProcess.pushResponse(secondSkillsListMsg.id, {
+        data: [{
+          cwd: '/test/project',
+          skills: [{
+            name: 'recall',
+            description: 'Recall past sessions',
+            path: `${bundledSkillRoot}/recall/SKILL.md`,
+            scope: 'user',
+            enabled: true,
+          }],
+          errors: [],
+        }],
+      });
+
+      const secondTurnMsg = await mockProcess.getNextClientMessage();
+      expect(secondTurnMsg.method).toBe('turn/start');
+      expect((secondTurnMsg.params as any).input).toEqual([
+        { type: 'text', text: 'Use ', text_elements: [] },
+        { type: 'skill', name: 'recall', path: `${bundledSkillRoot}/recall/SKILL.md` },
+        { type: 'text', text: ' again.', text_elements: [] },
+      ]);
+      mockProcess.pushResponse(secondTurnMsg.id, { turn: { id: 'turn-2' } });
+
+      adapter.close();
+    });
+
+    it('does not inject disabled bundled skills', async () => {
+      const bundledSkillRoot = resolve(process.cwd(), 'src', 'plugin', 'skills');
+      const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test/project' };
+      const adapter = new CodexAgentAdapter({
+        ...spec,
+        effectiveCwd: '/test/project',
+        bundledSkillRoot,
+      });
+
+      adapter.sendTurn('Use $recall before coding.', {});
+
+      const initMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(initMsg.id, { userAgent: 'codex/0.1.0' });
+
+      const startMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(startMsg.id, {
+        thread: { id: 'thread-123', status: 'idle', turns: [] },
+        model: 'o3',
+      });
+
+      const skillsListMsg = await mockProcess.getNextClientMessage();
+      expect(skillsListMsg.method).toBe('skills/list');
+      mockProcess.pushResponse(skillsListMsg.id, {
+        data: [{
+          cwd: '/test/project',
+          skills: [{
+            name: 'recall',
+            description: 'Recall past sessions',
+            path: `${bundledSkillRoot}/recall/SKILL.md`,
+            scope: 'user',
+            enabled: false,
+          }],
+          errors: [],
+        }],
+      });
+
+      const turnMsg = await mockProcess.getNextClientMessage();
+      expect(turnMsg.method).toBe('turn/start');
+      expect((turnMsg.params as any).input).toEqual([
+        { type: 'text', text: 'Use $recall before coding.', text_elements: [] },
+      ]);
+      mockProcess.pushResponse(turnMsg.id, { turn: { id: 'turn-1' } });
 
       adapter.close();
     });

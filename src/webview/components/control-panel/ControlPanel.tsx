@@ -77,6 +77,17 @@ const CYCLABLE_AGENCY_MODES: AgencyMode[] = [
   'ask-before-edits',
 ];
 
+function getChatPlaceholder(vendor: string): string {
+  switch (vendor) {
+    case 'codex':
+      return 'What would you like to build? Use $recall or $handoff-prompt-to for Crispy skills.';
+    case 'claude':
+      return 'What would you like to build? Use /recall for Crispy skills.';
+    default:
+      return 'What would you like to build?';
+  }
+}
+
 function controlPanelReducer(state: ControlPanelState, action: Action): ControlPanelState {
   switch (action.type) {
     case 'SET_BYPASS': {
@@ -1038,6 +1049,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               attachedImages={state.attachedImages}
               onInput={(value) => dispatch({ type: 'SET_INPUT', value })}
               onSend={handleSend}
+              placeholder={getChatPlaceholder(parseModelOption(state.model).vendor)}
               forkMode={!!state.forkMode}
               onFork={handleFork}
               voiceState={voice.state}

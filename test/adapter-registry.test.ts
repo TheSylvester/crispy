@@ -13,10 +13,11 @@ import type { AdapterRegistration, HostAdapterConfig } from '../src/host/adapter
 // Mock session-manager before importing adapter-registry
 const mockRegisterAdapter = vi.fn();
 const mockUnregisterAdapter = vi.fn();
+const mockSetToolEnv = vi.fn();
 vi.mock('../src/core/session-manager.js', () => ({
   registerAdapter: (...args: unknown[]) => mockRegisterAdapter(...args),
   unregisterAdapter: (...args: unknown[]) => mockUnregisterAdapter(...args),
-  setToolEnv: vi.fn(),
+  setToolEnv: (...args: unknown[]) => mockSetToolEnv(...args),
 }));
 
 // Mock session-channel (getActiveChannels used by settings change listener)
@@ -25,8 +26,9 @@ vi.mock('../src/core/session-channel.js', () => ({
 }));
 
 // Mock settings module
+const mockSetSessionDefaults = vi.fn();
 vi.mock('../src/core/settings/index.js', () => ({
-  setSessionDefaults: () => {},
+  setSessionDefaults: (...args: unknown[]) => mockSetSessionDefaults(...args),
 }));
 
 // Mock ClaudeAgentAdapter (imported for instanceof checks)
@@ -80,13 +82,13 @@ function applyInfraMocks() {
   vi.doMock('../src/core/session-manager.js', () => ({
     registerAdapter: (...args: unknown[]) => mockRegisterAdapter(...args),
     unregisterAdapter: (...args: unknown[]) => mockUnregisterAdapter(...args),
-    setToolEnv: vi.fn(),
+    setToolEnv: (...args: unknown[]) => mockSetToolEnv(...args),
   }));
   vi.doMock('../src/core/session-channel.js', () => ({
     getActiveChannels: () => [],
   }));
   vi.doMock('../src/core/settings/index.js', () => ({
-    setSessionDefaults: () => {},
+    setSessionDefaults: (...args: unknown[]) => mockSetSessionDefaults(...args),
   }));
   vi.doMock('../src/core/adapters/claude/claude-code-adapter.js', () => ({
     ClaudeAgentAdapter: class {},
@@ -365,5 +367,52 @@ describe('registerAllAdapters', () => {
     const factoryCall = claude.createFactory as ReturnType<typeof vi.fn>;
     const passedConfig = factoryCall.mock.calls[0][0];
     expect(passedConfig.plugins).toBeDefined();
+  });
+
+  it('passes bundledSkillRoot through factory config', async () => {
+    const codex = createMockRegistration('codex', true);
+
+    vi.resetModules();
+    applyInfraMocks();
+    vi.doMock('../src/core/adapters/claude/claude-registration.js', () => ({
+      claudeRegistration: createMockRegistration('claude', false),
+    }));
+    vi.doMock('../src/core/adapters/codex/codex-registration.js', () => ({
+      codexRegistration: codex,
+    }));
+    vi.doMock('../src/core/adapters/opencode/opencode-registration.js', () => ({
+      opencodeRegistration: createMockRegistration('opencode', false),
+    }));
+
+    const freshMod = await import('../src/host/adapter-registry.js');
+    freshMod.registerAllAdapters({ cwd: '/test', hostType: 'dev-server' });
+
+    const passedConfig = (codex.createFactory as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(passedConfig.bundledSkillRoot).toBe(`${process.cwd()}/src/plugin/skills`);
+  });
+});
+
+describe('resolveBundledCrispyPaths', () => {
+  it('resolves dev paths from the repo root', async () => {
+    const { resolveBundledCrispyPaths } = await import('../src/host/adapter-registry.js');
+    const repoRoot = process.cwd();
+
+    expect(resolveBundledCrispyPaths({})).toEqual({
+      extensionBase: repoRoot,
+      pluginRoot: `${repoRoot}/src/plugin`,
+      skillRoot: `${repoRoot}/src/plugin/skills`,
+    });
+  });
+
+  it('resolves packaged paths from the extension directory', async () => {
+    const { resolveBundledCrispyPaths } = await import('../src/host/adapter-registry.js');
+
+    expect(resolveBundledCrispyPaths({
+      extensionPath: '/tmp/crispy-extension',
+    })).toEqual({
+      extensionBase: '/tmp/crispy-extension',
+      pluginRoot: '/tmp/crispy-extension/dist/crispy-plugin',
+      skillRoot: '/tmp/crispy-extension/dist/crispy-plugin/skills',
+    });
   });
 });

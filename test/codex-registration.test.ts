@@ -74,7 +74,7 @@ describe('codexRegistration', () => {
     it('returns false when findCodexBinary() returns undefined', async () => {
       mockFindCodexBinary.mockReturnValue(undefined);
       const { codexRegistration } = await freshImport();
-      const config: HostAdapterConfig = { cwd: '/test' };
+      const config: HostAdapterConfig = { cwd: '/test', hostType: 'dev-server' };
 
       expect(codexRegistration.available(config)).toBe(false);
     });
@@ -82,7 +82,7 @@ describe('codexRegistration', () => {
     it('returns true when findCodexBinary() returns a path', async () => {
       mockFindCodexBinary.mockReturnValue('/usr/local/bin/codex');
       const { codexRegistration } = await freshImport();
-      const config: HostAdapterConfig = { cwd: '/test' };
+      const config: HostAdapterConfig = { cwd: '/test', hostType: 'dev-server' };
 
       expect(codexRegistration.available(config)).toBe(true);
     });
@@ -90,7 +90,7 @@ describe('codexRegistration', () => {
     it('calls codexDiscovery.setCommand() when binary found', async () => {
       mockFindCodexBinary.mockReturnValue('/usr/local/bin/codex');
       const { codexRegistration } = await freshImport();
-      const config: HostAdapterConfig = { cwd: '/test' };
+      const config: HostAdapterConfig = { cwd: '/test', hostType: 'dev-server' };
 
       codexRegistration.available(config);
 
@@ -100,7 +100,7 @@ describe('codexRegistration', () => {
     it('does NOT call setCommand() when binary not found', async () => {
       mockFindCodexBinary.mockReturnValue(undefined);
       const { codexRegistration } = await freshImport();
-      const config: HostAdapterConfig = { cwd: '/test' };
+      const config: HostAdapterConfig = { cwd: '/test', hostType: 'dev-server' };
 
       codexRegistration.available(config);
 
@@ -116,7 +116,7 @@ describe('codexRegistration', () => {
     it('always passes args: ["app-server"] (no MCP flags)', async () => {
       mockFindCodexBinary.mockReturnValue('/usr/local/bin/codex');
       const { codexRegistration } = await freshImport();
-      const config: HostAdapterConfig = { cwd: '/workspace' };
+      const config: HostAdapterConfig = { cwd: '/workspace', hostType: 'dev-server' };
 
       codexRegistration.available(config); // set cachedBinaryPath
       const factory = codexRegistration.createFactory(config);
@@ -130,7 +130,7 @@ describe('codexRegistration', () => {
     it('passes command: cachedBinaryPath', async () => {
       mockFindCodexBinary.mockReturnValue('/usr/local/bin/codex');
       const { codexRegistration } = await freshImport();
-      const config: HostAdapterConfig = { cwd: '/workspace' };
+      const config: HostAdapterConfig = { cwd: '/workspace', hostType: 'dev-server' };
 
       codexRegistration.available(config);
       const factory = codexRegistration.createFactory(config);
@@ -144,7 +144,7 @@ describe('codexRegistration', () => {
     it('uses spec.cwd for modes that have it', async () => {
       mockFindCodexBinary.mockReturnValue('/usr/local/bin/codex');
       const { codexRegistration } = await freshImport();
-      const config: HostAdapterConfig = { cwd: '/workspace' };
+      const config: HostAdapterConfig = { cwd: '/workspace', hostType: 'dev-server' };
 
       codexRegistration.available(config);
       const factory = codexRegistration.createFactory(config);
@@ -158,7 +158,7 @@ describe('codexRegistration', () => {
     it('does not inject host cwd into resume sessions without explicit cwd', async () => {
       mockFindCodexBinary.mockReturnValue('/usr/local/bin/codex');
       const { codexRegistration } = await freshImport();
-      const config: HostAdapterConfig = { cwd: '/workspace' };
+      const config: HostAdapterConfig = { cwd: '/workspace', hostType: 'dev-server' };
 
       codexRegistration.available(config);
       const factory = codexRegistration.createFactory(config);
@@ -171,7 +171,7 @@ describe('codexRegistration', () => {
     it('uses config.cwd for fresh sessions without spec.cwd', async () => {
       mockFindCodexBinary.mockReturnValue('/usr/local/bin/codex');
       const { codexRegistration } = await freshImport();
-      const config: HostAdapterConfig = { cwd: '/workspace' };
+      const config: HostAdapterConfig = { cwd: '/workspace', hostType: 'dev-server' };
 
       codexRegistration.available(config);
       const factory = codexRegistration.createFactory(config);
@@ -185,7 +185,7 @@ describe('codexRegistration', () => {
     it('spreads spec properties into adapter construction', async () => {
       mockFindCodexBinary.mockReturnValue('/usr/local/bin/codex');
       const { codexRegistration } = await freshImport();
-      const config: HostAdapterConfig = { cwd: '/workspace' };
+      const config: HostAdapterConfig = { cwd: '/workspace', hostType: 'dev-server' };
 
       codexRegistration.available(config);
       const factory = codexRegistration.createFactory(config);
@@ -208,6 +208,7 @@ describe('codexRegistration', () => {
       const systemPromptFactory = vi.fn().mockReturnValue('Host skills prompt');
       const config: HostAdapterConfig = {
         cwd: '/workspace',
+        hostType: 'dev-server',
         systemPromptFactory,
       };
 
@@ -230,6 +231,7 @@ describe('codexRegistration', () => {
       const { codexRegistration } = await freshImport();
       const config: HostAdapterConfig = {
         cwd: '/workspace',
+        hostType: 'dev-server',
         systemPromptFactory: vi.fn().mockReturnValue('Host prompt'),
       };
 
@@ -260,6 +262,7 @@ describe('codexRegistration', () => {
       const { codexRegistration } = await freshImport();
       const config: HostAdapterConfig = {
         cwd: '/workspace',
+        hostType: 'dev-server',
         systemPromptFactory: vi.fn().mockReturnValue('Host skills prompt'),
       };
 
@@ -272,9 +275,31 @@ describe('codexRegistration', () => {
         mode: 'resume',
         sessionId: 'sess-123',
         systemPrompt: 'Host skills prompt',
+        effectiveCwd: '/workspace',
       });
       // Resume without explicit cwd should NOT inject host cwd
       expect(callArg.cwd).toBeUndefined();
+    });
+
+    it('passes bundledSkillRoot through to the adapter', async () => {
+      mockFindCodexBinary.mockReturnValue('/usr/local/bin/codex');
+      const { codexRegistration } = await freshImport();
+      const config: HostAdapterConfig = {
+        cwd: '/workspace',
+        hostType: 'dev-server',
+        bundledSkillRoot: '/bundle/skills',
+      };
+
+      codexRegistration.available(config);
+      const factory = codexRegistration.createFactory(config);
+      factory({ mode: 'fresh', cwd: '/project' });
+
+      expect(MockCodexAgentAdapter).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bundledSkillRoot: '/bundle/skills',
+          effectiveCwd: '/project',
+        }),
+      );
     });
   });
 });
