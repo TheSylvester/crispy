@@ -299,18 +299,26 @@ async function initForumChannel(): Promise<void> {
   });
 }
 
-/** Find or create the #crispy-sessions forum channel. */
+// VIEW_CHANNEL + SEND_MESSAGES + READ_MESSAGE_HISTORY + MANAGE_MESSAGES + ADD_REACTIONS
+const FORUM_ALLOW_BITS = '76864';
+
+/** Find or create the #crispy-sessions forum channel, repairing permissions on every startup. */
 async function ensureForumChannel(guildId: string, botId: string, ownerId: string | null): Promise<string> {
   const channels = await getGuildChannels(guildId);
   const existing = channels.find(c => c.name === 'crispy-sessions' && c.type === 15);
-  if (existing) return existing.id;
+
+  if (existing) {
+    // Repair permissions on every startup — ensures new permission bits are applied
+    await repairForumPermissions(existing.id, guildId, botId, ownerId);
+    return existing.id;
+  }
 
   const permissionOverwrites: unknown[] = [
-    { id: guildId, type: 0, deny: '1024' },       // deny @everyone VIEW_CHANNEL
-    { id: botId, type: 1, allow: '3072' },         // allow bot VIEW_CHANNEL + SEND_MESSAGES
+    { id: guildId, type: 0, deny: '1024' },
+    { id: botId, type: 1, allow: FORUM_ALLOW_BITS },
   ];
   if (ownerId) {
-    permissionOverwrites.push({ id: ownerId, type: 1, allow: '3072' }); // owner: VIEW + SEND
+    permissionOverwrites.push({ id: ownerId, type: 1, allow: FORUM_ALLOW_BITS });
   }
 
   const forum = await createChannel(guildId, 'crispy-sessions', {
@@ -319,6 +327,23 @@ async function ensureForumChannel(guildId: string, botId: string, ownerId: strin
   });
   log({ source: SOURCE, level: 'info', summary: `created forum channel: ${forum.id}` });
   return forum.id;
+}
+
+/** Ensure bot and owner have correct permissions on the forum channel. */
+async function repairForumPermissions(channelId: string, guildId: string, botId: string, ownerId: string | null): Promise<void> {
+  try {
+    // @everyone deny VIEW_CHANNEL
+    await discordFetch('PUT', `/channels/${channelId}/permissions/${guildId}`, { type: 0, deny: '1024' });
+    // Bot allow
+    await discordFetch('PUT', `/channels/${channelId}/permissions/${botId}`, { type: 1, allow: FORUM_ALLOW_BITS });
+    // Owner allow
+    if (ownerId) {
+      await discordFetch('PUT', `/channels/${channelId}/permissions/${ownerId}`, { type: 1, allow: FORUM_ALLOW_BITS });
+    }
+    log({ source: SOURCE, level: 'debug', summary: 'forum permissions verified' });
+  } catch (err) {
+    log({ source: SOURCE, level: 'warn', summary: 'failed to repair forum permissions', data: err });
+  }
 }
 
 /**
