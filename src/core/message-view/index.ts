@@ -118,6 +118,8 @@ interface WatchState {
   newTurn: boolean;
   /** When true, catchup builds state but skips Discord flush (old messages already exist). */
   reconnecting: boolean;
+  /** When true, suppresses newTurn so catchup packs into fewer sections. */
+  catchingUp: boolean;
   /** Set on sub-agent posts — the parent session ID that spawned this. */
   parentSessionId?: string;
 }
@@ -693,6 +695,7 @@ function registerWatchState(
     sectionCounter: 0,
     newTurn: false,
     reconnecting: false,
+    catchingUp: false,
   };
   watchedSessions.set(sessionId, state);
   channelToSession.set(discordChannelId, sessionId);
@@ -746,9 +749,12 @@ function handleWatchEvent(buffer: MessageBuffer, event: SubscriberMessage, state
   switch (event.type) {
     case 'catchup': {
       // Render ALL entries into the buffer first (synchronous, no API calls)
+      // Suppress turn boundaries during catchup — pack into fewer sections
+      if (state) state.catchingUp = true;
       for (const entry of event.entries) {
         renderEntryToBuffer(buffer, entry, state);
       }
+      if (state) state.catchingUp = false;
       const statusSection = getOrCreateSection(buffer, 'status', '');
       if (event.state === 'streaming' || event.state === 'active') {
         updateSection(statusSection, '\u{23F3} Working\u{2026}');
@@ -1041,7 +1047,8 @@ function renderEntryToBuffer(buffer: MessageBuffer, entry: TranscriptEntry, stat
     // }
 
     // Turn boundary — force new section so next output appears after user's Discord message
-    if (state) {
+    // Only during live streaming — catchup packs everything into fewer sections
+    if (state && !state.catchingUp) {
       state.newTurn = true;
     }
     return;
