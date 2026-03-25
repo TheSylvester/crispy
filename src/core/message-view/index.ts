@@ -126,8 +126,7 @@ const watchedSessions = new Map<string, WatchState>();
 /** Reverse map: discordChannelId → sessionId (for routing post messages). */
 const channelToSession = new Map<string, string>();
 
-/** Sessions known to be sub-agents — skip auto-watch, let parent claim them. */
-const knownSubagentSessions = new Set<string>();
+// knownSubagentSessions removed — using session.isSidechain from SessionInfo instead
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -221,12 +220,18 @@ function startUp(config: DiscordProviderConfig): void {
       send(event: SessionListEvent) {
         if (event.type === 'session_list_upsert') {
           const session = event.session;
-          if (session.sessionKind === 'system') return;
+          // Filter: concierge sessions (checked by ID set in concierge module)
           if (isConciergeSession(session.sessionId)) return;
+          // Filter: already watched
           if (watchedSessions.has(session.sessionId)) return;
-          if (knownSubagentSessions.has(session.sessionId)) return;
+          // Filter: sidechain/sub-agent sessions
+          if (session.isSidechain) return;
+          // Filter: stale sessions (older than 10 min)
           const ageMs = Date.now() - session.modifiedAt.getTime();
           if (ageMs > 10 * 60 * 1000) return;
+          // Filter: sessions not in the current project directory
+          const cwd = process.cwd();
+          if (session.projectPath && session.projectPath !== cwd) return;
           void watchSession(session.sessionId, { auto: true }).catch(err => {
             log({ source: SOURCE, level: 'error', summary: `auto-watch failed for ${session.sessionId.slice(0, 8)}`, data: err });
           });
@@ -1145,9 +1150,6 @@ function handleSubagentResult(
 
   const agentId = result.agentId;
   if (!agentId) return;
-
-  // Mark immediately so auto-watch doesn't claim it before createSubagentPost runs
-  knownSubagentSessions.add(agentId);
 
   // Find the parent tool_use_id from tool_result content blocks
   if (!Array.isArray(content)) return;
