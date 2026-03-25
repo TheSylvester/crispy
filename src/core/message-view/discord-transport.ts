@@ -15,6 +15,25 @@ const BASE_URL = 'https://discord.com/api/v10';
 const MAX_RETRIES = 2;
 const SOURCE = 'discord-transport';
 
+export class DiscordApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code: number | null,
+    public readonly body: string,
+  ) {
+    super(`Discord API error ${status}: ${body}`);
+    this.name = 'DiscordApiError';
+  }
+
+  get permanent(): boolean {
+    if (this.status === 403 || this.status === 404) return true;
+    if (this.status === 400 && this.code != null) {
+      return [50083, 50001, 10003].includes(this.code);
+    }
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Gateway constants
 // ---------------------------------------------------------------------------
@@ -219,9 +238,11 @@ export async function discordFetch(method: string, path: string, body?: unknown)
 
     if (!res.ok) {
       const text = await res.text();
-      const msg = `Discord API error ${res.status}: ${text}`;
-      log({ source: SOURCE, level: 'error', summary: msg });
-      throw new Error(msg);
+      let code: number | null = null;
+      try { code = JSON.parse(text).code ?? null; } catch { /* not JSON */ }
+      const err = new DiscordApiError(res.status, code, text);
+      log({ source: SOURCE, level: 'error', summary: err.message });
+      throw err;
     }
 
     // 204 No Content — return undefined

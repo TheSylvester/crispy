@@ -25,12 +25,18 @@ export function renderSession(
   entries: TranscriptEntry[],
   toolResults: Map<string, boolean>,
   statusLine?: string,
+  maxEntries = 150,
 ): string[] {
   const lines: string[] = [];
 
   if (statusLine) lines.push(statusLine);
 
-  for (const entry of entries) {
+  const tail = entries.length > maxEntries ? entries.slice(-maxEntries) : entries;
+  if (entries.length > tail.length) {
+    lines.push(`*... ${entries.length - tail.length} earlier entries omitted*`);
+  }
+
+  for (const entry of tail) {
     if (entry.type === 'user') {
       const userText = extractUserText(entry);
       if (userText) lines.push(`\n**User:** ${userText}`);

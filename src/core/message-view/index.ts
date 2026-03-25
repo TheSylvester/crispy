@@ -42,6 +42,7 @@ import {
   triggerTyping,
   getActiveThreads,
 } from './discord-transport.js';
+import { DiscordApiError } from './discord-transport.js';
 import type { GatewayEventHandler } from './discord-transport.js';
 import type { DiscordProviderConfig, MessageProviderConfig } from './config.js';
 import { renderSession, getStatusLine, truncate, DISCORD_MAX_LENGTH } from './render.js';
@@ -54,6 +55,7 @@ export { renderSession, splitAtNewlines } from './render.js';
 const SOURCE = 'message-view';
 const MAX_CONCURRENT_PROMPTS = 3;
 const MIN_PROMPT_LENGTH = 3;
+const MAX_CHUNKS = 10;
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -93,11 +95,26 @@ interface WatchState {
   pendingInteractions: Map<string, PendingInteraction>;
   /** True while syncSession is in-flight (prevents concurrent syncs). */
   syncing: boolean;
+  consecutiveFailures: number;
 }
 
 const watchedSessions = new Map<string, WatchState>();
 const channelToSession = new Map<string, string>();
 const commandSessionIds = new Set<string>();
+
+function disposeWatch(sessionId: string): void {
+  const state = watchedSessions.get(sessionId);
+  if (!state) return;
+
+  if (state.channel) {
+    try { unsubscribe(state.channel, state.subscriber); } catch { /* best-effort */ }
+  }
+  channelToSession.delete(state.discordChannelId);
+  watchedSessions.delete(sessionId);
+  archiveThread(state.discordChannelId).catch(() => {});
+
+  log({ source: SOURCE, level: 'info', summary: `disposed watch for ${sessionId.slice(0, 8)}` });
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -145,7 +162,8 @@ function findEnabledDiscordProvider(): DiscordProviderConfig | null {
     const providers = raw.messageProviders as MessageProviderConfig[] | undefined;
     if (!providers) return null;
     return providers.find((p: MessageProviderConfig) => p.type === 'discord' && p.enabled) ?? null;
-  } catch {
+  } catch (err) {
+    log({ source: SOURCE, level: 'warn', summary: 'failed to read Discord provider config', data: err });
     return null;
   }
 }
@@ -223,13 +241,8 @@ function tearDown(): void {
     heartbeatTimer = null;
   }
 
-  for (const [sessionId, state] of watchedSessions) {
-    if (state.channel) {
-      try { unsubscribe(state.channel, state.subscriber); } catch { /* best-effort */ }
-    }
-    archiveThread(state.discordChannelId).catch(() => {});
-    channelToSession.delete(state.discordChannelId);
-    watchedSessions.delete(sessionId);
+  for (const sessionId of watchedSessions.keys()) {
+    disposeWatch(sessionId);
   }
 
   commandSessionIds.clear();
@@ -409,18 +422,8 @@ function handleGatewayReaction(
 
   // ❌ on any message in the forum → archive the thread (owner only)
   if (emoji === '\u{274C}' && (!ownerUserId || userId === ownerUserId)) {
-    // Check if this is a watched session post
     const sessionId = channelToSession.get(channelId);
-    if (sessionId) {
-      const state = watchedSessions.get(sessionId);
-      if (state) {
-        if (state.channel) {
-          try { unsubscribe(state.channel, state.subscriber); } catch { /* best-effort */ }
-        }
-        channelToSession.delete(channelId);
-        watchedSessions.delete(sessionId);
-      }
-    }
+    if (sessionId) disposeWatch(sessionId);
     archiveThread(channelId).catch((err) => {
       log({ source: SOURCE, level: 'debug', summary: `archive on \u{274C} failed for ${channelId}`, data: err });
     });
@@ -520,9 +523,7 @@ async function watchSession(sessionId: string, opts: { auto: boolean }): Promise
   try {
     state.channel = await subscribeSession(sessionId, subscriber);
   } catch (err) {
-    watchedSessions.delete(sessionId);
-    channelToSession.delete(discordChannelId);
-    archiveThread(discordChannelId).catch(() => {});
+    disposeWatch(sessionId);
     throw err;
   }
 
@@ -545,6 +546,7 @@ function registerWatchState(
     dirty: false,
     pendingInteractions: new Map(),
     syncing: false,
+    consecutiveFailures: 0,
   };
   watchedSessions.set(sessionId, state);
   channelToSession.set(discordChannelId, sessionId);
@@ -659,7 +661,10 @@ function reconcileApprovals(
 // ---------------------------------------------------------------------------
 
 async function syncSession(state: WatchState): Promise<void> {
-  if (state.syncing) return;
+  if (state.syncing) {
+    log({ source: SOURCE, level: 'debug', summary: `sync skip: ${state.sessionId.slice(0, 8)} already syncing` });
+    return;
+  }
   state.syncing = true;
   state.dirty = false;
 
@@ -669,6 +674,13 @@ async function syncSession(state: WatchState): Promise<void> {
       state.snapshot.toolResults,
       getStatusLine(state.snapshot.status),
     );
+
+    if (chunks.length > MAX_CHUNKS) {
+      log({ source: SOURCE, level: 'info', summary: `sync ${state.sessionId.slice(0, 8)}: truncating ${chunks.length} chunks to ${MAX_CHUNKS}` });
+      chunks.splice(0, chunks.length - MAX_CHUNKS);
+      chunks[0] = `*... truncated to last ${MAX_CHUNKS} messages*\n${chunks[0]}`;
+    }
+
     log({ source: SOURCE, level: 'info', summary: `sync ${state.sessionId.slice(0, 8)}: ${chunks.length} chunks from ${state.snapshot.entries.length} entries (msgs=${state.messageIds.length}, status=${state.snapshot.status})` });
 
     const maxLen = Math.max(chunks.length, state.currentChunks.length);
@@ -683,6 +695,25 @@ async function syncSession(state: WatchState): Promise<void> {
           state.currentChunks[i] = chunk;
         } catch (err) {
           log({ source: SOURCE, level: 'error', summary: `edit failed for chunk ${i}`, data: err });
+
+          if (err instanceof DiscordApiError && err.code === 50083) {
+            try {
+              await discordFetch('PATCH', `/channels/${state.discordChannelId}`, { archived: false });
+              log({ source: SOURCE, level: 'warn', summary: `unarchived thread ${state.discordChannelId} — retrying` });
+              state.dirty = true;
+              return;
+            } catch (unarchiveErr) {
+              log({ source: SOURCE, level: 'error', summary: `unarchive failed for ${state.discordChannelId}`, data: unarchiveErr });
+            }
+          }
+
+          state.consecutiveFailures++;
+          if ((err instanceof DiscordApiError && err.permanent) || state.consecutiveFailures >= 5) {
+            log({ source: SOURCE, level: 'error', summary: `circuit breaker: ${state.sessionId.slice(0, 8)} — disposing watch after ${state.consecutiveFailures} failures` });
+            disposeWatch(state.sessionId);
+            return;
+          }
+
           state.dirty = true;
           return;
         }
@@ -693,6 +724,25 @@ async function syncSession(state: WatchState): Promise<void> {
           state.currentChunks[i] = chunk;
         } catch (err) {
           log({ source: SOURCE, level: 'error', summary: `send failed for chunk ${i}`, data: err });
+
+          if (err instanceof DiscordApiError && err.code === 50083) {
+            try {
+              await discordFetch('PATCH', `/channels/${state.discordChannelId}`, { archived: false });
+              log({ source: SOURCE, level: 'warn', summary: `unarchived thread ${state.discordChannelId} — retrying` });
+              state.dirty = true;
+              return;
+            } catch (unarchiveErr) {
+              log({ source: SOURCE, level: 'error', summary: `unarchive failed for ${state.discordChannelId}`, data: unarchiveErr });
+            }
+          }
+
+          state.consecutiveFailures++;
+          if ((err instanceof DiscordApiError && err.permanent) || state.consecutiveFailures >= 5) {
+            log({ source: SOURCE, level: 'error', summary: `circuit breaker: ${state.sessionId.slice(0, 8)} — disposing watch after ${state.consecutiveFailures} failures` });
+            disposeWatch(state.sessionId);
+            return;
+          }
+
           state.dirty = true;
           return;
         }
@@ -702,6 +752,7 @@ async function syncSession(state: WatchState): Promise<void> {
       }
     }
 
+    state.consecutiveFailures = 0;
     state.currentChunks = chunks;
     log({ source: SOURCE, level: 'info', summary: `sync ${state.sessionId.slice(0, 8)}: complete (${chunks.length} chunks, dirty=${state.dirty})` });
   } finally {
