@@ -37,6 +37,9 @@ export function renderSession(
   }
 
   for (const entry of tail) {
+    // Skip SDK-injected system context (local-command, task-notification, etc.)
+    if (entry.isMeta) continue;
+
     if (entry.type === 'user') {
       const userText = extractUserText(entry);
       if (userText) lines.push(`\n**User:** ${userText}`);
@@ -113,10 +116,10 @@ export function truncate(str: string, max: number): string {
 function extractUserText(entry: TranscriptEntry): string {
   const content = entry.message?.content;
   if (!content) return '';
-  if (typeof content === 'string') return content.split('\n')[0].slice(0, 200);
+  if (typeof content === 'string') return truncate(content, 300);
   for (const block of content) {
     if (block.type === 'text' && block.text) {
-      return block.text.split('\n')[0].slice(0, 200);
+      return truncate(block.text, 300);
     }
   }
   return '';
