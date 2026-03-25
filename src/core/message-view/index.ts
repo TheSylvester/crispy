@@ -17,9 +17,14 @@ import type { SessionListSubscriber } from '../session-list-manager.js';
 import type { SessionListEvent } from '../session-list-events.js';
 import { unsubscribe, resolveApproval } from '../session-channel.js';
 import type { Subscriber, SubscriberMessage, SessionChannel } from '../session-channel.js';
-import type { TranscriptEntry, Vendor } from '../transcript.js';
+import type { Vendor } from '../transcript.js';
 import type { ApprovalOption, PendingApprovalInfo } from '../channel-events.js';
 import type { TurnIntent } from '../agent-adapter.js';
+import {
+  applySubscriberMessage,
+  createSessionSnapshot,
+  type SessionSnapshot,
+} from '../session-snapshot.js';
 import {
   initTransport,
   shutdownTransport,
@@ -40,7 +45,6 @@ import {
 import type { GatewayEventHandler } from './discord-transport.js';
 import type { DiscordProviderConfig, MessageProviderConfig } from './config.js';
 import { renderSession, getStatusLine, truncate, DISCORD_MAX_LENGTH } from './render.js';
-import type { WatchStatus } from './render.js';
 import { handleCommand } from './commands.js';
 import type { CommandContext } from './commands.js';
 
@@ -82,15 +86,13 @@ interface WatchState {
   subscriber: Subscriber;
   /** Null until subscribeSession completes (pre-registered for catchup delivery). */
   channel: SessionChannel | null;
-  entries: TranscriptEntry[];
-  toolResults: Map<string, boolean>;
+  snapshot: SessionSnapshot;
   messageIds: string[];
   currentChunks: string[];
   dirty: boolean;
   pendingInteractions: Map<string, PendingInteraction>;
   /** True while syncSession is in-flight (prevents concurrent syncs). */
   syncing: boolean;
-  status: WatchStatus;
 }
 
 const watchedSessions = new Map<string, WatchState>();
@@ -537,14 +539,12 @@ function registerWatchState(
     discordChannelId,
     subscriber,
     channel: null,
-    entries: [],
-    toolResults: new Map(),
+    snapshot: createSessionSnapshot(),
     messageIds: [],
     currentChunks: [],
     dirty: false,
     pendingInteractions: new Map(),
     syncing: false,
-    status: 'connecting',
   };
   watchedSessions.set(sessionId, state);
   channelToSession.set(discordChannelId, sessionId);
@@ -608,79 +608,49 @@ function buildWatchSubscriber(sessionId: string): Subscriber {
 }
 
 function handleWatchEvent(state: WatchState, event: SubscriberMessage): void {
-  switch (event.type) {
-    case 'catchup': {
-      for (const entry of event.entries) processEntry(state, entry);
-      if (event.state === 'streaming' || event.state === 'active') state.status = 'working';
-      else if (event.state === 'idle') state.status = 'idle';
-      else if (event.state === 'background') state.status = 'background';
-      else if (event.state === 'awaiting_approval') {
-        state.status = 'approval';
-        for (const a of event.pendingApprovals) {
-          if (!state.pendingInteractions.has(a.toolUseId)) {
-            void postApprovalInteraction(state, a).catch((err) => {
-              log({ source: SOURCE, level: 'error', summary: 'failed to post catchup approval', data: err });
-            });
-          }
-        }
-      }
-      state.dirty = true;
-      void syncSession(state).catch((err) => {
-        log({ source: SOURCE, level: 'error', summary: 'catchup flush failed', data: err });
-      });
-      break;
-    }
+  const prevSnapshot = state.snapshot;
+  const prevApprovals = prevSnapshot.pendingApprovals;
+  state.snapshot = applySubscriberMessage(prevSnapshot, event);
 
-    case 'entry':
-      processEntry(state, event.entry);
-      state.dirty = true;
-      break;
+  reconcileApprovals(state, prevApprovals, state.snapshot.pendingApprovals);
+  if (state.snapshot !== prevSnapshot) state.dirty = true;
 
-    case 'event': {
-      const evt = event.event;
-      if (evt.type !== 'status') break;
-      state.dirty = true;
-      switch (evt.status) {
-        case 'active': state.status = 'working'; break;
-        case 'idle': state.status = 'idle'; break;
-        case 'background': state.status = 'background'; break;
-        case 'awaiting_approval':
-          state.status = 'approval';
-          void postApprovalInteraction(state, {
-            toolUseId: evt.toolUseId,
-            toolName: evt.toolName,
-            input: evt.input,
-            reason: evt.reason,
-            options: evt.options,
-          }).catch((err) => {
-            log({ source: SOURCE, level: 'error', summary: 'failed to post approval', data: err });
-          });
-          break;
-      }
-      break;
-    }
+  if (event.type === 'catchup') {
+    void syncSession(state).catch((err) => {
+      log({ source: SOURCE, level: 'error', summary: 'catchup flush failed', data: err });
+    });
   }
 }
 
-function processEntry(state: WatchState, entry: TranscriptEntry): void {
-  state.entries.push(entry);
-  extractToolResults(state, entry);
-}
+function reconcileApprovals(
+  state: WatchState,
+  previous: PendingApprovalInfo[],
+  next: PendingApprovalInfo[],
+): void {
+  if (previous.length === 0 && next.length === 0) return;
 
-/** Extract tool_result blocks from user and result entries to populate the toolResults map. */
-function extractToolResults(state: WatchState, entry: TranscriptEntry): void {
-  // Claude: tool_result blocks inside user entries
-  // Codex/OpenCode: tool_result blocks inside top-level result entries
-  if (entry.type !== 'user' && entry.type !== 'result') return;
+  const previousIds = new Set(previous.map((approval) => approval.toolUseId));
+  const nextIds = new Set(next.map((approval) => approval.toolUseId));
 
-  const content = entry.message?.content;
-  if (!Array.isArray(content)) return;
-
-  for (const block of content) {
-    if (block.type === 'tool_result' && 'tool_use_id' in block) {
-      const tr = block as { tool_use_id: string; is_error?: boolean };
-      state.toolResults.set(tr.tool_use_id, !!tr.is_error);
+  for (const toolUseId of state.pendingInteractions.keys()) {
+    if (!nextIds.has(toolUseId)) {
+      state.pendingInteractions.delete(toolUseId);
     }
+  }
+
+  for (const approval of next) {
+    if (state.pendingInteractions.has(approval.toolUseId)) continue;
+
+    void postApprovalInteraction(state, approval).catch((err) => {
+      log({
+        source: SOURCE,
+        level: 'error',
+        summary: previousIds.has(approval.toolUseId)
+          ? 'failed to restore approval interaction'
+          : 'failed to post approval',
+        data: err,
+      });
+    });
   }
 }
 
@@ -694,42 +664,46 @@ async function syncSession(state: WatchState): Promise<void> {
   state.dirty = false;
 
   try {
-  const chunks = renderSession(state.entries, state.toolResults, getStatusLine(state.status));
-  log({ source: SOURCE, level: 'info', summary: `sync ${state.sessionId.slice(0, 8)}: ${chunks.length} chunks from ${state.entries.length} entries (msgs=${state.messageIds.length}, status=${state.status})` });
+    const chunks = renderSession(
+      state.snapshot.entries,
+      state.snapshot.toolResults,
+      getStatusLine(state.snapshot.status),
+    );
+    log({ source: SOURCE, level: 'info', summary: `sync ${state.sessionId.slice(0, 8)}: ${chunks.length} chunks from ${state.snapshot.entries.length} entries (msgs=${state.messageIds.length}, status=${state.snapshot.status})` });
 
-  const maxLen = Math.max(chunks.length, state.currentChunks.length);
-  for (let i = 0; i < maxLen; i++) {
-    const chunk = chunks[i];
-    const prev = state.currentChunks[i];
-    if (chunk === prev) continue;
+    const maxLen = Math.max(chunks.length, state.currentChunks.length);
+    for (let i = 0; i < maxLen; i++) {
+      const chunk = chunks[i];
+      const prev = state.currentChunks[i];
+      if (chunk === prev) continue;
 
-    if (chunk && state.messageIds[i]) {
-      try {
-        await editMessage(state.discordChannelId, state.messageIds[i], chunk);
-        state.currentChunks[i] = chunk;
-      } catch (err) {
-        log({ source: SOURCE, level: 'error', summary: `edit failed for chunk ${i}`, data: err });
-        state.dirty = true;
-        return;
+      if (chunk && state.messageIds[i]) {
+        try {
+          await editMessage(state.discordChannelId, state.messageIds[i], chunk);
+          state.currentChunks[i] = chunk;
+        } catch (err) {
+          log({ source: SOURCE, level: 'error', summary: `edit failed for chunk ${i}`, data: err });
+          state.dirty = true;
+          return;
+        }
+      } else if (chunk && !state.messageIds[i]) {
+        try {
+          const msg = await sendMessage(state.discordChannelId, chunk);
+          state.messageIds[i] = msg.id;
+          state.currentChunks[i] = chunk;
+        } catch (err) {
+          log({ source: SOURCE, level: 'error', summary: `send failed for chunk ${i}`, data: err });
+          state.dirty = true;
+          return;
+        }
+      } else if (!chunk && state.messageIds[i]) {
+        await editMessage(state.discordChannelId, state.messageIds[i], '\u{200B}').catch(() => {});
+        state.currentChunks[i] = '';
       }
-    } else if (chunk && !state.messageIds[i]) {
-      try {
-        const msg = await sendMessage(state.discordChannelId, chunk);
-        state.messageIds[i] = msg.id;
-        state.currentChunks[i] = chunk;
-      } catch (err) {
-        log({ source: SOURCE, level: 'error', summary: `send failed for chunk ${i}`, data: err });
-        state.dirty = true;
-        return;
-      }
-    } else if (!chunk && state.messageIds[i]) {
-      await editMessage(state.discordChannelId, state.messageIds[i], '\u{200B}').catch(() => {});
-      state.currentChunks[i] = '';
     }
-  }
 
-  state.currentChunks = chunks;
-  log({ source: SOURCE, level: 'info', summary: `sync ${state.sessionId.slice(0, 8)}: complete (${chunks.length} chunks, dirty=${state.dirty})` });
+    state.currentChunks = chunks;
+    log({ source: SOURCE, level: 'info', summary: `sync ${state.sessionId.slice(0, 8)}: complete (${chunks.length} chunks, dirty=${state.dirty})` });
   } finally {
     state.syncing = false;
   }

@@ -45,3 +45,6 @@ coverage/
 # Temporary files
 .tmp/
 tmp/
+
+# Local agent instructions
+/AGENTS.md
