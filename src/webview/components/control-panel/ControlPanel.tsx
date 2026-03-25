@@ -49,7 +49,7 @@ import { useControlPanel } from '../../context/ControlPanelContext.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent, TurnTarget } from '../../../core/agent-adapter.js';
-import type { WireProviderConfig } from '../../../core/settings/types.js';
+import type { WireProviderConfig, DiscordBotSettings } from '../../../core/settings/types.js';
 import type { SettingsChangedGlobalEvent } from '../../../core/settings/events.js';
 import { SETTINGS_CHANNEL_ID } from '../../../core/settings/events.js';
 import { RECALL_CATCHUP_CHANNEL_ID } from '../../../core/recall/catchup-types.js';
@@ -252,6 +252,14 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           setProviders(settingsEvent.snapshot.settings.providers);
           setRosieEnabled(settingsEvent.snapshot.settings.rosie?.bot?.enabled ?? false);
           setRosieModel(settingsEvent.snapshot.settings.rosie?.bot?.model);
+          // Discord push sync
+          const dBot = settingsEvent.snapshot.settings.discord?.bot;
+          if (dBot) {
+            setDiscordEnabled(dBot.enabled);
+            setDiscordGuildId(dBot.guildId);
+            setDiscordToken(dBot.token);
+            setDiscordSessions(dBot.sessions);
+          }
           setDefaultModel(settingsEvent.snapshot.settings.turnDefaults?.model ?? '');
           const savedMode = settingsEvent.snapshot.settings.turnDefaults?.permissionMode;
           if (savedMode) {
@@ -298,10 +306,24 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const [rosieEnabled, setRosieEnabled] = useState(false);
     const [rosieModel, setRosieModel] = useState<string | undefined>(undefined);
 
+    // --- Discord Bot settings state ---
+    const [discordEnabled, setDiscordEnabled] = useState(false);
+    const [discordGuildId, setDiscordGuildId] = useState('');
+    const [discordToken, setDiscordToken] = useState('');
+    const [discordSessions, setDiscordSessions] = useState<'all' | 'manual'>('all');
+
     useEffect(() => {
       transport.getSettings().then((snapshot) => {
         setRosieEnabled(snapshot.settings.rosie?.bot?.enabled ?? false);
         setRosieModel(snapshot.settings.rosie?.bot?.model);
+        // Discord
+        const discordBot = snapshot.settings.discord?.bot;
+        if (discordBot) {
+          setDiscordEnabled(discordBot.enabled);
+          setDiscordGuildId(discordBot.guildId);
+          setDiscordToken(discordBot.token);
+          setDiscordSessions(discordBot.sessions);
+        }
         const savedDefault = snapshot.settings.turnDefaults?.model ?? '';
         setDefaultModel(savedDefault);
         // Apply persisted default model on initial load (before any session overrides it)
@@ -343,6 +365,14 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       if (patch.enabled !== undefined) setRosieEnabled(patch.enabled);
       if (patch.model !== undefined) setRosieModel(patch.model);
       await transport.updateSettings({ rosie: { bot: patch } });
+    }, [transport]);
+
+    const handleUpdateDiscord = useCallback(async (patch: Partial<DiscordBotSettings>) => {
+      if (patch.enabled !== undefined) setDiscordEnabled(patch.enabled);
+      if (patch.guildId !== undefined) setDiscordGuildId(patch.guildId);
+      if (patch.token !== undefined) setDiscordToken(patch.token);
+      if (patch.sessions !== undefined) setDiscordSessions(patch.sessions);
+      await transport.updateSettings({ discord: { bot: patch } });
     }, [transport]);
 
     // --- Recall catch-up state ---
@@ -1108,6 +1138,11 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               rosieEnabled={rosieEnabled}
               rosieModel={rosieModel}
               onUpdateRosie={handleUpdateRosie}
+              discordEnabled={discordEnabled}
+              discordGuildId={discordGuildId}
+              discordToken={discordToken}
+              discordSessions={discordSessions}
+              onUpdateDiscord={handleUpdateDiscord}
               catchupStatus={catchupStatus}
               onStartEmbedding={handleStartEmbedding}
               onStopEmbedding={handleStopEmbedding}

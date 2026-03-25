@@ -27,6 +27,7 @@ import type {
   SettingsSection,
   ProviderConfig,
   WireProviderConfig,
+  DiscordBotSettings,
 } from './types.js';
 import { DEFAULT_SETTINGS } from './types.js';
 import { migrateFromProvidersJson } from './migration.js';
@@ -92,6 +93,12 @@ function toWireSnapshot(settings: CrispySettingsFile): WireSettingsSnapshot {
     settings: {
       ...settings,
       providers: maskProviders(settings.providers),
+      discord: {
+        bot: {
+          ...settings.discord.bot,
+          token: maskApiKey(settings.discord.bot.token),
+        },
+      },
     },
     revision: settings.revision,
     updatedAt: settings.updatedAt,
@@ -111,6 +118,7 @@ function computeChangedSections(
     'cliProfiles',
     'turnDefaults',
     'rosie',
+    'discord',
   ];
 
   return sections.filter(
@@ -160,6 +168,22 @@ function applyPatch(current: CrispySettings, patch: SettingsPatch): CrispySettin
     result.rosie = {
       ...current.rosie,
       bot: { ...current.rosie.bot, ...patch.rosie.bot },
+    };
+  }
+
+  if (patch.discord?.bot) {
+    const botPatch = patch.discord.bot;
+    // Preserve existing token when the patch has a masked value
+    const token = (botPatch.token && botPatch.token.includes('…'))
+      ? current.discord.bot.token
+      : botPatch.token;
+    result.discord = {
+      ...current.discord,
+      bot: {
+        ...current.discord.bot,
+        ...botPatch,
+        ...(token !== undefined && { token }),
+      },
     };
   }
 
@@ -256,6 +280,41 @@ function sanitizeSettings(data: unknown): CrispySettings {
       if (typeof rosie.model === 'string' && (rosie.model as string).trim()) {
         result.rosie.bot.model = (rosie.model as string).trim();
       }
+    }
+  }
+
+  // Discord Bot
+  if (settings.discord && typeof settings.discord === 'object') {
+    const discord = settings.discord as Record<string, unknown>;
+    if (discord.bot && typeof discord.bot === 'object') {
+      const bot = discord.bot as Record<string, unknown>;
+      result.discord = {
+        bot: {
+          enabled: typeof bot.enabled === 'boolean' ? bot.enabled : false,
+          token: typeof bot.token === 'string' ? bot.token : '',
+          guildId: typeof bot.guildId === 'string' ? bot.guildId : '',
+          sessions: (bot.sessions === 'all' || bot.sessions === 'manual') ? bot.sessions : 'all',
+        },
+      };
+    }
+  }
+
+  // One-time migration: messageProviders → discord.bot
+  if (settings.messageProviders && Array.isArray(settings.messageProviders) && !result.discord.bot.token) {
+    const discordProvider = (settings.messageProviders as Array<Record<string, unknown>>).find(
+      (p) => p.type === 'discord' && p.enabled,
+    );
+    if (discordProvider) {
+      result.discord = {
+        bot: {
+          enabled: !!discordProvider.enabled,
+          token: typeof discordProvider.token === 'string' ? discordProvider.token : '',
+          guildId: typeof discordProvider.guildId === 'string' ? discordProvider.guildId : '',
+          sessions: (discordProvider.sessions === 'all' || discordProvider.sessions === 'manual')
+            ? discordProvider.sessions as 'all' | 'manual'
+            : 'all',
+        },
+      };
     }
   }
 
@@ -423,6 +482,7 @@ export function getSettingsSnapshotInternal(): SettingsSnapshot {
       cliProfiles: currentSettings.cliProfiles,
       turnDefaults: currentSettings.turnDefaults,
       rosie: currentSettings.rosie,
+      discord: currentSettings.discord,
       mcp: currentSettings.mcp,
     },
     revision: currentSettings.revision,

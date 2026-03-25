@@ -2989,6 +2989,28 @@ h2 {
   color: var(--text-tertiary);
 }
 
+.crispy-cp-settings__discord-autowatch {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--font-sm);
+  color: var(--text-tertiary);
+  padding: 4px 6px;
+  margin-top: 2px;
+  background: var(--tint-light);
+  border-radius: var(--radius-sm);
+}
+
+.crispy-cp-settings__discord-autowatch select {
+  padding: 4px 8px;
+  background: var(--vscode-dropdown-background, #3c3c3c);
+  color: var(--vscode-dropdown-foreground, #d4d4d4);
+  border: 1px solid var(--tint-medium);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
 .crispy-cp-settings__hint {
   font-size: 11px;
   opacity: 0.6;

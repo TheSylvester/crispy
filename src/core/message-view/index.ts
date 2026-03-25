@@ -8,10 +8,8 @@
  * @module message-view/index
  */
 
-import { readFileSync } from 'node:fs';
 import { log } from '../log.js';
-import { onSettingsChanged } from '../settings/index.js';
-import { settingsPath } from '../paths.js';
+import { onSettingsChanged, getSettingsSnapshotInternal } from '../settings/index.js';
 import { subscribeSessionList, unsubscribeSessionList } from '../session-list-manager.js';
 import type { SessionListSubscriber } from '../session-list-manager.js';
 import type { SessionListEvent } from '../session-list-events.js';
@@ -26,7 +24,7 @@ import {
   triggerTyping,
 } from './discord-transport.js';
 import type { GatewayEventHandler } from './discord-transport.js';
-import type { DiscordProviderConfig, MessageProviderConfig } from './config.js';
+import type { DiscordProviderConfig } from './config.js';
 import { handleCommand } from './commands.js';
 import type { CommandContext } from './commands.js';
 import { ensureForumChannel, rejoinForumThreads } from './forum.js';
@@ -109,10 +107,17 @@ export function shutdownMessageView(): void {
 
 function findEnabledDiscordProvider(): DiscordProviderConfig | null {
   try {
-    const raw = JSON.parse(readFileSync(settingsPath(), 'utf-8'));
-    const providers = raw.messageProviders as MessageProviderConfig[] | undefined;
-    if (!providers) return null;
-    return providers.find((p: MessageProviderConfig) => p.type === 'discord' && p.enabled) ?? null;
+    const { settings } = getSettingsSnapshotInternal();
+    const { discord } = settings;
+    if (!discord.bot.enabled || !discord.bot.token || !discord.bot.guildId) return null;
+    return {
+      id: 'discord-bot',
+      type: 'discord',
+      enabled: discord.bot.enabled,
+      token: discord.bot.token,
+      guildId: discord.bot.guildId,
+      sessions: discord.bot.sessions,
+    };
   } catch (err) {
     log({ source: SOURCE, level: 'warn', summary: 'failed to read Discord provider config', data: err });
     return null;

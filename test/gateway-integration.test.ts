@@ -12,6 +12,11 @@ function getToken(): string | null {
   try {
     const settingsPath = `${process.env.HOME}/.crispy/settings.json`;
     const raw = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+    // New shape: discord.bot.token
+    if (raw.discord?.bot?.enabled && raw.discord.bot.token) {
+      return raw.discord.bot.token;
+    }
+    // Legacy fallback: messageProviders array
     const providers = raw.messageProviders as Array<{ type: string; enabled: boolean; token: string }> | undefined;
     const discord = providers?.find(p => p.type === 'discord' && p.enabled);
     return discord?.token ?? null;
