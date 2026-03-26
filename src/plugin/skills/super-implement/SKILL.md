@@ -20,7 +20,7 @@ Before generating prompts, analyze what work benefits from shared context:
 
 - **Small coupled work** → Single prompt (shared context improves quality)
 - **Large coupled work with sequential dependencies** → Chain (phased execution, fresh agent per phase)
-- **Independent work units** → Parallel prompts (separate `/super-agent` instances, no sequencing needed)
+- **Independent work units** → Parallel prompts (separate `$CRISPY_AGENT` instances, no sequencing needed)
 
 ---
 
@@ -173,18 +173,18 @@ No title header — start with the execution directive.
 Directory: `.ai-reference/prompts/<task-name>/`
 
 ```
-00-orchestrate.md       # Execution plan — which prompts run in parallel, which sequentially
+00-<task-name>.md       # Execution plan — which prompts run in parallel, which sequentially
 01-<task-name>.md       # First independent task
 02-<task-name>.md       # Second independent task
 ...
 ```
 
-### Orchestration Prompt (00-orchestrate.md)
+### Orchestrator (00-<task-name>.md)
 
 ```markdown
 # [Task Name] — Parallel Execution
 
-These tasks are independent and can run simultaneously via parallel `/super-agent` calls.
+These tasks are independent and can run simultaneously via parallel `$CRISPY_AGENT` calls.
 
 ## Tasks
 
@@ -203,10 +203,10 @@ Launch all tasks in parallel, piping each prompt file directly:
 
 \`\`\`bash
 PROMPT_FILE=.ai-reference/prompts/<task-name>/01-task-a.md \
-  .claude/skills/super-agent/scripts/super-agent &
+  $CRISPY_AGENT &
 
 PROMPT_FILE=.ai-reference/prompts/<task-name>/02-task-b.md \
-  .claude/skills/super-agent/scripts/super-agent &
+  $CRISPY_AGENT &
 
 wait
 \`\`\`
@@ -229,22 +229,22 @@ When parallel prompts produce/consume shared interfaces:
 Directory: `.ai-reference/prompts/<task-name>-chain/`
 
 ```
-00-orchestrate.md       # Entry point — hand this to the runner
+00-<task-name>.md       # Entry point — hand this to the runner
 01-<phase-name>.md      # e.g., 01-discovery.md
 02-<phase-name>.md      # e.g., 02-implement-core.md
 03-<phase-name>.md      # e.g., 03-verify.md
 ```
 
-### Orchestration Prompt (00-orchestrate.md)
+### Orchestrator (00-<task-name>.md)
 
-The orchestration prompt is an **executable prompt** — it IS the project manager. When handed to a super-agent, it autonomously runs each phase, verifies completeness, synthesizes inter-phase context, and adapts. Template:
+The orchestration prompt is an **executable prompt** — it IS the project manager. When handed to a crispy-agent, it autonomously runs each phase, verifies completeness, synthesizes inter-phase context, and adapts. Template:
 
 ```markdown
 <!-- EXECUTION DIRECTIVE: This is a pre-validated orchestration prompt. Execute immediately without entering plan mode or invoking /reflect. You are the project manager for a phased implementation. -->
 
 # [Task Name] — Orchestrator
 
-You are the orchestrator for a [N]-phase implementation. Your job is to execute each phase sequentially via super-agent, verify completeness between phases, synthesize findings, and adapt the next phase's prompt if needed.
+You are the orchestrator for a [N]-phase implementation. Your job is to execute each phase sequentially via crispy-agent, verify completeness between phases, synthesize findings, and adapt the next phase's prompt if needed.
 
 ## What You're Building
 
@@ -270,7 +270,7 @@ For each phase (1 through N), execute this loop:
 
 \`\`\`bash
 PROMPT_FILE=.ai-reference/prompts/<task-name>-chain/{phase-file} \
-  .claude/skills/super-agent/scripts/super-agent
+  $CRISPY_AGENT
 \`\`\`
 
 If NOT the first phase, prepend inter-phase context via stdin:
@@ -278,7 +278,7 @@ If NOT the first phase, prepend inter-phase context via stdin:
 \`\`\`bash
 { echo "{context from Step 2 of previous phase}"; echo; echo "---"; echo; \
   cat .ai-reference/prompts/<task-name>-chain/{phase-file}; } \
-  | .claude/skills/super-agent/scripts/super-agent
+  | $CRISPY_AGENT
 \`\`\`
 
 ### Step 2: Verify and synthesize
@@ -387,9 +387,9 @@ Created [single prompt / parallel prompts / prompt chain] in `.ai-reference/prom
 
 ## To Execute
 
-[single prompt]: PROMPT_FILE=<path> .claude/skills/super-agent/scripts/super-agent
-[parallel]:      See 00-orchestrate.md — launch N instances simultaneously via PROMPT_FILE.
-[chain]:         PROMPT_FILE=.ai-reference/prompts/<task-name>-chain/00-orchestrate.md .claude/skills/super-agent/scripts/super-agent
+[single prompt]: PROMPT_FILE=<path> $CRISPY_AGENT
+[parallel]:      See 00-<task-name>.md — launch N instances simultaneously via PROMPT_FILE.
+[chain]:         PROMPT_FILE=.ai-reference/prompts/<task-name>-chain/00-<task-name>.md $CRISPY_AGENT
                  (The orchestrator agent autonomously runs phases, verifies, and synthesizes context.)
 
 Scope decisions: [any ambiguity resolutions]

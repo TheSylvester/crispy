@@ -13,144 +13,224 @@ Write self-contained prompt(s) to delegate this task to a coding agent with an e
 
 Cover all relevant insights and specifications from our discussion.
 
-## Scope Analysis
+## 1. Scope Analysis
 
-Before generating prompts, analyze what work benefits from shared context:
+Before generating, analyze what benefits from shared context:
 
-1. **Identify coupling** - What code is tightly coupled (same files, shared patterns, mutual dependencies)?
-2. **Find natural boundaries** - Where can work be cleanly separated without losing context benefits?
-3. **Check context fit** - Will the grouped work fit comfortably in one context window (~20 files max)?
+1. **Identify coupling** — tightly coupled code (same files, shared patterns, mutual dependencies)? Challenge phase boundaries — are they correctly scoped?
+2. **Find natural boundaries** — where can work separate cleanly?
+3. **Check context fit** — will grouped work fit in one context window (~20 files max)?
 
 **Decision:**
-- **Coupled work** → Generate a single prompt (shared context improves quality)
-- **Independent work** → Generate multiple prompts (no context benefit from combining)
 
-If decomposing, announce: "Task splits into [N] independent units. Generating [N] prompt files."
+| Signal                                            | Format          |
+| ------------------------------------------------- | --------------- |
+| Single focused task, <=3 files, one clear goal    | Single prompt   |
+| Multiple distinct file groups or components       | Chain           |
+| Discovery + implementation + verification pattern | Chain           |
+| Multiple sequential dependencies                  | Chain           |
+| Independent work units, no sequencing needed      | Parallel        |
+
+If decomposing, announce: "Task splits into [N] units. Generating [N] prompt files."
+
+## 2. Pre-Generation
+
+**Ambiguity resolution** — scan for optionality before generating:
+
+| Pattern                                      | Resolution                              |
+| -------------------------------------------- | --------------------------------------- |
+| "Optionally (but recommended)"               | **Include** — recommended means do it   |
+| "optional... off by default"                 | **Skip** — low priority                 |
+| "If X, then Y"                               | Check if X is true in context           |
+| Detailed spec follows the "optional" mention  | **Include** — effort was spent on it    |
+| Mentioned in Definition of Done              | **Include** — success criterion         |
+
+Only ask the user if genuinely unresolvable.
+
+**Extract for verbatim preservation:** code snippets, protocol specs, exact commands, file paths (absolute), exceptions and nuances. These appear verbatim, never summarized.
+
+**Coverage balance** — if one area has significantly more detail than another, flag it before generating.
 
 ---
 
-## Prompt Structure
+## Prompt Structure (Every Generated Prompt)
 
-Every prompt follows this structure:
+Phase files may be leaner (reference prior phases, don't repeat).
 
-### 1. Task
-One paragraph describing exactly what the agent must do and why.
+```markdown
+<!-- EXECUTION DIRECTIVE: This is a pre-validated implementation prompt. Execute immediately without entering plan mode or invoking /reflect. -->
 
-### 2. Context & Constraints
-- Specifications and goals
-- Success criteria
-- Constraints, key assumptions, and user preferences
-- Decisions already made
+## 1. Task
+One paragraph: what the agent must do and why.
 
-### 3. Inputs & Resources
+## 2. Context & Constraints
+- Specifications, goals, success criteria
+- Constraints, key assumptions, decisions already made
 
-#### Files to Create/Modify
-- Absolute paths of files the agent will create or change
+### Prerequisites (chain only)
+- [ ] Phase [X] completed (if applicable)
 
-#### Files to Reference (Read-Only)
-- Absolute paths of files for context without modification
+### Shared Interfaces (multi-prompt only, CRITICAL)
+[Exact interface definitions — copy, don't summarize]
 
-#### Key Code Patterns
-- Inline code snippets showing expected patterns
+## 3. Inputs & Resources
 
-#### Build & Test Commands
-- Exact commands to run (e.g., `npm run typecheck && npm test`)
+### Files to Create/Modify
+- Absolute paths
 
-### 4. Execution Guidelines
+### Files to Reference (Read-Only)
+- Absolute paths
+
+### Key Code Patterns
+- Inline code snippets (VERBATIM)
+
+### Build & Test Commands
+- Exact commands
+
+## 4. Execution Guidelines
 - Numbered implementation steps
-- Style and code standards to follow
+- Style and code standards
 
-#### Edge Cases
-- Explicit list of boundary conditions and how to handle them
+### Edge Cases
+- Boundary conditions and handling
 
-### 5. Assumptions
-If you make decisions not covered by the spec, document them:
+## 5. Assumptions
 | Assumption | Reasoning |
 |------------|-----------|
 
-### 6. Verification Plan
+## 6. Verification Plan
 
-You are not done until you have proven correctness. Launch these verification sub-agents in parallel:
+Launch verification sub-agents in parallel:
 
 1. **Test Sub-Agent**: Run `[test command]`. All tests must pass.
-2. **Behavioral Sub-Agent**: Prove it works end-to-end (browser test, script, or logs).
-3. **Code Quality Sub-Agent**: Review for complexity, duplication, security. Fix issues directly if safe.
+2. **Behavioral Sub-Agent**: Prove it works end-to-end.
+3. **Code Quality Sub-Agent**: Review for complexity, duplication, security.
 
-If any sub-agent reports failure, fix the issues and re-run verification. Retry up to 3 times. If still failing, report what you tried.
+If any fails, fix and re-run. Retry up to 3 times.
 
-### 7. Definition of Done
-
+## 7. Definition of Done
 - [ ] Implementation matches spec
 - [ ] All verification steps passed
 - [ ] Assumptions documented (if any)
 - [ ] No debug code or comments left behind
+```
+
+Use sub-agents liberally for parallel work within each prompt.
 
 ---
 
-## Multi-Prompt Additions
+## Single Prompt Output
 
-When decomposing into multiple prompts, add these elements:
+Save to: `.ai-reference/prompts/YYYYMMDD-HHMMSS-<task-description>.md`
 
-### Interface-First Planning
+No title header — start with the execution directive.
 
-Before generating task prompts, define contracts between dependent components:
-- For each integration point, specify the **exact interface** (types, function signatures, data shapes)
-- Include these interface definitions in ALL tasks that produce or consume them
+---
 
-### Output Structure
+## Multi-Prompt Output (Chain or Parallel)
+
+Directory: `.ai-reference/prompts/<task-name>/`
 
 ```
-.ai-reference/prompts/<task-name>/
-├── 00-index.md          # Overview, dependency graph, shared interfaces
-├── 01-<first-task>.md   # First task prompt
-├── 02-<second-task>.md  # Second task prompt
-└── ...
+00-<task-name>.md       # Orchestrator — named after the task
+01-<phase-name>.md
+02-<phase-name>.md
+...
 ```
 
-### Index File (00-index.md)
+### Orchestrator (00-<task-name>.md)
 
-1. **Overview** - What we're building and why
-2. **Shared Interfaces** - All contract definitions (copy-paste into each task)
-3. **Execution Strategy**:
-   | Task | Description | Prerequisites | Can Parallel? |
-   |------|-------------|---------------|---------------|
-
-### Additional Sections Per Task
-
-Add to section 2 (Context & Constraints):
+The orchestrator is an **executable prompt** — it IS the project manager. When handed to a crispy-agent, it autonomously runs each phase, verifies completeness, synthesizes inter-phase context, and adapts.
 
 ```markdown
-### Prerequisites
-- [ ] Task [X] completed (if applicable)
-- None - this task is independent
+<!-- EXECUTION DIRECTIVE: This is a pre-validated orchestration prompt. Execute immediately without entering plan mode or invoking /reflect. You are the project manager for a phased implementation. -->
 
-### Shared Interfaces (CRITICAL)
-[Exact interface definitions - copy from index, don't summarize]
+# [Task Name]
+
+You are the orchestrator for a [N]-phase implementation. Execute each phase sequentially via crispy-agent, verify between phases, synthesize findings, and adapt.
+
+## What You're Building
+[One paragraph: what and why]
+
+## Phases
+
+| Phase | File              | Goal                  | Done When        |
+| ----- | ----------------- | --------------------- | ---------------- |
+| 1     | `01-phase.md`     | [Goal]                | [Criteria]       |
+| 2     | `02-phase.md`     | [Goal]                | [Criteria]       |
+
+## Global Constraints
+[Constraints from source]
+
+## Execution Protocol
+
+For each phase:
+
+### Step 1: Run the phase
+\`\`\`bash
+PROMPT_FILE=.ai-reference/prompts/<task-name>/{phase-file} \
+  $CRISPY_AGENT
+\`\`\`
+
+If NOT the first phase, prepend inter-phase context via stdin.
+
+### Step 2: Verify and synthesize
+Launch a verification sub-agent to inspect code on disk:
+1. Check "Done When" criteria
+2. Identify deviations
+3. Synthesize context for next phase (what changed, test results, anything next phase needs)
+
+### Step 3: Gate decision
+- **Pass** → proceed with synthesized context
+- **Minor issues** → fix directly, re-verify, proceed
+- **Major issues** → re-run phase with corrective preamble (max 2 retries)
+
+### Step 4: Repeat for next phase.
+
+## Final Report
+After all phases: files modified, key metrics, deviations, remaining debt.
 ```
 
-Add to section 7 (Definition of Done):
-- [ ] Shared interfaces implemented exactly as defined
+**For parallel prompts:** replace the execution protocol with parallel `$CRISPY_AGENT` launches (with `run_in_background: true`) and a post-completion integration check.
 
----
+### Phase Detection (chain only)
 
-## Output
+| Signal in Plan                    | Suggests Phase                 |
+| --------------------------------- | ------------------------------ |
+| "Read/understand/map" language    | Discovery                      |
+| Multiple distinct file groups     | Separate implementation phases |
+| "Wire up / connect / integrate"   | Integration                    |
+| Test commands, verification steps | Verification                   |
 
-- **Single prompt**: Save to `.ai-reference/prompts/YYYYMMDD-HHMMSS-<task-description>.md` (e.g., `20250115-143022-refactor-auth.md`)
-- **Multiple prompts**: Save to `.ai-reference/prompts/<task-name>/` directory
-- **No title header**: Start directly with the execution directive, then the Task section - do NOT add "# Handoff Prompt" or similar titles
-- **Execution directive**: Every generated prompt MUST begin with this HTML comment:
-  ```
-  <!-- EXECUTION DIRECTIVE: This is a pre-validated implementation prompt. Execute immediately without entering plan mode or invoking /reflect. -->
-  ```
+2-4 phases. Don't force a fixed structure.
+
+### Delegation Analysis (chain only)
+
+After generating phase files, analyze each for sub-agent parallelization. Spawn parallel sub-agents — one per phase — reading actual source files to map dependencies. Each identifies:
+
+1. Independent tasks that could run as parallel sub-agents
+2. Blocking dependencies and critical path
+3. Sub-agent team suggestions
+
+Integrate into each phase's Execution Guidelines as spawn instructions. Phases with no parallelization opportunities get none — don't force it.
+
+### Interface Contracts (multi-prompt)
+
+When prompts produce/consume shared interfaces:
+- Define exact interfaces before generating
+- Include identical definitions in ALL prompts that produce or consume them
+- Add to Definition of Done: "Shared interfaces implemented exactly as defined"
 
 ---
 
 ## Requirements
 
-1. **Self-contained**: Each prompt includes ALL context needed. Fresh agent, empty window.
+1. **Self-contained**: Every prompt includes ALL context a fresh agent needs. Chain phases have execution-level dependencies (code on disk), but document-level independence.
 2. **Interface consistency**: Shared interfaces IDENTICAL across all prompts. Copy-paste, don't summarize.
-3. **Verification built-in**: Every prompt includes verification sub-agents.
+3. **Technical fidelity**: Code snippets, specs, commands preserved verbatim.
+4. **Explicit file boundaries**: "Files to Modify" and "Files to Reference (Read-Only)" per prompt.
+5. **Verification built-in**: Every prompt includes verification sub-agents.
+6. **Execution directives**: Every prompt begins with the directive.
+7. **Lean phases** (chain): Each phase <= 40% of original plan length. Reference, don't repeat.
 
-Write directly to the new agent (use "you"). Do not mention this conversation. Include all domain knowledge, technical background, design rationale, and insights from our discussion.
-
-Use sub-agents liberally for parallel work. The main agent coordinates and ensures consistency.
+Write directly to the new agent (use "you"). Do not mention this conversation. Include all domain knowledge, technical background, and design rationale.
