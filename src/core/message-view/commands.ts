@@ -8,6 +8,7 @@
  * @module message-view/commands
  */
 
+import { hostname } from 'node:os';
 import { log } from '../log.js';
 import {
   resolveSessionPrefix,
@@ -28,6 +29,7 @@ const SOURCE = 'message-view/commands';
 export interface CommandContext {
   readonly guildId: string | null;
   readonly forumReady: boolean;
+  readonly permissionMode: string | null;
   uptimeMs(): number;
   watchedCount(): number;
   isWatching(sessionId: string): boolean;
@@ -56,7 +58,7 @@ export function parseCommand(text: string): { cmd: string; args: string } | null
 export async function handleCommand(channelId: string, text: string, ctx: CommandContext): Promise<void> {
   const parsed = parseCommand(text);
   if (!parsed) {
-    await sendMessage(channelId, 'Use `!new`, `!open`, `!sessions`, `!stop`, or `!status`').catch(() => {});
+    await sendMessage(channelId, 'Use `!new`, `!open`, `!sessions`, `!stop`, `!status`, or `!crispy`').catch(() => {});
     return;
   }
 
@@ -73,6 +75,7 @@ export async function handleCommand(channelId: string, text: string, ctx: Comman
       case 'sessions': return await handleSessions(channelId);
       case 'stop':   return await handleStop(channelId, parsed.args);
       case 'status': return await handleStatus(channelId, ctx);
+      case 'crispy':  return await handleCrispy(channelId, ctx);
       default:
         await sendMessage(channelId, `Unknown command: \`!${parsed.cmd}\``).catch(() => {});
     }
@@ -136,7 +139,11 @@ async function handleOpen(channelId: string, args: string, ctx: CommandContext):
 
   await ctx.openSession(resolvedId);
   const discordChannelId = ctx.getWatchDiscordChannelId(resolvedId);
-  if (!discordChannelId) throw new Error('Failed to watch session');
+  if (!discordChannelId) {
+    // Concurrent !open: another call is still setting up the watch.
+    await sendMessage(channelId, `\u{1F4E1} Session \`${resolvedId.slice(0, 8)}\` is being opened by another request.`).catch(() => {});
+    return;
+  }
   const link = `https://discord.com/channels/${ctx.guildId}/${discordChannelId}`;
   await sendMessage(channelId, `\u{1F4E1} Watching session \`${resolvedId.slice(0, 8)}\`\n${link}`).catch(() => {});
 }
@@ -183,6 +190,15 @@ async function handleStatus(channelId: string, ctx: CommandContext): Promise<voi
   await sendMessage(
     channelId,
     `Uptime: ${uptimeMin}m\nActive channels: ${activeCount}\nWatched sessions: ${watched}\nTotal sessions: ${allSessions.length}`,
+  ).catch(() => {});
+}
+
+async function handleCrispy(channelId: string, ctx: CommandContext): Promise<void> {
+  const pid = process.pid;
+  const uptimeMin = Math.floor(ctx.uptimeMs() / 60000);
+  await sendMessage(
+    channelId,
+    `crispy-pong pid=${pid} host=${hostname()} uptime=${uptimeMin}m`,
   ).catch(() => {});
 }
 

@@ -15,4 +15,6 @@ export interface DiscordProviderConfig {
   guildId: string;
   /** 'all' = auto-watch new sessions, 'manual' = only via !open */
   sessions: 'all' | 'manual';
+  /** Resolved: discord override ?? turnDefaults fallback. */
+  permissionMode: string | null;
 }

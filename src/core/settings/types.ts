@@ -101,6 +101,8 @@ export interface DiscordBotSettings {
   guildId: string;
   /** 'all' = auto-watch new sessions, 'manual' = only via !open */
   sessions: 'all' | 'manual';
+  /** Override permission mode for Discord sessions. null = use turnDefaults. */
+  permissionMode: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | null;
 }
 
 export interface DiscordSettings {
@@ -253,7 +255,7 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     bot: { enabled: false },
   },
   discord: {
-    bot: { enabled: false, token: '', guildId: '', sessions: 'all' },
+    bot: { enabled: false, token: '', guildId: '', sessions: 'all', permissionMode: null },
   },
   mcp: {
     memory: { vscode: true, devServer: true },

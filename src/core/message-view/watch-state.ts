@@ -14,7 +14,7 @@ import { unsubscribe, resolveApproval } from '../session-channel.js';
 import type { Subscriber, SubscriberMessage, SessionChannel } from '../session-channel.js';
 import type { Vendor } from '../transcript.js';
 import type { ApprovalOption, PendingApprovalInfo } from '../channel-events.js';
-import type { TurnIntent } from '../agent-adapter.js';
+import type { TurnIntent, TurnSettings } from '../agent-adapter.js';
 import {
   applySubscriberMessage,
   createSessionSnapshot,
@@ -35,6 +35,14 @@ import { renderSession, getStatusLine, truncate, DISCORD_MAX_LENGTH } from './re
 const SOURCE = 'message-view';
 const MIN_PROMPT_LENGTH = 3;
 const MAX_CHUNKS = 10;
+
+function buildPermissionSettings(mode: string | null): Partial<TurnSettings> {
+  if (!mode) return {};
+  return {
+    permissionMode: mode as TurnSettings['permissionMode'],
+    ...(mode === 'bypassPermissions' && { allowDangerouslySkipPermissions: true }),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -62,6 +70,7 @@ interface WatchState {
   /** True while syncSession is in-flight (prevents concurrent syncs). */
   syncing: boolean;
   consecutiveFailures: number;
+  permissionMode: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -71,6 +80,7 @@ interface WatchState {
 const watchedSessions = new Map<string, WatchState>();
 const channelToSession = new Map<string, string>();
 const commandSessionIds = new Set<string>();
+const pendingWatches = new Set<string>();
 
 // ---------------------------------------------------------------------------
 // Accessors (no raw map exports)
@@ -117,6 +127,7 @@ export function disposeWatch(sessionId: string): void {
   }
   channelToSession.delete(state.discordChannelId);
   watchedSessions.delete(sessionId);
+  commandSessionIds.delete(sessionId);
   archiveThread(state.discordChannelId).catch(() => {});
 
   log({ source: SOURCE, level: 'info', summary: `disposed watch for ${sessionId.slice(0, 8)}` });
@@ -128,6 +139,16 @@ export function disposeAllWatches(): void {
   }
 }
 
+export function rekeyWatchState(oldId: string, newId: string): void {
+  const state = watchedSessions.get(oldId);
+  if (!state) return;
+  state.sessionId = newId;
+  watchedSessions.delete(oldId);
+  watchedSessions.set(newId, state);
+  channelToSession.set(state.discordChannelId, newId);
+  commandSessionIds.add(newId);
+}
+
 // ---------------------------------------------------------------------------
 // Watch State Registration
 // ---------------------------------------------------------------------------
@@ -136,6 +157,7 @@ function registerWatchState(
   sessionId: string,
   discordChannelId: string,
   subscriber: Subscriber,
+  permissionMode?: string | null,
 ): WatchState {
   const state: WatchState = {
     sessionId,
@@ -149,6 +171,7 @@ function registerWatchState(
     pendingInteractions: new Map(),
     syncing: false,
     consecutiveFailures: 0,
+    permissionMode: permissionMode ?? null,
   };
   watchedSessions.set(sessionId, state);
   channelToSession.set(discordChannelId, sessionId);
@@ -164,6 +187,7 @@ export async function createWatchedSession(
   promptText: string,
   forumChannelId: string,
   guildId: string,
+  permissionMode: string | null,
 ): Promise<{ sessionId: string; discordChannelId: string }> {
   const displayName = promptText.slice(0, 100).replace(/\n/g, ' ').trim() || 'new session';
   const post = await createForumPost(forumChannelId, displayName, '\u{23F3} Starting session\u{2026}', {
@@ -175,18 +199,35 @@ export async function createWatchedSession(
     target: { kind: 'new', vendor, cwd: process.cwd() },
     content: [{ type: 'text', text: promptText }],
     clientMessageId: crypto.randomUUID(),
-    settings: {},
+    settings: buildPermissionSettings(permissionMode),
   };
 
   const tempSessionId = `prompt-${Date.now()}`;
-  // Block auto-watch before sendTurn fires session list notifications
   commandSessionIds.add(tempSessionId);
   const subscriber = buildWatchSubscriber(tempSessionId);
 
-  const result = await sendTurn(intent, subscriber);
-  commandSessionIds.add(result.sessionId);
-  const realId = result.rekeyPromise ? await result.rekeyPromise : result.sessionId;
-  commandSessionIds.add(realId);
+  // Register watch state EAGERLY under pending ID — the subscriber's
+  // session_changed handler will rekey to real ID synchronously before
+  // list-notify can trigger auto-watch.
+  registerWatchState(tempSessionId, discordChannelId, subscriber, permissionMode);
+
+  let realId: string;
+  try {
+    const result = await sendTurn(intent, subscriber);
+    commandSessionIds.add(result.sessionId);
+
+    // rekeyPromise resolves AFTER our subscriber has already rekeyed the
+    // watch maps (subscriber fires before rekey subscriber in broadcast order)
+    realId = result.rekeyPromise ? await result.rekeyPromise : result.sessionId;
+    commandSessionIds.add(realId);
+  } catch (err) {
+    // Clean up eagerly registered state + Discord thread on failure
+    watchedSessions.delete(tempSessionId);
+    channelToSession.delete(discordChannelId);
+    commandSessionIds.delete(tempSessionId);
+    archiveThread(discordChannelId).catch(() => {});
+    throw err;
+  }
 
   // Rename post to canonical session-{prefix} format
   const canonicalName = `session-${realId.slice(0, 8)}`;
@@ -194,8 +235,11 @@ export async function createWatchedSession(
     log({ source: SOURCE, level: 'warn', summary: `failed to rename post to ${canonicalName}`, data: err });
   });
 
-  const state = registerWatchState(realId, discordChannelId, subscriber);
-  state.channel = await subscribeSession(realId, subscriber);
+  // Get the (possibly rekeyed) watch state and subscribe
+  const state = watchedSessions.get(realId);
+  if (state) {
+    state.channel = await subscribeSession(realId, subscriber);
+  }
 
   log({ source: SOURCE, level: 'info', summary: `created session ${realId.slice(0, 12)}` });
   return { sessionId: realId, discordChannelId };
@@ -205,29 +249,34 @@ export async function watchSession(
   sessionId: string,
   forumChannelId: string,
   opts: { auto: boolean },
+  permissionMode?: string | null,
 ): Promise<void> {
-  if (watchedSessions.has(sessionId)) return;
-
-  const postName = `session-${sessionId.slice(0, 8)}`;
-  const anchorText = opts.auto
-    ? `\u{1F4E1} Auto-watching session \`${sessionId.slice(0, 8)}\``
-    : `\u{1F4E1} Watching session \`${sessionId.slice(0, 8)}\``;
-  const post = await createForumPost(forumChannelId, postName, anchorText, {
-    autoArchiveDuration: 1440,
-  });
-  const discordChannelId = post.id;
-
-  const subscriber = buildWatchSubscriber(sessionId);
-  const state = registerWatchState(sessionId, discordChannelId, subscriber);
-
+  if (watchedSessions.has(sessionId) || pendingWatches.has(sessionId)) return;
+  pendingWatches.add(sessionId);
   try {
-    state.channel = await subscribeSession(sessionId, subscriber);
-  } catch (err) {
-    disposeWatch(sessionId);
-    throw err;
-  }
+    const postName = `session-${sessionId.slice(0, 8)}`;
+    const anchorText = opts.auto
+      ? `\u{1F4E1} Auto-watching session \`${sessionId.slice(0, 8)}\``
+      : `\u{1F4E1} Watching session \`${sessionId.slice(0, 8)}\``;
+    const post = await createForumPost(forumChannelId, postName, anchorText, {
+      autoArchiveDuration: 1440,
+    });
+    const discordChannelId = post.id;
 
-  log({ source: SOURCE, level: 'info', summary: `${opts.auto ? 'auto-' : ''}watching session ${sessionId.slice(0, 12)}\u{2026}` });
+    const subscriber = buildWatchSubscriber(sessionId);
+    const state = registerWatchState(sessionId, discordChannelId, subscriber, permissionMode);
+
+    try {
+      state.channel = await subscribeSession(sessionId, subscriber);
+    } catch (err) {
+      disposeWatch(sessionId);
+      throw err;
+    }
+
+    log({ source: SOURCE, level: 'info', summary: `${opts.auto ? 'auto-' : ''}watching session ${sessionId.slice(0, 12)}\u{2026}` });
+  } finally {
+    pendingWatches.delete(sessionId);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -252,7 +301,7 @@ export async function handlePostMessage(
     target: { kind: 'existing', sessionId },
     content: [{ type: 'text', text }],
     clientMessageId: crypto.randomUUID(),
-    settings: {},
+    settings: buildPermissionSettings(state.permissionMode),
   };
 
   try {
@@ -267,16 +316,31 @@ export async function handlePostMessage(
 // Session Event Subscriber
 // ---------------------------------------------------------------------------
 
-function buildWatchSubscriber(sessionId: string): Subscriber {
+function buildWatchSubscriber(initialSessionId: string): Subscriber {
+  let sessionId = initialSessionId;
   return {
-    id: `message-view-watch-${sessionId.slice(0, 12)}`,
+    id: `message-view-watch-${initialSessionId.slice(0, 12)}`,
     send(event: SubscriberMessage): void {
       try {
-        // Primary lookup by sessionId; fallback by reference identity for rekeyed sessions
+        // Detect session_changed and rekey SYNCHRONOUSLY — this subscriber
+        // fires BEFORE list-notify, so rekey completes before auto-watch
+        // can see the session_list_upsert with the real ID.
+        if (event.type === 'event' && event.event.type === 'notification' &&
+            event.event.kind === 'session_changed' && 'sessionId' in event.event) {
+          const realId = (event.event as { sessionId: string }).sessionId;
+          rekeyWatchState(sessionId, realId);
+          sessionId = realId;
+        }
+
         let state = watchedSessions.get(sessionId);
         if (!state) {
+          // Fallback: linear scan by subscriber identity. Should be unreachable
+          // after synchronous rekey above — log if it fires to detect bugs.
           for (const s of watchedSessions.values()) {
             if (s.subscriber === this) { state = s; break; }
+          }
+          if (state) {
+            log({ source: SOURCE, level: 'warn', summary: `subscriber fallback scan hit for ${sessionId.slice(0, 12)} — rekey may have failed` });
           }
         }
         if (state) handleWatchEvent(state, event);

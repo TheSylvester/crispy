@@ -11,6 +11,7 @@ import { log } from '../log.js';
 import {
   discordFetch,
   createChannel,
+  createForumPost,
   getGuildChannels,
   getActiveThreads,
 } from './discord-transport.js';
@@ -44,7 +45,7 @@ export async function ensureForumChannel(guildId: string, botId: string, ownerId
   return forum.id;
 }
 
-export async function rejoinForumThreads(guildId: string, forumId: string): Promise<void> {
+export async function rejoinForumThreads(guildId: string, forumId: string): Promise<Array<{ id: string; name: string; parent_id: string }>> {
   // Active (non-archived) threads — guild-level endpoint
   const active = await getActiveThreads(guildId);
   const activeForum = active.filter(t => t.parent_id === forumId);
@@ -66,7 +67,7 @@ export async function rejoinForumThreads(guildId: string, forumId: string): Prom
   for (const t of [...activeForum, ...archivedForum]) {
     if (!seen.has(t.id)) { seen.add(t.id); allThreads.push(t); }
   }
-  if (allThreads.length === 0) return;
+  if (allThreads.length === 0) return activeForum;
 
   const joinTasks = allThreads.map(t =>
     discordFetch('PUT', `/channels/${t.id}/thread-members/@me`).catch((err) => {
@@ -75,6 +76,39 @@ export async function rejoinForumThreads(guildId: string, forumId: string): Prom
   );
   await Promise.all(joinTasks);
   log({ source: SOURCE, level: 'info', summary: `re-joined ${allThreads.length} forum thread${allThreads.length > 1 ? 's' : ''} (${activeForum.length} active, ${archivedForum.length} archived)` });
+  return activeForum;
+}
+
+const HEALTH_THREAD_NAME = 'crispy-health';
+
+export async function ensureHealthThread(
+  forumChannelId: string,
+  activeForumThreads: Array<{ id: string; name: string }>,
+): Promise<string> {
+  const existing = activeForumThreads.find(t => t.name === HEALTH_THREAD_NAME);
+  if (existing) return existing.id;
+
+  // Check archived threads
+  try {
+    const archived = await discordFetch('GET', `/channels/${forumChannelId}/threads/archived/public`) as {
+      threads?: Array<{ id: string; name?: string }>;
+    };
+    const archivedHealth = archived.threads?.find(t => t.name === HEALTH_THREAD_NAME);
+    if (archivedHealth) {
+      // Unarchive by sending a message (Discord auto-unarchives on message send)
+      await discordFetch('POST', `/channels/${archivedHealth.id}/messages`, {
+        content: '\u{1F3D3} Health thread reactivated',
+      });
+      return archivedHealth.id;
+    }
+  } catch { /* ignore — may not have archived threads */ }
+
+  // Create new health thread (forum post)
+  const post = await createForumPost(forumChannelId, HEALTH_THREAD_NAME, '\u{1F3D3} Crispy health-check thread \u{2014} do not delete', {
+    autoArchiveDuration: 10080,
+  });
+  log({ source: SOURCE, level: 'info', summary: `created health-check thread: ${post.id}` });
+  return post.id;
 }
 
 async function repairForumPermissions(channelId: string, guildId: string, botId: string, ownerId: string | null): Promise<void> {

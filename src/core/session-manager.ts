@@ -965,7 +965,7 @@ export function createSession(
   vendor: Vendor,
   cwd: string,
   subscriber: Subscriber,
-  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' },
+  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; allowDangerouslySkipPermissions?: boolean; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' },
   explicitPendingId?: string,
 ): PendingChannelResult {
   if (!adapters.has(vendor)) {
@@ -977,6 +977,7 @@ export function createSession(
     cwd,
     ...(options?.model && { model: options.model }),
     ...(options?.permissionMode && { permissionMode: options.permissionMode }),
+    ...(options?.allowDangerouslySkipPermissions && { allowDangerouslySkipPermissions: true }),
     ...(options?.extraArgs && { extraArgs: options.extraArgs }),
     ...(options?.skipPersistSession && { skipPersistSession: true }),
     ...(options?.mcpServers && { mcpServers: options.mcpServers }),
