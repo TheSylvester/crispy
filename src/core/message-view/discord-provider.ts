@@ -38,6 +38,7 @@ import {
   discordFetch,
   triggerTyping,
   sendMessage,
+  addReaction,
   archiveThread,
 } from './discord-transport.js';
 import type { GatewayEventHandler } from './discord-transport.js';
@@ -101,6 +102,7 @@ let currentConfig: DiscordProviderConfig | null = null;
 let currentDispatch: AgentDispatch | null = null;
 let workspaceCwd: string | null = null;
 let botControlChannelId: string | null = null;
+let welcomeMessageId: string | null = null;
 const lastTypingFired = new Map<string, number>();
 const TYPING_COOLDOWN_MS = 8000;
 const HEALTH_CHECK_TIMEOUT_MS = 3000;
@@ -279,6 +281,7 @@ function disposeDiscordProvider(): void {
   currentDispatch = null;
   workspaceCwd = null;
   botControlChannelId = null;
+  welcomeMessageId = null;
   clearWorkspaceChannels();
   ownerUserId = null;
   promptsInFlight = 0;
@@ -344,13 +347,14 @@ async function initWorkspaceChannels(): Promise<void> {
 
   botControlChannelId = await createBotChannel(guildId, botId, ownerUserId, myPid);
 
-  // Post welcome message in bot channel
-  void sendMessage(botControlChannelId, [
+  // Post welcome message with 📂 reaction for quick session browsing
+  const welcomeMsg = await sendMessage(botControlChannelId, [
     '\u{1F7E2} **Crispy online.**',
     '',
-    'Use `!sessions` to browse and open recent conversations.',
-    'Or create a **New Post** in the forum channel to start a fresh session.',
-  ].join('\n')).catch(() => {});
+    'React \u{1F4C2} to browse sessions, or create a **New Post** in the forum channel.',
+  ].join('\n'));
+  welcomeMessageId = welcomeMsg.id;
+  await addReaction(botControlChannelId, welcomeMsg.id, '\u{1F4C2}').catch(() => {});
 
   commandsEnabled = true;
   enableAutoWatchAndHeartbeat();
@@ -675,6 +679,14 @@ function handleGatewayReaction(
 ): void {
   const botId = getBotUserId();
   if (!botId || userId === botId) return;
+
+  // 📂 on welcome message → show session list
+  if (emoji === '\u{1F4C2}' && welcomeMessageId && messageId === welcomeMessageId) {
+    void handleCommand(channelId, '!sessions', buildCommandContext()).catch((err) => {
+      log({ source: SOURCE, level: 'error', summary: 'welcome reaction sessions error', data: err });
+    });
+    return;
+  }
 
   // Session list reaction (numbered emoji pick or pagination)
   void handleSessionListReaction(messageId, emoji, buildCommandContext()).catch((err) => {
