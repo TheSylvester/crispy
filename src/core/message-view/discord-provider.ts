@@ -628,8 +628,8 @@ async function handleGatewayMessage(
       }
       return;
     }
-    // (b) Another instance sent a command to our bot channel — let it through
-    if (commandsEnabled && channelId === botControlChannelId) {
+    // (b) Another instance sent a !command to our bot channel — let it through
+    if (commandsEnabled && channelId === botControlChannelId && message.content.trimStart().startsWith('!')) {
       // Fall through to normal command routing below
     } else {
       return;
