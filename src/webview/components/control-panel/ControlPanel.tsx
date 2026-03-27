@@ -77,15 +77,29 @@ const CYCLABLE_AGENCY_MODES: AgencyMode[] = [
   'ask-before-edits',
 ];
 
-function getChatPlaceholder(vendor: string): string {
-  switch (vendor) {
-    case 'codex':
-      return 'What would you like to build? Use $recall or $handoff-prompt-to for Crispy skills.';
-    case 'claude':
-      return 'What would you like to build? Use /recall for Crispy skills.';
-    default:
-      return 'What would you like to build?';
+/** Skill hints shown randomly in the chat placeholder. */
+const SKILL_HINTS: Array<{ skill: string; hint: string }> = [
+  { skill: 'recall', hint: 'search past sessions' },
+  { skill: 'spec-mode', hint: 'plan a feature interactively' },
+  { skill: 'superthink', hint: 'multi-agent adversarial review' },
+  { skill: 'handoff', hint: 'rotate to a fresh session' },
+  { skill: 'super-implement', hint: 'turn a plan into execution prompts' },
+  { skill: 'reflect', hint: 'verify a prompt before execution' },
+  { skill: 'backup-transcripts', hint: 'archive session history' },
+];
+
+/** Picks a random hint once per mount (avoids flicker on re-render). */
+function useRandomSkillHint(): { skill: string; hint: string } {
+  const ref = useRef(SKILL_HINTS[Math.floor(Math.random() * SKILL_HINTS.length)]);
+  return ref.current;
+}
+
+function getChatPlaceholder(vendor: string, pick: { skill: string; hint: string }): string {
+  const t = vendor === 'codex' ? '$' : '/';
+  if (vendor !== 'codex' && vendor !== 'claude') {
+    return 'What would you like to build?';
   }
+  return `Ask anything, or type ${t} for skills — try ${t}${pick.skill} to ${pick.hint}.`;
 }
 
 function controlPanelReducer(state: ControlPanelState, action: Action): ControlPanelState {
@@ -156,6 +170,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       handleForkHistoryLoaded: onForkHistoryLoaded,
       setAgencyMode: ctxSetAgencyMode,
     } = useControlPanel();
+    const skillHint = useRandomSkillHint();
     // Track the DOM element for native drag/drop listeners. A callback ref
     // ensures the useEffect re-runs when the element mounts, unlike a
     // RefObject whose identity never changes.
@@ -1079,7 +1094,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               attachedImages={state.attachedImages}
               onInput={(value) => dispatch({ type: 'SET_INPUT', value })}
               onSend={handleSend}
-              placeholder={getChatPlaceholder(parseModelOption(state.model).vendor)}
+              placeholder={getChatPlaceholder(parseModelOption(state.model).vendor, skillHint)}
               forkMode={!!state.forkMode}
               onFork={handleFork}
               voiceState={voice.state}
