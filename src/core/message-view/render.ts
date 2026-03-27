@@ -42,6 +42,14 @@ export function renderSession(
 ): string[] {
   const lines: string[] = [];
   let prevWasTool = false;
+  let inlineGroup: string[] = [];
+
+  const flushInlineGroup = () => {
+    if (inlineGroup.length) {
+      lines.push('      ' + inlineGroup.join(' '));
+      inlineGroup = [];
+    }
+  };
 
   if (statusLine) lines.push(statusLine);
 
@@ -52,6 +60,7 @@ export function renderSession(
     if (entry.parentToolUseID) continue;
 
     if (entry.type === 'user') {
+      flushInlineGroup();
       const userText = extractUserText(entry);
       if (userText) lines.push(`\n---\n**User:** ${userText}\n---`);
       continue;
@@ -62,20 +71,12 @@ export function renderSession(
 
     if (typeof content === 'string') {
       if (content) {
+        flushInlineGroup();
         if (prevWasTool) lines.push('');
         lines.push(content);
         prevWasTool = false;
       }
     } else {
-      let inlineGroup: string[] = [];
-
-      const flushInlineGroup = () => {
-        if (inlineGroup.length) {
-          lines.push('      ' + inlineGroup.join(' '));
-          inlineGroup = [];
-        }
-      };
-
       for (const block of content) {
         if (block.type === 'text' && block.text) {
           flushInlineGroup();
@@ -97,9 +98,9 @@ export function renderSession(
           prevWasTool = true;
         }
       }
-      flushInlineGroup();
     }
   }
+  flushInlineGroup();
 
   const fullText = lines.join('\n');
   if (!fullText) return [];
@@ -140,6 +141,14 @@ export function renderSessionWithAnchors(
   const consumed = new Set<string>();
   let currentContent = statusLine ? statusLine + '\n' : '';
   let prevWasTool = false;
+  let inlineGroup: string[] = [];
+
+  const flushInlineGroup = () => {
+    if (inlineGroup.length) {
+      currentContent += '\n      ' + inlineGroup.join(' ');
+      inlineGroup = [];
+    }
+  };
 
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
@@ -148,6 +157,7 @@ export function renderSessionWithAnchors(
     if (entry.parentToolUseID) continue;
 
     if (entry.type === 'user') {
+      flushInlineGroup();
       const text = extractUserText(entry);
       if (!text) continue;
       const anchorId = findDiscordAnchor(text, userMessages, consumed);
@@ -175,20 +185,12 @@ export function renderSessionWithAnchors(
 
     if (typeof content === 'string') {
       if (content) {
+        flushInlineGroup();
         if (prevWasTool) currentContent += '\n';
         currentContent += '\n' + content;
         prevWasTool = false;
       }
     } else {
-      let inlineGroup: string[] = [];
-
-      const flushInlineGroup = () => {
-        if (inlineGroup.length) {
-          currentContent += '\n      ' + inlineGroup.join(' ');
-          inlineGroup = [];
-        }
-      };
-
       for (const block of content) {
         if (block.type === 'text' && block.text) {
           flushInlineGroup();
@@ -210,9 +212,9 @@ export function renderSessionWithAnchors(
           prevWasTool = true;
         }
       }
-      flushInlineGroup();
     }
   }
+  flushInlineGroup();
 
   // Flush remaining
   if (currentContent.trim()) {
