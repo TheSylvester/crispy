@@ -1,9 +1,15 @@
 /**
  * Watch State — session watch registry, sync loop, and approval interactions
  *
- * Owns the WatchState type, the session→Discord channel maps, and all
- * functions that operate on watched sessions. Index.ts passes lifecycle
- * values (forumChannelId, guildId) as parameters to avoid circular imports.
+ * Owns the WatchState type (including ThreadSlot-based sync model), the
+ * session→Discord channel maps, and all functions that operate on watched
+ * sessions. Index.ts passes lifecycle values (forumChannelId, guildId) as
+ * parameters to avoid circular imports.
+ *
+ * Thread sync uses a heterogeneous slot model: bot-rendered content segments
+ * interleave with user-authored Discord messages (anchors). The renderer
+ * produces RenderSegment[], and syncSession() walks segments against
+ * ThreadSlot[] to edit, create, skip, or clear messages.
  *
  * @module message-view/watch-state
  */
@@ -28,13 +34,20 @@ import {
   archiveThread,
   discordFetch,
   triggerTyping,
+  getMessages,
+  getBotUserId,
 } from './discord-transport.js';
 import { DiscordApiError } from './discord-transport.js';
-import { renderSession, getStatusLine, truncate, DISCORD_MAX_LENGTH } from './render.js';
+import {
+  renderSessionWithAnchors,
+  getStatusLine,
+  truncate,
+  DISCORD_MAX_LENGTH,
+} from './render.js';
+import type { RenderSegment } from './render.js';
 
 const SOURCE = 'message-view';
 const MIN_PROMPT_LENGTH = 3;
-const MAX_CHUNKS = 10;
 
 function buildPermissionSettings(mode: string | null): Partial<TurnSettings> {
   if (!mode) return {};
@@ -56,6 +69,13 @@ interface PendingInteraction {
   emojiToOptionId: Map<string, string>;
 }
 
+export interface ThreadSlot {
+  kind: 'bot' | 'user';
+  discordMessageId: string;
+  content?: string;        // last-synced content (bot slots)
+  entryIndex?: number;     // transcript entry index (user slots)
+}
+
 interface WatchState {
   sessionId: string;
   discordChannelId: string;
@@ -63,8 +83,10 @@ interface WatchState {
   /** Null until subscribeSession completes (pre-registered for catchup delivery). */
   channel: SessionChannel | null;
   snapshot: SessionSnapshot;
-  messageIds: string[];
-  currentChunks: string[];
+  /** Ordered sequence of bot and user message slots in the Discord thread. */
+  threadSlots: ThreadSlot[];
+  /** Non-bot Discord messages in the thread: discordMessageId → content text. */
+  userMessages: Map<string, string>;
   dirty: boolean;
   pendingInteractions: Map<string, PendingInteraction>;
   /** True while syncSession is in-flight (prevents concurrent syncs). */
@@ -158,15 +180,20 @@ function registerWatchState(
   discordChannelId: string,
   subscriber: Subscriber,
   permissionMode?: string | null,
+  starterMessageId?: string,
 ): WatchState {
+  const threadSlots: ThreadSlot[] = [];
+  if (starterMessageId) {
+    threadSlots.push({ kind: 'bot', discordMessageId: starterMessageId, content: '' });
+  }
   const state: WatchState = {
     sessionId,
     discordChannelId,
     subscriber,
     channel: null,
     snapshot: createSessionSnapshot(),
-    messageIds: [],
-    currentChunks: [],
+    threadSlots,
+    userMessages: new Map(),
     dirty: false,
     pendingInteractions: new Map(),
     syncing: false,
@@ -188,6 +215,7 @@ export async function createWatchedSession(
   forumChannelId: string,
   guildId: string,
   permissionMode: string | null,
+  cwd?: string,
 ): Promise<{ sessionId: string; discordChannelId: string }> {
   const displayName = promptText.slice(0, 100).replace(/\n/g, ' ').trim() || 'new session';
   const post = await createForumPost(forumChannelId, displayName, '\u{23F3} Starting session\u{2026}', {
@@ -195,8 +223,10 @@ export async function createWatchedSession(
   });
 
   const discordChannelId = post.id;
+  const starterMessageId = post.messageId;
+  const sessionCwd = cwd ?? process.cwd();
   const intent: TurnIntent = {
-    target: { kind: 'new', vendor, cwd: process.cwd() },
+    target: { kind: 'new', vendor, cwd: sessionCwd },
     content: [{ type: 'text', text: promptText }],
     clientMessageId: crypto.randomUUID(),
     settings: buildPermissionSettings(permissionMode),
@@ -209,7 +239,7 @@ export async function createWatchedSession(
   // Register watch state EAGERLY under pending ID — the subscriber's
   // session_changed handler will rekey to real ID synchronously before
   // list-notify can trigger auto-watch.
-  registerWatchState(tempSessionId, discordChannelId, subscriber, permissionMode);
+  registerWatchState(tempSessionId, discordChannelId, subscriber, permissionMode, starterMessageId);
 
   let realId: string;
   try {
@@ -262,9 +292,15 @@ export async function watchSession(
       autoArchiveDuration: 1440,
     });
     const discordChannelId = post.id;
+    const starterMessageId = post.messageId;
 
     const subscriber = buildWatchSubscriber(sessionId);
-    const state = registerWatchState(sessionId, discordChannelId, subscriber, permissionMode);
+    const state = registerWatchState(sessionId, discordChannelId, subscriber, permissionMode, starterMessageId);
+
+    // Catchup: populate userMessages with existing non-bot messages
+    await populateUserMessages(state).catch((err) => {
+      log({ source: SOURCE, level: 'warn', summary: `catchup user messages failed for ${sessionId.slice(0, 8)}`, data: err });
+    });
 
     try {
       state.channel = await subscribeSession(sessionId, subscriber);
@@ -274,6 +310,39 @@ export async function watchSession(
     }
 
     log({ source: SOURCE, level: 'info', summary: `${opts.auto ? 'auto-' : ''}watching session ${sessionId.slice(0, 12)}\u{2026}` });
+  } finally {
+    pendingWatches.delete(sessionId);
+  }
+}
+
+/**
+ * Watch a session using an existing Discord thread (no forum post creation).
+ * Used for user-created forum posts where the thread already exists.
+ */
+export async function watchSessionInThread(
+  sessionId: string,
+  discordChannelId: string,
+  permissionMode?: string | null,
+): Promise<void> {
+  if (watchedSessions.has(sessionId) || pendingWatches.has(sessionId)) return;
+  pendingWatches.add(sessionId);
+  try {
+    const subscriber = buildWatchSubscriber(sessionId);
+    const state = registerWatchState(sessionId, discordChannelId, subscriber, permissionMode);
+
+    // Catchup: populate userMessages with existing non-bot messages
+    await populateUserMessages(state).catch((err) => {
+      log({ source: SOURCE, level: 'warn', summary: `catchup user messages failed for ${sessionId.slice(0, 8)}`, data: err });
+    });
+
+    try {
+      state.channel = await subscribeSession(sessionId, subscriber);
+    } catch (err) {
+      disposeWatch(sessionId);
+      throw err;
+    }
+
+    log({ source: SOURCE, level: 'info', summary: `watching session ${sessionId.slice(0, 12)} in existing thread ${discordChannelId}\u{2026}` });
   } finally {
     pendingWatches.delete(sessionId);
   }
@@ -499,8 +568,84 @@ export function resolveReactionApproval(
 }
 
 // ---------------------------------------------------------------------------
-// Render -> Diff -> Sync
+// User Message Catchup
 // ---------------------------------------------------------------------------
+
+/**
+ * Populate userMessages by fetching existing non-bot messages from the thread.
+ * Uses `?after=0&limit=100` for chronological ordering, paginates if needed.
+ */
+async function populateUserMessages(state: WatchState): Promise<void> {
+  const botId = getBotUserId();
+  let after = '0';
+  let hasMore = true;
+
+  while (hasMore) {
+    const msgs = await getMessages(state.discordChannelId, { after, limit: 100 });
+    if (msgs.length === 0) break;
+
+    for (const msg of msgs) {
+      if (!msg.author.bot && msg.author.id !== botId) {
+        state.userMessages.set(msg.id, msg.content);
+      }
+    }
+
+    if (msgs.length < 100) {
+      hasMore = false;
+    } else {
+      after = msgs[msgs.length - 1].id;
+    }
+  }
+
+  if (state.userMessages.size > 0) {
+    log({ source: SOURCE, level: 'info', summary: `catchup: ${state.userMessages.size} user messages in ${state.sessionId.slice(0, 8)}` });
+  }
+}
+
+/**
+ * Store a non-bot message from a watched thread. Called by the provider's
+ * Gateway handler on MESSAGE_CREATE for non-bot authors.
+ */
+export function trackUserMessage(channelId: string, messageId: string, content: string): void {
+  const sessionId = channelToSession.get(channelId);
+  if (!sessionId) return;
+  const state = watchedSessions.get(sessionId);
+  if (!state) return;
+  state.userMessages.set(messageId, content);
+}
+
+// ---------------------------------------------------------------------------
+// Render -> Diff -> Sync (segment-based)
+// ---------------------------------------------------------------------------
+
+/**
+ * Handle a Discord API error during sync. Returns true if the caller should
+ * abort the sync loop (circuit breaker or retry-later).
+ */
+async function handleSyncError(state: WatchState, err: unknown, context: string): Promise<boolean> {
+  log({ source: SOURCE, level: 'error', summary: `${context} failed`, data: err });
+
+  if (err instanceof DiscordApiError && err.code === 50083) {
+    try {
+      await discordFetch('PATCH', `/channels/${state.discordChannelId}`, { archived: false });
+      log({ source: SOURCE, level: 'warn', summary: `unarchived thread ${state.discordChannelId} — retrying` });
+      state.dirty = true;
+      return true;
+    } catch (unarchiveErr) {
+      log({ source: SOURCE, level: 'error', summary: `unarchive failed for ${state.discordChannelId}`, data: unarchiveErr });
+    }
+  }
+
+  state.consecutiveFailures++;
+  if ((err instanceof DiscordApiError && err.permanent) || state.consecutiveFailures >= 5) {
+    log({ source: SOURCE, level: 'error', summary: `circuit breaker: ${state.sessionId.slice(0, 8)} — disposing watch after ${state.consecutiveFailures} failures` });
+    disposeWatch(state.sessionId);
+    return true;
+  }
+
+  state.dirty = true;
+  return true;
+}
 
 export async function syncSession(state: WatchState): Promise<void> {
   if (state.syncing) {
@@ -511,92 +656,94 @@ export async function syncSession(state: WatchState): Promise<void> {
   state.dirty = false;
 
   try {
-    const chunks = renderSession(
+    const segments = renderSessionWithAnchors(
       state.snapshot.entries,
       state.snapshot.toolResults,
+      state.userMessages,
       getStatusLine(state.snapshot.status),
     );
 
-    if (chunks.length > MAX_CHUNKS) {
-      log({ source: SOURCE, level: 'info', summary: `sync ${state.sessionId.slice(0, 8)}: truncating ${chunks.length} chunks to ${MAX_CHUNKS}` });
-      chunks.splice(0, chunks.length - MAX_CHUNKS);
-      chunks[0] = `*... truncated to last ${MAX_CHUNKS} messages*\n${chunks[0]}`;
+    const contentSegments = segments.filter((s): s is Extract<RenderSegment, { kind: 'content' }> => s.kind === 'content');
+    log({ source: SOURCE, level: 'info', summary: `sync ${state.sessionId.slice(0, 8)}: ${segments.length} segments (${contentSegments.length} content) from ${state.snapshot.entries.length} entries (slots=${state.threadSlots.length}, status=${state.snapshot.status})` });
+
+    let slotIndex = 0;
+
+    for (const segment of segments) {
+      if (segment.kind === 'discord-anchor') {
+        // Skip past bot slots until we find the user slot — clear any with stale content
+        while (slotIndex < state.threadSlots.length && state.threadSlots[slotIndex].kind === 'bot') {
+          const skipSlot = state.threadSlots[slotIndex];
+          if (skipSlot.content) {
+            await editMessage(state.discordChannelId, skipSlot.discordMessageId, '\u{200B}').catch(() => {});
+            skipSlot.content = '';
+          }
+          slotIndex++;
+        }
+        if (slotIndex < state.threadSlots.length && state.threadSlots[slotIndex].kind === 'user') {
+          slotIndex++; // Skip over existing user message slot
+        } else {
+          // User message exists in Discord but not tracked — add slot
+          state.threadSlots.splice(slotIndex, 0, {
+            kind: 'user',
+            discordMessageId: segment.messageId,
+            entryIndex: segment.entryIndex,
+          });
+          slotIndex++;
+        }
+        continue;
+      }
+
+      // Content segment — edit existing bot message or post new one
+      if (slotIndex < state.threadSlots.length && state.threadSlots[slotIndex].kind === 'bot') {
+        const slot = state.threadSlots[slotIndex];
+        if (slot.content !== segment.text) {
+          try {
+            await editMessage(state.discordChannelId, slot.discordMessageId, segment.text);
+            slot.content = segment.text;
+          } catch (err) {
+            if (await handleSyncError(state, err, `edit slot ${slotIndex}`)) return;
+          }
+        }
+      } else if (slotIndex < state.threadSlots.length && state.threadSlots[slotIndex].kind === 'user') {
+        // Need a bot slot but found a user slot — insert before it
+        try {
+          const msg = await sendMessage(state.discordChannelId, segment.text);
+          state.threadSlots.splice(slotIndex, 0, {
+            kind: 'bot',
+            discordMessageId: msg.id,
+            content: segment.text,
+          });
+        } catch (err) {
+          if (await handleSyncError(state, err, `send before user slot ${slotIndex}`)) return;
+        }
+      } else {
+        // Past end of slots — create new bot message
+        try {
+          const msg = await sendMessage(state.discordChannelId, segment.text);
+          state.threadSlots.push({
+            kind: 'bot',
+            discordMessageId: msg.id,
+            content: segment.text,
+          });
+        } catch (err) {
+          if (await handleSyncError(state, err, `send new slot ${slotIndex}`)) return;
+        }
+      }
+      slotIndex++;
     }
 
-    log({ source: SOURCE, level: 'info', summary: `sync ${state.sessionId.slice(0, 8)}: ${chunks.length} chunks from ${state.snapshot.entries.length} entries (msgs=${state.messageIds.length}, status=${state.snapshot.status})` });
-
-    const maxLen = Math.max(chunks.length, state.currentChunks.length);
-    for (let i = 0; i < maxLen; i++) {
-      const chunk = chunks[i];
-      const prev = state.currentChunks[i];
-      if (chunk === prev) continue;
-
-      if (chunk && state.messageIds[i]) {
-        try {
-          await editMessage(state.discordChannelId, state.messageIds[i], chunk);
-          state.currentChunks[i] = chunk;
-        } catch (err) {
-          log({ source: SOURCE, level: 'error', summary: `edit failed for chunk ${i}`, data: err });
-
-          if (err instanceof DiscordApiError && err.code === 50083) {
-            try {
-              await discordFetch('PATCH', `/channels/${state.discordChannelId}`, { archived: false });
-              log({ source: SOURCE, level: 'warn', summary: `unarchived thread ${state.discordChannelId} — retrying` });
-              state.dirty = true;
-              return;
-            } catch (unarchiveErr) {
-              log({ source: SOURCE, level: 'error', summary: `unarchive failed for ${state.discordChannelId}`, data: unarchiveErr });
-            }
-          }
-
-          state.consecutiveFailures++;
-          if ((err instanceof DiscordApiError && err.permanent) || state.consecutiveFailures >= 5) {
-            log({ source: SOURCE, level: 'error', summary: `circuit breaker: ${state.sessionId.slice(0, 8)} — disposing watch after ${state.consecutiveFailures} failures` });
-            disposeWatch(state.sessionId);
-            return;
-          }
-
-          state.dirty = true;
-          return;
-        }
-      } else if (chunk && !state.messageIds[i]) {
-        try {
-          const msg = await sendMessage(state.discordChannelId, chunk);
-          state.messageIds[i] = msg.id;
-          state.currentChunks[i] = chunk;
-        } catch (err) {
-          log({ source: SOURCE, level: 'error', summary: `send failed for chunk ${i}`, data: err });
-
-          if (err instanceof DiscordApiError && err.code === 50083) {
-            try {
-              await discordFetch('PATCH', `/channels/${state.discordChannelId}`, { archived: false });
-              log({ source: SOURCE, level: 'warn', summary: `unarchived thread ${state.discordChannelId} — retrying` });
-              state.dirty = true;
-              return;
-            } catch (unarchiveErr) {
-              log({ source: SOURCE, level: 'error', summary: `unarchive failed for ${state.discordChannelId}`, data: unarchiveErr });
-            }
-          }
-
-          state.consecutiveFailures++;
-          if ((err instanceof DiscordApiError && err.permanent) || state.consecutiveFailures >= 5) {
-            log({ source: SOURCE, level: 'error', summary: `circuit breaker: ${state.sessionId.slice(0, 8)} — disposing watch after ${state.consecutiveFailures} failures` });
-            disposeWatch(state.sessionId);
-            return;
-          }
-
-          state.dirty = true;
-          return;
-        }
-      } else if (!chunk && state.messageIds[i]) {
-        await editMessage(state.discordChannelId, state.messageIds[i], '\u{200B}').catch(() => {});
-        state.currentChunks[i] = '';
+    // Clear surplus bot slots with zero-width space
+    while (slotIndex < state.threadSlots.length) {
+      const slot = state.threadSlots[slotIndex];
+      if (slot.kind === 'bot' && slot.content) {
+        await editMessage(state.discordChannelId, slot.discordMessageId, '\u{200B}').catch(() => {});
+        slot.content = '';
       }
+      slotIndex++;
     }
 
     state.consecutiveFailures = 0;
-    state.currentChunks = chunks;
-    log({ source: SOURCE, level: 'info', summary: `sync ${state.sessionId.slice(0, 8)}: complete (${chunks.length} chunks, dirty=${state.dirty})` });
+    log({ source: SOURCE, level: 'info', summary: `sync ${state.sessionId.slice(0, 8)}: complete (${segments.length} segments, ${state.threadSlots.length} slots, dirty=${state.dirty})` });
   } finally {
     state.syncing = false;
   }

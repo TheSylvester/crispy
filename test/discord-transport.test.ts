@@ -71,12 +71,12 @@ describe('createForumPost', () => {
   });
 
   it('sends POST to /channels/{forumId}/threads with correct body', async () => {
-    const responseBody = { id: 'thread-123', name: 'My Post' };
+    const responseBody = { id: 'thread-123', name: 'My Post', message: { id: 'msg-001' } };
     mockFetch.mockResolvedValueOnce(okResponse(responseBody));
 
     const result = await createForumPost('forum-456', 'My Post', 'Hello world');
 
-    expect(result).toEqual(responseBody);
+    expect(result).toEqual({ id: 'thread-123', name: 'My Post', messageId: 'msg-001' });
     expect(mockFetch).toHaveBeenCalledOnce();
 
     const [url, init] = mockFetch.mock.calls[0];

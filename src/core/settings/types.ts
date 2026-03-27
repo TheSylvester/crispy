@@ -103,6 +103,8 @@ export interface DiscordBotSettings {
   sessions: 'all' | 'manual';
   /** Override permission mode for Discord sessions. null = use turnDefaults. */
   permissionMode: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | null;
+  /** Hours of inactivity before auto-archiving a Discord thread. Default: 24. */
+  archivalTimeoutHours: number;
 }
 
 export interface DiscordSettings {
@@ -255,7 +257,7 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     bot: { enabled: false },
   },
   discord: {
-    bot: { enabled: false, token: '', guildId: '', sessions: 'all', permissionMode: null },
+    bot: { enabled: false, token: '', guildId: '', sessions: 'all', permissionMode: null, archivalTimeoutHours: 24 },
   },
   mcp: {
     memory: { vscode: true, devServer: true },

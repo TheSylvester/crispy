@@ -1,17 +1,31 @@
 /**
  * Session Rendering — Pure functions for Discord message content
  *
- * Transforms transcript entries into Discord-ready string chunks (<=4000 chars).
+ * Transforms transcript entries into Discord-ready string chunks (<=2000 chars).
  * No side effects, no I/O, no Discord API calls. Testable in isolation.
+ *
+ * Exports two render modes:
+ * - `renderSession()` — flat string[] output (backwards-compatible)
+ * - `renderSessionWithAnchors()` — RenderSegment[] that splits around
+ *   user-authored Discord messages for deduplication
  *
  * @module message-view/render
  */
 
 import type { TranscriptEntry } from '../transcript.js';
+import type { WatchStatus } from '../session-snapshot.js';
 
 export const DISCORD_MAX_LENGTH = 2000;
 
-export type WatchStatus = 'connecting' | 'working' | 'idle' | 'background' | 'approval';
+export type { WatchStatus };
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type RenderSegment =
+  | { kind: 'content'; text: string }
+  | { kind: 'discord-anchor'; messageId: string; entryIndex: number };
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -25,18 +39,12 @@ export function renderSession(
   entries: TranscriptEntry[],
   toolResults: Map<string, boolean>,
   statusLine?: string,
-  maxEntries = 150,
 ): string[] {
   const lines: string[] = [];
 
   if (statusLine) lines.push(statusLine);
 
-  const tail = entries.length > maxEntries ? entries.slice(-maxEntries) : entries;
-  if (entries.length > tail.length) {
-    lines.push(`*... ${entries.length - tail.length} earlier entries omitted*`);
-  }
-
-  for (const entry of tail) {
+  for (const entry of entries) {
     // Skip SDK-injected system context (local-command, task-notification, etc.)
     if (entry.isMeta) continue;
 
@@ -70,6 +78,98 @@ export function renderSession(
   const fullText = lines.join('\n');
   if (!fullText) return [];
   return splitAtNewlines(fullText, DISCORD_MAX_LENGTH);
+}
+
+/**
+ * Content-match a user transcript entry against known Discord messages.
+ * Returns the Discord message ID on match, null otherwise. Marks matched
+ * IDs as consumed so duplicate user messages ("try again") don't double-match.
+ */
+export function findDiscordAnchor(
+  entryText: string,
+  userMessages: Map<string, string>,
+  consumed: Set<string>,
+): string | null {
+  for (const [msgId, content] of userMessages) {
+    if (consumed.has(msgId)) continue;
+    if (content.trim() === entryText.trim()) return msgId;
+    // Fuzzy: Discord may have full text, transcript may differ slightly
+    if (content.startsWith(entryText.slice(0, 200))) return msgId;
+  }
+  return null;
+}
+
+/**
+ * Render a session into RenderSegment[] that splits around user-authored
+ * Discord messages (anchors). Content segments contain bot-rendered text;
+ * anchor segments mark where user Discord messages live in the thread.
+ */
+export function renderSessionWithAnchors(
+  entries: TranscriptEntry[],
+  toolResults: Map<string, boolean>,
+  userMessages: Map<string, string>,
+  statusLine?: string,
+): RenderSegment[] {
+  const segments: RenderSegment[] = [];
+  const consumed = new Set<string>();
+  let currentContent = statusLine ? statusLine + '\n' : '';
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (entry.isMeta) continue;
+
+    if (entry.type === 'user') {
+      const text = extractUserText(entry);
+      if (!text) continue;
+      const anchorId = findDiscordAnchor(text, userMessages, consumed);
+
+      if (anchorId) {
+        // Flush accumulated content
+        if (currentContent.trim()) {
+          for (const chunk of splitAtNewlines(currentContent, DISCORD_MAX_LENGTH)) {
+            segments.push({ kind: 'content', text: chunk });
+          }
+          currentContent = '';
+        }
+        segments.push({ kind: 'discord-anchor', messageId: anchorId, entryIndex: i });
+        consumed.add(anchorId);
+        continue;
+      }
+      // No anchor — render inline as **User:** text
+      currentContent += `\n**User:** ${text}`;
+      continue;
+    }
+
+    if (entry.type !== 'assistant') continue;
+    const content = entry.message?.content;
+    if (!content) continue;
+
+    if (typeof content === 'string') {
+      if (content) currentContent += '\n' + content;
+    } else {
+      for (const block of content) {
+        if (block.type === 'text' && block.text) {
+          currentContent += '\n' + block.text;
+        }
+        if (block.type === 'tool_use') {
+          const input = (block.input ?? {}) as Record<string, unknown>;
+          const status = toolResults.has(block.id)
+            ? (toolResults.get(block.id) ? '\u{2717}' : '\u{2713}')
+            : '\u{23F3}';
+          currentContent += '\n' + renderToolLine(block.name, input, status);
+        }
+      }
+    }
+  }
+
+  // Flush remaining
+  if (currentContent.trim()) {
+    for (const chunk of splitAtNewlines(currentContent, DISCORD_MAX_LENGTH)) {
+      segments.push({ kind: 'content', text: chunk });
+    }
+  }
+
+  return segments;
 }
 
 /** Split text into chunks <= maxLen chars, breaking at newline boundaries. */
@@ -113,13 +213,13 @@ export function truncate(str: string, max: number): string {
 // User prompt extraction
 // ---------------------------------------------------------------------------
 
-function extractUserText(entry: TranscriptEntry): string {
+export function extractUserText(entry: TranscriptEntry): string {
   const content = entry.message?.content;
   if (!content) return '';
-  if (typeof content === 'string') return truncate(content, 300);
+  if (typeof content === 'string') return content;
   for (const block of content) {
     if (block.type === 'text' && block.text) {
-      return truncate(block.text, 300);
+      return block.text;
     }
   }
   return '';

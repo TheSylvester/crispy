@@ -8,12 +8,13 @@
  * @module session-snapshot
  */
 
+export type WatchStatus = 'connecting' | 'working' | 'idle' | 'background' | 'approval';
+
 import type { AdapterSettings, ChannelMessage } from './agent-adapter.js';
 import type {
   ChannelCatchupMessage,
   PendingApprovalInfo,
 } from './channel-events.js';
-import type { WatchStatus } from './message-view/render.js';
 import type { SubscriberMessage } from './session-channel.js';
 import type { ContextUsage, ToolResultBlock, TranscriptEntry } from './transcript.js';
 

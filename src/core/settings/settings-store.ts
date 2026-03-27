@@ -295,6 +295,7 @@ function sanitizeSettings(data: unknown): CrispySettings {
           guildId: typeof bot.guildId === 'string' ? bot.guildId : '',
           sessions: (bot.sessions === 'all' || bot.sessions === 'manual') ? bot.sessions : 'all',
           permissionMode: (bot.permissionMode === 'default' || bot.permissionMode === 'acceptEdits' || bot.permissionMode === 'plan' || bot.permissionMode === 'bypassPermissions') ? bot.permissionMode : null,
+          archivalTimeoutHours: typeof bot.archivalTimeoutHours === 'number' && bot.archivalTimeoutHours > 0 ? bot.archivalTimeoutHours : 24,
         },
       };
     }
@@ -315,6 +316,7 @@ function sanitizeSettings(data: unknown): CrispySettings {
             ? discordProvider.sessions as 'all' | 'manual'
             : 'all',
           permissionMode: null,
+          archivalTimeoutHours: 24,
         },
       };
     }

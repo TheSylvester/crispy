@@ -17,4 +17,6 @@ export interface DiscordProviderConfig {
   sessions: 'all' | 'manual';
   /** Resolved: discord override ?? turnDefaults fallback. */
   permissionMode: string | null;
+  /** Hours of inactivity before auto-archiving a Discord thread. Default: 24. */
+  archivalTimeoutHours: number;
 }

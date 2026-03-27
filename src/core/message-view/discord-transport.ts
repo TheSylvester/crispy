@@ -73,6 +73,7 @@ export interface GatewayEventHandler {
     mentions?: Array<{ id: string }>;
   }): void;
   onReactionAdd(channelId: string, messageId: string, userId: string, emoji: string): void;
+  onThreadCreate?(event: { id: string; parent_id: string; name: string; guild_id: string }): void;
   onReady(): void;
   onDisconnect?(): void;
   onReconnect?(): void;
@@ -462,6 +463,24 @@ function handleGatewayDispatch(eventName: string, data: unknown): void {
       break;
     }
 
+    case 'THREAD_CREATE': {
+      const d = data as {
+        id: string;
+        parent_id: string;
+        name: string;
+        guild_id: string;
+      };
+      if (gatewayHandler?.onThreadCreate) {
+        gatewayHandler.onThreadCreate({
+          id: d.id,
+          parent_id: d.parent_id,
+          name: d.name,
+          guild_id: d.guild_id,
+        });
+      }
+      break;
+    }
+
     default:
       log({ source: SOURCE, level: 'debug', summary: `gateway dispatch: ${eventName}` });
   }
@@ -658,20 +677,32 @@ export async function createThread(
 /**
  * Create a forum post (thread in a forum channel).
  * Endpoint: POST /channels/{forumChannelId}/threads
+ *
+ * Discord returns the starter message in the response's `message` field.
+ * `messageId` is the starter message ID — used to seed the first ThreadSlot.
  */
 export async function createForumPost(
   forumChannelId: string,
   name: string,
   message: string,
   opts?: { autoArchiveDuration?: number; appliedTags?: string[] },
-): Promise<{ id: string; name: string }> {
+): Promise<{ id: string; name: string; messageId: string }> {
   const body: Record<string, unknown> = {
     name: name.slice(0, 100),
     message: { content: message },
   };
   if (opts?.autoArchiveDuration) body.auto_archive_duration = opts.autoArchiveDuration;
   if (opts?.appliedTags) body.applied_tags = opts.appliedTags;
-  return discordFetch('POST', `/channels/${forumChannelId}/threads`, body) as Promise<{ id: string; name: string }>;
+  const result = await discordFetch('POST', `/channels/${forumChannelId}/threads`, body) as {
+    id: string;
+    name: string;
+    message?: { id: string };
+  };
+  return {
+    id: result.id,
+    name: result.name,
+    messageId: result.message?.id ?? '',
+  };
 }
 
 /** Archive a thread (hides it, doesn't delete). */

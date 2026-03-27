@@ -11,7 +11,7 @@
  */
 
 import { onResponseCompleteAfter } from '../lifecycle-hooks.js';
-import type { AgentDispatch } from '../../host/agent-dispatch.js';
+import type { AgentDispatch } from '../agent-dispatch-types.js';
 import { getSettingsSnapshotInternal } from '../settings/index.js';
 import { parseModelOption } from '../model-utils.js';
 import { closeSession } from '../session-manager.js';

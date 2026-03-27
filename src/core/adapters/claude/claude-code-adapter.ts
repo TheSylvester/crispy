@@ -1854,6 +1854,7 @@ export function findSession(sessionId: string): SessionInfo | undefined {
       label: meta?.label,
       lastMessage: meta?.lastMessage,
       vendor: 'claude',
+      isSidechain: meta?.isSidechain,
       ...(gen3Title && { title: gen3Title }),
     };
   }

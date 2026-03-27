@@ -361,7 +361,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
       settingsDone();
       // Message view reads settings on init — must come after settings are loaded
       const mvDone = phase('init message view');
-      initMessageView();
+      initMessageView(dispatch, cwd);
       mvDone();
     })
     .catch((err) => {
