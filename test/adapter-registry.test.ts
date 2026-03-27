@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { resolve } from 'node:path';
 import type { VendorDiscovery, SessionOpenSpec, AgentAdapter } from '../src/core/agent-adapter.js';
 import type { Vendor } from '../src/core/transcript.js';
 import type { AdapterRegistration, HostAdapterConfig } from '../src/host/adapter-registry.js';
@@ -388,7 +389,7 @@ describe('registerAllAdapters', () => {
     freshMod.registerAllAdapters({ cwd: '/test', hostType: 'dev-server' });
 
     const passedConfig = (codex.createFactory as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(passedConfig.bundledSkillRoot).toBe(`${process.cwd()}/src/plugin/skills`);
+    expect(passedConfig.bundledSkillRoot).toBe(resolve(process.cwd(), 'src', 'plugin', 'skills'));
   });
 });
 
@@ -399,8 +400,8 @@ describe('resolveBundledCrispyPaths', () => {
 
     expect(resolveBundledCrispyPaths({})).toEqual({
       extensionBase: repoRoot,
-      pluginRoot: `${repoRoot}/src/plugin`,
-      skillRoot: `${repoRoot}/src/plugin/skills`,
+      pluginRoot: resolve(repoRoot, 'src', 'plugin'),
+      skillRoot: resolve(repoRoot, 'src', 'plugin', 'skills'),
     });
   });
 
@@ -411,8 +412,8 @@ describe('resolveBundledCrispyPaths', () => {
       extensionPath: '/tmp/crispy-extension',
     })).toEqual({
       extensionBase: '/tmp/crispy-extension',
-      pluginRoot: '/tmp/crispy-extension/dist/crispy-plugin',
-      skillRoot: '/tmp/crispy-extension/dist/crispy-plugin/skills',
+      pluginRoot: resolve('/tmp/crispy-extension', 'dist', 'crispy-plugin'),
+      skillRoot: resolve('/tmp/crispy-extension', 'dist', 'crispy-plugin', 'skills'),
     });
   });
 });
