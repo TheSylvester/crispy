@@ -60,9 +60,11 @@ export function renderSession(
     if (entry.parentToolUseID) continue;
 
     if (entry.type === 'user') {
-      flushInlineGroup();
       const userText = extractUserText(entry);
-      if (userText) lines.push(`\n---\n**User:** ${userText}\n---`);
+      if (userText) {
+        flushInlineGroup();
+        lines.push(`\n---\n**User:** ${userText}\n---`);
+      }
       continue;
     }
     if (entry.type !== 'assistant') continue;
@@ -157,9 +159,9 @@ export function renderSessionWithAnchors(
     if (entry.parentToolUseID) continue;
 
     if (entry.type === 'user') {
-      flushInlineGroup();
       const text = extractUserText(entry);
       if (!text) continue;
+      flushInlineGroup();
       const anchorId = findDiscordAnchor(text, userMessages, consumed);
 
       if (anchorId) {
