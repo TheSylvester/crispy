@@ -6347,3 +6347,15 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   border-top: 1px solid var(--border-panel);
   opacity: 0.7;
 }
+
+/* ============================================================================
+ * Math (KaTeX MathML output)
+ * ============================================================================ */
+
+.katex-display {
+  display: block;
+  text-align: center;
+  margin: 0.8em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
