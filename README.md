@@ -42,6 +42,11 @@ subscribers — no flash, no re-subscription. Two new plugin skills use it:
   of routing through the built-in file viewer
 - Fixed a race where the first turn could ignore your persisted agency mode
   if submitted before settings finished loading
+- Fixed several Codex fork/resume issues: forked sessions now preserve
+  history correctly, no longer duplicate the system prompt, and recover more
+  reliably from missing approval state
+- Fixed session rotation and discovery edge cases that could attach new
+  sessions to the wrong working directory
 
 ---
 
