@@ -1162,8 +1162,10 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
       sessionId = intent.target.sessionId;
       const currentVendor = channel.adapter?.vendor;
 
-      // Check for vendor switch via the model field
-      if (intent.target.model && currentVendor) {
+      // Check for vendor switch via the model field.
+      // Use != null (not truthiness) — Claude "Default" sends model='' which
+      // is falsy but still a valid vendor selection (parseModelOption('') → claude).
+      if (intent.target.model != null && currentVendor) {
         const { vendor: targetVendor, model } = parseModelOption(intent.target.model);
         if (targetVendor !== currentVendor) {
           // Vendor switch — load source history and create hydrated session
