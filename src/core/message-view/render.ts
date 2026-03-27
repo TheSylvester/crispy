@@ -41,6 +41,7 @@ export function renderSession(
   statusLine?: string,
 ): string[] {
   const lines: string[] = [];
+  let prevWasTool = false;
 
   if (statusLine) lines.push(statusLine);
 
@@ -60,20 +61,43 @@ export function renderSession(
     if (!content) continue;
 
     if (typeof content === 'string') {
-      if (content) lines.push(content);
+      if (content) {
+        if (prevWasTool) lines.push('');
+        lines.push(content);
+        prevWasTool = false;
+      }
     } else {
+      let inlineGroup: string[] = [];
+
+      const flushInlineGroup = () => {
+        if (inlineGroup.length) {
+          lines.push(inlineGroup.join(''));
+          inlineGroup = [];
+        }
+      };
+
       for (const block of content) {
         if (block.type === 'text' && block.text) {
+          flushInlineGroup();
+          if (prevWasTool) lines.push('');
           lines.push(block.text);
+          prevWasTool = false;
         }
         if (block.type === 'tool_use') {
           const input = (block.input ?? {}) as Record<string, unknown>;
           const status = toolResults.has(block.id)
             ? (toolResults.get(block.id) ? '\u{2717}' : '\u{2713}')
             : '\u{23F3}';
-          lines.push(renderToolLine(block.name, input, status));
+          if (INLINE_TOOLS.has(block.name.toLowerCase())) {
+            inlineGroup.push(renderToolIcon(block.name, status));
+          } else {
+            flushInlineGroup();
+            lines.push(renderToolLine(block.name, input, status));
+          }
+          prevWasTool = true;
         }
       }
+      flushInlineGroup();
     }
   }
 
@@ -115,6 +139,7 @@ export function renderSessionWithAnchors(
   const segments: RenderSegment[] = [];
   const consumed = new Set<string>();
   let currentContent = statusLine ? statusLine + '\n' : '';
+  let prevWasTool = false;
 
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
@@ -149,20 +174,43 @@ export function renderSessionWithAnchors(
     if (!content) continue;
 
     if (typeof content === 'string') {
-      if (content) currentContent += '\n' + content;
+      if (content) {
+        if (prevWasTool) currentContent += '\n';
+        currentContent += '\n' + content;
+        prevWasTool = false;
+      }
     } else {
+      let inlineGroup: string[] = [];
+
+      const flushInlineGroup = () => {
+        if (inlineGroup.length) {
+          currentContent += '\n' + inlineGroup.join('');
+          inlineGroup = [];
+        }
+      };
+
       for (const block of content) {
         if (block.type === 'text' && block.text) {
+          flushInlineGroup();
+          if (prevWasTool) currentContent += '\n';
           currentContent += '\n' + block.text;
+          prevWasTool = false;
         }
         if (block.type === 'tool_use') {
           const input = (block.input ?? {}) as Record<string, unknown>;
           const status = toolResults.has(block.id)
             ? (toolResults.get(block.id) ? '\u{2717}' : '\u{2713}')
             : '\u{23F3}';
-          currentContent += '\n' + renderToolLine(block.name, input, status);
+          if (INLINE_TOOLS.has(block.name.toLowerCase())) {
+            inlineGroup.push(renderToolIcon(block.name, status));
+          } else {
+            flushInlineGroup();
+            currentContent += '\n' + renderToolLine(block.name, input, status);
+          }
+          prevWasTool = true;
         }
       }
+      flushInlineGroup();
     }
   }
 
@@ -227,6 +275,32 @@ export function extractUserText(entry: TranscriptEntry): string {
     }
   }
   return '';
+}
+
+// ---------------------------------------------------------------------------
+// Inline icon rendering (compact mode for read-only tools)
+// ---------------------------------------------------------------------------
+
+/** Tools that render as compact emoji icons instead of full lines.
+ *  Matches the webview's 'inline' renderCategory (tools with no explicit
+ *  renderCategory in tool-definitions.ts). */
+const INLINE_TOOLS = new Set([
+  'read', 'grep', 'glob', 'ls',
+  'websearch', 'webfetch',
+  'toolsearch', 'taskoutput',
+]);
+
+const INLINE_TOOL_ICONS: Record<string, string> = {
+  read: '\u{1F4C4}', grep: '\u{1F50D}', glob: '\u{1F4C2}', ls: '\u{1F50D}',
+  websearch: '\u{1F310}', webfetch: '\u{1F30E}',
+  toolsearch: '\u{1F50D}', taskoutput: '\u{1F916}',
+};
+
+function renderToolIcon(name: string, status: string): string {
+  const icon = INLINE_TOOL_ICONS[name.toLowerCase()] ?? '\u{1F527}';
+  if (status === '\u{2717}') return icon + '\u{2717}';
+  if (status === '\u{23F3}') return icon + '\u{23F3}';
+  return icon;
 }
 
 // ---------------------------------------------------------------------------
