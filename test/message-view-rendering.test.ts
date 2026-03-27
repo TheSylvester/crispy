@@ -134,8 +134,8 @@ describe('renderSession', () => {
     ];
     const chunks = renderSession(entries, new Map());
     expect(chunks).toHaveLength(1);
-    expect(chunks[0]).toContain('\u{23F3}'); // pending
-    expect(chunks[0]).toContain('**read**');
+    // read is an inline tool: renders as icon+status, no bold name
+    expect(chunks[0]).toContain('\u{1F4C4}\u{23F3}'); // 📄⏳
   });
 
   it('renders tool_use with completed status when result exists', () => {
@@ -149,7 +149,8 @@ describe('renderSession', () => {
     ];
     const chunks = renderSession(entries, toolResults);
     expect(chunks).toHaveLength(1);
-    expect(chunks[0]).toContain('\u{2713}'); // check mark
+    // read is inline: completed = just icon (no ✓ suffix, no ⏳)
+    expect(chunks[0]).toContain('\u{1F4C4}'); // 📄
     expect(chunks[0]).not.toContain('\u{23F3}');
   });
 
@@ -209,8 +210,9 @@ describe('renderSession', () => {
     const full = chunks.join('\n');
     expect(full).toContain('I will read the file first.');
     expect(full).toContain('Now editing.');
-    expect(full).toContain('\u{2713}'); // t1 completed
-    expect(full).toContain('\u{23F3}'); // t2 pending
+    // read is inline: completed = just icon (no ✓); edit is full-line with ⏳
+    expect(full).toContain('\u{1F4C4}'); // t1 (read) completed — inline icon only
+    expect(full).toContain('\u{23F3}'); // t2 (edit) pending
   });
 
   it('produces 2-4 chunks from 50 entries with substantial content', () => {
@@ -253,7 +255,7 @@ describe('tool rendering format via renderSession', () => {
       ]),
     ];
     const chunks = renderSession(entries, new Map());
-    expect(chunks[0]).toContain('\u{1F4BB} **bash**');
+    expect(chunks[0]).toContain('  \u{1F4BB}  **bash**');
     expect(chunks[0]).toContain('`npm run build`');
     expect(chunks[0]).toContain('\u{23F3}');
   });
@@ -275,8 +277,8 @@ describe('tool rendering format via renderSession', () => {
       ]),
     ];
     const chunks = renderSession(entries, new Map());
-    expect(chunks[0]).toContain('\u{1F4C4} **read**');
-    expect(chunks[0]).toContain('`src/index.ts`');
+    // read is inline: renders as icon+⏳, no bold name or path
+    expect(chunks[0]).toContain('\u{1F4C4}\u{23F3}');
   });
 
   it('edit: icon name path +N -N status', () => {
@@ -286,7 +288,7 @@ describe('tool rendering format via renderSession', () => {
       ]),
     ];
     const chunks = renderSession(entries, new Map());
-    expect(chunks[0]).toContain('\u{1F4DD} **edit**');
+    expect(chunks[0]).toContain('  \u{1F4DD}  **edit**');
     expect(chunks[0]).toContain('+5 -3');
   });
 
@@ -297,8 +299,8 @@ describe('tool rendering format via renderSession', () => {
       ]),
     ];
     const chunks = renderSession(entries, new Map());
-    expect(chunks[0]).toContain('\u{1F50D} **grep**');
-    expect(chunks[0]).toContain('`TODO`');
+    // grep is inline: renders as icon+⏳, no bold name or pattern
+    expect(chunks[0]).toContain('\u{1F50D}\u{23F3}');
   });
 
   it('agent: icon name description status', () => {
@@ -308,7 +310,7 @@ describe('tool rendering format via renderSession', () => {
       ]),
     ];
     const chunks = renderSession(entries, new Map());
-    expect(chunks[0]).toContain('\u{1F916} **agent**');
+    expect(chunks[0]).toContain('  \u{1F916}  **agent**');
     expect(chunks[0]).toContain('Search for related files');
   });
 
