@@ -30,7 +30,6 @@ import { createAgentDispatch } from './agent-dispatch.js';
 import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
 import { initRosieBot, shutdownRosieBot } from '../core/rosie/index.js';
-import { initMessageView, shutdownMessageView } from '../core/message-view/index.js';
 import { initRecallIngest, shutdownRecallIngest } from '../core/recall/ingest-hook.js';
 import { startRecallCatchup, stopEmbeddingBackfill } from '../core/recall/catchup-manager.js';
 import { disposeEmbedder } from '../core/recall/embedder.js';
@@ -359,10 +358,6 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     .then(() => {
       startWatchingSettings();
       settingsDone();
-      // Message view reads settings on init — must come after settings are loaded
-      const mvDone = phase('init message view');
-      initMessageView(dispatch, cwd);
-      mvDone();
     })
     .catch((err) => {
       console.error('[server] init settings failed:', err);
@@ -425,7 +420,6 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     await new Promise<void>(resolve => server.close(() => resolve()));
     // 4. Existing cleanup
     ipcHandle?.close();
-    shutdownMessageView();
     shutdownRosieBot();
     shutdownRecallIngest();
     stopEmbeddingBackfill();
