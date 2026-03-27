@@ -71,7 +71,7 @@ export function renderSession(
 
       const flushInlineGroup = () => {
         if (inlineGroup.length) {
-          lines.push(inlineGroup.join(''));
+          lines.push('      ' + inlineGroup.join(' '));
           inlineGroup = [];
         }
       };
@@ -184,7 +184,7 @@ export function renderSessionWithAnchors(
 
       const flushInlineGroup = () => {
         if (inlineGroup.length) {
-          currentContent += '\n' + inlineGroup.join('');
+          currentContent += '\n      ' + inlineGroup.join(' ');
           inlineGroup = [];
         }
       };
