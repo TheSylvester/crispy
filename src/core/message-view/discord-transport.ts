@@ -714,13 +714,6 @@ export async function deleteChannel(channelId: string): Promise<void> {
   await discordFetch('DELETE', `/channels/${channelId}`);
 }
 
-/** List all active (non-archived) threads in a guild. */
-export async function getActiveThreads(guildId: string): Promise<Array<{ id: string; name: string; parent_id: string; last_message_id?: string }>> {
-  const result = await discordFetch('GET', `/guilds/${guildId}/threads/active`) as {
-    threads: Array<{ id: string; name: string; parent_id: string; last_message_id?: string }>;
-  };
-  return result.threads ?? [];
-}
 
 export async function getGuildChannels(guildId: string): Promise<Array<{ id: string; name: string; type: number }>> {
   return discordFetch('GET', `/guilds/${guildId}/channels`) as Promise<Array<{ id: string; name: string; type: number }>>;

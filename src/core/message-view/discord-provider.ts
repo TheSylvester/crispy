@@ -1,24 +1,24 @@
 /**
  * Discord Provider — Discord-specific MessageProvider implementation
  *
- * Owns the Gateway connection, heartbeat loop, leadership probes, workspace-
- * scoped forum channel lifecycle, command handling, approval interactions, and
- * sync loop. Receives snapshot updates from the shared layer and renders to
- * Discord.
+ * Owns the Gateway connection, heartbeat loop, workspace-scoped forum channel
+ * lifecycle, command handling, approval interactions, and sync loop.
+ *
+ * Lifecycle: wipe-on-startup. All crispy-* channels are deleted and recreated
+ * fresh each time the bot connects. No crash recovery, no multi-instance
+ * coordination.
  *
  * Workspace model: each forum channel maps to a project directory (workspace).
- * Channel naming: `crispy-{project}-{pid}`. The provider maintains a map from
- * cwd → forumChannelId and scopes auto-watch + commands per workspace.
+ * Channel naming: `crispy-{project}` (no PID). The provider maintains a map
+ * from cwd → forumChannelId.
  *
- * Forum-first interaction: users create forum posts to start sessions. The bot
- * detects THREAD_CREATE, reads the first message as the prompt, spawns a
- * session via AgentDispatch, renames the post to the session display name, and
- * embeds the session ID in the first bot message for crash recovery.
+ * Interaction: users create forum posts to start sessions, or use `!sessions`
+ * in the bot control channel to open existing ones. The bot channel also
+ * accepts plain-text commands (no @mention required).
  *
  * @module message-view/discord-provider
  */
 
-import * as path from 'node:path';
 import { log } from '../log.js';
 import { isChildSession } from '../session-manager.js';
 import { subscribeSessionList, unsubscribeSessionList } from '../session-list-manager.js';
@@ -39,19 +39,14 @@ import {
   triggerTyping,
   sendMessage,
   archiveThread,
-  getActiveThreads,
 } from './discord-transport.js';
 import type { GatewayEventHandler } from './discord-transport.js';
 import { handleCommand } from './commands.js';
 import type { CommandContext } from './commands.js';
 import {
-  scanWorkspaceChannels,
-  ensureWorkspaceChannel,
-  takeOverOrphanedChannels,
-  rejoinForumThreads,
-  ensureBotChannel,
-  findBotChannels,
-  deleteBotChannel,
+  wipeAllCrispyChannels,
+  createWorkspaceChannel,
+  createBotChannel,
   cwdToBaseProject,
   type WorkspaceChannel,
 } from './forum.js';
@@ -78,8 +73,6 @@ import {
 const SOURCE = 'discord-provider';
 const MAX_CONCURRENT_PROMPTS = 3;
 const DEFAULT_ARCHIVAL_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
-/** Discord epoch (2015-01-01T00:00:00.000Z) used for snowflake → timestamp. */
-const DISCORD_EPOCH = 1420070400000n;
 
 // ---------------------------------------------------------------------------
 // Provider state — singleton: only one Discord provider may exist at a time.
@@ -99,8 +92,6 @@ const lastActivityMap = new Map<string, number>();
 
 let ownerUserId: string | null = null;
 let commandsEnabled = false;
-let probeResolve: ((pong: string) => void) | null = null;
-let probeTimeout: ReturnType<typeof setTimeout> | null = null;
 let promptsInFlight = 0;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let startTime = 0;
@@ -108,6 +99,7 @@ let unsubSessionList: (() => void) | null = null;
 let currentConfig: DiscordProviderConfig | null = null;
 let currentDispatch: AgentDispatch | null = null;
 let workspaceCwd: string | null = null;
+let botControlChannelId: string | null = null;
 const lastTypingFired = new Map<string, number>();
 const TYPING_COOLDOWN_MS = 8000;
 
@@ -262,9 +254,6 @@ export function createDiscordProvider(
 
 function disposeDiscordProvider(): void {
   commandsEnabled = false;
-  probeResolve = null;
-  // Don't clear probeTimeout — let it fire naturally so the Promise resolves.
-  // Clearing it would strand the probeLeadership() Promise forever.
 
   if (unsubSessionList) {
     unsubSessionList();
@@ -284,6 +273,7 @@ function disposeDiscordProvider(): void {
   currentConfig = null;
   currentDispatch = null;
   workspaceCwd = null;
+  botControlChannelId = null;
   clearWorkspaceChannels();
   ownerUserId = null;
   promptsInFlight = 0;
@@ -309,205 +299,37 @@ async function initWorkspaceChannels(): Promise<void> {
     log({ source: SOURCE, level: 'warn', summary: 'failed to discover application owner', data: err });
   }
 
-  const pid = process.pid;
   const guildId = currentConfig.guildId;
 
-  // Workspace channel creation requires an explicit cwd. Without one
-  // (e.g. dev-server launched from an unknown directory), the bot connects
-  // and enables commands but has no workspace forum to manage.
-  let activeThreads: Array<{ id: string; name: string; parent_id: string }> = [];
+  // Wipe all existing crispy-* channels — clean slate on every startup.
+  // No crash recovery, no orphan takeover, no channel claiming.
+  await wipeAllCrispyChannels(guildId);
 
   if (workspaceCwd) {
-    // Step 1: Scan guild for existing crispy-* forum channels
-    const existingForums = await scanWorkspaceChannels(guildId);
-    log({ source: SOURCE, level: 'info', summary: `found ${existingForums.length} existing workspace channel(s)` });
-
-    // Step 2: Ensure workspace channel for current cwd
-    const primaryChannel = await ensureWorkspaceChannel(guildId, botId, ownerUserId, workspaceCwd, pid, existingForums);
-    if (!primaryChannel) {
-      log({ source: SOURCE, level: 'warn', summary: 'failed to claim workspace channel — another instance won, disconnecting' });
-      disposeDiscordProvider();
-      return;
-    }
-
-    registerWorkspaceChannel(workspaceCwd, primaryChannel);
-    log({ source: SOURCE, level: 'info', summary: `primary workspace channel ready: ${primaryChannel.channelName} (${primaryChannel.channelId})` });
-
-    // Step 3: Rejoin threads in the primary channel
-    activeThreads = await rejoinForumThreads(guildId, primaryChannel.channelId);
-
-    // Step 4: Take over orphaned channels (PIDs that are dead)
-    const ownedIds = new Set([primaryChannel.channelId]);
-    const takenOver = await takeOverOrphanedChannels(pid, existingForums, ownedIds);
-    for (const wc of takenOver) {
-      await rejoinForumThreads(guildId, wc.channelId);
-    }
-
-    // Step 5: Crash recovery — rebuild channelMap from Discord threads
-    await recoverChannelMap(guildId, primaryChannel.channelId);
-    for (const wc of takenOver) {
-      await recoverChannelMap(guildId, wc.channelId);
-    }
+    const channel = await createWorkspaceChannel(guildId, botId, ownerUserId, workspaceCwd);
+    registerWorkspaceChannel(workspaceCwd, channel);
+    log({ source: SOURCE, level: 'info', summary: `workspace forum ready: ${channel.channelName} (${channel.channelId})` });
   } else {
     log({ source: SOURCE, level: 'warn', summary: 'no workspace cwd — bot will connect but skip workspace channel creation' });
   }
 
-  // --- PROBE PHASE (dedicated bot channel for leadership probes) ---
-  const botChannelId = await ensureBotChannel(guildId, botId, ownerUserId, pid);
+  // Bot control channel
+  botControlChannelId = await createBotChannel(guildId, botId, ownerUserId, process.pid);
 
-  // Random delay (0-2s) to reduce simultaneous-startup split-brain risk
-  await new Promise(r => setTimeout(r, Math.random() * 2000));
-  if (!currentConfig) return;
+  // Post welcome message in bot channel
+  void sendMessage(botControlChannelId, [
+    '\u{1F7E2} **Crispy online.**',
+    '',
+    'Use `!sessions` to browse and open recent conversations.',
+    'Or create a **New Post** in the forum channel to start a fresh session.',
+  ].join('\n')).catch(() => {});
 
-  // Probe ALL existing crispy-bot-* channels for an active leader
-  const allBotChannels = await findBotChannels(guildId);
-  const otherBotChannels = allBotChannels.filter(ch => ch.pid !== pid);
-
-  for (const ch of otherBotChannels) {
-    const pong = await probeLeadership(ch.id);
-    if (!currentConfig) return;
-    if (pong) {
-      log({ source: SOURCE, level: 'warn', summary: `Another Crispy instance already active (${pong}) in ${ch.name} — disconnecting Discord` });
-      // Clean up our own bot channel before backing off
-      await deleteBotChannel(botChannelId).catch(() => {});
-      disposeDiscordProvider();
-      return;
-    }
-  }
-
-  // No other leader responded — claim leadership
-  // Delete stale bot channels (other PIDs that didn't respond)
-  for (const ch of otherBotChannels) {
-    await deleteBotChannel(ch.id).catch((err) => {
-      log({ source: SOURCE, level: 'warn', summary: `failed to delete stale bot channel ${ch.name}`, data: err });
-    });
-  }
-
-  // Announce presence in our own bot channel
-  void handleCommand(botChannelId, '!crispy', buildCommandContext());
-
-  // Claim leadership
   commandsEnabled = true;
   enableAutoWatchAndHeartbeat();
 
-  // DM startup announcement to owner
-  void announceStartup();
-
-  log({ source: SOURCE, level: 'info', summary: `Discord bot active — commands enabled, ${workspaceChannels.size} workspace(s), ${channelMap.size} recovered thread(s)` });
+  log({ source: SOURCE, level: 'info', summary: `Discord bot active — commands enabled, ${workspaceChannels.size} workspace(s)` });
 }
 
-function probeLeadership(threadId: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    probeResolve = (pong) => {
-      if (probeTimeout) { clearTimeout(probeTimeout); probeTimeout = null; }
-      resolve(pong);
-    };
-    sendMessage(threadId, '!crispy').catch(() => {
-      probeResolve = null;
-      resolve(null);
-    });
-    probeTimeout = setTimeout(() => {
-      probeResolve = null;
-      probeTimeout = null;
-      resolve(null);
-    }, 3000);
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Crash Recovery — rebuild channelMap from Discord threads
-// ---------------------------------------------------------------------------
-
-/** Extract a Unix-ms timestamp from a Discord snowflake ID. */
-function snowflakeToTimestamp(snowflake: string): number {
-  return Number((BigInt(snowflake) >> 22n) + DISCORD_EPOCH);
-}
-
-async function recoverChannelMap(guildId: string, forumChannelId: string): Promise<void> {
-  const botId = getBotUserId();
-  if (!botId) return;
-
-  try {
-    // Fetch active threads in guild, filter to this forum
-    const active = await getActiveThreads(guildId);
-    const forumThreads = active.filter(t => t.parent_id === forumChannelId);
-
-    // Also fetch archived threads from the forum
-    let archivedThreads: Array<{ id: string; parent_id: string; last_message_id?: string }> = [];
-    try {
-      const archived = await discordFetch('GET',
-        `/channels/${forumChannelId}/threads/archived/public`
-      ) as { threads?: Array<{ id: string; parent_id: string; last_message_id?: string }> };
-      archivedThreads = archived.threads ?? [];
-    } catch (err) {
-      log({ source: SOURCE, level: 'warn', summary: 'failed to fetch archived threads for recovery', data: err });
-    }
-
-    // Deduplicate
-    const seen = new Set<string>();
-    const allThreads: Array<{ id: string; last_message_id?: string }> = [];
-    for (const t of [...forumThreads, ...archivedThreads]) {
-      if (!seen.has(t.id)) { seen.add(t.id); allThreads.push(t); }
-    }
-
-    let recovered = 0;
-    for (const thread of allThreads) {
-      if (channelMap.has(thread.id)) continue; // Already tracked
-
-      try {
-        // Fetch first few messages in chronological order
-        const messages = await discordFetch('GET',
-          `/channels/${thread.id}/messages?limit=10&after=0`
-        ) as Array<{ author: { id: string }; content: string }>;
-
-        const botMsg = messages.find(
-          m => m.author.id === botId && m.content.startsWith('\u{1F4CB} Session `')
-        );
-
-        if (botMsg) {
-          const match = botMsg.content.match(/Session `([^`]+)`/);
-          if (match) {
-            channelMap.set(thread.id, match[1]);
-            // Preserve real last-activity time from the thread's most recent
-            // message snowflake. Falling back to Date.now() only when the
-            // snowflake is unavailable avoids resetting the inactivity clock
-            // on every restart (which would prevent archival of idle threads).
-            const lastActivity = thread.last_message_id
-              ? snowflakeToTimestamp(thread.last_message_id)
-              : Date.now();
-            lastActivityMap.set(thread.id, lastActivity);
-            recovered++;
-          }
-        }
-      } catch (err) {
-        log({ source: SOURCE, level: 'debug', summary: `recovery: failed to read messages from thread ${thread.id}`, data: err });
-      }
-    }
-
-    if (recovered > 0) {
-      log({ source: SOURCE, level: 'info', summary: `crash recovery: rebuilt ${recovered} channel mapping(s) from forum ${forumChannelId}` });
-    }
-  } catch (err) {
-    log({ source: SOURCE, level: 'error', summary: 'crash recovery failed', data: err });
-  }
-}
-
-// ---------------------------------------------------------------------------
-// DM Startup Announcement
-// ---------------------------------------------------------------------------
-
-async function announceStartup(): Promise<void> {
-  if (!ownerUserId) return;
-
-  try {
-    const dm = await discordFetch('POST', '/users/@me/channels', { recipient_id: ownerUserId }) as { id: string };
-    const workspaces = [...workspaceChannels.entries()];
-    const lines = workspaces.map(([cwd]) => `\u{1F4C1} ${path.basename(cwd)} \u{2014} \`${cwd}\``);
-    await sendMessage(dm.id, `\u{1F7E2} Crispy online.\n\n**Active folders:**\n${lines.join('\n')}`);
-  } catch (err) {
-    log({ source: SOURCE, level: 'warn', summary: 'failed to send startup DM', data: err });
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Thread Create — user-created forum posts become sessions
@@ -736,19 +558,8 @@ async function handleGatewayMessage(
   const botId = getBotUserId();
   if (!botId) return;
 
-  // Bot-self messages: handle probe protocol, drop everything else
-  if (message.author.id === botId) {
-    if (commandsEnabled && message.content.trim() === '!crispy') {
-      void handleCommand(channelId, '!crispy', buildCommandContext());
-      return;
-    }
-    if (probeResolve && message.content.startsWith('crispy-pong')) {
-      const resolve = probeResolve;
-      probeResolve = null;
-      resolve(message.content);
-    }
-    return;
-  }
+  // Drop bot-self messages
+  if (message.author.id === botId) return;
 
   if (!commandsEnabled) return;
 
@@ -762,11 +573,16 @@ async function handleGatewayMessage(
     return;
   }
 
-  // Route 2: DM or @mention -> ! commands
+  // Route 2: DM, @mention, or bot control channel -> ! commands
   let text: string | null = null;
   if (!message.guild_id) {
+    // DM — accept plain text
+    text = message.content.trim();
+  } else if (botControlChannelId && channelId === botControlChannelId) {
+    // Bot control channel — accept plain text (no @mention needed)
     text = message.content.trim();
   } else if (message.mentions?.some(m => m.id === botId)) {
+    // @mention in any guild channel — strip the mention
     text = message.content.replace(/<@!?\d+>\s*/g, '').trim();
   }
 
