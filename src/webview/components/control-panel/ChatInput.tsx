@@ -13,7 +13,9 @@ import { useRef, useLayoutEffect, useEffect, useCallback } from 'react';
 import type { AttachedImage } from './types.js';
 import { ForkIcon, MicIcon } from './icons.js';
 import { useMention } from '../../hooks/useMention.js';
+import { useCommandAutocomplete } from '../../hooks/useCommandAutocomplete.js';
 import { MentionDropdown } from './MentionDropdown.js';
+import { CommandDropdown } from './CommandDropdown.js';
 import type { VoiceState } from '../../hooks/useVoiceInput.js';
 
 interface ChatInputProps {
@@ -28,11 +30,14 @@ interface ChatInputProps {
   voiceState?: VoiceState;
   /** Toggle voice recording on/off. */
   onVoiceToggle?: () => void;
+  /** Current vendor for command autocomplete (null disables). */
+  vendor?: string | null;
 }
 
-export function ChatInput({ value, attachedImages, onInput, onSend, placeholder, forkMode, onFork, voiceState = 'idle', onVoiceToggle }: ChatInputProps): React.JSX.Element {
+export function ChatInput({ value, attachedImages, onInput, onSend, placeholder, forkMode, onFork, voiceState = 'idle', onVoiceToggle, vendor }: ChatInputProps): React.JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mention = useMention(textareaRef, value, onInput);
+  const command = useCommandAutocomplete(textareaRef, value, onInput, vendor ?? null);
 
   // Auto-focus textarea on mount
   useEffect(() => {
@@ -64,23 +69,26 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
     requestAnimationFrame(() => { el.style.transition = ''; });
   }, [value]);
 
-  // Click-outside dismissal for mention dropdown
+  // Click-outside dismissal for mention and command dropdowns
   useEffect(() => {
-    if (!mention.active) return;
+    if (!mention.active && !command.active) return;
     function onMouseDown(e: MouseEvent): void {
       const inputRow = textareaRef.current?.closest('.crispy-cp-input-row');
       if (inputRow && !inputRow.contains(e.target as Node)) {
         mention.dismiss();
+        command.dismiss();
       }
     }
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
-  }, [mention.active, mention.dismiss]);
+  }, [mention.active, mention.dismiss, command.active, command.dismiss]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       // Let mention hook consume keys first
       if (mention.handleKeyDown(e)) return;
+      // Then command hook
+      if (command.handleKeyDown(e)) return;
 
       // Ctrl+Shift+Enter: fork
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
@@ -94,15 +102,16 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
         onSend();
       }
     },
-    [onSend, onFork, mention.handleKeyDown],
+    [onSend, onFork, mention.handleKeyDown, command.handleKeyDown],
   );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       onInput(e.target.value);
       mention.handleInputChange(e.target);
+      command.handleInputChange(e.target);
     },
-    [onInput, mention.handleInputChange],
+    [onInput, mention.handleInputChange, command.handleInputChange],
   );
 
   const isEmpty = !value.trim() && attachedImages.length === 0;
@@ -123,6 +132,14 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
           onSelect={mention.selectItem}
         />
       )}
+      {command.active && (
+        <CommandDropdown
+          commands={command.filtered}
+          selectedIndex={command.selectedIndex}
+          query={command.query}
+          onSelect={command.selectItem}
+        />
+      )}
       <textarea
         ref={textareaRef}
         className="crispy-cp-input"
@@ -131,7 +148,7 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
-        onSelect={(e) => mention.handleInputChange(e.currentTarget)}
+        onSelect={(e) => { mention.handleInputChange(e.currentTarget); command.handleInputChange(e.currentTarget); }}
       />
       {onVoiceToggle && (
         <button

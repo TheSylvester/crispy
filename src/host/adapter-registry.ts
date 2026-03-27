@@ -16,6 +16,7 @@ import { resolve } from 'node:path';
 import type { AgentAdapter, VendorDiscovery, SessionOpenSpec, LocalPlugin } from '../core/agent-adapter.js';
 import type { Vendor } from '../core/transcript.js';
 import { registerAdapter, unregisterAdapter, setToolEnv } from '../core/session-manager.js';
+import { setSkillRoot } from '../core/input-command-service.js';
 import { setSessionDefaults } from '../core/settings/index.js';
 import type { AgentDispatch } from './agent-dispatch.js';
 
@@ -175,6 +176,7 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
     CRISPY_AGENT: resolve(bundledPaths.pluginRoot, 'scripts', 'crispy-agent'),
     CRISPY_SESSION: resolve(bundledPaths.pluginRoot, 'scripts', 'crispy-session'),
   });
+  setSkillRoot(bundledPaths.skillRoot);
   console.error(`[adapter-registry] Plugin path: ${bundledPaths.pluginRoot}`);
 
   // System prompt factory — skills hint (always active when dispatch is available).

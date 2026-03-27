@@ -2041,58 +2041,66 @@ h2 {
   }
 }
 
-/* --- @Mention Autocomplete Dropdown --- */
+/* --- Autocomplete Dropdown (shared by @-mention, /command, etc.) --- */
 
-.crispy-cp-mention {
+.crispy-cp-autocomplete {
   position: absolute;
   bottom: calc(100% + 4px);
   left: 0;
   right: 0;
-  z-index: 500;
-  max-height: 300px;
+  max-height: 240px;
   overflow-y: auto;
-  background: var(--vscode-editorWidget-background, #252526);
-  border: 1px solid var(--vscode-editorWidget-border, #454545);
-  border-radius: 10px;
-  padding: 4px 0;
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 500;
+  background: var(--vscode-dropdown-background, #252526);
+  border: 1px solid var(--vscode-dropdown-border, #454545);
+  border-radius: 6px;
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.3);
 }
 
-.crispy-cp-mention__item {
-  padding: 4px 10px;
+.crispy-cp-autocomplete__item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
   cursor: pointer;
-  font-size: var(--font-base);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.crispy-cp-autocomplete__label {
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--vscode-list-inactiveSelectionForeground, #d4d4d4);
+  flex-shrink: 0;
 }
 
-.crispy-cp-mention__item:hover {
-  background: var(--vscode-list-hoverBackground, #2a2d2e);
-}
-
-.crispy-cp-mention__item--selected {
+.crispy-cp-autocomplete__item--selected {
   background: var(--vscode-list-activeSelectionBackground, #094771);
   color: var(--vscode-list-activeSelectionForeground, #fff);
 }
 
-.crispy-cp-mention__empty {
-  padding: 8px 10px;
-  font-style: italic;
-  text-align: center;
-  color: var(--text-tertiary);
-  font-size: var(--font-base);
+.crispy-cp-autocomplete__item:hover:not(.crispy-cp-autocomplete__item--selected) {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
 }
 
-.crispy-cp-mention__highlight {
-  background: var(
-    --vscode-editor-findMatchHighlightBackground,
-    rgba(234, 92, 0, 0.33)
-  );
+.crispy-cp-autocomplete__desc {
+  color: var(--vscode-descriptionForeground, #888);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.crispy-cp-autocomplete__highlight {
+  background: var(--vscode-editor-findMatchHighlightBackground, rgba(234, 92, 0, 0.33));
   color: inherit;
-  font-weight: 600;
-  border-radius: 1px;
+  border-radius: 2px;
+}
+
+.crispy-cp-autocomplete__empty {
+  padding: 8px 10px;
+  color: var(--vscode-descriptionForeground, #888);
+  font-style: italic;
+  font-size: 13px;
 }
 
 /* --- Mic Button (Voice Input) --- */
