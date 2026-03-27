@@ -99,6 +99,12 @@ export class CodexAgentAdapter implements AgentAdapter {
    */
   private startupPhase = true;
 
+  // --- Item tracking for turnComplete ---
+  /** Number of item/started events not yet matched by item/completed. */
+  private pendingItemCount = 0;
+  /** Set when turn/completed fires while items are still pending delivery. */
+  private turnCompletedPending = false;
+
   // --- Streaming delta accumulator ---
   /** Accumulated text from agentMessage deltas for the current turn. */
   private streamingText = '';
@@ -670,7 +676,9 @@ export class CodexAgentAdapter implements AgentAdapter {
         const turn = p.turn as Record<string, unknown> | undefined;
         this.currentTurnId = turn?.id as string | undefined;
         this.startupPhase = false;
-        // Reset streaming buffer for new turn (no clear event — fresh turn)
+        // Reset item tracking + streaming buffer for new turn
+        this.pendingItemCount = 0;
+        this.turnCompletedPending = false;
         this.streamingText = '';
         this.streamingThinking = '';
         this.emitStatus('active');
@@ -680,13 +688,19 @@ export class CodexAgentAdapter implements AgentAdapter {
       case 'turn/completed': {
         this.clearStreamingBuffer();
         this.currentTurnId = undefined;
-        // Don't emit turnComplete here — Codex delivers item/completed events
-        // (with the final assistant text) AFTER turn/completed, often in a
-        // separate event loop tick. The session-manager's debounce fallback
-        // (IDLE_SETTLE_MS) handles Codex correctly; turnComplete is only safe
-        // for adapters that guarantee all data is delivered before idle (Claude).
+        // Codex delivers item/completed events AFTER turn/completed, often in
+        // a separate event loop tick. If items are still pending, defer the
+        // idle signal until all item/completed events arrive — then emit with
+        // turnComplete so dispatch resolves immediately without debounce.
         if (this.pendingApprovals.size === 0) {
-          this.emitStatus('idle');
+          if (this.pendingItemCount > 0) {
+            this.turnCompletedPending = true;
+            log({ level: 'debug', source: 'codex-adapter', summary: `turn/completed deferred — ${this.pendingItemCount} item(s) still pending` });
+          } else {
+            // All items already delivered — safe to emit turnComplete now
+            this.turnCompletedPending = false;
+            this.emitIdleWithTurnComplete();
+          }
         }
         break;
       }
@@ -753,6 +767,14 @@ export class CodexAgentAdapter implements AgentAdapter {
         // (emit entry first so the webview has it before the ghost clears)
         if (item.type === 'agentMessage') {
           this.clearStreamingBuffer();
+        }
+
+        // Item tracking: decrement and check if turn/completed was deferred
+        if (this.pendingItemCount > 0) this.pendingItemCount--;
+        if (this.turnCompletedPending && this.pendingItemCount === 0) {
+          this.turnCompletedPending = false;
+          log({ level: 'debug', source: 'codex-adapter', summary: 'All pending items delivered after turn/completed — emitting idle+turnComplete' });
+          this.emitIdleWithTurnComplete();
         }
         break;
       }
@@ -821,8 +843,11 @@ export class CodexAgentAdapter implements AgentAdapter {
         break;
       }
 
-      // Ignored notifications
       case 'item/started':
+        this.pendingItemCount++;
+        break;
+
+      // Ignored notifications
       case 'item/reasoning/summaryPartAdded':
       case 'account/rateLimits/updated':
         // These are informational, don't need to emit events
@@ -975,6 +1000,16 @@ export class CodexAgentAdapter implements AgentAdapter {
     this.outputQueue.enqueue({
       type: 'event',
       event: { type: 'status', status },
+    });
+  }
+
+  /** Emit idle with authoritative turnComplete — skips debounce in dispatch. */
+  private emitIdleWithTurnComplete(): void {
+    if (this._closed) return;
+    this._status = 'idle';
+    this.outputQueue.enqueue({
+      type: 'event',
+      event: { type: 'status', status: 'idle', turnComplete: true },
     });
   }
 
