@@ -239,6 +239,21 @@ export function TranscriptViewer(): React.JSX.Element {
   // Channel state for fork streaming check + error surfacing
   const { channelState, lastError, clearError } = useSessionStatus(selectedSessionId);
 
+  // Watchdog: if the channel says awaiting_approval but the approval hook
+  // has no request, the approval event was lost (subscriber swap race, React
+  // batching edge case, etc.). Re-subscribe after a short settle to trigger
+  // a fresh catchup that includes the pending approval from channel state.
+  const approvalWatchdogRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => {
+    clearTimeout(approvalWatchdogRef.current);
+    if (channelState === 'awaiting_approval' && !approvalRequest && selectedSessionId) {
+      approvalWatchdogRef.current = setTimeout(() => {
+        transport.subscribe(selectedSessionId).catch(() => {});
+      }, 150);
+    }
+    return () => clearTimeout(approvalWatchdogRef.current);
+  }, [channelState, approvalRequest, selectedSessionId, transport]);
+
   const { parked, isAtTop, scrollToBottom, scrollToTop, pinToBottom } = useAutoScroll({
     sessionId: selectedSessionId,
     scrollRef: transcriptRef,

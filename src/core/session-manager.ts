@@ -1068,7 +1068,20 @@ export async function createForkSession(
     }
   }
 
-  // Legacy fork path: pending channel with re-key
+  // Legacy fork path: pending channel with re-key.
+  // Pre-load parent history so the channel starts with the fork's transcript
+  // visible — otherwise the channel is empty until live entries arrive.
+  let forkEntries: TranscriptEntry[] | undefined;
+  try {
+    forkEntries = await reg.discovery.loadHistory(fromSessionId);
+    if (options?.atMessageId) {
+      const cutIdx = forkEntries.findIndex(e => e.uuid === options.atMessageId);
+      if (cutIdx !== -1) forkEntries = forkEntries.slice(0, cutIdx + 1);
+    }
+  } catch (err) {
+    log({ source: 'session', level: 'warn', summary: `Failed to pre-load fork history`, data: { fromSessionId, error: String(err) } });
+  }
+
   const spec: SessionOpenSpec = {
     mode: 'fork',
     fromSessionId,
@@ -1082,7 +1095,10 @@ export async function createForkSession(
     ...(options?.sessionKind && { sessionKind: options.sessionKind }),
   };
 
-  return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
+  return createPendingChannel(vendor, spec, subscriber, {
+    explicitPendingId,
+    entries: forkEntries,
+  });
 }
 
 // ============================================================================

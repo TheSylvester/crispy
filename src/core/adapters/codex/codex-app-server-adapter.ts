@@ -692,20 +692,19 @@ export class CodexAgentAdapter implements AgentAdapter {
         const threadId = (p.threadId as string) ?? this.currentThreadId ?? '';
         const turnId = (p.turnId as string) ?? this.currentTurnId ?? '';
 
-        // --- userMessage handling: echo suppression + system-context detection ---
+        // --- userMessage handling: startup-phase detection + echo suppression ---
         if (item.type === 'userMessage') {
-          // Echo suppression: skip userMessage items that we sent — the channel
-          // already broadcast the optimistic user entry from sendTurn().
-          if (this.pendingSendCount > 0) {
-            this.pendingSendCount--;
-            break;
-          }
-
           // During startup (before first turn/started), Codex may inject
-          // system-context items (AGENTS.md, environment_context) as userMessages.
+          // system-context items (AGENTS.md, environment_context) as userMessages,
+          // or replay history echoes during thread/resume or thread/fork.
           // Mark them isMeta so rendering and serialization skip them.
-          // Also catches history echoes during thread/resume — the session-manager
-          // already backfilled history, so these are duplicates.
+          //
+          // IMPORTANT: startupPhase must be checked BEFORE echo suppression.
+          // sendTurn() increments pendingSendCount before start(), so during
+          // fork startup the counter is >0. Without this guard, the first
+          // replayed userMessage would be consumed by echo suppression instead
+          // of being tagged isMeta, and the actual echo after turn/started
+          // would pass through as a duplicate.
           if (this.startupPhase) {
             try {
               const entries = adaptCodexItem(item, threadId, turnId);
@@ -716,6 +715,13 @@ export class CodexAgentAdapter implements AgentAdapter {
             } catch (err) {
               log({ level: 'warn', source: 'codex-adapter', summary: `Failed to adapt startup item: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
             }
+            break;
+          }
+
+          // Echo suppression: skip userMessage items that we sent — the channel
+          // already broadcast the optimistic user entry from sendTurn().
+          if (this.pendingSendCount > 0) {
+            this.pendingSendCount--;
             break;
           }
         }
@@ -833,9 +839,13 @@ export class CodexAgentAdapter implements AgentAdapter {
     params: unknown,
   ): void {
     if (!isApprovalRequest(method)) {
-      log({ level: 'warn', source: 'codex-adapter', summary: `Unknown server request: ${method}` });
+      log({ level: 'warn', source: 'codex-adapter', summary: `Unknown server request: ${method}`, data: { method, id } });
+      // Respond with a decline decision — if this is an unrecognized approval
+      // method, sending { error } may leave Codex hanging because it expects a
+      // decision-shaped response. A decline is safe: the turn continues and the
+      // user sees the denial in the transcript.
       try {
-        this.client?.sendResponse(id, { error: 'Unknown method' });
+        this.client?.sendResponse(id, { decision: 'decline' });
       } catch { /* cleanup */ }
       return;
     }
