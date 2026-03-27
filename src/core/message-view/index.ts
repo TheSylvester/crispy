@@ -53,13 +53,13 @@ export function initMessageView(dispatch?: AgentDispatch, cwd?: string): void {
   currentDispatch = dispatch ?? null;
   currentCwd = cwd ?? null;
   const config = findEnabledDiscordProvider();
-  if (!config) {
-    log({ source: SOURCE, level: 'info', summary: 'no enabled discord provider found -- skipping init' });
-    return;
+  if (config) {
+    startUp(config);
+  } else {
+    log({ source: SOURCE, level: 'info', summary: 'no enabled discord provider found -- will start when enabled' });
   }
 
-  startUp(config);
-
+  // Always watch settings so enabling Discord later triggers startup
   unsubSettings = onSettingsChanged(() => {
     const next = findEnabledDiscordProvider();
     if (!next) {
