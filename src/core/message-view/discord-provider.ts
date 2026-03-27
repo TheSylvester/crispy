@@ -680,8 +680,10 @@ function handleGatewayReaction(
   const botId = getBotUserId();
   if (!botId || userId === botId) return;
 
-  // 📂 on welcome message → show session list
+  // 📂 on welcome message → show session list, then remove user's reaction so they can tap again
   if (emoji === '\u{1F4C2}' && welcomeMessageId && messageId === welcomeMessageId) {
+    const encoded = encodeURIComponent('\u{1F4C2}');
+    void discordFetch('DELETE', `/channels/${channelId}/messages/${messageId}/reactions/${encoded}/${userId}`).catch(() => {});
     void handleCommand(channelId, '!sessions', buildCommandContext()).catch((err) => {
       log({ source: SOURCE, level: 'error', summary: 'welcome reaction sessions error', data: err });
     });
