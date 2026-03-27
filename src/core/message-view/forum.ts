@@ -2,9 +2,11 @@
  * Forum Channel Management — workspace-scoped forum channels
  *
  * Each forum channel maps to a workspace (project directory) on the host.
- * Channel naming: `crispy-{project}` where {project} is the basename of the
- * cwd. No PID suffix — on startup the bot wipes all existing crispy-*
- * channels and creates fresh ones.
+ * Channel naming: `crispy-{project}-{pid}` where {project} is the basename
+ * of the cwd and {pid} is the owning process ID. Bot control channels use
+ * `crispy-bot-{pid}`. On startup each bot wipes its own PID channels and
+ * health-checks other bots' channels — dead bots' channels get cleaned up,
+ * live bots' channels are left alone.
  *
  * Zero coupling to watch state; depends only on discord-transport.
  *
@@ -39,15 +41,15 @@ export function cwdToBaseProject(cwd: string): string {
 }
 
 /**
- * Build a workspace forum channel name: `crispy-{project}`.
- * No PID, no disambiguation — wipe-on-startup guarantees a clean slate.
+ * Build a workspace forum channel name: `crispy-{project}-{pid}`.
+ * PID suffix enables multiple Crispy instances on one Discord server.
  */
-function buildChannelName(cwd: string): string {
-  const project = cwdToBaseProject(cwd);
-  const name = `crispy-${project}`;
-  return name.length > MAX_CHANNEL_NAME_LENGTH
-    ? name.slice(0, MAX_CHANNEL_NAME_LENGTH)
-    : name;
+function buildChannelName(cwd: string, pid: number): string {
+  const suffix = `-${pid}`;
+  const prefix = 'crispy-';
+  const maxProjectLen = MAX_CHANNEL_NAME_LENGTH - prefix.length - suffix.length;
+  const project = cwdToBaseProject(cwd).slice(0, maxProjectLen);
+  return `${prefix}${project}${suffix}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -61,30 +63,128 @@ export interface WorkspaceChannel {
 }
 
 // ---------------------------------------------------------------------------
-// Wipe & Create — the only lifecycle strategy
+// Channel PID Parsing
 // ---------------------------------------------------------------------------
 
-/**
- * Delete ALL existing crispy-* channels (forums + bot channels) in the guild.
- * Called on startup to guarantee a clean slate.
- */
-export async function wipeAllCrispyChannels(guildId: string): Promise<number> {
-  const channels = await getGuildChannels(guildId);
-  const crispyChannels = channels.filter(ch =>
-    ch.name.startsWith('crispy-') && (ch.type === GUILD_FORUM || ch.type === GUILD_TEXT),
-  );
+interface ParsedChannelPid {
+  pid: number;
+  project?: string;
+}
 
-  if (crispyChannels.length === 0) return 0;
+/**
+ * Parse a crispy channel name to extract the PID.
+ * - `crispy-bot-{pid}` → { pid }
+ * - `crispy-{project}-{pid}` → { project, pid }
+ * Returns null if the channel name doesn't match a crispy pattern with a PID.
+ */
+export function parseChannelPid(name: string): ParsedChannelPid | null {
+  // Bot channel: crispy-bot-{pid}
+  const botMatch = name.match(/^crispy-bot-(\d+)$/);
+  if (botMatch) return { pid: parseInt(botMatch[1], 10) };
+
+  // Forum channel: crispy-{project}-{pid} — greedy match on project, last numeric segment is PID
+  const forumMatch = name.match(/^crispy-(.+)-(\d+)$/);
+  if (forumMatch) return { project: forumMatch[1], pid: parseInt(forumMatch[2], 10) };
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Selective Wipe — per-PID cleanup
+// ---------------------------------------------------------------------------
+
+type GuildChannel = { id: string; name: string; type: number };
+
+function isCrispyChannel(ch: GuildChannel): boolean {
+  return ch.name.startsWith('crispy-') && (ch.type === GUILD_FORUM || ch.type === GUILD_TEXT);
+}
+
+/** Delete channels matching a predicate. Accepts pre-fetched list to avoid redundant API calls. */
+async function deleteMatchingChannels(
+  channels: GuildChannel[],
+  predicate: (parsed: ParsedChannelPid) => boolean,
+  label: string,
+): Promise<number> {
+  const matching = channels.filter(ch => {
+    if (!isCrispyChannel(ch)) return false;
+    const parsed = parseChannelPid(ch.name);
+    return parsed != null && predicate(parsed);
+  });
+
+  if (matching.length === 0) return 0;
 
   const results = await Promise.allSettled(
-    crispyChannels.map(ch => deleteChannel(ch.id).catch(err => {
-      log({ source: SOURCE, level: 'warn', summary: `failed to delete channel ${ch.name} (${ch.id})`, data: err });
-    })),
+    matching.map(ch => deleteChannel(ch.id)),
   );
 
-  const deleted = results.filter(r => r.status === 'fulfilled').length;
-  log({ source: SOURCE, level: 'info', summary: `wiped ${deleted} crispy-* channel(s)` });
+  let deleted = 0;
+  for (let i = 0; i < results.length; i++) {
+    if (results[i].status === 'fulfilled') {
+      deleted++;
+    } else {
+      log({ source: SOURCE, level: 'warn', summary: `failed to delete channel ${matching[i].name} (${matching[i].id})`, data: (results[i] as PromiseRejectedResult).reason });
+    }
+  }
+  log({ source: SOURCE, level: 'info', summary: `wiped ${deleted} channel(s) for ${label}` });
   return deleted;
+}
+
+/**
+ * Scan guild channels and perform selective cleanup + discovery in one pass.
+ * Returns { deletedOwn, otherBots } — own PID channels are deleted,
+ * other bots' control channels are returned for health checking.
+ */
+export async function cleanupAndDiscoverBots(
+  guildId: string,
+  myPid: number,
+): Promise<{
+  deletedOwn: number;
+  otherBots: Array<{ id: string; name: string; pid: number }>;
+  channels: GuildChannel[];
+}> {
+  const channels = await getGuildChannels(guildId);
+
+  // Wipe own PID channels
+  const deletedOwn = await deleteMatchingChannels(channels, p => p.pid === myPid, `PID ${myPid}`);
+
+  // Wipe legacy channels (pre-PID format: crispy-{project} with no PID suffix)
+  const legacyChannels = channels.filter(ch =>
+    isCrispyChannel(ch) && parseChannelPid(ch.name) === null,
+  );
+  if (legacyChannels.length > 0) {
+    const legacyResults = await Promise.allSettled(legacyChannels.map(ch => deleteChannel(ch.id)));
+    const legacyDeleted = legacyResults.filter(r => r.status === 'fulfilled').length;
+    if (legacyDeleted > 0) {
+      log({ source: SOURCE, level: 'info', summary: `wiped ${legacyDeleted} legacy crispy channel(s) (no PID)` });
+    }
+  }
+
+  // Discover other bots' control channels
+  const otherBots: Array<{ id: string; name: string; pid: number }> = [];
+  for (const ch of channels) {
+    if (ch.type !== GUILD_TEXT) continue;
+    if (!ch.name.startsWith(BOT_CHANNEL_PREFIX)) continue;
+    const parsed = parseChannelPid(ch.name);
+    if (parsed && parsed.pid !== myPid) {
+      otherBots.push({ id: ch.id, name: ch.name, pid: parsed.pid });
+    }
+  }
+
+  return { deletedOwn, otherBots, channels };
+}
+
+/**
+ * Bulk-delete all crispy channels whose PID is in the given set.
+ * Accepts pre-fetched channel list to avoid redundant API calls.
+ */
+export async function wipeChannelsForPids(
+  guildId: string,
+  pids: Set<number>,
+  prefetchedChannels?: GuildChannel[],
+): Promise<number> {
+  if (pids.size === 0) return 0;
+  const channels = prefetchedChannels ?? await getGuildChannels(guildId);
+  return deleteMatchingChannels(channels, p => pids.has(p.pid), `dead PIDs: ${[...pids].join(', ')}`);
 }
 
 /**
@@ -96,8 +196,9 @@ export async function createWorkspaceChannel(
   botId: string,
   ownerId: string | null,
   cwd: string,
+  pid: number,
 ): Promise<WorkspaceChannel> {
-  const channelName = buildChannelName(cwd);
+  const channelName = buildChannelName(cwd, pid);
   const project = cwdToBaseProject(cwd);
 
   const permissionOverwrites: unknown[] = [

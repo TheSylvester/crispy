@@ -4,12 +4,12 @@
  * Owns the Gateway connection, heartbeat loop, workspace-scoped forum channel
  * lifecycle, command handling, approval interactions, and sync loop.
  *
- * Lifecycle: wipe-on-startup. All crispy-* channels are deleted and recreated
- * fresh each time the bot connects. No crash recovery, no multi-instance
- * coordination.
+ * Lifecycle: selective wipe on startup. Each bot wipes its own PID channels,
+ * health-checks other bots' channels (sends `!status`, waits 3s for response),
+ * and deletes dead bots' channels. Live bots' channels are left alone.
  *
  * Workspace model: each forum channel maps to a project directory (workspace).
- * Channel naming: `crispy-{project}` (no PID). The provider maintains a map
+ * Channel naming: `crispy-{project}-{pid}`. The provider maintains a map
  * from cwd → forumChannelId.
  *
  * Interaction: users create forum posts to start sessions, or use `!sessions`
@@ -44,7 +44,8 @@ import type { GatewayEventHandler } from './discord-transport.js';
 import { handleCommand, handleSessionListReaction } from './commands.js';
 import type { CommandContext } from './commands.js';
 import {
-  wipeAllCrispyChannels,
+  cleanupAndDiscoverBots,
+  wipeChannelsForPids,
   createWorkspaceChannel,
   createBotChannel,
   cwdToBaseProject,
@@ -102,6 +103,10 @@ let workspaceCwd: string | null = null;
 let botControlChannelId: string | null = null;
 const lastTypingFired = new Map<string, number>();
 const TYPING_COOLDOWN_MS = 8000;
+const HEALTH_CHECK_TIMEOUT_MS = 3000;
+
+/** Pending health check resolvers keyed by channel ID. Set during startup, cleared after. */
+const healthCheckResolvers = new Map<string, (content: string) => void>();
 
 // ---------------------------------------------------------------------------
 // Workspace helpers
@@ -300,21 +305,44 @@ async function initWorkspaceChannels(): Promise<void> {
   }
 
   const guildId = currentConfig.guildId;
+  const myPid = process.pid;
 
-  // Wipe all existing crispy-* channels — clean slate on every startup.
-  // No crash recovery, no orphan takeover, no channel claiming.
-  await wipeAllCrispyChannels(guildId);
+  // Step 1: Wipe own PID channels + discover other bots (single API call)
+  const { otherBots, channels } = await cleanupAndDiscoverBots(guildId, myPid);
 
+  // Step 2: Health-check other bots' channels (parallel — max wait is one timeout)
+  if (otherBots.length > 0) {
+    log({ source: SOURCE, level: 'info', summary: `health-checking ${otherBots.length} other bot channel(s)` });
+    const results = await Promise.allSettled(otherBots.map(bot => healthCheckBot(bot.id)));
+    const deadPids = new Set<number>();
+
+    for (let i = 0; i < otherBots.length; i++) {
+      const alive = results[i].status === 'fulfilled' && (results[i] as PromiseFulfilledResult<boolean>).value;
+      if (!alive) {
+        log({ source: SOURCE, level: 'info', summary: `bot PID ${otherBots[i].pid} (${otherBots[i].name}) is dead — marking for cleanup` });
+        deadPids.add(otherBots[i].pid);
+      } else {
+        log({ source: SOURCE, level: 'info', summary: `bot PID ${otherBots[i].pid} (${otherBots[i].name}) is alive — leaving channels` });
+      }
+    }
+
+    // Step 3: Bulk-delete dead bots' channels (reuse pre-fetched list)
+    if (deadPids.size > 0) {
+      await wipeChannelsForPids(guildId, deadPids, channels);
+    }
+  }
+  healthCheckResolvers.clear();
+
+  // Step 4: Create fresh channels
   if (workspaceCwd) {
-    const channel = await createWorkspaceChannel(guildId, botId, ownerUserId, workspaceCwd);
+    const channel = await createWorkspaceChannel(guildId, botId, ownerUserId, workspaceCwd, myPid);
     registerWorkspaceChannel(workspaceCwd, channel);
     log({ source: SOURCE, level: 'info', summary: `workspace forum ready: ${channel.channelName} (${channel.channelId})` });
   } else {
     log({ source: SOURCE, level: 'warn', summary: 'no workspace cwd — bot will connect but skip workspace channel creation' });
   }
 
-  // Bot control channel
-  botControlChannelId = await createBotChannel(guildId, botId, ownerUserId, process.pid);
+  botControlChannelId = await createBotChannel(guildId, botId, ownerUserId, myPid);
 
   // Post welcome message in bot channel
   void sendMessage(botControlChannelId, [
@@ -330,6 +358,36 @@ async function initWorkspaceChannels(): Promise<void> {
   log({ source: SOURCE, level: 'info', summary: `Discord bot active — commands enabled, ${workspaceChannels.size} workspace(s)` });
 }
 
+
+// ---------------------------------------------------------------------------
+// Health Check — probe another bot's control channel via !status
+// ---------------------------------------------------------------------------
+
+/**
+ * Send `!status` to a bot control channel and wait for a response.
+ * Returns true if the bot responds within the timeout, false otherwise.
+ * Uses a one-shot Promise: the gateway message handler resolves it when a
+ * bot-self message arrives in the probed channel.
+ */
+async function healthCheckBot(channelId: string): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => {
+      healthCheckResolvers.delete(channelId);
+      resolve(false);
+    }, HEALTH_CHECK_TIMEOUT_MS);
+
+    healthCheckResolvers.set(channelId, () => {
+      clearTimeout(timer);
+      resolve(true);
+    });
+
+    sendMessage(channelId, '!status').catch(() => {
+      clearTimeout(timer);
+      healthCheckResolvers.delete(channelId);
+      resolve(false);
+    });
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Thread Create — user-created forum posts become sessions
@@ -558,8 +616,25 @@ async function handleGatewayMessage(
   const botId = getBotUserId();
   if (!botId) return;
 
-  // Drop bot-self messages
-  if (message.author.id === botId) return;
+  // All instances share one bot user ID (same token), so bot-self messages
+  // include messages sent by OTHER instances. Two cases need special routing:
+  if (message.author.id === botId) {
+    // (a) Health check: resolve pending probes, but ignore our own !status echo
+    const resolver = healthCheckResolvers.get(channelId);
+    if (resolver) {
+      if (message.content.trim() !== '!status') {
+        healthCheckResolvers.delete(channelId);
+        resolver(message.content);
+      }
+      return;
+    }
+    // (b) Another instance sent a command to our bot channel — let it through
+    if (commandsEnabled && channelId === botControlChannelId) {
+      // Fall through to normal command routing below
+    } else {
+      return;
+    }
+  }
 
   if (!commandsEnabled) return;
 

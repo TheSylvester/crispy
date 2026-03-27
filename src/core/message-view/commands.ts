@@ -8,7 +8,6 @@
  * @module message-view/commands
  */
 
-import { hostname } from 'node:os';
 import { log } from '../log.js';
 import {
   interruptSession,
@@ -94,7 +93,6 @@ export async function handleCommand(channelId: string, text: string, ctx: Comman
       case 'open':     return await handleOpen(channelId, parsed.args, ctx);
       case 'stop':     return await handleStop(channelId, parsed.args);
       case 'status':   return await handleStatus(channelId, ctx);
-      case 'crispy':   return await handleCrispy(channelId, ctx);
       default:
         await sendMessage(channelId, `Unknown command: \`!${parsed.cmd}\`\n${COMMANDS_HELP}`).catch(() => {});
     }
@@ -295,11 +293,3 @@ async function handleStatus(channelId: string, ctx: CommandContext): Promise<voi
   ).catch(() => {});
 }
 
-async function handleCrispy(channelId: string, ctx: CommandContext): Promise<void> {
-  const pid = process.pid;
-  const uptimeMin = Math.floor(ctx.uptimeMs() / 60000);
-  await sendMessage(
-    channelId,
-    `crispy-pong pid=${pid} host=${hostname()} uptime=${uptimeMin}m`,
-  ).catch(() => {});
-}
