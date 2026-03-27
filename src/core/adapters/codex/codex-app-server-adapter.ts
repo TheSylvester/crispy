@@ -352,6 +352,8 @@ export class CodexAgentAdapter implements AgentAdapter {
       }
 
       case 'resume': {
+        // Don't re-send systemPrompt — the resumed thread already has
+        // developerInstructions from its prior session history.
         response = await this.client.request('thread/resume', {
           threadId: this.spec.sessionId,
           ...this.buildThreadConfigParams({
@@ -359,19 +361,20 @@ export class CodexAgentAdapter implements AgentAdapter {
             model: this.spec.model,
             permissionMode: this.spec.permissionMode,
             mcpServers: this.spec.mcpServers,
-            systemPrompt: this.spec.systemPrompt,
           }),
         });
         break;
       }
 
       case 'fork': {
+        // Don't re-send systemPrompt — the forked thread inherits the parent's
+        // developerInstructions from history. Re-sending causes N+1 copies after
+        // N forks (GitHub issue #4).
         const forkParams: Record<string, unknown> = {
           threadId: this.spec.fromSessionId,
           ...this.buildThreadConfigParams({
             model: this.spec.model,
             mcpServers: this.spec.mcpServers,
-            systemPrompt: this.spec.systemPrompt,
           }),
         };
         if (this.spec.atMessageId) {
@@ -382,6 +385,8 @@ export class CodexAgentAdapter implements AgentAdapter {
       }
 
       case 'hydrated': {
+        // Don't re-send systemPrompt — the serialized history already
+        // contains the developerInstructions from the source session.
         const history = serializeToCodexHistory(this.spec.history);
         response = await this.client.request('thread/resume', {
           threadId: crypto.randomUUID(),
@@ -391,7 +396,6 @@ export class CodexAgentAdapter implements AgentAdapter {
             model: this.spec.model,
             permissionMode: this.spec.permissionMode,
             mcpServers: this.spec.mcpServers,
-            systemPrompt: this.spec.systemPrompt,
           }),
         });
         break;

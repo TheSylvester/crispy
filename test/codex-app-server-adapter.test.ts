@@ -501,7 +501,6 @@ describe('CodexAgentAdapter', () => {
         cwd: '/resume/project',
         model: 'o4-mini',
         approvalPolicy: 'on-request',
-        developerInstructions: 'Use memory first',
         config: {
           mcp_servers: {
             memory: { type: 'stdio', command: 'memory-mcp' },
@@ -578,7 +577,6 @@ describe('CodexAgentAdapter', () => {
         threadId: 'original-session',
         atItemId: 'msg-5',
         model: 'o3',
-        developerInstructions: 'Fork prompt',
         config: {
           mcp_servers: {
             memory: { type: 'stdio', command: 'memory-mcp', args: ['serve'] },
