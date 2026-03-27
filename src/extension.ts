@@ -7,7 +7,8 @@
 import * as vscode from 'vscode';
 
 import { initSettings, startWatchingSettings, stopWatchingSettings } from './core/settings/index.js';
-import { openCrispyPanel, getOrCreatePanelForPrefill, getMostRecentPanel, getActivePanel } from './host/webview-host.js';
+import { openCrispyPanel, getOrCreatePanelForPrefill, getMostRecentPanel, getActivePanel, createCrispyPanel } from './host/webview-host.js';
+import { registerPanelOpener } from './host/panel-opener.js';
 import { startRescan, stopRescan } from './core/session-list-manager.js';
 import { findClaudeBinary } from './core/find-claude-binary.js';
 import { registerAllAdapters } from './host/adapter-registry.js';
@@ -59,7 +60,7 @@ export function activate(context: vscode.ExtensionContext): void {
   done();
   context.subscriptions.push({ dispose: disposeAdapters });
 
-  setHostSocketPath(getSocketPath());
+  setHostSocketPath(getSocketPath(undefined, 'server'));
 
   const workspaceOpts = { workspaceCwd: cwd };
 
@@ -91,7 +92,10 @@ export function activate(context: vscode.ExtensionContext): void {
   const providerBase = pathToClaudeCodeExecutable
     ? { cwd, pathToClaudeCodeExecutable }
     : { cwd };
-  initSettings(providerBase).catch((err) => console.error('[crispy] Failed to load settings:', err));
+  initSettings(providerBase)
+    .then(() => {
+    })
+    .catch((err) => console.error('[crispy] Failed to load settings:', err));
   startWatchingSettings();
 
   // Wire up lifecycle hooks:
@@ -105,7 +109,7 @@ export function activate(context: vscode.ExtensionContext): void {
   done = phase('initRosieBot');
   initRosieBot(dispatch, {
     trackerScript: resolve(context.extensionPath, 'dist', 'crispy-tracker.mjs'),
-    ipcSocket: getSocketPath(),
+    ipcSocket: getSocketPath(undefined, 'server'),
   });
   done();
   context.subscriptions.push({
@@ -116,6 +120,16 @@ export function activate(context: vscode.ExtensionContext): void {
       disposeEmbedder();
       dispatch.dispose();
     },
+  });
+
+  // Register panel opener so CLI callers (ipc-server) can open VS Code panels
+  registerPanelOpener((sessionId) => {
+    const panel = createCrispyPanel(context, vscode.ViewColumn.Beside);
+    const msg = { kind: 'openSession', sessionId };
+    const delays = [100, 500, 1500];
+    for (const delay of delays) {
+      setTimeout(() => panel.webview.postMessage(msg), delay);
+    }
   });
 
   // Defer session list scan to next tick so the webview can initialize first

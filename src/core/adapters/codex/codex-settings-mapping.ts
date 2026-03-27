@@ -23,6 +23,15 @@ import type { SandboxMode } from './protocol/v2/SandboxMode.js';
 import type { SandboxPolicy } from './protocol/v2/SandboxPolicy.js';
 import type { UserInput } from './protocol/v2/UserInput.js';
 
+export interface ResolvedCodexSkillReference {
+  name: string;
+  path: string;
+}
+
+export type CodexSkillReferenceResolver = (
+  name: string,
+) => ResolvedCodexSkillReference | undefined;
+
 // ============================================================================
 // Permission Mode ↔ Approval Policy Mapping
 // ============================================================================
@@ -236,6 +245,188 @@ export function mapTokenUsage(usage: Record<string, unknown>): ContextUsage | nu
 // Message Content → UserInput[]
 // ============================================================================
 
+function isSkillNameStart(ch: string): boolean {
+  return /^[a-z]$/.test(ch);
+}
+
+function isSkillNameChar(ch: string): boolean {
+  return /^[a-z0-9-]$/.test(ch);
+}
+
+function isSkillBoundary(ch: string): boolean {
+  return ch.length === 0 || !/[A-Za-z0-9_-]/.test(ch);
+}
+
+interface SkillToken {
+  name: string;
+  start: number;
+  end: number;
+}
+
+function countRepeatedChars(text: string, start: number, ch: string): number {
+  let end = start;
+  while (end < text.length && text[end] === ch) {
+    end++;
+  }
+  return end - start;
+}
+
+function findExplicitCodexSkillTokens(text: string): SkillToken[] {
+  const tokens: SkillToken[] = [];
+  let inFence: { ch: '`' | '~'; length: number } | null = null;
+  let inlineCodeDelimiterLength: number | null = null;
+  let atLineStart = true;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+
+    if (ch === '\n') {
+      atLineStart = true;
+      continue;
+    }
+
+    if (atLineStart && (ch === ' ' || ch === '\t')) {
+      continue;
+    }
+
+    const repeatedCount = (ch === '`' || ch === '~')
+      ? countRepeatedChars(text, i, ch)
+      : 0;
+
+    if (atLineStart && repeatedCount >= 3 && (ch === '`' || ch === '~')) {
+      if (inFence) {
+        if (inFence.ch === ch && repeatedCount >= inFence.length) {
+          inFence = null;
+        }
+      } else if (inlineCodeDelimiterLength === null) {
+        inFence = { ch, length: repeatedCount };
+      }
+      atLineStart = false;
+      i += repeatedCount - 1;
+      continue;
+    }
+
+    atLineStart = false;
+
+    if (inFence) {
+      continue;
+    }
+
+    if (ch === '\\') {
+      i += 1;
+      continue;
+    }
+
+    if (ch === '`') {
+      if (inlineCodeDelimiterLength === null) {
+        inlineCodeDelimiterLength = repeatedCount;
+      } else if (inlineCodeDelimiterLength === repeatedCount) {
+        inlineCodeDelimiterLength = null;
+      }
+      i += repeatedCount - 1;
+      continue;
+    }
+
+    if (inlineCodeDelimiterLength !== null || ch !== '$') {
+      continue;
+    }
+
+    const prev = i > 0 ? text[i - 1] : '';
+    if (!isSkillBoundary(prev)) {
+      continue;
+    }
+
+    const nameStart = i + 1;
+    if (nameStart >= text.length || !isSkillNameStart(text[nameStart])) {
+      continue;
+    }
+
+    let end = nameStart + 1;
+    while (end < text.length && isSkillNameChar(text[end])) {
+      end++;
+    }
+
+    const next = end < text.length ? text[end] : '';
+    if (!isSkillBoundary(next)) {
+      continue;
+    }
+
+    tokens.push({
+      name: text.slice(nameStart, end),
+      start: i,
+      end,
+    });
+    i = end - 1;
+  }
+
+  return tokens;
+}
+
+function createTextInput(text: string): UserInput {
+  return {
+    type: 'text',
+    text,
+    text_elements: [],
+  };
+}
+
+function mapTextContent(
+  text: string,
+  resolveSkillReference?: CodexSkillReferenceResolver,
+): UserInput[] {
+  if (!resolveSkillReference) {
+    return [createTextInput(text)];
+  }
+
+  const tokens = findExplicitCodexSkillTokens(text);
+  if (tokens.length === 0) {
+    return [createTextInput(text)];
+  }
+
+  const inputs: UserInput[] = [];
+  let textBuffer = '';
+  let cursor = 0;
+
+  for (const token of tokens) {
+    textBuffer += text.slice(cursor, token.start);
+
+    const resolvedSkill = resolveSkillReference(token.name);
+    if (!resolvedSkill) {
+      textBuffer += text.slice(token.start, token.end);
+      cursor = token.end;
+      continue;
+    }
+
+    if (textBuffer.length > 0) {
+      inputs.push(createTextInput(textBuffer));
+      textBuffer = '';
+    }
+
+    inputs.push({
+      type: 'skill',
+      name: resolvedSkill.name,
+      path: resolvedSkill.path,
+    });
+
+    cursor = token.end;
+  }
+
+  textBuffer += text.slice(cursor);
+  if (textBuffer.length > 0) {
+    inputs.push(createTextInput(textBuffer));
+  }
+
+  return inputs;
+}
+
+export function hasExplicitCodexSkillReference(content: MessageContent): boolean {
+  if (typeof content === 'string') {
+    return findExplicitCodexSkillTokens(content).length > 0;
+  }
+
+  return content.some((block) => block.type === 'text' && findExplicitCodexSkillTokens(block.text).length > 0);
+}
+
 /**
  * Transform Crispy MessageContent to Codex UserInput[].
  *
@@ -253,42 +444,37 @@ export function mapTokenUsage(usage: Record<string, unknown>): ContextUsage | nu
  *     { type: 'text', text: 'Look at this', text_elements: [] },
  *     { type: 'image', url: 'data:image/png;base64,...' }
  *   ]
+ *
+ * When `resolveSkillReference` is provided, explicit `$skill-name` tokens in
+ * text blocks are converted to Codex `skill` inputs. Unresolved references are
+ * left untouched in the text.
  */
-export function mapMessageContent(content: MessageContent): UserInput[] {
+export function mapMessageContent(
+  content: MessageContent,
+  resolveSkillReference?: CodexSkillReferenceResolver,
+): UserInput[] {
   // String input → single text element
   if (typeof content === 'string') {
-    return [{
-      type: 'text',
-      text: content,
-      text_elements: [],
-    }];
+    return mapTextContent(content, resolveSkillReference);
   }
 
   // Array of content blocks
-  return content.map((block): UserInput => {
+  return content.flatMap((block): UserInput[] => {
     if (block.type === 'text') {
-      return {
-        type: 'text',
-        text: block.text,
-        text_elements: [],
-      };
+      return mapTextContent(block.text, resolveSkillReference);
     }
 
     if (block.type === 'image') {
       // Convert base64 source to data URL format
       const imageBlock = block as MessageContentBlock & { type: 'image' };
       const { media_type, data } = imageBlock.source;
-      return {
+      return [{
         type: 'image',
         url: `data:${media_type};base64,${data}`,
-      };
+      }];
     }
 
     // Fallback for unknown block types — treat as text if possible
-    return {
-      type: 'text',
-      text: JSON.stringify(block),
-      text_elements: [],
-    };
+    return [createTextInput(JSON.stringify(block))];
   });
 }

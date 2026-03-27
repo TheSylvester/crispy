@@ -20,8 +20,9 @@ import { connect } from 'node:net';
 import { discoverSocket, MessageRouter, EXIT_TRANSPORT, EXIT_USAGE } from './ipc-client.js';
 
 export async function runRpcPipe(argv: string[]): Promise<void> {
-  // Parse --session flag from argv, collecting remaining positional args
+  // Parse flags from argv, collecting remaining positional args
   let sessionOverride: string | undefined;
+  let subscribeFirst = false;
   const positional: string[] = [];
 
   for (let i = 0; i < argv.length; i++) {
@@ -32,6 +33,8 @@ export async function runRpcPipe(argv: string[]): Promise<void> {
         process.exitCode = EXIT_USAGE;
         return;
       }
+    } else if (argv[i] === '--subscribe-first') {
+      subscribeFirst = true;
     } else {
       positional.push(argv[i]!);
     }
@@ -95,6 +98,19 @@ export async function runRpcPipe(argv: string[]): Promise<void> {
     // Auto-inject sessionId into params if not already present
     if (sessionId && !('sessionId' in params)) {
       params.sessionId = sessionId;
+    }
+
+    // Auto-inject cwd for switchSession so the new session inherits the
+    // caller's working directory rather than the host process's cwd
+    if (method === 'switchSession' && !('cwd' in params)) {
+      params.cwd = process.cwd();
+    }
+
+    // Subscribe to the session first if requested — ensures the caller
+    // holds a subscription on this connection before the main RPC.
+    // Required by switchSession which guards against cross-client rekey bugs.
+    if (subscribeFirst && sessionId) {
+      await router.sendRpc('subscribe', { sessionId });
     }
 
     const result = await router.sendRpc(method, params);

@@ -23,7 +23,7 @@ if [[ -z "${CRISPY_DISPATCH:-}" ]]; then
   echo "Error: CRISPY_DISPATCH env var not set. This script must be run from a Crispy-managed session." >&2
   exit 13
 fi
-DISPATCH_BIN="node $CRISPY_DISPATCH"
+DISPATCH_BIN="$CRISPY_DISPATCH"
 
 # Defaults
 VENDOR="claude"

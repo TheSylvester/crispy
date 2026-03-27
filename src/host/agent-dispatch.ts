@@ -7,45 +7,24 @@
  *
  * Does NOT: orchestrate multi-step flows, manage timeouts, extract results.
  * That's the dispatch-handler's job.
+ *
+ * The AgentDispatch interface is defined in core/agent-dispatch-types.ts so
+ * that core modules can reference it without a core→host import. This file
+ * re-exports the interface and provides the concrete factory.
  */
 
 import { randomUUID } from 'node:crypto';
-import type { SessionInfo, TurnIntent, TurnReceipt } from '../core/agent-adapter.js';
+import type { SessionInfo, TurnReceipt } from '../core/agent-adapter.js';
 import type { TranscriptEntry } from '../core/transcript.js';
-import type { ChildSessionOptions, ChildSessionResult, ResumeChildOptions } from '../core/session-manager.js';
+import type { ChildSessionResult } from '../core/session-manager.js';
+import type { WorkspaceListResponse } from '../core/workspace-roots.js';
 import type { HostEvent, HostMessage } from './client-connection.js';
 import { createClientConnection } from './client-connection.js';
 
-export interface AgentDispatch {
-  // Discovery
-  listSessions(): Promise<SessionInfo[]>;
-  findSession(sessionId: string): Promise<SessionInfo | null>;
-  loadSession(sessionId: string, options?: { until?: string }): Promise<TranscriptEntry[]>;
-
-  // Session lifecycle
-  subscribe(sessionId: string): Promise<void>;
-  unsubscribe(sessionId: string): Promise<void>;
-  sendTurn(intent: TurnIntent): Promise<TurnReceipt>;
-  resolveApproval(sessionId: string, toolUseId: string, optionId: string, extra?: {
-    message?: string;
-    updatedInput?: Record<string, unknown>;
-    updatedPermissions?: unknown[];
-  }): Promise<void>;
-  interrupt(sessionId: string): Promise<void>;
-  close(sessionId: string): Promise<void>;
-
-  /** Dispatch an ephemeral child session — fork or new — collect result, auto-close. */
-  dispatchChild(options: ChildSessionOptions): Promise<ChildSessionResult | null>;
-
-  /** Resume an existing child session with a follow-up turn. */
-  resumeChild(options: ResumeChildOptions): Promise<ChildSessionResult | null>;
-
-  // Event delivery
-  onEvent(handler: (sessionId: string, event: HostEvent) => void): () => void;
-
-  // Cleanup
-  dispose(): void;
-}
+// Re-export the interface from core so existing host-layer importers
+// continue to work without changing their import paths.
+export type { AgentDispatch } from '../core/agent-dispatch-types.js';
+import type { AgentDispatch } from '../core/agent-dispatch-types.js';
 
 export function createAgentDispatch(): AgentDispatch {
   const clientId = `dispatch-${randomUUID()}`;
@@ -71,6 +50,8 @@ export function createAgentDispatch(): AgentDispatch {
       connection.call('resolveApproval', { sessionId, toolUseId, optionId, extra }).then(() => {}),
     interrupt: (id) => connection.call('interrupt', { sessionId: id }).then(() => {}),
     close: (id) => connection.call('close', { sessionId: id }).then(() => {}),
+    listWorkspaces: () => connection.call('listWorkspaces', {}) as Promise<WorkspaceListResponse>,
+    resolveSessionPrefix: (prefix) => connection.call('resolveSessionPrefix', { sessionId: prefix }).then((r) => (r as { sessionId: string }).sessionId),
     dispatchChild: (options) => connection.call('dispatchChild', options as unknown as Record<string, unknown>) as Promise<ChildSessionResult | null>,
     resumeChild: (options) => connection.call('resumeChild', options as unknown as Record<string, unknown>) as Promise<ChildSessionResult | null>,
 

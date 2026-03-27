@@ -18,6 +18,38 @@ Works with Claude Code and Codex. Runs standalone in your browser or as a VS Cod
 
 ---
 
+## What's New in v0.2.4
+
+### Git diff panel
+
+The sidebar now includes a Git panel showing your working tree changes —
+staged, modified, and untracked files grouped by status. Click any file to
+see a syntax-highlighted diff preview.
+
+### Session rotation and handoff
+
+Session rotation swaps the adapter on a live channel without tearing down
+subscribers — no flash, no re-subscription. Two new plugin skills use it:
+
+- **`/handoff`** — reflects on the conversation, distills a self-contained
+  prompt, and rotates into a fresh session so context stays clean
+- **`/clear-and-execute`** — clears context and continues with a prompt file,
+  useful when context is bloated or you want a clean slate
+
+### Fixes
+
+- File links in VS Code / Cursor now open in the native editor again instead
+  of routing through the built-in file viewer
+- Fixed a race where the first turn could ignore your persisted agency mode
+  if submitted before settings finished loading
+- Fixed several Codex fork/resume issues: forked sessions now preserve
+  history correctly, no longer duplicate the system prompt, and recover more
+  reliably from missing approval state
+- Fixed session rotation and discovery edge cases that could attach new
+  sessions to the wrong working directory
+
+---
+
 ## What's New in v0.2.3
 
 ### File viewer side panel

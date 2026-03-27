@@ -16,6 +16,7 @@ import type { WireProviderConfig, ProviderConfig, WireSettingsSnapshot, Settings
 import type { VendorModelGroup } from './components/control-panel/types.js';
 import type { CatchupStatus } from '../core/recall/catchup-types.js';
 import type { WorkspaceInfo, WorkspaceListResponse } from '../core/workspace-roots.js';
+import type { GitDiffResult } from '../core/git-diff-service.js';
 
 /** Client-side session info — modifiedAt is a string after JSON serialization. */
 export interface WireSessionInfo extends Omit<SessionInfo, 'modifiedAt'> {
@@ -88,6 +89,17 @@ export interface SessionService {
    */
   sendTurn(intent: TurnIntent, pendingId?: string): Promise<TurnReceipt>;
 
+  switchSession?(params: {
+    sessionId: string;
+    prompt?: string;
+    targetSessionId?: string;
+    vendor?: string;
+    permissionMode?: string;
+    allowDangerouslySkipPermissions?: boolean;
+  }): Promise<{ previousSessionId: string; sessionId: string }>;
+
+  openPanel?(params: { sessionId: string }): Promise<{ ok: boolean }>;
+
   forkToNewPanel?(params: {
     fromSessionId: string;
     atMessageId?: string;
@@ -112,6 +124,7 @@ export interface SessionService {
   onEvent(handler: (sessionId: string, event: HostEvent) => void): () => void;
   getGitFiles(cwd: string): Promise<string[]>;
   getGitBranchInfo(cwd: string): Promise<{ branch: string; dirty: boolean } | null>;
+  getGitDiff(cwd: string): Promise<GitDiffResult>;
   fileExists(path: string): Promise<boolean>;
   readImage(path: string): Promise<{ data: string; mimeType: string; fileName: string }>;
   readFile(path: string): Promise<{ content: string; fileName: string; size: number }>;

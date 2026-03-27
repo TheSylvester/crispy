@@ -183,6 +183,28 @@ interact, and screenshot. Kill the server when done (`lsof -i :3456`).
 - `playgrounds/` — interactive HTML/TS playground tools (search explorers,
   visualizers, etc.). All playground artifacts go here, not in the repo root.
 
+## Plugin (`src/plugin/`)
+
+Crispy ships a Claude Code plugin bundled into the extension. It provides
+skills, agents, and hooks that are distributed to all Crispy users — they
+appear as `crispy:*` in the skill list (e.g. `crispy:recall`,
+`crispy:superthink`).
+
+- **Skills** go in `src/plugin/skills/<name>/SKILL.md`
+- **Agents** go in `src/plugin/agents/<name>.md`
+- **Hooks** go in `src/plugin/hooks/`
+
+**When to use `src/plugin/skills/` vs `.claude/skills/`:**
+- `src/plugin/skills/` — distributed to users. Features that work in any
+  Crispy-managed session (recall, superthink, handoff, clear-and-execute).
+  These rely on Crispy infrastructure (`crispy-dispatch`, `$CRISPY_SESSION_ID`,
+  RPC pipe).
+- `.claude/skills/` — dev-only. Tools for developing Crispy itself (retro,
+  tracker-lab, audit-plans). Not shipped in the extension.
+
+Do not put user-facing skills in `.claude/skills/`. Do not put dev tools
+in `src/plugin/skills/`.
+
 ## Skills (`.claude/skills/`)
 
 - **Add Git Worktree** (`add-worktree/`) — Isolated worktree at

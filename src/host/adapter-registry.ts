@@ -15,7 +15,7 @@
 import { resolve } from 'node:path';
 import type { AgentAdapter, VendorDiscovery, SessionOpenSpec, LocalPlugin } from '../core/agent-adapter.js';
 import type { Vendor } from '../core/transcript.js';
-import { registerAdapter, unregisterAdapter } from '../core/session-manager.js';
+import { registerAdapter, unregisterAdapter, setToolEnv } from '../core/session-manager.js';
 import { setSessionDefaults } from '../core/settings/index.js';
 import type { AgentDispatch } from './agent-dispatch.js';
 
@@ -24,17 +24,40 @@ import { claudeRegistration } from '../core/adapters/claude/claude-registration.
 import { codexRegistration } from '../core/adapters/codex/codex-registration.js';
 import { opencodeRegistration } from '../core/adapters/opencode/opencode-registration.js';
 
-/** System prompt hint for Crispy skills — nudges the model to use /recall. */
+/** System prompt hint for bundled Crispy skills across vendors. */
 const CRISPY_SKILLS_PROMPT =
-  'You have Crispy skills available, including /recall for session transcript memory.\n\n' +
-  'Proactively use /recall at the start of non-trivial tasks, before architectural ' +
+  'You have Crispy skills available, including recall for session transcript memory.\n\n' +
+  'Use your vendor-native skill syntax to invoke them explicitly: `/recall` in Claude Code and `$recall` in Codex.\n\n' +
+  'Proactively use recall at the start of non-trivial tasks, before architectural ' +
   'decisions, and whenever prior context could inform your approach — not just ' +
   'when the user explicitly references past conversations.\n\n' +
-  'The recall CLI (`node $RECALL_CLI`) supports two modes:\n' +
-  '- Search: `node $RECALL_CLI "query"` — finds sessions by topic\n' +
-  '- Read: `node $RECALL_CLI <session-id>` — reads full session content (paginated)\n' +
+  'The recall CLI (`$RECALL_CLI`) supports two modes:\n' +
+  '- Search: `$RECALL_CLI "query"` — finds sessions by topic\n' +
+  '- Read: `$RECALL_CLI <session-id>` — reads full session content (paginated)\n' +
   'Always read into promising search results — snippets are just previews.\n\n' +
   'Your Crispy session ID is available in the $CRISPY_SESSION_ID environment variable.';
+
+export interface BundledCrispyPaths {
+  extensionBase: string;
+  pluginRoot: string;
+  skillRoot: string;
+}
+
+/** Resolve bundled Crispy plugin/skill paths in dev and packaged modes. */
+export function resolveBundledCrispyPaths(config: {
+  extensionPath?: string;
+}): BundledCrispyPaths {
+  const extensionBase = config.extensionPath || process.cwd();
+  const pluginRoot = config.extensionPath
+    ? resolve(config.extensionPath, 'dist', 'crispy-plugin')
+    : resolve(process.cwd(), 'src', 'plugin');
+
+  return {
+    extensionBase,
+    pluginRoot,
+    skillRoot: resolve(pluginRoot, 'skills'),
+  };
+}
 
 // ============================================================================
 // Types
@@ -71,6 +94,8 @@ export interface HostAdapterConfig {
   extensionPath?: string;
   /** Plugins to inject into adapter sessions (set by registerAllAdapters). */
   plugins?: LocalPlugin[];
+  /** Bundled Crispy skill root for vendors that mount skills directly. */
+  bundledSkillRoot?: string;
 }
 
 /**
@@ -139,18 +164,18 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
 
   // --- Plugin injection ---
   // Resolve plugin path: packaged extension uses dist/, dev uses src/
-  const extBase = config.extensionPath || process.cwd();
-  const pluginPath = config.extensionPath
-    ? resolve(config.extensionPath, 'dist', 'crispy-plugin')
-    : resolve(process.cwd(), 'src', 'plugin');
-  const plugins: LocalPlugin[] = [{ type: 'local', path: pluginPath }];
+  const bundledPaths = resolveBundledCrispyPaths(config);
+  const plugins: LocalPlugin[] = [{ type: 'local', path: bundledPaths.pluginRoot }];
 
-  // Set env vars so skill Bash commands can find bundled CLIs
-  process.env.RECALL_CLI = resolve(extBase, 'dist', 'recall.js');
-  process.env.CRISPY_DISPATCH = resolve(extBase, 'dist', 'crispy-dispatch.js');
-  process.env.CRISPY_TRACKER = resolve(extBase, 'dist', 'crispy-tracker.mjs');
-  process.env.CRISPY_AGENT = resolve(pluginPath, 'scripts', 'crispy-agent');
-  console.error(`[adapter-registry] Plugin path: ${pluginPath}`);
+  // Flow tool paths through spec.env instead of polluting process.env
+  setToolEnv({
+    RECALL_CLI: resolve(bundledPaths.extensionBase, 'dist', 'recall.js'),
+    CRISPY_DISPATCH: resolve(bundledPaths.extensionBase, 'dist', 'crispy-dispatch.js'),
+    CRISPY_TRACKER: resolve(bundledPaths.extensionBase, 'dist', 'crispy-tracker.mjs'),
+    CRISPY_AGENT: resolve(bundledPaths.pluginRoot, 'scripts', 'crispy-agent'),
+    CRISPY_SESSION: resolve(bundledPaths.pluginRoot, 'scripts', 'crispy-session'),
+  });
+  console.error(`[adapter-registry] Plugin path: ${bundledPaths.pluginRoot}`);
 
   // System prompt factory — skills hint (always active when dispatch is available).
   const systemPromptFactory = dispatch
@@ -166,6 +191,7 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
   const enrichedConfig: HostAdapterConfig = {
     ...config,
     ...(systemPromptFactory && { systemPromptFactory }),
+    bundledSkillRoot: bundledPaths.skillRoot,
     plugins,
   };
 

@@ -55,6 +55,7 @@ import { ConnectorLines } from "../blocks/ConnectorLines.js";
 import { PanelStateProvider } from "../blocks/PanelStateContext.js";
 import { BlocksToolPanel } from "../blocks/BlocksToolPanel.js";
 import { FilePanel } from "./file-panel/FilePanel.js";
+import { GitPanel } from "./git-panel/GitPanel.js";
 import { FileViewerPanel } from "./file-panel/FileViewerPanel.js";
 import { useFilePanel } from "../context/FilePanelContext.js";
 import { useControlPanel } from "../context/ControlPanelContext.js";
@@ -238,6 +239,21 @@ export function TranscriptViewer(): React.JSX.Element {
   // Channel state for fork streaming check + error surfacing
   const { channelState, lastError, clearError } = useSessionStatus(selectedSessionId);
 
+  // Watchdog: if the channel says awaiting_approval but the approval hook
+  // has no request, the approval event was lost (subscriber swap race, React
+  // batching edge case, etc.). Re-subscribe after a short settle to trigger
+  // a fresh catchup that includes the pending approval from channel state.
+  const approvalWatchdogRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => {
+    clearTimeout(approvalWatchdogRef.current);
+    if (channelState === 'awaiting_approval' && !approvalRequest && selectedSessionId) {
+      approvalWatchdogRef.current = setTimeout(() => {
+        transport.subscribe(selectedSessionId).catch(() => {});
+      }, 150);
+    }
+    return () => clearTimeout(approvalWatchdogRef.current);
+  }, [channelState, approvalRequest, selectedSessionId, transport]);
+
   const { parked, isAtTop, scrollToBottom, scrollToTop, pinToBottom } = useAutoScroll({
     sessionId: selectedSessionId,
     scrollRef: transcriptRef,
@@ -348,37 +364,41 @@ export function TranscriptViewer(): React.JSX.Element {
       const { clearContext, planContent, ...transportExtra } = extra ?? {};
 
       if (clearContext && selectedSessionId) {
-        // ExitPlanMode with context clear: resolve approval, close old session,
-        // null out selection (clears transcript), and prefill handoff prompt.
+        // ExitPlanMode with context clear: resolve approval, then rotate session
         const handoffPrompt = constructExitPlanHandoffPrompt(planContent, selectedSessionId);
 
-        // Resolve the approval first — SDK needs the PermissionResult before we tear down
+        // Resolve the approval first — SDK needs the PermissionResult before we rotate
         await resolveApproval(optionId, Object.keys(transportExtra).length ? transportExtra : undefined);
 
-        // Close the old session — tears down the adapter and channel
-        try {
-          await transport.close(selectedSessionId);
-        } catch (err) {
-          // Session may already be closed; proceed anyway
-          console.warn('[TranscriptViewer] close session failed:', err);
+        // Extract permission mode to pass to rotation RPC
+        const targetMode = (transportExtra.updatedPermissions?.[0] as { mode?: string })?.mode;
+
+        // Rotate: same channel, fresh adapter, permission mode forwarded
+        if (transport.switchSession) {
+          const bypassEnabled = targetMode === 'bypassPermissions';
+          const result = await transport.switchSession({
+            sessionId: selectedSessionId,
+            prompt: handoffPrompt,
+            ...(targetMode && { permissionMode: targetMode }),
+            ...(bypassEnabled && { allowDangerouslySkipPermissions: true }),
+          });
+
+          // Point at the new session (no WelcomePage flash)
+          setSelectedSessionId(result.sessionId);
+        } else {
+          // Fallback: close + prefill (legacy path if rotation unavailable)
+          try { await transport.close(selectedSessionId); } catch { /* may already be closed */ }
+          setSelectedSessionId(null);
+          cpCtxRef.current.setPrefillInput({ text: handoffPrompt, autoSend: true });
         }
 
-        // Null out session selection — clears transcript (useTranscript resets),
-        // clears approval UI (useApprovalRequest clears on session change)
-        setSelectedSessionId(null);
-
-        // Push the chosen permission mode into ControlPanel state so the
-        // new session is created with the correct permissionMode.
-        const targetMode = (transportExtra.updatedPermissions?.[0] as { mode?: string })?.mode;
+        // Push permission mode to ControlPanel state (for UI display)
         if (targetMode) {
           const agencyMode = mapPermissionModeToAgency(targetMode);
           if (agencyMode) {
             cpCtxRef.current.setPendingAgencyMode({ agencyMode, bypassEnabled: targetMode === 'bypassPermissions' });
           }
         }
-
-        // Prefill ChatInput with the handoff prompt and auto-send
-        cpCtxRef.current.setPrefillInput({ text: handoffPrompt, autoSend: true });
         return;
       }
 
@@ -509,6 +529,7 @@ export function TranscriptViewer(): React.JSX.Element {
       {mainContent}
       {toolPanelOpen && sidebarView === 'tools' && !selectedSessionId && !hasForkHistory && <ToolPanelShell />}
       {toolPanelOpen && sidebarView === 'files' && <FilePanel />}
+      {toolPanelOpen && sidebarView === 'git' && <GitPanel />}
       <FileViewerPanel />
       <TranscriptAnnotationPopover {...annotation} />
       {selectedSessionId && !error && <StopButton ref={stopButtonRef} />}

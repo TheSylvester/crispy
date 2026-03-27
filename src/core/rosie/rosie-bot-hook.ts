@@ -11,7 +11,7 @@
  */
 
 import { onResponseCompleteAfter } from '../lifecycle-hooks.js';
-import type { AgentDispatch } from '../../host/agent-dispatch.js';
+import type { AgentDispatch } from '../agent-dispatch-types.js';
 import { getSettingsSnapshotInternal } from '../settings/index.js';
 import { parseModelOption } from '../model-utils.js';
 import { closeSession } from '../session-manager.js';
@@ -293,16 +293,16 @@ For each turn:
 
 0. If the user explicitly says not to track this turn or session (e.g.
    "don't track this", "scratch session", "just experimenting"), call
-   \`node $CRISPY_TRACKER trivial\` with the user's reason. Skip the rest.
+   \`$CRISPY_TRACKER trivial\` with the user's reason. Skip the rest.
 1. Identify all distinct work items in the turn.
 2. For each item: does it match an existing item in CURRENT_PROJECTS?
    Match if: (a) title/goal aligns, (b) entity overlap, or (c) continues
    an existing item's trajectory. Check in that order.
-   → call \`node $CRISPY_TRACKER track\`.
+   → call \`$CRISPY_TRACKER track\`.
    If both a parent and child match, track the most specific (child).
 3. For each remaining unmatched item where real work happened:
-   → call \`node $CRISPY_TRACKER create\`.
-4. If no items qualify after steps 1-3, call \`node $CRISPY_TRACKER trivial\` with a reason.
+   → call \`$CRISPY_TRACKER create\`.
+4. If no items qualify after steps 1-3, call \`$CRISPY_TRACKER trivial\` with a reason.
 
 **Default bias: prefer track over create.** Diagnosis →
 root cause → fix is ONE project, not three. Only create when no existing
@@ -327,39 +327,39 @@ Emit one CLI call per distinct item.
 Use the Bash tool to call the tracker CLI:
 
 ### Create a project
-node $CRISPY_TRACKER create --title "..." --type project --stage active --status "..." --summary "..." --icon "🔧"
+$CRISPY_TRACKER create --title "..." --type project --stage active --status "..." --summary "..." --icon "🔧"
 
 ### Update a project
-node $CRISPY_TRACKER track --id <project-id> --status "..." [--stage <stage>]
+$CRISPY_TRACKER track --id <project-id> --status "..." [--stage <stage>]
 
 ### Merge duplicates
-node $CRISPY_TRACKER merge --keep <keep-id> --remove <remove-id>
+$CRISPY_TRACKER merge --keep <keep-id> --remove <remove-id>
 
 ### Mark trivial
-node $CRISPY_TRACKER trivial --reason "..."
+$CRISPY_TRACKER trivial --reason "..."
 
 ### Show project details
-node $CRISPY_TRACKER show --id <project-id>
+$CRISPY_TRACKER show --id <project-id>
 
 Use this when you need full details (status, summary) for a
 project before deciding whether to track it. The CURRENT_PROJECTS index
 only shows id, stage, and title.
 
 ### Set session title
-node $CRISPY_TRACKER title --session $CRISPY_PARENT_SESSION_ID --title "Short descriptive title"
+$CRISPY_TRACKER title --session $CRISPY_PARENT_SESSION_ID --title "Short descriptive title"
 
 ### List available stages
-node $CRISPY_TRACKER stages
+$CRISPY_TRACKER stages
 
 ## Session Title (MANDATORY)
 
 The injection includes \`SESSION_TITLE:\` showing the current title.
 
-- If it says \`(none — you MUST set one)\` → you MUST call \`node $CRISPY_TRACKER title\`
+- If it says \`(none — you MUST set one)\` → you MUST call \`$CRISPY_TRACKER title\`
 - If it shows an existing title → only update if the session's focus has
   significantly shifted. Otherwise skip the title call.
 
-node $CRISPY_TRACKER title --session $CRISPY_PARENT_SESSION_ID --title "Short 3-8 word label"
+$CRISPY_TRACKER title --session $CRISPY_PARENT_SESSION_ID --title "Short 3-8 word label"
 
 Always call this AFTER your tracking action (create/track/merge/trivial).
 
@@ -444,11 +444,11 @@ Expected reasoning and tool calls:
 Two distinct items here. The JWT middleware clearly continues the Auth
 Rewrite (p1). The sidebar fix is unrelated — needs a new project.
 
-node $CRISPY_TRACKER track --id p1 --status "JWT middleware implemented in jwt-verify.ts"
+$CRISPY_TRACKER track --id p1 --status "JWT middleware implemented in jwt-verify.ts"
 
-node $CRISPY_TRACKER create --title "Fix sidebar mobile overflow" --type project --stage done --status "Fixed — CSS overflow corrected" --summary "Sidebar broke on mobile viewports due to missing overflow rule" --icon "🎨"
+$CRISPY_TRACKER create --title "Fix sidebar mobile overflow" --type project --stage done --status "Fixed — CSS overflow corrected" --summary "Sidebar broke on mobile viewports due to missing overflow rule" --icon "🎨"
 
-node $CRISPY_TRACKER title --session $CRISPY_PARENT_SESSION_ID --title "Auth JWT & sidebar fix"
+$CRISPY_TRACKER title --session $CRISPY_PARENT_SESSION_ID --title "Auth JWT & sidebar fix"
 
 The sidebar fix is unrelated to Auth Rewrite — it gets its own top-level
 project. Created as done because the fix is already complete — the user
@@ -473,7 +473,7 @@ Expected reasoning and tool calls:
 
 Both p1 and t1 match, but t1 is the most specific — track the child.
 
-node $CRISPY_TRACKER track --id t1 --status "Added expiry validation, extracted token-expiry module"
+$CRISPY_TRACKER track --id t1 --status "Added expiry validation, extracted token-expiry module"
 
 ### Example 3: Trivial turn
 
@@ -488,7 +488,7 @@ Expected reasoning and tool calls:
 
 The turn retrieved information but made no changes or decisions.
 
-node $CRISPY_TRACKER trivial --reason "Recall of prior decision, no new work"
+$CRISPY_TRACKER trivial --reason "Recall of prior decision, no new work"
 
 ## Injection Format
 
@@ -506,7 +506,7 @@ TURN <N>
 
 The project index is compact — just id, stage, and title. If you need
 full details (status, summary) to decide whether a turn matches
-a project, call \`node $CRISPY_TRACKER show --id <id>\` before making your decision.`;
+a project, call \`$CRISPY_TRACKER show --id <id>\` before making your decision.`;
 
 // ============================================================================
 // Per-Turn Injection Builder (Gen 3)

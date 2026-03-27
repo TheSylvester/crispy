@@ -19,6 +19,7 @@ export type SettingsSection =
   | 'cliProfiles'
   | 'turnDefaults'
   | 'rosie'
+  | 'discord'
   | 'mcp';
 
 // ============================================================================
@@ -88,6 +89,26 @@ export interface RosieBotSettings {
 
 export interface RosieSettings {
   bot: RosieBotSettings;
+}
+
+// ============================================================================
+// Discord Bot
+// ============================================================================
+
+export interface DiscordBotSettings {
+  enabled: boolean;
+  token: string;
+  guildId: string;
+  /** 'all' = auto-watch new sessions, 'manual' = only via !open */
+  sessions: 'all' | 'manual';
+  /** Override permission mode for Discord sessions. null = use turnDefaults. */
+  permissionMode: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | null;
+  /** Hours of inactivity before auto-archiving a Discord thread. Default: 24. */
+  archivalTimeoutHours: number;
+}
+
+export interface DiscordSettings {
+  bot: DiscordBotSettings;
 }
 
 // ============================================================================
@@ -164,6 +185,7 @@ export interface CrispySettings {
   cliProfiles: SettingsCliProfiles;
   turnDefaults: SettingsTurnDefaults;
   rosie: RosieSettings;
+  discord: DiscordSettings;
   mcp: McpSettings;
 }
 
@@ -179,10 +201,11 @@ export interface SettingsSnapshot {
   updatedAt: string;
 }
 
-/** Wire-safe snapshot — provider apiKeys masked. */
+/** Wire-safe snapshot — provider apiKeys and discord bot token masked. */
 export interface WireSettingsSnapshot {
-  settings: Omit<CrispySettings, 'providers'> & {
+  settings: Omit<CrispySettings, 'providers' | 'discord'> & {
     providers: Record<string, WireProviderConfig>;
+    discord: { bot: Omit<DiscordBotSettings, 'token'> & { token: string } };
   };
   revision: number;
   updatedAt: string;
@@ -196,6 +219,7 @@ export type SettingsPatch = Partial<{
   cliProfiles: Partial<SettingsCliProfiles>;
   turnDefaults: Partial<SettingsTurnDefaults>;
   rosie: { bot?: Partial<RosieBotSettings> };
+  discord: { bot?: Partial<DiscordBotSettings> };
   mcp: { memory?: Partial<McpMemorySettings> };
 }>;
 
@@ -231,6 +255,9 @@ export const DEFAULT_SETTINGS: CrispySettings = {
   },
   rosie: {
     bot: { enabled: false },
+  },
+  discord: {
+    bot: { enabled: false, token: '', guildId: '', sessions: 'all', permissionMode: null, archivalTimeoutHours: 24 },
   },
   mcp: {
     memory: { vscode: true, devServer: true },

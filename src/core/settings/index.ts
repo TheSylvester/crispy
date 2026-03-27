@@ -25,6 +25,8 @@ export type {
   SettingsCliProfiles,
   SettingsTurnDefaults,
   RosieSettings,
+  DiscordBotSettings,
+  DiscordSettings,
   CrispySettings,
   CrispySettingsFile,
   SettingsSnapshot,

@@ -1,0 +1,46 @@
+# ============================================================================
+# CI — Typecheck, test, build, and package on all 6 platforms
+# ============================================================================
+#
+# Trigger:  Pull requests targeting main
+# Purpose:  Catch platform-specific failures BEFORE tagging and publishing.
+#           Same matrix as publish.yml, minus the publish/release steps.
+#
+# ============================================================================
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,    target: linux-x64 }
+          - { os: ubuntu-24.04-arm, target: linux-arm64 }
+          - { os: macos-latest,     target: darwin-x64 }
+          - { os: macos-latest,     target: darwin-arm64 }
+          - { os: windows-latest,   target: win32-x64 }
+          - { os: windows-latest,   target: win32-arm64 }
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm run test:unit
+
+      - run: npm run build
+
+      - run: npm run package:${{ matrix.target }}

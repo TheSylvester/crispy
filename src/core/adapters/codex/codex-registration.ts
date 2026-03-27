@@ -53,6 +53,8 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
 
     return new CodexAgentAdapter({
       ...effectiveSpec,
+      effectiveCwd,
+      bundledSkillRoot: config.bundledSkillRoot,
       command: cachedBinaryPath,
       args: ['app-server'],
     });

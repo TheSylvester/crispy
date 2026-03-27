@@ -15,7 +15,8 @@ import { resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
-import type { TurnIntent, ChannelMessage } from "../core/agent-adapter.js";
+import type { TurnIntent, ChannelMessage, SessionOpenSpec } from "../core/agent-adapter.js";
+import type { Vendor } from "../core/transcript.js";
 import type {
   Subscriber,
   SessionChannel,
@@ -46,6 +47,7 @@ import {
   rekeyChildSession,
   resolveSessionId,
   resolveSessionPrefix,
+  switchSession,
 } from "../core/session-manager.js";
 import type { ChildSessionOptions, ResumeChildOptions } from "../core/session-manager.js";
 import {
@@ -73,6 +75,7 @@ import {
 } from '../core/recall/catchup-manager.js';
 import { readSessionMessages } from '../core/recall/message-store.js';
 import { getGitFiles, getGitBranchInfo, fileExists, readImage, readTextFile } from "../core/file-service.js";
+import { getGitDiff } from "../core/git-diff-service.js";
 import { getLineage, getChildSessions, getLineageGraph, dbPath, setSessionTitle } from '../core/activity-index.js';
 import { refreshAndNotify } from '../core/session-list-manager.js';
 import { getProjectsWithDetails, getProjectActivity, updateProjectStage, updateProjectSortOrder, reorderProjectsInStage, getStages, getValidStageNames, writeTrackerResults, mergeProjects, extractTurnsFromMessages, getProjectTitle } from '../core/rosie/tracker/index.js';
@@ -93,6 +96,7 @@ import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-rea
 // at extension activation time (crashes VS Code's Electron host).
 // import { transcribeAudio } from '../core/voice/index.js'; // <-- lazy below
 import { startCapture, stopCapture, cancelCapture, cleanupOrphanedVoiceFiles } from './audio-capture.js';
+import { openPanel as openPanelFn } from './panel-opener.js';
 
 // Clean up any orphaned voice temp files from previous sessions on module load.
 cleanupOrphanedVoiceFiles();
@@ -331,6 +335,26 @@ export function createClientConnection(
     }
   }
 
+  /**
+   * Create a mutable subscriber that allows session ID re-keying.
+   * The rekey() method updates the session ID used in event routing.
+   * Used by sendTurn and switchSession RPCs for pending → real transitions.
+   */
+  function createMutableSubscriber(initialSessionId: string) {
+    let currentSessionId = initialSessionId;
+    const subscriber: Subscriber = {
+      id: clientId,
+      send(event: SubscriberMessage) {
+        if (disposed) return;
+        sendFn({ kind: "event", sessionId: currentSessionId, event });
+      },
+    };
+    return {
+      subscriber,
+      rekey(newId: string) { currentSessionId = newId; },
+    };
+  }
+
   async function routeMethod(
     method: string,
     params: Record<string, unknown>,
@@ -401,25 +425,6 @@ export function createClientConnection(
           autoClose: boolean;
           visible: boolean;
         } | undefined;
-
-        /**
-         * Create a mutable subscriber that allows session ID re-keying.
-         * The rekey() method updates the session ID used in event routing.
-         */
-        function createMutableSubscriber(initialSessionId: string) {
-          let currentSessionId = initialSessionId;
-          const subscriber: Subscriber = {
-            id: clientId,
-            send(event: SubscriberMessage) {
-              if (disposed) return;
-              sendFn({ kind: "event", sessionId: currentSessionId, event });
-            },
-          };
-          return {
-            subscriber,
-            rekey(newId: string) { currentSessionId = newId; },
-          };
-        }
 
         // For existing sessions — may trigger vendor switch internally
         if (intent.target.kind === 'existing') {
@@ -530,6 +535,158 @@ export function createClientConnection(
         }
 
         return { sessionId: result.sessionId };
+      }
+
+      case "switchSession": {
+        const sessionId = params.sessionId as string;
+        const prompt = params.prompt as string | undefined;
+        const targetSessionId = params.targetSessionId as string | undefined;
+        if (!sessionId) throw new Error('Missing sessionId');
+        if (!prompt && !targetSessionId) throw new Error('Missing prompt or targetSessionId (or both)');
+
+        // Caller must hold a subscription to the session being rotated.
+        // This ensures the rekey (pending → real) always updates the right
+        // subscriber — prevents cross-client stale-subscriber bugs.
+        if (!subscriptions.has(sessionId)) {
+          throw new Error(`Cannot rotate session "${sessionId}": caller must be subscribed first`);
+        }
+
+        const permissionMode = params.permissionMode as string | undefined;
+        const allowDangerouslySkipPermissions = (params.allowDangerouslySkipPermissions as boolean) || false;
+        type PermissionMode = TurnIntent['settings']['permissionMode'];
+
+        if (targetSessionId) {
+          // ── Resume mode: rotate to an existing session ──
+          const targetInfo = findSession(targetSessionId);
+          if (!targetInfo) throw new Error(`Target session "${targetSessionId}" not found`);
+
+          // Same session — skip the switch but still send prompt if provided
+          if (targetInfo.sessionId === sessionId) {
+            if (prompt) {
+              const sub = subscriptions.get(sessionId);
+              if (sub) {
+                const intent: TurnIntent = {
+                  clientMessageId: randomUUID(),
+                  content: [{ type: 'text', text: prompt }],
+                  target: { kind: 'existing', sessionId },
+                  settings: {
+                    ...(permissionMode && { permissionMode: permissionMode as PermissionMode }),
+                    allowDangerouslySkipPermissions,
+                  },
+                };
+                await sendTurn(intent, sub.subscriber);
+              }
+            }
+            return { previousSessionId: sessionId, sessionId };
+          }
+
+          // Resolve vendor from the TARGET session
+          const vendor = targetInfo.vendor;
+
+          const spec: SessionOpenSpec = {
+            mode: 'resume',
+            sessionId: targetInfo.sessionId,
+            ...(permissionMode && { permissionMode: permissionMode as PermissionMode }),
+          };
+
+          const result = await switchSession(sessionId, vendor, spec);
+
+          // Replace subscriber — same pattern as fresh mode
+          const oldSub = subscriptions.get(sessionId);
+          if (oldSub) {
+            unsubscribe(result.channel, oldSub.subscriber);
+            subscriptions.delete(sessionId);
+          }
+
+          const mutable = createMutableSubscriber(result.pendingId);
+          subscribe(result.channel, mutable.subscriber);
+          subscriptions.set(result.pendingId, {
+            channel: result.channel, subscriber: mutable.subscriber,
+          });
+
+          // No rekey needed — pendingId is already the real session ID for resume.
+
+          // Optionally send a prompt as the first turn in the resumed session
+          if (prompt) {
+            const resumeIntent: TurnIntent = {
+              clientMessageId: randomUUID(),
+              content: [{ type: 'text', text: prompt }],
+              target: { kind: 'existing', sessionId: result.pendingId },
+              settings: {
+                ...(permissionMode && { permissionMode: permissionMode as PermissionMode }),
+                allowDangerouslySkipPermissions,
+              },
+            };
+            await sendTurn(resumeIntent, mutable.subscriber);
+          }
+
+          return {
+            previousSessionId: result.previousSessionId,
+            sessionId: result.pendingId,
+          };
+        }
+
+        // ── Fresh mode: start a new session with a prompt ──
+        const sessionInfo = findSession(sessionId);
+        const vendor = (params.vendor as Vendor) ?? sessionInfo?.vendor;
+        if (!vendor) throw new Error(`Cannot determine vendor for session "${sessionId}"`);
+
+        const cwd = (params.cwd as string) ?? sessionInfo?.projectPath ?? process.cwd();
+
+        const spec: SessionOpenSpec = {
+          mode: 'fresh',
+          cwd,
+          ...(permissionMode && { permissionMode: permissionMode as PermissionMode }),
+        };
+
+        const result = await switchSession(sessionId, vendor, spec);
+
+        // Replace subscriber with mutable variant (same pattern as sendTurn).
+        // The old subscriber's send() closure captures the old sessionId —
+        // it MUST be replaced or events route under the wrong ID.
+        const oldSub = subscriptions.get(sessionId);
+        if (oldSub) {
+          unsubscribe(result.channel, oldSub.subscriber);
+          subscriptions.delete(sessionId);
+        }
+
+        const mutable = createMutableSubscriber(result.pendingId);
+        subscribe(result.channel, mutable.subscriber);
+        subscriptions.set(result.pendingId, {
+          channel: result.channel, subscriber: mutable.subscriber,
+        });
+
+        // Handle rekey (pending → real) — same pattern as sendTurn
+        result.rekeyPromise
+          .then(realId => {
+            if (disposed) return;
+            mutable.rekey(realId);
+            const entry = subscriptions.get(result.pendingId);
+            if (entry) {
+              subscriptions.delete(result.pendingId);
+              subscriptions.set(realId, entry);
+            }
+          })
+          .catch(() => {
+            subscriptions.delete(result.pendingId);
+          });
+
+        // Build intent and send the handoff prompt as the first turn
+        const rotationIntent: TurnIntent = {
+          clientMessageId: randomUUID(),
+          content: [{ type: 'text', text: prompt! }],
+          target: { kind: 'existing', sessionId: result.pendingId },
+          settings: {
+            ...(permissionMode && { permissionMode: permissionMode as PermissionMode }),
+            ...(allowDangerouslySkipPermissions && { allowDangerouslySkipPermissions }),
+          },
+        };
+        await sendTurn(rotationIntent, mutable.subscriber);
+
+        return {
+          previousSessionId: result.previousSessionId,
+          sessionId: result.pendingId,
+        };
       }
 
       case "resolveApproval": {
@@ -709,6 +866,11 @@ export function createClientConnection(
         return getGitBranchInfo(cwd);
       }
 
+      case "getGitDiff": {
+        const cwd = params.cwd as string;
+        return getGitDiff(cwd);
+      }
+
       case "fileExists": {
         const filePath = params.path as string;
         try {
@@ -729,6 +891,29 @@ export function createClientConnection(
         const filePath = params.path as string;
         assertPathAllowed(filePath);
         return readTextFile(filePath);
+      }
+
+      case "openPanel": {
+        let sessionId = params.sessionId as string;
+        if (!sessionId) throw new Error('Missing sessionId');
+
+        if (sessionId.startsWith('pending:')) {
+          const resolved = resolveSessionId(sessionId);
+          if (resolved === sessionId) {
+            throw new Error(
+              `Session "${sessionId}" is still initializing. ` +
+              'Wait for the real session ID before calling openPanel.',
+            );
+          }
+          sessionId = resolved;
+        }
+
+        const session = findSession(sessionId);
+        if (!session) throw new Error(`Session "${sessionId}" not found`);
+        sessionId = session.sessionId;
+
+        openPanelFn(sessionId);
+        return { ok: true, sessionId };
       }
 
       case "forkToNewPanel":

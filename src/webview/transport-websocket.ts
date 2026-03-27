@@ -15,6 +15,7 @@ import type { TurnReceipt } from '../core/agent-adapter.js';
 import type { WireProviderConfig, WireSettingsSnapshot, SettingsPatch } from '../core/settings/types.js';
 import type { VendorModelGroup } from './components/control-panel/types.js';
 import type { CatchupStatus } from '../core/recall/catchup-types.js';
+import type { GitDiffResult } from '../core/git-diff-service.js';
 import { float32ToBase64 } from './utils/encoding.js';
 
 /** Pending request awaiting a response. */
@@ -127,6 +128,16 @@ export function createWebSocketTransport(url: string): SessionService {
     sendTurn: (intent, pendingId) =>
       request<TurnReceipt>('sendTurn', { intent, ...(pendingId && { pendingId }) }),
 
+    switchSession: (params) =>
+      request<{ previousSessionId: string; sessionId: string }>('switchSession', params),
+
+    openPanel: async (params) => {
+      const url = new URL(window.location.pathname, window.location.origin);
+      url.searchParams.set('sessionId', params.sessionId);
+      window.open(url.toString(), '_blank');
+      return { ok: true };
+    },
+
     forkToNewPanel: async (params) => {
       // Browser dev-server: open fork in a new tab via window.open()
       const url = new URL(window.location.pathname, window.location.origin);
@@ -177,6 +188,7 @@ export function createWebSocketTransport(url: string): SessionService {
 
     getGitFiles: (cwd) => request<string[]>('getGitFiles', { cwd }),
     getGitBranchInfo: (cwd) => request<{ branch: string; dirty: boolean } | null>('getGitBranchInfo', { cwd }),
+    getGitDiff: (cwd) => request<GitDiffResult>('getGitDiff', { cwd }),
     fileExists: (path) => request<boolean>('fileExists', { path }),
     readImage: (path) => request<{ data: string; mimeType: string; fileName: string }>('readImage', { path }),
     readFile: (path) => request<{ content: string; fileName: string; size: number }>('readFile', { path }),

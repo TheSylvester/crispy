@@ -1,9 +1,8 @@
 /**
  * FileLink — clickable file reference component
  *
- * Opens files in the file viewer panel (FileViewerPanel) via
- * FilePanelContext.openFileAbsolute(). Same code path in both VS Code
- * and browser environments.
+ * In VS Code: opens files in the native editor via transport.openFile().
+ * In browser: opens files in the file viewer panel via FilePanelContext.
  *
  * Structural matches with no index hits validate via fileExists() on click.
  *
@@ -12,6 +11,7 @@
 
 import { useCallback } from 'react';
 import { useTransport } from '../context/TransportContext.js';
+import { useEnvironment } from '../context/EnvironmentContext.js';
 import { useFilePanel } from '../context/FilePanelContext.js';
 import type { FileMatch } from '../utils/file-index.js';
 
@@ -28,9 +28,11 @@ interface FileLinkProps {
   children?: React.ReactNode;
 }
 
-export function FileLink({ token, matches, line, children }: FileLinkProps): React.JSX.Element {
+export function FileLink({ token, matches, line, col, children }: FileLinkProps): React.JSX.Element {
   const transport = useTransport();
+  const environment = useEnvironment();
   const { openFileAbsolute } = useFilePanel();
+  const isVSCode = environment === 'vscode';
 
   const handleClick = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -53,9 +55,13 @@ export function FileLink({ token, matches, line, children }: FileLinkProps): Rea
     }
 
     if (targetPath) {
-      openFileAbsolute(targetPath, line);
+      if (isVSCode) {
+        transport.openFile(targetPath, line, col);
+      } else {
+        openFileAbsolute(targetPath, line);
+      }
     }
-  }, [matches, token, line, transport, openFileAbsolute]);
+  }, [matches, token, line, col, transport, openFileAbsolute, isVSCode]);
 
   const display = children ?? token;
 

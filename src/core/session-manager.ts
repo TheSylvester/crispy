@@ -30,6 +30,13 @@
 let hostSocketPath = '';
 export function setHostSocketPath(path: string): void { hostSocketPath = path; }
 
+// ---------------------------------------------------------------------------
+// Tool env vars — set by adapter-registry so buildSessionEnv() can inject
+// tool paths (RECALL_CLI, CRISPY_DISPATCH, etc.) without polluting process.env.
+// ---------------------------------------------------------------------------
+let toolEnv: Record<string, string> = {};
+export function setToolEnv(env: Record<string, string>): void { toolEnv = env; }
+
 import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, ChannelMessage, TurnIntent, TurnTarget, TurnSettings, SubagentEntriesResult, EphemeralTargetOptions, LocalPlugin } from './agent-adapter.js';
 import type { TranscriptEntry, MessageContent, Vendor, Usage } from './transcript.js';
 import type { SessionChannel, Subscriber, SubscriberMessage } from './session-channel.js';
@@ -37,8 +44,9 @@ import { parseModelOption } from './model-utils.js';
 
 import {
   createChannel, setAdapter, subscribe, unsubscribe,
-  destroyChannel, rekeyChannel, getChannel,
+  destroyChannel, rekeyChannel, getChannel, rotateAdapter,
   broadcastUserEntry as channelBroadcastUserEntry,
+  broadcastEvent,
 } from './session-channel.js';
 import { refreshAndNotify, notifyStatusChange } from './session-list-manager.js';
 import { fireResponseComplete } from './lifecycle-hooks.js';
@@ -321,6 +329,7 @@ export function _resetRegistry(): void {
   sessions.clear();
   pending.clear();
   adapters.clear();
+  toolEnv = {};
   invalidateSessionCache();
 }
 
@@ -491,6 +500,64 @@ function evictIfDead(sessionId: string): void {
 }
 
 /**
+ * Attach a one-shot subscriber that notifies the session list when the
+ * real session ID resolves (via session_changed event). Used by
+ * createPendingChannel() and switchSession() fresh mode.
+ */
+function attachListNotifySubscriber(channel: SessionChannel, id: string): void {
+  const sub: Subscriber = {
+    id: `__list_notify__${id}`,
+    send(msg) {
+      if (isSessionChangedEvent(msg)) {
+        refreshAndNotify(msg.event.sessionId);
+        unsubscribe(channel, sub);
+      }
+    },
+  };
+  subscribe(channel, sub);
+}
+
+/**
+ * Wire lifecycle hooks on a channel — onIdle and onStatusChange.
+ *
+ * Shared by openChannel() and switchSession(). The closures read
+ * channel.adapter?.sessionId at call time, so they automatically
+ * pick up the current adapter after rotation.
+ */
+function wireLifecycleHooks(channel: SessionChannel): void {
+  channel.onIdle = () => {
+    const sessionId = channel.adapter?.sessionId;
+    if (!sessionId) return;
+    const childMeta = childSessions.get(sessionId);
+    if (childMeta && !childMeta.visible) return;
+    if (childMeta?.visible) {
+      setTimeout(() => {
+        const currentId = channel.adapter?.sessionId ?? sessionId;
+        refreshAndNotify(currentId);
+        if (childMeta.autoClose) {
+          closeSession(currentId);
+          childSessions.delete(currentId);
+          if (currentId !== sessionId) childSessions.delete(sessionId);
+        }
+      }, 150);
+      return;
+    }
+    setTimeout(() => {
+      refreshAndNotify(sessionId);
+      fireResponseComplete(sessionId);
+    }, 150);
+  };
+
+  channel.onStatusChange = (state) => {
+    const sessionId = channel.adapter?.sessionId;
+    if (!sessionId) return;
+    const childMeta = childSessions.get(sessionId);
+    if (childMeta && !childMeta.visible) return;
+    notifyStatusChange(sessionId, state);
+  };
+}
+
+/**
  * Create a channel for a session using a factory-created adapter.
  * Internal — not exported. Uses sessionId as channelId (1:1 mapping).
  *
@@ -511,56 +578,7 @@ function openChannel(
   const liveAdapter = registration.createAdapter(spec);
   const channel = createChannel(channelId, options?.initialEntries);
 
-  // Wire idle hook: when the channel transitions to idle (end of turn),
-  // re-read session metadata from disk and push an upsert to all
-  // session-list subscribers (title/lastMessage/timestamp may have changed).
-  channel.onIdle = () => {
-    const sessionId = channel.adapter?.sessionId;
-    if (!sessionId) return;
-    // Child sessions (internal dispatches) don't fire lifecycle hooks.
-    // Check here — before broadcast delivers the idle event to subscribers
-    // whose cleanup() would delete the childSessions entry. The existing
-    // guard in fireResponseComplete is defense-in-depth but races with cleanup.
-    const childMeta = childSessions.get(sessionId);
-    if (childMeta && !childMeta.visible) return; // hidden child: skip everything
-    if (childMeta?.visible) {
-      // Visible child: notify session list (appears in editor UI) but
-      // still skip lifecycle hooks (Rosie won't process it).
-      // Re-resolve sessionId inside setTimeout to handle pending→real rekey
-      // that may have happened since idle fired (fix #3: stale-ID race).
-      setTimeout(() => {
-        const currentId = channel.adapter?.sessionId ?? sessionId;
-        refreshAndNotify(currentId);
-        if (childMeta.autoClose) {
-          closeSession(currentId);
-          childSessions.delete(currentId);
-          if (currentId !== sessionId) childSessions.delete(sessionId);
-        }
-      }, 150);
-      return;
-    }
-    // Small grace period: the adapter emits idle synchronously when the SDK
-    // yields the result message, but the SDK may not have flushed the JSONL
-    // file to disk yet. 150ms is enough for the OS write buffer to flush.
-    // The 30s rescan is a fallback either way.
-    setTimeout(() => {
-      refreshAndNotify(sessionId);
-      // Fire lifecycle hooks (Rosie, future features). Fire-and-forget —
-      // handlers are error-isolated and run concurrently.
-      fireResponseComplete(sessionId);
-    }, 150);
-  };
-
-  channel.onStatusChange = (state) => {
-    const sessionId = channel.adapter?.sessionId;
-    if (!sessionId) return;
-    const childMeta = childSessions.get(sessionId);
-    // Hidden children skip status notifications entirely.
-    // Visible children broadcast status so the editor UI can show live state.
-    if (childMeta && !childMeta.visible) return;
-    notifyStatusChange(sessionId, state);
-  };
-
+  wireLifecycleHooks(channel);
   setAdapter(channel, liveAdapter);
   return channel;
 }
@@ -583,6 +601,7 @@ export interface PendingChannelResult {
  */
 function buildSessionEnv(sessionId: string, extraEnv?: Record<string, string>): Record<string, string> {
   return {
+    ...toolEnv,
     ...extraEnv,
     CRISPY_SESSION_ID: sessionId,
     ...(hostSocketPath && { CRISPY_SOCK: hostSocketPath }),
@@ -631,16 +650,7 @@ function createPendingChannel(
   subscribe(channel, subscriber);
 
   // One-shot session-list notifier: pushes upsert when the real session ID resolves
-  const listNotifySubscriber: Subscriber = {
-    id: `__list_notify__${pendingId}`,
-    send(msg) {
-      if (isSessionChangedEvent(msg)) {
-        refreshAndNotify(msg.event.sessionId);
-        unsubscribe(channel, listNotifySubscriber);
-      }
-    },
-  };
-  subscribe(channel, listNotifySubscriber);
+  attachListNotifySubscriber(channel, pendingId);
 
   // One-shot re-key subscriber: swaps pending → real ID on session_changed
   // Also resolves the rekeyPromise with the real session ID.
@@ -677,6 +687,184 @@ function createPendingChannel(
   });
 
   return { pendingId, channel, rekeyPromise };
+}
+
+// ============================================================================
+// Session Rotation
+// ============================================================================
+
+/** Result from rotating a session on an existing channel. */
+export interface RotateSessionResult {
+  previousSessionId: string;
+  pendingId: string;
+  channel: SessionChannel;
+  rekeyPromise: Promise<string>;
+}
+
+/**
+ * Rotate the session — swap the adapter on the channel, rekey to the
+ * new session ID, preserve the old session in the session list.
+ *
+ * The channel object survives with all its subscribers. Old entries are
+ * flushed, the old session is preserved, and a new session begins
+ * streaming into the same channel.
+ */
+export async function switchSession(
+  currentSessionId: string,
+  vendor: Vendor,
+  spec: SessionOpenSpec,
+): Promise<RotateSessionResult> {
+  if (currentSessionId.startsWith('pending:')) {
+    throw new Error('Cannot rotate a session that is still initializing.');
+  }
+
+  // If resume target already has a channel, detach it so this one can take over.
+  // This happens when a previous switch left a stale channel attached, or when
+  // multiple clients race to open the same session.
+  if (spec.mode === 'resume' && sessions.has(spec.sessionId)) {
+    const staleChannel = sessions.get(spec.sessionId)!;
+    await rotateAdapter(staleChannel);
+    destroyChannel(spec.sessionId);
+    sessions.delete(spec.sessionId);
+  }
+
+  const channel = requireChannel(currentSessionId);
+  const previousSessionId = channel.adapter?.sessionId ?? currentSessionId;
+
+  // Capture current adapter settings before rotation destroys the adapter.
+  // These become defaults for the new session — caller-provided values take precedence.
+  const inheritedSettings = channel.adapter?.settings;
+
+  // Close old adapter, flush entries, reset state
+  await rotateAdapter(channel);
+
+  // Fire old-session lifecycle hooks (same 150ms delay as openChannel's onIdle)
+  setTimeout(() => {
+    refreshAndNotify(previousSessionId);
+    fireResponseComplete(previousSessionId);
+  }, 150);
+
+  // Resume mode: skip the pending ID dance — use the real target ID directly.
+  // Resumed sessions pre-seed _sessionId, so session_changed never fires and
+  // the pending→real rekey would time out. Instead, rekey straight to the
+  // target ID and return an already-resolved rekeyPromise.
+  if (spec.mode === 'resume') {
+    const realId = spec.sessionId;
+
+    rekeyChannel(currentSessionId, realId);
+    sessions.delete(currentSessionId);
+    sessions.set(realId, channel);
+
+    // Inject env with the REAL session ID (not a pending one)
+    spec = { ...spec, env: buildSessionEnv(realId, spec.env) };
+
+    const registration = adapters.get(vendor);
+    if (!registration) throw new Error(`No adapter registered for vendor "${vendor}".`);
+
+    // Load history so the channel has entries for subscriber catchup.
+    // rotateAdapter() flushed channel.entries — we must re-seed them.
+    const history = await registration.discovery.loadHistory(realId);
+    channel.entries = history;
+    channel.entryIndex = history.length;
+
+    // Notify all subscribers (including other clients like the webview) that
+    // this channel switched to a different session. Emitted AFTER history
+    // loading so catchup has entries when the webview re-subscribes.
+    // Subscribers still receive this tagged with the old sessionId (their
+    // send() closure captured it at subscribe time), so the webview's
+    // session_changed handler in SessionContext.tsx matches and updates
+    // selectedSessionId correctly.
+    broadcastEvent(channel, {
+      type: 'notification',
+      kind: 'session_changed',
+      sessionId: realId,
+      previousSessionId: currentSessionId,
+    });
+
+    const newAdapter = registration.createAdapter(spec);
+
+    wireLifecycleHooks(channel);
+    setAdapter(channel, newAdapter);
+
+    // For resume, session_changed won't fire (adapter pre-seeds _sessionId),
+    // so notify the session list directly instead of subscribing a one-shot.
+    refreshAndNotify(realId);
+
+    return {
+      previousSessionId,
+      pendingId: realId,
+      channel,
+      rekeyPromise: Promise.resolve(realId),
+    };
+  }
+
+  // Fresh mode: generate pending ID and rekey channel
+  const pendingId = `pending:${crypto.randomUUID()}`;
+  rekeyChannel(currentSessionId, pendingId);
+  sessions.delete(currentSessionId);
+  sessions.set(pendingId, channel);
+
+  // Inherit settings from previous adapter (caller-provided values win)
+  if (inheritedSettings && spec.mode === 'fresh') {
+    type FreshSpec = Extract<SessionOpenSpec, { mode: 'fresh' }>;
+    spec = {
+      ...spec,
+      model: spec.model ?? inheritedSettings.model,
+      permissionMode: spec.permissionMode ?? inheritedSettings.permissionMode as FreshSpec['permissionMode'],
+      allowDangerouslySkipPermissions: spec.allowDangerouslySkipPermissions ?? inheritedSettings.allowDangerouslySkipPermissions,
+      extraArgs: spec.extraArgs ?? inheritedSettings.extraArgs,
+    };
+  }
+
+  // Inject env (CRISPY_SESSION_ID + CRISPY_SOCK)
+  spec = { ...spec, env: buildSessionEnv(pendingId, spec.env) };
+
+  // Create new adapter
+  const registration = adapters.get(vendor);
+  if (!registration) {
+    throw new Error(`No adapter registered for vendor "${vendor}".`);
+  }
+  const newAdapter = registration.createAdapter(spec);
+
+  // Re-wire lifecycle hooks (same closures as openChannel — reads adapter.sessionId at call time)
+  wireLifecycleHooks(channel);
+
+  // Install new adapter — starts consumption loop
+  setAdapter(channel, newAdapter);
+
+  // One-shot list-notify subscriber (same pattern as createPendingChannel)
+  attachListNotifySubscriber(channel, pendingId);
+
+  // One-shot rekey subscriber (pending → real)
+  const rekeyPromise = new Promise<string>((resolve, reject) => {
+    let settled = false;
+    const rekeySubscriber: Subscriber = {
+      id: `__rekey__${pendingId}`,
+      send(msg) {
+        if (isSessionChangedEvent(msg)) {
+          settled = true;
+          const realId = msg.event.sessionId;
+          rekeyChannel(pendingId, realId);
+          log({ source: 'session', level: 'info', summary: `Session rotation: re-keyed ${pendingId.slice(0, 20)}… → ${realId.slice(0, 12)}…`, data: { pendingId, realId } });
+          sessions.delete(pendingId);
+          sessions.set(realId, channel);
+          pendingToReal.set(pendingId, realId);
+          unsubscribe(channel, rekeySubscriber);
+          resolve(realId);
+        }
+      },
+    };
+    subscribe(channel, rekeySubscriber);
+
+    setTimeout(() => {
+      if (settled) return;
+      unsubscribe(channel, rekeySubscriber);
+      log({ source: 'session', level: 'error', summary: `Rotation re-key timeout: ${pendingId.slice(0, 20)}… (15s)`, data: { pendingId } });
+      reject(new Error(`Rotation timed out: session re-key did not complete within 15 seconds (${pendingId})`));
+    }, 15_000);
+  });
+
+  return { previousSessionId, pendingId, channel, rekeyPromise };
 }
 
 // ============================================================================
@@ -777,7 +965,7 @@ export function createSession(
   vendor: Vendor,
   cwd: string,
   subscriber: Subscriber,
-  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string>; systemPrompt?: string },
+  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; allowDangerouslySkipPermissions?: boolean; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' },
   explicitPendingId?: string,
 ): PendingChannelResult {
   if (!adapters.has(vendor)) {
@@ -789,11 +977,13 @@ export function createSession(
     cwd,
     ...(options?.model && { model: options.model }),
     ...(options?.permissionMode && { permissionMode: options.permissionMode }),
+    ...(options?.allowDangerouslySkipPermissions && { allowDangerouslySkipPermissions: true }),
     ...(options?.extraArgs && { extraArgs: options.extraArgs }),
     ...(options?.skipPersistSession && { skipPersistSession: true }),
     ...(options?.mcpServers && { mcpServers: options.mcpServers }),
     ...(options?.env && { env: options.env }),
     ...(options?.systemPrompt && { systemPrompt: options.systemPrompt }),
+    ...(options?.sessionKind && { sessionKind: options.sessionKind }),
   };
 
   return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
@@ -823,6 +1013,7 @@ export async function createForkSession(
     mcpServers?: Record<string, unknown>;
     env?: Record<string, string>;
     systemPrompt?: string;
+    sessionKind?: 'user' | 'system';
   },
   explicitPendingId?: string,
 ): Promise<PendingChannelResult> {
@@ -877,7 +1068,20 @@ export async function createForkSession(
     }
   }
 
-  // Legacy fork path: pending channel with re-key
+  // Legacy fork path: pending channel with re-key.
+  // Pre-load parent history so the channel starts with the fork's transcript
+  // visible — otherwise the channel is empty until live entries arrive.
+  let forkEntries: TranscriptEntry[] | undefined;
+  try {
+    forkEntries = await reg.discovery.loadHistory(fromSessionId);
+    if (options?.atMessageId) {
+      const cutIdx = forkEntries.findIndex(e => e.uuid === options.atMessageId);
+      if (cutIdx !== -1) forkEntries = forkEntries.slice(0, cutIdx + 1);
+    }
+  } catch (err) {
+    log({ source: 'session', level: 'warn', summary: `Failed to pre-load fork history`, data: { fromSessionId, error: String(err) } });
+  }
+
   const spec: SessionOpenSpec = {
     mode: 'fork',
     fromSessionId,
@@ -888,9 +1092,13 @@ export async function createForkSession(
     ...(options?.mcpServers && { mcpServers: options.mcpServers }),
     ...(options?.env && { env: options.env }),
     ...(options?.systemPrompt && { systemPrompt: options.systemPrompt }),
+    ...(options?.sessionKind && { sessionKind: options.sessionKind }),
   };
 
-  return createPendingChannel(vendor, spec, subscriber, { explicitPendingId });
+  return createPendingChannel(vendor, spec, subscriber, {
+    explicitPendingId,
+    entries: forkEntries,
+  });
 }
 
 // ============================================================================
@@ -954,8 +1162,10 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
       sessionId = intent.target.sessionId;
       const currentVendor = channel.adapter?.vendor;
 
-      // Check for vendor switch via the model field
-      if (intent.target.model && currentVendor) {
+      // Check for vendor switch via the model field.
+      // Use != null (not truthiness) — Claude "Default" sends model='' which
+      // is falsy but still a valid vendor selection (parseModelOption('') → claude).
+      if (intent.target.model != null && currentVendor) {
         const { vendor: targetVendor, model } = parseModelOption(intent.target.model);
         if (targetVendor !== currentVendor) {
           // Vendor switch — load source history and create hydrated session
@@ -1004,6 +1214,7 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
           ...(intent.target.mcpServers && { mcpServers: intent.target.mcpServers }),
           ...(intent.target.env && { env: intent.target.env }),
           ...(intent.target.systemPrompt && { systemPrompt: intent.target.systemPrompt }),
+          ...(intent.target.sessionKind && { sessionKind: intent.target.sessionKind }),
         },
         pendingId,
       );
@@ -1025,6 +1236,7 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
           ...(intent.target.mcpServers && { mcpServers: intent.target.mcpServers }),
           ...(intent.target.env && { env: intent.target.env }),
           ...(intent.target.systemPrompt && { systemPrompt: intent.target.systemPrompt }),
+          ...(intent.target.sessionKind && { sessionKind: intent.target.sessionKind }),
         },
         pendingId,
       );
@@ -1045,6 +1257,7 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
         ...(intent.settings.permissionMode && { permissionMode: intent.settings.permissionMode }),
         ...(intent.target.skipPersistSession && { skipPersistSession: true }),
         ...(intent.target.systemPrompt && { systemPrompt: intent.target.systemPrompt }),
+        ...(intent.target.sessionKind && { sessionKind: intent.target.sessionKind }),
       };
 
       const result = createPendingChannel(intent.target.vendor, spec, subscriber, {
@@ -1094,6 +1307,14 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
   };
   for (const [, sub] of channel.subscribers) {
     try { sub.send(settingsMsg); } catch { /* swallow */ }
+  }
+
+  // Persist sessionKind after rekey so system sessions stay hidden across restarts
+  const targetSessionKind = 'sessionKind' in intent.target ? (intent.target as { sessionKind?: 'user' | 'system' }).sessionKind : undefined;
+  if (targetSessionKind && rekeyPromise) {
+    rekeyPromise.then((realId) => {
+      try { setSessionKind(realId, targetSessionKind); invalidateSessionCache(); } catch { /* best-effort */ }
+    }).catch(() => {});
   }
 
   return { sessionId, channel, rekeyPromise };

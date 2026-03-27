@@ -49,7 +49,7 @@ import { useControlPanel } from '../../context/ControlPanelContext.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent, TurnTarget } from '../../../core/agent-adapter.js';
-import type { WireProviderConfig } from '../../../core/settings/types.js';
+import type { WireProviderConfig, DiscordBotSettings } from '../../../core/settings/types.js';
 import type { SettingsChangedGlobalEvent } from '../../../core/settings/events.js';
 import { SETTINGS_CHANNEL_ID } from '../../../core/settings/events.js';
 import { RECALL_CATCHUP_CHANNEL_ID } from '../../../core/recall/catchup-types.js';
@@ -76,6 +76,17 @@ const CYCLABLE_AGENCY_MODES: AgencyMode[] = [
   'edit-automatically',
   'ask-before-edits',
 ];
+
+function getChatPlaceholder(vendor: string): string {
+  switch (vendor) {
+    case 'codex':
+      return 'What would you like to build? Use $recall or $handoff-prompt-to for Crispy skills.';
+    case 'claude':
+      return 'What would you like to build? Use /recall for Crispy skills.';
+    default:
+      return 'What would you like to build?';
+  }
+}
 
 function controlPanelReducer(state: ControlPanelState, action: Action): ControlPanelState {
   switch (action.type) {
@@ -241,6 +252,14 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           setProviders(settingsEvent.snapshot.settings.providers);
           setRosieEnabled(settingsEvent.snapshot.settings.rosie?.bot?.enabled ?? false);
           setRosieModel(settingsEvent.snapshot.settings.rosie?.bot?.model);
+          // Discord push sync
+          const dBot = settingsEvent.snapshot.settings.discord?.bot;
+          if (dBot) {
+            setDiscordEnabled(dBot.enabled);
+            setDiscordGuildId(dBot.guildId);
+            setDiscordToken(dBot.token);
+            setDiscordSessions(dBot.sessions);
+          }
           setDefaultModel(settingsEvent.snapshot.settings.turnDefaults?.model ?? '');
           const savedMode = settingsEvent.snapshot.settings.turnDefaults?.permissionMode;
           if (savedMode) {
@@ -278,15 +297,33 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // Ref mirror so event-handler closures always see the latest value
     // (React state in useEffect closures is stale until the effect re-runs).
     const defaultPermissionModeRef = useRef<AgencyMode>('ask-before-edits');
+    // Gate: prevent sending turns until persisted settings have loaded,
+    // otherwise the first turn races with getSettings() and may use
+    // the wrong permission mode (e.g. bypass=false when user saved bypass=true).
+    const settingsLoadedRef = useRef(false);
 
     // --- Rosie Bot settings state ---
     const [rosieEnabled, setRosieEnabled] = useState(false);
     const [rosieModel, setRosieModel] = useState<string | undefined>(undefined);
 
+    // --- Discord Bot settings state ---
+    const [discordEnabled, setDiscordEnabled] = useState(false);
+    const [discordGuildId, setDiscordGuildId] = useState('');
+    const [discordToken, setDiscordToken] = useState('');
+    const [discordSessions, setDiscordSessions] = useState<'all' | 'manual'>('all');
+
     useEffect(() => {
       transport.getSettings().then((snapshot) => {
         setRosieEnabled(snapshot.settings.rosie?.bot?.enabled ?? false);
         setRosieModel(snapshot.settings.rosie?.bot?.model);
+        // Discord
+        const discordBot = snapshot.settings.discord?.bot;
+        if (discordBot) {
+          setDiscordEnabled(discordBot.enabled);
+          setDiscordGuildId(discordBot.guildId);
+          setDiscordToken(discordBot.token);
+          setDiscordSessions(discordBot.sessions);
+        }
         const savedDefault = snapshot.settings.turnDefaults?.model ?? '';
         setDefaultModel(savedDefault);
         // Apply persisted default model on initial load (before any session overrides it)
@@ -306,7 +343,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             }
           }
         }
-      }).catch(console.error);
+      }).catch(console.error).finally(() => { settingsLoadedRef.current = true; });
     }, [transport]);
 
     const handleUpdateDefaultModel = useCallback(async (model: string) => {
@@ -328,6 +365,14 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       if (patch.enabled !== undefined) setRosieEnabled(patch.enabled);
       if (patch.model !== undefined) setRosieModel(patch.model);
       await transport.updateSettings({ rosie: { bot: patch } });
+    }, [transport]);
+
+    const handleUpdateDiscord = useCallback(async (patch: Partial<DiscordBotSettings>) => {
+      if (patch.enabled !== undefined) setDiscordEnabled(patch.enabled);
+      if (patch.guildId !== undefined) setDiscordGuildId(patch.guildId);
+      if (patch.token !== undefined) setDiscordToken(patch.token);
+      if (patch.sessions !== undefined) setDiscordSessions(patch.sessions);
+      await transport.updateSettings({ discord: { bot: patch } });
     }, [transport]);
 
     // --- Recall catch-up state ---
@@ -575,6 +620,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     // --- Send handler ---
     const handleSend = useCallback(() => {
+      // Block until persisted settings (permission mode, bypass) have loaded
+      // to avoid sending the first turn with stale defaults.
+      if (!settingsLoadedRef.current) return;
+
       const text = state.input.trim();
       const hasImages = state.attachedImages.length > 0;
       if (!text && !hasImages) return;
@@ -1030,6 +1079,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               attachedImages={state.attachedImages}
               onInput={(value) => dispatch({ type: 'SET_INPUT', value })}
               onSend={handleSend}
+              placeholder={getChatPlaceholder(parseModelOption(state.model).vendor)}
               forkMode={!!state.forkMode}
               onFork={handleFork}
               voiceState={voice.state}
@@ -1088,6 +1138,11 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               rosieEnabled={rosieEnabled}
               rosieModel={rosieModel}
               onUpdateRosie={handleUpdateRosie}
+              discordEnabled={discordEnabled}
+              discordGuildId={discordGuildId}
+              discordToken={discordToken}
+              discordSessions={discordSessions}
+              onUpdateDiscord={handleUpdateDiscord}
               catchupStatus={catchupStatus}
               onStartEmbedding={handleStartEmbedding}
               onStopEmbedding={handleStopEmbedding}

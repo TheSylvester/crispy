@@ -14,7 +14,7 @@
  * SYNC NOTE: Socket discovery and JSON-RPC framing are duplicated from
  * src/cli/ipc-client.ts and src/cli/rpc-pipe.ts. This file must be a
  * standalone .mjs (no build step, no TypeScript) so it can run from
- * `node $CRISPY_TRACKER` inside a child session. If the wire protocol
+ * `$CRISPY_TRACKER` inside a child session. If the wire protocol
  * or discovery logic changes in those files, update this file too.
  */
 

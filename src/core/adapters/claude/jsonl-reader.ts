@@ -136,6 +136,7 @@ export interface TailMetadata {
   summary?: string; // from type:"summary" entry (AI-generated title)
   slug?: string; // three-word session name from any entry
   lastTimestamp?: string; // ISO timestamp from most recent entry
+  cwd?: string; // project path from any entry with a cwd field
 }
 
 // ============================================================================
@@ -1388,12 +1389,14 @@ export function extractMetadataFast(
     const firstEntry = entries[0];
     const parentSessionId = firstEntry?.sessionId;
 
-    // Extract the real project path from the first entry with a `cwd` field.
-    // This avoids the lossy slugToPath() round-trip that breaks hyphenated paths.
-    const projectPath = entries.find((e) => e.cwd)?.cwd;
-
     // Extract tail metadata (read from end of file)
     const tail = extractTailMetadata(filepath);
+
+    // Extract the real project path from the first entry with a `cwd` field.
+    // This avoids the lossy slugToPath() round-trip that breaks hyphenated paths.
+    // Fall back to the tail's cwd when the head chunk is dominated by large
+    // entries (e.g. base64 images) that push cwd past the 64KB read buffer.
+    const projectPath = entries.find((e) => e.cwd)?.cwd ?? tail.cwd;
 
     const isSidechain = isSidechainSession(entries);
     const isTrivial = isTrivialSession(entries, stat.size);
@@ -1525,8 +1528,15 @@ export function extractTailMetadata(
           }
         }
 
+        // Extract cwd (project path) from any entry with a cwd field.
+        // Fallback for sessions whose head chunk is dominated by large
+        // entries (e.g. base64 images) that push cwd past the 64KB read.
+        if (!result.cwd && entry.cwd) {
+          result.cwd = entry.cwd;
+        }
+
         // Stop early if we've found all fields
-        if (result.lastMessage && result.summary && result.slug && result.lastTimestamp) {
+        if (result.lastMessage && result.summary && result.slug && result.lastTimestamp && result.cwd) {
           break;
         }
       } catch {

@@ -33,8 +33,9 @@ interface ServerEntry {
   startedAt: string;
 }
 
-export function getSocketPath(mode?: 'prod' | 'dev'): string {
-  if (process.env.CRISPY_SOCK) return process.env.CRISPY_SOCK;
+export function getSocketPath(mode?: 'prod' | 'dev', purpose: 'server' | 'client' = 'client'): string {
+  // CRISPY_SOCK override is for client discovery only — servers must generate their own path
+  if (purpose === 'client' && process.env.CRISPY_SOCK) return process.env.CRISPY_SOCK;
   if (mode) {
     const suffix = mode === 'dev' ? '-dev' : '';
     return platform() === 'win32'
@@ -99,7 +100,7 @@ function unregister(): void {
 let connectionCounter = 0;
 
 export async function startIpcServer(cwd: string, overridePath?: string): Promise<{ close(): void }> {
-  const socketPath = overridePath ?? getSocketPath();
+  const socketPath = overridePath ?? getSocketPath(undefined, 'server');
 
   // Ensure IPC and run directories exist (on win32 socketPath is a pipe path, not a dir)
   mkdirSync(ipcDir(), { recursive: true });

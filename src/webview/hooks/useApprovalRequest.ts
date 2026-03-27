@@ -14,7 +14,7 @@
  * @module useApprovalRequest
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTransport } from '../context/TransportContext.js';
 import type { ApprovalRequest, ApprovalExtra } from '../components/approval/types.js';
 
@@ -29,9 +29,16 @@ export function useApprovalRequest(sessionId: string | null): UseApprovalRequest
   const transport = useTransport();
   const [request, setRequest] = useState<ApprovalRequest | null>(null);
 
-  // Clear on session change
+  // Clear on session change — but not on pending→real transitions,
+  // which are the same logical session (just an ID rekey).
+  const prevSessionIdRef = useRef<string | null>(null);
   useEffect(() => {
-    setRequest(null);
+    const prevId = prevSessionIdRef.current;
+    prevSessionIdRef.current = sessionId;
+    const isPendingToReal = prevId?.startsWith('pending:') && sessionId && !sessionId.startsWith('pending:');
+    if (!isPendingToReal) {
+      setRequest(null);
+    }
   }, [sessionId]);
 
   // Listen for approval events

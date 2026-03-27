@@ -3,7 +3,7 @@
   "displayName": "Crispy",
   "icon": "media/crispy-icon.png",
   "description": "An agent workbench for Claude Code and Codex — with local agent memory, multi-agent collaboration, and controls you can't get in a terminal",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "publisher": "the-sylvester",
   "license": "MIT",
   "bin": {
@@ -103,9 +103,9 @@
     "smoke": "npx tsx scripts/smoke.ts",
     "smoke:quick": "npx tsx scripts/smoke.ts --skip-embed",
     "dev": "npm run build:webview && node --import tsx src/host/dev-server.ts",
-    "build:cli": "esbuild src/cli/crispy-dispatch.ts --bundle --outfile=dist/crispy-dispatch.js --format=esm --platform=node --sourcemap",
+    "build:cli": "esbuild src/cli/crispy-dispatch.ts --bundle --outfile=dist/crispy-dispatch.js --format=esm --platform=node --sourcemap --banner:js=\"#!/usr/bin/env node\" && chmod +x dist/crispy-dispatch.js",
     "build:cli-entry": "esbuild src/cli/crispy-cli.ts --bundle --outfile=dist/crispy-cli.js --external:@anthropic-ai/* --external:ws --external:open --external:onnxruntime-node --external:@huggingface/transformers --format=cjs --platform=node --sourcemap --loader:.md=text --banner:js=\"#!/usr/bin/env node\"",
-    "build:recall": "esbuild scripts/recall.ts --bundle --outfile=dist/recall.js --external:onnxruntime-node --external:@huggingface/transformers --format=cjs --platform=node --sourcemap --banner:js=\"#!/usr/bin/env node\"",
+    "build:recall": "esbuild scripts/recall.ts --bundle --outfile=dist/recall.js --external:onnxruntime-node --external:@huggingface/transformers --format=cjs --platform=node --sourcemap --banner:js=\"#!/usr/bin/env node\" && chmod +x dist/recall.js",
     "dispatch": "node --import tsx src/cli/crispy-dispatch.ts",
     "prepublishOnly": "npm run build"
   },

@@ -36,6 +36,7 @@ import { disposeEmbedder } from '../core/recall/embedder.js';
 import { startIpcServer, getSocketPath } from './ipc-server.js';
 import { setHostSocketPath } from '../core/session-manager.js';
 import { isLocalConnection, validateToken, parseCookie, cookieName, setTokenCookie, getOrCreateToken } from './auth.js';
+import { registerPanelOpener } from './panel-opener.js';
 
 // __dirname is available in CJS (tsx, tsc). When esbuild bundles to ESM with
 // --platform=node it shims __dirname automatically, so this works in both modes.
@@ -320,13 +321,19 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
   // join(__dirname, '..') gives the package root.
   const extensionPath = mode === 'dev' ? undefined : join(__dirname, '..');
 
+  // Dev server can't open browser tabs from the host side.
+  // The browser transport handles openPanel client-side.
+  registerPanelOpener(() => {
+    throw new Error('openPanel from CLI not supported in dev-server mode');
+  });
+
   done = phase('register adapters');
   registerAllAdapters({ cwd, hostType, dispatch, extensionPath });
   done();
 
   // IPC socket: use stable paths for daemon, PID-based for dev
   const socketMode = mode === 'daemon' ? 'prod' as const : undefined;
-  const ipcSocketPath = getSocketPath(socketMode);
+  const ipcSocketPath = getSocketPath(socketMode, 'server');
   setHostSocketPath(ipcSocketPath);
 
   done = phase('init recall ingest');

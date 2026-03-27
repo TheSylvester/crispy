@@ -106,13 +106,19 @@ export interface RecallCatchupEvent {
   status: import('./recall/catchup-types.js').CatchupStatus;
 }
 
+export interface SessionRotatedEvent {
+  type: 'notification';
+  kind: 'session_rotated';
+}
+
 export type NotificationEvent =
   | ErrorEvent
   | CompactingEvent
   | PermissionModeChangedEvent
   | SessionChangedEvent
   | SettingsChangedEvent
-  | RecallCatchupEvent;
+  | RecallCatchupEvent
+  | SessionRotatedEvent;
 
 // ============================================================================
 // Channel Event (union)

@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * crispy-dispatch — CLI client for Crispy IPC
  *

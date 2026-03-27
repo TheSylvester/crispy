@@ -15,6 +15,7 @@ import type { TurnReceipt } from '../core/agent-adapter.js';
 import type { WireProviderConfig, WireSettingsSnapshot, SettingsPatch } from '../core/settings/types.js';
 import type { VendorModelGroup } from './components/control-panel/types.js';
 import type { CatchupStatus } from '../core/recall/catchup-types.js';
+import type { GitDiffResult } from '../core/git-diff-service.js';
 import { float32ToBase64 } from './utils/encoding.js';
 
 interface VSCodeAPI {
@@ -99,6 +100,12 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     sendTurn: (intent, pendingId) =>
       request<TurnReceipt>('sendTurn', { intent, ...(pendingId && { pendingId }) }),
 
+    switchSession: (params) =>
+      request<{ previousSessionId: string; sessionId: string }>('switchSession', params),
+
+    openPanel: (params) =>
+      request<{ ok: boolean }>('openPanel', params),
+
     forkToNewPanel: (params) =>
       request<{ ok: boolean }>('forkToNewPanel', params),
 
@@ -138,6 +145,7 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
 
     getGitFiles: (cwd) => request<string[]>('getGitFiles', { cwd }),
     getGitBranchInfo: (cwd) => request<{ branch: string; dirty: boolean } | null>('getGitBranchInfo', { cwd }),
+    getGitDiff: (cwd) => request<GitDiffResult>('getGitDiff', { cwd }),
     fileExists: (path) => request<boolean>('fileExists', { path }),
     readImage: (path) => request<{ data: string; mimeType: string; fileName: string }>('readImage', { path }),
     readFile: (path) => request<{ content: string; fileName: string; size: number }>('readFile', { path }),
