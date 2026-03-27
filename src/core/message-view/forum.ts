@@ -169,12 +169,22 @@ export async function ensureWorkspaceChannel(
   pid: number,
   existingForums: Array<{ id: string; name: string; project: string; pid: number }>,
 ): Promise<WorkspaceChannel | null> {
-  const existingNames = existingForums.map(f => f.name);
-  const myChannelName = buildWorkspaceChannelName(cwd, pid, existingNames);
-  const myProject = parseWorkspaceChannelName(myChannelName)!.project;
+  const baseProject = cwdToBaseProject(cwd);
 
-  // Find existing channel for this workspace — match by project portion
-  const existing = existingForums.find(f => f.project === myProject);
+  // Match existing channel for this workspace using the base project name.
+  // Check both exact match and disambiguated forms (e.g. "dev-crispy" ends with "-crispy").
+  // This must happen BEFORE buildWorkspaceChannelName, which would re-disambiguate and
+  // produce a name that no longer matches the existing channel — causing a duplicate.
+  const existing = existingForums.find(f => f.project === baseProject)
+    ?? existingForums.find(f => f.project.endsWith(`-${baseProject}`));
+
+  // When reusing an existing channel, preserve its project portion (keeps disambiguation stable).
+  // Only call buildWorkspaceChannelName for genuinely new channels.
+  const existingNames = existingForums.map(f => f.name);
+  const myChannelName = existing
+    ? `crispy-${existing.project}-${pid}`
+    : buildWorkspaceChannelName(cwd, pid, existingNames);
+  const myProject = parseWorkspaceChannelName(myChannelName)!.project;
 
   if (existing) {
     if (existing.pid === pid) {

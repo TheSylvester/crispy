@@ -78,6 +78,8 @@ import {
 const SOURCE = 'discord-provider';
 const MAX_CONCURRENT_PROMPTS = 3;
 const DEFAULT_ARCHIVAL_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
+/** Discord epoch (2015-01-01T00:00:00.000Z) used for snowflake → timestamp. */
+const DISCORD_EPOCH = 1420070400000n;
 
 // ---------------------------------------------------------------------------
 // Provider state — singleton: only one Discord provider may exist at a time.
@@ -416,6 +418,11 @@ function probeLeadership(threadId: string): Promise<string | null> {
 // Crash Recovery — rebuild channelMap from Discord threads
 // ---------------------------------------------------------------------------
 
+/** Extract a Unix-ms timestamp from a Discord snowflake ID. */
+function snowflakeToTimestamp(snowflake: string): number {
+  return Number((BigInt(snowflake) >> 22n) + DISCORD_EPOCH);
+}
+
 async function recoverChannelMap(guildId: string, forumChannelId: string): Promise<void> {
   const botId = getBotUserId();
   if (!botId) return;
@@ -426,11 +433,11 @@ async function recoverChannelMap(guildId: string, forumChannelId: string): Promi
     const forumThreads = active.filter(t => t.parent_id === forumChannelId);
 
     // Also fetch archived threads from the forum
-    let archivedThreads: Array<{ id: string; parent_id: string }> = [];
+    let archivedThreads: Array<{ id: string; parent_id: string; last_message_id?: string }> = [];
     try {
       const archived = await discordFetch('GET',
         `/channels/${forumChannelId}/threads/archived/public`
-      ) as { threads?: Array<{ id: string; parent_id: string }> };
+      ) as { threads?: Array<{ id: string; parent_id: string; last_message_id?: string }> };
       archivedThreads = archived.threads ?? [];
     } catch (err) {
       log({ source: SOURCE, level: 'warn', summary: 'failed to fetch archived threads for recovery', data: err });
@@ -438,7 +445,7 @@ async function recoverChannelMap(guildId: string, forumChannelId: string): Promi
 
     // Deduplicate
     const seen = new Set<string>();
-    const allThreads: Array<{ id: string }> = [];
+    const allThreads: Array<{ id: string; last_message_id?: string }> = [];
     for (const t of [...forumThreads, ...archivedThreads]) {
       if (!seen.has(t.id)) { seen.add(t.id); allThreads.push(t); }
     }
@@ -461,7 +468,14 @@ async function recoverChannelMap(guildId: string, forumChannelId: string): Promi
           const match = botMsg.content.match(/Session `([^`]+)`/);
           if (match) {
             channelMap.set(thread.id, match[1]);
-            lastActivityMap.set(thread.id, Date.now());
+            // Preserve real last-activity time from the thread's most recent
+            // message snowflake. Falling back to Date.now() only when the
+            // snowflake is unavailable avoids resetting the inactivity clock
+            // on every restart (which would prevent archival of idle threads).
+            const lastActivity = thread.last_message_id
+              ? snowflakeToTimestamp(thread.last_message_id)
+              : Date.now();
+            lastActivityMap.set(thread.id, lastActivity);
             recovered++;
           }
         }
@@ -519,22 +533,23 @@ function handleThreadCreate(event: { id: string; parent_id: string; name: string
     if (channelMap.has(event.id)) return;
     if (getSessionForChannel(event.id)) return;
 
-    void handleUserCreatedPost(event.id, event.parent_id).catch((err) => {
+    void handleUserCreatedPost(event.id, event.parent_id, event.name).catch((err) => {
       log({ source: SOURCE, level: 'error', summary: `failed to handle user-created post ${event.id}`, data: err });
     });
   }, 2000);
 }
 
-async function handleUserCreatedPost(threadId: string, forumChannelId: string): Promise<void> {
+async function handleUserCreatedPost(threadId: string, forumChannelId: string, threadName?: string): Promise<void> {
   if (!currentDispatch || !currentConfig) return;
 
   // Fetch first message in thread (chronological order)
   const messages = await discordFetch('GET', `/channels/${threadId}/messages?limit=1&after=0`) as
     Array<{ content: string; author: { id: string } }>;
   const firstMsg = messages[0];
-  if (!firstMsg?.content) return;
 
-  const rawPrompt = firstMsg.content.trim();
+  // Use message body if present, otherwise fall back to thread title.
+  // Discord forum posts always have a title; the body may be empty.
+  const rawPrompt = (firstMsg?.content?.trim() || threadName?.trim()) ?? '';
   if (!rawPrompt) return;
 
   // Parse vendor prefix (e.g. "codex: fix bug")
@@ -676,6 +691,13 @@ function enableAutoWatchAndHeartbeat(): void {
 
   heartbeatTimer = setInterval(() => {
     for (const state of allWatches()) {
+      // Ensure every watched session has an archival activity entry.
+      // Auto-watched sessions bypass channelMap/lastActivityMap registration,
+      // so seed their initial timestamp here on first encounter.
+      if (!lastActivityMap.has(state.discordChannelId)) {
+        lastActivityMap.set(state.discordChannelId, Date.now());
+      }
+
       if (state.snapshot.status === 'working') {
         const now = Date.now();
         const last = lastTypingFired.get(state.discordChannelId) ?? 0;
@@ -685,6 +707,8 @@ function enableAutoWatchAndHeartbeat(): void {
         }
       }
       if (!state.dirty || state.syncing) continue;
+      // Update archival activity tracking — snapshot changed for this session
+      lastActivityMap.set(state.discordChannelId, Date.now());
       void syncSession(state).catch((err) => {
         log({ source: SOURCE, level: 'error', summary: `sync error for ${state.sessionId.slice(0, 8)}`, data: err });
       });

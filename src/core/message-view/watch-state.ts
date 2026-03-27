@@ -265,6 +265,13 @@ export async function createWatchedSession(
     log({ source: SOURCE, level: 'warn', summary: `failed to rename post to ${canonicalName}`, data: err });
   });
 
+  // Update starter message with session ID anchor (for crash recovery)
+  if (starterMessageId) {
+    editMessage(discordChannelId, starterMessageId, `\u{1F4CB} Session \`${realId}\``).catch((err) => {
+      log({ source: SOURCE, level: 'warn', summary: `failed to update starter message with session ID anchor`, data: err });
+    });
+  }
+
   // Get the (possibly rekeyed) watch state and subscribe
   const state = watchedSessions.get(realId);
   if (state) {
@@ -285,9 +292,7 @@ export async function watchSession(
   pendingWatches.add(sessionId);
   try {
     const postName = opts.displayName?.slice(0, 100) || `session-${sessionId.slice(0, 8)}`;
-    const anchorText = opts.auto
-      ? `\u{1F4E1} Auto-watching session \`${sessionId.slice(0, 8)}\``
-      : `\u{1F4E1} Watching session \`${sessionId.slice(0, 8)}\``;
+    const anchorText = `\u{1F4CB} Session \`${sessionId}\``;
     const post = await createForumPost(forumChannelId, postName, anchorText, {
       autoArchiveDuration: 1440,
     });

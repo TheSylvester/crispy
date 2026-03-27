@@ -52,7 +52,7 @@ export function renderSession(
 
     if (entry.type === 'user') {
       const userText = extractUserText(entry);
-      if (userText) lines.push(`\n**User:** ${userText}`);
+      if (userText) lines.push(`\n---\n**User:** ${userText}\n---`);
       continue;
     }
     if (entry.type !== 'assistant') continue;
@@ -140,7 +140,7 @@ export function renderSessionWithAnchors(
         continue;
       }
       // No anchor — render inline as **User:** text
-      currentContent += `\n**User:** ${text}`;
+      currentContent += `\n---\n**User:** ${text}\n---`;
       continue;
     }
 
@@ -258,63 +258,63 @@ export function renderToolLine(name: string, input: Record<string, unknown>, sta
       const badges: string[] = [];
       if (input.run_in_background) badges.push('[background]');
       if (input.timeout) badges.push(`[\u{23F1} ${Math.round((input.timeout as number) / 1000)}s]`);
-      const meta = badges.length ? ` ${badges.join(' ')}` : '';
-      return `\u{1F4BB} **bash**${meta}  \`${subject}\`  ${status}`;
+      const meta = badges.length ? ` ${badges.join(' ')} ` : '  ';
+      return `  \u{1F4BB}  **bash**${meta}\`${subject}\`  ${status}`;
     }
     case 'read': {
       const path = shortPath(input.file_path as string ?? '');
       const range = input.offset ? `:${input.offset}-${(input.offset as number) + (input.limit as number ?? 100)}` : '';
-      return `\u{1F4C4} **read**  \`${path}${range}\`  ${status}`;
+      return `  \u{1F4C4}  **read**  \`${path}${range}\`  ${status}`;
     }
     case 'write': {
       const path = shortPath(input.file_path as string ?? '');
       const lines = typeof input.content === 'string' ? input.content.split('\n').length : 0;
-      return `\u{270E} **write**  \`${path}\` (${lines} lines)  ${status}`;
+      return `  \u{270E}  **write**  \`${path}\` (${lines} lines)  ${status}`;
     }
     case 'edit': {
       const path = shortPath(input.file_path as string ?? '');
       const addLines = typeof input.new_string === 'string' ? input.new_string.split('\n').length : 0;
       const delLines = typeof input.old_string === 'string' ? input.old_string.split('\n').length : 0;
-      return `\u{1F4DD} **edit**  \`${path}\` +${addLines} -${delLines}  ${status}`;
+      return `  \u{1F4DD}  **edit**  \`${path}\` +${addLines} -${delLines}  ${status}`;
     }
     case 'grep': {
       const pattern = (input.pattern as string ?? '').slice(0, 40);
       const scope = input.path ?? input.glob ?? input.type ?? '';
       const scopeStr = scope ? ` in ${String(scope).slice(0, 30)}` : '';
-      return `\u{1F50D} **grep**  \`${pattern}\`${scopeStr}  ${status}`;
+      return `  \u{1F50D}  **grep**  \`${pattern}\`${scopeStr}  ${status}`;
     }
     case 'glob': {
       const pattern = (input.pattern as string ?? '').slice(0, 40);
       const scope = input.path ? ` in ${String(input.path).slice(0, 30)}` : '';
-      return `\u{1F4C2} **glob**  \`${pattern}\`${scope}  ${status}`;
+      return `  \u{1F4C2}  **glob**  \`${pattern}\`${scope}  ${status}`;
     }
     case 'agent': {
       const desc = (input.description as string ?? input.prompt as string ?? '').split('\n')[0].slice(0, 50);
-      const badge = input.subagent_type ? ` [${input.subagent_type}]` : '';
-      return `\u{1F916} **agent**${badge}  ${desc}  ${status}`;
+      const badge = input.subagent_type ? ` [${input.subagent_type}] ` : '  ';
+      return `  \u{1F916}  **agent**${badge}${desc}  ${status}`;
     }
     case 'skill': {
       const skill = input.skill as string ?? '';
-      return `\u{2728} **skill**  ${skill}  ${status}`;
+      return `  \u{2728}  **skill**  ${skill}  ${status}`;
     }
     case 'todowrite':
-      return `\u{1F4CB} **todos**  updated  ${status}`;
+      return `  \u{1F4CB}  **todos**  updated  ${status}`;
     case 'websearch': {
       const query = (input.query as string ?? '').slice(0, 40);
-      return `\u{1F310} **websearch**  \`${query}\`  ${status}`;
+      return `  \u{1F310}  **websearch**  \`${query}\`  ${status}`;
     }
     case 'webfetch': {
       const url = (input.url as string ?? '').slice(0, 60);
-      return `\u{1F30E} **webfetch**  \`${url}\`  ${status}`;
+      return `  \u{1F30E}  **webfetch**  \`${url}\`  ${status}`;
     }
     default: {
       if (name.startsWith('mcp__')) {
         const shortName = name.replace('mcp__', '').replace(/__/g, '/');
         const subject = extractSubject(input);
-        return `\u{1F50C} **${shortName}**  ${subject}  ${status}`;
+        return `  \u{1F50C}  **${shortName}**  ${subject}  ${status}`;
       }
       const subject = extractSubject(input);
-      return `\u{1F527} **${name}**  ${subject}  ${status}`;
+      return `  \u{1F527}  **${name}**  ${subject}  ${status}`;
     }
   }
 }
