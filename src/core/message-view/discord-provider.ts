@@ -505,14 +505,24 @@ function handleThreadCreate(event: { id: string; parent_id: string; name: string
   // Only handle threads in workspace forum channels
   if (!isWorkspaceForum(event.parent_id)) return;
 
-  // If we already track this channel, it's bot-created — skip
+  // If we already track this channel, it's bot-created or auto-watched — skip
   if (channelMap.has(event.id)) return;
   if (getSessionForChannel(event.id)) return;
 
-  // User-created post — process asynchronously
-  void handleUserCreatedPost(event.id, event.parent_id).catch((err) => {
-    log({ source: SOURCE, level: 'error', summary: `failed to handle user-created post ${event.id}`, data: err });
-  });
+  // Check if the thread name looks bot-created (session-XXXXXXXX or auto-watch format)
+  // Bot-created threads from watchSession/createWatchedSession have names like
+  // "session-XXXXXXXX" or the prompt text. The THREAD_CREATE fires before
+  // registerWatchState completes, so channelToSession won't have it yet.
+  // Delay slightly to let the createForumPost → registerWatchState chain complete.
+  setTimeout(() => {
+    // Re-check after a tick — the watch may have registered by now
+    if (channelMap.has(event.id)) return;
+    if (getSessionForChannel(event.id)) return;
+
+    void handleUserCreatedPost(event.id, event.parent_id).catch((err) => {
+      log({ source: SOURCE, level: 'error', summary: `failed to handle user-created post ${event.id}`, data: err });
+    });
+  }, 2000);
 }
 
 async function handleUserCreatedPost(threadId: string, forumChannelId: string): Promise<void> {
@@ -652,7 +662,8 @@ function enableAutoWatchAndHeartbeat(): void {
           if (!matchedCwd) return;
         }
 
-        void watchSession(session.sessionId, forumChannelId, { auto: true },
+        const displayName = session.title ?? session.label ?? undefined;
+        void watchSession(session.sessionId, forumChannelId, { auto: true, displayName },
           currentConfig?.permissionMode ?? null).catch(err => {
           log({ source: SOURCE, level: 'error', summary: `auto-watch failed for ${session.sessionId.slice(0, 8)}`, data: err });
         });

@@ -47,6 +47,8 @@ export function renderSession(
   for (const entry of entries) {
     // Skip SDK-injected system context (local-command, task-notification, etc.)
     if (entry.isMeta) continue;
+    // Skip sub-agent internal entries (progress messages with parentToolUseID)
+    if (entry.parentToolUseID) continue;
 
     if (entry.type === 'user') {
       const userText = extractUserText(entry);
@@ -117,6 +119,8 @@ export function renderSessionWithAnchors(
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     if (entry.isMeta) continue;
+    // Skip sub-agent internal entries (progress messages with parentToolUseID)
+    if (entry.parentToolUseID) continue;
 
     if (entry.type === 'user') {
       const text = extractUserText(entry);

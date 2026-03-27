@@ -278,13 +278,13 @@ export async function createWatchedSession(
 export async function watchSession(
   sessionId: string,
   forumChannelId: string,
-  opts: { auto: boolean },
+  opts: { auto: boolean; displayName?: string },
   permissionMode?: string | null,
 ): Promise<void> {
   if (watchedSessions.has(sessionId) || pendingWatches.has(sessionId)) return;
   pendingWatches.add(sessionId);
   try {
-    const postName = `session-${sessionId.slice(0, 8)}`;
+    const postName = opts.displayName?.slice(0, 100) || `session-${sessionId.slice(0, 8)}`;
     const anchorText = opts.auto
       ? `\u{1F4E1} Auto-watching session \`${sessionId.slice(0, 8)}\``
       : `\u{1F4E1} Watching session \`${sessionId.slice(0, 8)}\``;
