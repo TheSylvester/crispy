@@ -41,7 +41,7 @@ import {
   archiveThread,
 } from './discord-transport.js';
 import type { GatewayEventHandler } from './discord-transport.js';
-import { handleCommand } from './commands.js';
+import { handleCommand, handleSessionListReaction } from './commands.js';
 import type { CommandContext } from './commands.js';
 import {
   wipeAllCrispyChannels,
@@ -600,6 +600,11 @@ function handleGatewayReaction(
 ): void {
   const botId = getBotUserId();
   if (!botId || userId === botId) return;
+
+  // Session list reaction (numbered emoji pick or pagination)
+  void handleSessionListReaction(messageId, emoji, buildCommandContext()).catch((err) => {
+    log({ source: SOURCE, level: 'error', summary: 'session list reaction error', data: err });
+  });
 
   // ❌ on any message in the forum → archive the thread (owner only)
   if (emoji === '\u{274C}' && (!ownerUserId || userId === ownerUserId)) {

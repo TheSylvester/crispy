@@ -1,9 +1,9 @@
 /**
  * Bot Commands — ! command parsing and handlers
  *
- * Parses "!command args" from Discord DMs and @mentions.
- * Control-plane only: `!open`, `!stop`, `!status`, `!crispy`.
- * Session creation happens via user-created forum posts, not commands.
+ * Parses "!command args" from Discord messages in the bot control channel,
+ * DMs, or @mentions. Primary entry point: `!sessions` for browsing and
+ * opening recent conversations via emoji reactions.
  *
  * @module message-view/commands
  */
@@ -15,11 +15,28 @@ import {
   resolveSessionPrefix,
 } from '../session-manager.js';
 import { getActiveChannels } from '../session-channel.js';
-import { sendMessage } from './discord-transport.js';
+import { sendMessage, addReaction } from './discord-transport.js';
 import type { AgentDispatch } from '../agent-dispatch-types.js';
+import { listAllSessions } from '../session-manager.js';
 
 const SOURCE = 'message-view/commands';
-const COMMANDS_HELP = 'Available: `!open`, `!stop`, `!status`, `!crispy`';
+const COMMANDS_HELP = 'Available: `!sessions`, `!open`, `!stop`, `!status`';
+
+// Numbered emoji for session list reactions (1️⃣ through 🔟)
+const NUMBER_EMOJI = [
+  '\u{31}\u{FE0F}\u{20E3}', '\u{32}\u{FE0F}\u{20E3}', '\u{33}\u{FE0F}\u{20E3}',
+  '\u{34}\u{FE0F}\u{20E3}', '\u{35}\u{FE0F}\u{20E3}', '\u{36}\u{FE0F}\u{20E3}',
+  '\u{37}\u{FE0F}\u{20E3}', '\u{38}\u{FE0F}\u{20E3}', '\u{39}\u{FE0F}\u{20E3}',
+  '\u{1F51F}', // 🔟
+];
+const NEXT_PAGE_EMOJI = '\u{27A1}\u{FE0F}'; // ➡️
+
+// Active session list state — maps messageId → { sessions, page, channelId }
+const activeSessionLists = new Map<string, {
+  sessions: Array<{ sessionId: string; title: string }>;
+  page: number;
+  channelId: string;
+}>();
 
 // ---------------------------------------------------------------------------
 // Context interface — injected by discord-provider.ts
@@ -65,7 +82,7 @@ export async function handleCommand(channelId: string, text: string, ctx: Comman
     return;
   }
 
-  const needsForum = parsed.cmd === 'open';
+  const needsForum = ['open', 'sessions'].includes(parsed.cmd);
   if (needsForum && !ctx.forumReady) {
     await sendMessage(channelId, '\u{274C} Forum channel not ready yet.').catch(() => {});
     return;
@@ -73,10 +90,11 @@ export async function handleCommand(channelId: string, text: string, ctx: Comman
 
   try {
     switch (parsed.cmd) {
-      case 'open':   return await handleOpen(channelId, parsed.args, ctx);
-      case 'stop':   return await handleStop(channelId, parsed.args);
-      case 'status': return await handleStatus(channelId, ctx);
-      case 'crispy':  return await handleCrispy(channelId, ctx);
+      case 'sessions': return await handleSessions(channelId, parsed.args, ctx);
+      case 'open':     return await handleOpen(channelId, parsed.args, ctx);
+      case 'stop':     return await handleStop(channelId, parsed.args);
+      case 'status':   return await handleStatus(channelId, ctx);
+      case 'crispy':   return await handleCrispy(channelId, ctx);
       default:
         await sendMessage(channelId, `Unknown command: \`!${parsed.cmd}\`\n${COMMANDS_HELP}`).catch(() => {});
     }
@@ -89,6 +107,123 @@ export async function handleCommand(channelId: string, text: string, ctx: Comman
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
+
+async function handleSessions(channelId: string, args: string, ctx: CommandContext): Promise<void> {
+  const page = args ? Math.max(0, parseInt(args, 10) - 1) : 0;
+  if (!Number.isFinite(page)) {
+    await sendMessage(channelId, 'Usage: `!sessions` or `!sessions <page>`').catch(() => {});
+    return;
+  }
+
+  const allSessions = listAllSessions();
+  if (allSessions.length === 0) {
+    await sendMessage(channelId, 'No sessions found.').catch(() => {});
+    return;
+  }
+
+  const PAGE_SIZE = 10;
+  const start = page * PAGE_SIZE;
+  const pageSessions = allSessions.slice(start, start + PAGE_SIZE);
+
+  if (pageSessions.length === 0) {
+    await sendMessage(channelId, 'No more sessions.').catch(() => {});
+    return;
+  }
+
+  const totalPages = Math.ceil(allSessions.length / PAGE_SIZE);
+  const now = Date.now();
+
+  const lines = pageSessions.map((s, i) => {
+    const title = (s.title ?? s.label ?? '(untitled)').slice(0, 55);
+    const ago = formatTimeAgo(now - s.modifiedAt.getTime());
+    const vendor = s.vendor !== 'claude' ? ` \u{2022} ${s.vendor}` : '';
+    return `${NUMBER_EMOJI[i]} **${title}**  \u{2014}  ${ago}${vendor}`;
+  });
+
+  const header = totalPages > 1
+    ? `\u{1F4C2} **Sessions** (page ${page + 1}/${totalPages})`
+    : '\u{1F4C2} **Sessions**';
+
+  const msg = await sendMessage(channelId, `${header}\n\n${lines.join('\n')}`);
+
+  // Store session list state for reaction handler
+  activeSessionLists.set(msg.id, {
+    sessions: pageSessions.map(s => ({
+      sessionId: s.sessionId,
+      title: s.title ?? s.label ?? '(untitled)',
+    })),
+    page,
+    channelId,
+  });
+
+  // Add numbered reactions + pagination
+  for (let i = 0; i < pageSessions.length; i++) {
+    await addReaction(channelId, msg.id, NUMBER_EMOJI[i]).catch(() => {});
+  }
+  if (start + PAGE_SIZE < allSessions.length) {
+    await addReaction(channelId, msg.id, NEXT_PAGE_EMOJI).catch(() => {});
+  }
+}
+
+function formatTimeAgo(ms: number): string {
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+/**
+ * Handle a reaction on a session list message.
+ * Returns true if the reaction was consumed (recognized as a session pick).
+ */
+export async function handleSessionListReaction(
+  messageId: string,
+  emoji: string,
+  ctx: CommandContext,
+): Promise<boolean> {
+  const state = activeSessionLists.get(messageId);
+  if (!state) return false;
+
+  // Pagination
+  if (emoji === NEXT_PAGE_EMOJI || emoji === '\u{27A1}') {
+    activeSessionLists.delete(messageId);
+    await handleSessions(state.channelId, String(state.page + 2), ctx);
+    return true;
+  }
+
+  // Number pick
+  const index = NUMBER_EMOJI.indexOf(emoji);
+  if (index < 0 || index >= state.sessions.length) return false;
+
+  const picked = state.sessions[index];
+  activeSessionLists.delete(messageId);
+
+  if (ctx.isWatching(picked.sessionId)) {
+    const discordChannelId = ctx.getWatchDiscordChannelId(picked.sessionId);
+    const link = `https://discord.com/channels/${ctx.guildId}/${discordChannelId}`;
+    await sendMessage(state.channelId, `Already open: ${link}`).catch(() => {});
+    return true;
+  }
+
+  await sendMessage(state.channelId, `\u{23F3} Opening **${picked.title.slice(0, 50)}**\u{2026}`).catch(() => {});
+
+  try {
+    await ctx.openSession(picked.sessionId);
+    const discordChannelId = ctx.getWatchDiscordChannelId(picked.sessionId);
+    if (discordChannelId) {
+      const link = `https://discord.com/channels/${ctx.guildId}/${discordChannelId}`;
+      await sendMessage(state.channelId, `\u{2705} Opened: ${link}`).catch(() => {});
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await sendMessage(state.channelId, `\u{274C} Failed to open: ${msg}`).catch(() => {});
+  }
+
+  return true;
+}
 
 async function handleOpen(channelId: string, args: string, ctx: CommandContext): Promise<void> {
   if (!ctx.dispatch) {
