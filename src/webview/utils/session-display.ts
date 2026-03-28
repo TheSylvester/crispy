@@ -5,8 +5,9 @@
  * > truncated session ID. Matches Claude Code's behavior where lastPrompt ranks
  * above firstPrompt.
  *
- * Subtitle: always shows the *other* useful text that the title isn't already
- * displaying, so the two lines never show redundant content.
+ * Subtitle: shows the *other* useful text that the title isn't already
+ * displaying, falling back to lastMessage when no distinct prompt is available.
+ * The two lines never show redundant content.
  *
  * @module session-display
  */
@@ -23,21 +24,28 @@ export function getSessionDisplayName(
 }
 
 export function getSessionSubtitle(
-  session: Pick<WireSessionInfo, 'title' | 'label' | 'lastUserPrompt'>,
+  session: Pick<WireSessionInfo, 'title' | 'label' | 'lastUserPrompt' | 'lastMessage'>,
 ): string | null {
   const title = session.title?.trim();
   const label = session.label?.trim();
   const lastUser = session.lastUserPrompt?.trim();
+  const lastMsg = session.lastMessage?.trim();
 
   // Line 2 shows whichever prompt Line 1 isn't showing
   if (title) {
     // Rosie title on line 1 — show first prompt as context
-    return label && label !== title ? label : null;
+    if (label && label !== title) return label;
+    if (lastMsg && lastMsg !== title) return lastMsg;
+    return null;
   }
   if (lastUser) {
     // Last prompt on line 1 — show first prompt if different
-    return label && label !== lastUser ? label : null;
+    if (label && label !== lastUser) return label;
+    // Fall back to lastMessage (may be assistant text) for context
+    if (lastMsg && lastMsg !== lastUser) return lastMsg;
+    return null;
   }
-  // First prompt (label) is on line 1 — nothing else to show
+  // First prompt (label) is on line 1 — fall back to lastMessage
+  if (lastMsg && lastMsg !== label) return lastMsg;
   return null;
 }
