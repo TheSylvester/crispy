@@ -14,21 +14,13 @@ import {
   resolveSessionPrefix,
 } from '../session-manager.js';
 import { getActiveChannels } from '../session-channel.js';
-import { sendMessage, addReaction } from './discord-transport.js';
+import { sendMessage, sendMessageWithComponents } from './discord-transport.js';
+import type { MessageComponent } from './discord-transport.js';
 import type { AgentDispatch } from '../agent-dispatch-types.js';
 import { listAllSessions } from '../session-manager.js';
 
 const SOURCE = 'message-view/commands';
 const COMMANDS_HELP = 'Available: `!sessions`, `!open`, `!stop`, `!status`';
-
-// Numbered emoji for session list reactions (1️⃣ through 🔟)
-const NUMBER_EMOJI = [
-  '\u{31}\u{FE0F}\u{20E3}', '\u{32}\u{FE0F}\u{20E3}', '\u{33}\u{FE0F}\u{20E3}',
-  '\u{34}\u{FE0F}\u{20E3}', '\u{35}\u{FE0F}\u{20E3}', '\u{36}\u{FE0F}\u{20E3}',
-  '\u{37}\u{FE0F}\u{20E3}', '\u{38}\u{FE0F}\u{20E3}', '\u{39}\u{FE0F}\u{20E3}',
-  '\u{1F51F}', // 🔟
-];
-const NEXT_PAGE_EMOJI = '\u{27A1}\u{FE0F}'; // ➡️
 
 // Active session list state — maps messageId → { sessions, page, channelId }
 const activeSessionLists = new Map<string, {
@@ -131,36 +123,54 @@ async function handleSessions(channelId: string, args: string, ctx: CommandConte
   const totalPages = Math.ceil(allSessions.length / PAGE_SIZE);
   const now = Date.now();
 
+  // Pre-compute titles once — used in message text, button labels, and state storage
+  const titles = pageSessions.map(s => s.title ?? s.label ?? '(untitled)');
+
   const lines = pageSessions.map((s, i) => {
-    const title = (s.title ?? s.label ?? '(untitled)').slice(0, 55);
     const ago = formatTimeAgo(now - s.modifiedAt.getTime());
     const vendor = s.vendor !== 'claude' ? ` \u{2022} ${s.vendor}` : '';
-    return `${NUMBER_EMOJI[i]} **${title}**  \u{2014}  ${ago}${vendor}`;
+    return `**${i + 1}.** **${titles[i].slice(0, 55)}**  \u{2014}  ${ago}${vendor}`;
   });
 
   const header = totalPages > 1
     ? `\u{1F4C2} **Sessions** (page ${page + 1}/${totalPages})`
     : '\u{1F4C2} **Sessions**';
 
-  const msg = await sendMessage(channelId, `${header}\n\n${lines.join('\n')}`);
+  // Build button rows (max 5 per action row)
+  const buttons: MessageComponent[] = pageSessions.map((_s, i) => ({
+    type: 2,
+    style: 2,
+    label: `${i + 1}. ${titles[i].slice(0, 70)}`,
+    custom_id: `session:${i}`,
+  }));
 
-  // Store session list state for reaction handler
+  const actionRows: MessageComponent[] = [];
+  for (let i = 0; i < buttons.length; i += 5) {
+    actionRows.push({ type: 1, components: buttons.slice(i, i + 5) });
+  }
+
+  if (start + PAGE_SIZE < allSessions.length) {
+    actionRows.push({
+      type: 1,
+      components: [{
+        type: 2,
+        style: 1,
+        label: 'Next Page \u{25B6}',
+        custom_id: `session_next:${page + 1}`,
+      }],
+    });
+  }
+
+  const msg = await sendMessageWithComponents(channelId, `${header}\n\n${lines.join('\n')}`, actionRows);
+
   activeSessionLists.set(msg.id, {
-    sessions: pageSessions.map(s => ({
+    sessions: pageSessions.map((s, i) => ({
       sessionId: s.sessionId,
-      title: s.title ?? s.label ?? '(untitled)',
+      title: titles[i],
     })),
     page,
     channelId,
   });
-
-  // Add numbered reactions + pagination
-  for (let i = 0; i < pageSessions.length; i++) {
-    await addReaction(channelId, msg.id, NUMBER_EMOJI[i]).catch(() => {});
-  }
-  if (start + PAGE_SIZE < allSessions.length) {
-    await addReaction(channelId, msg.id, NEXT_PAGE_EMOJI).catch(() => {});
-  }
 }
 
 function formatTimeAgo(ms: number): string {
@@ -174,53 +184,36 @@ function formatTimeAgo(ms: number): string {
 }
 
 /**
- * Handle a reaction on a session list message.
- * Returns true if the reaction was consumed (recognized as a session pick).
+ * Handle a session pick button interaction.
+ * Returns the picked session info, or null if the interaction is stale.
  */
-export async function handleSessionListReaction(
+export function handleSessionButtonPick(
+  customId: string,
   messageId: string,
-  emoji: string,
-  ctx: CommandContext,
-): Promise<boolean> {
+): { sessionId: string; title: string } | null {
   const state = activeSessionLists.get(messageId);
-  if (!state) return false;
-
-  // Pagination
-  if (emoji === NEXT_PAGE_EMOJI || emoji === '\u{27A1}') {
-    activeSessionLists.delete(messageId);
-    await handleSessions(state.channelId, String(state.page + 2), ctx);
-    return true;
-  }
-
-  // Number pick
-  const index = NUMBER_EMOJI.indexOf(emoji);
-  if (index < 0 || index >= state.sessions.length) return false;
-
-  const picked = state.sessions[index];
+  if (!state) return null;
+  const index = parseInt(customId.split(':')[1], 10);
+  if (isNaN(index) || index >= state.sessions.length) return null;
   activeSessionLists.delete(messageId);
+  return state.sessions[index];
+}
 
-  if (ctx.isWatching(picked.sessionId)) {
-    const discordChannelId = ctx.getWatchDiscordChannelId(picked.sessionId);
-    const link = `https://discord.com/channels/${ctx.guildId}/${discordChannelId}`;
-    await sendMessage(state.channelId, `Already open: ${link}`).catch(() => {});
-    return true;
-  }
-
-  await sendMessage(state.channelId, `\u{23F3} Opening **${picked.title.slice(0, 50)}**\u{2026}`).catch(() => {});
-
-  try {
-    await ctx.openSession(picked.sessionId);
-    const discordChannelId = ctx.getWatchDiscordChannelId(picked.sessionId);
-    if (discordChannelId) {
-      const link = `https://discord.com/channels/${ctx.guildId}/${discordChannelId}`;
-      await sendMessage(state.channelId, `\u{2705} Opened: ${link}`).catch(() => {});
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    await sendMessage(state.channelId, `\u{274C} Failed to open: ${msg}`).catch(() => {});
-  }
-
-  return true;
+/**
+ * Handle a session list "Next Page" button interaction.
+ * Posts the next page of sessions.
+ */
+export async function handleSessionNextButton(
+  customId: string,
+  messageId: string,
+  ctx: CommandContext,
+): Promise<void> {
+  const state = activeSessionLists.get(messageId);
+  if (!state) return;
+  activeSessionLists.delete(messageId);
+  const nextPage = parseInt(customId.split(':')[1], 10);
+  if (isNaN(nextPage)) return;
+  await handleSessions(state.channelId, String(nextPage + 1), ctx);
 }
 
 async function handleOpen(channelId: string, args: string, ctx: CommandContext): Promise<void> {

@@ -29,14 +29,15 @@ import {
 import {
   sendMessage,
   editMessage,
-  addReaction,
   createForumPost,
   archiveThread,
   discordFetch,
   triggerTyping,
   getMessages,
   getBotUserId,
+  sendMessageWithComponents,
 } from './discord-transport.js';
+import type { MessageComponent } from './discord-transport.js';
 import { DiscordApiError } from './discord-transport.js';
 import {
   renderSessionWithAnchors,
@@ -66,7 +67,6 @@ interface PendingInteraction {
   toolUseId: string;
   toolName: string;
   options: ApprovalOption[];
-  emojiToOptionId: Map<string, string>;
 }
 
 export interface ThreadSlot {
@@ -444,42 +444,42 @@ function handleWatchEvent(state: WatchState, event: SubscriberMessage): void {
 // Approval Interactions
 // ---------------------------------------------------------------------------
 
-const NUMBERED_EMOJI = ['1\u{FE0F}\u{20E3}', '2\u{FE0F}\u{20E3}', '3\u{FE0F}\u{20E3}', '4\u{FE0F}\u{20E3}', '5\u{FE0F}\u{20E3}'];
+function buildApprovalButtons(approval: PendingApprovalInfo): MessageComponent[] {
+  const buttons: MessageComponent[] = [];
+  for (const opt of approval.options) {
+    const customId = `approve:${approval.toolUseId}:${opt.id}`;
+    // Discord custom_id limit is 100 chars — skip options that would exceed it
+    if (customId.length > 100) continue;
 
-function buildEmojiMap(options: ApprovalOption[]): Map<string, string> {
-  const map = new Map<string, string>();
-  let numberedIdx = 0;
-
-  for (const opt of options) {
     const id = opt.id.toLowerCase();
-    if (id.includes('deny')) map.set('\u{274C}', opt.id);
-    else if (id.includes('allow') && id.includes('session')) map.set('\u{1F501}', opt.id);
-    else if (id.includes('allow')) map.set('\u{2705}', opt.id);
-    else {
-      map.set(NUMBERED_EMOJI[numberedIdx] ?? `${numberedIdx + 1}\u{FE0F}\u{20E3}`, opt.id);
-      numberedIdx++;
-    }
+    let style = 2; // Secondary
+    if (id.includes('deny')) style = 4;                          // Danger (red)
+    else if (id === 'allow' || id === 'always_allow') style = 3; // Success (green)
+    // allow_session and other allow variants stay Secondary (gray)
+
+    buttons.push({
+      type: 2, // Button
+      style,
+      label: opt.label,
+      custom_id: customId,
+    });
   }
-  return map;
+
+  // Discord limits ActionRows to 5 buttons each
+  const rows: MessageComponent[] = [];
+  for (let i = 0; i < buttons.length; i += 5) {
+    rows.push({ type: 1, components: buttons.slice(i, i + 5) });
+  }
+  return rows;
 }
 
-function buildApprovalMessage(
-  approval: PendingApprovalInfo,
-  emojiToOptionId: Map<string, string>,
-): string {
+function buildApprovalMessage(approval: PendingApprovalInfo): string {
   const inputStr = typeof approval.input === 'string'
     ? approval.input.slice(0, 300)
     : JSON.stringify(approval.input).slice(0, 300);
   const reason = approval.reason ? `> ${approval.reason}\n\n` : '';
-
-  const optionLabels: string[] = [];
-  for (const [emoji, optionId] of emojiToOptionId) {
-    const opt = approval.options.find(o => o.id === optionId);
-    optionLabels.push(`${emoji} ${opt?.label ?? optionId}`);
-  }
-
   return truncate(
-    `\u{26A0}\u{FE0F} **Approval Required: ${approval.toolName}**\n\`${inputStr}\`\n${reason}${optionLabels.join('  |  ')}`,
+    `\u{26A0}\u{FE0F} **Approval Required: ${approval.toolName}**\n\`${inputStr}\`\n${reason}`,
     DISCORD_MAX_LENGTH,
   );
 }
@@ -519,57 +519,43 @@ function reconcileApprovals(
 async function postApprovalInteraction(state: WatchState, approval: PendingApprovalInfo): Promise<void> {
   if (state.pendingInteractions.has(approval.toolUseId)) return;
 
-  const emojiToOptionId = buildEmojiMap(approval.options);
-  const text = buildApprovalMessage(approval, emojiToOptionId);
-  const msg = await sendMessage(state.discordChannelId, text);
-
-  for (const emoji of emojiToOptionId.keys()) {
-    await addReaction(state.discordChannelId, msg.id, emoji).catch((err) => {
-      log({ source: SOURCE, level: 'warn', summary: `failed to add reaction ${emoji}`, data: err });
-    });
-  }
+  const buttons = buildApprovalButtons(approval);
+  const text = buildApprovalMessage(approval);
+  const msg = await sendMessageWithComponents(state.discordChannelId, text, buttons);
 
   state.pendingInteractions.set(approval.toolUseId, {
     discordMessageId: msg.id,
     toolUseId: approval.toolUseId,
     toolName: approval.toolName,
     options: approval.options,
-    emojiToOptionId,
   });
 
   log({ source: SOURCE, level: 'info', summary: `posted approval for ${approval.toolName} (${approval.toolUseId.slice(0, 8)})` });
 }
 
-export function resolveReactionApproval(
+export function resolveButtonApproval(
   channelId: string,
-  messageId: string,
-  userId: string,
-  emoji: string,
-): void {
+  toolUseId: string,
+  optionId: string,
+): { emoji: string; toolName: string; label: string } | null {
   const sessionId = channelToSession.get(channelId);
-  if (!sessionId) return;
+  if (!sessionId) return null;
   const state = watchedSessions.get(sessionId);
-  if (!state) return;
+  if (!state) return null;
 
-  for (const [toolUseId, interaction] of state.pendingInteractions) {
-    if (interaction.discordMessageId !== messageId) continue;
-    const optionId = interaction.emojiToOptionId.get(emoji);
-    if (!optionId) continue;
+  const interaction = state.pendingInteractions.get(toolUseId);
+  if (!interaction) return null;
+  if (!state.channel) return null;
 
-    if (!state.channel) return;
-    resolveApproval(state.channel, toolUseId, optionId);
-    state.pendingInteractions.delete(toolUseId);
+  resolveApproval(state.channel, toolUseId, optionId);
+  state.pendingInteractions.delete(toolUseId);
 
-    const opt = interaction.options.find(o => o.id === optionId);
-    editMessage(
-      state.discordChannelId,
-      interaction.discordMessageId,
-      `${emoji} **${interaction.toolName}** \u{2014} ${opt?.label ?? optionId}`,
-    ).catch(() => {});
+  const opt = interaction.options.find(o => o.id === optionId);
+  const id = optionId.toLowerCase();
+  const emoji = id.includes('deny') ? '\u{274C}' : id.includes('allow') ? '\u{2705}' : '\u{1F518}';
 
-    log({ source: SOURCE, level: 'info', summary: `approval resolved: ${interaction.toolName} \u{2192} ${optionId}` });
-    return;
-  }
+  log({ source: SOURCE, level: 'info', summary: `approval resolved: ${interaction.toolName} \u{2192} ${optionId}` });
+  return { emoji, toolName: interaction.toolName, label: opt?.label ?? optionId };
 }
 
 // ---------------------------------------------------------------------------

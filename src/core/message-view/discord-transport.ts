@@ -52,9 +52,7 @@ const GatewayOpcode = {
 const GatewayIntents =
   (1 << 0)  | // GUILDS
   (1 << 9)  | // GUILD_MESSAGES
-  (1 << 10) | // GUILD_MESSAGE_REACTIONS
   (1 << 12) | // DIRECT_MESSAGES
-  (1 << 13) | // DIRECT_MESSAGE_REACTIONS
   (1 << 15);  // MESSAGE_CONTENT (privileged)
 
 const GATEWAY_RECONNECT_BASE_MS = 1000;
@@ -64,6 +62,28 @@ const GATEWAY_RECONNECT_MAX_MS = 30000;
 // Gateway types
 // ---------------------------------------------------------------------------
 
+export interface DiscordInteraction {
+  id: string;
+  token: string;
+  type: number;
+  data?: { custom_id: string; component_type: number };
+  channel_id: string;
+  message?: { id: string };
+  member?: { user: { id: string } };
+  user?: { id: string };
+  guild_id?: string;
+}
+
+export interface MessageComponent {
+  type: number;           // 1 = ActionRow, 2 = Button
+  components?: MessageComponent[];  // ActionRow children
+  style?: number;         // Button: 1=Primary, 2=Secondary, 3=Success, 4=Danger
+  label?: string;
+  custom_id?: string;
+  disabled?: boolean;
+  emoji?: { name: string };
+}
+
 export interface GatewayEventHandler {
   onMessage(channelId: string, message: {
     id: string;
@@ -72,7 +92,8 @@ export interface GatewayEventHandler {
     guild_id?: string;
     mentions?: Array<{ id: string }>;
   }): void;
-  onReactionAdd(channelId: string, messageId: string, userId: string, emoji: string): void;
+  onReactionAdd?(channelId: string, messageId: string, userId: string, emoji: string): void;
+  onInteraction?(interaction: DiscordInteraction): void;
   onThreadCreate?(event: { id: string; parent_id: string; name: string; guild_id: string; owner_id?: string }): void;
   onReady(): void;
   onDisconnect?(): void;
@@ -459,7 +480,15 @@ function handleGatewayDispatch(eventName: string, data: unknown): void {
       const emoji = reaction.emoji.id
         ? `${reaction.emoji.name}:${reaction.emoji.id}`
         : (reaction.emoji.name ?? '');
-      gatewayHandler.onReactionAdd(reaction.channel_id, reaction.message_id, reaction.user_id, emoji);
+      gatewayHandler.onReactionAdd?.(reaction.channel_id, reaction.message_id, reaction.user_id, emoji);
+      break;
+    }
+
+    case 'INTERACTION_CREATE': {
+      const interaction = data as DiscordInteraction;
+      if (interaction.type === 3 && interaction.data) {
+        gatewayHandler.onInteraction?.(interaction);
+      }
       break;
     }
 
@@ -720,4 +749,44 @@ export async function deleteChannel(channelId: string): Promise<void> {
 
 export async function getGuildChannels(guildId: string): Promise<Array<{ id: string; name: string; type: number }>> {
   return discordFetch('GET', `/guilds/${guildId}/channels`) as Promise<Array<{ id: string; name: string; type: number }>>;
+}
+
+// ---------------------------------------------------------------------------
+// Message Components (buttons) + Interaction responses
+// ---------------------------------------------------------------------------
+
+export async function sendMessageWithComponents(
+  channelId: string,
+  content: string,
+  components: MessageComponent[],
+): Promise<{ id: string }> {
+  return discordFetch('POST', `/channels/${channelId}/messages`, {
+    content,
+    components,
+  }) as Promise<{ id: string }>;
+}
+
+/**
+ * Respond to a Discord interaction (button click).
+ * Type 4 = CHANNEL_MESSAGE_WITH_SOURCE (reply with message)
+ * Type 6 = DEFERRED_UPDATE_MESSAGE (ack, no visible change)
+ * Type 7 = UPDATE_MESSAGE (edit the original message)
+ *
+ * Interaction responses use a DIFFERENT endpoint from normal REST calls.
+ * No Bot auth header — the interaction token IS the auth.
+ */
+export async function respondToInteraction(
+  interactionId: string,
+  interactionToken: string,
+  response: { type: number; data?: { content?: string; components?: MessageComponent[]; flags?: number } },
+): Promise<void> {
+  const res = await fetch(`https://discord.com/api/v10/interactions/${interactionId}/${interactionToken}/callback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(response),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    log({ source: SOURCE, level: 'error', summary: `interaction response failed: ${res.status} ${text}` });
+  }
 }

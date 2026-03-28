@@ -38,11 +38,12 @@ import {
   discordFetch,
   triggerTyping,
   sendMessage,
-  addReaction,
+  sendMessageWithComponents,
+  respondToInteraction,
   archiveThread,
 } from './discord-transport.js';
-import type { GatewayEventHandler } from './discord-transport.js';
-import { handleCommand, handleSessionListReaction } from './commands.js';
+import type { GatewayEventHandler, DiscordInteraction } from './discord-transport.js';
+import { handleCommand, handleSessionButtonPick, handleSessionNextButton } from './commands.js';
 import type { CommandContext } from './commands.js';
 import {
   cleanupAndDiscoverBots,
@@ -63,7 +64,7 @@ import {
   allWatches,
   disposeWatch,
   disposeAllWatches,
-  resolveReactionApproval,
+  resolveButtonApproval,
   syncSession,
   watchSession,
   watchSessionInThread,
@@ -115,7 +116,6 @@ let currentConfig: DiscordProviderConfig | null = null;
 let currentDispatch: AgentDispatch | null = null;
 let workspaceCwd: string | null = null;
 let botControlChannelId: string | null = null;
-let welcomeMessageId: string | null = null;
 const lastTypingFired = new Map<string, number>();
 const TYPING_COOLDOWN_MS = 8000;
 const HEALTH_CHECK_TIMEOUT_MS = 3000;
@@ -224,8 +224,10 @@ export function createDiscordProvider(
         log({ source: SOURCE, level: 'error', summary: 'gateway message handler error', data: err });
       });
     },
-    onReactionAdd(channelId, messageId, userId, emoji) {
-      handleGatewayReaction(channelId, messageId, userId, emoji);
+    onInteraction(interaction) {
+      handleGatewayInteraction(interaction).catch((err) => {
+        log({ source: SOURCE, level: 'error', summary: 'interaction handler error', data: err });
+      });
     },
     onThreadCreate(event) {
       handleThreadCreate(event);
@@ -294,7 +296,7 @@ function disposeDiscordProvider(): void {
   currentDispatch = null;
   workspaceCwd = null;
   botControlChannelId = null;
-  welcomeMessageId = null;
+
   clearWorkspaceChannels();
   ownerUserId = null;
   promptsInFlight = 0;
@@ -360,14 +362,21 @@ async function initWorkspaceChannels(): Promise<void> {
 
   botControlChannelId = await createBotChannel(guildId, botId, ownerUserId, myPid);
 
-  // Post welcome message with 📂 reaction for quick session browsing
-  const welcomeMsg = await sendMessage(botControlChannelId, [
-    '\u{1F7E2} **Crispy online.**',
-    '',
-    'React \u{1F4C2} to browse sessions, or create a **New Post** in the forum channel.',
-  ].join('\n'));
-  welcomeMessageId = welcomeMsg.id;
-  await addReaction(botControlChannelId, welcomeMsg.id, '\u{1F4C2}').catch(() => {});
+  // Post welcome message with Browse Sessions button
+  const welcomeMsg = await sendMessageWithComponents(botControlChannelId,
+    '\u{1F7E2} **Crispy online.**\n\nClick below to browse sessions, or create a **New Post** in the forum channel.',
+    [{
+      type: 1, // ActionRow
+      components: [{
+        type: 2, // Button
+        style: 1, // Primary
+        label: 'Browse Sessions',
+        custom_id: 'browse_sessions',
+        emoji: { name: '\u{1F4C2}' },
+      }],
+    }],
+  );
+
 
   commandsEnabled = true;
   enableAutoWatchAndHeartbeat();
@@ -708,45 +717,99 @@ async function handleGatewayMessage(
   }
 }
 
-function handleGatewayReaction(
-  channelId: string,
-  messageId: string,
-  userId: string,
-  emoji: string,
-): void {
-  const botId = getBotUserId();
-  if (!botId || userId === botId) return;
-
-  // Auth gate: only allowed users can react
-  if (!isAuthorized(userId)) return;
-
-  // 📂 on welcome message → show session list, then remove user's reaction so they can tap again
-  if (emoji === '\u{1F4C2}' && welcomeMessageId && messageId === welcomeMessageId) {
-    const encoded = encodeURIComponent('\u{1F4C2}');
-    void discordFetch('DELETE', `/channels/${channelId}/messages/${messageId}/reactions/${encoded}/${userId}`).catch(() => {});
-    void handleCommand(channelId, '!sessions', buildCommandContext()).catch((err) => {
-      log({ source: SOURCE, level: 'error', summary: 'welcome reaction sessions error', data: err });
+async function handleGatewayInteraction(interaction: DiscordInteraction): Promise<void> {
+  // Extract user ID (guild = member.user.id, DM = user.id)
+  const userId = interaction.member?.user?.id ?? interaction.user?.id;
+  if (!userId || !isAuthorized(userId)) {
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 4,
+      data: { content: '\u{274C} Not authorized.', flags: 64 },
     });
     return;
   }
 
-  // Session list reaction (numbered emoji pick or pagination)
-  void handleSessionListReaction(messageId, emoji, buildCommandContext()).catch((err) => {
-    log({ source: SOURCE, level: 'error', summary: 'session list reaction error', data: err });
-  });
-
-  // ❌ on any message in the forum → archive the thread (authorized users — redundant with gate above, defense-in-depth)
-  if (emoji === '\u{274C}') {
-    const sessionId = getSessionForChannel(channelId);
-    if (sessionId) disposeWatch(sessionId);
-    archiveThread(channelId).catch((err) => {
-      log({ source: SOURCE, level: 'debug', summary: `archive on \u{274C} failed for ${channelId}`, data: err });
-    });
-    log({ source: SOURCE, level: 'info', summary: `\u{274C} reaction — archived thread ${channelId}` });
+  const customId = interaction.data?.custom_id;
+  if (!customId) {
+    await respondToInteraction(interaction.id, interaction.token, { type: 6 });
     return;
   }
 
-  resolveReactionApproval(channelId, messageId, userId, emoji);
+  // Route by prefix
+  if (customId.startsWith('approve:')) {
+    await handleApprovalInteraction(interaction, customId);
+  } else if (customId === 'browse_sessions') {
+    await respondToInteraction(interaction.id, interaction.token, { type: 6 });
+    await handleCommand(interaction.channel_id, '!sessions', buildCommandContext());
+  } else if (customId.startsWith('session:') || customId.startsWith('session_next:')) {
+    // Ack immediately — opening a session can exceed the 3-second deadline
+    await respondToInteraction(interaction.id, interaction.token, { type: 6 });
+    if (customId.startsWith('session_next:')) {
+      await handleSessionNextButton(customId, interaction.message?.id ?? '', buildCommandContext());
+    } else {
+      await handleSessionPickInteraction(interaction, customId);
+    }
+  } else {
+    // Unknown custom_id — ack to prevent Discord "interaction failed" error
+    await respondToInteraction(interaction.id, interaction.token, { type: 6 });
+  }
+}
+
+async function handleApprovalInteraction(interaction: DiscordInteraction, customId: string): Promise<void> {
+  const parts = customId.split(':');
+  const toolUseId = parts[1];
+  const optionId = parts.slice(2).join(':'); // Rejoin in case optionId contains colons
+  if (!toolUseId || !optionId) {
+    await respondToInteraction(interaction.id, interaction.token, { type: 6 });
+    return;
+  }
+
+  const resolved = resolveButtonApproval(interaction.channel_id, toolUseId, optionId);
+  if (resolved) {
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 7, // UPDATE_MESSAGE
+      data: {
+        content: `${resolved.emoji} **${resolved.toolName}** \u{2014} ${resolved.label}`,
+        components: [], // Remove buttons
+      },
+    });
+  } else {
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 4,
+      data: { content: '\u{26A0}\u{FE0F} This approval has expired.', flags: 64 },
+    });
+  }
+}
+
+async function handleSessionPickInteraction(interaction: DiscordInteraction, customId: string): Promise<void> {
+  const messageId = interaction.message?.id ?? '';
+  const picked = handleSessionButtonPick(customId, messageId);
+  if (!picked) {
+    await sendMessage(interaction.channel_id, '\u{26A0}\u{FE0F} This session list has expired. Use `!sessions` to refresh.').catch(() => {});
+    return;
+  }
+
+  const ctx = buildCommandContext();
+
+  if (ctx.isWatching(picked.sessionId)) {
+    const discordChannelId = ctx.getWatchDiscordChannelId(picked.sessionId);
+    const link = `https://discord.com/channels/${ctx.guildId}/${discordChannelId}`;
+    await sendMessage(interaction.channel_id, `Already open: ${link}`).catch(() => {});
+    return;
+  }
+
+  await sendMessage(interaction.channel_id, `\u{23F3} Opening **${picked.title.slice(0, 50)}**\u{2026}`).catch(() => {});
+
+  try {
+    await ctx.openSession(picked.sessionId);
+    const discordChannelId = ctx.getWatchDiscordChannelId(picked.sessionId);
+    if (discordChannelId) {
+      const link = `https://discord.com/channels/${ctx.guildId}/${discordChannelId}`;
+      await sendMessage(interaction.channel_id, `\u{2705} Opened: ${link}`).catch(() => {});
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await sendMessage(interaction.channel_id, `\u{274C} Failed to open: ${msg}`).catch(() => {});
+  }
 }
 
 // ---------------------------------------------------------------------------
