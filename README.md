@@ -18,6 +18,17 @@ Works with Claude Code and Codex. Runs standalone in your browser or as a VS Cod
 
 ---
 
+## What's New in v0.2.5
+
+### v0.2.5 — Feature Requests + Codex Stability
+
+- **LaTeX math rendering** — inline and display math via `$...$` and `$$...$$`
+- **Skill autocomplete** — type `/` in the chat input for a searchable skill picker
+- **Codex stability** — three fixes for turn-completion hangs and skill discovery
+- **Scroll fix** — long conversations no longer truncate at viewport height
+
+---
+
 ## What's New in v0.2.4
 
 ### Git diff panel

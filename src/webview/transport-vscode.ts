@@ -16,6 +16,7 @@ import type { WireProviderConfig, WireSettingsSnapshot, SettingsPatch } from '..
 import type { VendorModelGroup } from './components/control-panel/types.js';
 import type { CatchupStatus } from '../core/recall/catchup-types.js';
 import type { GitDiffResult } from '../core/git-diff-service.js';
+import type { InputCommand } from '../core/input-command-service.js';
 import { float32ToBase64 } from './utils/encoding.js';
 
 interface VSCodeAPI {
@@ -182,6 +183,9 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     listWorkspaces: () => request<WorkspaceListResponse>('listWorkspaces'),
     addWorkspaceRoot: (path) => request<{ ok: boolean }>('addWorkspaceRoot', { path }),
     removeWorkspaceRoot: (path) => request<{ ok: boolean }>('removeWorkspaceRoot', { path }),
+
+    listAvailableCommands: (params) =>
+      request<InputCommand[]>('listAvailableCommands', params),
 
     onEvent(handler) {
       eventHandlers.push(handler);

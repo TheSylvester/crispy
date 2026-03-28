@@ -17,6 +17,8 @@ import type { VendorModelGroup } from './components/control-panel/types.js';
 import type { CatchupStatus } from '../core/recall/catchup-types.js';
 import type { WorkspaceInfo, WorkspaceListResponse } from '../core/workspace-roots.js';
 import type { GitDiffResult } from '../core/git-diff-service.js';
+import type { InputCommand } from '../core/input-command-service.js';
+export type { InputCommand };
 
 /** Client-side session info — modifiedAt is a string after JSON serialization. */
 export interface WireSessionInfo extends Omit<SessionInfo, 'modifiedAt'> {
@@ -187,6 +189,9 @@ export interface SessionService {
   listWorkspaces(): Promise<WorkspaceListResponse>;
   addWorkspaceRoot(path: string): Promise<{ ok: boolean }>;
   removeWorkspaceRoot(path: string): Promise<{ ok: boolean }>;
+
+  /** Skill and slash command autocomplete */
+  listAvailableCommands(params: { vendor?: string }): Promise<InputCommand[]>;
 
   dispose(): void;
 

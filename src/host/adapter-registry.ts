@@ -12,10 +12,12 @@
  * @module host/adapter-registry
  */
 
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { AgentAdapter, VendorDiscovery, SessionOpenSpec, LocalPlugin } from '../core/agent-adapter.js';
 import type { Vendor } from '../core/transcript.js';
 import { registerAdapter, unregisterAdapter, setToolEnv } from '../core/session-manager.js';
+import { setSkillRoot } from '../core/input-command-service.js';
 import { setSessionDefaults } from '../core/settings/index.js';
 import type { AgentDispatch } from './agent-dispatch.js';
 
@@ -36,6 +38,66 @@ const CRISPY_SKILLS_PROMPT =
   '- Read: `$RECALL_CLI <session-id>` — reads full session content (paginated)\n' +
   'Always read into promising search results — snippets are just previews.\n\n' +
   'Your Crispy session ID is available in the $CRISPY_SESSION_ID environment variable.';
+
+/**
+ * Build a Codex-specific skill catalog from SKILL.md frontmatter.
+ *
+ * Progressive disclosure: the system prompt contains skill metadata (name,
+ * description, file path) so the model knows what's available. When invoked
+ * via `$skill-name`, the model reads the full SKILL.md via its tools.
+ *
+ * This avoids injecting multi-KB skill content into every user turn — the
+ * content only enters context when the model reads it on demand.
+ *
+ * Why not native Codex plugin registration: Codex's plugin/install RPC
+ * requires marketplace.json under `.agents/plugins/`, which is a directory
+ * Crispy doesn't own. Self-expansion (injecting as text) was the prior
+ * workaround but persists in conversation history across all subsequent turns.
+ */
+function buildCodexSkillCatalog(skillRoot: string): string {
+  const lines: string[] = [];
+  let dirs: string[];
+  try {
+    dirs = readdirSync(skillRoot, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+  } catch {
+    return '';
+  }
+
+  for (const dir of dirs) {
+    const skillPath = resolve(skillRoot, dir, 'SKILL.md');
+    let raw: string;
+    try {
+      raw = readFileSync(skillPath, 'utf-8');
+    } catch {
+      continue;
+    }
+
+    // Parse YAML frontmatter
+    if (!raw.startsWith('---')) continue;
+    const end = raw.indexOf('\n---', 3);
+    if (end === -1) continue;
+    const frontmatter = raw.slice(4, end);
+
+    let name = dir;
+    let description = '';
+    for (const line of frontmatter.split('\n')) {
+      const nameMatch = line.match(/^name:\s*(.+)/);
+      if (nameMatch) name = nameMatch[1].trim().replace(/^["']|["']$/g, '');
+      const descMatch = line.match(/^description:\s*(.+)/);
+      if (descMatch) description = descMatch[1].trim().replace(/^["'>]+\s*/g, '').replace(/["']$/g, '');
+    }
+
+    lines.push(`- **${name}** (\`$${dir}\`): ${description}`);
+    lines.push(`  Read full instructions: \`${skillPath}\``);
+  }
+
+  if (lines.length === 0) return '';
+  return '\n\n## Available Crispy Skills\n\n' +
+    'When a skill is invoked via `$skill-name`, read the full SKILL.md file to get detailed instructions.\n\n' +
+    lines.join('\n');
+}
 
 export interface BundledCrispyPaths {
   extensionBase: string;
@@ -96,6 +158,8 @@ export interface HostAdapterConfig {
   plugins?: LocalPlugin[];
   /** Bundled Crispy skill root for vendors that mount skills directly. */
   bundledSkillRoot?: string;
+  /** Codex-specific system prompt factory with progressive-disclosure skill catalog. */
+  codexSystemPromptFactory?: () => string | undefined;
 }
 
 /**
@@ -175,11 +239,21 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
     CRISPY_AGENT: resolve(bundledPaths.pluginRoot, 'scripts', 'crispy-agent'),
     CRISPY_SESSION: resolve(bundledPaths.pluginRoot, 'scripts', 'crispy-session'),
   });
+  setSkillRoot(bundledPaths.skillRoot);
   console.error(`[adapter-registry] Plugin path: ${bundledPaths.pluginRoot}`);
 
   // System prompt factory — skills hint (always active when dispatch is available).
   const systemPromptFactory = dispatch
     ? () => CRISPY_SKILLS_PROMPT
+    : undefined;
+
+  // Codex-specific prompt: base hint + progressive-disclosure skill catalog.
+  // Codex can't natively expand Crispy plugin skills (plugin/install requires
+  // marketplace under .agents/plugins/ which Crispy doesn't own). Instead,
+  // the system prompt lists skill metadata so the model reads SKILL.md on demand.
+  const codexSkillCatalog = buildCodexSkillCatalog(bundledPaths.skillRoot);
+  const codexSystemPromptFactory = dispatch
+    ? () => CRISPY_SKILLS_PROMPT + codexSkillCatalog
     : undefined;
 
   // Share factories with dynamic provider adapters (GLM, etc.)
@@ -191,6 +265,7 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
   const enrichedConfig: HostAdapterConfig = {
     ...config,
     ...(systemPromptFactory && { systemPromptFactory }),
+    ...(codexSystemPromptFactory && { codexSystemPromptFactory }),
     bundledSkillRoot: bundledPaths.skillRoot,
     plugins,
   };

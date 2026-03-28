@@ -19,6 +19,11 @@ import type { FileIndex } from '../utils/file-index.js';
 /** Inline element types safe to recurse into (won't break semantics). */
 const INLINE_RECURSE_TAGS = new Set(['strong', 'em', 'b', 'i', 'u', 's', 'del', 'ins', 'mark', 'span', 'a']);
 
+/** Check if an element's className contains a KaTeX class — skip linkification inside math. */
+function hasKatexClass(className: unknown): boolean {
+  return typeof className === 'string' && className.includes('katex');
+}
+
 /**
  * Process React children: linkify string children, recurse into inline
  * elements (strong, em, etc.), pass code blocks and other elements through.
@@ -32,9 +37,9 @@ function linkifyChildren(children: React.ReactNode, index: FileIndex | null): Re
     // Recurse into inline wrapper elements (strong, em, span, etc.)
     // but NOT into code, pre, or other block-level elements.
     if (React.isValidElement(child)) {
-      const el = child as React.ReactElement<{ children?: React.ReactNode }>;
+      const el = child as React.ReactElement<{ children?: React.ReactNode; className?: unknown }>;
       const tag = typeof el.type === 'string' ? el.type : null;
-      if (tag && INLINE_RECURSE_TAGS.has(tag) && el.props.children != null) {
+      if (tag && INLINE_RECURSE_TAGS.has(tag) && el.props.children != null && !hasKatexClass(el.props.className)) {
         return React.cloneElement(el, {}, linkifyChildren(el.props.children, index));
       }
     }
