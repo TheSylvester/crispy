@@ -96,7 +96,7 @@ function toWireSnapshot(settings: CrispySettingsFile): WireSettingsSnapshot {
       discord: {
         bot: {
           ...settings.discord.bot,
-          token: maskApiKey(settings.discord.bot.token),
+          token: settings.discord.bot.token ? maskApiKey(settings.discord.bot.token) : '',
         },
       },
     },
