@@ -3,7 +3,7 @@
  *
  * Parses "!command args" from Discord messages in the bot control channel,
  * DMs, or @mentions. Primary entry point: `!sessions` for browsing and
- * opening recent conversations via emoji reactions.
+ * opening recent conversations via button interactions.
  *
  * @module message-view/commands
  */
@@ -21,6 +21,19 @@ import { listAllSessions } from '../session-manager.js';
 
 const SOURCE = 'message-view/commands';
 const COMMANDS_HELP = 'Available: `!sessions`, `!open`, `!stop`, `!status`';
+
+// Session display — mirrors webview/utils/session-display.ts (can't import from webview layer)
+function getSessionDisplayName(s: { title?: string; label?: string; lastUserPrompt?: string; sessionId: string }): string {
+  return s.title?.trim() || s.lastUserPrompt?.trim() || s.label?.trim() || s.sessionId.slice(0, 8) + '\u{2026}';
+}
+
+function getSessionSubtitle(s: { title?: string; label?: string; lastUserPrompt?: string; lastMessage?: string }): string | null {
+  const title = s.title?.trim(), label = s.label?.trim();
+  const lastUser = s.lastUserPrompt?.trim(), lastMsg = s.lastMessage?.trim();
+  if (title) return (label && label !== title) ? label : (lastMsg && lastMsg !== title) ? lastMsg : null;
+  if (lastUser) return (label && label !== lastUser) ? label : (lastMsg && lastMsg !== lastUser) ? lastMsg : null;
+  return (lastMsg && lastMsg !== label) ? lastMsg : null;
+}
 
 // Active session list state — maps messageId → { sessions, page, channelId }
 const activeSessionLists = new Map<string, {
@@ -123,24 +136,29 @@ async function handleSessions(channelId: string, args: string, ctx: CommandConte
   const totalPages = Math.ceil(allSessions.length / PAGE_SIZE);
   const now = Date.now();
 
-  // Pre-compute titles once — used in message text, button labels, and state storage
-  const titles = pageSessions.map(s => s.title ?? s.label ?? '(untitled)');
-
-  const lines = pageSessions.map((s, i) => {
-    const ago = formatTimeAgo(now - s.modifiedAt.getTime());
-    const vendor = s.vendor !== 'claude' ? ` \u{2022} ${s.vendor}` : '';
-    return `**${i + 1}.** **${titles[i].slice(0, 55)}**  \u{2014}  ${ago}${vendor}`;
-  });
-
   const header = totalPages > 1
     ? `\u{1F4C2} **Sessions** (page ${page + 1}/${totalPages})`
     : '\u{1F4C2} **Sessions**';
+
+  // Pre-compute display names and subtitles (same logic as webview dropdown)
+  const displayNames = pageSessions.map(s => getSessionDisplayName(s));
+  const subtitles = pageSessions.map(s => getSessionSubtitle(s));
+
+  // Message text: subtitle + time + vendor per session (button has the title)
+  const lines = pageSessions.map((s, i) => {
+    const ago = formatTimeAgo(now - s.modifiedAt.getTime());
+    const vendor = s.vendor !== 'claude' ? ` \u{2022} ${s.vendor}` : '';
+    const sub = subtitles[i]?.slice(0, 60);
+    return sub
+      ? `> ${sub}\n> ${ago}${vendor}`
+      : `> ${ago}${vendor}`;
+  });
 
   // Build button rows (max 5 per action row)
   const buttons: MessageComponent[] = pageSessions.map((_s, i) => ({
     type: 2,
     style: 2,
-    label: `${i + 1}. ${titles[i].slice(0, 70)}`,
+    label: displayNames[i].slice(0, 75),
     custom_id: `session:${i}`,
   }));
 
@@ -166,7 +184,7 @@ async function handleSessions(channelId: string, args: string, ctx: CommandConte
   activeSessionLists.set(msg.id, {
     sessions: pageSessions.map((s, i) => ({
       sessionId: s.sessionId,
-      title: titles[i],
+      title: displayNames[i],
     })),
     page,
     channelId,
