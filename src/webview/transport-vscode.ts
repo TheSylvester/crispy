@@ -187,6 +187,12 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     listAvailableCommands: (params) =>
       request<InputCommand[]>('listAvailableCommands', params),
 
+    validateDiscordToken: (token) =>
+      request<{ valid: boolean; username?: string; id?: string; error?: string }>('validateDiscordToken', { token }),
+
+    getDiscordAppInfo: (token) =>
+      request<{ appId: string; name: string } | null>('getDiscordAppInfo', { token }),
+
     onEvent(handler) {
       eventHandlers.push(handler);
       return () => {

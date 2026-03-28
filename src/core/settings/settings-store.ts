@@ -174,7 +174,7 @@ function applyPatch(current: CrispySettings, patch: SettingsPatch): CrispySettin
   if (patch.discord?.bot) {
     const botPatch = patch.discord.bot;
     // Preserve existing token when the patch has a masked value
-    const token = (botPatch.token && botPatch.token.includes('…'))
+    const token = (botPatch.token && (botPatch.token.includes('…') || botPatch.token.includes('...')))
       ? current.discord.bot.token
       : botPatch.token;
     result.discord = {

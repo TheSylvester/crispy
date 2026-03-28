@@ -235,6 +235,12 @@ export function createWebSocketTransport(url: string): SessionService {
     listAvailableCommands: (params) =>
       request<InputCommand[]>('listAvailableCommands', params),
 
+    validateDiscordToken: (token) =>
+      request<{ valid: boolean; username?: string; id?: string; error?: string }>('validateDiscordToken', { token }),
+
+    getDiscordAppInfo: (token) =>
+      request<{ appId: string; name: string } | null>('getDiscordAppInfo', { token }),
+
     dispose() {
       ws.close();
       for (const [, req] of pending) {

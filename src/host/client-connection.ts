@@ -965,6 +965,28 @@ export function createClientConnection(
       case 'getModelGroups':
         return await getModelGroups(getRegisteredVendors());
 
+      case 'validateDiscordToken': {
+        const token = params.token;
+        if (typeof token !== 'string' || !token) return { valid: false, error: 'Missing token' };
+        const res = await fetch('https://discord.com/api/v10/users/@me', {
+          headers: { Authorization: `Bot ${token}` },
+        });
+        if (!res.ok) return { valid: false, error: `HTTP ${res.status}` };
+        const user = await res.json() as { username: string; id: string };
+        return { valid: true, username: user.username, id: user.id };
+      }
+
+      case 'getDiscordAppInfo': {
+        const token = params.token;
+        if (typeof token !== 'string' || !token) return null;
+        const res = await fetch('https://discord.com/api/v10/oauth2/applications/@me', {
+          headers: { Authorization: `Bot ${token}` },
+        });
+        if (!res.ok) return null;
+        const app = await res.json() as { id: string; name: string };
+        return { appId: app.id, name: app.name };
+      }
+
       case "getResponsePreview": {
         const file = params.file as string;
         const offset = params.offset as number;
