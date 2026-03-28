@@ -31,7 +31,7 @@ function lsFiles(args: string[], cwd: string): Promise<string[]> {
     execFile(
       "git",
       ["ls-files", "-z", ...args],
-      { cwd, maxBuffer: 10 * 1024 * 1024 },
+      { cwd, maxBuffer: 10 * 1024 * 1024, windowsHide: true },
       (err, stdout) => {
         if (err) {
           reject(err);
@@ -94,7 +94,7 @@ export async function getGitBranchInfo(
       execFile(
         "git",
         ["rev-parse", "--abbrev-ref", "HEAD"],
-        { cwd },
+        { cwd, windowsHide: true },
         (err, stdout) => (err ? reject(err) : resolve(stdout.trim())),
       );
     });
@@ -106,7 +106,7 @@ export async function getGitBranchInfo(
             execFile(
               "git",
               ["rev-parse", "--short", "HEAD"],
-              { cwd },
+              { cwd, windowsHide: true },
               (err, stdout) => (err ? reject(err) : resolve(stdout.trim())),
             );
           })
@@ -116,7 +116,7 @@ export async function getGitBranchInfo(
       execFile(
         "git",
         ["status", "--porcelain"],
-        { cwd, maxBuffer: 1024 * 1024 },
+        { cwd, maxBuffer: 1024 * 1024, windowsHide: true },
         (err, stdout) => (err ? reject(err) : resolve(stdout)),
       );
     });

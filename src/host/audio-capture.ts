@@ -214,7 +214,7 @@ function spawnRecorder(
   tempScriptPath: string | null = null,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const proc = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
 
     let resolved = false;
     let stderrOutput = '';

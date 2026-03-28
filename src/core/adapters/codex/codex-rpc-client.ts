@@ -219,6 +219,7 @@ export class CodexRpcClient {
       cwd,
       env: mergedEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
       ...(isWindows && { shell: true }),
     });
 

@@ -20,7 +20,7 @@ export interface GitDiffResult {
 
 function runGit(args: string[], cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile("git", args, { cwd, maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+    execFile("git", args, { cwd, maxBuffer: 10 * 1024 * 1024, windowsHide: true }, (err, stdout) => {
       if (err) {
         // git diff exits with 0 on success but some commands exit 1 for
         // "changes found" — only reject on actual failures

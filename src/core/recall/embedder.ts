@@ -713,6 +713,7 @@ async function startServer(): Promise<string> {
   ], {
     stdio: 'ignore',
     detached: false,
+    windowsHide: true,
     env: { ...process.env, [envKey]: libDir },
   });
 
