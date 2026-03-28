@@ -15,7 +15,7 @@
  * - Perform session discovery (codexDiscovery handles that)
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 import type {
   AgentAdapter,
@@ -104,6 +104,8 @@ export class CodexAgentAdapter implements AgentAdapter {
   private pendingItemCount = 0;
   /** Set when turn/completed fires while items are still pending delivery. */
   private turnCompletedPending = false;
+  /** Safety timeout for stuck pendingItemCount — emits plain idle after 10s. */
+  private turnCompleteSafetyTimer: ReturnType<typeof setTimeout> | null = null;
 
   // --- Streaming delta accumulator ---
   /** Accumulated text from agentMessage deltas for the current turn. */
@@ -239,6 +241,17 @@ export class CodexAgentAdapter implements AgentAdapter {
 
     // Transition back to active if no more pending approvals
     if (this.pendingApprovals.size === 0) {
+      // If the turn already completed while we were waiting for approval,
+      // apply the deferred-idle logic now instead of emitting active
+      if (this.currentTurnId === undefined) {
+        if (this.pendingItemCount > 0) {
+          this.turnCompletedPending = true;
+          this.startTurnCompleteSafetyTimer();
+        } else {
+          this.emitIdleWithTurnComplete();
+          return;
+        }
+      }
       this.emitStatus('active');
     }
   }
@@ -260,7 +273,8 @@ export class CodexAgentAdapter implements AgentAdapter {
     // Detach from shared discovery
     codexDiscovery.detachClient();
 
-    // Clear streaming buffer before closing
+    // Clear timers and streaming buffer before closing
+    this.clearTurnCompleteSafetyTimer();
     this.clearStreamingBuffer();
 
     // Kill process
@@ -488,10 +502,10 @@ export class CodexAgentAdapter implements AgentAdapter {
 
     for (const skillName of unresolvedSkills) {
       log({
-        level: 'debug',
+        level: 'warn',
         source: 'codex-adapter',
         summary: `Bundled Crispy skill not found for Codex turn: ${skillName}`,
-        data: { skillName },
+        data: { skillName, discoveredSkills: [...bundledSkills.keys()] },
       });
     }
 
@@ -552,7 +566,10 @@ export class CodexAgentAdapter implements AgentAdapter {
       });
 
       const inventory = new Map<string, ResolvedCodexSkillReference>();
-      const entry = response.data.find((item) => item.cwd === effectiveCwd) ?? response.data[0];
+      // Try exact CWD match first, then fall back to any entry with bundled skills
+      const entry = response.data.find((item) => item.cwd === effectiveCwd)
+        ?? response.data.find((item) => item.skills?.some((s) => this.isBundledSkillPath(bundledSkillRoot, s.path)))
+        ?? response.data[0];
 
       for (const skill of entry?.skills ?? []) {
         if (!skill.enabled) {
@@ -573,9 +590,23 @@ export class CodexAgentAdapter implements AgentAdapter {
           continue;
         }
 
+        // Read SKILL.md content for self-expansion — Codex app-server doesn't
+        // expand `{ type: 'skill' }` inputs, so we inject the content as text.
+        let content: string | undefined;
+        try {
+          content = readFileSync(skill.path, 'utf-8');
+        } catch {
+          log({
+            level: 'warn',
+            source: 'codex-adapter',
+            summary: `Failed to read bundled skill content: ${skill.path}`,
+          });
+        }
+
         inventory.set(skill.name, {
           name: skill.name,
           path: skill.path,
+          content,
         });
       }
 
@@ -584,6 +615,12 @@ export class CodexAgentAdapter implements AgentAdapter {
       if (this.bundledSkillDiscoveryGeneration === discoveryGeneration) {
         this.bundledSkillDiscoveryNeedsReload = false;
       }
+      log({
+        level: 'info',
+        source: 'codex-adapter',
+        summary: `Discovered ${inventory.size} bundled skill(s): ${[...inventory.keys()].join(', ') || '(none)'}`,
+        data: { effectiveCwd, entryCount: response.data.length, matchedCwd: entry?.cwd },
+      });
       return inventory;
     } catch (err) {
       log({
@@ -679,6 +716,7 @@ export class CodexAgentAdapter implements AgentAdapter {
         // Reset item tracking + streaming buffer for new turn
         this.pendingItemCount = 0;
         this.turnCompletedPending = false;
+        this.clearTurnCompleteSafetyTimer();
         this.streamingText = '';
         this.streamingThinking = '';
         this.emitStatus('active');
@@ -695,12 +733,18 @@ export class CodexAgentAdapter implements AgentAdapter {
         if (this.pendingApprovals.size === 0) {
           if (this.pendingItemCount > 0) {
             this.turnCompletedPending = true;
+            this.startTurnCompleteSafetyTimer();
             log({ level: 'debug', source: 'codex-adapter', summary: `turn/completed deferred — ${this.pendingItemCount} item(s) still pending` });
           } else {
             // All items already delivered — safe to emit turnComplete now
             this.turnCompletedPending = false;
             this.emitIdleWithTurnComplete();
           }
+        } else {
+          // Turn ended while approvals pending — record that fact.
+          // respondToApproval() will handle idle emission when approvals clear.
+          this.turnCompletedPending = true;
+          this.startTurnCompleteSafetyTimer();
         }
         break;
       }
@@ -733,6 +777,7 @@ export class CodexAgentAdapter implements AgentAdapter {
             } catch (err) {
               log({ level: 'warn', source: 'codex-adapter', summary: `Failed to adapt startup item: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
             }
+            this.settleItemTracking();
             break;
           }
 
@@ -740,6 +785,7 @@ export class CodexAgentAdapter implements AgentAdapter {
           // already broadcast the optimistic user entry from sendTurn().
           if (this.pendingSendCount > 0) {
             this.pendingSendCount--;
+            this.settleItemTracking();
             break;
           }
         }
@@ -769,13 +815,7 @@ export class CodexAgentAdapter implements AgentAdapter {
           this.clearStreamingBuffer();
         }
 
-        // Item tracking: decrement and check if turn/completed was deferred
-        if (this.pendingItemCount > 0) this.pendingItemCount--;
-        if (this.turnCompletedPending && this.pendingItemCount === 0) {
-          this.turnCompletedPending = false;
-          log({ level: 'debug', source: 'codex-adapter', summary: 'All pending items delivered after turn/completed — emitting idle+turnComplete' });
-          this.emitIdleWithTurnComplete();
-        }
+        this.settleItemTracking();
         break;
       }
 
@@ -1003,14 +1043,51 @@ export class CodexAgentAdapter implements AgentAdapter {
     });
   }
 
+  /** Decrement pending item count and resolve deferred turn/completed if all items delivered. */
+  private settleItemTracking(): void {
+    if (this.pendingItemCount > 0) this.pendingItemCount--;
+    if (this.turnCompletedPending && this.pendingItemCount === 0) {
+      this.turnCompletedPending = false;
+      this.clearTurnCompleteSafetyTimer();
+      log({ level: 'debug', source: 'codex-adapter', summary: 'All pending items delivered after turn/completed — emitting idle+turnComplete' });
+      this.emitIdleWithTurnComplete();
+    }
+  }
+
   /** Emit idle with authoritative turnComplete — skips debounce in dispatch. */
   private emitIdleWithTurnComplete(): void {
     if (this._closed) return;
+    this.clearTurnCompleteSafetyTimer();
     this._status = 'idle';
     this.outputQueue.enqueue({
       type: 'event',
       event: { type: 'status', status: 'idle', turnComplete: true },
     });
+  }
+
+  /** Start safety timeout for stuck pendingItemCount — emits plain idle after 10s. */
+  private startTurnCompleteSafetyTimer(): void {
+    this.clearTurnCompleteSafetyTimer();
+    this.turnCompleteSafetyTimer = setTimeout(() => {
+      if (this.turnCompletedPending) {
+        log({
+          level: 'warn',
+          source: 'codex-adapter',
+          summary: `Safety timeout: ${this.pendingItemCount} item(s) never settled — emitting idle`,
+        });
+        this.turnCompletedPending = false;
+        this.pendingItemCount = 0;
+        this.emitStatus('idle');
+      }
+    }, 10_000);
+  }
+
+  /** Clear the turn-complete safety timer. */
+  private clearTurnCompleteSafetyTimer(): void {
+    if (this.turnCompleteSafetyTimer !== null) {
+      clearTimeout(this.turnCompleteSafetyTimer);
+      this.turnCompleteSafetyTimer = null;
+    }
   }
 
   private emitError(error: Error | string): void {

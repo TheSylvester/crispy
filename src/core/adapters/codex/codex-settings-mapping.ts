@@ -26,6 +26,8 @@ import type { UserInput } from './protocol/v2/UserInput.js';
 export interface ResolvedCodexSkillReference {
   name: string;
   path: string;
+  /** Pre-read SKILL.md content for self-expansion (Codex doesn't expand skill inputs). */
+  content?: string;
 }
 
 export type CodexSkillReferenceResolver = (
@@ -402,11 +404,17 @@ function mapTextContent(
       textBuffer = '';
     }
 
+    // Send both the skill input (for Codex to potentially handle natively)
+    // AND self-expand the content as text (Codex app-server doesn't currently
+    // expand skill inputs, so the model never sees the SKILL.md instructions).
     inputs.push({
       type: 'skill',
       name: resolvedSkill.name,
       path: resolvedSkill.path,
     });
+    if (resolvedSkill.content) {
+      inputs.push(createTextInput(resolvedSkill.content));
+    }
 
     cursor = token.end;
   }
