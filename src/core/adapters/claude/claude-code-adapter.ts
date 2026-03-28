@@ -371,6 +371,7 @@ export interface SessionInfo {
   size: number;
   label?: string;
   lastMessage?: string;
+  lastUserPrompt?: string;
   vendor: 'claude';
   isSidechain?: boolean;
 }
@@ -1804,6 +1805,7 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
         size: stat.size,
         label: meta?.label,
         lastMessage: meta?.lastMessage,
+        lastUserPrompt: meta?.lastUserPrompt,
         vendor: 'claude',
         isSidechain: meta?.isSidechain,
         ...(gen3Title && { title: gen3Title }),
@@ -1856,6 +1858,7 @@ export function findSession(sessionId: string): SessionInfo | undefined {
       size: stat.size,
       label: meta?.label,
       lastMessage: meta?.lastMessage,
+      lastUserPrompt: meta?.lastUserPrompt,
       vendor: 'claude',
       isSidechain: meta?.isSidechain,
       ...(gen3Title && { title: gen3Title }),

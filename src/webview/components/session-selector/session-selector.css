@@ -331,31 +331,9 @@
 .crispy-session-item__preview {
   font-size: var(--font-xs);
   color: var(--text-tertiary);
-  display: flex;
-  width: 100%;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.crispy-session-item__preview-head,
-.crispy-session-item__preview-tail {
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.crispy-session-item__preview-head {
-  flex-shrink: 1;
-  min-width: 0;
-}
-
-.crispy-session-item__preview-tail {
-  flex-shrink: 1;
-  min-width: 0;
-  direction: rtl;
-}
-
-.crispy-session-item__preview-tail bdo {
-  unicode-bidi: bidi-override;
+  white-space: nowrap;
 }
 
 /* --- Meta cluster: vendor icon + LIVE + time --- */

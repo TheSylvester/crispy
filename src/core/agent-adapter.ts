@@ -54,6 +54,7 @@ export interface SessionInfo {
   size: number;
   label?: string;
   lastMessage?: string;
+  lastUserPrompt?: string;
   vendor: Vendor;
   isSidechain?: boolean;
   /** Short session title from the session_titles table. */

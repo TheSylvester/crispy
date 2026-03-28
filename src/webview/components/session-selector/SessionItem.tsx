@@ -1,9 +1,9 @@
 /**
  * SessionItem — single session row in the session list
  *
- * Two-line layout: header row (label + meta cluster) and optional preview row.
+ * Two-line layout: header row (label + meta cluster) and optional subtitle row.
  * The meta cluster contains the vendor icon, optional LIVE badge, and
- * relative timestamp. Search highlighting applies to both label and preview.
+ * relative timestamp. Search highlighting applies to both label and subtitle.
  *
  * Does NOT own selection logic — receives isSelected/isFocused/isLive as props
  * and calls onClick for selection.
@@ -13,7 +13,7 @@
 
 import type { WireSessionInfo } from '../../transport.js';
 import { VendorIcon } from './VendorIcon.js';
-import { getSessionDisplayName } from '../../utils/session-display.js';
+import { getSessionDisplayName, getSessionSubtitle } from '../../utils/session-display.js';
 import { formatRelativeTime } from '../../utils/format.js';
 
 interface SessionItemProps {
@@ -61,6 +61,7 @@ export function SessionItem({
   ].filter(Boolean).join(' ');
 
   const label = getSessionDisplayName(session);
+  const subtitle = getSessionSubtitle(session);
 
   return (
     <li
@@ -81,23 +82,9 @@ export function SessionItem({
           </span>
         </div>
       </div>
-      {session.lastMessage && (
+      {subtitle && (
         <div className="crispy-session-item__preview">
-          {(() => {
-            const mid = Math.ceil(session.lastMessage.length / 2);
-            const head = session.lastMessage.slice(0, mid);
-            const tail = session.lastMessage.slice(mid);
-            return (
-              <>
-                <span className="crispy-session-item__preview-head">
-                  {highlightMatch(head, searchQuery)}
-                </span>
-                <span className="crispy-session-item__preview-tail">
-                  <bdo dir="ltr">{highlightMatch(tail, searchQuery)}</bdo>
-                </span>
-              </>
-            );
-          })()}
+          {highlightMatch(subtitle, searchQuery)}
         </div>
       )}
     </li>
