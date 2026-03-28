@@ -147,14 +147,16 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [discordDirty, setDiscordDirty] = useState(false);
 
   const handleClickOutside = useCallback(
     (e: MouseEvent) => {
       if (pinned && containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        if (discordDirty) return; // Don't close while wizard has unsaved state
         onToggle();
       }
     },
-    [pinned, onToggle],
+    [pinned, onToggle, discordDirty],
   );
 
   useEffect(() => {
@@ -403,6 +405,7 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
             sessions={discordSessions}
             allowedUserIds={discordAllowedUserIds}
             onUpdateDiscord={onUpdateDiscord}
+            onDirtyChange={setDiscordDirty}
           />
 
           {/* --- Providers Section --- */}

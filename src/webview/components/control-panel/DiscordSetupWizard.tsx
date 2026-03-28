@@ -40,6 +40,8 @@ interface DiscordSetupWizardProps {
   sessions: 'all' | 'manual';
   allowedUserIds: string[];
   onUpdateDiscord: (patch: Partial<DiscordBotSettings>) => void;
+  /** Notify parent when the wizard has unsaved draft state (prevents click-outside close). */
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +66,7 @@ export function DiscordSetupWizard({
   sessions,
   allowedUserIds,
   onUpdateDiscord,
+  onDirtyChange,
 }: DiscordSetupWizardProps) {
   const transport = useTransport();
 
@@ -79,6 +82,11 @@ export function DiscordSetupWizard({
   // Wizard vs compact view
   const [editing, setEditing] = useState(false);
   const hasExistingConfig = enabled && !!token;
+
+  // Notify parent when wizard has unsaved state (first-time or editing)
+  useEffect(() => {
+    onDirtyChange?.(isFirstTime || editing);
+  }, [isFirstTime, editing, onDirtyChange]);
 
   // Validation state
   const [validation, setValidation] = useState<TokenValidation>({ status: 'idle' });
