@@ -90,6 +90,7 @@ import {
 import type { TrackerNotifyEvent, TrackerNotifySubscriber } from '../core/rosie/tracker/tracker-notifications.js';
 import { readResponsePreview } from '../core/adapters/claude/jsonl-reader.js';
 import { addRoot, removeRoot, listAllWorkspaces } from '../core/workspace-roots.js';
+import { listAvailableCommands } from '../core/input-command-service.js';
 import type { WorkspaceListResponse } from '../core/workspace-roots.js';
 import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-reader.js';
 // Voice module is lazy-loaded to avoid pulling onnxruntime-node native bindings
@@ -1240,6 +1241,11 @@ export function createClientConnection(
         const path = params.path as string;
         removeRoot(path);
         return { ok: true };
+      }
+
+      case "listAvailableCommands": {
+        const vendor = params.vendor as string | undefined;
+        return listAvailableCommands(vendor);
       }
 
       default:

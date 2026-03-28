@@ -21,7 +21,8 @@ function buildEffectiveSpec(
   config: HostAdapterConfig,
   effectiveCwd: string,
 ): SessionOpenSpec & { cwd?: string } {
-  const hostPrompt = config.systemPromptFactory?.();
+  // Prefer Codex-specific prompt (includes progressive-disclosure skill catalog)
+  const hostPrompt = config.codexSystemPromptFactory?.() ?? config.systemPromptFactory?.();
   const effectiveSystemPrompt = spec.systemPrompt ?? hostPrompt;
 
   return {

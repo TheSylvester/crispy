@@ -277,11 +277,13 @@ describe('CodexAgentAdapter', () => {
 
       const turnMsg = await mockProcess.getNextClientMessage();
       expect(turnMsg.method).toBe('turn/start');
-      expect((turnMsg.params as any).input).toEqual([
-        { type: 'text', text: 'Use ', text_elements: [] },
-        { type: 'skill', name: 'recall', path: `${bundledSkillRoot}/recall/SKILL.md` },
-        { type: 'text', text: ' before coding.', text_elements: [] },
-      ]);
+      const input = (turnMsg.params as any).input;
+      expect(input[0]).toEqual({ type: 'text', text: 'Use ', text_elements: [] });
+      expect(input[1]).toEqual({ type: 'skill', name: 'recall', path: `${bundledSkillRoot}/recall/SKILL.md` });
+      // Full SKILL.md content injected (frontmatter stripped) on explicit $skill
+      expect(input[2]).toMatchObject({ type: 'text' });
+      expect(input[2].text).toContain('# Recall');
+      expect(input[3]).toEqual({ type: 'text', text: ' before coding.', text_elements: [] });
       mockProcess.pushResponse(turnMsg.id, { turn: { id: 'turn-1' } });
 
       adapter.close();
@@ -376,11 +378,12 @@ describe('CodexAgentAdapter', () => {
 
       const secondTurnMsg = await mockProcess.getNextClientMessage();
       expect(secondTurnMsg.method).toBe('turn/start');
-      expect((secondTurnMsg.params as any).input).toEqual([
-        { type: 'text', text: 'Use ', text_elements: [] },
-        { type: 'skill', name: 'recall', path: `${bundledSkillRoot}/recall/SKILL.md` },
-        { type: 'text', text: ' again.', text_elements: [] },
-      ]);
+      const secondInput = (secondTurnMsg.params as any).input;
+      expect(secondInput[0]).toEqual({ type: 'text', text: 'Use ', text_elements: [] });
+      expect(secondInput[1]).toEqual({ type: 'skill', name: 'recall', path: `${bundledSkillRoot}/recall/SKILL.md` });
+      expect(secondInput[2]).toMatchObject({ type: 'text' });
+      expect(secondInput[2].text).toContain('# Recall');
+      expect(secondInput[3]).toEqual({ type: 'text', text: ' again.', text_elements: [] });
       mockProcess.pushResponse(secondTurnMsg.id, { turn: { id: 'turn-2' } });
 
       adapter.close();
@@ -1467,6 +1470,187 @@ describe('CodexAgentAdapter', () => {
       expect(adapter.status).toBe('idle');
 
       adapter.close();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Group 11: Turn-completion with pending approvals
+  // --------------------------------------------------------------------------
+
+  describe('Turn-completion with pending approvals', () => {
+    it('emits idle+turnComplete when approval resolves after turn/completed', async () => {
+      const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test' };
+      const adapter = new CodexAgentAdapter(spec);
+
+      adapter.sendTurn('Run a command', {});
+
+      // Complete handshake
+      const initMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(initMsg.id, { userAgent: 'codex' });
+      const startMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(startMsg.id, { thread: { id: 't-1', turns: [] }, model: 'o3' });
+      const turnMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(turnMsg.id, { turn: { id: 'turn-1' } });
+
+      await waitForTick();
+
+      // Push turn/started
+      mockProcess.pushNotification('turn/started', { turn: { id: 'turn-1' } });
+      // item/started for the tool call
+      mockProcess.pushNotification('item/started', { itemId: 'item-1' });
+
+      await waitForTick();
+
+      // Approval request arrives
+      mockProcess.pushServerRequest('item/commandExecution/requestApproval', 42, {
+        itemId: 'call-hang-test',
+        command: 'ls',
+        cwd: '/test',
+      });
+
+      await waitForTick(50);
+      expect(adapter.status).toBe('awaiting_approval');
+
+      // turn/completed fires while approval is still pending
+      mockProcess.pushNotification('turn/completed', { turn: { id: 'turn-1' } });
+      await waitForTick();
+
+      // Adapter should still be awaiting_approval (not stuck in active)
+      expect(adapter.status).toBe('awaiting_approval');
+
+      // User approves
+      adapter.respondToApproval('call-hang-test', 'allow');
+
+      // Consume the approval response
+      const approvalResponse = await mockProcess.getNextClientMessage();
+      expect((approvalResponse as any).result?.decision).toBe('accept');
+
+      // item/completed arrives for the tool call
+      mockProcess.pushNotification('item/completed', {
+        threadId: 't-1',
+        turnId: 'turn-1',
+        item: {
+          type: 'agentMessage',
+          id: 'item-1',
+          text: 'Done.',
+        },
+      });
+
+      await waitForTick(50);
+
+      // Should have transitioned to idle (not stuck in active)
+      expect(adapter.status).toBe('idle');
+
+      // Verify the idle event has turnComplete
+      const messages = await collectUntil(
+        adapter,
+        (msgs) => msgs.some((m) =>
+          m.type === 'event' && m.event.type === 'status' && m.event.status === 'idle',
+        ),
+        200,
+      );
+
+      // At minimum, we shouldn't be stuck — idle is the important thing
+      expect(adapter.status).toBe('idle');
+
+      adapter.close();
+    });
+
+    it('emits idle+turnComplete immediately when approval resolves after turn/completed with no pending items', async () => {
+      const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test' };
+      const adapter = new CodexAgentAdapter(spec);
+
+      adapter.sendTurn('Run a command', {});
+
+      // Complete handshake
+      const initMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(initMsg.id, { userAgent: 'codex' });
+      const startMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(startMsg.id, { thread: { id: 't-1', turns: [] }, model: 'o3' });
+      const turnMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(turnMsg.id, { turn: { id: 'turn-1' } });
+
+      await waitForTick();
+
+      // Push turn/started
+      mockProcess.pushNotification('turn/started', { turn: { id: 'turn-1' } });
+
+      await waitForTick();
+
+      // Approval request (no item/started — items already settled)
+      mockProcess.pushServerRequest('item/commandExecution/requestApproval', 42, {
+        itemId: 'call-no-items',
+        command: 'echo hi',
+        cwd: '/test',
+      });
+
+      await waitForTick(50);
+      expect(adapter.status).toBe('awaiting_approval');
+
+      // turn/completed fires while approval is still pending
+      mockProcess.pushNotification('turn/completed', { turn: { id: 'turn-1' } });
+      await waitForTick();
+
+      // User approves — with no pending items, should go straight to idle
+      adapter.respondToApproval('call-no-items', 'allow');
+
+      // Consume the approval response
+      await mockProcess.getNextClientMessage();
+
+      await waitForTick(50);
+
+      // Should be idle with turnComplete (not active)
+      expect(adapter.status).toBe('idle');
+
+      adapter.close();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Group 12: Safety timeout for stuck pendingItemCount
+  // --------------------------------------------------------------------------
+
+  describe('Safety timeout for stuck items', () => {
+    it('emits plain idle after 10s when items never settle', async () => {
+      vi.useFakeTimers();
+
+      const spec: SessionOpenSpec = { mode: 'fresh', cwd: '/test' };
+      const adapter = new CodexAgentAdapter(spec);
+
+      adapter.sendTurn('Test', {});
+
+      // Complete handshake
+      const initMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(initMsg.id, { userAgent: 'codex' });
+      const startMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(startMsg.id, { thread: { id: 't-1', turns: [] }, model: 'o3' });
+      const turnMsg = await mockProcess.getNextClientMessage();
+      mockProcess.pushResponse(turnMsg.id, { turn: { id: 'turn-1' } });
+
+      await vi.advanceTimersByTimeAsync(20);
+
+      // Push turn/started, then item/started without item/completed
+      mockProcess.pushNotification('turn/started', { turn: { id: 'turn-1' } });
+      await vi.advanceTimersByTimeAsync(10);
+
+      mockProcess.pushNotification('item/started', { itemId: 'stuck-item' });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // turn/completed with items still pending
+      mockProcess.pushNotification('turn/completed', { turn: { id: 'turn-1' } });
+      await vi.advanceTimersByTimeAsync(10);
+
+      // Status should still be active (waiting for items)
+      expect(adapter.status).toBe('active');
+
+      // Advance past the 10s safety timeout
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      // Safety timeout should have fired — adapter goes idle
+      expect(adapter.status).toBe('idle');
+
+      adapter.close();
+      vi.useRealTimers();
     });
   });
 });

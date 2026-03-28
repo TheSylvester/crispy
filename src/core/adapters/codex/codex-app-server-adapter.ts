@@ -15,7 +15,7 @@
  * - Perform session discovery (codexDiscovery handles that)
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 import type {
   AgentAdapter,
@@ -98,6 +98,14 @@ export class CodexAgentAdapter implements AgentAdapter {
    * are marked isMeta so the rendering filter and history serializer skip them.
    */
   private startupPhase = true;
+
+  // --- Item tracking for turnComplete ---
+  /** Number of item/started events not yet matched by item/completed. */
+  private pendingItemCount = 0;
+  /** Set when turn/completed fires while items are still pending delivery. */
+  private turnCompletedPending = false;
+  /** Safety timeout for stuck pendingItemCount — emits plain idle after 10s. */
+  private turnCompleteSafetyTimer: ReturnType<typeof setTimeout> | null = null;
 
   // --- Streaming delta accumulator ---
   /** Accumulated text from agentMessage deltas for the current turn. */
@@ -233,6 +241,17 @@ export class CodexAgentAdapter implements AgentAdapter {
 
     // Transition back to active if no more pending approvals
     if (this.pendingApprovals.size === 0) {
+      // If the turn already completed while we were waiting for approval,
+      // apply the deferred-idle logic now instead of emitting active
+      if (this.currentTurnId === undefined) {
+        if (this.pendingItemCount > 0) {
+          this.turnCompletedPending = true;
+          this.startTurnCompleteSafetyTimer();
+        } else {
+          this.emitIdleWithTurnComplete();
+          return;
+        }
+      }
       this.emitStatus('active');
     }
   }
@@ -254,7 +273,8 @@ export class CodexAgentAdapter implements AgentAdapter {
     // Detach from shared discovery
     codexDiscovery.detachClient();
 
-    // Clear streaming buffer before closing
+    // Clear timers and streaming buffer before closing
+    this.clearTurnCompleteSafetyTimer();
     this.clearStreamingBuffer();
 
     // Kill process
@@ -482,10 +502,10 @@ export class CodexAgentAdapter implements AgentAdapter {
 
     for (const skillName of unresolvedSkills) {
       log({
-        level: 'debug',
+        level: 'warn',
         source: 'codex-adapter',
         summary: `Bundled Crispy skill not found for Codex turn: ${skillName}`,
-        data: { skillName },
+        data: { skillName, discoveredSkills: [...bundledSkills.keys()] },
       });
     }
 
@@ -546,7 +566,10 @@ export class CodexAgentAdapter implements AgentAdapter {
       });
 
       const inventory = new Map<string, ResolvedCodexSkillReference>();
-      const entry = response.data.find((item) => item.cwd === effectiveCwd) ?? response.data[0];
+      // Try exact CWD match first, then fall back to any entry with bundled skills
+      const entry = response.data.find((item) => item.cwd === effectiveCwd)
+        ?? response.data.find((item) => item.skills?.some((s) => this.isBundledSkillPath(bundledSkillRoot, s.path)))
+        ?? response.data[0];
 
       for (const skill of entry?.skills ?? []) {
         if (!skill.enabled) {
@@ -567,10 +590,29 @@ export class CodexAgentAdapter implements AgentAdapter {
           continue;
         }
 
-        inventory.set(skill.name, {
-          name: skill.name,
-          path: skill.path,
-        });
+        // Read SKILL.md content for direct injection on explicit $skill invocation.
+        let content: string | undefined;
+        try {
+          content = readFileSync(skill.path, 'utf-8');
+        } catch {
+          log({
+            level: 'warn',
+            source: 'codex-adapter',
+            summary: `Failed to read bundled skill content: ${skill.path}`,
+          });
+        }
+
+        const ref = { name: skill.name, path: skill.path, content };
+        inventory.set(skill.name, ref);
+        // Plugin-scoped skills come back as "crispy:<name>" — also register
+        // the unprefixed name so $skill-name tokens resolve correctly.
+        const colonIdx = skill.name.indexOf(':');
+        if (colonIdx >= 0) {
+          const shortName = skill.name.slice(colonIdx + 1);
+          if (!inventory.has(shortName)) {
+            inventory.set(shortName, ref);
+          }
+        }
       }
 
       this.bundledSkillCache = inventory;
@@ -578,6 +620,12 @@ export class CodexAgentAdapter implements AgentAdapter {
       if (this.bundledSkillDiscoveryGeneration === discoveryGeneration) {
         this.bundledSkillDiscoveryNeedsReload = false;
       }
+      log({
+        level: 'info',
+        source: 'codex-adapter',
+        summary: `Discovered ${inventory.size} bundled skill(s): ${[...inventory.keys()].join(', ') || '(none)'}`,
+        data: { effectiveCwd, entryCount: response.data.length, matchedCwd: entry?.cwd },
+      });
       return inventory;
     } catch (err) {
       log({
@@ -670,7 +718,10 @@ export class CodexAgentAdapter implements AgentAdapter {
         const turn = p.turn as Record<string, unknown> | undefined;
         this.currentTurnId = turn?.id as string | undefined;
         this.startupPhase = false;
-        // Reset streaming buffer for new turn (no clear event — fresh turn)
+        // Reset item tracking + streaming buffer for new turn
+        this.pendingItemCount = 0;
+        this.turnCompletedPending = false;
+        this.clearTurnCompleteSafetyTimer();
         this.streamingText = '';
         this.streamingThinking = '';
         this.emitStatus('active');
@@ -680,13 +731,25 @@ export class CodexAgentAdapter implements AgentAdapter {
       case 'turn/completed': {
         this.clearStreamingBuffer();
         this.currentTurnId = undefined;
-        // Don't emit turnComplete here — Codex delivers item/completed events
-        // (with the final assistant text) AFTER turn/completed, often in a
-        // separate event loop tick. The session-manager's debounce fallback
-        // (IDLE_SETTLE_MS) handles Codex correctly; turnComplete is only safe
-        // for adapters that guarantee all data is delivered before idle (Claude).
+        // Codex delivers item/completed events AFTER turn/completed, often in
+        // a separate event loop tick. If items are still pending, defer the
+        // idle signal until all item/completed events arrive — then emit with
+        // turnComplete so dispatch resolves immediately without debounce.
         if (this.pendingApprovals.size === 0) {
-          this.emitStatus('idle');
+          if (this.pendingItemCount > 0) {
+            this.turnCompletedPending = true;
+            this.startTurnCompleteSafetyTimer();
+            log({ level: 'debug', source: 'codex-adapter', summary: `turn/completed deferred — ${this.pendingItemCount} item(s) still pending` });
+          } else {
+            // All items already delivered — safe to emit turnComplete now
+            this.turnCompletedPending = false;
+            this.emitIdleWithTurnComplete();
+          }
+        } else {
+          // Turn ended while approvals pending — record that fact.
+          // respondToApproval() will handle idle emission when approvals clear.
+          this.turnCompletedPending = true;
+          this.startTurnCompleteSafetyTimer();
         }
         break;
       }
@@ -719,6 +782,7 @@ export class CodexAgentAdapter implements AgentAdapter {
             } catch (err) {
               log({ level: 'warn', source: 'codex-adapter', summary: `Failed to adapt startup item: ${err instanceof Error ? err.message : String(err)}`, data: { error: String(err) } });
             }
+            this.settleItemTracking();
             break;
           }
 
@@ -726,6 +790,7 @@ export class CodexAgentAdapter implements AgentAdapter {
           // already broadcast the optimistic user entry from sendTurn().
           if (this.pendingSendCount > 0) {
             this.pendingSendCount--;
+            this.settleItemTracking();
             break;
           }
         }
@@ -754,6 +819,8 @@ export class CodexAgentAdapter implements AgentAdapter {
         if (item.type === 'agentMessage') {
           this.clearStreamingBuffer();
         }
+
+        this.settleItemTracking();
         break;
       }
 
@@ -821,8 +888,11 @@ export class CodexAgentAdapter implements AgentAdapter {
         break;
       }
 
-      // Ignored notifications
       case 'item/started':
+        this.pendingItemCount++;
+        break;
+
+      // Ignored notifications
       case 'item/reasoning/summaryPartAdded':
       case 'account/rateLimits/updated':
         // These are informational, don't need to emit events
@@ -976,6 +1046,53 @@ export class CodexAgentAdapter implements AgentAdapter {
       type: 'event',
       event: { type: 'status', status },
     });
+  }
+
+  /** Decrement pending item count and resolve deferred turn/completed if all items delivered. */
+  private settleItemTracking(): void {
+    if (this.pendingItemCount > 0) this.pendingItemCount--;
+    if (this.turnCompletedPending && this.pendingItemCount === 0) {
+      this.turnCompletedPending = false;
+      this.clearTurnCompleteSafetyTimer();
+      log({ level: 'debug', source: 'codex-adapter', summary: 'All pending items delivered after turn/completed — emitting idle+turnComplete' });
+      this.emitIdleWithTurnComplete();
+    }
+  }
+
+  /** Emit idle with authoritative turnComplete — skips debounce in dispatch. */
+  private emitIdleWithTurnComplete(): void {
+    if (this._closed) return;
+    this.clearTurnCompleteSafetyTimer();
+    this._status = 'idle';
+    this.outputQueue.enqueue({
+      type: 'event',
+      event: { type: 'status', status: 'idle', turnComplete: true },
+    });
+  }
+
+  /** Start safety timeout for stuck pendingItemCount — emits plain idle after 10s. */
+  private startTurnCompleteSafetyTimer(): void {
+    this.clearTurnCompleteSafetyTimer();
+    this.turnCompleteSafetyTimer = setTimeout(() => {
+      if (this.turnCompletedPending) {
+        log({
+          level: 'warn',
+          source: 'codex-adapter',
+          summary: `Safety timeout: ${this.pendingItemCount} item(s) never settled — emitting idle`,
+        });
+        this.turnCompletedPending = false;
+        this.pendingItemCount = 0;
+        this.emitStatus('idle');
+      }
+    }, 10_000);
+  }
+
+  /** Clear the turn-complete safety timer. */
+  private clearTurnCompleteSafetyTimer(): void {
+    if (this.turnCompleteSafetyTimer !== null) {
+      clearTimeout(this.turnCompleteSafetyTimer);
+      this.turnCompleteSafetyTimer = null;
+    }
   }
 
   private emitError(error: Error | string): void {

@@ -1,14 +1,14 @@
 /**
  * Mention Dropdown — filtered file list for @-mention autocomplete
  *
- * Presentational component positioned above the chat input.
- * Uses onMouseDown (not onClick) so selection fires before textarea blur.
+ * Thin wrapper over AutocompleteDropdown that maps FileMatch[] to
+ * AutocompleteItem[] and applies query-substring highlighting.
  *
  * @module control-panel/MentionDropdown
  */
 
-import { useRef, useEffect } from 'react';
 import type { FileMatch } from '../../utils/file-index.js';
+import { AutocompleteDropdown, type AutocompleteItem } from './AutocompleteDropdown.js';
 
 interface MentionDropdownProps {
   results: FileMatch[];
@@ -38,7 +38,7 @@ function highlightMatch(path: string, query: string): React.ReactNode {
   return (
     <>
       {path.slice(0, idx)}
-      <mark className="crispy-cp-mention__highlight">{path.slice(idx, idx + matchLen)}</mark>
+      <mark className="crispy-cp-autocomplete__highlight">{path.slice(idx, idx + matchLen)}</mark>
       {path.slice(idx + matchLen)}
     </>
   );
@@ -50,40 +50,17 @@ export function MentionDropdown({
   query,
   onSelect,
 }: MentionDropdownProps): React.JSX.Element {
-  const listRef = useRef<HTMLDivElement>(null);
-  const selectedRef = useRef<HTMLDivElement>(null);
-
-  // Scroll selected item into view
-  useEffect(() => {
-    selectedRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [selectedIndex]);
-
-  if (results.length === 0) {
-    return (
-      <div className="crispy-cp-mention">
-        <div className="crispy-cp-mention__empty">No matches</div>
-      </div>
-    );
-  }
+  const items: AutocompleteItem[] = results.map((m) => ({
+    key: m.relativePath,
+    label: highlightMatch(m.relativePath, query),
+  }));
 
   return (
-    <div
-      ref={listRef}
-      className="crispy-cp-mention"
-    >
-      {results.map((file, i) => (
-        <div
-          key={file.relativePath}
-          ref={i === selectedIndex ? selectedRef : undefined}
-          className={`crispy-cp-mention__item${i === selectedIndex ? ' crispy-cp-mention__item--selected' : ''}`}
-          onMouseDown={(e) => {
-            e.preventDefault(); // Prevent textarea blur
-            onSelect(i);
-          }}
-        >
-          {highlightMatch(file.relativePath, query)}
-        </div>
-      ))}
-    </div>
+    <AutocompleteDropdown
+      items={items}
+      selectedIndex={selectedIndex}
+      onSelect={onSelect}
+      emptyMessage="No matching files"
+    />
   );
 }
