@@ -326,6 +326,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const [discordGuildId, setDiscordGuildId] = useState('');
     const [discordToken, setDiscordToken] = useState('');
     const [discordSessions, setDiscordSessions] = useState<'all' | 'manual'>('all');
+    const [discordAllowedUserIds, setDiscordAllowedUserIds] = useState<string[]>([]);
 
     useEffect(() => {
       transport.getSettings().then((snapshot) => {
@@ -338,6 +339,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           setDiscordGuildId(discordBot.guildId);
           setDiscordToken(discordBot.token);
           setDiscordSessions(discordBot.sessions);
+          if (discordBot.allowedUserIds) setDiscordAllowedUserIds(discordBot.allowedUserIds);
         }
         const savedDefault = snapshot.settings.turnDefaults?.model ?? '';
         setDefaultModel(savedDefault);
@@ -387,6 +389,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       if (patch.guildId !== undefined) setDiscordGuildId(patch.guildId);
       if (patch.token !== undefined) setDiscordToken(patch.token);
       if (patch.sessions !== undefined) setDiscordSessions(patch.sessions);
+      if (patch.allowedUserIds !== undefined) setDiscordAllowedUserIds(patch.allowedUserIds);
       await transport.updateSettings({ discord: { bot: patch } });
     }, [transport]);
 
@@ -1158,6 +1161,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               discordGuildId={discordGuildId}
               discordToken={discordToken}
               discordSessions={discordSessions}
+              discordAllowedUserIds={discordAllowedUserIds}
               onUpdateDiscord={handleUpdateDiscord}
               catchupStatus={catchupStatus}
               onStartEmbedding={handleStartEmbedding}

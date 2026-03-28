@@ -105,6 +105,8 @@ export interface DiscordBotSettings {
   permissionMode: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | null;
   /** Hours of inactivity before auto-archiving a Discord thread. Default: 24. */
   archivalTimeoutHours: number;
+  /** Numeric Discord user IDs allowed to interact. Empty = owner-only (resolved via OAuth). */
+  allowedUserIds: string[];
 }
 
 export interface DiscordSettings {
@@ -257,7 +259,7 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     bot: { enabled: false },
   },
   discord: {
-    bot: { enabled: false, token: '', guildId: '', sessions: 'all', permissionMode: null, archivalTimeoutHours: 24 },
+    bot: { enabled: false, token: '', guildId: '', sessions: 'all', permissionMode: null, archivalTimeoutHours: 24, allowedUserIds: [] },
   },
   mcp: {
     memory: { vscode: true, devServer: true },

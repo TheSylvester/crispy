@@ -42,6 +42,7 @@ interface SettingsPopupProps {
   discordGuildId: string;
   discordToken: string;
   discordSessions: 'all' | 'manual';
+  discordAllowedUserIds: string[];
   onUpdateDiscord: (patch: Partial<DiscordBotSettings>) => void;
   catchupStatus?: CatchupStatus | null;
   onStartEmbedding?: () => void;
@@ -139,7 +140,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordSessions, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordSessions, discordAllowedUserIds, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -392,7 +393,59 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
             </div>
           )}
 
-          {/* Discord message-view settings intentionally hidden pending security hardening. */}
+          {/* --- Discord Bot Section --- */}
+          <div className="crispy-cp-settings__section-header">Discord Bot</div>
+          <label className="crispy-cp-settings__row">
+            <span>Enabled</span>
+            <input
+              type="checkbox"
+              checked={discordEnabled}
+              onChange={(e) => onUpdateDiscord({ enabled: e.target.checked })}
+            />
+          </label>
+          {discordEnabled && (
+            <div className="crispy-cp-settings__provider-form">
+              <label>
+                <span>Guild ID</span>
+                <input
+                  type="text"
+                  value={discordGuildId}
+                  onChange={(e) => onUpdateDiscord({ guildId: e.target.value })}
+                  placeholder="Discord server ID"
+                />
+              </label>
+              <label>
+                <span>Bot Token</span>
+                <input
+                  type="password"
+                  value={discordToken}
+                  onChange={(e) => onUpdateDiscord({ token: e.target.value })}
+                  placeholder="Bot token"
+                />
+              </label>
+              <label className="crispy-cp-settings__discord-autowatch">
+                <span>Auto-watch</span>
+                <select
+                  value={discordSessions}
+                  onChange={(e) => onUpdateDiscord({ sessions: e.target.value as 'all' | 'manual' })}
+                >
+                  <option value="all">All sessions</option>
+                  <option value="manual">Manual (!open only)</option>
+                </select>
+              </label>
+              <label>
+                <span>Allowed User IDs</span>
+                <input
+                  type="text"
+                  value={discordAllowedUserIds.join(', ')}
+                  onChange={(e) => onUpdateDiscord({
+                    allowedUserIds: e.target.value.split(',').map(s => s.trim()).filter(Boolean),
+                  })}
+                  placeholder="Comma-separated Discord user IDs"
+                />
+              </label>
+            </div>
+          )}
 
           {/* --- Providers Section --- */}
           {providers && onSaveProvider && onDeleteProvider && (

@@ -296,6 +296,7 @@ function sanitizeSettings(data: unknown): CrispySettings {
           sessions: (bot.sessions === 'all' || bot.sessions === 'manual') ? bot.sessions : 'all',
           permissionMode: (bot.permissionMode === 'default' || bot.permissionMode === 'acceptEdits' || bot.permissionMode === 'plan' || bot.permissionMode === 'bypassPermissions') ? bot.permissionMode : null,
           archivalTimeoutHours: typeof bot.archivalTimeoutHours === 'number' && bot.archivalTimeoutHours > 0 ? bot.archivalTimeoutHours : 24,
+          allowedUserIds: Array.isArray(bot.allowedUserIds) ? (bot.allowedUserIds as string[]).filter(id => typeof id === 'string') : [],
         },
       };
     }
@@ -317,6 +318,7 @@ function sanitizeSettings(data: unknown): CrispySettings {
             : 'all',
           permissionMode: null,
           archivalTimeoutHours: 24,
+          allowedUserIds: [],
         },
       };
     }

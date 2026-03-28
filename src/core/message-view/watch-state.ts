@@ -582,11 +582,14 @@ export function resolveReactionApproval(
  */
 async function populateUserMessages(state: WatchState): Promise<void> {
   const botId = getBotUserId();
-  let after = '0';
+  let before: string | undefined;
   let hasMore = true;
+  const MAX_PAGES = 5; // Cap at 500 messages
+  let pages = 0;
 
-  while (hasMore) {
-    const msgs = await getMessages(state.discordChannelId, { after, limit: 100 });
+  while (hasMore && pages < MAX_PAGES) {
+    pages++;
+    const msgs = await getMessages(state.discordChannelId, { before, limit: 100 });
     if (msgs.length === 0) break;
 
     for (const msg of msgs) {
@@ -598,10 +601,13 @@ async function populateUserMessages(state: WatchState): Promise<void> {
     if (msgs.length < 100) {
       hasMore = false;
     } else {
-      after = msgs[msgs.length - 1].id;
+      before = msgs[msgs.length - 1].id;
     }
   }
 
+  if (pages >= MAX_PAGES) {
+    log({ source: SOURCE, level: 'warn', summary: `catchup capped at ${MAX_PAGES} pages for ${state.sessionId.slice(0, 8)}` });
+  }
   if (state.userMessages.size > 0) {
     log({ source: SOURCE, level: 'info', summary: `catchup: ${state.userMessages.size} user messages in ${state.sessionId.slice(0, 8)}` });
   }

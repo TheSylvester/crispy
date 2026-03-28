@@ -19,4 +19,6 @@ export interface DiscordProviderConfig {
   permissionMode: string | null;
   /** Hours of inactivity before auto-archiving a Discord thread. Default: 24. */
   archivalTimeoutHours: number;
+  /** Numeric Discord user IDs allowed to interact. Empty = owner-only (resolved via OAuth). */
+  allowedUserIds: string[];
 }

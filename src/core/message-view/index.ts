@@ -71,7 +71,8 @@ export function initMessageView(dispatch?: AgentDispatch, cwd?: string): void {
       next.guildId !== activeConfig.guildId ||
       next.sessions !== activeConfig.sessions ||
       next.permissionMode !== activeConfig.permissionMode ||
-      next.archivalTimeoutHours !== activeConfig.archivalTimeoutHours
+      next.archivalTimeoutHours !== activeConfig.archivalTimeoutHours ||
+      JSON.stringify(next.allowedUserIds) !== JSON.stringify(activeConfig.allowedUserIds)
     )) {
       tearDown();
       startUp(next);
@@ -107,6 +108,7 @@ function findEnabledDiscordProvider(): DiscordProviderConfig | null {
       sessions: discord.bot.sessions,
       permissionMode: discord.bot.permissionMode ?? settings.turnDefaults.permissionMode,
       archivalTimeoutHours: discord.bot.archivalTimeoutHours ?? 24,
+      allowedUserIds: discord.bot.allowedUserIds ?? [],
     };
   } catch (err) {
     log({ source: SOURCE, level: 'warn', summary: 'failed to read Discord provider config', data: err });

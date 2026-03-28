@@ -73,7 +73,7 @@ export interface GatewayEventHandler {
     mentions?: Array<{ id: string }>;
   }): void;
   onReactionAdd(channelId: string, messageId: string, userId: string, emoji: string): void;
-  onThreadCreate?(event: { id: string; parent_id: string; name: string; guild_id: string }): void;
+  onThreadCreate?(event: { id: string; parent_id: string; name: string; guild_id: string; owner_id?: string }): void;
   onReady(): void;
   onDisconnect?(): void;
   onReconnect?(): void;
@@ -469,6 +469,7 @@ function handleGatewayDispatch(eventName: string, data: unknown): void {
         parent_id: string;
         name: string;
         guild_id: string;
+        owner_id?: string;
       };
       if (gatewayHandler?.onThreadCreate) {
         gatewayHandler.onThreadCreate({
@@ -476,6 +477,7 @@ function handleGatewayDispatch(eventName: string, data: unknown): void {
           parent_id: d.parent_id,
           name: d.name,
           guild_id: d.guild_id,
+          owner_id: d.owner_id,
         });
       }
       break;
@@ -617,10 +619,11 @@ export async function editMessage(channelId: string, messageId: string, content:
 
 export async function getMessages(
   channelId: string,
-  opts?: { after?: string; limit?: number },
+  opts?: { after?: string; before?: string; limit?: number },
 ): Promise<Array<{ id: string; content: string; author: { id: string; bot?: boolean } }>> {
   const params = new URLSearchParams();
   if (opts?.after) params.set('after', opts.after);
+  if (opts?.before) params.set('before', opts.before);
   if (opts?.limit) params.set('limit', String(opts.limit));
   const qs = params.toString();
   const path = `/channels/${channelId}/messages${qs ? `?${qs}` : ''}`;

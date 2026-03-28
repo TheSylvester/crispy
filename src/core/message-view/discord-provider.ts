@@ -94,6 +94,19 @@ const lastActivityMap = new Map<string, number>();
 
 let ownerUserId: string | null = null;
 let commandsEnabled = false;
+
+/**
+ * Authorization check — fail-closed.
+ * Owner (via OAuth) always passes. Allowlist is additive (expands access
+ * beyond owner). If no owner AND no allowlist, nobody can interact.
+ */
+function isAuthorized(userId: string): boolean {
+  if (ownerUserId && userId === ownerUserId) return true;
+  if (currentConfig?.allowedUserIds?.length) {
+    return currentConfig.allowedUserIds.includes(userId);
+  }
+  return false;
+}
 let promptsInFlight = 0;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let startTime = 0;
@@ -374,6 +387,19 @@ async function initWorkspaceChannels(): Promise<void> {
  * bot-self message arrives in the probed channel.
  */
 async function healthCheckBot(channelId: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const alive = await singleHealthProbe(channelId);
+    if (alive) return true;
+    if (attempt === 0) {
+      // Wait before retry — give the other bot time to reconnect
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+  return false;
+}
+
+/** Single health probe: send `!status` and wait for a response within timeout. */
+function singleHealthProbe(channelId: string): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     const timer = setTimeout(() => {
       healthCheckResolvers.delete(channelId);
@@ -397,8 +423,12 @@ async function healthCheckBot(channelId: string): Promise<boolean> {
 // Thread Create — user-created forum posts become sessions
 // ---------------------------------------------------------------------------
 
-function handleThreadCreate(event: { id: string; parent_id: string; name: string; guild_id: string }): void {
+function handleThreadCreate(event: { id: string; parent_id: string; name: string; guild_id: string; owner_id?: string }): void {
   if (!commandsEnabled) return;
+
+  // Auth gate: only allowed users can create sessions via forum posts.
+  // Fail-closed: if owner_id is absent, deny (don't assume authorized).
+  if (!event.owner_id || !isAuthorized(event.owner_id)) return;
 
   // Only handle threads in workspace forum channels
   if (!isWorkspaceForum(event.parent_id)) return;
@@ -642,6 +672,13 @@ async function handleGatewayMessage(
 
   if (!commandsEnabled) return;
 
+  // Auth gate: only allowed users can interact.
+  // Bot-self fall-through (cross-instance commands) is exempt — those
+  // messages already passed the bot-self block above and are needed for
+  // multi-instance health checks.
+  const isBotSelf = message.author.id === botId;
+  if (!isBotSelf && !isAuthorized(message.author.id)) return;
+
   // Route 1: message in a session post -> track + follow-up turn + update activity
   if (getSessionForChannel(channelId)) {
     // Track non-bot message for anchor detection (deduplication)
@@ -680,6 +717,9 @@ function handleGatewayReaction(
   const botId = getBotUserId();
   if (!botId || userId === botId) return;
 
+  // Auth gate: only allowed users can react
+  if (!isAuthorized(userId)) return;
+
   // 📂 on welcome message → show session list, then remove user's reaction so they can tap again
   if (emoji === '\u{1F4C2}' && welcomeMessageId && messageId === welcomeMessageId) {
     const encoded = encodeURIComponent('\u{1F4C2}');
@@ -695,8 +735,8 @@ function handleGatewayReaction(
     log({ source: SOURCE, level: 'error', summary: 'session list reaction error', data: err });
   });
 
-  // ❌ on any message in the forum → archive the thread (owner only)
-  if (emoji === '\u{274C}' && (!ownerUserId || userId === ownerUserId)) {
+  // ❌ on any message in the forum → archive the thread (authorized users — redundant with gate above, defense-in-depth)
+  if (emoji === '\u{274C}') {
     const sessionId = getSessionForChannel(channelId);
     if (sessionId) disposeWatch(sessionId);
     archiveThread(channelId).catch((err) => {
