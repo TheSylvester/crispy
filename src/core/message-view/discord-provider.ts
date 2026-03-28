@@ -39,7 +39,7 @@ import {
   archiveThread,
 } from './discord-transport.js';
 import type { GatewayEventHandler, DiscordInteraction } from './discord-transport.js';
-import { handleCommand, handleSessionButtonPick, handleSessionNextButton } from './commands.js';
+import { handleCommand, handleSessionButtonPick, handleSessionNextButton, disposeAllScreens } from './commands.js';
 import type { CommandContext } from './commands.js';
 import {
   cleanupAndDiscoverBots,
@@ -280,6 +280,7 @@ function disposeDiscordProvider(): void {
 
   disposeAllWatches();
   clearCommandSessions();
+  disposeAllScreens();
   lastTypingFired.clear();
   channelMap.clear();
   lastActivityMap.clear();
@@ -508,8 +509,8 @@ async function handleUserCreatedPost(threadId: string, forumChannelId: string, t
   });
 
   // First bot message: session ID anchor + close button
-  await sendMessageWithComponents(threadId, `\u{1F4CB} Session \`${sessionId}\``, buildCloseButton(sessionId)).catch(() => {
-    sendMessage(threadId, `\u{1F4CB} Session \`${sessionId}\``).catch(() => {});
+  await sendMessageWithComponents(threadId, `session-${sessionId.slice(0, 8)}`, buildCloseButton(sessionId)).catch(() => {
+    sendMessage(threadId, `session-${sessionId.slice(0, 8)}`).catch(() => {});
   });
 
   // Watch in the user-created thread (no new forum post)
@@ -701,11 +702,12 @@ async function handleGatewayInteraction(interaction: DiscordInteraction): Promis
     const sessionId = customId.slice(6);
     const fallbackSessionId = getSessionForChannel(interaction.channel_id);
     const watchState = getWatch(sessionId) ?? (fallbackSessionId ? getWatch(fallbackSessionId) : undefined);
+    const displayId = (watchState?.sessionId ?? sessionId).slice(0, 8);
     // Respond first (before archive, which could race with the response)
     await respondToInteraction(interaction.id, interaction.token, {
       type: 7,
       data: {
-        content: `\u{1F4CB} Session \`${sessionId}\` \u{2014} \u{1F512} closed`,
+        content: `session-${displayId} \u{2014} \u{1F512} closed`,
         components: [],
       },
     });

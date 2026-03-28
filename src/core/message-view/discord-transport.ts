@@ -646,6 +646,19 @@ export async function editMessage(channelId: string, messageId: string, content:
   await discordFetch('PATCH', `/channels/${channelId}/messages/${messageId}`, { content });
 }
 
+export async function editMessageWithComponents(
+  channelId: string,
+  messageId: string,
+  content: string,
+  components: MessageComponent[],
+): Promise<void> {
+  await discordFetch('PATCH', `/channels/${channelId}/messages/${messageId}`, { content, components });
+}
+
+export async function deleteMessage(channelId: string, messageId: string): Promise<void> {
+  await discordFetch('DELETE', `/channels/${channelId}/messages/${messageId}`);
+}
+
 export async function getMessages(
   channelId: string,
   opts?: { after?: string; before?: string; limit?: number },

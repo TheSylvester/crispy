@@ -14,7 +14,12 @@ import {
   resolveSessionPrefix,
 } from '../session-manager.js';
 import { getActiveChannels } from '../session-channel.js';
-import { sendMessage, sendMessageWithComponents } from './discord-transport.js';
+import {
+  sendMessage,
+  sendMessageWithComponents,
+  editMessageWithComponents,
+  deleteMessage,
+} from './discord-transport.js';
 import type { MessageComponent } from './discord-transport.js';
 import type { AgentDispatch } from '../agent-dispatch-types.js';
 import { listAllSessions } from '../session-manager.js';
@@ -22,25 +27,49 @@ import { listAllSessions } from '../session-manager.js';
 const SOURCE = 'message-view/commands';
 const COMMANDS_HELP = 'Available: `!sessions`, `!open`, `!stop`, `!status`';
 
+/** Sessions per page: 5 in msg1 + 4 in msg2 (+ Next Page button). */
+const MSG1_SLOTS = 5;
+const MSG2_SLOTS = 4;
+const PAGE_SIZE = MSG1_SLOTS + MSG2_SLOTS; // 9
+
+/** Auto-refresh the session screen after this many ms of inactivity. */
+const SCREEN_IDLE_REFRESH_MS = 60_000;
+
 // Session display — mirrors webview/utils/session-display.ts (can't import from webview layer)
 function getSessionDisplayName(s: { title?: string; label?: string; lastUserPrompt?: string; sessionId: string }): string {
   return s.title?.trim() || s.lastUserPrompt?.trim() || s.label?.trim() || s.sessionId.slice(0, 8) + '\u{2026}';
 }
 
-function getSessionSubtitle(s: { title?: string; label?: string; lastUserPrompt?: string; lastMessage?: string }): string | null {
-  const title = s.title?.trim(), label = s.label?.trim();
-  const lastUser = s.lastUserPrompt?.trim(), lastMsg = s.lastMessage?.trim();
-  if (title) return (label && label !== title) ? label : (lastMsg && lastMsg !== title) ? lastMsg : null;
-  if (lastUser) return (label && label !== lastUser) ? label : (lastMsg && lastMsg !== lastUser) ? lastMsg : null;
-  return (lastMsg && lastMsg !== label) ? lastMsg : null;
-}
+// ---------------------------------------------------------------------------
+// Session screen state — the bot channel is treated as an interactive display.
+// Each channel has at most one "screen" (2 Discord messages) that is edited
+// in-place for pagination and auto-refreshed after idle.
+// ---------------------------------------------------------------------------
 
-// Active session list state — maps messageId → { sessions, page, channelId }
-const activeSessionLists = new Map<string, {
+interface SessionScreen {
+  channelId: string;
+  /** Discord message IDs for the two screen messages. */
+  messageIds: [string, string] | [string];
+  /** Session data visible on the current page (for button→session mapping). */
   sessions: Array<{ sessionId: string; title: string }>;
   page: number;
-  channelId: string;
-}>();
+  lastInteraction: number;
+  refreshTimer: ReturnType<typeof setTimeout> | null;
+}
+
+/** One screen per bot control channel. */
+const activeScreens = new Map<string, SessionScreen>();
+
+/**
+ * Look up a session from a button click on any screen message.
+ * Matches against both message IDs in the screen.
+ */
+export function getScreenForMessage(messageId: string): SessionScreen | undefined {
+  for (const screen of activeScreens.values()) {
+    if (screen.messageIds.includes(messageId)) return screen;
+  }
+  return undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Context interface — injected by discord-provider.ts
@@ -124,7 +153,6 @@ async function handleSessions(channelId: string, args: string, ctx: CommandConte
     return;
   }
 
-  const PAGE_SIZE = 10;
   const start = page * PAGE_SIZE;
   const pageSessions = allSessions.slice(start, start + PAGE_SIZE);
 
@@ -134,41 +162,37 @@ async function handleSessions(channelId: string, args: string, ctx: CommandConte
   }
 
   const totalPages = Math.ceil(allSessions.length / PAGE_SIZE);
-  const now = Date.now();
+  const displayNames = pageSessions.map(s => getSessionDisplayName(s));
 
   const header = totalPages > 1
     ? `\u{1F4C2} **Sessions** (page ${page + 1}/${totalPages})`
     : '\u{1F4C2} **Sessions**';
 
-  // Pre-compute display names and subtitles (same logic as webview dropdown)
-  const displayNames = pageSessions.map(s => getSessionDisplayName(s));
-  const subtitles = pageSessions.map(s => getSessionSubtitle(s));
+  const hasNextPage = start + PAGE_SIZE < allSessions.length;
 
-  // Message text: subtitle + time + vendor per session (button has the title)
-  const lines = pageSessions.map((s, i) => {
-    const ago = formatTimeAgo(now - s.modifiedAt.getTime());
-    const vendor = s.vendor !== 'claude' ? ` \u{2022} ${s.vendor}` : '';
-    const sub = subtitles[i]?.slice(0, 60);
-    return sub
-      ? `> ${sub}\n> ${ago}${vendor}`
-      : `> ${ago}${vendor}`;
-  });
+  // Split sessions across two messages: msg1 gets up to MSG1_SLOTS, msg2 gets the rest.
+  // msg2 is only used when there are >MSG1_SLOTS sessions or a Next Page button is needed.
+  const msg1Names = displayNames.slice(0, MSG1_SLOTS);
+  const msg2Names = displayNames.slice(MSG1_SLOTS);
+  const needsMsg2 = msg2Names.length > 0 || hasNextPage;
 
-  // Build button rows (max 5 per action row)
-  const buttons: MessageComponent[] = pageSessions.map((_s, i) => ({
-    type: 2,
-    style: 2,
-    label: displayNames[i].slice(0, 75),
-    custom_id: `session:${i}`,
-  }));
+  // Build vertical-stack action rows (1 button per row)
+  const buildRows = (names: string[], offset: number): MessageComponent[] =>
+    names.map((name, i) => ({
+      type: 1 as const,
+      components: [{
+        type: 2 as const,
+        style: 2 as const,
+        label: name.slice(0, 80),
+        custom_id: `session:${offset + i}`,
+      }],
+    }));
 
-  const actionRows: MessageComponent[] = [];
-  for (let i = 0; i < buttons.length; i += 5) {
-    actionRows.push({ type: 1, components: buttons.slice(i, i + 5) });
-  }
+  const msg1Rows = buildRows(msg1Names, 0);
 
-  if (start + PAGE_SIZE < allSessions.length) {
-    actionRows.push({
+  // If ≤5 sessions and no next page, put Next Page on msg1 (won't exceed 5 rows)
+  if (hasNextPage && !needsMsg2) {
+    msg1Rows.push({
       type: 1,
       components: [{
         type: 2,
@@ -179,26 +203,72 @@ async function handleSessions(channelId: string, args: string, ctx: CommandConte
     });
   }
 
-  const msg = await sendMessageWithComponents(channelId, `${header}\n\n${lines.join('\n')}`, actionRows);
+  let msg2Rows: MessageComponent[] = [];
+  if (needsMsg2) {
+    msg2Rows = buildRows(msg2Names, MSG1_SLOTS);
+    if (hasNextPage) {
+      msg2Rows.push({
+        type: 1,
+        components: [{
+          type: 2,
+          style: 1,
+          label: 'Next Page \u{25B6}',
+          custom_id: `session_next:${page + 1}`,
+        }],
+      });
+    }
+  }
 
-  activeSessionLists.set(msg.id, {
-    sessions: pageSessions.map((s, i) => ({
-      sessionId: s.sessionId,
-      title: displayNames[i],
-    })),
-    page,
+  // Check for existing screen to edit-in-place
+  const existing = activeScreens.get(channelId);
+
+  const sessionData = pageSessions.map((s, i) => ({
+    sessionId: s.sessionId,
+    title: displayNames[i],
+  }));
+
+  if (existing) {
+    try {
+      await editMessageWithComponents(channelId, existing.messageIds[0], header, msg1Rows);
+      if (existing.messageIds.length === 2 && needsMsg2) {
+        // Edit existing msg2
+        await editMessageWithComponents(channelId, existing.messageIds[1], '\u{200B}', msg2Rows);
+      } else if (existing.messageIds.length === 2 && !needsMsg2) {
+        // Had msg2 but no longer needed — delete it
+        deleteMessage(channelId, existing.messageIds[1]).catch(() => {});
+        existing.messageIds = [existing.messageIds[0]];
+      } else if (existing.messageIds.length === 1 && needsMsg2) {
+        // Need msg2 but didn't have one — create it
+        const msg2 = await sendMessageWithComponents(channelId, '\u{200B}', msg2Rows);
+        existing.messageIds = [existing.messageIds[0], msg2.id];
+      }
+      existing.sessions = sessionData;
+      existing.page = page;
+      existing.lastInteraction = Date.now();
+      scheduleScreenRefresh(channelId, ctx);
+      return;
+    } catch {
+      // Edit failed (messages deleted?) — fall through to create new
+      teardownScreen(channelId);
+    }
+  }
+
+  // Create fresh screen
+  const msg1 = await sendMessageWithComponents(channelId, header, msg1Rows);
+  const messageIds: [string, string] | [string] = needsMsg2
+    ? [msg1.id, (await sendMessageWithComponents(channelId, '\u{200B}', msg2Rows)).id]
+    : [msg1.id];
+
+  const screen: SessionScreen = {
     channelId,
-  });
-}
-
-function formatTimeAgo(ms: number): string {
-  const mins = Math.floor(ms / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+    messageIds,
+    sessions: sessionData,
+    page,
+    lastInteraction: Date.now(),
+    refreshTimer: null,
+  };
+  activeScreens.set(channelId, screen);
+  scheduleScreenRefresh(channelId, ctx);
 }
 
 /**
@@ -209,29 +279,74 @@ export function handleSessionButtonPick(
   customId: string,
   messageId: string,
 ): { sessionId: string; title: string } | null {
-  const state = activeSessionLists.get(messageId);
-  if (!state) return null;
+  const screen = getScreenForMessage(messageId);
+  if (!screen) return null;
   const index = parseInt(customId.split(':')[1], 10);
-  if (isNaN(index) || index >= state.sessions.length) return null;
-  activeSessionLists.delete(messageId);
-  return state.sessions[index];
+  if (isNaN(index) || index >= screen.sessions.length) return null;
+  screen.lastInteraction = Date.now();
+  return screen.sessions[index];
 }
 
 /**
  * Handle a session list "Next Page" button interaction.
- * Posts the next page of sessions.
+ * Edits the screen in-place to show the next page.
  */
 export async function handleSessionNextButton(
   customId: string,
   messageId: string,
   ctx: CommandContext,
 ): Promise<void> {
-  const state = activeSessionLists.get(messageId);
-  if (!state) return;
-  activeSessionLists.delete(messageId);
+  const screen = getScreenForMessage(messageId);
+  if (!screen) return;
   const nextPage = parseInt(customId.split(':')[1], 10);
   if (isNaN(nextPage)) return;
-  await handleSessions(state.channelId, String(nextPage + 1), ctx);
+  await handleSessions(screen.channelId, String(nextPage + 1), ctx);
+}
+
+// ---------------------------------------------------------------------------
+// Screen lifecycle
+// ---------------------------------------------------------------------------
+
+function scheduleScreenRefresh(channelId: string, ctx: CommandContext): void {
+  const screen = activeScreens.get(channelId);
+  if (!screen) return;
+
+  if (screen.refreshTimer) clearTimeout(screen.refreshTimer);
+  screen.refreshTimer = setTimeout(async () => {
+    const current = activeScreens.get(channelId);
+    if (!current || current !== screen) return;
+    // Postpone if a recent interaction happened within the idle window
+    const elapsed = Date.now() - current.lastInteraction;
+    if (elapsed < SCREEN_IDLE_REFRESH_MS) {
+      scheduleScreenRefresh(channelId, ctx);
+      return;
+    }
+    // Auto-refresh back to page 1
+    try {
+      await handleSessions(channelId, '1', ctx);
+    } catch (err) {
+      log({ source: SOURCE, level: 'warn', summary: 'session screen auto-refresh failed', data: err });
+    }
+  }, SCREEN_IDLE_REFRESH_MS);
+}
+
+function teardownScreen(channelId: string): void {
+  const screen = activeScreens.get(channelId);
+  if (!screen) return;
+  if (screen.refreshTimer) clearTimeout(screen.refreshTimer);
+  // Best-effort delete old messages
+  for (const msgId of screen.messageIds) {
+    deleteMessage(channelId, msgId).catch(() => {});
+  }
+  activeScreens.delete(channelId);
+}
+
+/** Clean up all screens (called on bot shutdown). */
+export function disposeAllScreens(): void {
+  for (const screen of activeScreens.values()) {
+    if (screen.refreshTimer) clearTimeout(screen.refreshTimer);
+  }
+  activeScreens.clear();
 }
 
 async function handleOpen(channelId: string, args: string, ctx: CommandContext): Promise<void> {

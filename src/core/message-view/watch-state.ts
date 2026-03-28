@@ -29,6 +29,7 @@ import {
 import {
   sendMessage,
   editMessage,
+  editMessageWithComponents,
   createForumPost,
   archiveThread,
   discordFetch,
@@ -41,7 +42,6 @@ import type { MessageComponent } from './discord-transport.js';
 import { DiscordApiError } from './discord-transport.js';
 import {
   renderSessionWithAnchors,
-  getStatusLine,
   truncate,
   DISCORD_MAX_LENGTH,
 } from './render.js';
@@ -233,6 +233,7 @@ export async function createWatchedSession(
   const displayName = promptText.slice(0, 100).replace(/\n/g, ' ').trim() || 'new session';
   const post = await createForumPost(forumChannelId, displayName, '\u{23F3} Starting session\u{2026}', {
     autoArchiveDuration: 1440,
+    components: buildCloseButton(`pending-${Date.now()}`),
   });
 
   const discordChannelId = post.id;
@@ -278,9 +279,14 @@ export async function createWatchedSession(
     log({ source: SOURCE, level: 'warn', summary: `failed to rename post to ${canonicalName}`, data: err });
   });
 
-  // Update starter message with session ID anchor (for crash recovery)
+  // Update starter message with static session ID + close button
   if (starterMessageId) {
-    editMessage(discordChannelId, starterMessageId, `\u{1F4CB} Session \`${realId}\``).catch((err) => {
+    editMessageWithComponents(
+      discordChannelId,
+      starterMessageId,
+      `session-${realId.slice(0, 8)}`,
+      buildCloseButton(realId),
+    ).catch((err) => {
       log({ source: SOURCE, level: 'warn', summary: `failed to update starter message with session ID anchor`, data: err });
     });
   }
@@ -305,7 +311,7 @@ export async function watchSession(
   pendingWatches.add(sessionId);
   try {
     const postName = opts.displayName?.slice(0, 100) || `session-${sessionId.slice(0, 8)}`;
-    const post = await createForumPost(forumChannelId, postName, `\u{1F4CB} Session \`${sessionId}\``, {
+    const post = await createForumPost(forumChannelId, postName, `session-${sessionId.slice(0, 8)}`, {
       autoArchiveDuration: 1440,
       components: buildCloseButton(sessionId),
     });
@@ -670,7 +676,6 @@ export async function syncSession(state: WatchState): Promise<void> {
       state.snapshot.entries,
       state.snapshot.toolResults,
       state.userMessages,
-      getStatusLine(state.snapshot.status),
     );
 
     const contentSegments = segments.filter((s): s is Extract<RenderSegment, { kind: 'content' }> => s.kind === 'content');
@@ -708,7 +713,15 @@ export async function syncSession(state: WatchState): Promise<void> {
         const slot = state.threadSlots[slotIndex];
         if (slot.content !== segment.text) {
           try {
-            await editMessage(state.discordChannelId, slot.discordMessageId, segment.text);
+            if (slotIndex === 0) {
+              // First slot (starter message) — preserve Close button
+              await editMessageWithComponents(
+                state.discordChannelId, slot.discordMessageId, segment.text,
+                buildCloseButton(state.sessionId),
+              );
+            } else {
+              await editMessage(state.discordChannelId, slot.discordMessageId, segment.text);
+            }
             slot.content = segment.text;
           } catch (err) {
             if (await handleSyncError(state, err, `edit slot ${slotIndex}`)) return;
