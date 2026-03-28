@@ -1050,6 +1050,7 @@ export async function createForkSession(
         mode: 'resume',
         sessionId: realId,
         env: buildSessionEnv(realId),
+        ...(options?.settings?.permissionMode && { permissionMode: options.settings.permissionMode }),
       };
       const channel = openChannel(realId, vendor, spec, {
         initialEntries: forkEntries,
@@ -1087,6 +1088,8 @@ export async function createForkSession(
     fromSessionId,
     ...(options?.atMessageId && { atMessageId: options.atMessageId }),
     ...(options?.settings?.model && { model: options.settings.model }),
+    ...(options?.settings?.permissionMode && { permissionMode: options.settings.permissionMode }),
+    ...(options?.settings?.allowDangerouslySkipPermissions && { allowDangerouslySkipPermissions: true }),
     ...(options?.settings?.outputFormat && { outputFormat: options.settings.outputFormat }),
     ...(options?.skipPersistSession && { skipPersistSession: true }),
     ...(options?.mcpServers && { mcpServers: options.mcpServers }),

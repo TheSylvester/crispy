@@ -1316,7 +1316,10 @@ export class ClaudeAgentAdapter implements AgentAdapter {
           this.options.model = this._metadata.model;
           settingsChanged = true;
         }
-        if (this._metadata.permissionMode && this._metadata.permissionMode !== this.options.permissionMode) {
+        // Only backfill permission mode from SDK init when no explicit mode was
+        // set — avoids clobbering the user's UI-selected mode with whatever the
+        // SDK reports on startup.
+        if (this._metadata.permissionMode && !this.options.permissionMode) {
           this.options.permissionMode = this._metadata.permissionMode as Options['permissionMode'];
           settingsChanged = true;
         }
