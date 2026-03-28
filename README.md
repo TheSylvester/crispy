@@ -1,8 +1,8 @@
 # Crispy
 
-**An agent workbench for Claude Code and Codex — with local agent memory, multi-agent collaboration, and controls you can't get in a terminal.**
+**A power-user's graphical controller for multiple Claude Code and Codex instances at a time, supercharged with agent memory, fork/rewind, multi-agent collaboration, full tool-call visibility, and inline quoting.**
 
-Works with Claude Code and Codex. Runs standalone in your browser or as a VS Code / Cursor extension.
+Runs standalone in your browser or as a VS Code / Cursor extension.
 
 [![npm](https://img.shields.io/npm/v/crispy-code?label=npm&color=blue)](https://www.npmjs.com/package/crispy-code)
 [![Version](https://img.shields.io/open-vsx/v/the-sylvester/crispy?label=OpenVSX&color=blue)](https://open-vsx.org/extension/the-sylvester/crispy)
@@ -12,9 +12,9 @@ Works with Claude Code and Codex. Runs standalone in your browser or as a VS Cod
 
 ![Crispy — reading project docs, explaining the codebase, and making an edit in one conversation](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/hero.gif)
 
-**Agent memory** — searchable transcripts across all vendors, fully local.
-**Multi-agent collaboration** — resumable cross-vendor sessions, directed by your agent of choice.
-**Coding agent workbench** — fork, rewind, agency modes, tool auditing, multiple browser tabs or side-by-side VS Code Editor panels, local voice input, and more.
+**Agent memory** — every transcript indexed locally with full-text + semantic search. No cloud, no API calls.
+**Multi-agent /superthink** — pit Claude and Codex against each other on the same question. Catches bugs and blind spots a single model misses.
+**Fork, rewind, and control** — agency modes, tool audit panel, multiple browser tabs or side-by-side VS Code panels, inline quoting, local voice input, and more.
 
 ---
 
@@ -78,15 +78,16 @@ subscribers — no flash, no re-subscription. Two new plugin skills use it:
 ![Agent memory — recall searching past sessions with skill and agent badges](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/agent-memory-recall.png)
 
 - Agent memory — every session indexed locally with full-text and semantic search across all vendors. Find past decisions, debugging threads, and design discussions — full transcripts, not summaries
-- Multi-agent collaboration — resumable cross-vendor child sessions, directed by your agent of choice
+- Multi-agent `/superthink` — pit Claude and Codex against each other on the same question. Catches bugs and blind spots a single model misses
+- Built-in skills — tell your agent to `/handoff` when context gets long, `/clear-and-execute` a plan from markdown, or `/superthink` for a second opinion. One slash command, no setup
 - Claude Code and Codex adapters
 
 ### Execution control
 
 ![Cycle through agency modes — plan, ask, accept, bypass](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/permission-modes.gif)
 
-- Agency modes — plan, ask-before-edits, auto-accept, bypass (persisted per session)
-- Dedicated tool panel for auditing tool calls and sub-agent work
+- Agency modes — plan, auto-accept, `--dangerously-skip-permissions`, browser mode — one click, persisted per session
+- Tool audit panel — every tool call and sub-agent's work in a collapsible panel, not buried in your conversation
 - One-click bypass mode and pop-out to external browser
 
 ### UI
