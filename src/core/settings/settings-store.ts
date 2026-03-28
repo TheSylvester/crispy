@@ -293,7 +293,6 @@ function sanitizeSettings(data: unknown): CrispySettings {
           enabled: typeof bot.enabled === 'boolean' ? bot.enabled : false,
           token: typeof bot.token === 'string' ? bot.token : '',
           guildId: typeof bot.guildId === 'string' ? bot.guildId : '',
-          sessions: (bot.sessions === 'all' || bot.sessions === 'manual') ? bot.sessions : 'all',
           permissionMode: (bot.permissionMode === 'default' || bot.permissionMode === 'acceptEdits' || bot.permissionMode === 'plan' || bot.permissionMode === 'bypassPermissions') ? bot.permissionMode : null,
           archivalTimeoutHours: typeof bot.archivalTimeoutHours === 'number' && bot.archivalTimeoutHours > 0 ? bot.archivalTimeoutHours : 24,
           allowedUserIds: Array.isArray(bot.allowedUserIds) ? (bot.allowedUserIds as string[]).filter(id => typeof id === 'string') : [],
@@ -313,9 +312,6 @@ function sanitizeSettings(data: unknown): CrispySettings {
           enabled: !!discordProvider.enabled,
           token: typeof discordProvider.token === 'string' ? discordProvider.token : '',
           guildId: typeof discordProvider.guildId === 'string' ? discordProvider.guildId : '',
-          sessions: (discordProvider.sessions === 'all' || discordProvider.sessions === 'manual')
-            ? discordProvider.sessions as 'all' | 'manual'
-            : 'all',
           permissionMode: null,
           archivalTimeoutHours: 24,
           allowedUserIds: [],

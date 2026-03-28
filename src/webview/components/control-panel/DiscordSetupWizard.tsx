@@ -37,7 +37,6 @@ interface DiscordSetupWizardProps {
   enabled: boolean;
   guildId: string;
   token: string;
-  sessions: 'all' | 'manual';
   allowedUserIds: string[];
   onUpdateDiscord: (patch: Partial<DiscordBotSettings>) => void;
   /** Notify parent when the wizard has unsaved draft state (prevents click-outside close). */
@@ -63,7 +62,6 @@ export function DiscordSetupWizard({
   enabled,
   guildId,
   token,
-  sessions,
   allowedUserIds,
   onUpdateDiscord,
   onDirtyChange,
@@ -74,7 +72,6 @@ export function DiscordSetupWizard({
   const isFirstTime = enabled && !token;
   const [draftToken, setDraftToken] = useState('');
   const [draftGuildId, setDraftGuildId] = useState('');
-  const [draftSessions, setDraftSessions] = useState<'all' | 'manual'>('all');
   const [draftAllowedUserIds, setDraftAllowedUserIds] = useState('');
   // Track whether user explicitly changed the token (to avoid saving masked values)
   const [tokenTouched, setTokenTouched] = useState(false);
@@ -159,7 +156,6 @@ export function DiscordSetupWizard({
     const patch: Partial<DiscordBotSettings> = {
       enabled: true,
       guildId: draftGuildId,
-      sessions: draftSessions,
       allowedUserIds: draftAllowedUserIds.split(',').map(s => s.trim()).filter(Boolean),
     };
     // Only include token if user explicitly changed it (avoids saving masked values)
@@ -167,18 +163,17 @@ export function DiscordSetupWizard({
     onUpdateDiscord(patch);
     setEditing(false);
     setTokenTouched(false);
-  }, [onUpdateDiscord, draftToken, draftGuildId, draftSessions, draftAllowedUserIds, tokenTouched]);
+  }, [onUpdateDiscord, draftToken, draftGuildId, draftAllowedUserIds, tokenTouched]);
 
   const handleEdit = useCallback(() => {
     setDraftToken(token);
     setDraftGuildId(guildId);
-    setDraftSessions(sessions);
     setDraftAllowedUserIds(allowedUserIds.join(', '));
     setTokenTouched(false);
     setEditing(true);
     // Don't auto-validate — token prop is masked, validation would fail.
     // User must re-enter token if they want to change it.
-  }, [token, guildId, sessions, allowedUserIds]);
+  }, [token, guildId, allowedUserIds]);
 
   const handleCancel = useCallback(() => {
     setEditing(false);
@@ -222,10 +217,6 @@ export function DiscordSetupWizard({
           <div className="crispy-discord-wizard__summary-row">
             <span className="crispy-discord-wizard__summary-label">Guild</span>
             <span className="crispy-discord-wizard__summary-value">{guildId || '(not set)'}</span>
-          </div>
-          <div className="crispy-discord-wizard__summary-row">
-            <span className="crispy-discord-wizard__summary-label">Auto-watch</span>
-            <span className="crispy-discord-wizard__summary-value">{sessions === 'all' ? 'All sessions' : 'Manual'}</span>
           </div>
           <button className="crispy-cp-settings__provider-btn" onClick={handleEdit}>
             Edit
@@ -373,20 +364,6 @@ export function DiscordSetupWizard({
             </button>
             {advancedOpen && (
               <div className="crispy-discord-wizard__advanced-body">
-                <label className="crispy-cp-settings__discord-autowatch">
-                  <span>Auto-watch</span>
-                  <select
-                    value={(isFirstTime || editing) ? draftSessions : sessions}
-                    onChange={(e) => {
-                      const val = e.target.value as 'all' | 'manual';
-                      if (isFirstTime || editing) setDraftSessions(val);
-                      else onUpdateDiscord({ sessions: val });
-                    }}
-                  >
-                    <option value="all">All sessions</option>
-                    <option value="manual">Manual (!open only)</option>
-                  </select>
-                </label>
                 <label className="crispy-discord-wizard__field">
                   <span>Allowed User IDs</span>
                   <input

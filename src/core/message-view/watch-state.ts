@@ -50,6 +50,19 @@ import type { RenderSegment } from './render.js';
 const SOURCE = 'message-view';
 const MIN_PROMPT_LENGTH = 3;
 
+/** Build a "Close Thread" button row for forum posts. */
+export function buildCloseButton(sessionId: string): MessageComponent[] {
+  return [{
+    type: 1,
+    components: [{
+      type: 2,
+      style: 4,
+      label: 'Close Thread',
+      custom_id: `close:${sessionId}`,
+    }],
+  }];
+}
+
 function buildPermissionSettings(mode: string | null): Partial<TurnSettings> {
   if (!mode) return {};
   return {
@@ -285,16 +298,16 @@ export async function createWatchedSession(
 export async function watchSession(
   sessionId: string,
   forumChannelId: string,
-  opts: { auto: boolean; displayName?: string },
+  opts: { displayName?: string },
   permissionMode?: string | null,
 ): Promise<void> {
   if (watchedSessions.has(sessionId) || pendingWatches.has(sessionId)) return;
   pendingWatches.add(sessionId);
   try {
     const postName = opts.displayName?.slice(0, 100) || `session-${sessionId.slice(0, 8)}`;
-    const anchorText = `\u{1F4CB} Session \`${sessionId}\``;
-    const post = await createForumPost(forumChannelId, postName, anchorText, {
+    const post = await createForumPost(forumChannelId, postName, `\u{1F4CB} Session \`${sessionId}\``, {
       autoArchiveDuration: 1440,
+      components: buildCloseButton(sessionId),
     });
     const discordChannelId = post.id;
     const starterMessageId = post.messageId;
@@ -314,7 +327,7 @@ export async function watchSession(
       throw err;
     }
 
-    log({ source: SOURCE, level: 'info', summary: `${opts.auto ? 'auto-' : ''}watching session ${sessionId.slice(0, 12)}\u{2026}` });
+    log({ source: SOURCE, level: 'info', summary: `watching session ${sessionId.slice(0, 12)}\u{2026}` });
   } finally {
     pendingWatches.delete(sessionId);
   }

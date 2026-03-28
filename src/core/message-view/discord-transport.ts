@@ -717,11 +717,13 @@ export async function createForumPost(
   forumChannelId: string,
   name: string,
   message: string,
-  opts?: { autoArchiveDuration?: number; appliedTags?: string[] },
+  opts?: { autoArchiveDuration?: number; appliedTags?: string[]; components?: MessageComponent[] },
 ): Promise<{ id: string; name: string; messageId: string }> {
+  const msg: Record<string, unknown> = { content: message };
+  if (opts?.components) msg.components = opts.components;
   const body: Record<string, unknown> = {
     name: name.slice(0, 100),
-    message: { content: message },
+    message: msg,
   };
   if (opts?.autoArchiveDuration) body.auto_archive_duration = opts.autoArchiveDuration;
   if (opts?.appliedTags) body.applied_tags = opts.appliedTags;

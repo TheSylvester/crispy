@@ -273,7 +273,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             setDiscordEnabled(dBot.enabled);
             setDiscordGuildId(dBot.guildId);
             setDiscordToken(dBot.token);
-            setDiscordSessions(dBot.sessions);
           }
           setDefaultModel(settingsEvent.snapshot.settings.turnDefaults?.model ?? '');
           const savedMode = settingsEvent.snapshot.settings.turnDefaults?.permissionMode;
@@ -325,7 +324,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const [discordEnabled, setDiscordEnabled] = useState(false);
     const [discordGuildId, setDiscordGuildId] = useState('');
     const [discordToken, setDiscordToken] = useState('');
-    const [discordSessions, setDiscordSessions] = useState<'all' | 'manual'>('all');
     const [discordAllowedUserIds, setDiscordAllowedUserIds] = useState<string[]>([]);
 
     useEffect(() => {
@@ -338,7 +336,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           setDiscordEnabled(discordBot.enabled);
           setDiscordGuildId(discordBot.guildId);
           setDiscordToken(discordBot.token);
-          setDiscordSessions(discordBot.sessions);
           if (discordBot.allowedUserIds) setDiscordAllowedUserIds(discordBot.allowedUserIds);
         }
         const savedDefault = snapshot.settings.turnDefaults?.model ?? '';
@@ -388,7 +385,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       if (patch.enabled !== undefined) setDiscordEnabled(patch.enabled);
       if (patch.guildId !== undefined) setDiscordGuildId(patch.guildId);
       if (patch.token !== undefined) setDiscordToken(patch.token);
-      if (patch.sessions !== undefined) setDiscordSessions(patch.sessions);
       if (patch.allowedUserIds !== undefined) setDiscordAllowedUserIds(patch.allowedUserIds);
       await transport.updateSettings({ discord: { bot: patch } });
     }, [transport]);
@@ -1160,7 +1156,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               discordEnabled={discordEnabled}
               discordGuildId={discordGuildId}
               discordToken={discordToken}
-              discordSessions={discordSessions}
               discordAllowedUserIds={discordAllowedUserIds}
               onUpdateDiscord={handleUpdateDiscord}
               catchupStatus={catchupStatus}

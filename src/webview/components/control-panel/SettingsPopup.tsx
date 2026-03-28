@@ -42,7 +42,6 @@ interface SettingsPopupProps {
   discordEnabled: boolean;
   discordGuildId: string;
   discordToken: string;
-  discordSessions: 'all' | 'manual';
   discordAllowedUserIds: string[];
   onUpdateDiscord: (patch: Partial<DiscordBotSettings>) => void;
   catchupStatus?: CatchupStatus | null;
@@ -141,7 +140,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordSessions, discordAllowedUserIds, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordAllowedUserIds, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -402,7 +401,6 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
             enabled={discordEnabled}
             guildId={discordGuildId}
             token={discordToken}
-            sessions={discordSessions}
             allowedUserIds={discordAllowedUserIds}
             onUpdateDiscord={onUpdateDiscord}
             onDirtyChange={setDiscordDirty}

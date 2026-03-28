@@ -20,10 +20,6 @@
  */
 
 import { log } from '../log.js';
-import { isChildSession } from '../session-manager.js';
-import { subscribeSessionList, unsubscribeSessionList } from '../session-list-manager.js';
-import type { SessionListSubscriber } from '../session-list-manager.js';
-import type { SessionListEvent } from '../session-list-events.js';
 import type { SessionSnapshot } from '../session-snapshot.js';
 import type { MessageProvider, ViewOpts } from './provider.js';
 import type { DiscordProviderConfig } from './config.js';
@@ -65,6 +61,7 @@ import {
   disposeWatch,
   disposeAllWatches,
   resolveButtonApproval,
+  buildCloseButton,
   syncSession,
   watchSession,
   watchSessionInThread,
@@ -111,7 +108,6 @@ function isAuthorized(userId: string): boolean {
 let promptsInFlight = 0;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let startTime = 0;
-let unsubSessionList: (() => void) | null = null;
 let currentConfig: DiscordProviderConfig | null = null;
 let currentDispatch: AgentDispatch | null = null;
 let workspaceCwd: string | null = null;
@@ -261,7 +257,7 @@ export function createDiscordProvider(
 
     async createSessionView(_sessionId: string, _prompt: string, _opts: ViewOpts): Promise<void> {
       // Session views are created via createWatchedSession / watchSession
-      // which are called through the command context or auto-watch.
+      // which are called through the command context.
     },
 
     dispose(): void {
@@ -277,10 +273,6 @@ export function createDiscordProvider(
 function disposeDiscordProvider(): void {
   commandsEnabled = false;
 
-  if (unsubSessionList) {
-    unsubSessionList();
-    unsubSessionList = null;
-  }
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = null;
@@ -379,7 +371,7 @@ async function initWorkspaceChannels(): Promise<void> {
 
 
   commandsEnabled = true;
-  enableAutoWatchAndHeartbeat();
+  enableHeartbeat();
 
   log({ source: SOURCE, level: 'info', summary: `Discord bot active — commands enabled, ${workspaceChannels.size} workspace(s)` });
 }
@@ -442,11 +434,11 @@ function handleThreadCreate(event: { id: string; parent_id: string; name: string
   // Only handle threads in workspace forum channels
   if (!isWorkspaceForum(event.parent_id)) return;
 
-  // If we already track this channel, it's bot-created or auto-watched — skip
+  // If we already track this channel, it's bot-created — skip
   if (channelMap.has(event.id)) return;
   if (getSessionForChannel(event.id)) return;
 
-  // Check if the thread name looks bot-created (session-XXXXXXXX or auto-watch format)
+  // Check if the thread name looks bot-created (session-XXXXXXXX format)
   // Bot-created threads from watchSession/createWatchedSession have names like
   // "session-XXXXXXXX" or the prompt text. The THREAD_CREATE fires before
   // registerWatchState completes, so channelToSession won't have it yet.
@@ -515,8 +507,10 @@ async function handleUserCreatedPost(threadId: string, forumChannelId: string, t
     log({ source: SOURCE, level: 'warn', summary: `failed to rename user-created post`, data: err });
   });
 
-  // First bot message: session ID anchor (for crash recovery)
-  await sendMessage(threadId, `\u{1F4CB} Session \`${sessionId}\``);
+  // First bot message: session ID anchor + close button
+  await sendMessageWithComponents(threadId, `\u{1F4CB} Session \`${sessionId}\``, buildCloseButton(sessionId)).catch(() => {
+    sendMessage(threadId, `\u{1F4CB} Session \`${sessionId}\``).catch(() => {});
+  });
 
   // Watch in the user-created thread (no new forum post)
   const permMode = currentConfig.permissionMode ?? null;
@@ -571,52 +565,15 @@ function buildPermissionSettings(mode: string | null): Record<string, unknown> {
 }
 
 // ---------------------------------------------------------------------------
-// Auto-watch & Heartbeat
+// Heartbeat
 // ---------------------------------------------------------------------------
 
-function enableAutoWatchAndHeartbeat(): void {
+function enableHeartbeat(): void {
   if (!currentConfig) return;
-
-  if (currentConfig.sessions === 'all') {
-    const sessionListSub: SessionListSubscriber = {
-      id: 'message-view-session-list',
-      send(event: SessionListEvent) {
-        if (event.type !== 'session_list_upsert') return;
-        const session = event.session;
-        if (isCommandSession(session.sessionId)) return;
-        if (hasWatch(session.sessionId)) return;
-        if (session.isSidechain) return;
-        if (session.sessionKind === 'system') return;
-        if (isChildSession(session.sessionId)) return;
-        if (Date.now() - session.modifiedAt.getTime() > 10 * 60 * 1000) return;
-
-        // Scope by workspace: session's projectPath must match a registered workspace
-        const forumChannelId = getForumForSession(session.projectPath);
-        if (!forumChannelId) return;
-
-        // Verify the session belongs to a workspace we manage
-        if (session.projectPath) {
-          const matchedCwd = findWorkspaceCwd(session.projectPath);
-          if (!matchedCwd) return;
-        }
-
-        const displayName = session.title ?? session.label ?? undefined;
-        void watchSession(session.sessionId, forumChannelId, { auto: true, displayName },
-          currentConfig?.permissionMode ?? null).catch(err => {
-          log({ source: SOURCE, level: 'error', summary: `auto-watch failed for ${session.sessionId.slice(0, 8)}`, data: err });
-        });
-      },
-    };
-    subscribeSessionList(sessionListSub);
-    unsubSessionList = () => unsubscribeSessionList(sessionListSub);
-    log({ source: SOURCE, level: 'info', summary: 'auto-watch enabled' });
-  }
 
   heartbeatTimer = setInterval(() => {
     for (const state of allWatches()) {
-      // Ensure every watched session has an archival activity entry.
-      // Auto-watched sessions bypass channelMap/lastActivityMap registration,
-      // so seed their initial timestamp here on first encounter.
+      // Seed archival activity entry on first encounter
       if (!lastActivityMap.has(state.discordChannelId)) {
         lastActivityMap.set(state.discordChannelId, Date.now());
       }
@@ -740,6 +697,26 @@ async function handleGatewayInteraction(interaction: DiscordInteraction): Promis
   } else if (customId === 'browse_sessions') {
     await respondToInteraction(interaction.id, interaction.token, { type: 6 });
     await handleCommand(interaction.channel_id, '!sessions', buildCommandContext());
+  } else if (customId.startsWith('close:')) {
+    const sessionId = customId.slice(6);
+    const fallbackSessionId = getSessionForChannel(interaction.channel_id);
+    const watchState = getWatch(sessionId) ?? (fallbackSessionId ? getWatch(fallbackSessionId) : undefined);
+    // Respond first (before archive, which could race with the response)
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 7,
+      data: {
+        content: `\u{1F4CB} Session \`${sessionId}\` \u{2014} \u{1F512} closed`,
+        components: [],
+      },
+    });
+    if (watchState) {
+      disposeWatch(watchState.sessionId);
+    } else {
+      archiveThread(interaction.channel_id).catch(() => {});
+    }
+    // Clean up provider-level bookkeeping (disposeWatch only clears watch-state maps)
+    channelMap.delete(interaction.channel_id);
+    lastActivityMap.delete(interaction.channel_id);
   } else if (customId.startsWith('session:') || customId.startsWith('session_next:')) {
     // Ack immediately — opening a session can exceed the 3-second deadline
     await respondToInteraction(interaction.id, interaction.token, { type: 6 });
@@ -830,7 +807,7 @@ function buildCommandContext(): CommandContext {
     openSession: (id, forumChannelId) => {
       const targetForumId = forumChannelId ?? primaryForumId;
       if (!targetForumId) throw new Error('Forum channel not ready');
-      return watchSession(id, targetForumId, { auto: false },
+      return watchSession(id, targetForumId, {},
         currentConfig?.permissionMode ?? null);
     },
     getWorkspaceCwd: (forumChannelId) => {
