@@ -61,85 +61,6 @@ subscribers — no flash, no re-subscription. Two new plugin skills use it:
 
 ---
 
-## What's New in v0.2.3
-
-### File viewer side panel
-
-The file viewer is now a persistent side panel instead of a modal. Includes
-word wrap, markdown preview (auto-enabled for .md files), and quoting from
-preview mode.
-
-![File viewer panel with markdown preview, titlebar with git branch, and file tree](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/file-viewer-panel.png)
-
-### Workspace picker
-
-The standalone landing page now shows all registered workspaces with an Add
-Folder input. URL-based routing supports multiple projects from a single
-daemon.
-
-![Workspace picker — select a project to open in standalone mode](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/workspace-picker.png)
-
-### Titlebar
-
-App icon, git branch indicator with dirty-state marker, and compact Crispy
-wordmark. Always visible, no session required.
-
-### Standalone fixes
-
-IPC socket path fix for daemon mode to enable multi-agent collaboration and other skills, startup progress messages, Windows
-compatibility for postinstall, and dynamic version on the welcome screen.
-
-### Emoji filename support
-
-Emoji characters now work correctly in the file panel, @-mentions, and
-linkified paths.
-
----
-
-## What's New in v0.2
-
-### Agent memory
-
-Every session is indexed locally with full-text and semantic search. Your
-agent can find past decisions, debugging threads, and design discussions
-across Claude Code and Codex — and read the full conversation back. Not
-summaries. Not rules files. The actual transcripts already saved on your
-machine. Runs locally after first-use model download — no cloud services, no expiry.
-
-![Agent memory — recall searching past sessions with skill and agent badges](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/agent-memory-recall.png)
-
-### Multi-agent collaboration
-
-Resumable Claude and Codex agents working together in back-and-forth
-discussions directed by your coding agent of choice. Your agent dispatches
-child sessions across vendors, gets parallel perspectives, and picks up
-each session where it left off. No external MCP servers or configuration required.
-
-### Icons render mode (new default)
-
-The new default look. Minor tool calls are collapsed to inline icons that
-flow with the conversation — click any icon to open the full detail in the
-side panel. Keeps the focus on the conversation, not the tool calls.
-
-### Voice input
-
-Click-to-record voice input with local VAD and speech-to-text. Your speech
-is transcribed locally and inserted into the chat input. Requires a
-microphone.
-
-### Inline quoting
-
-Select text in any assistant response to quote it into your next message
-with your own commentary. No more copy-pasting to reference something the
-agent said.
-
-### Copy-to-markdown
-
-One-click copy buttons on assistant messages and tool output cards. Copies
-clean, formatted Markdown to your clipboard.
-
----
-
 ## Capabilities
 
 ### Conversations
@@ -148,13 +69,16 @@ clean, formatted Markdown to your clipboard.
 
 - Fork and rewind at any point — new session opens side-by-side with full context
 - Side-by-side agent windows — as many as your editor can tile
+- Session rotation and handoff — swap adapters on a live channel without re-subscription
 - Execute Markdown files as prompts from the Explorer context menu
 - Session browser with search and vendor filtering
 
 ### Agent intelligence
 
-- Agent memory — full-text and semantic search across all sessions and vendors
-- Multi-agent collaboration — resumable cross-vendor child sessions
+![Agent memory — recall searching past sessions with skill and agent badges](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/agent-memory-recall.png)
+
+- Agent memory — every session indexed locally with full-text and semantic search across all vendors. Find past decisions, debugging threads, and design discussions — full transcripts, not summaries
+- Multi-agent collaboration — resumable cross-vendor child sessions, directed by your agent of choice
 - Claude Code and Codex adapters
 
 ### Execution control
@@ -167,6 +91,10 @@ clean, formatted Markdown to your clipboard.
 
 ### UI
 
+![File viewer panel with markdown preview, titlebar with git branch, and file tree](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/file-viewer-panel.png)
+
+- File viewer side panel with word wrap, markdown preview, and quoting
+- Git diff panel — staged, modified, and untracked files with syntax-highlighted diffs
 - Four rendering modes — Icons (default), Blocks, Compact, YAML
 - Inline quoting and copy-to-markdown
 - Voice input with local VAD and speech-to-text
@@ -183,8 +111,11 @@ clean, formatted Markdown to your clipboard.
 
 ### Standalone mode
 
+![Workspace picker — select a project to open in standalone mode](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/workspace-picker.png)
+
 - Run `npx crispy-code` — full UI in your browser, no VS Code required
 - Background daemon with `crispy start` / `crispy stop` / `crispy status`
+- Workspace picker with URL-based routing for multiple projects
 - Multiple browser tabs for parallel agent sessions
 - Same core features — memory, collaboration, fork, rewind
 
