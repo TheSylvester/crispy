@@ -590,8 +590,7 @@ export class CodexAgentAdapter implements AgentAdapter {
           continue;
         }
 
-        // Read SKILL.md content for self-expansion — Codex app-server doesn't
-        // expand `{ type: 'skill' }` inputs, so we inject the content as text.
+        // Read SKILL.md content for direct injection on explicit $skill invocation.
         let content: string | undefined;
         try {
           content = readFileSync(skill.path, 'utf-8');
@@ -603,11 +602,17 @@ export class CodexAgentAdapter implements AgentAdapter {
           });
         }
 
-        inventory.set(skill.name, {
-          name: skill.name,
-          path: skill.path,
-          content,
-        });
+        const ref = { name: skill.name, path: skill.path, content };
+        inventory.set(skill.name, ref);
+        // Plugin-scoped skills come back as "crispy:<name>" — also register
+        // the unprefixed name so $skill-name tokens resolve correctly.
+        const colonIdx = skill.name.indexOf(':');
+        if (colonIdx >= 0) {
+          const shortName = skill.name.slice(colonIdx + 1);
+          if (!inventory.has(shortName)) {
+            inventory.set(shortName, ref);
+          }
+        }
       }
 
       this.bundledSkillCache = inventory;

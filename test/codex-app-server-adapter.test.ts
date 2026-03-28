@@ -280,7 +280,7 @@ describe('CodexAgentAdapter', () => {
       const input = (turnMsg.params as any).input;
       expect(input[0]).toEqual({ type: 'text', text: 'Use ', text_elements: [] });
       expect(input[1]).toEqual({ type: 'skill', name: 'recall', path: `${bundledSkillRoot}/recall/SKILL.md` });
-      // Self-expanded skill content follows the skill input
+      // Full SKILL.md content injected (frontmatter stripped) on explicit $skill
       expect(input[2]).toMatchObject({ type: 'text' });
       expect(input[2].text).toContain('# Recall');
       expect(input[3]).toEqual({ type: 'text', text: ' before coding.', text_elements: [] });
@@ -381,7 +381,6 @@ describe('CodexAgentAdapter', () => {
       const secondInput = (secondTurnMsg.params as any).input;
       expect(secondInput[0]).toEqual({ type: 'text', text: 'Use ', text_elements: [] });
       expect(secondInput[1]).toEqual({ type: 'skill', name: 'recall', path: `${bundledSkillRoot}/recall/SKILL.md` });
-      // Self-expanded skill content follows the skill input
       expect(secondInput[2]).toMatchObject({ type: 'text' });
       expect(secondInput[2].text).toContain('# Recall');
       expect(secondInput[3]).toEqual({ type: 'text', text: ' again.', text_elements: [] });

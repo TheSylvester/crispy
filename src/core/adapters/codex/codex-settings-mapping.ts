@@ -26,7 +26,7 @@ import type { UserInput } from './protocol/v2/UserInput.js';
 export interface ResolvedCodexSkillReference {
   name: string;
   path: string;
-  /** Pre-read SKILL.md content for self-expansion (Codex doesn't expand skill inputs). */
+  /** Pre-read SKILL.md content for direct injection on explicit $skill invocation. */
   content?: string;
 }
 
@@ -364,6 +364,14 @@ function findExplicitCodexSkillTokens(text: string): SkillToken[] {
   return tokens;
 }
 
+/** Strip YAML frontmatter from SKILL.md content before injection. */
+function stripSkillFrontmatter(content: string): string {
+  if (!content.startsWith('---')) return content;
+  const end = content.indexOf('\n---', 3);
+  if (end === -1) return content;
+  return content.slice(end + 4).trimStart();
+}
+
 function createTextInput(text: string): UserInput {
   return {
     type: 'text',
@@ -404,16 +412,19 @@ function mapTextContent(
       textBuffer = '';
     }
 
-    // Send both the skill input (for Codex to potentially handle natively)
-    // AND self-expand the content as text (Codex app-server doesn't currently
-    // expand skill inputs, so the model never sees the SKILL.md instructions).
+    // Explicit $skill invocation: inject the full SKILL.md content (frontmatter
+    // stripped) so the model has deterministic access. The system prompt catalog
+    // handles discovery for natural-language mentions; this path handles the
+    // guaranteed-content case. The { type: 'skill' } input is sent for protocol
+    // tracking (Codex silently ignores it — skills from perCwdExtraUserRoots
+    // aren't in the session's loaded roots).
     inputs.push({
       type: 'skill',
       name: resolvedSkill.name,
       path: resolvedSkill.path,
     });
     if (resolvedSkill.content) {
-      inputs.push(createTextInput(resolvedSkill.content));
+      inputs.push(createTextInput(stripSkillFrontmatter(resolvedSkill.content)));
     }
 
     cursor = token.end;
