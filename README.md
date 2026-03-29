@@ -102,6 +102,8 @@ information you see in the Crispy UI, rendered into Discord.
 
 ### Discord
 
+![Crispy Discord bot — live session monitor with tool calls, approvals, and forum-based session management](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/discord.png)
+
 - Live session monitor — full transcript rendering with tool-call visibility, not a hidden chatbot
 - Forum-based session browser — each workspace is a forum channel, each session a thread
 - Inline approval buttons — approve or deny tool use from your phone
