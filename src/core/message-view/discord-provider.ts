@@ -64,7 +64,7 @@ import {
   disposeAllWatches,
   resolveButtonApproval,
   buildCloseButton,
-  syncSession,
+  drainOne,
   watchSession,
   watchSessionInThread,
   createWatchedSession,
@@ -577,32 +577,51 @@ function buildPermissionSettings(mode: string | null): Record<string, unknown> {
 function enableHeartbeat(): void {
   if (!currentConfig) return;
 
+  const intervalMs = currentConfig.heartbeatIntervalMs ?? 1500;
+
   heartbeatTimer = setInterval(() => {
+    const now = Date.now();
+
     for (const state of allWatches()) {
-      // Seed archival activity entry on first encounter
       if (!lastActivityMap.has(state.discordChannelId)) {
-        lastActivityMap.set(state.discordChannelId, Date.now());
+        lastActivityMap.set(state.discordChannelId, now);
       }
 
+      // Typing indicator (unchanged — still needs its own cooldown)
       if (state.snapshot.status === 'working') {
-        const now = Date.now();
         const last = lastTypingFired.get(state.discordChannelId) ?? 0;
         if (now - last >= TYPING_COOLDOWN_MS) {
           lastTypingFired.set(state.discordChannelId, now);
           triggerTyping(state.discordChannelId).catch(() => {});
         }
       }
-      if (!state.dirty || state.syncing) continue;
-      // Update archival activity tracking — snapshot changed for this session
-      lastActivityMap.set(state.discordChannelId, Date.now());
-      void syncSession(state).catch((err) => {
-        log({ source: SOURCE, level: 'error', summary: `sync error for ${state.sessionId.slice(0, 8)}`, data: err });
+
+      // Drain: skip if cooling down from error/429
+      if (state.cooldownUntil && now < state.cooldownUntil) continue;
+
+      // Burst mode: catchup sets burstRemaining to allow multiple ops per tick.
+      // Steady state: burstRemaining is 0 → runs drainOne once.
+      const opsThisTick = Math.max(1, state.burstRemaining);
+      state.burstRemaining = 0;
+
+      void (async () => {
+        for (let i = 0; i < opsThisTick; i++) {
+          // Re-check cooldown between iterations — handleDrainError may have
+          // set it during a previous iteration in this burst.
+          if (state.cooldownUntil && Date.now() < state.cooldownUntil) break;
+          const moreWork = await drainOne(state);
+          if (moreWork) {
+            lastActivityMap.set(state.discordChannelId, now);
+          }
+          if (!moreWork) break;
+        }
+      })().catch((err) => {
+        log({ source: SOURCE, level: 'error', summary: `drain error for ${state.sessionId.slice(0, 8)}`, data: err });
       });
     }
 
-    // Check for threads to archive
     checkArchival();
-  }, 3000);
+  }, intervalMs);
 }
 
 // ---------------------------------------------------------------------------

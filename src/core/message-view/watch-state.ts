@@ -6,10 +6,12 @@
  * sessions. Index.ts passes lifecycle values (forumChannelId, guildId) as
  * parameters to avoid circular imports.
  *
- * Thread sync uses a heterogeneous slot model: bot-rendered content segments
- * interleave with user-authored Discord messages (anchors). The renderer
- * produces RenderSegment[], and syncSession() walks segments against
- * ThreadSlot[] to edit, create, skip, or clear messages.
+ * Thread sync uses a two-phase model: (1) reactive render — channel events
+ * immediately re-render segments and store them on the watch state (no API
+ * calls); (2) heartbeat drain — each tick, drainOne() walks rendered segments
+ * against ThreadSlot[], finds the first mismatch, executes one API call, and
+ * returns. The segments themselves are the queue — rapid-fire events collapse
+ * automatically since only the latest render is compared.
  *
  * @module message-view/watch-state
  */
@@ -100,10 +102,15 @@ interface WatchState {
   threadSlots: ThreadSlot[];
   /** Non-bot Discord messages in the thread: discordMessageId → content text. */
   userMessages: Map<string, string>;
-  dirty: boolean;
+  /** Latest render output — updated reactively on each event. Heartbeat drains against threadSlots. */
+  renderedSegments: RenderSegment[];
   pendingInteractions: Map<string, PendingInteraction>;
-  /** True while syncSession is in-flight (prevents concurrent syncs). */
-  syncing: boolean;
+  /** True while drainOne is in-flight (prevents concurrent drains per thread). */
+  draining: boolean;
+  /** Epoch ms — if Date.now() < cooldownUntil, skip this thread on the current tick. */
+  cooldownUntil: number;
+  /** When >0, drainOne runs multiple times per tick (catchup fast-fill). Decremented each tick. */
+  burstRemaining: number;
   consecutiveFailures: number;
   permissionMode: string | null;
 }
@@ -207,9 +214,11 @@ function registerWatchState(
     snapshot: createSessionSnapshot(),
     threadSlots,
     userMessages: new Map(),
-    dirty: false,
+    renderedSegments: [],
     pendingInteractions: new Map(),
-    syncing: false,
+    draining: false,
+    cooldownUntil: 0,
+    burstRemaining: 0,
     consecutiveFailures: 0,
     permissionMode: permissionMode ?? null,
   };
@@ -450,12 +459,21 @@ function handleWatchEvent(state: WatchState, event: SubscriberMessage): void {
   state.snapshot = applySubscriberMessage(prevSnapshot, event);
 
   reconcileApprovals(state, prevApprovals, state.snapshot.pendingApprovals);
-  if (state.snapshot !== prevSnapshot) state.dirty = true;
 
+  // Reactive render: recompute segments immediately (no API calls).
+  // The heartbeat drain will diff these against threadSlots.
+  if (state.snapshot !== prevSnapshot) {
+    state.renderedSegments = renderSessionWithAnchors(
+      state.snapshot.entries,
+      state.snapshot.toolResults,
+      state.userMessages,
+    );
+  }
+
+  // Catchup: set burstRemaining so the heartbeat drains multiple ops per tick
+  // (avoids 30s trickle for sessions with many segments).
   if (event.type === 'catchup') {
-    void syncSession(state).catch((err) => {
-      log({ source: SOURCE, level: 'error', summary: 'catchup flush failed', data: err });
-    });
+    state.burstRemaining = 5;
   }
 }
 
@@ -634,21 +652,27 @@ export function trackUserMessage(channelId: string, messageId: string, content: 
 // Render -> Diff -> Sync (segment-based)
 // ---------------------------------------------------------------------------
 
+const DEFAULT_COOLDOWN_MS = 5000;
+
 /**
- * Handle a Discord API error during sync. Returns true if the caller should
- * abort the sync loop (circuit breaker or retry-later).
+ * Handle a Discord API error during drainOne. Returns true if the caller
+ * should stop draining (circuit breaker or cooldown set).
  */
-async function handleSyncError(state: WatchState, err: unknown, context: string): Promise<boolean> {
+async function handleDrainError(state: WatchState, err: unknown, context: string): Promise<boolean> {
   log({ source: SOURCE, level: 'error', summary: `${context} failed`, data: err });
 
+  // Archived thread — unarchive and retry next tick (no cooldown needed)
   if (err instanceof DiscordApiError && err.code === 50083) {
     try {
       await discordFetch('PATCH', `/channels/${state.discordChannelId}`, { archived: false });
-      log({ source: SOURCE, level: 'warn', summary: `unarchived thread ${state.discordChannelId} — retrying` });
-      state.dirty = true;
+      log({ source: SOURCE, level: 'warn', summary: `unarchived thread ${state.discordChannelId} — retrying next tick` });
       return true;
     } catch (unarchiveErr) {
       log({ source: SOURCE, level: 'error', summary: `unarchive failed for ${state.discordChannelId}`, data: unarchiveErr });
+      // Don't fall through to the permanent check — 50083 is transient when
+      // the unarchive itself fails (network blip, brief 429). Set cooldown.
+      state.cooldownUntil = Date.now() + DEFAULT_COOLDOWN_MS;
+      return true;
     }
   }
 
@@ -659,45 +683,51 @@ async function handleSyncError(state: WatchState, err: unknown, context: string)
     return true;
   }
 
-  state.dirty = true;
+  // Set cooldown — the mismatch persists in renderedSegments, so
+  // the next tick after cooldown retries automatically.
+  state.cooldownUntil = Date.now() + DEFAULT_COOLDOWN_MS;
   return true;
 }
 
-export async function syncSession(state: WatchState): Promise<void> {
-  if (state.syncing) {
-    log({ source: SOURCE, level: 'debug', summary: `sync skip: ${state.sessionId.slice(0, 8)} already syncing` });
-    return;
-  }
-  state.syncing = true;
-  state.dirty = false;
+/**
+ * Drain one mismatch between renderedSegments and threadSlots.
+ * Returns true if more work remains (caller should drain again next tick).
+ *
+ * Algorithm: walk segments against slots, find the FIRST mismatch, execute
+ * ONE API call, update the slot, return. The segments themselves are the
+ * queue — no explicit outbox needed.
+ */
+export async function drainOne(state: WatchState): Promise<boolean> {
+  if (state.draining) return false;
+  // Bail if watch was disposed between tick start and now
+  if (!watchedSessions.has(state.sessionId)) return false;
 
+  state.draining = true;
   try {
-    const segments = renderSessionWithAnchors(
-      state.snapshot.entries,
-      state.snapshot.toolResults,
-      state.userMessages,
-    );
-
-    const contentSegments = segments.filter((s): s is Extract<RenderSegment, { kind: 'content' }> => s.kind === 'content');
-    log({ source: SOURCE, level: 'info', summary: `sync ${state.sessionId.slice(0, 8)}: ${segments.length} segments (${contentSegments.length} content) from ${state.snapshot.entries.length} entries (slots=${state.threadSlots.length}, status=${state.snapshot.status})` });
-
+    const segments = state.renderedSegments;
     let slotIndex = 0;
 
     for (const segment of segments) {
       if (segment.kind === 'discord-anchor') {
-        // Skip past bot slots until we find the user slot — clear any with stale content
+        // Skip past bot slots until we find the user slot — clear stale ones (one per tick)
         while (slotIndex < state.threadSlots.length && state.threadSlots[slotIndex].kind === 'bot') {
           const skipSlot = state.threadSlots[slotIndex];
           if (skipSlot.content) {
-            await editMessage(state.discordChannelId, skipSlot.discordMessageId, '\u{200B}').catch(() => {});
-            skipSlot.content = '';
+            // Clear one stale bot slot before anchor — one API call, return
+            try {
+              await editMessage(state.discordChannelId, skipSlot.discordMessageId, '\u{200B}');
+              skipSlot.content = '';
+              state.consecutiveFailures = 0;
+            } catch (err) {
+              await handleDrainError(state, err, `clear bot slot before anchor ${slotIndex}`);
+            }
+            return true;
           }
           slotIndex++;
         }
         if (slotIndex < state.threadSlots.length && state.threadSlots[slotIndex].kind === 'user') {
-          slotIndex++; // Skip over existing user message slot
+          slotIndex++;
         } else {
-          // User message exists in Discord but not tracked — add slot
           state.threadSlots.splice(slotIndex, 0, {
             kind: 'user',
             discordMessageId: segment.messageId,
@@ -708,13 +738,13 @@ export async function syncSession(state: WatchState): Promise<void> {
         continue;
       }
 
-      // Content segment — edit existing bot message or post new one
+      // Content segment — find first mismatch
       if (slotIndex < state.threadSlots.length && state.threadSlots[slotIndex].kind === 'bot') {
         const slot = state.threadSlots[slotIndex];
         if (slot.content !== segment.text) {
+          // Mismatch — edit this one slot
           try {
             if (slotIndex === 0) {
-              // First slot (starter message) — preserve Close button
               await editMessageWithComponents(
                 state.discordChannelId, slot.discordMessageId, segment.text,
                 buildCloseButton(state.sessionId),
@@ -723,10 +753,13 @@ export async function syncSession(state: WatchState): Promise<void> {
               await editMessage(state.discordChannelId, slot.discordMessageId, segment.text);
             }
             slot.content = segment.text;
+            state.consecutiveFailures = 0;
           } catch (err) {
-            if (await handleSyncError(state, err, `edit slot ${slotIndex}`)) return;
+            await handleDrainError(state, err, `edit slot ${slotIndex}`);
           }
+          return true;
         }
+        // Content matches — no API call, continue scanning
       } else if (slotIndex < state.threadSlots.length && state.threadSlots[slotIndex].kind === 'user') {
         // Need a bot slot but found a user slot — insert before it
         try {
@@ -736,11 +769,13 @@ export async function syncSession(state: WatchState): Promise<void> {
             discordMessageId: msg.id,
             content: segment.text,
           });
+          state.consecutiveFailures = 0;
         } catch (err) {
-          if (await handleSyncError(state, err, `send before user slot ${slotIndex}`)) return;
+          await handleDrainError(state, err, `send before user slot ${slotIndex}`);
         }
+        return true;
       } else {
-        // Past end of slots — create new bot message
+        // Past end of slots — append new bot message
         try {
           const msg = await sendMessage(state.discordChannelId, segment.text);
           state.threadSlots.push({
@@ -748,26 +783,34 @@ export async function syncSession(state: WatchState): Promise<void> {
             discordMessageId: msg.id,
             content: segment.text,
           });
+          state.consecutiveFailures = 0;
         } catch (err) {
-          if (await handleSyncError(state, err, `send new slot ${slotIndex}`)) return;
+          await handleDrainError(state, err, `send new slot ${slotIndex}`);
         }
+        return true;
       }
       slotIndex++;
     }
 
-    // Clear surplus bot slots with zero-width space
+    // Surplus bot slots — clear ONE per tick
     while (slotIndex < state.threadSlots.length) {
       const slot = state.threadSlots[slotIndex];
       if (slot.kind === 'bot' && slot.content) {
-        await editMessage(state.discordChannelId, slot.discordMessageId, '\u{200B}').catch(() => {});
-        slot.content = '';
+        try {
+          await editMessage(state.discordChannelId, slot.discordMessageId, '\u{200B}');
+          slot.content = '';
+          state.consecutiveFailures = 0;
+        } catch (err) {
+          await handleDrainError(state, err, `clear surplus slot ${slotIndex}`);
+        }
+        return true;
       }
       slotIndex++;
     }
 
-    state.consecutiveFailures = 0;
-    log({ source: SOURCE, level: 'info', summary: `sync ${state.sessionId.slice(0, 8)}: complete (${segments.length} segments, ${state.threadSlots.length} slots, dirty=${state.dirty})` });
+    // Nothing needed changing
+    return false;
   } finally {
-    state.syncing = false;
+    state.draining = false;
   }
 }

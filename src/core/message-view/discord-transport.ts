@@ -265,6 +265,7 @@ export async function discordFetch(method: string, path: string, body?: unknown)
       const json = await res.json() as { retry_after?: number };
       const retryAfter = json.retry_after ?? 1;
       log({ source: SOURCE, level: 'warn', summary: `429 rate limited, retry after ${retryAfter}s (attempt ${attempt + 1})` });
+      lastError = new DiscordApiError(429, null, JSON.stringify({ retry_after: retryAfter }));
       await sleep(retryAfter * 1000);
       continue;
     }

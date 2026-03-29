@@ -19,4 +19,6 @@ export interface DiscordProviderConfig {
   archivalTimeoutHours: number;
   /** Numeric Discord user IDs allowed to interact. Empty = owner-only (resolved via OAuth). */
   allowedUserIds: string[];
+  /** Heartbeat drain interval in ms. Default: 1500. */
+  heartbeatIntervalMs?: number;
 }
