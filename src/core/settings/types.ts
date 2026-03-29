@@ -31,6 +31,8 @@ export interface SettingsPreferences {
   bashBlockInIcons: boolean;
   renderMode: string;
   badgeStyle: string;
+  /** Auto-invoke /reflect after creating implementation plans. Default: true. */
+  autoReflect: boolean;
 }
 
 // ============================================================================
@@ -233,6 +235,7 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     bashBlockInIcons: true,
     renderMode: 'icons',
     badgeStyle: 'frosted',
+    autoReflect: true,
   },
   providers: {},
   hooks: {

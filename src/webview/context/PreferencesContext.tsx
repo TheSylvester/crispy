@@ -52,6 +52,8 @@ interface Preferences {
   sidebarView: SidebarView;
   /** User-dragged file viewer panel width override (px). null = use auto-computed width. */
   fileViewerWidthPx: number | null;
+  /** Auto-invoke /reflect after creating implementation plans. */
+  autoReflect: boolean;
   /** Whether the Rosie bot tracker is enabled. Read-only from settings. */
   rosieBotEnabled: boolean;
 }
@@ -67,6 +69,7 @@ interface PreferencesContextValue extends Preferences {
   setToolViewOverride: (override: ToolViewOverride) => void;
   setDebugMode: (enabled: boolean) => void;
   setToolPanelAutoOpen: (enabled: boolean) => void;
+  setAutoReflect: (enabled: boolean) => void;
   setCondensedToolMode: (enabled: boolean) => void;
   setBadgeStyle: (style: BadgeStyle) => void;
   setBashBlockInIcons: (enabled: boolean) => void;
@@ -116,6 +119,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [renderMode, setRenderModeLocal] = useState<RenderMode>(getInitialRenderMode);
   const [badgeStyle, setBadgeStyleLocal] = useState<BadgeStyle>('frosted');
   const [toolPanelAutoOpen, setToolPanelAutoOpenLocal] = useState(false);
+  const [autoReflect, setAutoReflectLocal] = useState(true);
   const [bashBlockInIcons, setBashBlockInIconsLocal] = useState(true);
 
   /** Latest known revision from settings RPC or incoming events. */
@@ -135,6 +139,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       if (!urlMode && prefs.renderMode) setRenderModeLocal(prefs.renderMode as RenderMode);
       if (prefs.badgeStyle) setBadgeStyleLocal(prefs.badgeStyle as BadgeStyle);
       setToolPanelAutoOpenLocal(prefs.toolPanelAutoOpen);
+      setAutoReflectLocal(prefs.autoReflect ?? true);
       setBashBlockInIconsLocal(prefs.bashBlockInIcons);
       setRosieBotEnabled(snapshot.settings.rosie?.bot?.enabled ?? false);
     }).catch((err) => {
@@ -162,6 +167,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         if (!urlMode && prefs.renderMode) setRenderModeLocal(prefs.renderMode as RenderMode);
         if (prefs.badgeStyle) setBadgeStyleLocal(prefs.badgeStyle as BadgeStyle);
         setToolPanelAutoOpenLocal(prefs.toolPanelAutoOpen);
+        setAutoReflectLocal(prefs.autoReflect ?? true);
         setBashBlockInIconsLocal(prefs.bashBlockInIcons);
       }
       if (changedSections.includes('rosie')) {
@@ -222,6 +228,11 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     persistPreference({ toolPanelAutoOpen: enabled });
   }, [persistPreference]);
 
+  const setAutoReflect = useCallback((enabled: boolean) => {
+    setAutoReflectLocal(enabled);
+    persistPreference({ autoReflect: enabled });
+  }, [persistPreference]);
+
   const setBashBlockInIcons = useCallback((enabled: boolean) => {
     setBashBlockInIconsLocal(enabled);
     persistPreference({ bashBlockInIcons: enabled });
@@ -242,6 +253,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     toolViewOverride,
     debugMode,
     toolPanelAutoOpen,
+    autoReflect,
     condensedToolMode,
     badgeStyle,
     bashBlockInIcons,
@@ -257,6 +269,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setToolViewOverride,
     setDebugMode,
     setToolPanelAutoOpen,
+    setAutoReflect,
     setCondensedToolMode,
     setBadgeStyle,
     setBashBlockInIcons,
@@ -272,6 +285,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     toolViewOverride,
     debugMode,
     toolPanelAutoOpen,
+    autoReflect,
     condensedToolMode,
     badgeStyle,
     bashBlockInIcons,
@@ -287,6 +301,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setToolViewOverride,
     setDebugMode,
     setToolPanelAutoOpen,
+    setAutoReflect,
     setCondensedToolMode,
     setBadgeStyle,
     setBashBlockInIcons,
