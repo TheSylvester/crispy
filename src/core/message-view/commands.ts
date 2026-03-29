@@ -318,12 +318,12 @@ function scheduleScreenRefresh(channelId: string, ctx: CommandContext): void {
       scheduleScreenRefresh(channelId, ctx);
       return;
     }
-    // Idle wipe: delete all non-toolbar messages, then re-render session list
+    // Idle wipe: delete all non-toolbar messages, leave channel clean.
+    // User can click "Browse Sessions" in the toolbar to re-open the list.
     try {
       await wipeNonToolbarMessages(channelId, ctx.toolbarMessageId);
       if (screen.refreshTimer) clearTimeout(screen.refreshTimer);
       activeScreens.delete(channelId);
-      await handleSessions(channelId, '1', ctx);
     } catch (err) {
       log({ source: SOURCE, level: 'warn', summary: 'session screen idle wipe failed', data: err });
     }

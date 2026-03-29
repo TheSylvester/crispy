@@ -782,9 +782,9 @@ export async function createForumPost(
   };
 }
 
-/** Archive a thread (hides it, doesn't delete). */
+/** @deprecated Use deleteChannel — threads are transient and get wiped anyway. */
 export async function archiveThread(threadId: string): Promise<void> {
-  await discordFetch('PATCH', `/channels/${threadId}`, { archived: true });
+  await deleteChannel(threadId);
 }
 
 export async function deleteChannel(channelId: string): Promise<void> {
