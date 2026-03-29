@@ -75,7 +75,7 @@ export function renderSession(
       if (content) {
         flushInlineGroup();
         if (prevWasTool) lines.push('');
-        lines.push(content);
+        lines.push(convertTablesToLists(content));
         prevWasTool = false;
       }
     } else {
@@ -83,7 +83,7 @@ export function renderSession(
         if (block.type === 'text' && block.text) {
           flushInlineGroup();
           if (prevWasTool) lines.push('');
-          lines.push(block.text);
+          lines.push(convertTablesToLists(block.text));
           prevWasTool = false;
         }
         if (block.type === 'tool_use') {
@@ -189,7 +189,7 @@ export function renderSessionWithAnchors(
       if (content) {
         flushInlineGroup();
         if (prevWasTool) currentContent += '\n';
-        currentContent += '\n' + content;
+        currentContent += '\n' + convertTablesToLists(content);
         prevWasTool = false;
       }
     } else {
@@ -197,7 +197,7 @@ export function renderSessionWithAnchors(
         if (block.type === 'text' && block.text) {
           flushInlineGroup();
           if (prevWasTool) currentContent += '\n';
-          currentContent += '\n' + block.text;
+          currentContent += '\n' + convertTablesToLists(block.text);
           prevWasTool = false;
         }
         if (block.type === 'tool_use') {
@@ -263,6 +263,100 @@ export function getStatusLine(status: WatchStatus): string {
 export function truncate(str: string, max: number): string {
   if (str.length <= max) return str;
   return str.slice(0, max - 3) + '...';
+}
+
+// ---------------------------------------------------------------------------
+// Markdown table → list conversion (Discord doesn't render tables)
+// ---------------------------------------------------------------------------
+
+/** True if the line looks like a markdown table separator: |---|---| etc. */
+function isTableSeparator(line: string): boolean {
+  return /^\|[\s:]*-+[\s:]*(\|[\s:]*-+[\s:]*)*\|?\s*$/.test(line.trim());
+}
+
+/** True if the line looks like a markdown table row: | val | val | */
+function isTableRow(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.includes('|');
+}
+
+/** Split a table row into cell values, trimming whitespace. */
+function splitTableRow(line: string): string[] {
+  const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+  return trimmed.split('|').map(cell => cell.trim());
+}
+
+/**
+ * Convert markdown tables to Discord-friendly list format.
+ * Skips content inside code fences. On any parse failure, passes
+ * through the original text unchanged.
+ *
+ * Example:
+ *   | Name | Desc |        →   **Name:** foo — **Desc:** Short
+ *   |------|------|        →   **Name:** bar — **Desc:** Long
+ *   | foo  | Short |
+ *   | bar  | Long  |
+ */
+export function convertTablesToLists(text: string): string {
+  const lines = text.split('\n');
+  const result: string[] = [];
+  let inCodeBlock = false;
+
+  let i = 0;
+  while (i < lines.length) {
+    // Track code fences
+    if (lines[i].trim().startsWith('```')) {
+      inCodeBlock = !inCodeBlock;
+      result.push(lines[i]);
+      i++;
+      continue;
+    }
+
+    // Pass through if inside code block
+    if (inCodeBlock) {
+      result.push(lines[i]);
+      i++;
+      continue;
+    }
+
+    // Detect table: current line is a table row, next line is separator
+    if (isTableRow(lines[i]) && i + 1 < lines.length && isTableSeparator(lines[i + 1])) {
+      const headers = splitTableRow(lines[i]);
+      i += 2; // skip header + separator
+
+      // Collect data rows
+      const rows: string[][] = [];
+      while (i < lines.length && isTableRow(lines[i]) && !isTableSeparator(lines[i])) {
+        rows.push(splitTableRow(lines[i]));
+        i++;
+      }
+
+      if (rows.length === 0 || headers.length === 0) {
+        // Degenerate table — pass through as-is
+        result.push(lines[i - rows.length - 2]); // header
+        result.push(lines[i - rows.length - 1]); // separator
+        for (let r = 0; r < rows.length; r++) {
+          result.push(lines[i - rows.length + r]);
+        }
+        continue;
+      }
+
+      // Convert each data row to: **Header1:** val1 — **Header2:** val2
+      for (const row of rows) {
+        const parts = headers.map((h, ci) => {
+          const val = ci < row.length ? row[ci] : '';
+          return `**${h}:** ${val}`;
+        });
+        result.push(parts.join(' \u{2014} '));
+      }
+      continue;
+    }
+
+    result.push(lines[i]);
+    i++;
+  }
+
+  return result.join('\n');
 }
 
 // ---------------------------------------------------------------------------
