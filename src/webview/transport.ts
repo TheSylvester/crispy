@@ -193,6 +193,12 @@ export interface SessionService {
   /** Skill and slash command autocomplete */
   listAvailableCommands(params: { vendor?: string }): Promise<InputCommand[]>;
 
+  /** Discord bot setup — validate a bot token against Discord API */
+  validateDiscordToken(token: string): Promise<{ valid: boolean; username?: string; id?: string; error?: string }>;
+
+  /** Discord bot setup — fetch application info for invite URL generation */
+  getDiscordAppInfo(token: string): Promise<{ appId: string; name: string } | null>;
+
   dispose(): void;
 
   /** Fire-and-forget message to the host. VS Code only; no-op elsewhere. */

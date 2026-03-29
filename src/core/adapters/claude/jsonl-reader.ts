@@ -27,7 +27,8 @@ type ClaudeEntryType =
   | "stream_event"
   | "progress"
   | "queue-operation"
-  | "file-history-snapshot";
+  | "file-history-snapshot"
+  | "last-prompt";
 
 /** Minimal content block shape for Claude JSONL parsing. */
 interface ClaudeContentBlock {
@@ -124,6 +125,7 @@ export interface ClaudeQuickMeta {
   isTrivial: boolean;
   parentSessionId?: string;
   lastMessage?: string;
+  lastUserPrompt?: string;
   /** Real absolute project path extracted from the `cwd` field of JSONL entries. */
   projectPath?: string;
   /** ISO timestamp from the most recent transcript entry (for accurate sort order). */
@@ -133,6 +135,7 @@ export interface ClaudeQuickMeta {
 /** Structured metadata extracted from the tail (last 32KB) of a JSONL file. */
 export interface TailMetadata {
   lastMessage?: string; // last user/assistant text
+  lastUserPrompt?: string; // last user-only text (distinct from lastMessage which includes assistant)
   summary?: string; // from type:"summary" entry (AI-generated title)
   slug?: string; // three-word session name from any entry
   lastTimestamp?: string; // ISO timestamp from most recent entry
@@ -1353,11 +1356,13 @@ export function extractMetadataFast(
     const bytesRead = fs.readSync(fd, buffer, 0, bytesToRead, 0);
 
     if (bytesRead === 0) {
+      const emptyTail = extractTailMetadata(filepath);
       return {
         label: "No prompt",
         isSidechain: false,
         isTrivial: true,
-        lastMessage: extractTailMetadata(filepath).lastMessage,
+        lastMessage: emptyTail.lastMessage,
+        lastUserPrompt: emptyTail.lastUserPrompt,
       };
     }
 
@@ -1414,6 +1419,7 @@ export function extractMetadataFast(
       isTrivial,
       parentSessionId,
       lastMessage: tail.lastMessage,
+      lastUserPrompt: tail.lastUserPrompt,
       lastTimestamp: tail.lastTimestamp,
       projectPath,
     };
@@ -1528,6 +1534,11 @@ export function extractTailMetadata(
           }
         }
 
+        // Extract lastUserPrompt from Claude Code's "last-prompt" entry
+        if (!result.lastUserPrompt && entry.type === "last-prompt" && entry.lastPrompt) {
+          result.lastUserPrompt = String(entry.lastPrompt).replace(/\n/g, " ").trim();
+        }
+
         // Extract cwd (project path) from any entry with a cwd field.
         // Fallback for sessions whose head chunk is dominated by large
         // entries (e.g. base64 images) that push cwd past the 64KB read.
@@ -1536,7 +1547,7 @@ export function extractTailMetadata(
         }
 
         // Stop early if we've found all fields
-        if (result.lastMessage && result.summary && result.slug && result.lastTimestamp && result.cwd) {
+        if (result.lastMessage && result.lastUserPrompt && result.summary && result.slug && result.lastTimestamp && result.cwd) {
           break;
         }
       } catch {

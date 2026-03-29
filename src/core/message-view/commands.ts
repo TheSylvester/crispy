@@ -3,7 +3,7 @@
  *
  * Parses "!command args" from Discord messages in the bot control channel,
  * DMs, or @mentions. Primary entry point: `!sessions` for browsing and
- * opening recent conversations via emoji reactions.
+ * opening recent conversations via button interactions.
  *
  * @module message-view/commands
  */
@@ -14,28 +14,64 @@ import {
   resolveSessionPrefix,
 } from '../session-manager.js';
 import { getActiveChannels } from '../session-channel.js';
-import { sendMessage, addReaction } from './discord-transport.js';
+import {
+  sendMessage,
+  sendMessageWithComponents,
+  editMessageWithComponents,
+  deleteMessage,
+  getMessages,
+  bulkDeleteMessages,
+} from './discord-transport.js';
+import type { MessageComponent } from './discord-transport.js';
 import type { AgentDispatch } from '../agent-dispatch-types.js';
 import { listAllSessions } from '../session-manager.js';
 
 const SOURCE = 'message-view/commands';
 const COMMANDS_HELP = 'Available: `!sessions`, `!open`, `!stop`, `!status`';
 
-// Numbered emoji for session list reactions (1️⃣ through 🔟)
-const NUMBER_EMOJI = [
-  '\u{31}\u{FE0F}\u{20E3}', '\u{32}\u{FE0F}\u{20E3}', '\u{33}\u{FE0F}\u{20E3}',
-  '\u{34}\u{FE0F}\u{20E3}', '\u{35}\u{FE0F}\u{20E3}', '\u{36}\u{FE0F}\u{20E3}',
-  '\u{37}\u{FE0F}\u{20E3}', '\u{38}\u{FE0F}\u{20E3}', '\u{39}\u{FE0F}\u{20E3}',
-  '\u{1F51F}', // 🔟
-];
-const NEXT_PAGE_EMOJI = '\u{27A1}\u{FE0F}'; // ➡️
+/** Sessions per page: 5 in msg1 + 4 in msg2 (+ Next Page button). */
+const MSG1_SLOTS = 5;
+const MSG2_SLOTS = 4;
+const PAGE_SIZE = MSG1_SLOTS + MSG2_SLOTS; // 9
 
-// Active session list state — maps messageId → { sessions, page, channelId }
-const activeSessionLists = new Map<string, {
+/** Auto-refresh the session screen after this many ms of inactivity. */
+const SCREEN_IDLE_REFRESH_MS = 60_000;
+
+// Session display — mirrors webview/utils/session-display.ts (can't import from webview layer)
+function getSessionDisplayName(s: { title?: string; label?: string; lastUserPrompt?: string; sessionId: string }): string {
+  return s.title?.trim() || s.lastUserPrompt?.trim() || s.label?.trim() || s.sessionId.slice(0, 8) + '\u{2026}';
+}
+
+// ---------------------------------------------------------------------------
+// Session screen state — the bot channel is treated as an interactive display.
+// Each channel has at most one "screen" (2 Discord messages) that is edited
+// in-place for pagination and auto-refreshed after idle.
+// ---------------------------------------------------------------------------
+
+interface SessionScreen {
+  channelId: string;
+  /** Discord message IDs for the two screen messages. */
+  messageIds: [string, string] | [string];
+  /** Session data visible on the current page (for button→session mapping). */
   sessions: Array<{ sessionId: string; title: string }>;
   page: number;
-  channelId: string;
-}>();
+  lastInteraction: number;
+  refreshTimer: ReturnType<typeof setTimeout> | null;
+}
+
+/** One screen per bot control channel. */
+const activeScreens = new Map<string, SessionScreen>();
+
+/**
+ * Look up a session from a button click on any screen message.
+ * Matches against both message IDs in the screen.
+ */
+export function getScreenForMessage(messageId: string): SessionScreen | undefined {
+  for (const screen of activeScreens.values()) {
+    if (screen.messageIds.includes(messageId)) return screen;
+  }
+  return undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Context interface — injected by discord-provider.ts
@@ -43,9 +79,10 @@ const activeSessionLists = new Map<string, {
 
 export interface CommandContext {
   readonly guildId: string | null;
-  readonly forumReady: boolean;
   readonly permissionMode: string | null;
   readonly dispatch: AgentDispatch | null;
+  /** The toolbar message ID in the bot channel (preserved during wipes). */
+  readonly toolbarMessageId: string | null;
   uptimeMs(): number;
   watchedCount(): number;
   isWatching(sessionId: string): boolean;
@@ -81,12 +118,6 @@ export async function handleCommand(channelId: string, text: string, ctx: Comman
     return;
   }
 
-  const needsForum = ['open', 'sessions'].includes(parsed.cmd);
-  if (needsForum && !ctx.forumReady) {
-    await sendMessage(channelId, '\u{274C} Forum channel not ready yet.').catch(() => {});
-    return;
-  }
-
   try {
     switch (parsed.cmd) {
       case 'sessions': return await handleSessions(channelId, parsed.args, ctx);
@@ -119,7 +150,6 @@ async function handleSessions(channelId: string, args: string, ctx: CommandConte
     return;
   }
 
-  const PAGE_SIZE = 10;
   const start = page * PAGE_SIZE;
   const pageSessions = allSessions.slice(start, start + PAGE_SIZE);
 
@@ -129,98 +159,194 @@ async function handleSessions(channelId: string, args: string, ctx: CommandConte
   }
 
   const totalPages = Math.ceil(allSessions.length / PAGE_SIZE);
-  const now = Date.now();
-
-  const lines = pageSessions.map((s, i) => {
-    const title = (s.title ?? s.label ?? '(untitled)').slice(0, 55);
-    const ago = formatTimeAgo(now - s.modifiedAt.getTime());
-    const vendor = s.vendor !== 'claude' ? ` \u{2022} ${s.vendor}` : '';
-    return `${NUMBER_EMOJI[i]} **${title}**  \u{2014}  ${ago}${vendor}`;
-  });
+  const displayNames = pageSessions.map(s => getSessionDisplayName(s));
 
   const header = totalPages > 1
     ? `\u{1F4C2} **Sessions** (page ${page + 1}/${totalPages})`
     : '\u{1F4C2} **Sessions**';
 
-  const msg = await sendMessage(channelId, `${header}\n\n${lines.join('\n')}`);
+  const hasNextPage = start + PAGE_SIZE < allSessions.length;
 
-  // Store session list state for reaction handler
-  activeSessionLists.set(msg.id, {
-    sessions: pageSessions.map(s => ({
-      sessionId: s.sessionId,
-      title: s.title ?? s.label ?? '(untitled)',
-    })),
-    page,
+  // Split sessions across two messages: msg1 gets up to MSG1_SLOTS, msg2 gets the rest.
+  // msg2 is only used when there are >MSG1_SLOTS sessions or a Next Page button is needed.
+  const msg1Names = displayNames.slice(0, MSG1_SLOTS);
+  const msg2Names = displayNames.slice(MSG1_SLOTS);
+  const needsMsg2 = msg2Names.length > 0 || hasNextPage;
+
+  // Build vertical-stack action rows (1 button per row)
+  const buildRows = (names: string[], offset: number): MessageComponent[] =>
+    names.map((name, i) => ({
+      type: 1 as const,
+      components: [{
+        type: 2 as const,
+        style: 2 as const,
+        label: name.slice(0, 80),
+        custom_id: `session:${offset + i}`,
+      }],
+    }));
+
+  const msg1Rows = buildRows(msg1Names, 0);
+
+  // If ≤5 sessions and no next page, put Next Page on msg1 (won't exceed 5 rows)
+  if (hasNextPage && !needsMsg2) {
+    msg1Rows.push({
+      type: 1,
+      components: [{
+        type: 2,
+        style: 1,
+        label: 'Next Page \u{25B6}',
+        custom_id: `session_next:${page + 1}`,
+      }],
+    });
+  }
+
+  let msg2Rows: MessageComponent[] = [];
+  if (needsMsg2) {
+    msg2Rows = buildRows(msg2Names, MSG1_SLOTS);
+    if (hasNextPage) {
+      msg2Rows.push({
+        type: 1,
+        components: [{
+          type: 2,
+          style: 1,
+          label: 'Next Page \u{25B6}',
+          custom_id: `session_next:${page + 1}`,
+        }],
+      });
+    }
+  }
+
+  // Check for existing screen to edit-in-place
+  const existing = activeScreens.get(channelId);
+
+  const sessionData = pageSessions.map((s, i) => ({
+    sessionId: s.sessionId,
+    title: displayNames[i],
+  }));
+
+  if (existing) {
+    try {
+      await editMessageWithComponents(channelId, existing.messageIds[0], header, msg1Rows);
+      if (existing.messageIds.length === 2 && needsMsg2) {
+        // Edit existing msg2
+        await editMessageWithComponents(channelId, existing.messageIds[1], '\u{200B}', msg2Rows);
+      } else if (existing.messageIds.length === 2 && !needsMsg2) {
+        // Had msg2 but no longer needed — delete it
+        deleteMessage(channelId, existing.messageIds[1]).catch(() => {});
+        existing.messageIds = [existing.messageIds[0]];
+      } else if (existing.messageIds.length === 1 && needsMsg2) {
+        // Need msg2 but didn't have one — create it
+        const msg2 = await sendMessageWithComponents(channelId, '\u{200B}', msg2Rows);
+        existing.messageIds = [existing.messageIds[0], msg2.id];
+      }
+      existing.sessions = sessionData;
+      existing.page = page;
+      existing.lastInteraction = Date.now();
+      scheduleScreenRefresh(channelId, ctx);
+      return;
+    } catch {
+      // Edit failed (messages deleted?) — fall through to create new
+      teardownScreen(channelId);
+    }
+  }
+
+  // Create fresh screen
+  const msg1 = await sendMessageWithComponents(channelId, header, msg1Rows);
+  const messageIds: [string, string] | [string] = needsMsg2
+    ? [msg1.id, (await sendMessageWithComponents(channelId, '\u{200B}', msg2Rows)).id]
+    : [msg1.id];
+
+  const screen: SessionScreen = {
     channelId,
-  });
-
-  // Add numbered reactions + pagination
-  for (let i = 0; i < pageSessions.length; i++) {
-    await addReaction(channelId, msg.id, NUMBER_EMOJI[i]).catch(() => {});
-  }
-  if (start + PAGE_SIZE < allSessions.length) {
-    await addReaction(channelId, msg.id, NEXT_PAGE_EMOJI).catch(() => {});
-  }
-}
-
-function formatTimeAgo(ms: number): string {
-  const mins = Math.floor(ms / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+    messageIds,
+    sessions: sessionData,
+    page,
+    lastInteraction: Date.now(),
+    refreshTimer: null,
+  };
+  activeScreens.set(channelId, screen);
+  scheduleScreenRefresh(channelId, ctx);
 }
 
 /**
- * Handle a reaction on a session list message.
- * Returns true if the reaction was consumed (recognized as a session pick).
+ * Handle a session pick button interaction.
+ * Returns the picked session info, or null if the interaction is stale.
  */
-export async function handleSessionListReaction(
+export function handleSessionButtonPick(
+  customId: string,
   messageId: string,
-  emoji: string,
+): { sessionId: string; title: string } | null {
+  const screen = getScreenForMessage(messageId);
+  if (!screen) return null;
+  const index = parseInt(customId.split(':')[1], 10);
+  if (isNaN(index) || index >= screen.sessions.length) return null;
+  screen.lastInteraction = Date.now();
+  return screen.sessions[index];
+}
+
+/**
+ * Handle a session list "Next Page" button interaction.
+ * Edits the screen in-place to show the next page.
+ */
+export async function handleSessionNextButton(
+  customId: string,
+  messageId: string,
   ctx: CommandContext,
-): Promise<boolean> {
-  const state = activeSessionLists.get(messageId);
-  if (!state) return false;
+): Promise<void> {
+  const screen = getScreenForMessage(messageId);
+  if (!screen) return;
+  const nextPage = parseInt(customId.split(':')[1], 10);
+  if (isNaN(nextPage)) return;
+  await handleSessions(screen.channelId, String(nextPage + 1), ctx);
+}
 
-  // Pagination
-  if (emoji === NEXT_PAGE_EMOJI || emoji === '\u{27A1}') {
-    activeSessionLists.delete(messageId);
-    await handleSessions(state.channelId, String(state.page + 2), ctx);
-    return true;
-  }
+// ---------------------------------------------------------------------------
+// Screen lifecycle
+// ---------------------------------------------------------------------------
 
-  // Number pick
-  const index = NUMBER_EMOJI.indexOf(emoji);
-  if (index < 0 || index >= state.sessions.length) return false;
+function scheduleScreenRefresh(channelId: string, ctx: CommandContext): void {
+  const screen = activeScreens.get(channelId);
+  if (!screen) return;
 
-  const picked = state.sessions[index];
-  activeSessionLists.delete(messageId);
-
-  if (ctx.isWatching(picked.sessionId)) {
-    const discordChannelId = ctx.getWatchDiscordChannelId(picked.sessionId);
-    const link = `https://discord.com/channels/${ctx.guildId}/${discordChannelId}`;
-    await sendMessage(state.channelId, `Already open: ${link}`).catch(() => {});
-    return true;
-  }
-
-  await sendMessage(state.channelId, `\u{23F3} Opening **${picked.title.slice(0, 50)}**\u{2026}`).catch(() => {});
-
-  try {
-    await ctx.openSession(picked.sessionId);
-    const discordChannelId = ctx.getWatchDiscordChannelId(picked.sessionId);
-    if (discordChannelId) {
-      const link = `https://discord.com/channels/${ctx.guildId}/${discordChannelId}`;
-      await sendMessage(state.channelId, `\u{2705} Opened: ${link}`).catch(() => {});
+  if (screen.refreshTimer) clearTimeout(screen.refreshTimer);
+  screen.refreshTimer = setTimeout(async () => {
+    const current = activeScreens.get(channelId);
+    if (!current || current !== screen) return;
+    // Postpone if a recent interaction happened within the idle window
+    const elapsed = Date.now() - current.lastInteraction;
+    if (elapsed < SCREEN_IDLE_REFRESH_MS) {
+      scheduleScreenRefresh(channelId, ctx);
+      return;
     }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    await sendMessage(state.channelId, `\u{274C} Failed to open: ${msg}`).catch(() => {});
-  }
+    // Idle wipe: delete all non-toolbar messages, leave channel clean.
+    // User can click "Browse Sessions" in the toolbar to re-open the list.
+    try {
+      await wipeNonToolbarMessages(channelId, ctx.toolbarMessageId);
+      if (screen.refreshTimer) clearTimeout(screen.refreshTimer);
+      activeScreens.delete(channelId);
+    } catch (err) {
+      log({ source: SOURCE, level: 'warn', summary: 'session screen idle wipe failed', data: err });
+    }
+  }, SCREEN_IDLE_REFRESH_MS);
+}
 
-  return true;
+function teardownScreen(channelId: string): void {
+  const screen = activeScreens.get(channelId);
+  if (!screen) return;
+  if (screen.refreshTimer) clearTimeout(screen.refreshTimer);
+  // Best-effort delete old messages
+  for (const msgId of screen.messageIds) {
+    deleteMessage(channelId, msgId).catch(() => {});
+  }
+  activeScreens.delete(channelId);
+}
+
+/** Clean up all screens (called on bot shutdown). */
+export function disposeAllScreens(): void {
+  for (const screen of activeScreens.values()) {
+    if (screen.refreshTimer) clearTimeout(screen.refreshTimer);
+  }
+  activeScreens.clear();
 }
 
 async function handleOpen(channelId: string, args: string, ctx: CommandContext): Promise<void> {
@@ -291,5 +417,59 @@ async function handleStatus(channelId: string, ctx: CommandContext): Promise<voi
     channelId,
     `Uptime: ${uptimeMin}m\nWorkspaces: ${workspaces}\nActive channels: ${activeCount}\nWatched sessions: ${watched}`,
   ).catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// Channel Wipe — delete all non-toolbar messages
+// ---------------------------------------------------------------------------
+
+/**
+ * Delete all messages in a channel except the toolbar message.
+ * Paginates through `getMessages()` (max 100 per call) until all
+ * non-toolbar messages are deleted.
+ */
+async function wipeNonToolbarMessages(channelId: string, toolbarId: string | null): Promise<void> {
+  let deleted = 0;
+  const MAX_PAGES = 5;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const messages = await getMessages(channelId, { limit: 100 });
+    if (messages.length === 0) break;
+
+    const toDelete = messages.filter(m => m.id !== toolbarId).map(m => m.id);
+    if (toDelete.length === 0) break;
+
+    try {
+      await bulkDeleteMessages(channelId, toDelete);
+    } catch {
+      // Bulk delete can fail for messages >14 days old — fall back to individual deletes
+      await Promise.allSettled(toDelete.map(id => deleteMessage(channelId, id)));
+    }
+    deleted += toDelete.length;
+
+    if (messages.length < 100) break;
+  }
+
+  if (deleted > 0) {
+    log({ source: SOURCE, level: 'info', summary: `wiped ${deleted} message(s) from channel ${channelId}` });
+  }
+}
+
+/**
+ * Reset the bot channel: wipe all non-toolbar messages, tear down the
+ * existing screen, and re-render the session list from scratch.
+ */
+export async function resetBotChannel(
+  channelId: string,
+  ctx: CommandContext,
+): Promise<void> {
+  const existing = activeScreens.get(channelId);
+  if (existing) {
+    if (existing.refreshTimer) clearTimeout(existing.refreshTimer);
+    activeScreens.delete(channelId);
+  }
+
+  await wipeNonToolbarMessages(channelId, ctx.toolbarMessageId);
+  await handleSessions(channelId, '1', ctx);
 }
 

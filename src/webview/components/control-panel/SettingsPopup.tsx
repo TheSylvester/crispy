@@ -19,6 +19,7 @@ import type { ToolViewOverride, BadgeStyle } from '../../context/PreferencesCont
 import type { WireProviderConfig, ProviderConfig, DiscordBotSettings } from '../../../core/settings/types.js';
 import type { CatchupStatus } from '../../../core/recall/catchup-types.js';
 import { formatDuration } from '../../utils/format.js';
+import { DiscordSetupWizard } from './DiscordSetupWizard.js';
 
 interface SettingsPopupProps {
   pinned: boolean;
@@ -35,13 +36,15 @@ interface SettingsPopupProps {
   onBadgeStyleChange: (style: BadgeStyle) => void;
   bashBlockInIcons: boolean;
   onBashBlockInIconsChange: (enabled: boolean) => void;
+  autoReflect: boolean;
+  onAutoReflectChange: (enabled: boolean) => void;
   rosieEnabled: boolean;
   rosieModel?: string;
   onUpdateRosie: (patch: { enabled?: boolean; model?: string }) => void;
   discordEnabled: boolean;
   discordGuildId: string;
   discordToken: string;
-  discordSessions: 'all' | 'manual';
+  discordAllowedUserIds: string[];
   onUpdateDiscord: (patch: Partial<DiscordBotSettings>) => void;
   catchupStatus?: CatchupStatus | null;
   onStartEmbedding?: () => void;
@@ -139,20 +142,22 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordSessions, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordAllowedUserIds, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [discordDirty, setDiscordDirty] = useState(false);
 
   const handleClickOutside = useCallback(
     (e: MouseEvent) => {
       if (pinned && containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        if (discordDirty) return; // Don't close while wizard has unsaved state
         onToggle();
       }
     },
-    [pinned, onToggle],
+    [pinned, onToggle, discordDirty],
   );
 
   useEffect(() => {
@@ -281,6 +286,14 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               onChange={(e) => onToolPanelAutoOpenChange(e.target.checked)}
             />
           </label>
+          <label className="crispy-cp-settings__row">
+            <span>Auto-reflect Plans</span>
+            <input
+              type="checkbox"
+              checked={autoReflect}
+              onChange={(e) => onAutoReflectChange(e.target.checked)}
+            />
+          </label>
 
           {/* --- Defaults Section --- */}
           <div className="crispy-cp-settings__section-header">Defaults</div>
@@ -392,7 +405,16 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
             </div>
           )}
 
-          {/* Discord message-view settings intentionally hidden pending security hardening. */}
+          {/* --- Discord Bot Section --- */}
+          <div className="crispy-cp-settings__section-header">Discord Bot</div>
+          <DiscordSetupWizard
+            enabled={discordEnabled}
+            guildId={discordGuildId}
+            token={discordToken}
+            allowedUserIds={discordAllowedUserIds}
+            onUpdateDiscord={onUpdateDiscord}
+            onDirtyChange={setDiscordDirty}
+          />
 
           {/* --- Providers Section --- */}
           {providers && onSaveProvider && onDeleteProvider && (

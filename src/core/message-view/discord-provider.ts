@@ -20,15 +20,13 @@
  */
 
 import { log } from '../log.js';
-import { isChildSession } from '../session-manager.js';
-import { subscribeSessionList, unsubscribeSessionList } from '../session-list-manager.js';
-import type { SessionListSubscriber } from '../session-list-manager.js';
-import type { SessionListEvent } from '../session-list-events.js';
 import type { SessionSnapshot } from '../session-snapshot.js';
 import type { MessageProvider, ViewOpts } from './provider.js';
 import type { DiscordProviderConfig } from './config.js';
 import type { AgentDispatch } from '../agent-dispatch-types.js';
 import type { Vendor } from '../transcript.js';
+import { existsSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
 import {
   initTransport,
   shutdownTransport,
@@ -38,11 +36,12 @@ import {
   discordFetch,
   triggerTyping,
   sendMessage,
-  addReaction,
+  sendMessageWithComponents,
+  respondToInteraction,
   archiveThread,
 } from './discord-transport.js';
-import type { GatewayEventHandler } from './discord-transport.js';
-import { handleCommand, handleSessionListReaction } from './commands.js';
+import type { GatewayEventHandler, DiscordInteraction } from './discord-transport.js';
+import { handleCommand, handleSessionButtonPick, handleSessionNextButton, disposeAllScreens, resetBotChannel } from './commands.js';
 import type { CommandContext } from './commands.js';
 import {
   cleanupAndDiscoverBots,
@@ -63,8 +62,9 @@ import {
   allWatches,
   disposeWatch,
   disposeAllWatches,
-  resolveReactionApproval,
-  syncSession,
+  resolveButtonApproval,
+  buildCloseButton,
+  drainOne,
   watchSession,
   watchSessionInThread,
   createWatchedSession,
@@ -75,6 +75,19 @@ import {
 const SOURCE = 'discord-provider';
 const MAX_CONCURRENT_PROMPTS = 3;
 const DEFAULT_ARCHIVAL_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+const TOOLBAR_MESSAGE = '\u{1F7E2} **Crispy online.**\n\nBrowse sessions, add a workspace, or reset this channel.';
+
+function buildToolbarComponents(): import('./discord-transport.js').MessageComponent[] {
+  return [{
+    type: 1,
+    components: [
+      { type: 2, style: 1, label: 'Browse Sessions', custom_id: 'browse_sessions', emoji: { name: '\u{1F4C2}' } },
+      { type: 2, style: 2, label: 'Add Workspace', custom_id: 'add_workspace', emoji: { name: '\u{1F4C1}' } },
+      { type: 2, style: 4, label: 'Reset', custom_id: 'reset_channel', emoji: { name: '\u{1F504}' } },
+    ],
+  }];
+}
 
 // ---------------------------------------------------------------------------
 // Provider state — singleton: only one Discord provider may exist at a time.
@@ -94,15 +107,29 @@ const lastActivityMap = new Map<string, number>();
 
 let ownerUserId: string | null = null;
 let commandsEnabled = false;
+
+/**
+ * Authorization check — fail-closed.
+ * Owner (via OAuth) always passes. Allowlist is additive (expands access
+ * beyond owner). If no owner AND no allowlist, nobody can interact.
+ */
+function isAuthorized(userId: string): boolean {
+  if (ownerUserId && userId === ownerUserId) return true;
+  if (currentConfig?.allowedUserIds?.length) {
+    return currentConfig.allowedUserIds.includes(userId);
+  }
+  return false;
+}
 let promptsInFlight = 0;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 let startTime = 0;
-let unsubSessionList: (() => void) | null = null;
 let currentConfig: DiscordProviderConfig | null = null;
 let currentDispatch: AgentDispatch | null = null;
 let workspaceCwd: string | null = null;
 let botControlChannelId: string | null = null;
-let welcomeMessageId: string | null = null;
+let toolbarMessageId: string | null = null;
+/** Prevents concurrent workspace creation for the same path. */
+const pendingWorkspaceCreations = new Set<string>();
 const lastTypingFired = new Map<string, number>();
 const TYPING_COOLDOWN_MS = 8000;
 const HEALTH_CHECK_TIMEOUT_MS = 3000;
@@ -151,11 +178,6 @@ function getWorkspaceForForum(forumChannelId: string): string | null {
 /** Check if a forum channel is a workspace forum we manage. */
 function isWorkspaceForum(forumChannelId: string): boolean {
   return channelToWorkspace.has(forumChannelId);
-}
-
-/** Check if any workspace forum is ready. */
-function hasAnyForum(): boolean {
-  return workspaceChannels.size > 0;
 }
 
 function registerWorkspaceChannel(cwd: string, wc: WorkspaceChannel): void {
@@ -211,8 +233,10 @@ export function createDiscordProvider(
         log({ source: SOURCE, level: 'error', summary: 'gateway message handler error', data: err });
       });
     },
-    onReactionAdd(channelId, messageId, userId, emoji) {
-      handleGatewayReaction(channelId, messageId, userId, emoji);
+    onInteraction(interaction) {
+      handleGatewayInteraction(interaction).catch((err) => {
+        log({ source: SOURCE, level: 'error', summary: 'interaction handler error', data: err });
+      });
     },
     onThreadCreate(event) {
       handleThreadCreate(event);
@@ -246,7 +270,7 @@ export function createDiscordProvider(
 
     async createSessionView(_sessionId: string, _prompt: string, _opts: ViewOpts): Promise<void> {
       // Session views are created via createWatchedSession / watchSession
-      // which are called through the command context or auto-watch.
+      // which are called through the command context.
     },
 
     dispose(): void {
@@ -262,10 +286,6 @@ export function createDiscordProvider(
 function disposeDiscordProvider(): void {
   commandsEnabled = false;
 
-  if (unsubSessionList) {
-    unsubSessionList();
-    unsubSessionList = null;
-  }
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = null;
@@ -273,6 +293,7 @@ function disposeDiscordProvider(): void {
 
   disposeAllWatches();
   clearCommandSessions();
+  disposeAllScreens();
   lastTypingFired.clear();
   channelMap.clear();
   lastActivityMap.clear();
@@ -281,7 +302,9 @@ function disposeDiscordProvider(): void {
   currentDispatch = null;
   workspaceCwd = null;
   botControlChannelId = null;
-  welcomeMessageId = null;
+  toolbarMessageId = null;
+  pendingWorkspaceCreations.clear();
+
   clearWorkspaceChannels();
   ownerUserId = null;
   promptsInFlight = 0;
@@ -347,17 +370,14 @@ async function initWorkspaceChannels(): Promise<void> {
 
   botControlChannelId = await createBotChannel(guildId, botId, ownerUserId, myPid);
 
-  // Post welcome message with 📂 reaction for quick session browsing
-  const welcomeMsg = await sendMessage(botControlChannelId, [
-    '\u{1F7E2} **Crispy online.**',
-    '',
-    'React \u{1F4C2} to browse sessions, or create a **New Post** in the forum channel.',
-  ].join('\n'));
-  welcomeMessageId = welcomeMsg.id;
-  await addReaction(botControlChannelId, welcomeMsg.id, '\u{1F4C2}').catch(() => {});
+  const welcomeMsg = await sendMessageWithComponents(
+    botControlChannelId, TOOLBAR_MESSAGE, buildToolbarComponents(),
+  );
+  toolbarMessageId = welcomeMsg.id;
+
 
   commandsEnabled = true;
-  enableAutoWatchAndHeartbeat();
+  enableHeartbeat();
 
   log({ source: SOURCE, level: 'info', summary: `Discord bot active — commands enabled, ${workspaceChannels.size} workspace(s)` });
 }
@@ -374,6 +394,19 @@ async function initWorkspaceChannels(): Promise<void> {
  * bot-self message arrives in the probed channel.
  */
 async function healthCheckBot(channelId: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const alive = await singleHealthProbe(channelId);
+    if (alive) return true;
+    if (attempt === 0) {
+      // Wait before retry — give the other bot time to reconnect
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+  return false;
+}
+
+/** Single health probe: send `!status` and wait for a response within timeout. */
+function singleHealthProbe(channelId: string): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     const timer = setTimeout(() => {
       healthCheckResolvers.delete(channelId);
@@ -397,17 +430,21 @@ async function healthCheckBot(channelId: string): Promise<boolean> {
 // Thread Create — user-created forum posts become sessions
 // ---------------------------------------------------------------------------
 
-function handleThreadCreate(event: { id: string; parent_id: string; name: string; guild_id: string }): void {
+function handleThreadCreate(event: { id: string; parent_id: string; name: string; guild_id: string; owner_id?: string }): void {
   if (!commandsEnabled) return;
+
+  // Auth gate: only allowed users can create sessions via forum posts.
+  // Fail-closed: if owner_id is absent, deny (don't assume authorized).
+  if (!event.owner_id || !isAuthorized(event.owner_id)) return;
 
   // Only handle threads in workspace forum channels
   if (!isWorkspaceForum(event.parent_id)) return;
 
-  // If we already track this channel, it's bot-created or auto-watched — skip
+  // If we already track this channel, it's bot-created — skip
   if (channelMap.has(event.id)) return;
   if (getSessionForChannel(event.id)) return;
 
-  // Check if the thread name looks bot-created (session-XXXXXXXX or auto-watch format)
+  // Check if the thread name looks bot-created (session-XXXXXXXX format)
   // Bot-created threads from watchSession/createWatchedSession have names like
   // "session-XXXXXXXX" or the prompt text. The THREAD_CREATE fires before
   // registerWatchState completes, so channelToSession won't have it yet.
@@ -476,8 +513,10 @@ async function handleUserCreatedPost(threadId: string, forumChannelId: string, t
     log({ source: SOURCE, level: 'warn', summary: `failed to rename user-created post`, data: err });
   });
 
-  // First bot message: session ID anchor (for crash recovery)
-  await sendMessage(threadId, `\u{1F4CB} Session \`${sessionId}\``);
+  // First bot message: session ID anchor + close button
+  await sendMessageWithComponents(threadId, `session-${sessionId.slice(0, 8)}`, buildCloseButton(sessionId)).catch(() => {
+    sendMessage(threadId, `session-${sessionId.slice(0, 8)}`).catch(() => {});
+  });
 
   // Watch in the user-created thread (no new forum post)
   const permMode = currentConfig.permissionMode ?? null;
@@ -532,75 +571,57 @@ function buildPermissionSettings(mode: string | null): Record<string, unknown> {
 }
 
 // ---------------------------------------------------------------------------
-// Auto-watch & Heartbeat
+// Heartbeat
 // ---------------------------------------------------------------------------
 
-function enableAutoWatchAndHeartbeat(): void {
+function enableHeartbeat(): void {
   if (!currentConfig) return;
 
-  if (currentConfig.sessions === 'all') {
-    const sessionListSub: SessionListSubscriber = {
-      id: 'message-view-session-list',
-      send(event: SessionListEvent) {
-        if (event.type !== 'session_list_upsert') return;
-        const session = event.session;
-        if (isCommandSession(session.sessionId)) return;
-        if (hasWatch(session.sessionId)) return;
-        if (session.isSidechain) return;
-        if (session.sessionKind === 'system') return;
-        if (isChildSession(session.sessionId)) return;
-        if (Date.now() - session.modifiedAt.getTime() > 10 * 60 * 1000) return;
-
-        // Scope by workspace: session's projectPath must match a registered workspace
-        const forumChannelId = getForumForSession(session.projectPath);
-        if (!forumChannelId) return;
-
-        // Verify the session belongs to a workspace we manage
-        if (session.projectPath) {
-          const matchedCwd = findWorkspaceCwd(session.projectPath);
-          if (!matchedCwd) return;
-        }
-
-        const displayName = session.title ?? session.label ?? undefined;
-        void watchSession(session.sessionId, forumChannelId, { auto: true, displayName },
-          currentConfig?.permissionMode ?? null).catch(err => {
-          log({ source: SOURCE, level: 'error', summary: `auto-watch failed for ${session.sessionId.slice(0, 8)}`, data: err });
-        });
-      },
-    };
-    subscribeSessionList(sessionListSub);
-    unsubSessionList = () => unsubscribeSessionList(sessionListSub);
-    log({ source: SOURCE, level: 'info', summary: 'auto-watch enabled' });
-  }
+  const intervalMs = currentConfig.heartbeatIntervalMs ?? 1500;
 
   heartbeatTimer = setInterval(() => {
+    const now = Date.now();
+
     for (const state of allWatches()) {
-      // Ensure every watched session has an archival activity entry.
-      // Auto-watched sessions bypass channelMap/lastActivityMap registration,
-      // so seed their initial timestamp here on first encounter.
       if (!lastActivityMap.has(state.discordChannelId)) {
-        lastActivityMap.set(state.discordChannelId, Date.now());
+        lastActivityMap.set(state.discordChannelId, now);
       }
 
+      // Typing indicator (unchanged — still needs its own cooldown)
       if (state.snapshot.status === 'working') {
-        const now = Date.now();
         const last = lastTypingFired.get(state.discordChannelId) ?? 0;
         if (now - last >= TYPING_COOLDOWN_MS) {
           lastTypingFired.set(state.discordChannelId, now);
           triggerTyping(state.discordChannelId).catch(() => {});
         }
       }
-      if (!state.dirty || state.syncing) continue;
-      // Update archival activity tracking — snapshot changed for this session
-      lastActivityMap.set(state.discordChannelId, Date.now());
-      void syncSession(state).catch((err) => {
-        log({ source: SOURCE, level: 'error', summary: `sync error for ${state.sessionId.slice(0, 8)}`, data: err });
+
+      // Drain: skip if cooling down from error/429
+      if (state.cooldownUntil && now < state.cooldownUntil) continue;
+
+      // Burst mode: catchup sets burstRemaining to allow multiple ops per tick.
+      // Steady state: burstRemaining is 0 → runs drainOne once.
+      const opsThisTick = Math.max(1, state.burstRemaining);
+      state.burstRemaining = 0;
+
+      void (async () => {
+        for (let i = 0; i < opsThisTick; i++) {
+          // Re-check cooldown between iterations — handleDrainError may have
+          // set it during a previous iteration in this burst.
+          if (state.cooldownUntil && Date.now() < state.cooldownUntil) break;
+          const moreWork = await drainOne(state);
+          if (moreWork) {
+            lastActivityMap.set(state.discordChannelId, now);
+          }
+          if (!moreWork) break;
+        }
+      })().catch((err) => {
+        log({ source: SOURCE, level: 'error', summary: `drain error for ${state.sessionId.slice(0, 8)}`, data: err });
       });
     }
 
-    // Check for threads to archive
     checkArchival();
-  }, 3000);
+  }, intervalMs);
 }
 
 // ---------------------------------------------------------------------------
@@ -642,6 +663,13 @@ async function handleGatewayMessage(
 
   if (!commandsEnabled) return;
 
+  // Auth gate: only allowed users can interact.
+  // Bot-self fall-through (cross-instance commands) is exempt — those
+  // messages already passed the bot-self block above and are needed for
+  // multi-instance health checks.
+  const isBotSelf = message.author.id === botId;
+  if (!isBotSelf && !isAuthorized(message.author.id)) return;
+
   // Route 1: message in a session post -> track + follow-up turn + update activity
   if (getSessionForChannel(channelId)) {
     // Track non-bot message for anchor detection (deduplication)
@@ -671,42 +699,267 @@ async function handleGatewayMessage(
   }
 }
 
-function handleGatewayReaction(
-  channelId: string,
-  messageId: string,
-  userId: string,
-  emoji: string,
-): void {
-  const botId = getBotUserId();
-  if (!botId || userId === botId) return;
-
-  // 📂 on welcome message → show session list, then remove user's reaction so they can tap again
-  if (emoji === '\u{1F4C2}' && welcomeMessageId && messageId === welcomeMessageId) {
-    const encoded = encodeURIComponent('\u{1F4C2}');
-    void discordFetch('DELETE', `/channels/${channelId}/messages/${messageId}/reactions/${encoded}/${userId}`).catch(() => {});
-    void handleCommand(channelId, '!sessions', buildCommandContext()).catch((err) => {
-      log({ source: SOURCE, level: 'error', summary: 'welcome reaction sessions error', data: err });
+async function handleGatewayInteraction(interaction: DiscordInteraction): Promise<void> {
+  // Extract user ID (guild = member.user.id, DM = user.id)
+  const userId = interaction.member?.user?.id ?? interaction.user?.id;
+  if (!userId || !isAuthorized(userId)) {
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 4,
+      data: { content: '\u{274C} Not authorized.', flags: 64 },
     });
     return;
   }
 
-  // Session list reaction (numbered emoji pick or pagination)
-  void handleSessionListReaction(messageId, emoji, buildCommandContext()).catch((err) => {
-    log({ source: SOURCE, level: 'error', summary: 'session list reaction error', data: err });
+  // Modal submissions (type 5) — route by custom_id
+  if (interaction.type === 5) {
+    const customId = interaction.data?.custom_id;
+    if (customId === 'add_workspace_modal') {
+      await handleAddWorkspaceModal(interaction);
+    } else {
+      await respondToInteraction(interaction.id, interaction.token, { type: 6 });
+    }
+    return;
+  }
+
+  const customId = interaction.data?.custom_id;
+  if (!customId) {
+    await respondToInteraction(interaction.id, interaction.token, { type: 6 });
+    return;
+  }
+
+  // Route by prefix
+  if (customId.startsWith('approve:')) {
+    await handleApprovalInteraction(interaction, customId);
+  } else if (customId === 'browse_sessions') {
+    await respondToInteraction(interaction.id, interaction.token, { type: 6 });
+    await handleCommand(interaction.channel_id, '!sessions', buildCommandContext());
+  } else if (customId === 'add_workspace') {
+    // Open modal with text input for workspace path
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 9, // MODAL
+      data: {
+        custom_id: 'add_workspace_modal',
+        title: 'Add Workspace',
+        components: [{
+          type: 1, // ActionRow
+          components: [{
+            type: 4, // TextInput
+            custom_id: 'workspace_path',
+            label: 'Workspace Path',
+            style: 1, // Short
+            placeholder: '/home/user/dev/my-project',
+            required: true,
+          }],
+        }],
+      },
+    });
+  } else if (customId === 'reset_channel') {
+    await respondToInteraction(interaction.id, interaction.token, { type: 6 });
+    await handleResetChannel(interaction.channel_id);
+  } else if (customId.startsWith('close:')) {
+    const sessionId = customId.slice(6);
+    const fallbackSessionId = getSessionForChannel(interaction.channel_id);
+    const watchState = getWatch(sessionId) ?? (fallbackSessionId ? getWatch(fallbackSessionId) : undefined);
+    const displayId = (watchState?.sessionId ?? sessionId).slice(0, 8);
+    // Respond first (before archive, which could race with the response)
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 7,
+      data: {
+        content: `session-${displayId} \u{2014} \u{1F512} closed`,
+        components: [],
+      },
+    });
+    if (watchState) {
+      disposeWatch(watchState.sessionId);
+    } else {
+      archiveThread(interaction.channel_id).catch(() => {});
+    }
+    // Clean up provider-level bookkeeping (disposeWatch only clears watch-state maps)
+    channelMap.delete(interaction.channel_id);
+    lastActivityMap.delete(interaction.channel_id);
+  } else if (customId.startsWith('session:') || customId.startsWith('session_next:')) {
+    // Ack immediately — opening a session can exceed the 3-second deadline
+    await respondToInteraction(interaction.id, interaction.token, { type: 6 });
+    if (customId.startsWith('session_next:')) {
+      await handleSessionNextButton(customId, interaction.message?.id ?? '', buildCommandContext());
+    } else {
+      await handleSessionPickInteraction(interaction, customId);
+    }
+  } else {
+    // Unknown custom_id — ack to prevent Discord "interaction failed" error
+    await respondToInteraction(interaction.id, interaction.token, { type: 6 });
+  }
+}
+
+async function handleApprovalInteraction(interaction: DiscordInteraction, customId: string): Promise<void> {
+  const parts = customId.split(':');
+  const toolUseId = parts[1];
+  const optionId = parts.slice(2).join(':'); // Rejoin in case optionId contains colons
+  if (!toolUseId || !optionId) {
+    await respondToInteraction(interaction.id, interaction.token, { type: 6 });
+    return;
+  }
+
+  const resolved = resolveButtonApproval(interaction.channel_id, toolUseId, optionId);
+  if (resolved) {
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 7, // UPDATE_MESSAGE
+      data: {
+        content: `${resolved.emoji} **${resolved.toolName}** \u{2014} ${resolved.label}`,
+        components: [], // Remove buttons
+      },
+    });
+  } else {
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 4,
+      data: { content: '\u{26A0}\u{FE0F} This approval has expired.', flags: 64 },
+    });
+  }
+}
+
+async function handleSessionPickInteraction(interaction: DiscordInteraction, customId: string): Promise<void> {
+  const messageId = interaction.message?.id ?? '';
+  const picked = handleSessionButtonPick(customId, messageId);
+  if (!picked) {
+    await sendMessage(interaction.channel_id, '\u{26A0}\u{FE0F} This session list has expired. Use `!sessions` to refresh.').catch(() => {});
+    return;
+  }
+
+  const ctx = buildCommandContext();
+
+  if (ctx.isWatching(picked.sessionId)) {
+    const discordChannelId = ctx.getWatchDiscordChannelId(picked.sessionId);
+    const link = `https://discord.com/channels/${ctx.guildId}/${discordChannelId}`;
+    await sendMessage(interaction.channel_id, `Already open: ${link}`).catch(() => {});
+    return;
+  }
+
+  await sendMessage(interaction.channel_id, `\u{23F3} Opening **${picked.title.slice(0, 50)}**\u{2026}`).catch(() => {});
+
+  try {
+    await ctx.openSession(picked.sessionId);
+    const discordChannelId = ctx.getWatchDiscordChannelId(picked.sessionId);
+    if (discordChannelId) {
+      const link = `https://discord.com/channels/${ctx.guildId}/${discordChannelId}`;
+      await sendMessage(interaction.channel_id, `\u{2705} Opened: ${link}`).catch(() => {});
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await sendMessage(interaction.channel_id, `\u{274C} Failed to open: ${msg}`).catch(() => {});
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Add Workspace Modal Handler
+// ---------------------------------------------------------------------------
+
+async function handleAddWorkspaceModal(interaction: DiscordInteraction): Promise<void> {
+  const rawPath = interaction.data?.components?.[0]?.components?.[0]?.value?.trim();
+  const workspacePath = rawPath ? resolvePath(rawPath) : null;
+  if (!workspacePath) {
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 4,
+      data: { content: '\u{274C} No path provided.', flags: 64 },
+    });
+    return;
+  }
+
+  // Check for duplicate workspace or in-flight creation
+  if (workspaceChannels.has(workspacePath)) {
+    const existing = workspaceChannels.get(workspacePath)!;
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 4,
+      data: {
+        content: `\u{1F4C1} Workspace already exists: <#${existing.channelId}>`,
+        flags: 64,
+      },
+    });
+    return;
+  }
+  if (pendingWorkspaceCreations.has(workspacePath)) {
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 4,
+      data: { content: `\u{23F3} Workspace creation already in progress for this path.`, flags: 64 },
+    });
+    return;
+  }
+
+  if (!existsSync(workspacePath)) {
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 4,
+      data: { content: `\u{274C} Path not found: \`${workspacePath}\``, flags: 64 },
+    });
+    return;
+  }
+
+  // Ack with deferred reply — channel creation may take a moment
+  await respondToInteraction(interaction.id, interaction.token, {
+    type: 4,
+    data: { content: `\u{23F3} Creating workspace for \`${workspacePath}\`\u{2026}` },
   });
 
-  // ❌ on any message in the forum → archive the thread (owner only)
-  if (emoji === '\u{274C}' && (!ownerUserId || userId === ownerUserId)) {
-    const sessionId = getSessionForChannel(channelId);
-    if (sessionId) disposeWatch(sessionId);
-    archiveThread(channelId).catch((err) => {
-      log({ source: SOURCE, level: 'debug', summary: `archive on \u{274C} failed for ${channelId}`, data: err });
-    });
-    log({ source: SOURCE, level: 'info', summary: `\u{274C} reaction — archived thread ${channelId}` });
-    return;
-  }
+  pendingWorkspaceCreations.add(workspacePath);
+  try {
+    const guildId = currentConfig!.guildId;
+    const botId = getBotUserId()!;
+    const channel = await createWorkspaceChannel(guildId, botId, ownerUserId, workspacePath, process.pid);
+    registerWorkspaceChannel(workspacePath, channel);
+    log({ source: SOURCE, level: 'info', summary: `dynamic workspace created: ${channel.channelName} (${channel.channelId})` });
 
-  resolveReactionApproval(channelId, messageId, userId, emoji);
+    // Edit the deferred reply with success
+    await discordFetch('PATCH', `/webhooks/${getBotUserId()}/${interaction.token}/messages/@original`, {
+      content: `\u{2705} Workspace created: <#${channel.channelId}> for \`${workspacePath}\``,
+    }).catch(() => {});
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await discordFetch('PATCH', `/webhooks/${getBotUserId()}/${interaction.token}/messages/@original`, {
+      content: `\u{274C} Failed to create workspace: ${msg}`,
+    }).catch(() => {});
+  } finally {
+    pendingWorkspaceCreations.delete(workspacePath);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reset Channel Handler
+// ---------------------------------------------------------------------------
+
+async function handleResetChannel(channelId: string): Promise<void> {
+  if (!channelId) return;
+  await resetBotChannel(channelId, buildCommandContext());
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic Workspace Creation — auto-create forum for unknown project paths
+// ---------------------------------------------------------------------------
+
+async function ensureWorkspaceForSession(projectPath: string | undefined): Promise<string | null> {
+  const cwd = findWorkspaceCwd(projectPath);
+  if (cwd) return workspaceChannels.get(cwd)?.channelId ?? null;
+
+  if (!projectPath) return getPrimaryForumChannelId();
+  if (!currentConfig || !getBotUserId()) return getPrimaryForumChannelId();
+
+  // Guard against concurrent creation for the same path
+  if (pendingWorkspaceCreations.has(projectPath)) return getPrimaryForumChannelId();
+
+  pendingWorkspaceCreations.add(projectPath);
+  try {
+    // Re-check after acquiring the guard (another call may have completed)
+    if (workspaceChannels.has(projectPath)) return workspaceChannels.get(projectPath)!.channelId;
+
+    const channel = await createWorkspaceChannel(
+      currentConfig.guildId, getBotUserId()!, ownerUserId, projectPath, process.pid,
+    );
+    registerWorkspaceChannel(projectPath, channel);
+    log({ source: SOURCE, level: 'info', summary: `auto-created workspace for ${projectPath}: ${channel.channelName}` });
+    return channel.channelId;
+  } catch (err) {
+    log({ source: SOURCE, level: 'warn', summary: `failed to auto-create workspace for ${projectPath}`, data: err });
+    return getPrimaryForumChannelId();
+  } finally {
+    pendingWorkspaceCreations.delete(projectPath);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -717,17 +970,22 @@ function buildCommandContext(): CommandContext {
   const primaryForumId = getPrimaryForumChannelId();
   return {
     guildId: currentConfig?.guildId ?? null,
-    forumReady: !!(currentConfig && hasAnyForum()),
     permissionMode: currentConfig?.permissionMode ?? null,
     dispatch: currentDispatch,
+    toolbarMessageId,
     uptimeMs: () => Date.now() - startTime,
     watchedCount: () => watchCount(),
     isWatching: (id) => hasWatch(id),
     getWatchDiscordChannelId: (id) => getWatch(id)?.discordChannelId,
-    openSession: (id, forumChannelId) => {
-      const targetForumId = forumChannelId ?? primaryForumId;
+    openSession: async (id, forumChannelId) => {
+      let targetForumId = forumChannelId ?? null;
+      if (!targetForumId) {
+        // Look up session's projectPath for dynamic workspace creation
+        const sessionInfo = await currentDispatch?.findSession(id);
+        targetForumId = await ensureWorkspaceForSession(sessionInfo?.projectPath) ?? primaryForumId;
+      }
       if (!targetForumId) throw new Error('Forum channel not ready');
-      return watchSession(id, targetForumId, { auto: false },
+      return watchSession(id, targetForumId, {},
         currentConfig?.permissionMode ?? null);
     },
     getWorkspaceCwd: (forumChannelId) => {

@@ -144,6 +144,21 @@ describe('claudeRegistration', () => {
       });
     });
 
+    it('resume mode forwards spec.permissionMode to adapter', async () => {
+      const { claudeRegistration } = await freshImport();
+      const config: HostAdapterConfig = {
+        cwd: '/workspace',
+        pathToClaudeCodeExecutable: '/usr/bin/claude',
+      };
+      mockGetResumeModel.mockReturnValue(undefined);
+
+      const factory = claudeRegistration.createFactory(config);
+      factory({ mode: 'resume', sessionId: 'sess-123', permissionMode: 'bypassPermissions' });
+
+      const args = MockClaudeAgentAdapter.mock.calls[0][0];
+      expect(args.permissionMode).toBe('bypassPermissions');
+    });
+
     it('fork mode uses config.cwd', async () => {
       const { claudeRegistration } = await freshImport();
       const config: HostAdapterConfig = {
@@ -165,6 +180,26 @@ describe('claudeRegistration', () => {
         forkSession: true,
         resumeSessionAt: 'msg-42',
       });
+    });
+
+    it('fork mode forwards spec.permissionMode and allowDangerouslySkipPermissions', async () => {
+      const { claudeRegistration } = await freshImport();
+      const config: HostAdapterConfig = {
+        cwd: '/workspace',
+        pathToClaudeCodeExecutable: '/usr/bin/claude',
+      };
+
+      const factory = claudeRegistration.createFactory(config);
+      factory({
+        mode: 'fork',
+        fromSessionId: 'orig-sess',
+        permissionMode: 'bypassPermissions',
+        allowDangerouslySkipPermissions: true,
+      });
+
+      const args = MockClaudeAgentAdapter.mock.calls[0][0];
+      expect(args.permissionMode).toBe('bypassPermissions');
+      expect(args.allowDangerouslySkipPermissions).toBe(true);
     });
 
     it('hydrated mode uses spec.cwd', async () => {

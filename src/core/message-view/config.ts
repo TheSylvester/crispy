@@ -13,10 +13,12 @@ export interface DiscordProviderConfig {
   enabled: boolean;
   token: string;
   guildId: string;
-  /** 'all' = auto-watch new sessions, 'manual' = only via !open */
-  sessions: 'all' | 'manual';
   /** Resolved: discord override ?? turnDefaults fallback. */
   permissionMode: string | null;
   /** Hours of inactivity before auto-archiving a Discord thread. Default: 24. */
   archivalTimeoutHours: number;
+  /** Numeric Discord user IDs allowed to interact. Empty = owner-only (resolved via OAuth). */
+  allowedUserIds: string[];
+  /** Heartbeat drain interval in ms. Default: 1500. */
+  heartbeatIntervalMs?: number;
 }

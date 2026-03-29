@@ -31,6 +31,8 @@ export interface SettingsPreferences {
   bashBlockInIcons: boolean;
   renderMode: string;
   badgeStyle: string;
+  /** Auto-invoke /reflect after creating implementation plans. Default: true. */
+  autoReflect: boolean;
 }
 
 // ============================================================================
@@ -99,12 +101,12 @@ export interface DiscordBotSettings {
   enabled: boolean;
   token: string;
   guildId: string;
-  /** 'all' = auto-watch new sessions, 'manual' = only via !open */
-  sessions: 'all' | 'manual';
   /** Override permission mode for Discord sessions. null = use turnDefaults. */
   permissionMode: 'default' | 'acceptEdits' | 'plan' | 'bypassPermissions' | null;
   /** Hours of inactivity before auto-archiving a Discord thread. Default: 24. */
   archivalTimeoutHours: number;
+  /** Numeric Discord user IDs allowed to interact. Empty = owner-only (resolved via OAuth). */
+  allowedUserIds: string[];
 }
 
 export interface DiscordSettings {
@@ -233,6 +235,7 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     bashBlockInIcons: true,
     renderMode: 'icons',
     badgeStyle: 'frosted',
+    autoReflect: true,
   },
   providers: {},
   hooks: {
@@ -257,7 +260,7 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     bot: { enabled: false },
   },
   discord: {
-    bot: { enabled: false, token: '', guildId: '', sessions: 'all', permissionMode: null, archivalTimeoutHours: 24 },
+    bot: { enabled: false, token: '', guildId: '', permissionMode: null, archivalTimeoutHours: 24, allowedUserIds: [] },
   },
   mcp: {
     memory: { vscode: true, devServer: true },

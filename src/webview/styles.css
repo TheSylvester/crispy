@@ -3003,33 +3003,219 @@ h2 {
   color: var(--text-tertiary);
 }
 
-.crispy-cp-settings__discord-autowatch {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: var(--font-sm);
-  color: var(--text-tertiary);
-  padding: 4px 6px;
-  margin-top: 2px;
-  background: var(--tint-light);
-  border-radius: var(--radius-sm);
-}
-
-.crispy-cp-settings__discord-autowatch select {
-  padding: 4px 8px;
-  background: var(--vscode-dropdown-background, #3c3c3c);
-  color: var(--vscode-dropdown-foreground, #d4d4d4);
-  border: 1px solid var(--tint-medium);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-sm);
-  cursor: pointer;
-}
-
 .crispy-cp-settings__hint {
   font-size: 11px;
   opacity: 0.6;
   padding: 0 4px 8px;
   line-height: 1.4;
+}
+
+/* --- Discord Setup Wizard --- */
+
+.crispy-discord-wizard__form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  background: var(--tint-faint);
+  border-radius: var(--radius-sm);
+  margin-top: 6px;
+}
+
+.crispy-discord-wizard__step {
+  display: flex;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.crispy-discord-wizard__step-number {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--tint-medium);
+  color: var(--vscode-foreground, #d4d4d4);
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+
+.crispy-discord-wizard__step-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.crispy-discord-wizard__step-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--vscode-foreground, #d4d4d4);
+  margin-bottom: 4px;
+}
+
+.crispy-discord-wizard__instructions {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-tertiary);
+}
+
+.crispy-discord-wizard__instructions a {
+  color: var(--vscode-textLink-foreground, #3794ff);
+}
+
+.crispy-discord-wizard__instructions-text {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+.crispy-discord-wizard__instructions-text--dim {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+.crispy-discord-wizard__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-sm);
+  color: var(--text-tertiary);
+  margin-top: 4px;
+  cursor: pointer;
+}
+
+.crispy-discord-wizard__field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: var(--font-sm);
+  color: var(--text-tertiary);
+}
+
+.crispy-discord-wizard__field > span:first-child {
+  font-weight: 500;
+}
+
+.crispy-discord-wizard__field input[type="text"],
+.crispy-discord-wizard__field input[type="password"] {
+  padding: 4px 8px;
+  background: var(--bg-editor);
+  color: var(--vscode-foreground, #d4d4d4);
+  border: 1px solid var(--tint-medium);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  width: 100%;
+}
+
+.crispy-discord-wizard__input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.crispy-discord-wizard__input-row input {
+  flex: 1;
+  padding: 4px 8px;
+  background: var(--bg-editor);
+  color: var(--vscode-foreground, #d4d4d4);
+  border: 1px solid var(--tint-medium);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+}
+
+.crispy-discord-wizard__badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.crispy-discord-wizard__badge--ok {
+  color: var(--vscode-testing-iconPassed, #73c991);
+}
+
+.crispy-discord-wizard__badge--err {
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.crispy-discord-wizard__badge--pending {
+  color: var(--text-tertiary);
+}
+
+.crispy-discord-wizard__hint {
+  font-size: 11px;
+  opacity: 0.6;
+  line-height: 1.4;
+}
+
+.crispy-discord-wizard__invite {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-sm);
+  margin-top: 2px;
+}
+
+.crispy-discord-wizard__invite a {
+  color: var(--vscode-textLink-foreground, #3794ff);
+}
+
+.crispy-discord-wizard__advanced {
+  margin-top: 4px;
+}
+
+.crispy-discord-wizard__advanced-toggle {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.crispy-discord-wizard__advanced-toggle:hover {
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-discord-wizard__advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0 0 0;
+}
+
+.crispy-discord-wizard__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.crispy-discord-wizard__summary {
+  padding: 6px 8px;
+  background: var(--tint-faint);
+  border-radius: var(--radius-sm);
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.crispy-discord-wizard__summary-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-sm);
+}
+
+.crispy-discord-wizard__summary-label {
+  color: var(--text-tertiary);
+}
+
+.crispy-discord-wizard__summary-value {
+  color: var(--vscode-foreground, #d4d4d4);
 }
 
 /* --- Recall catch-up status (inside settings popup) --- */

@@ -18,7 +18,7 @@ import type { AgentAdapter, VendorDiscovery, SessionOpenSpec, LocalPlugin } from
 import type { Vendor } from '../core/transcript.js';
 import { registerAdapter, unregisterAdapter, setToolEnv } from '../core/session-manager.js';
 import { setSkillRoot } from '../core/input-command-service.js';
-import { setSessionDefaults } from '../core/settings/index.js';
+import { setSessionDefaults, getSettingsSnapshotInternal } from '../core/settings/index.js';
 import type { AgentDispatch } from './agent-dispatch.js';
 
 // Import all registration descriptors
@@ -38,6 +38,11 @@ const CRISPY_SKILLS_PROMPT =
   '- Read: `$RECALL_CLI <session-id>` — reads full session content (paginated)\n' +
   'Always read into promising search results — snippets are just previews.\n\n' +
   'Your Crispy session ID is available in the $CRISPY_SESSION_ID environment variable.';
+
+/** Auto-reflect instruction appended when the setting is enabled. */
+const AUTO_REFLECT_PROMPT =
+  '\n\nAfter creating or significantly updating a markdown file that represents an ' +
+  'implementation plan, use the /reflect skill to verify it before proceeding.';
 
 /**
  * Build a Codex-specific skill catalog from SKILL.md frontmatter.
@@ -243,8 +248,12 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
   console.error(`[adapter-registry] Plugin path: ${bundledPaths.pluginRoot}`);
 
   // System prompt factory — skills hint (always active when dispatch is available).
+  // Reads autoReflect setting dynamically per-session so toggling takes effect immediately.
   const systemPromptFactory = dispatch
-    ? () => CRISPY_SKILLS_PROMPT
+    ? () => {
+        const autoReflect = getSettingsSnapshotInternal().settings.preferences.autoReflect;
+        return CRISPY_SKILLS_PROMPT + (autoReflect ? AUTO_REFLECT_PROMPT : '');
+      }
     : undefined;
 
   // Codex-specific prompt: base hint + progressive-disclosure skill catalog.
@@ -253,7 +262,10 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
   // the system prompt lists skill metadata so the model reads SKILL.md on demand.
   const codexSkillCatalog = buildCodexSkillCatalog(bundledPaths.skillRoot);
   const codexSystemPromptFactory = dispatch
-    ? () => CRISPY_SKILLS_PROMPT + codexSkillCatalog
+    ? () => {
+        const autoReflect = getSettingsSnapshotInternal().settings.preferences.autoReflect;
+        return CRISPY_SKILLS_PROMPT + (autoReflect ? AUTO_REFLECT_PROMPT : '') + codexSkillCatalog;
+      }
     : undefined;
 
   // Share factories with dynamic provider adapters (GLM, etc.)

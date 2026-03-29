@@ -222,6 +222,7 @@ export class OpenCodeAgentAdapter implements AgentAdapter {
     this.serverProcess = spawn(command, ['serve', '--port', String(port)], {
       cwd: this.config.cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
     });
 
     this.serverProcess.stderr?.on('data', (data: Buffer) => {

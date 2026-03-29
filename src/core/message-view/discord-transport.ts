@@ -52,9 +52,7 @@ const GatewayOpcode = {
 const GatewayIntents =
   (1 << 0)  | // GUILDS
   (1 << 9)  | // GUILD_MESSAGES
-  (1 << 10) | // GUILD_MESSAGE_REACTIONS
   (1 << 12) | // DIRECT_MESSAGES
-  (1 << 13) | // DIRECT_MESSAGE_REACTIONS
   (1 << 15);  // MESSAGE_CONTENT (privileged)
 
 const GATEWAY_RECONNECT_BASE_MS = 1000;
@@ -64,6 +62,39 @@ const GATEWAY_RECONNECT_MAX_MS = 30000;
 // Gateway types
 // ---------------------------------------------------------------------------
 
+export interface DiscordInteraction {
+  id: string;
+  token: string;
+  type: number;
+  data?: {
+    custom_id: string;
+    component_type?: number;
+    /** Modal submission values — nested ActionRow > TextInput. */
+    components?: Array<{ type: number; components: Array<{ type: number; custom_id: string; value: string }> }>;
+  };
+  channel_id: string;
+  message?: { id: string };
+  member?: { user: { id: string } };
+  user?: { id: string };
+  guild_id?: string;
+}
+
+export interface MessageComponent {
+  type: number;           // 1 = ActionRow, 2 = Button, 4 = TextInput
+  components?: MessageComponent[];  // ActionRow children
+  style?: number;         // Button: 1=Primary, 2=Secondary, 3=Success, 4=Danger; TextInput: 1=Short, 2=Paragraph
+  label?: string;
+  custom_id?: string;
+  disabled?: boolean;
+  emoji?: { name: string };
+  // TextInput fields (type 4)
+  placeholder?: string;
+  required?: boolean;
+  value?: string;
+  min_length?: number;
+  max_length?: number;
+}
+
 export interface GatewayEventHandler {
   onMessage(channelId: string, message: {
     id: string;
@@ -72,8 +103,9 @@ export interface GatewayEventHandler {
     guild_id?: string;
     mentions?: Array<{ id: string }>;
   }): void;
-  onReactionAdd(channelId: string, messageId: string, userId: string, emoji: string): void;
-  onThreadCreate?(event: { id: string; parent_id: string; name: string; guild_id: string }): void;
+  onReactionAdd?(channelId: string, messageId: string, userId: string, emoji: string): void;
+  onInteraction?(interaction: DiscordInteraction): void;
+  onThreadCreate?(event: { id: string; parent_id: string; name: string; guild_id: string; owner_id?: string }): void;
   onReady(): void;
   onDisconnect?(): void;
   onReconnect?(): void;
@@ -233,6 +265,7 @@ export async function discordFetch(method: string, path: string, body?: unknown)
       const json = await res.json() as { retry_after?: number };
       const retryAfter = json.retry_after ?? 1;
       log({ source: SOURCE, level: 'warn', summary: `429 rate limited, retry after ${retryAfter}s (attempt ${attempt + 1})` });
+      lastError = new DiscordApiError(429, null, JSON.stringify({ retry_after: retryAfter }));
       await sleep(retryAfter * 1000);
       continue;
     }
@@ -459,7 +492,16 @@ function handleGatewayDispatch(eventName: string, data: unknown): void {
       const emoji = reaction.emoji.id
         ? `${reaction.emoji.name}:${reaction.emoji.id}`
         : (reaction.emoji.name ?? '');
-      gatewayHandler.onReactionAdd(reaction.channel_id, reaction.message_id, reaction.user_id, emoji);
+      gatewayHandler.onReactionAdd?.(reaction.channel_id, reaction.message_id, reaction.user_id, emoji);
+      break;
+    }
+
+    case 'INTERACTION_CREATE': {
+      const interaction = data as DiscordInteraction;
+      // type 3 = MESSAGE_COMPONENT (buttons), type 5 = MODAL_SUBMIT
+      if ((interaction.type === 3 || interaction.type === 5) && interaction.data) {
+        gatewayHandler.onInteraction?.(interaction);
+      }
       break;
     }
 
@@ -469,6 +511,7 @@ function handleGatewayDispatch(eventName: string, data: unknown): void {
         parent_id: string;
         name: string;
         guild_id: string;
+        owner_id?: string;
       };
       if (gatewayHandler?.onThreadCreate) {
         gatewayHandler.onThreadCreate({
@@ -476,6 +519,7 @@ function handleGatewayDispatch(eventName: string, data: unknown): void {
           parent_id: d.parent_id,
           name: d.name,
           guild_id: d.guild_id,
+          owner_id: d.owner_id,
         });
       }
       break;
@@ -615,12 +659,44 @@ export async function editMessage(channelId: string, messageId: string, content:
   await discordFetch('PATCH', `/channels/${channelId}/messages/${messageId}`, { content });
 }
 
+export async function editMessageWithComponents(
+  channelId: string,
+  messageId: string,
+  content: string,
+  components: MessageComponent[],
+): Promise<void> {
+  await discordFetch('PATCH', `/channels/${channelId}/messages/${messageId}`, { content, components });
+}
+
+export async function deleteMessage(channelId: string, messageId: string): Promise<void> {
+  await discordFetch('DELETE', `/channels/${channelId}/messages/${messageId}`);
+}
+
+/**
+ * Bulk delete messages (2-100 at a time). Messages older than 14 days
+ * cannot be bulk-deleted — Discord returns 400. Falls back to individual
+ * deletes for single messages.
+ */
+export async function bulkDeleteMessages(channelId: string, messageIds: string[]): Promise<void> {
+  if (messageIds.length === 0) return;
+  if (messageIds.length === 1) {
+    await deleteMessage(channelId, messageIds[0]);
+    return;
+  }
+  // Discord caps at 100 per call
+  for (let i = 0; i < messageIds.length; i += 100) {
+    const batch = messageIds.slice(i, i + 100);
+    await discordFetch('POST', `/channels/${channelId}/messages/bulk-delete`, { messages: batch });
+  }
+}
+
 export async function getMessages(
   channelId: string,
-  opts?: { after?: string; limit?: number },
+  opts?: { after?: string; before?: string; limit?: number },
 ): Promise<Array<{ id: string; content: string; author: { id: string; bot?: boolean } }>> {
   const params = new URLSearchParams();
   if (opts?.after) params.set('after', opts.after);
+  if (opts?.before) params.set('before', opts.before);
   if (opts?.limit) params.set('limit', String(opts.limit));
   const qs = params.toString();
   const path = `/channels/${channelId}/messages${qs ? `?${qs}` : ''}`;
@@ -685,11 +761,13 @@ export async function createForumPost(
   forumChannelId: string,
   name: string,
   message: string,
-  opts?: { autoArchiveDuration?: number; appliedTags?: string[] },
+  opts?: { autoArchiveDuration?: number; appliedTags?: string[]; components?: MessageComponent[] },
 ): Promise<{ id: string; name: string; messageId: string }> {
+  const msg: Record<string, unknown> = { content: message };
+  if (opts?.components) msg.components = opts.components;
   const body: Record<string, unknown> = {
     name: name.slice(0, 100),
-    message: { content: message },
+    message: msg,
   };
   if (opts?.autoArchiveDuration) body.auto_archive_duration = opts.autoArchiveDuration;
   if (opts?.appliedTags) body.applied_tags = opts.appliedTags;
@@ -705,9 +783,9 @@ export async function createForumPost(
   };
 }
 
-/** Archive a thread (hides it, doesn't delete). */
+/** @deprecated Use deleteChannel — threads are transient and get wiped anyway. */
 export async function archiveThread(threadId: string): Promise<void> {
-  await discordFetch('PATCH', `/channels/${threadId}`, { archived: true });
+  await deleteChannel(threadId);
 }
 
 export async function deleteChannel(channelId: string): Promise<void> {
@@ -717,4 +795,55 @@ export async function deleteChannel(channelId: string): Promise<void> {
 
 export async function getGuildChannels(guildId: string): Promise<Array<{ id: string; name: string; type: number }>> {
   return discordFetch('GET', `/guilds/${guildId}/channels`) as Promise<Array<{ id: string; name: string; type: number }>>;
+}
+
+// ---------------------------------------------------------------------------
+// Message Components (buttons) + Interaction responses
+// ---------------------------------------------------------------------------
+
+export async function sendMessageWithComponents(
+  channelId: string,
+  content: string,
+  components: MessageComponent[],
+): Promise<{ id: string }> {
+  return discordFetch('POST', `/channels/${channelId}/messages`, {
+    content,
+    components,
+  }) as Promise<{ id: string }>;
+}
+
+/**
+ * Respond to a Discord interaction.
+ * Type 4 = CHANNEL_MESSAGE_WITH_SOURCE (reply with message)
+ * Type 6 = DEFERRED_UPDATE_MESSAGE (ack, no visible change)
+ * Type 7 = UPDATE_MESSAGE (edit the original message)
+ * Type 9 = MODAL (open a modal popup with text inputs)
+ *
+ * Interaction responses use a DIFFERENT endpoint from normal REST calls.
+ * No Bot auth header — the interaction token IS the auth.
+ */
+export async function respondToInteraction(
+  interactionId: string,
+  interactionToken: string,
+  response: {
+    type: number;
+    data?: {
+      content?: string;
+      components?: MessageComponent[];
+      flags?: number;
+      // Modal fields (type 9)
+      custom_id?: string;
+      title?: string;
+    };
+  },
+): Promise<void> {
+  const res = await fetch(`https://discord.com/api/v10/interactions/${interactionId}/${interactionToken}/callback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(response),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    log({ source: SOURCE, level: 'error', summary: `interaction response failed: ${res.status} ${text}` });
+  }
 }

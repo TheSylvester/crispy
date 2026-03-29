@@ -663,6 +663,88 @@ describe('sdkOptions invariants', () => {
   });
 });
 
+// ========== Group 8b: Init permissionMode backfill ==========
+
+describe('Init permissionMode backfill', () => {
+  it('backfills permissionMode from init when options.permissionMode is unset', async () => {
+    const deferred = createDeferredQuery();
+    mockQueryFn.mockImplementation((params) => {
+      capturedOptions = params.options;
+      return deferred.query;
+    });
+
+    // No permissionMode in constructor — simulates a bare resume
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
+    ch.sendTurn('go', {});
+    await tick();
+
+    // SDK init reports permissionMode
+    const msg = (obj: Record<string, unknown>) => obj as unknown as SDKMessage;
+    deferred.pushMessage(msg({
+      type: 'system', subtype: 'init', tools: [], mcp_servers: [],
+      model: 'sonnet', cwd: '/tmp', apiKeySource: 'user',
+      claude_code_version: '1.0.0', permissionMode: 'acceptEdits',
+      slash_commands: [], output_style: 'normal', skills: [], plugins: [],
+      uuid: 'u1', session_id: 's1',
+    }));
+    await tick();
+
+    deferred.complete();
+
+    // Collect all output — should include settings_changed with backfilled permissionMode
+    const output = await collectUntil(ch, (msgs) =>
+      msgs.some((m) => m.type === 'event' && m.event.type === 'status' && m.event.status === 'idle'),
+    );
+    const settingsEvent = output.find(
+      (m) => m.type === 'event' && m.event.type === 'notification' && (m.event as { kind: string }).kind === 'settings_changed',
+    );
+    expect(settingsEvent).toBeDefined();
+
+    ch.close();
+  });
+
+  it('does NOT clobber explicit permissionMode from init', async () => {
+    const deferred = createDeferredQuery();
+    mockQueryFn.mockImplementation((params) => {
+      capturedOptions = params.options;
+      return deferred.query;
+    });
+
+    // Explicit permissionMode + model — simulates UI-selected mode.
+    // Model is set to prevent model backfill from triggering settings_changed.
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp', permissionMode: 'bypassPermissions', model: 'sonnet' });
+    ch.sendTurn('go', {});
+    await tick();
+
+    // SDK init reports a DIFFERENT permissionMode
+    const msg = (obj: Record<string, unknown>) => obj as unknown as SDKMessage;
+    deferred.pushMessage(msg({
+      type: 'system', subtype: 'init', tools: [], mcp_servers: [],
+      model: 'sonnet', cwd: '/tmp', apiKeySource: 'user',
+      claude_code_version: '1.0.0', permissionMode: 'default',
+      slash_commands: [], output_style: 'normal', skills: [], plugins: [],
+      uuid: 'u1', session_id: 's1',
+    }));
+    await tick();
+
+    deferred.complete();
+
+    // Collect all output — should NOT include settings_changed since explicit mode is preserved
+    const output = await collectUntil(ch, (msgs) =>
+      msgs.some((m) => m.type === 'event' && m.event.type === 'status' && m.event.status === 'idle'),
+    );
+    const settingsEvent = output.find(
+      (m) => m.type === 'event' && m.event.type === 'notification' && (m.event as { kind: string }).kind === 'settings_changed',
+    );
+    expect(settingsEvent).toBeUndefined();
+
+    // Verify the adapter kept the explicit mode
+    expect(capturedOptions!.permissionMode).toBe('bypassPermissions');
+
+    ch.close();
+  });
+});
+
 // ========== Group 9: Streaming delta accumulation ==========
 
 describe('Streaming delta accumulation', () => {

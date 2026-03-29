@@ -371,6 +371,7 @@ export interface SessionInfo {
   size: number;
   label?: string;
   lastMessage?: string;
+  lastUserPrompt?: string;
   vendor: 'claude';
   isSidechain?: boolean;
 }
@@ -687,6 +688,8 @@ export class ClaudeAgentAdapter implements AgentAdapter {
 
   /** Change permission mode mid-conversation. */
   async setPermissionMode(mode: PermissionMode): Promise<void> {
+    const prev = this.options.permissionMode ?? '(not set)';
+    log({ level: 'info', source: 'claude-adapter', summary: `[PERMISSION MODE] Changing: ${prev} → ${mode}` });
     this.options.permissionMode = mode;
     await this.requireQuery('setPermissionMode').setPermissionMode(mode);
   }
@@ -952,6 +955,16 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       includePartialMessages: true,
       canUseTool: (toolName, input, canUseOpts) => this.handleCanUseTool(toolName, input, canUseOpts),
     };
+
+    // --- Diagnostic: log permission config sent to SDK ---
+    log({
+      level: 'info',
+      source: 'claude-adapter',
+      summary: `[PERMISSION CONFIG] Starting query: ` +
+        `permissionMode=${sdkOptions.permissionMode ?? '(not set)'} ` +
+        `bypassEnabled=${sdkOptions.allowDangerouslySkipPermissions ?? false} ` +
+        `resume=${!!sdkOptions.resume} sessionId=${sdkOptions.sessionId?.slice(0, 8) ?? '(none)'}`,
+    });
 
     // Hydrated session: write a synthetic JSONL file and configure the SDK
     // to resume from it (forked, so Claude creates its own session ID).
@@ -1316,7 +1329,11 @@ export class ClaudeAgentAdapter implements AgentAdapter {
           this.options.model = this._metadata.model;
           settingsChanged = true;
         }
-        if (this._metadata.permissionMode && this._metadata.permissionMode !== this.options.permissionMode) {
+        // Only backfill permission mode from SDK init when no explicit mode was
+        // set — avoids clobbering the user's UI-selected mode with whatever the
+        // SDK reports on startup.
+        if (this._metadata.permissionMode && !this.options.permissionMode) {
+          log({ level: 'info', source: 'claude-adapter', summary: `[PERMISSION MODE] Backfill from SDK init: ${this._metadata.permissionMode} (options had no explicit mode)` });
           this.options.permissionMode = this._metadata.permissionMode as Options['permissionMode'];
           settingsChanged = true;
         }
@@ -1356,6 +1373,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
           statusMsg.permissionMode &&
           statusMsg.permissionMode !== this.options.permissionMode
         ) {
+          log({ level: 'info', source: 'claude-adapter', summary: `[PERMISSION MODE] SDK status update: ${this.options.permissionMode ?? '(not set)'} → ${statusMsg.permissionMode}` });
           this.options.permissionMode = statusMsg.permissionMode as Options['permissionMode'];
           this.outputQueue.enqueue({
             type: 'event',
@@ -1570,8 +1588,24 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   ): Promise<PermissionResult> {
     const toolUseId = opts.toolUseID;
 
+    // --- Diagnostic: log every permission request with full context ---
+    const permMode = this.options.permissionMode ?? '(not set)';
+    const skipPerms = this.options.allowDangerouslySkipPermissions ?? false;
+    log({
+      level: 'warn',
+      source: 'claude-adapter',
+      summary: `[PERMISSION REQUEST] tool=${toolName} toolUseId=${toolUseId.slice(0, 8)} ` +
+        `permissionMode=${permMode} bypassEnabled=${skipPerms} ` +
+        `agentId=${opts.agentID ?? '(main)'} ` +
+        `reason=${opts.decisionReason ?? '(none)'} ` +
+        `blockedPath=${opts.blockedPath ?? '(none)'} ` +
+        `suggestions=${opts.suggestions?.length ?? 0}`,
+      data: { toolName, toolUseId, permMode, skipPerms, agentId: opts.agentID, reason: opts.decisionReason, blockedPath: opts.blockedPath, inputKeys: Object.keys(input) },
+    });
+
     // If already aborted, deny immediately
     if (opts.signal.aborted) {
+      log({ level: 'warn', source: 'claude-adapter', summary: `[PERMISSION REQUEST] denied (aborted) toolUseId=${toolUseId.slice(0, 8)}` });
       return Promise.resolve({ behavior: 'deny', message: 'Aborted', toolUseID: toolUseId });
     }
 
@@ -1801,6 +1835,7 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
         size: stat.size,
         label: meta?.label,
         lastMessage: meta?.lastMessage,
+        lastUserPrompt: meta?.lastUserPrompt,
         vendor: 'claude',
         isSidechain: meta?.isSidechain,
         ...(gen3Title && { title: gen3Title }),
@@ -1853,6 +1888,7 @@ export function findSession(sessionId: string): SessionInfo | undefined {
       size: stat.size,
       label: meta?.label,
       lastMessage: meta?.lastMessage,
+      lastUserPrompt: meta?.lastUserPrompt,
       vendor: 'claude',
       isSidechain: meta?.isSidechain,
       ...(gen3Title && { title: gen3Title }),

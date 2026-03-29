@@ -713,6 +713,7 @@ async function startServer(): Promise<string> {
   ], {
     stdio: 'ignore',
     detached: false,
+    windowsHide: true,
     env: { ...process.env, [envKey]: libDir },
   });
 
@@ -960,9 +961,9 @@ async function embedViaProcess(texts: string[], modelPath: string): Promise<Floa
       '-c', '8192',
     ];
 
-    if (texts.length > 1) {
-      args.push('--embd-separator', BATCH_SEPARATOR);
-    }
+    // Always set separator — without it, llama-embedding splits on newlines
+    // by default, causing multi-line texts to produce extra vectors.
+    args.push('--embd-separator', BATCH_SEPARATOR);
 
     if (useFile) {
       tmpFile = join(tmpdir(), `crispy-embed-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);

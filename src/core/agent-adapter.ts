@@ -54,6 +54,7 @@ export interface SessionInfo {
   size: number;
   label?: string;
   lastMessage?: string;
+  lastUserPrompt?: string;
   vendor: Vendor;
   isSidechain?: boolean;
   /** Short session title from the session_titles table. */
@@ -229,7 +230,7 @@ export interface AdapterSettings {
 export type SessionOpenSpec =
   | { mode: 'resume'; sessionId: string; cwd?: string; model?: string; permissionMode?: TurnSettings['permissionMode']; mcpServers?: Record<string, unknown>; plugins?: LocalPlugin[]; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' }
   | { mode: 'fresh'; cwd: string; model?: string; permissionMode?: TurnSettings['permissionMode']; allowDangerouslySkipPermissions?: boolean; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; plugins?: LocalPlugin[]; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' }
-  | { mode: 'fork'; fromSessionId: string; atMessageId?: string; model?: string; skipPersistSession?: boolean; outputFormat?: TurnSettings['outputFormat']; mcpServers?: Record<string, unknown>; plugins?: LocalPlugin[]; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' }
+  | { mode: 'fork'; fromSessionId: string; atMessageId?: string; model?: string; permissionMode?: TurnSettings['permissionMode']; allowDangerouslySkipPermissions?: boolean; skipPersistSession?: boolean; outputFormat?: TurnSettings['outputFormat']; mcpServers?: Record<string, unknown>; plugins?: LocalPlugin[]; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' }
   | { mode: 'hydrated'; cwd: string; history: TranscriptEntry[]; sourceVendor: Vendor; sourceSessionId?: string; model?: string; permissionMode?: TurnSettings['permissionMode']; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; plugins?: LocalPlugin[]; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' };
 
 // ============================================================================
