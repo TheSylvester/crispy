@@ -27,7 +27,8 @@ type ClaudeEntryType =
   | "stream_event"
   | "progress"
   | "queue-operation"
-  | "file-history-snapshot";
+  | "file-history-snapshot"
+  | "last-prompt";
 
 /** Minimal content block shape for Claude JSONL parsing. */
 interface ClaudeContentBlock {
@@ -1533,30 +1534,9 @@ export function extractTailMetadata(
           }
         }
 
-        // Extract lastUserPrompt — most recent user-only message
-        if (
-          !result.lastUserPrompt &&
-          entry.type === "user" &&
-          !entry.isMeta
-        ) {
-          const msgContent = entry.message?.content;
-          let text = "";
-
-          if (typeof msgContent === "string") {
-            text = msgContent;
-          } else if (Array.isArray(msgContent)) {
-            for (let j = msgContent.length - 1; j >= 0; j--) {
-              const block = msgContent[j];
-              if (block.type === "text" && block.text) {
-                text = block.text;
-                break;
-              }
-            }
-          }
-
-          if (text) {
-            result.lastUserPrompt = text.replace(/\n/g, " ").trim();
-          }
+        // Extract lastUserPrompt from Claude Code's "last-prompt" entry
+        if (!result.lastUserPrompt && entry.type === "last-prompt" && entry.lastPrompt) {
+          result.lastUserPrompt = String(entry.lastPrompt).replace(/\n/g, " ").trim();
         }
 
         // Extract cwd (project path) from any entry with a cwd field.
