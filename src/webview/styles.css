@@ -6031,6 +6031,13 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   max-width: 80ch;
 }
 
+.crispy-file-viewer__markdown img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  margin: 8px 0;
+}
+
 /* Target line highlight */
 .crispy-code-preview__target-line {
   background: rgba(255, 213, 79, 0.15);
