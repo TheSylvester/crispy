@@ -19,6 +19,8 @@ import {
   sendMessageWithComponents,
   editMessageWithComponents,
   deleteMessage,
+  getMessages,
+  bulkDeleteMessages,
 } from './discord-transport.js';
 import type { MessageComponent } from './discord-transport.js';
 import type { AgentDispatch } from '../agent-dispatch-types.js';
@@ -77,9 +79,10 @@ export function getScreenForMessage(messageId: string): SessionScreen | undefine
 
 export interface CommandContext {
   readonly guildId: string | null;
-  readonly forumReady: boolean;
   readonly permissionMode: string | null;
   readonly dispatch: AgentDispatch | null;
+  /** The toolbar message ID in the bot channel (preserved during wipes). */
+  readonly toolbarMessageId: string | null;
   uptimeMs(): number;
   watchedCount(): number;
   isWatching(sessionId: string): boolean;
@@ -112,12 +115,6 @@ export async function handleCommand(channelId: string, text: string, ctx: Comman
   const parsed = parseCommand(text);
   if (!parsed) {
     await sendMessage(channelId, `${COMMANDS_HELP}\nTo start a new session, create a forum post in a workspace channel.`).catch(() => {});
-    return;
-  }
-
-  const needsForum = ['open', 'sessions'].includes(parsed.cmd);
-  if (needsForum && !ctx.forumReady) {
-    await sendMessage(channelId, '\u{274C} Forum channel not ready yet.').catch(() => {});
     return;
   }
 
@@ -321,11 +318,14 @@ function scheduleScreenRefresh(channelId: string, ctx: CommandContext): void {
       scheduleScreenRefresh(channelId, ctx);
       return;
     }
-    // Auto-refresh back to page 1
+    // Idle wipe: delete all non-toolbar messages, then re-render session list
     try {
+      await wipeNonToolbarMessages(channelId, ctx.toolbarMessageId);
+      if (screen.refreshTimer) clearTimeout(screen.refreshTimer);
+      activeScreens.delete(channelId);
       await handleSessions(channelId, '1', ctx);
     } catch (err) {
-      log({ source: SOURCE, level: 'warn', summary: 'session screen auto-refresh failed', data: err });
+      log({ source: SOURCE, level: 'warn', summary: 'session screen idle wipe failed', data: err });
     }
   }, SCREEN_IDLE_REFRESH_MS);
 }
@@ -417,5 +417,59 @@ async function handleStatus(channelId: string, ctx: CommandContext): Promise<voi
     channelId,
     `Uptime: ${uptimeMin}m\nWorkspaces: ${workspaces}\nActive channels: ${activeCount}\nWatched sessions: ${watched}`,
   ).catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// Channel Wipe — delete all non-toolbar messages
+// ---------------------------------------------------------------------------
+
+/**
+ * Delete all messages in a channel except the toolbar message.
+ * Paginates through `getMessages()` (max 100 per call) until all
+ * non-toolbar messages are deleted.
+ */
+async function wipeNonToolbarMessages(channelId: string, toolbarId: string | null): Promise<void> {
+  let deleted = 0;
+  const MAX_PAGES = 5;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const messages = await getMessages(channelId, { limit: 100 });
+    if (messages.length === 0) break;
+
+    const toDelete = messages.filter(m => m.id !== toolbarId).map(m => m.id);
+    if (toDelete.length === 0) break;
+
+    try {
+      await bulkDeleteMessages(channelId, toDelete);
+    } catch {
+      // Bulk delete can fail for messages >14 days old — fall back to individual deletes
+      await Promise.allSettled(toDelete.map(id => deleteMessage(channelId, id)));
+    }
+    deleted += toDelete.length;
+
+    if (messages.length < 100) break;
+  }
+
+  if (deleted > 0) {
+    log({ source: SOURCE, level: 'info', summary: `wiped ${deleted} message(s) from channel ${channelId}` });
+  }
+}
+
+/**
+ * Reset the bot channel: wipe all non-toolbar messages, tear down the
+ * existing screen, and re-render the session list from scratch.
+ */
+export async function resetBotChannel(
+  channelId: string,
+  ctx: CommandContext,
+): Promise<void> {
+  const existing = activeScreens.get(channelId);
+  if (existing) {
+    if (existing.refreshTimer) clearTimeout(existing.refreshTimer);
+    activeScreens.delete(channelId);
+  }
+
+  await wipeNonToolbarMessages(channelId, ctx.toolbarMessageId);
+  await handleSessions(channelId, '1', ctx);
 }
 

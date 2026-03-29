@@ -25,6 +25,8 @@ import type { MessageProvider, ViewOpts } from './provider.js';
 import type { DiscordProviderConfig } from './config.js';
 import type { AgentDispatch } from '../agent-dispatch-types.js';
 import type { Vendor } from '../transcript.js';
+import { existsSync } from 'node:fs';
+import { resolve as resolvePath } from 'node:path';
 import {
   initTransport,
   shutdownTransport,
@@ -39,7 +41,7 @@ import {
   archiveThread,
 } from './discord-transport.js';
 import type { GatewayEventHandler, DiscordInteraction } from './discord-transport.js';
-import { handleCommand, handleSessionButtonPick, handleSessionNextButton, disposeAllScreens } from './commands.js';
+import { handleCommand, handleSessionButtonPick, handleSessionNextButton, disposeAllScreens, resetBotChannel } from './commands.js';
 import type { CommandContext } from './commands.js';
 import {
   cleanupAndDiscoverBots,
@@ -73,6 +75,19 @@ import {
 const SOURCE = 'discord-provider';
 const MAX_CONCURRENT_PROMPTS = 3;
 const DEFAULT_ARCHIVAL_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+const TOOLBAR_MESSAGE = '\u{1F7E2} **Crispy online.**\n\nBrowse sessions, add a workspace, or reset this channel.';
+
+function buildToolbarComponents(): import('./discord-transport.js').MessageComponent[] {
+  return [{
+    type: 1,
+    components: [
+      { type: 2, style: 1, label: 'Browse Sessions', custom_id: 'browse_sessions', emoji: { name: '\u{1F4C2}' } },
+      { type: 2, style: 2, label: 'Add Workspace', custom_id: 'add_workspace', emoji: { name: '\u{1F4C1}' } },
+      { type: 2, style: 4, label: 'Reset', custom_id: 'reset_channel', emoji: { name: '\u{1F504}' } },
+    ],
+  }];
+}
 
 // ---------------------------------------------------------------------------
 // Provider state — singleton: only one Discord provider may exist at a time.
@@ -112,6 +127,9 @@ let currentConfig: DiscordProviderConfig | null = null;
 let currentDispatch: AgentDispatch | null = null;
 let workspaceCwd: string | null = null;
 let botControlChannelId: string | null = null;
+let toolbarMessageId: string | null = null;
+/** Prevents concurrent workspace creation for the same path. */
+const pendingWorkspaceCreations = new Set<string>();
 const lastTypingFired = new Map<string, number>();
 const TYPING_COOLDOWN_MS = 8000;
 const HEALTH_CHECK_TIMEOUT_MS = 3000;
@@ -160,11 +178,6 @@ function getWorkspaceForForum(forumChannelId: string): string | null {
 /** Check if a forum channel is a workspace forum we manage. */
 function isWorkspaceForum(forumChannelId: string): boolean {
   return channelToWorkspace.has(forumChannelId);
-}
-
-/** Check if any workspace forum is ready. */
-function hasAnyForum(): boolean {
-  return workspaceChannels.size > 0;
 }
 
 function registerWorkspaceChannel(cwd: string, wc: WorkspaceChannel): void {
@@ -289,6 +302,8 @@ function disposeDiscordProvider(): void {
   currentDispatch = null;
   workspaceCwd = null;
   botControlChannelId = null;
+  toolbarMessageId = null;
+  pendingWorkspaceCreations.clear();
 
   clearWorkspaceChannels();
   ownerUserId = null;
@@ -355,20 +370,10 @@ async function initWorkspaceChannels(): Promise<void> {
 
   botControlChannelId = await createBotChannel(guildId, botId, ownerUserId, myPid);
 
-  // Post welcome message with Browse Sessions button
-  const welcomeMsg = await sendMessageWithComponents(botControlChannelId,
-    '\u{1F7E2} **Crispy online.**\n\nClick below to browse sessions, or create a **New Post** in the forum channel.',
-    [{
-      type: 1, // ActionRow
-      components: [{
-        type: 2, // Button
-        style: 1, // Primary
-        label: 'Browse Sessions',
-        custom_id: 'browse_sessions',
-        emoji: { name: '\u{1F4C2}' },
-      }],
-    }],
+  const welcomeMsg = await sendMessageWithComponents(
+    botControlChannelId, TOOLBAR_MESSAGE, buildToolbarComponents(),
   );
+  toolbarMessageId = welcomeMsg.id;
 
 
   commandsEnabled = true;
@@ -686,6 +691,17 @@ async function handleGatewayInteraction(interaction: DiscordInteraction): Promis
     return;
   }
 
+  // Modal submissions (type 5) — route by custom_id
+  if (interaction.type === 5) {
+    const customId = interaction.data?.custom_id;
+    if (customId === 'add_workspace_modal') {
+      await handleAddWorkspaceModal(interaction);
+    } else {
+      await respondToInteraction(interaction.id, interaction.token, { type: 6 });
+    }
+    return;
+  }
+
   const customId = interaction.data?.custom_id;
   if (!customId) {
     await respondToInteraction(interaction.id, interaction.token, { type: 6 });
@@ -698,6 +714,29 @@ async function handleGatewayInteraction(interaction: DiscordInteraction): Promis
   } else if (customId === 'browse_sessions') {
     await respondToInteraction(interaction.id, interaction.token, { type: 6 });
     await handleCommand(interaction.channel_id, '!sessions', buildCommandContext());
+  } else if (customId === 'add_workspace') {
+    // Open modal with text input for workspace path
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 9, // MODAL
+      data: {
+        custom_id: 'add_workspace_modal',
+        title: 'Add Workspace',
+        components: [{
+          type: 1, // ActionRow
+          components: [{
+            type: 4, // TextInput
+            custom_id: 'workspace_path',
+            label: 'Workspace Path',
+            style: 1, // Short
+            placeholder: '/home/user/dev/my-project',
+            required: true,
+          }],
+        }],
+      },
+    });
+  } else if (customId === 'reset_channel') {
+    await respondToInteraction(interaction.id, interaction.token, { type: 6 });
+    await handleResetChannel(interaction.channel_id);
   } else if (customId.startsWith('close:')) {
     const sessionId = customId.slice(6);
     const fallbackSessionId = getSessionForChannel(interaction.channel_id);
@@ -792,6 +831,119 @@ async function handleSessionPickInteraction(interaction: DiscordInteraction, cus
 }
 
 // ---------------------------------------------------------------------------
+// Add Workspace Modal Handler
+// ---------------------------------------------------------------------------
+
+async function handleAddWorkspaceModal(interaction: DiscordInteraction): Promise<void> {
+  const rawPath = interaction.data?.components?.[0]?.components?.[0]?.value?.trim();
+  const workspacePath = rawPath ? resolvePath(rawPath) : null;
+  if (!workspacePath) {
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 4,
+      data: { content: '\u{274C} No path provided.', flags: 64 },
+    });
+    return;
+  }
+
+  // Check for duplicate workspace or in-flight creation
+  if (workspaceChannels.has(workspacePath)) {
+    const existing = workspaceChannels.get(workspacePath)!;
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 4,
+      data: {
+        content: `\u{1F4C1} Workspace already exists: <#${existing.channelId}>`,
+        flags: 64,
+      },
+    });
+    return;
+  }
+  if (pendingWorkspaceCreations.has(workspacePath)) {
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 4,
+      data: { content: `\u{23F3} Workspace creation already in progress for this path.`, flags: 64 },
+    });
+    return;
+  }
+
+  if (!existsSync(workspacePath)) {
+    await respondToInteraction(interaction.id, interaction.token, {
+      type: 4,
+      data: { content: `\u{274C} Path not found: \`${workspacePath}\``, flags: 64 },
+    });
+    return;
+  }
+
+  // Ack with deferred reply — channel creation may take a moment
+  await respondToInteraction(interaction.id, interaction.token, {
+    type: 4,
+    data: { content: `\u{23F3} Creating workspace for \`${workspacePath}\`\u{2026}` },
+  });
+
+  pendingWorkspaceCreations.add(workspacePath);
+  try {
+    const guildId = currentConfig!.guildId;
+    const botId = getBotUserId()!;
+    const channel = await createWorkspaceChannel(guildId, botId, ownerUserId, workspacePath, process.pid);
+    registerWorkspaceChannel(workspacePath, channel);
+    log({ source: SOURCE, level: 'info', summary: `dynamic workspace created: ${channel.channelName} (${channel.channelId})` });
+
+    // Edit the deferred reply with success
+    await discordFetch('PATCH', `/webhooks/${getBotUserId()}/${interaction.token}/messages/@original`, {
+      content: `\u{2705} Workspace created: <#${channel.channelId}> for \`${workspacePath}\``,
+    }).catch(() => {});
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await discordFetch('PATCH', `/webhooks/${getBotUserId()}/${interaction.token}/messages/@original`, {
+      content: `\u{274C} Failed to create workspace: ${msg}`,
+    }).catch(() => {});
+  } finally {
+    pendingWorkspaceCreations.delete(workspacePath);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reset Channel Handler
+// ---------------------------------------------------------------------------
+
+async function handleResetChannel(channelId: string): Promise<void> {
+  if (!channelId) return;
+  await resetBotChannel(channelId, buildCommandContext());
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic Workspace Creation — auto-create forum for unknown project paths
+// ---------------------------------------------------------------------------
+
+async function ensureWorkspaceForSession(projectPath: string | undefined): Promise<string | null> {
+  const cwd = findWorkspaceCwd(projectPath);
+  if (cwd) return workspaceChannels.get(cwd)?.channelId ?? null;
+
+  if (!projectPath) return getPrimaryForumChannelId();
+  if (!currentConfig || !getBotUserId()) return getPrimaryForumChannelId();
+
+  // Guard against concurrent creation for the same path
+  if (pendingWorkspaceCreations.has(projectPath)) return getPrimaryForumChannelId();
+
+  pendingWorkspaceCreations.add(projectPath);
+  try {
+    // Re-check after acquiring the guard (another call may have completed)
+    if (workspaceChannels.has(projectPath)) return workspaceChannels.get(projectPath)!.channelId;
+
+    const channel = await createWorkspaceChannel(
+      currentConfig.guildId, getBotUserId()!, ownerUserId, projectPath, process.pid,
+    );
+    registerWorkspaceChannel(projectPath, channel);
+    log({ source: SOURCE, level: 'info', summary: `auto-created workspace for ${projectPath}: ${channel.channelName}` });
+    return channel.channelId;
+  } catch (err) {
+    log({ source: SOURCE, level: 'warn', summary: `failed to auto-create workspace for ${projectPath}`, data: err });
+    return getPrimaryForumChannelId();
+  } finally {
+    pendingWorkspaceCreations.delete(projectPath);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Command Context
 // ---------------------------------------------------------------------------
 
@@ -799,15 +951,20 @@ function buildCommandContext(): CommandContext {
   const primaryForumId = getPrimaryForumChannelId();
   return {
     guildId: currentConfig?.guildId ?? null,
-    forumReady: !!(currentConfig && hasAnyForum()),
     permissionMode: currentConfig?.permissionMode ?? null,
     dispatch: currentDispatch,
+    toolbarMessageId,
     uptimeMs: () => Date.now() - startTime,
     watchedCount: () => watchCount(),
     isWatching: (id) => hasWatch(id),
     getWatchDiscordChannelId: (id) => getWatch(id)?.discordChannelId,
-    openSession: (id, forumChannelId) => {
-      const targetForumId = forumChannelId ?? primaryForumId;
+    openSession: async (id, forumChannelId) => {
+      let targetForumId = forumChannelId ?? null;
+      if (!targetForumId) {
+        // Look up session's projectPath for dynamic workspace creation
+        const sessionInfo = await currentDispatch?.findSession(id);
+        targetForumId = await ensureWorkspaceForSession(sessionInfo?.projectPath) ?? primaryForumId;
+      }
       if (!targetForumId) throw new Error('Forum channel not ready');
       return watchSession(id, targetForumId, {},
         currentConfig?.permissionMode ?? null);

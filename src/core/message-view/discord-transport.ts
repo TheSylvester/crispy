@@ -66,7 +66,12 @@ export interface DiscordInteraction {
   id: string;
   token: string;
   type: number;
-  data?: { custom_id: string; component_type: number };
+  data?: {
+    custom_id: string;
+    component_type?: number;
+    /** Modal submission values — nested ActionRow > TextInput. */
+    components?: Array<{ type: number; components: Array<{ type: number; custom_id: string; value: string }> }>;
+  };
   channel_id: string;
   message?: { id: string };
   member?: { user: { id: string } };
@@ -75,13 +80,19 @@ export interface DiscordInteraction {
 }
 
 export interface MessageComponent {
-  type: number;           // 1 = ActionRow, 2 = Button
+  type: number;           // 1 = ActionRow, 2 = Button, 4 = TextInput
   components?: MessageComponent[];  // ActionRow children
-  style?: number;         // Button: 1=Primary, 2=Secondary, 3=Success, 4=Danger
+  style?: number;         // Button: 1=Primary, 2=Secondary, 3=Success, 4=Danger; TextInput: 1=Short, 2=Paragraph
   label?: string;
   custom_id?: string;
   disabled?: boolean;
   emoji?: { name: string };
+  // TextInput fields (type 4)
+  placeholder?: string;
+  required?: boolean;
+  value?: string;
+  min_length?: number;
+  max_length?: number;
 }
 
 export interface GatewayEventHandler {
@@ -486,7 +497,8 @@ function handleGatewayDispatch(eventName: string, data: unknown): void {
 
     case 'INTERACTION_CREATE': {
       const interaction = data as DiscordInteraction;
-      if (interaction.type === 3 && interaction.data) {
+      // type 3 = MESSAGE_COMPONENT (buttons), type 5 = MODAL_SUBMIT
+      if ((interaction.type === 3 || interaction.type === 5) && interaction.data) {
         gatewayHandler.onInteraction?.(interaction);
       }
       break;
@@ -659,6 +671,24 @@ export async function deleteMessage(channelId: string, messageId: string): Promi
   await discordFetch('DELETE', `/channels/${channelId}/messages/${messageId}`);
 }
 
+/**
+ * Bulk delete messages (2-100 at a time). Messages older than 14 days
+ * cannot be bulk-deleted — Discord returns 400. Falls back to individual
+ * deletes for single messages.
+ */
+export async function bulkDeleteMessages(channelId: string, messageIds: string[]): Promise<void> {
+  if (messageIds.length === 0) return;
+  if (messageIds.length === 1) {
+    await deleteMessage(channelId, messageIds[0]);
+    return;
+  }
+  // Discord caps at 100 per call
+  for (let i = 0; i < messageIds.length; i += 100) {
+    const batch = messageIds.slice(i, i + 100);
+    await discordFetch('POST', `/channels/${channelId}/messages/bulk-delete`, { messages: batch });
+  }
+}
+
 export async function getMessages(
   channelId: string,
   opts?: { after?: string; before?: string; limit?: number },
@@ -782,10 +812,11 @@ export async function sendMessageWithComponents(
 }
 
 /**
- * Respond to a Discord interaction (button click).
+ * Respond to a Discord interaction.
  * Type 4 = CHANNEL_MESSAGE_WITH_SOURCE (reply with message)
  * Type 6 = DEFERRED_UPDATE_MESSAGE (ack, no visible change)
  * Type 7 = UPDATE_MESSAGE (edit the original message)
+ * Type 9 = MODAL (open a modal popup with text inputs)
  *
  * Interaction responses use a DIFFERENT endpoint from normal REST calls.
  * No Bot auth header — the interaction token IS the auth.
@@ -793,7 +824,17 @@ export async function sendMessageWithComponents(
 export async function respondToInteraction(
   interactionId: string,
   interactionToken: string,
-  response: { type: number; data?: { content?: string; components?: MessageComponent[]; flags?: number } },
+  response: {
+    type: number;
+    data?: {
+      content?: string;
+      components?: MessageComponent[];
+      flags?: number;
+      // Modal fields (type 9)
+      custom_id?: string;
+      title?: string;
+    };
+  },
 ): Promise<void> {
   const res = await fetch(`https://discord.com/api/v10/interactions/${interactionId}/${interactionToken}/callback`, {
     method: 'POST',
