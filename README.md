@@ -1,8 +1,8 @@
 # Crispy
 
-**A power-user's graphical controller for multiple Claude Code and Codex instances at a time, supercharged with agent memory, fork/rewind, multi-agent collaboration, full tool-call visibility, and inline quoting.**
+**A zero-compromise UI for Claude Code and Codex — with agent memory, multi-agent collaboration, and a Discord bot that puts your entire workspace in your pocket.**
 
-Runs standalone in your browser or as a VS Code / Cursor extension.
+Runs standalone in your browser, as a VS Code / Cursor extension, or through Discord on your phone.
 
 [![npm](https://img.shields.io/npm/v/crispy-code?label=npm&color=blue)](https://www.npmjs.com/package/crispy-code)
 [![Version](https://img.shields.io/open-vsx/v/the-sylvester/crispy?label=OpenVSX&color=blue)](https://open-vsx.org/extension/the-sylvester/crispy)
@@ -12,52 +12,50 @@ Runs standalone in your browser or as a VS Code / Cursor extension.
 
 ![Crispy — reading project docs, explaining the codebase, and making an edit in one conversation](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/hero.gif)
 
+**Discord bot** — approve tool use, browse sessions, and manage your workspace from your phone. Not a chatbot — a live session monitor with full tool-call visibility.
 **Agent memory** — every transcript indexed locally with full-text + semantic search. No cloud, no API calls.
 **Multi-agent /superthink** — pit Claude and Codex against each other on the same question. Catches bugs and blind spots a single model misses.
-**Fork, rewind, and control** — agency modes, tool audit panel, multiple browser tabs or side-by-side VS Code panels, inline quoting, local voice input, and more.
+**Fork, rewind, and control** — agency modes, tool audit panel, side-by-side panels, inline quoting, voice input, and more.
 
 ---
 
-## What's New in v0.2.5
+## What's New in v0.2.7
 
-### v0.2.5 — Feature Requests + Codex Stability
+### Your entire workspace, in Discord
 
-- **LaTeX math rendering** — inline and display math via `$...$` and `$$...$$`
-- **Skill autocomplete** — type `/` in the chat input for a searchable skill picker
-- **Codex stability** — three fixes for turn-completion hangs and skill discovery
-- **Scroll fix** — long conversations no longer truncate at viewport height
+Crispy now runs a Discord bot that mirrors your coding sessions into your own
+server — live transcript rendering, inline approval buttons, session
+management, all from your phone or any device with Discord.
 
----
+This isn't a chatbot. Every competitor (Claude Code Channels, OpenClaw, Hermes
+Agent) builds a text pipe where Discord *is* the session and tool calls are
+hidden. Crispy is different: Discord is a **live session monitor** with full
+tool-call visibility, structured approvals, and a session browser — the same
+information you see in the Crispy UI, rendered into Discord.
 
-## What's New in v0.2.4
+- **Forum-based sessions** — each workspace gets a forum channel, each session
+  is a thread. Browse, search, and manage sessions naturally
+- **Inline approvals** — approve or deny tool use with Discord buttons, right
+  from your phone. No copy-pasting confirmation codes
+- **Session management** — `!sessions` to browse, `!open` to resume, `!stop`
+  to close. A concierge bot, not a dumb bridge
+- **Multi-instance support** — run multiple Crispy instances against the same
+  server. PID-scoped channels, automatic health probes, dead-bot cleanup
+- **Setup wizard** — guided onboarding in Settings with token validation,
+  auto-generated invite URL, and step-by-step instructions
+- **Secure by default** — fail-closed authorization, allowlist-based access,
+  OAuth owner resolution. Nobody interacts unless explicitly permitted
 
-### Git diff panel
+### Other improvements
 
-The sidebar now includes a Git panel showing your working tree changes —
-staged, modified, and untracked files grouped by status. Click any file to
-see a syntax-highlighted diff preview.
-
-### Session rotation and handoff
-
-Session rotation swaps the adapter on a live channel without tearing down
-subscribers — no flash, no re-subscription. Two new plugin skills use it:
-
-- **`/handoff`** — reflects on the conversation, distills a self-contained
-  prompt, and rotates into a fresh session so context stays clean
-- **`/clear-and-execute`** — clears context and continues with a prompt file,
-  useful when context is bloated or you want a clean slate
-
-### Fixes
-
-- File links in VS Code / Cursor now open in the native editor again instead
-  of routing through the built-in file viewer
-- Fixed a race where the first turn could ignore your persisted agency mode
-  if submitted before settings finished loading
-- Fixed several Codex fork/resume issues: forked sessions now preserve
-  history correctly, no longer duplicate the system prompt, and recover more
-  reliably from missing approval state
-- Fixed session rotation and discovery edge cases that could attach new
-  sessions to the wrong working directory
+- **Auto-reflect toggle** — enable automatic plan verification in Settings
+- **Smarter session list** — two-line title + subtitle layout with display
+  names matching the webview
+- **Permission lifecycle diagnostics** — Rosie Log now surfaces permission
+  mode transitions for debugging
+- **Windows stability** — `windowsHide` on all spawn/exec calls prevents
+  console flash on Windows
+- **Recall fix** — embedding separator always set correctly in one-shot path
 
 ---
 
@@ -101,6 +99,15 @@ subscribers — no flash, no re-subscription. Two new plugin skills use it:
 - Voice input with local VAD and speech-to-text
 - Image attachments, @mentions, linkified file paths and URLs
 - Light, dark, and high-contrast themes
+
+### Discord
+
+- Live session monitor — full transcript rendering with tool-call visibility, not a hidden chatbot
+- Forum-based session browser — each workspace is a forum channel, each session a thread
+- Inline approval buttons — approve or deny tool use from your phone
+- Session management commands — browse, open, and close sessions from Discord
+- Multi-instance — multiple Crispy instances share one server without conflicts
+- Secure by default — fail-closed auth, allowlist access, guided setup wizard
 
 ### Providers
 
