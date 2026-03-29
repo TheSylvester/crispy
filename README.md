@@ -33,6 +33,8 @@ hidden. Crispy is different: Discord is a **live session monitor** with full
 tool-call visibility, structured approvals, and a session browser — the same
 information you see in the Crispy UI, rendered into Discord.
 
+![Crispy Discord bot — live session monitor with tool calls, approvals, and forum-based session management](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/discord.png)
+
 - **Forum-based sessions** — each workspace gets a forum channel, each session
   is a thread. Browse, search, and manage sessions naturally
 - **Inline approvals** — approve or deny tool use with Discord buttons, right
