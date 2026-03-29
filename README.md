@@ -1,8 +1,6 @@
 # Crispy
 
-**A zero-compromise UI for Claude Code and Codex — with agent memory, multi-agent collaboration, and a Discord bot that puts your entire workspace in your pocket.**
-
-Runs standalone in your browser, as a VS Code / Cursor extension, or through Discord on your phone.
+**A power-user's workbench for multiple Claude Code and Codex instances at a time — run it in VS Code, in your browser, or from Discord on your phone.**
 
 [![npm](https://img.shields.io/npm/v/crispy-code?label=npm&color=blue)](https://www.npmjs.com/package/crispy-code)
 [![Version](https://img.shields.io/open-vsx/v/the-sylvester/crispy?label=OpenVSX&color=blue)](https://open-vsx.org/extension/the-sylvester/crispy)
@@ -12,10 +10,13 @@ Runs standalone in your browser, as a VS Code / Cursor extension, or through Dis
 
 ![Crispy — reading project docs, explaining the codebase, and making an edit in one conversation](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/hero.gif)
 
-**Discord bot** — approve tool use, browse sessions, and manage your workspace from your phone. Not a chatbot — a live session monitor with full tool-call visibility.
-**Agent memory** — every transcript indexed locally with full-text + semantic search. No cloud, no API calls.
-**Multi-agent /superthink** — pit Claude and Codex against each other on the same question. Catches bugs and blind spots a single model misses.
-**Fork, rewind, and control** — agency modes, tool audit panel, side-by-side panels, inline quoting, voice input, and more.
+- **Discord bot** — live session monitor with inline approval buttons, session browser, and forum-based workspace channels. Approve tool use from your phone.
+- **Agent memory** — every transcript indexed locally with full-text + semantic search. No cloud, no API calls. Backfills from your existing Claude Code transcripts.
+- **/superthink** — pit Claude and Codex against each other on the same question. Catches bugs and blind spots a single model misses.
+- **Fork or rewind** from any message — opens side-by-side with full context
+- **Tool audit panel** — every tool call and sub-agent's work in a collapsible panel, not buried in your conversation
+- **Agency modes** — plan, auto-accept, `--dangerously-skip-permissions` — one click, persisted per session
+- **Built-in skills** — `/handoff`, `/clear-and-execute`, `/superthink`. One slash command, no setup.
 
 ---
 
