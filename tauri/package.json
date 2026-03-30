@@ -1,0 +1,18 @@
+{
+  "name": "crispy-desktop",
+  "version": "0.2.8",
+  "private": true,
+  "description": "Crispy desktop app — native window shell for the Crispy daemon",
+  "scripts": {
+    "bundle-runtime": "node -e \"require('child_process').execSync(process.platform==='win32'?'pwsh scripts/bundle-runtime.ps1':'bash scripts/bundle-runtime.sh',{stdio:'inherit'})\"",
+    "bundle-runtime:sh": "bash scripts/bundle-runtime.sh",
+    "bundle-runtime:win": "pwsh scripts/bundle-runtime.ps1",
+    "tauri": "tauri",
+    "dev": "npm run bundle-runtime && tauri dev",
+    "build": "npm run bundle-runtime && tauri build",
+    "signer-generate": "cargo tauri signer generate -w ~/.tauri/crispy.key"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "identifier": "default",
+  "description": "Default capability for Crispy desktop",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "dialog:default",
+    "updater:default",
+    "process:default",
+    "single-instance:default"
+  ]
+}

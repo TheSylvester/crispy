@@ -1,0 +1,48 @@
+{
+  "productName": "Crispy",
+  "version": "0.2.8",
+  "identifier": "io.github.thesylvester.crispy",
+  "build": {
+    "frontendDist": "../src-frontend/"
+  },
+  "app": {
+    "security": {
+      "csp": null
+    },
+    "windows": [],
+    "withGlobalTauri": false
+  },
+  "bundle": {
+    "active": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "runtime/**/*"
+    ],
+    "createUpdaterArtifacts": false,
+    "targets": "all",
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "installMode": "currentUser"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/TheSylvester/crispy/releases/latest/download/latest.json"
+      ],
+      "pubkey": "GENERATE_WITH_cargo_tauri_signer_generate"
+    }
+  }
+}
