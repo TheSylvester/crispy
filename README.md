@@ -11,12 +11,20 @@
 ![Crispy — reading project docs, explaining the codebase, and making an edit in one conversation](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/hero.gif)
 
 - **Discord bot** — live session monitor with inline approval buttons, session browser, and forum-based workspace channels. Approve tool use from your phone.
-- **Agent memory** — every transcript indexed locally with full-text + semantic search. No cloud, no API calls. Backfills from your existing Claude Code transcripts.
+- **Agent memory** — every transcript indexed locally with full-text search (instant) and semantic search (local model downloaded on first use). Backfills from your existing transcripts across vendors.
 - **/superthink** — pit Claude and Codex against each other on the same question. Catches bugs and blind spots a single model misses.
 - **Fork or rewind** from any message — opens side-by-side with full context
-- **Tool audit panel** — every tool call and sub-agent's work in a collapsible panel, not buried in your conversation
+- **Tool audit panel** — every tool call and sub-agent's work in a collapsible panel with timing and status badges
 - **Agency modes** — plan, auto-accept, `--dangerously-skip-permissions` — one click, persisted per session
-- **Built-in skills** — `/handoff`, `/clear-and-execute`, `/superthink`. One slash command, no setup.
+
+---
+
+## What's New in v0.2.8
+
+- **Skill autocomplete** — type `/` (Claude) or `$` (Codex) in the chat input to browse and search skills, filtered per vendor
+- **Single-dollar LaTeX** — inline math with `$...$` now renders correctly alongside display math `$$...$$`
+- **PWA support** — standalone mode is now installable as a desktop app from the browser
+- **Windows path normalization** — fixes path mismatches on native Windows with `\\?\` prefixes, mixed separators, and drive letter casing
 
 ---
 
@@ -29,7 +37,7 @@ server — live transcript rendering, inline approval buttons, session
 management, all from your phone or any device with Discord.
 
 This isn't a chatbot. Every competitor (Claude Code Channels, OpenClaw, Hermes
-Agent) builds a text pipe where Discord *is* the session and tool calls are
+Agent) builds a text pipe where Discord _is_ the session and tool calls are
 hidden. Crispy is different: Discord is a **live session monitor** with full
 tool-call visibility, structured approvals, and a session browser — the same
 information you see in the Crispy UI, rendered into Discord.
@@ -49,20 +57,42 @@ information you see in the Crispy UI, rendered into Discord.
 - **Secure by default** — fail-closed authorization, allowlist-based access,
   OAuth owner resolution. Nobody interacts unless explicitly permitted
 
-### Other improvements
-
-- **Auto-reflect toggle** — enable automatic plan verification in Settings
-- **Smarter session list** — two-line title + subtitle layout with display
-  names matching the webview
-- **Permission lifecycle diagnostics** — Rosie Log now surfaces permission
-  mode transitions for debugging
-- **Windows stability** — `windowsHide` on all spawn/exec calls prevents
-  console flash on Windows
-- **Recall fix** — embedding separator always set correctly in one-shot path
-
 ---
 
 ## Capabilities
+
+### Agent recall
+
+![Agent memory — recall searching past sessions with skill and agent badges](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/agent-memory-recall.png)
+
+- Every session indexed locally with full-text and semantic search across all vendors
+- Find past decisions, debugging threads, and design discussions — full transcripts, not summaries
+- Backfills from your existing Claude Code and Codex transcripts automatically
+- Claude Code and Codex adapters shipping
+
+### Multi-agent coordination
+
+- `/superthink` — pit Claude and Codex against each other on the same question. Catches bugs and blind spots a single model misses
+- `/super-implement` — turn plans into self-contained execution prompts, auto-decomposed if too large
+- `/reflect` — verify prompts and plans against the codebase before execution
+- `/handoff` — distill context and rotate into a fresh session when context gets long
+- `/spec-mode` — interactive spec-building through conversation
+
+### Discord remote
+
+![Crispy Discord bot — live session monitor with tool calls, approvals, and forum-based session management](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/discord.png)
+
+- Live session monitor — browse, open, and manage sessions with full tool-call visibility from Discord
+- Inline approval buttons — approve or deny tool use from your phone
+- Multi-instance — multiple Crispy instances share one server without conflicts
+- Secure by default — fail-closed auth, allowlist access, guided setup wizard
+
+### Observability and control
+
+![Cycle through agency modes — plan, ask, accept, bypass](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/permission-modes.gif)
+
+- See everything your sub-agents are doing in the tool audit panel — timing, status badges, and nested sub-agent trees
+- Agency modes — plan, auto-accept, `--dangerously-skip-permissions` — one click, persisted per session
 
 ### Conversations
 
@@ -70,26 +100,9 @@ information you see in the Crispy UI, rendered into Discord.
 
 - Fork and rewind at any point — new session opens side-by-side with full context
 - Side-by-side agent windows — as many as your editor can tile
-- Session rotation and handoff — swap adapters on a live channel without re-subscription
-- Execute Markdown files as prompts from the Explorer context menu
+- Session rotation — switch between Claude and Codex mid-conversation without losing context
+- Execute prompts in Markdown files with one click from the Explorer or file panel
 - Session browser with search and vendor filtering
-
-### Agent intelligence
-
-![Agent memory — recall searching past sessions with skill and agent badges](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/agent-memory-recall.png)
-
-- Agent memory — every session indexed locally with full-text and semantic search across all vendors. Find past decisions, debugging threads, and design discussions — full transcripts, not summaries
-- Multi-agent `/superthink` — pit Claude and Codex against each other on the same question. Catches bugs and blind spots a single model misses
-- Built-in skills — tell your agent to `/handoff` when context gets long, `/clear-and-execute` a plan from markdown, or `/superthink` for a second opinion. One slash command, no setup
-- Claude Code and Codex adapters
-
-### Execution control
-
-![Cycle through agency modes — plan, ask, accept, bypass](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/permission-modes.gif)
-
-- Agency modes — plan, auto-accept, `--dangerously-skip-permissions`, browser mode — one click, persisted per session
-- Tool audit panel — every tool call and sub-agent's work in a collapsible panel, not buried in your conversation
-- One-click bypass mode and pop-out to external browser
 
 ### UI
 
@@ -103,40 +116,27 @@ information you see in the Crispy UI, rendered into Discord.
 - Image attachments, @mentions, linkified file paths and URLs
 - Light, dark, and high-contrast themes
 
-### Discord
-
-![Crispy Discord bot — live session monitor with tool calls, approvals, and forum-based session management](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/discord.png)
-
-- Live session monitor — full transcript rendering with tool-call visibility, not a hidden chatbot
-- Forum-based session browser — each workspace is a forum channel, each session a thread
-- Inline approval buttons — approve or deny tool use from your phone
-- Session management commands — browse, open, and close sessions from Discord
-- Multi-instance — multiple Crispy instances share one server without conflicts
-- Secure by default — fail-closed auth, allowlist access, guided setup wizard
-
 ### Providers
 
 ![Model selector showing multiple vendors, and the provider configuration form](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/models.gif)
 
-- Custom model providers — route through any Claude-compatible endpoint
-  (GLM-4.7, DeepSeek, local models)
-- One-click model switching across vendors
+- Custom model providers — add Anthropic-compatible providers with a custom base URL and model names
+- Start a conversation with Claude, continue it in Codex — switch vendors mid-session
 
 ### Standalone mode
 
 ![Workspace picker — select a project to open in standalone mode](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/workspace-picker.png)
 
-- Run `npx crispy-code` — full UI in your browser, no VS Code required
+- Run `npm i -g crispy-code && crispy` — full UI in your browser, no VS Code required
 - Background daemon with `crispy start` / `crispy stop` / `crispy status`
 - Workspace picker with URL-based routing for multiple projects
 - Multiple browser tabs for parallel agent sessions
-- Same core features — memory, collaboration, fork, rewind
+- Same core features — memory, superthink, fork, rewind
 
 ---
 
 ## Coming Soon
 
-- OpenCode adapter
 - Gemini CLI adapter
 
 ---
@@ -146,11 +146,12 @@ information you see in the Crispy UI, rendered into Discord.
 ### Standalone (recommended)
 
 ```bash
-npx crispy-code
+npm i -g crispy-code
+crispy
 ```
 
 Opens Crispy in your browser. No VS Code, no extension install, no config.
-Run `npx crispy-code start` for a background daemon, `npx crispy-code stop` to shut it down.
+Run `crispy start` for a background daemon, `crispy stop` to shut it down.
 
 ### VS Code / Cursor Extension
 
@@ -179,11 +180,9 @@ node dist/crispy-cli.js
 
 ### Standalone
 
-1. Run `npx crispy-code` — browser opens automatically
-2. Browse sessions in the sidebar, or start a new conversation
-3. Use the control panel at the bottom for chat input, model selection, and
-   agency mode toggles
-4. Open multiple tabs for parallel sessions
+1. `crispy start` runs it as a background daemon
+2. Navigate to `http://localhost:3456`, or run `crispy` to open it automatically
+3. Start a conversation, or browse existing sessions in the sidebar
 
 ### VS Code
 
@@ -196,8 +195,7 @@ node dist/crispy-cli.js
 ## Requirements
 
 - Node.js 18+ (standalone) or VS Code 1.94+ (extension)
-- Claude Code CLI installed and authenticated
-- Codex CLI (optional, for Codex sessions)
+- Claude Code CLI and/or Codex CLI — install whichever vendors you use
 - Microphone (optional, for voice input)
 
 ---
