@@ -191,7 +191,7 @@ export interface SessionService {
   removeWorkspaceRoot(path: string): Promise<{ ok: boolean }>;
 
   /** Skill and slash command autocomplete */
-  listAvailableCommands(params: { vendor?: string }): Promise<InputCommand[]>;
+  listAvailableCommands(params: { vendor?: string; sessionId?: string }): Promise<InputCommand[]>;
 
   /** Discord bot setup — validate a bot token against Discord API */
   validateDiscordToken(token: string): Promise<{ valid: boolean; username?: string; id?: string; error?: string }>;

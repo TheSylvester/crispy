@@ -69,24 +69,28 @@ export function useCommandAutocomplete(
   _value: string,
   onInput: (value: string) => void,
   vendor: string | null,
+  sessionId: string | null,
 ): UseCommandAutocompleteReturn {
   const transport = useTransport();
   const [commands, setCommands] = useState<InputCommand[]>([]);
   const [state, setState] = useState<CommandState>(INACTIVE);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  // Fetch commands when vendor changes
+  // Fetch commands when vendor or session changes
   useEffect(() => {
     if (!vendor) {
       setCommands([]);
       return;
     }
     let stale = false;
-    transport.listAvailableCommands({ vendor })
+    transport.listAvailableCommands({
+      vendor,
+      ...(sessionId && !sessionId.startsWith('pending:') ? { sessionId } : {}),
+    })
       .then(cmds => { if (!stale) setCommands(cmds); })
       .catch(() => { if (!stale) setCommands([]); });
     return () => { stale = true; };
-  }, [transport, vendor]);
+  }, [transport, vendor, sessionId]);
 
   // Filter commands by query (memoized to stabilize reference for downstream consumers)
   const filtered = useMemo(() => {

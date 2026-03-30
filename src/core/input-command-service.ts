@@ -1,8 +1,9 @@
 /**
  * Input Command Service — skill and slash command discovery
  *
- * Scans bundled Crispy skills from disk. Returns InputCommand[]
- * for the webview autocomplete dropdown.
+ * Scans bundled Crispy skills from disk AND merges vendor-reported
+ * commands/skills registered by adapters at session init time.
+ * Returns InputCommand[] for the webview autocomplete dropdown.
  *
  * @module core/input-command-service
  */
@@ -31,6 +32,35 @@ type SkillEntry = Omit<InputCommand, 'trigger' | 'insertText'>;
 
 let skillRoot: string | undefined;
 let cachedSkills: SkillEntry[] | undefined;
+
+// ============================================================================
+// Vendor command registry — adapters push here after init
+// ============================================================================
+
+const vendorCommands = new Map<string, SkillEntry[]>();
+
+/**
+ * Register vendor-reported commands for a session.
+ * Called by adapters after init (Claude) or skill discovery (Codex).
+ * Overwrites any previous registration for the same session (safe for resume).
+ */
+export function registerVendorCommands(sessionId: string, commands: SkillEntry[]): void {
+  vendorCommands.set(sessionId, commands);
+  log({
+    source: 'input-command-service',
+    level: 'info',
+    summary: `registered ${commands.length} vendor command(s) for session ${sessionId.slice(0, 8)}`,
+  });
+}
+
+/** Clear vendor commands for a session (called on channel teardown). */
+export function clearVendorCommands(sessionId: string): void {
+  vendorCommands.delete(sessionId);
+}
+
+// ============================================================================
+// Bundled skill scanning
+// ============================================================================
 
 /** Set the root directory for bundled skills (called from host at startup). */
 export function setSkillRoot(path: string): void {
@@ -86,14 +116,43 @@ function scanBundledSkills(root: string): SkillEntry[] {
   return results;
 }
 
-/** Return all available commands for the given vendor. */
-export async function listAvailableCommands(vendor?: string): Promise<InputCommand[]> {
-  if (!skillRoot) return [];
+// ============================================================================
+// Public API
+// ============================================================================
 
+/** Normalize a skill ID for dedup comparison (strip `crispy:` prefix). */
+function normalizeId(id: string): string {
+  return id.startsWith('crispy:') ? id.slice(7) : id;
+}
+
+/** Return all available commands for the given vendor and session. */
+export async function listAvailableCommands(vendor?: string, sessionId?: string): Promise<InputCommand[]> {
   const trigger: '/' | '$' = vendor === 'codex' ? '$' : '/';
-  const skills = scanBundledSkills(skillRoot);
 
-  return skills.map(s => ({
+  // 1. Bundled Crispy skills
+  const bundled = skillRoot ? scanBundledSkills(skillRoot) : [];
+  const bundledIds = new Set(bundled.map(s => normalizeId(s.id)));
+
+  // 2. Vendor-reported commands (if session is known)
+  const vendorEntries = sessionId ? (vendorCommands.get(sessionId) ?? []) : [];
+
+  // 3. Merge: bundled first, then vendor (skip duplicates)
+  const merged: SkillEntry[] = [...bundled];
+  for (const v of vendorEntries) {
+    const nid = normalizeId(v.id);
+    if (bundledIds.has(nid)) {
+      // Vendor duplicate — but if vendor has a richer description, merge it
+      const existing = merged.find(b => normalizeId(b.id) === nid);
+      if (existing && (!existing.description || existing.description === existing.id) && v.description) {
+        existing.description = v.description;
+      }
+      continue;
+    }
+    bundledIds.add(nid); // prevent further dupes
+    merged.push(v);
+  }
+
+  return merged.map(s => ({
     ...s,
     trigger,
     insertText: `${trigger}${s.id} `,

@@ -32,12 +32,14 @@ interface ChatInputProps {
   onVoiceToggle?: () => void;
   /** Current vendor for command autocomplete (null disables). */
   vendor?: string | null;
+  /** Active session ID for provider-aware command autocomplete. */
+  sessionId?: string | null;
 }
 
-export function ChatInput({ value, attachedImages, onInput, onSend, placeholder, forkMode, onFork, voiceState = 'idle', onVoiceToggle, vendor }: ChatInputProps): React.JSX.Element {
+export function ChatInput({ value, attachedImages, onInput, onSend, placeholder, forkMode, onFork, voiceState = 'idle', onVoiceToggle, vendor, sessionId }: ChatInputProps): React.JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mention = useMention(textareaRef, value, onInput);
-  const command = useCommandAutocomplete(textareaRef, value, onInput, vendor ?? null);
+  const command = useCommandAutocomplete(textareaRef, value, onInput, vendor ?? null, sessionId ?? null);
 
   // Auto-focus textarea on mount
   useEffect(() => {

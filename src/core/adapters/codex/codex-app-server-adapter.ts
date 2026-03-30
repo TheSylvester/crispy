@@ -25,6 +25,7 @@ import type {
   TurnSettings,
 } from '../../agent-adapter.js';
 import { log } from '../../log.js';
+import { registerVendorCommands } from '../../input-command-service.js';
 import type { ChannelEvent, ChannelStatus } from '../../channel-events.js';
 import type {
   ContentBlock,
@@ -454,6 +455,16 @@ export class CodexAgentAdapter implements AgentAdapter {
     // Attach to discovery for shared RPC
     codexDiscovery.attachClient(this.client);
 
+    // Eager skill discovery for autocomplete — fire-and-forget, deferred.
+    // Fetches ALL enabled skills (not just bundled) and registers them
+    // so the webview autocomplete dropdown is populated on first use.
+    // Deferred to avoid interfering with the startup handshake sequence.
+    setTimeout(() => {
+      if (!this._closed) {
+        this.discoverAllSkillsForAutocomplete().catch(() => {/* logged internally */});
+      }
+    }, 500);
+
     // History backfill is handled by session-manager via discovery.loadHistory().
     // The adapter only emits *new* entries from live notifications.
   }
@@ -642,6 +653,42 @@ export class CodexAgentAdapter implements AgentAdapter {
     const resolvedRoot = resolve(root);
     const rel = relative(resolvedRoot, resolve(candidate));
     return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  }
+
+  /**
+   * Fetch ALL enabled skills from Codex (not just bundled) and register them
+   * for autocomplete. Runs once at adapter startup, fire-and-forget.
+   */
+  private async discoverAllSkillsForAutocomplete(): Promise<void> {
+    const effectiveCwd = this.spec.effectiveCwd ?? this.spec.cwd;
+    if (!this.client?.alive || !effectiveCwd || !this._sessionId) return;
+
+    try {
+      const response = await this.client.request<SkillsListResponse>('skills/list', {
+        cwds: [effectiveCwd],
+        forceReload: false,
+      });
+
+      if (this._closed) return;
+
+      const entry = response.data.find((item) => item.cwd === effectiveCwd) ?? response.data[0];
+      const allSkills = (entry?.skills ?? [])
+        .filter(s => s.enabled)
+        .map(s => ({
+          id: s.name,
+          displayName: s.name,
+          description: s.description || s.name,
+          source: 'vendor' as const,
+        }));
+
+      registerVendorCommands(this._sessionId, allSkills);
+    } catch (err) {
+      log({
+        level: 'warn',
+        source: 'codex-adapter',
+        summary: `Failed to discover skills for autocomplete: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
   }
 
   private buildThreadConfigParams(options: {
@@ -879,6 +926,12 @@ export class CodexAgentAdapter implements AgentAdapter {
       case 'skills/changed': {
         this.bundledSkillDiscoveryGeneration += 1;
         this.bundledSkillDiscoveryNeedsReload = true;
+        // Re-discover all skills for autocomplete (deferred to avoid racing with turn RPC)
+        setTimeout(() => {
+          if (!this._closed) {
+            this.discoverAllSkillsForAutocomplete().catch(() => {/* logged internally */});
+          }
+        }, 100);
         break;
       }
 
