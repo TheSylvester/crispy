@@ -260,7 +260,9 @@ async fn start_or_attach_daemon(
 fn is_local_url(url: &str) -> bool {
     if let Ok(parsed) = Url::parse(url) {
         if let Some(host) = parsed.host_str() {
-            return host == "localhost" || host == "127.0.0.1" || host == "::1";
+            // "tauri.localhost" is the Windows origin for WebviewUrl::App(...)
+            return host == "localhost" || host == "tauri.localhost"
+                || host == "127.0.0.1" || host == "::1";
         }
     }
     // Allow tauri:// and about:blank

@@ -81,7 +81,9 @@ function isLocalhostOrigin(origin: string): boolean {
   if (!origin) return true; // no Origin header → non-browser client (CLI, curl)
   try {
     const { hostname } = new URL(origin);
-    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
+    // "tauri.localhost" is the Tauri v2 webview origin on Windows
+    return hostname === 'localhost' || hostname === 'tauri.localhost'
+      || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
   } catch {
     return false;
   }
