@@ -10,6 +10,7 @@
 
 import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
+import { homedir } from 'os';
 import { log } from './log.js';
 
 /** A single autocomplete-able command or skill. */
@@ -70,21 +71,17 @@ export function setSkillRoot(path: string): void {
 }
 
 /**
- * Synchronously scan bundled skill directories for SKILL.md frontmatter.
- * Results are cached — bundled skills don't change at runtime.
+ * Synchronously scan a skill directory for SKILL.md frontmatter.
+ * Each subdirectory containing a SKILL.md is treated as one skill entry.
  */
-function scanBundledSkills(root: string): SkillEntry[] {
-  if (cachedSkills) return cachedSkills;
-
+function scanSkillDir(root: string, source: SkillEntry['source']): SkillEntry[] {
   let entries: string[];
   try {
     entries = readdirSync(root, { withFileTypes: true })
       .filter(d => d.isDirectory())
       .map(d => d.name);
   } catch {
-    log({ source: 'input-command-service', level: 'warn', summary: `failed to read skill root: ${root}` });
-    cachedSkills = [];
-    return cachedSkills;
+    return [];
   }
 
   const results: SkillEntry[] = [];
@@ -104,15 +101,44 @@ function scanBundledSkills(root: string): SkillEntry[] {
       continue;
     }
 
-    results.push({
-      id: dir,
-      displayName: dir,
-      description,
-      source: 'bundled',
-    });
+    results.push({ id: dir, displayName: dir, description, source });
   }
 
-  cachedSkills = results;
+  return results;
+}
+
+/**
+ * Synchronously scan bundled skill directories for SKILL.md frontmatter.
+ * Results are cached — bundled skills don't change at runtime.
+ */
+function scanBundledSkills(root: string): SkillEntry[] {
+  if (cachedSkills) return cachedSkills;
+  cachedSkills = scanSkillDir(root, 'bundled');
+  if (cachedSkills.length === 0) {
+    log({ source: 'input-command-service', level: 'warn', summary: `no bundled skills found in: ${root}` });
+  }
+  return cachedSkills;
+}
+
+/**
+ * Scan project-level and user-level .claude/skills/ directories.
+ * Not cached — CWD can change between sessions.
+ */
+function scanProjectSkills(cwd: string): SkillEntry[] {
+  const dirs = [
+    join(cwd, '.claude', 'skills'),
+    join(homedir(), '.claude', 'skills'),
+  ];
+  const seen = new Set<string>();
+  const results: SkillEntry[] = [];
+  for (const dir of dirs) {
+    for (const entry of scanSkillDir(dir, 'vendor')) {
+      if (!seen.has(entry.id)) {
+        seen.add(entry.id);
+        results.push(entry);
+      }
+    }
+  }
   return results;
 }
 
@@ -126,30 +152,36 @@ function normalizeId(id: string): string {
 }
 
 /** Return all available commands for the given vendor and session. */
-export async function listAvailableCommands(vendor?: string, sessionId?: string): Promise<InputCommand[]> {
+export async function listAvailableCommands(vendor?: string, sessionId?: string, cwd?: string): Promise<InputCommand[]> {
   const trigger: '/' | '$' = vendor === 'codex' ? '$' : '/';
 
   // 1. Bundled Crispy skills
   const bundled = skillRoot ? scanBundledSkills(skillRoot) : [];
-  const bundledIds = new Set(bundled.map(s => normalizeId(s.id)));
+  const seenIds = new Set(bundled.map(s => normalizeId(s.id)));
 
-  // 2. Vendor-reported commands (if session is known)
+  // 2. Project-level .claude/skills/ (from CWD and ~/)
+  const projectSkills = cwd ? scanProjectSkills(cwd) : [];
+
+  // 3. Vendor-reported commands (if session is known)
   const vendorEntries = sessionId ? (vendorCommands.get(sessionId) ?? []) : [];
 
-  // 3. Merge: bundled first, then vendor (skip duplicates)
+  // 4. Merge: bundled first, then project skills, then vendor (skip duplicates)
   const merged: SkillEntry[] = [...bundled];
-  for (const v of vendorEntries) {
-    const nid = normalizeId(v.id);
-    if (bundledIds.has(nid)) {
-      // Vendor duplicate — but if vendor has a richer description, merge it
-      const existing = merged.find(b => normalizeId(b.id) === nid);
-      if (existing && (!existing.description || existing.description === existing.id) && v.description) {
-        existing.description = v.description;
+
+  for (const source of [projectSkills, vendorEntries]) {
+    for (const v of source) {
+      const nid = normalizeId(v.id);
+      if (seenIds.has(nid)) {
+        // Duplicate — but if this source has a richer description, merge it
+        const existing = merged.find(b => normalizeId(b.id) === nid);
+        if (existing && (!existing.description || existing.description === existing.id) && v.description) {
+          existing.description = v.description;
+        }
+        continue;
       }
-      continue;
+      seenIds.add(nid);
+      merged.push(v);
     }
-    bundledIds.add(nid); // prevent further dupes
-    merged.push(v);
   }
 
   return merged.map(s => ({

@@ -682,6 +682,10 @@ export class CodexAgentAdapter implements AgentAdapter {
         }));
 
       registerVendorCommands(this._sessionId, allSkills);
+      this.outputQueue.enqueue({
+        type: 'event',
+        event: { type: 'notification', kind: 'commands_updated' },
+      });
     } catch (err) {
       log({
         level: 'warn',

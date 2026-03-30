@@ -34,12 +34,14 @@ interface ChatInputProps {
   vendor?: string | null;
   /** Active session ID for provider-aware command autocomplete. */
   sessionId?: string | null;
+  /** Project CWD for discovering .claude/skills/. */
+  cwd?: string | null;
 }
 
-export function ChatInput({ value, attachedImages, onInput, onSend, placeholder, forkMode, onFork, voiceState = 'idle', onVoiceToggle, vendor, sessionId }: ChatInputProps): React.JSX.Element {
+export function ChatInput({ value, attachedImages, onInput, onSend, placeholder, forkMode, onFork, voiceState = 'idle', onVoiceToggle, vendor, sessionId, cwd }: ChatInputProps): React.JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mention = useMention(textareaRef, value, onInput);
-  const command = useCommandAutocomplete(textareaRef, value, onInput, vendor ?? null, sessionId ?? null);
+  const command = useCommandAutocomplete(textareaRef, value, onInput, vendor ?? null, sessionId ?? null, cwd ?? null);
 
   // Auto-focus textarea on mount
   useEffect(() => {

@@ -1380,6 +1380,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
                 }
               }
               registerVendorCommands(sid, vendorCmds);
+              this.emitCommandsUpdated();
             })
             .catch(() => {
               if (this._closed) return;
@@ -1390,6 +1391,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
                 description: name,
                 source: 'vendor' as const,
               })));
+              this.emitCommandsUpdated();
             });
         }
 
@@ -1776,6 +1778,17 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         kind: 'settings_changed',
         settings: this.settings,
       },
+    });
+  }
+
+  /**
+   * Emit a commands_updated notification so the UI re-fetches autocomplete commands.
+   */
+  private emitCommandsUpdated(): void {
+    if (this._closed) return;
+    this.outputQueue.enqueue({
+      type: 'event',
+      event: { type: 'notification', kind: 'commands_updated' },
     });
   }
 }

@@ -1271,7 +1271,8 @@ export function createClientConnection(
       case "listAvailableCommands": {
         const vendor = params.vendor as string | undefined;
         const sessionId = params.sessionId as string | undefined;
-        return listAvailableCommands(vendor, sessionId);
+        const cwd = params.cwd as string | undefined;
+        return listAvailableCommands(vendor, sessionId, cwd);
       }
 
       default:

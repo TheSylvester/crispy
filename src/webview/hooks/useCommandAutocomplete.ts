@@ -70,13 +70,32 @@ export function useCommandAutocomplete(
   onInput: (value: string) => void,
   vendor: string | null,
   sessionId: string | null,
+  cwd: string | null,
 ): UseCommandAutocompleteReturn {
   const transport = useTransport();
   const [commands, setCommands] = useState<InputCommand[]>([]);
   const [state, setState] = useState<CommandState>(INACTIVE);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  // Fetch commands when vendor or session changes
+  // Fetch commands when vendor or session changes, and re-fetch on commands_updated
+  const [fetchTick, setFetchTick] = useState(0);
+
+  // Listen for commands_updated notifications from the adapter
+  useEffect(() => {
+    if (!sessionId || sessionId.startsWith('pending:')) return;
+    const off = transport.onEvent((sid, event) => {
+      if (sid !== sessionId) return;
+      if (
+        event.type === 'event' &&
+        event.event.type === 'notification' &&
+        event.event.kind === 'commands_updated'
+      ) {
+        setFetchTick(t => t + 1);
+      }
+    });
+    return off;
+  }, [transport, sessionId]);
+
   useEffect(() => {
     if (!vendor) {
       setCommands([]);
@@ -86,11 +105,12 @@ export function useCommandAutocomplete(
     transport.listAvailableCommands({
       vendor,
       ...(sessionId && !sessionId.startsWith('pending:') ? { sessionId } : {}),
+      ...(cwd ? { cwd } : {}),
     })
       .then(cmds => { if (!stale) setCommands(cmds); })
       .catch(() => { if (!stale) setCommands([]); });
     return () => { stale = true; };
-  }, [transport, vendor, sessionId]);
+  }, [transport, vendor, sessionId, cwd, fetchTick]);
 
   // Filter commands by query (memoized to stabilize reference for downstream consumers)
   const filtered = useMemo(() => {
