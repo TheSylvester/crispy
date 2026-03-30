@@ -701,10 +701,8 @@ pub fn run() {
                 }
                 RunEvent::ExitRequested { api, .. } => {
                     // Only prevent exit when window is hidden — allow explicit quit
-                    let quitting = {
-                        let state = app.state::<Mutex<AppState>>();
-                        state.lock().unwrap_or_else(|e| e.into_inner()).is_quitting
-                    };
+                    let state = app.state::<Mutex<AppState>>();
+                    let quitting = state.lock().unwrap_or_else(|e| e.into_inner()).is_quitting;
                     if !quitting {
                         api.prevent_exit();
                     }
