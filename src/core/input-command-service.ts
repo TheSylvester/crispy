@@ -121,19 +121,22 @@ function scanBundledSkills(root: string): SkillEntry[] {
 }
 
 /**
- * Scan project-level and user-level .claude/skills/ directories.
- * Codex has its own skills/list RPC that discovers .agents/skills/ — no
- * need to duplicate that here. This only covers Claude's skill paths.
+ * Scan project-level and user-level skill directories.
+ * Claude: .claude/skills/   Codex: .agents/skills/
+ *
+ * Live sessions also register vendor commands via adapter RPCs, but this
+ * disk scan provides immediate availability on the splash screen before
+ * any session exists.
+ *
  * Not cached — CWD can change between sessions.
  */
-function scanProjectSkills(cwd: string): SkillEntry[] {
-  const dirs = [
-    join(cwd, '.claude', 'skills'),
-    join(homedir(), '.claude', 'skills'),
-  ];
+function scanProjectSkills(cwd: string, vendor?: string): SkillEntry[] {
+  const skillDirs = vendor === 'codex'
+    ? [join(cwd, '.agents', 'skills'), join(homedir(), '.agents', 'skills')]
+    : [join(cwd, '.claude', 'skills'), join(homedir(), '.claude', 'skills')];
   const seen = new Set<string>();
   const results: SkillEntry[] = [];
-  for (const dir of dirs) {
+  for (const dir of skillDirs) {
     for (const entry of scanSkillDir(dir, 'vendor')) {
       if (!seen.has(entry.id)) {
         seen.add(entry.id);
@@ -161,9 +164,8 @@ export async function listAvailableCommands(vendor?: string, sessionId?: string,
   const bundled = skillRoot ? scanBundledSkills(skillRoot) : [];
   const seenIds = new Set(bundled.map(s => normalizeId(s.id)));
 
-  // 2. Project-level .claude/skills/ (from CWD and ~/)
-  // Codex discovers its own .agents/skills/ via skills/list RPC — skip here.
-  const projectSkills = (cwd && vendor !== 'codex') ? scanProjectSkills(cwd) : [];
+  // 2. Project-level skills (from CWD and ~/)
+  const projectSkills = cwd ? scanProjectSkills(cwd, vendor) : [];
 
   // 3. Vendor-reported commands (if session is known)
   const vendorEntries = sessionId ? (vendorCommands.get(sessionId) ?? []) : [];

@@ -16,8 +16,11 @@ import { basename, extname } from "node:path";
  * (for linkification and @-mention autocomplete). These are listed via a
  * separate `git ls-files --others --ignored` scoped to each path, then merged
  * with the main listing.
+ *
+ * `.claude/commands` and `.claude/skills` are always gitignored but contain
+ * user-authored content that should be browsable and @-mentionable.
  */
-const EXTRA_INDEX_DIRS = [".ai-reference"];
+const EXTRA_INDEX_DIRS = [".ai-reference", ".claude/commands", ".claude/skills"];
 
 /**
  * Run `git ls-files` with the given args and return non-empty entries.
