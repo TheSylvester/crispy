@@ -20,6 +20,7 @@ import { openSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { logsDir, tokenPath } from '../core/paths.js';
 import { rotateToken } from '../host/auth.js';
+import { CRISPY_VERSION } from '../core/version.js';
 import {
   writePidFile, readPidFile, writePortFile, readPortFile,
   isProcessAlive, cleanupRunFiles,
@@ -99,7 +100,7 @@ async function startBackground(): Promise<void> {
     return;
   }
 
-  console.log('Starting Crispy daemon...');
+  console.log(`Starting Crispy v${CRISPY_VERSION} daemon...`);
   mkdirSync(logsDir(), { recursive: true });
   const logPath = join(logsDir(), 'crispy.log');
   const logFd = openSync(logPath, 'a');
@@ -120,11 +121,20 @@ async function startBackground(): Promise<void> {
 
   child.unref();
 
-  // Wait for daemon to write port file
-  await sleep(2000);
-  const port = readPortFile('prod');
-  if (port && await checkHealth(port)) {
-    console.log(`Crispy daemon started (PID ${child.pid}) on http://localhost:${port}`);
+  // Poll for daemon readiness (port file + health check)
+  let port: number | null = null;
+  let healthy = false;
+  for (let i = 0; i < 30; i++) {
+    await sleep(500);
+    port = readPortFile('prod');
+    if (port && await checkHealth(port)) {
+      healthy = true;
+      break;
+    }
+  }
+
+  if (healthy) {
+    console.log(`Crispy v${CRISPY_VERSION} daemon started (PID ${child.pid}) on http://localhost:${port}`);
     console.log(`Logs: ${logPath}`);
   } else {
     console.error('Daemon may have failed to start. Check logs:', logPath);
