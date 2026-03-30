@@ -123,14 +123,15 @@ fn kill_daemon(pid: u32) {
     kill_daemon_signal(pid, false);
 }
 
-fn kill_daemon_signal(pid: u32, force: bool) {
+fn kill_daemon_signal(pid: u32, _force: bool) {
     #[cfg(unix)]
     {
-        let signal = if force { "-9" } else { "-15" };
+        let signal = if _force { "-9" } else { "-15" };
         let _ = Command::new("kill").args([signal, &pid.to_string()]).status();
     }
     #[cfg(windows)]
     {
+        // taskkill /F is always forceful on Windows
         let _ = Command::new("taskkill")
             .args(["/F", "/T", "/PID", &pid.to_string()])
             .status();
@@ -408,11 +409,13 @@ fn build_tray(app: &AppHandle, we_own_daemon: bool) -> Result<(), String> {
         .build()
         .map_err(|e| format!("Failed to build tray menu: {}", e))?;
 
-    TrayIconBuilder::new()
-        .icon(app.default_window_icon().cloned().unwrap_or_else(|| {
-            tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
-                .expect("Failed to load tray icon")
-        }))
+    let tray_builder = TrayIconBuilder::new();
+    let tray_builder = if let Some(icon) = app.default_window_icon().cloned() {
+        tray_builder.icon(icon)
+    } else {
+        tray_builder
+    };
+    tray_builder
         .menu(&tray_menu)
         .tooltip("Crispy")
         .on_menu_event(move |app, event| {
