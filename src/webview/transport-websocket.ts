@@ -82,6 +82,16 @@ export function createWebSocketTransport(url: string): SessionService {
     }
   });
 
+  ws.addEventListener('error', () => {
+    // WebSocket errors don't carry detail — the close event follows immediately.
+    // Reject all pending requests so callers surface the failure.
+    for (const [, req] of pending) {
+      clearTimeout(req.timer);
+      req.reject(new Error('WebSocket connection failed — the daemon may not be running or may have rejected the connection'));
+    }
+    pending.clear();
+  });
+
   ws.addEventListener('close', () => {
     isOpen = false;
     for (const [, req] of pending) {

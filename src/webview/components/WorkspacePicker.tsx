@@ -46,8 +46,14 @@ export function WorkspacePicker(): React.JSX.Element {
       const result = await transport.listWorkspaces();
       setWorkspaces(result.workspaces);
       setHome(result.home);
+      setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('WebSocket') || msg.includes('timed out')) {
+        setError('Could not connect to the Crispy daemon. Is it running? Try: npx crispy-code start');
+      } else {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }
