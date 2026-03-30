@@ -34,6 +34,7 @@ import type { MessageRecord, MessageVectorRecord } from './message-store.js';
 import { getDb } from '../crispy-db.js';
 import { dbPath } from '../activity-index.js';
 import { findSession, loadSession } from '../session-manager.js';
+import { normalizePath } from '../url-path-resolver.js';
 import type { TranscriptEntry } from '../transcript.js';
 
 // ============================================================================
@@ -102,7 +103,8 @@ export async function ingestSessionMessages(
 
   // 2. Resolve session info for project_id
   const sessionInfo = findSession(sessionId);
-  const projectId = options?.projectId ?? sessionInfo?.projectPath ?? null;
+  const rawProjectId = options?.projectId ?? sessionInfo?.projectPath ?? null;
+  const projectId = rawProjectId ? normalizePath(rawProjectId) : null;
 
   // 3. Load entries through the vendor adapter
   let rawEntries: TranscriptEntry[];

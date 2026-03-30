@@ -21,6 +21,7 @@ import type {
   SessionInfo as AgentSessionInfo,
 } from '../../agent-adapter.js';
 import { log } from '../../log.js';
+import { registerVendorCommands } from '../../input-command-service.js';
 import type { ChannelStatus } from '../../channel-events.js';
 import type { ApprovalOption } from '../../channel-events.js';
 
@@ -1353,6 +1354,47 @@ export class ClaudeAgentAdapter implements AgentAdapter {
           this.emitStatus('active');
         }
 
+        // --- Register vendor commands for autocomplete ---
+        // Try supportedCommands() for rich data (name + description),
+        // fall back to init metadata names if the control API isn't ready.
+        if (this._sessionId) {
+          const sid = this._sessionId;
+          const fallbackNames = [
+            ...this._metadata.slashCommands,
+            ...this._metadata.skills,
+          ];
+          this.supportedCommands()
+            .then(cmds => {
+              if (this._closed) return;
+              // Rich slash commands from SDK control API
+              const vendorCmds = cmds.map(c => ({
+                id: c.name,
+                displayName: c.name,
+                description: c.description || c.name,
+                source: 'vendor' as const,
+              }));
+              // Skills from init metadata (names only, no rich API)
+              for (const name of this._metadata?.skills ?? []) {
+                if (!vendorCmds.some(c => c.id === name)) {
+                  vendorCmds.push({ id: name, displayName: name, description: name, source: 'vendor' });
+                }
+              }
+              registerVendorCommands(sid, vendorCmds);
+              this.emitCommandsUpdated();
+            })
+            .catch(() => {
+              if (this._closed) return;
+              // Fallback: register names from init metadata without descriptions
+              registerVendorCommands(sid, fallbackNames.map(name => ({
+                id: name,
+                displayName: name,
+                description: name,
+                source: 'vendor' as const,
+              })));
+              this.emitCommandsUpdated();
+            });
+        }
+
         // System init — emit as entry for metadata (tools, model, etc.)
         this.emitEntry(msg);
         break;
@@ -1736,6 +1778,17 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         kind: 'settings_changed',
         settings: this.settings,
       },
+    });
+  }
+
+  /**
+   * Emit a commands_updated notification so the UI re-fetches autocomplete commands.
+   */
+  private emitCommandsUpdated(): void {
+    if (this._closed) return;
+    this.outputQueue.enqueue({
+      type: 'event',
+      event: { type: 'notification', kind: 'commands_updated' },
     });
   }
 }

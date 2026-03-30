@@ -3,7 +3,7 @@
  *
  * Thin wrapper around react-markdown that bakes in the standard config:
  * remark-gfm for tables/strikethrough, remark-math + rehype-katex for
- * LaTeX math rendering (MathML output, $$-only delimiters), PreBlock
+ * LaTeX math rendering (MathML output, $ and $$ delimiters), PreBlock
  * for fenced code, and the four Linkified* components for file-path linking.
  *
  * "Wherever there's Markdown, there's Linkify."
@@ -24,8 +24,8 @@ import { LinkifiedP, LinkifiedLi, LinkifiedTd, LinkifiedCode } from './linkify-c
 import type { Components } from 'react-markdown';
 import type { PluggableList } from 'unified';
 
-const remarkPlugins: PluggableList = [remarkGfm, [remarkMath, { singleDollarTextMath: false }]];
-const remarkPluginsWithBreaks: PluggableList = [remarkGfm, [remarkMath, { singleDollarTextMath: false }], remarkBreaks];
+const remarkPlugins: PluggableList = [remarkGfm, [remarkMath, { singleDollarTextMath: true }]];
+const remarkPluginsWithBreaks: PluggableList = [remarkGfm, [remarkMath, { singleDollarTextMath: true }], remarkBreaks];
 const rehypePlugins: PluggableList = [[rehypeKatex, { output: 'mathml' }]];
 const defaultComponents = {
   code: LinkifiedCode,

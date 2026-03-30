@@ -1099,6 +1099,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               voiceState={voice.state}
               onVoiceToggle={voice.toggle}
               vendor={parseModelOption(state.model).vendor}
+              sessionId={selectedSessionId}
+              cwd={workspaceCwdPath}
             />
           </>
         )}

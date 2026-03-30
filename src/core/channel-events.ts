@@ -111,6 +111,11 @@ export interface SessionRotatedEvent {
   kind: 'session_rotated';
 }
 
+export interface CommandsUpdatedEvent {
+  type: 'notification';
+  kind: 'commands_updated';
+}
+
 export type NotificationEvent =
   | ErrorEvent
   | CompactingEvent
@@ -118,7 +123,8 @@ export type NotificationEvent =
   | SessionChangedEvent
   | SettingsChangedEvent
   | RecallCatchupEvent
-  | SessionRotatedEvent;
+  | SessionRotatedEvent
+  | CommandsUpdatedEvent;
 
 // ============================================================================
 // Channel Event (union)

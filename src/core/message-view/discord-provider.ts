@@ -27,6 +27,7 @@ import type { AgentDispatch } from '../agent-dispatch-types.js';
 import type { Vendor } from '../transcript.js';
 import { existsSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
+import { normalizePath } from '../url-path-resolver.js';
 import {
   initTransport,
   shutdownTransport,
@@ -154,11 +155,12 @@ function getPrimaryForumChannelId(): string | null {
 /** Find the workspace cwd that matches a session's projectPath. */
 function findWorkspaceCwd(projectPath: string | undefined): string | null {
   if (!projectPath) return null;
+  const normalized = normalizePath(projectPath);
   // Exact match first
-  if (workspaceChannels.has(projectPath)) return projectPath;
-  // Fallback: find by matching basename
+  if (workspaceChannels.has(normalized)) return normalized;
+  // Fallback: find by normalized key comparison
   for (const cwd of workspaceChannels.keys()) {
-    if (projectPath === cwd) return cwd;
+    if (normalizePath(cwd) === normalized) return cwd;
   }
   return null;
 }
@@ -855,7 +857,7 @@ async function handleSessionPickInteraction(interaction: DiscordInteraction, cus
 
 async function handleAddWorkspaceModal(interaction: DiscordInteraction): Promise<void> {
   const rawPath = interaction.data?.components?.[0]?.components?.[0]?.value?.trim();
-  const workspacePath = rawPath ? resolvePath(rawPath) : null;
+  const workspacePath = rawPath ? normalizePath(resolvePath(rawPath)) : null;
   if (!workspacePath) {
     await respondToInteraction(interaction.id, interaction.token, {
       type: 4,
@@ -940,25 +942,27 @@ async function ensureWorkspaceForSession(projectPath: string | undefined): Promi
   if (!projectPath) return getPrimaryForumChannelId();
   if (!currentConfig || !getBotUserId()) return getPrimaryForumChannelId();
 
-  // Guard against concurrent creation for the same path
-  if (pendingWorkspaceCreations.has(projectPath)) return getPrimaryForumChannelId();
+  const normalized = normalizePath(projectPath);
 
-  pendingWorkspaceCreations.add(projectPath);
+  // Guard against concurrent creation for the same path
+  if (pendingWorkspaceCreations.has(normalized)) return getPrimaryForumChannelId();
+
+  pendingWorkspaceCreations.add(normalized);
   try {
     // Re-check after acquiring the guard (another call may have completed)
-    if (workspaceChannels.has(projectPath)) return workspaceChannels.get(projectPath)!.channelId;
+    if (workspaceChannels.has(normalized)) return workspaceChannels.get(normalized)!.channelId;
 
     const channel = await createWorkspaceChannel(
-      currentConfig.guildId, getBotUserId()!, ownerUserId, projectPath, process.pid,
+      currentConfig.guildId, getBotUserId()!, ownerUserId, normalized, process.pid,
     );
-    registerWorkspaceChannel(projectPath, channel);
-    log({ source: SOURCE, level: 'info', summary: `auto-created workspace for ${projectPath}: ${channel.channelName}` });
+    registerWorkspaceChannel(normalized, channel);
+    log({ source: SOURCE, level: 'info', summary: `auto-created workspace for ${normalized}: ${channel.channelName}` });
     return channel.channelId;
   } catch (err) {
-    log({ source: SOURCE, level: 'warn', summary: `failed to auto-create workspace for ${projectPath}`, data: err });
+    log({ source: SOURCE, level: 'warn', summary: `failed to auto-create workspace for ${normalized}`, data: err });
     return getPrimaryForumChannelId();
   } finally {
-    pendingWorkspaceCreations.delete(projectPath);
+    pendingWorkspaceCreations.delete(normalized);
   }
 }
 

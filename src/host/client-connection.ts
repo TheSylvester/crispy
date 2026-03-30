@@ -12,6 +12,7 @@
  */
 
 import { resolve, sep } from "node:path";
+import { normalizePath } from "../core/url-path-resolver.js";
 import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -165,8 +166,10 @@ const CLAUDE_CONFIG_DIR = resolve(homedir(), '.claude');
  * (e.g. /home/user/project-evil matching /home/user/project).
  */
 function isWithin(filePath: string, root: string): boolean {
-  const normalizedRoot = root.endsWith(sep) ? root : root + sep;
-  return filePath === root || filePath.startsWith(normalizedRoot);
+  const nFile = normalizePath(filePath);
+  const nRoot = normalizePath(root);
+  const prefix = nRoot.endsWith('/') ? nRoot : nRoot + '/';
+  return nFile === nRoot || nFile.startsWith(prefix);
 }
 
 // ============================================================================
@@ -1267,7 +1270,9 @@ export function createClientConnection(
 
       case "listAvailableCommands": {
         const vendor = params.vendor as string | undefined;
-        return listAvailableCommands(vendor);
+        const sessionId = params.sessionId as string | undefined;
+        const cwd = params.cwd as string | undefined;
+        return listAvailableCommands(vendor, sessionId, cwd);
       }
 
       default:

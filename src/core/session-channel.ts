@@ -30,6 +30,7 @@
 
 import type { AgentAdapter, ChannelMessage } from './agent-adapter.js';
 import { log } from './log.js';
+import { clearVendorCommands } from './input-command-service.js';
 import type { TranscriptEntry } from './transcript.js';
 import type {
   ChannelCatchupMessage,
@@ -202,6 +203,7 @@ export function destroyChannel(channelId: string): void {
   const channel = channels.get(channelId);
   if (!channel) return;
 
+  clearVendorCommands(channelId);
   teardown(channel);
   channels.delete(channelId);
 }
@@ -484,7 +486,10 @@ export async function rotateAdapter(channel: SessionChannel): Promise<void> {
   const savedOnIdle = channel.onIdle;
   channel.onIdle = undefined;
 
-  // 2. Close the old adapter
+  // 2. Clear vendor commands for the old adapter's session
+  clearVendorCommands(channel.channelId);
+
+  // 3. Close the old adapter
   if (channel.adapter) {
     try {
       channel.adapter.close();
@@ -493,12 +498,12 @@ export async function rotateAdapter(channel: SessionChannel): Promise<void> {
     }
   }
 
-  // 3. Wait for consumption loop to exit
+  // 4. Wait for consumption loop to exit
   if (channel.loopDone) {
     await channel.loopDone.catch(() => {});
   }
 
-  // 4. Reset channel state atomically
+  // 5. Reset channel state atomically
   channel.adapter = null;
   channel.entries = [];
   channel.entryIndex = 0;
@@ -507,7 +512,7 @@ export async function rotateAdapter(channel: SessionChannel): Promise<void> {
   channel.loopDone = null;
   channel.onIdle = savedOnIdle;
 
-  // 5. Notify subscribers that rotation occurred — entries have been flushed
+  // 6. Notify subscribers that rotation occurred — entries have been flushed
   broadcast(channel, {
     type: 'event',
     event: { type: 'notification', kind: 'session_rotated' },

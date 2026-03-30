@@ -41,6 +41,7 @@ import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, Chann
 import type { TranscriptEntry, MessageContent, Vendor, Usage } from './transcript.js';
 import type { SessionChannel, Subscriber, SubscriberMessage } from './session-channel.js';
 import { parseModelOption } from './model-utils.js';
+import { normalizePath } from './url-path-resolver.js';
 
 import {
   createChannel, setAdapter, subscribe, unsubscribe,
@@ -1181,7 +1182,7 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
 
           const spec: SessionOpenSpec = {
             mode: 'hydrated',
-            cwd: sourceInfo?.projectPath ?? process.cwd(),
+            cwd: normalizePath(sourceInfo?.projectPath ?? process.cwd()),
             history,
             sourceVendor: currentVendor,
             sourceSessionId: sessionId,
@@ -1397,7 +1398,7 @@ export async function dispatchChildSession(
 
   // Get parent's project path for cross-vendor cwd
   const parentInfo = findSession(parentSessionId);
-  const cwd = options.cwd ?? parentInfo?.projectPath ?? process.cwd();
+  const cwd = normalizePath(options.cwd ?? parentInfo?.projectPath ?? process.cwd());
 
   // Common ephemeral options shared by all target kinds
   const ephemeral: EphemeralTargetOptions = {

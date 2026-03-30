@@ -11,6 +11,7 @@ import { useMemo } from 'react';
 import { useFileIndex } from '../../../context/FileIndexContext.js';
 import { useCwd } from '../../../hooks/useSessionCwd.js';
 import { FileLink } from '../../../components/FileLink.js';
+import { normalizePath } from '../../../../core/url-path-resolver.js';
 
 interface FilePathProps {
   path: string;
@@ -33,8 +34,11 @@ export function FilePath({ path, lineRange }: FilePathProps): React.JSX.Element 
 
   // Strip CWD prefix to make absolute paths relative for index matching
   const relativePath = useMemo(() => {
-    if (!cwd || !path.startsWith(cwd)) return path;
-    const stripped = path.slice(cwd.length);
+    if (!cwd) return path;
+    const nPath = normalizePath(path);
+    const nCwd = normalizePath(cwd);
+    if (!nPath.startsWith(nCwd)) return path;
+    const stripped = nPath.slice(nCwd.length);
     return stripped.startsWith('/') ? stripped.slice(1) : stripped;
   }, [path, cwd]);
 
@@ -59,7 +63,9 @@ export function FilePath({ path, lineRange }: FilePathProps): React.JSX.Element 
   );
 
   // If we have an index and the path is resolvable, make it clickable
-  if (index && (matches.length > 0 || path.startsWith('/'))) {
+  // Accept both Unix absolute (/...) and Windows absolute (C:\... or c:/...)
+  const isAbsolute = path.startsWith('/') || /^[A-Za-z]:[/\\]/.test(path);
+  if (index && (matches.length > 0 || isAbsolute)) {
     return (
       <FileLink
         token={matches.length > 0 ? matches[0].absolutePath : path}
