@@ -409,6 +409,10 @@ fn build_tray(app: &AppHandle, we_own_daemon: bool) -> Result<(), String> {
         .map_err(|e| format!("Failed to build tray menu: {}", e))?;
 
     TrayIconBuilder::new()
+        .icon(app.default_window_icon().cloned().unwrap_or_else(|| {
+            tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))
+                .expect("Failed to load tray icon")
+        }))
         .menu(&tray_menu)
         .tooltip("Crispy")
         .on_menu_event(move |app, event| {
