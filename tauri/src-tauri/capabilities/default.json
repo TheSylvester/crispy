@@ -7,7 +7,6 @@
     "shell:allow-open",
     "dialog:default",
     "updater:default",
-    "process:default",
-    "single-instance:default"
+    "process:default"
   ]
 }
