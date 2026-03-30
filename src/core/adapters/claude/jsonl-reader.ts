@@ -10,6 +10,7 @@
 import * as fs from "fs";
 import * as crypto from "crypto";
 import { log } from '../../log.js';
+import { normalizePath } from '../../url-path-resolver.js';
 
 // ============================================================================
 // Claude JSONL Types (private to this module)
@@ -1401,7 +1402,8 @@ export function extractMetadataFast(
     // This avoids the lossy slugToPath() round-trip that breaks hyphenated paths.
     // Fall back to the tail's cwd when the head chunk is dominated by large
     // entries (e.g. base64 images) that push cwd past the 64KB read buffer.
-    const projectPath = entries.find((e) => e.cwd)?.cwd ?? tail.cwd;
+    const rawCwd = entries.find((e) => e.cwd)?.cwd ?? tail.cwd;
+    const projectPath = rawCwd ? normalizePath(rawCwd) : rawCwd;
 
     const isSidechain = isSidechainSession(entries);
     const isTrivial = isTrivialSession(entries, stat.size);

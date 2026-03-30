@@ -27,6 +27,7 @@ import type { TranscriptEntry } from '../../transcript.js';
 import type { Part } from '@opencode-ai/sdk/client';
 import { adaptOpenCodePart } from './opencode-entry-adapter.js';
 import { log } from '../../log.js';
+import { normalizePath } from '../../url-path-resolver.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -288,7 +289,7 @@ class OpenCodeDiscovery implements VendorDiscovery {
       sessionId: row.id,
       path: dbPath,
       projectSlug: this.deriveProjectSlug(row.directory),
-      projectPath: row.directory,
+      projectPath: row.directory ? normalizePath(row.directory) : row.directory,
       modifiedAt: new Date(row.time_updated),
       size: (row.summary_additions ?? 0) + (row.summary_deletions ?? 0),
       label: row.title || undefined,

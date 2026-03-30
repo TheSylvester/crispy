@@ -18,10 +18,15 @@
  * works in the browser without importing `os`.
  */
 export function fsPathToUrlPath(fsPath: string, home: string): string {
+  // Strip Windows extended-length path prefix (\\?\)
+  if (fsPath.startsWith('\\\\?\\')) fsPath = fsPath.slice(4);
+  if (home.startsWith('\\\\?\\')) home = home.slice(4);
   const sep = home.includes('\\') ? '\\' : '/';
 
-  // Home-relative shorthand
-  if (fsPath === home || fsPath.startsWith(home + sep)) {
+  // Home-relative shorthand — case-insensitive on Windows (drive letters, user dirs)
+  const fsLower = fsPath.toLowerCase();
+  const homeLower = home.toLowerCase();
+  if (fsLower === homeLower || fsLower.startsWith(homeLower + sep)) {
     return '/~' + fsPath.slice(home.length).replace(/\\/g, '/');
   }
 
@@ -39,7 +44,9 @@ export function fsPathToUrlPath(fsPath: string, home: string): string {
  * no trailing slash.
  */
 export function normalizePath(p: string): string {
-  let normalized = p.replace(/\\/g, '/');
+  // Strip Windows extended-length path prefix (\\?\)
+  let normalized = p.startsWith('\\\\?\\') ? p.slice(4) : p;
+  normalized = normalized.replace(/\\/g, '/');
   // Lowercase Windows drive letter for comparison
   normalized = normalized.replace(/^([A-Za-z]):/, (_, d: string) => d.toLowerCase() + ':');
   // Remove trailing slash (but keep bare '/')

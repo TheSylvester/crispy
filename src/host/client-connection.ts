@@ -12,6 +12,7 @@
  */
 
 import { resolve, sep } from "node:path";
+import { normalizePath } from "../core/url-path-resolver.js";
 import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -88,6 +89,12 @@ import {
   TRACKER_NOTIFY_CHANNEL_ID,
 } from '../core/rosie/tracker/tracker-notifications.js';
 import type { TrackerNotifyEvent, TrackerNotifySubscriber } from '../core/rosie/tracker/tracker-notifications.js';
+import {
+  subscribeSuggestNotify,
+  unsubscribeSuggestNotify,
+  SUGGEST_NOTIFY_CHANNEL_ID,
+} from '../core/rosie/suggest/suggest-notifications.js';
+import type { SuggestNotifyEvent, SuggestNotifySubscriber } from '../core/rosie/suggest/suggest-notifications.js';
 import { readResponsePreview } from '../core/adapters/claude/jsonl-reader.js';
 import { addRoot, removeRoot, listAllWorkspaces } from '../core/workspace-roots.js';
 import { listAvailableCommands } from '../core/input-command-service.js';
@@ -165,8 +172,10 @@ const CLAUDE_CONFIG_DIR = resolve(homedir(), '.claude');
  * (e.g. /home/user/project-evil matching /home/user/project).
  */
 function isWithin(filePath: string, root: string): boolean {
-  const normalizedRoot = root.endsWith(sep) ? root : root + sep;
-  return filePath === root || filePath.startsWith(normalizedRoot);
+  const nFile = normalizePath(filePath);
+  const nRoot = normalizePath(root);
+  const prefix = nRoot.endsWith('/') ? nRoot : nRoot + '/';
+  return nFile === nRoot || nFile.startsWith(prefix);
 }
 
 // ============================================================================
@@ -182,7 +191,7 @@ export type ClientMessage = {
 };
 
 /** Union of all events that can be pushed over the wire. */
-export type HostEvent = SubscriberMessage | SessionListEvent | SettingsChangedGlobalEvent | LogEvent | RecallCatchupEvent | TrackerNotifyEvent;
+export type HostEvent = SubscriberMessage | SessionListEvent | SettingsChangedGlobalEvent | LogEvent | RecallCatchupEvent | TrackerNotifyEvent | SuggestNotifyEvent;
 
 /** Host → Client response or push event. */
 export type HostMessage =
@@ -257,6 +266,9 @@ export function createClientConnection(
 
   /** Tracker notification subscription for this client. */
   let trackerNotifySub: TrackerNotifySubscriber | null = null;
+
+  /** Suggest notification subscription for this client. */
+  let suggestNotifySub: SuggestNotifySubscriber | null = null;
 
   /** Flag set on dispose() to prevent re-keying after client disconnect. */
   let disposed = false;
@@ -819,6 +831,48 @@ export function createClientConnection(
         return { unsubscribed: true };
       }
 
+      // --- Suggest notification subscription ---
+      case "subscribeSuggestNotify": {
+        if (suggestNotifySub) return { subscribed: true };
+        suggestNotifySub = {
+          id: clientId,
+          send(event) {
+            sendFn({ kind: "event", sessionId: SUGGEST_NOTIFY_CHANNEL_ID, event });
+          },
+        };
+        subscribeSuggestNotify(suggestNotifySub);
+        return { subscribed: true };
+      }
+
+      case "unsubscribeSuggestNotify": {
+        if (suggestNotifySub) {
+          unsubscribeSuggestNotify(suggestNotifySub);
+          suggestNotifySub = null;
+        }
+        return { unsubscribed: true };
+      }
+
+      case "recordSuggestionSelection": {
+        const { sessionId, turnNumber, selected, actualInput } = params as {
+          sessionId: string; turnNumber: number; selected: number | null; actualInput?: string;
+        };
+        const db = getDb(dbPath());
+        db.prepare(
+          `UPDATE rosie_suggestions SET selected = ?, actual_input = ?
+           WHERE session_id = ? AND turn_number = ?`,
+        ).run([selected, actualInput ?? null, sessionId, turnNumber]);
+        return { ok: true };
+      }
+
+      case "getSuggestions": {
+        const { sessionId } = params as { sessionId: string };
+        const db = getDb(dbPath());
+        const rows = db.prepare(
+          `SELECT * FROM rosie_suggestions WHERE session_id = ? ORDER BY turn_number DESC LIMIT 1`,
+        ).all(sessionId);
+        return { suggestions: rows };
+      }
+
       // --- Recall catch-up subscription (follows subscribeLog pattern) ---
       case "subscribeRecallCatchup": {
         if (catchupSub) return { subscribed: true };
@@ -1290,6 +1344,10 @@ export function createClientConnection(
     if (trackerNotifySub) {
       unsubscribeTrackerNotify(trackerNotifySub);
       trackerNotifySub = null;
+    }
+    if (suggestNotifySub) {
+      unsubscribeSuggestNotify(suggestNotifySub);
+      suggestNotifySub = null;
     }
     if (catchupSub) {
       unsubscribeCatchup(catchupSub.id);

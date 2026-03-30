@@ -60,7 +60,7 @@ export function removeRoot(path: string): void {
 export function listRoots(): string[] {
   const db = getDb(dbPath());
   const rows = db.all('SELECT path FROM workspace_roots ORDER BY added_at') as Array<{ path: string }>;
-  return rows.map(r => r.path);
+  return rows.map(r => normalizePath(r.path));
 }
 
 // ============================================================================
@@ -117,7 +117,8 @@ export function listAllWorkspaces(sessions: SessionInfo[]): WorkspaceInfo[] {
     if (!session.projectPath) continue;
     const normalized = normalizePath(session.projectPath);
     if (!seen.has(normalized)) {
-      seen.set(normalized, { path: session.projectPath, isExplicit: false });
+      // Store the normalized path — raw projectPath may contain \\?\ prefix on Windows
+      seen.set(normalized, { path: normalized, isExplicit: false });
     }
   }
 

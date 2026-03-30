@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { getDb } from '../../crispy-db.js';
 import { ensureCrispyDir, dbPath } from '../../activity-index.js';
 import { log } from '../../log.js';
+import { normalizePath } from '../../url-path-resolver.js';
 import { VALID_STAGES } from './types.js';
 import type { TrackerBlock, ProjectStage } from './types.js';
 
@@ -43,7 +44,7 @@ function getTrackerDb() {
 function projectPathFilter(projectPath: string | undefined): { and: string; where: string; params: string[] } {
   if (!projectPath) return { and: '', where: '', params: [] };
   const cond = `(project_path = ? OR project_path IS NULL)`;
-  return { and: ` AND ${cond}`, where: ` WHERE ${cond}`, params: [projectPath] };
+  return { and: ` AND ${cond}`, where: ` WHERE ${cond}`, params: [normalizePath(projectPath)] };
 }
 
 // ============================================================================
@@ -121,6 +122,8 @@ export function getValidStageNames(): string[] {
  */
 export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string, projectPath?: string): void {
   if (blocks.length === 0) return;
+  // Normalize at the write boundary — raw projectPath may carry \\?\ prefix on Windows
+  const normalizedPath = projectPath ? normalizePath(projectPath) : projectPath;
 
   const db = getTrackerDb();
   const now = new Date().toISOString();
@@ -169,7 +172,7 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string,
             projectId, p.title, p.stage, p.status || null, p.icon || null,
             p.blocked_by || null, p.summary || null,
             p.branch || null, p.type || 'project', p.parent_id || null,
-            now, now, now, projectPath || null,
+            now, now, now, normalizedPath || null,
           ]);
           // Record 'created' activity
           insertActivity.run([projectId, sessionFile, tsNow, 'created', null, p.stage, null, p.status || null, null, 'rosie']);
@@ -193,7 +196,7 @@ export function writeTrackerResults(blocks: TrackerBlock[], sessionFile: string,
             p.blocked_by ?? null, null, // summary — keep existing
             p.branch ?? null, now, now,
             newStage, now, // for the CASE WHEN closed_at
-            projectPath || null, // repair-on-touch: fill project_path if NULL
+            normalizedPath || null, // repair-on-touch: fill project_path if NULL
             projectId,
           ]);
 

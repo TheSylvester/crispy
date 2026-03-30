@@ -26,6 +26,7 @@ import { findCodexSessionFile, parseCodexJsonlFile, scanCodexUserMessages } from
 import { adaptCodexJsonlRecords } from './codex-jsonl-adapter.js';
 import { CodexRpcClient, type CodexRpcClientOptions } from './codex-rpc-client.js';
 import { log } from '../../log.js';
+import { normalizePath } from '../../url-path-resolver.js';
 import { CRISPY_VERSION } from '../../version.js';
 import { getSessionTitleFromDb } from '../../activity-index.js';
 
@@ -264,7 +265,7 @@ export class CodexDiscovery implements VendorDiscovery {
       sessionId: thread.id,
       path: thread.path ?? '',
       projectSlug: this.deriveProjectSlug(thread.cwd),
-      projectPath: thread.cwd,
+      projectPath: thread.cwd ? normalizePath(thread.cwd) : thread.cwd,
       modifiedAt: new Date(thread.updatedAt * 1000),
       size: 0, // RPC doesn't provide file size
       label: thread.preview?.slice(0, 80),
