@@ -116,16 +116,17 @@ foreach ($dep in $OptionalDeps) {
 # `npm install --prefix ~/.crispy <tarball>` — gets correct Linux native deps.
 Write-Host ">>> Creating WSL install tarball..." -ForegroundColor Yellow
 
+$PackDest = (Resolve-Path "$TauriDir\$RuntimeDir").Path
 Push-Location "$RepoRoot"
-$PackOutput = npm pack --pack-destination "$TauriDir\$RuntimeDir" 2>&1
-$TarballMatch = $PackOutput | Select-String "crispy-code-.*\.tgz" | ForEach-Object { $_.Matches.Value }
-$TarballName = if ($TarballMatch) { $TarballMatch } else { ($PackOutput | Select-Object -Last 1).Trim() }
+# npm pack writes the tarball filename to stdout; stderr has warnings we ignore
+$TarballName = (npm pack --pack-destination "$PackDest" 2>$null | Select-Object -Last 1).Trim()
 Pop-Location
 
-if (Test-Path "$TauriDir\$RuntimeDir\$TarballName") {
+if ($TarballName -and (Test-Path "$PackDest\$TarballName")) {
     Write-Host "    Tarball: $TarballName"
 } else {
     Write-Host "    WARNING: Failed to create tarball (WSL auto-provision won't work)" -ForegroundColor Yellow
+    Write-Host "    Tried: npm pack --pack-destination $PackDest"
 }
 
 # ---- Step 5: Report sizes ----
