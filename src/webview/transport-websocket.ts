@@ -143,9 +143,11 @@ export function createWebSocketTransport(url: string): SessionService {
       request<{ previousSessionId: string; sessionId: string }>('switchSession', params),
 
     openPanel: async (params) => {
-      const createWindow = (window as any).__CRISPY_CREATE_WINDOW__;
-      if (createWindow) {
-        await createWindow(`sessionId=${encodeURIComponent(params.sessionId)}`);
+      if ((window as any).__CRISPY_DESKTOP__) {
+        // Tauri: send command via title channel (init script intercepts and calls IPC)
+        const diag = (window as any).__CRISPY_IPC_DIAG__;
+        console.log('[Tauri] openPanel: IPC diag =', JSON.stringify(diag), 'setting title cmd');
+        document.title = `__CMD__:create_window:sessionId=${encodeURIComponent(params.sessionId)}`;
         return { ok: true };
       }
       const url = new URL(window.location.pathname, window.location.origin);
@@ -164,12 +166,14 @@ export function createWebSocketTransport(url: string): SessionService {
       if (params.bypassEnabled) qp.set('bypass', '1');
       if (params.chromeEnabled) qp.set('chrome', '1');
 
-      const createWindow = (window as any).__CRISPY_CREATE_WINDOW__;
-      if (createWindow) {
-        await createWindow(qp.toString());
+      if ((window as any).__CRISPY_DESKTOP__) {
+        // Tauri: send command via title channel (init script intercepts and calls IPC)
+        const diag = (window as any).__CRISPY_IPC_DIAG__;
+        console.log('[Tauri] forkToNewPanel: IPC diag =', JSON.stringify(diag), 'query =', qp.toString());
+        document.title = `__CMD__:create_window:${qp.toString()}`;
         return { ok: true };
       }
-      // Non-Tauri fallback
+      // Dev server / browser fallback
       const url = new URL(window.location.pathname, window.location.origin);
       url.search = qp.toString();
       window.open(url.toString(), '_blank');

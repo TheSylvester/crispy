@@ -26,20 +26,53 @@ const WINDOW_INIT_SCRIPT: &str = r#"
 window.__CRISPY_DESKTOP__ = true;
 (function() {
     var ipc = window.__TAURI_INTERNALS__;
+
+    // Diagnostic: log IPC availability to console (visible in Rust logs via WebView2).
+    // Also expose on window for page JS to check.
+    window.__CRISPY_IPC_DIAG__ = {
+        hasInternals: !!ipc,
+        href: location.href,
+        ts: Date.now()
+    };
+
     if (!ipc) return;
 
-    // Title bridge — sync document.title to native window title
+    // Title bridge + command channel.
+    // Page JS can send commands by setting document.title to "__CMD__:command:arg"
+    // — the observer intercepts it, calls ipc.invoke(), and restores the original title.
+    // The `path` param carries window.location.pathname so Rust can open new windows
+    // at the correct workspace (Tauri's window.url() doesn't track SPA pushState).
+    var realTitle = '';
     new MutationObserver(function() {
-        ipc.invoke('set_window_title', { title: document.title }).catch(function() {});
+        var t = document.title;
+        if (t.startsWith('__CMD__:')) {
+            var sep = t.indexOf(':', 7);
+            var cmd = sep > 0 ? t.slice(7, sep) : t.slice(7);
+            var arg = sep > 0 ? t.slice(sep + 1) : '';
+            if (cmd === 'create_window') {
+                ipc.invoke('create_window', {
+                    query: arg || null,
+                    path: window.location.pathname || null
+                }).catch(function() {});
+            }
+            document.title = realTitle;
+            return;
+        }
+        realTitle = t;
+        ipc.invoke('set_window_title', { title: t }).catch(function() {});
     }).observe(document.querySelector('title') || document.head, {
         subtree: true, childList: true, characterData: true
     });
 
-    // Expose window creation to page JS — the init script has IPC access
-    // even on http://localhost pages where __TAURI_INTERNALS__ may not be
-    // directly available to page-level JavaScript.
-    window.__CRISPY_CREATE_WINDOW__ = function(query) {
-        return ipc.invoke('create_window', { query: query || null });
+    // Handle menu actions dispatched from Rust via window.eval().
+    // The React app may override this later for its own actions.
+    window.__CRISPY_MENU_ACTION__ = function(action) {
+        if (action === 'new_window') {
+            ipc.invoke('create_window', {
+                query: null,
+                path: window.location.pathname || null
+            }).catch(function() {});
+        }
     };
 })();
 "#;
@@ -378,21 +411,25 @@ fn get_wsl_status(app: AppHandle) -> WslStatus {
 /// Create a new Crispy window pointed at the same daemon.
 /// Called from menu, tray, keyboard shortcut, or webview split button.
 /// Optional `query` param carries fork/openPanel URL params (e.g. "forkFrom=X&forkAt=Y").
+/// Optional `path` overrides the workspace path (from JS `window.location.pathname`),
+/// since Tauri's `window.url()` doesn't track SPA pushState navigation.
 #[tauri::command]
-fn create_window(app: AppHandle, query: Option<String>) -> Result<(), String> {
-    spawn_new_window(&app, query.as_deref());
+fn create_window(app: AppHandle, query: Option<String>, path: Option<String>) -> Result<(), String> {
+    spawn_new_window(&app, query.as_deref(), path.as_deref());
     Ok(())
 }
 
 /// Shared window creation logic — used by Tauri command, menu handler, and tray.
 /// Opens a new window pointed at the same workspace as the currently focused window.
 /// Optional `query` is appended as URL search params (for fork/openPanel).
+/// Optional `path` overrides the workspace path — use when called from JS
+/// (which knows the real SPA-routed path via window.location.pathname).
 ///
 /// IMPORTANT: WebviewWindowBuilder::build() deadlocks on Windows when called from
 /// synchronous Tauri command/event handlers (wry#583). All callers are sync (menu,
 /// tray, command), so we gather state synchronously then spawn an async task to do
 /// the actual window creation off the main thread.
-fn spawn_new_window(app: &AppHandle, query: Option<&str>) {
+fn spawn_new_window(app: &AppHandle, query: Option<&str>, explicit_path: Option<&str>) {
     let port = {
         let state = app.state::<Mutex<AppState>>();
         let s = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -403,12 +440,18 @@ fn spawn_new_window(app: &AppHandle, query: Option<&str>) {
         return;
     }
 
-    // Grab the focused window's URL to preserve the workspace path.
-    let current_path = focused_window(app)
-        .and_then(|w| w.url().ok())
-        .and_then(|u| {
-            let path = u.path().to_string();
-            if path.len() > 1 { Some(path) } else { None }
+    // Use the explicit path from JS (accurate for SPA pushState routing),
+    // falling back to Tauri's window.url() (only accurate for full navigations).
+    let current_path = explicit_path
+        .filter(|p| p.len() > 1)
+        .map(|p| p.to_string())
+        .or_else(|| {
+            focused_window(app)
+                .and_then(|w| w.url().ok())
+                .and_then(|u| {
+                    let path = u.path().to_string();
+                    if path.len() > 1 { Some(path) } else { None }
+                })
         })
         .unwrap_or_default();
 
@@ -495,7 +538,13 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
             }
         }
         "new_window" => {
-            spawn_new_window(app, None);
+            // Route through JS so the init script can capture window.location.pathname
+            // (Tauri's window.url() doesn't track SPA pushState navigation).
+            if let Some(window) = focused_window(app) {
+                dispatch_menu_action(&window, "new_window");
+            } else {
+                spawn_new_window(app, None, None);
+            }
         }
         "open_docs" => {
             let _ = open::that("https://github.com/TheSylvester/crispy");
@@ -632,7 +681,7 @@ fn build_tray(app: &AppHandle, we_own_daemon: bool) -> Result<(), String> {
                     show_any_window(app);
                 }
                 "tray_new_window" => {
-                    spawn_new_window(app, None);
+                    spawn_new_window(app, None, None);
                 }
                 "tray_restart" => {
                     let app_clone = app.clone();
