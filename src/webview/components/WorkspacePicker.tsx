@@ -416,13 +416,8 @@ export function WorkspacePicker(): React.JSX.Element {
     return () => { (window as any).__CRISPY_MENU_ACTION__ = prev; };
   }, []);
 
-  // Load dismissed WSL distros from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem('crispy-wsl-dismissed');
-      if (stored) setWslDismissed(new Set(JSON.parse(stored)));
-    } catch { /* ignore */ }
-  }, []);
+  // Dismissed WSL cards are session-only — reappear on app restart
+  // so the user gets another chance if they dismissed by accident.
 
   // Load pinned workspaces from localStorage
   useEffect(() => {
@@ -446,7 +441,7 @@ export function WorkspacePicker(): React.JSX.Element {
     setWslDismissed(prev => {
       const next = new Set(prev);
       next.add(distro);
-      localStorage.setItem('crispy-wsl-dismissed', JSON.stringify([...next]));
+      // Session-only — don't persist to localStorage
       return next;
     });
   }, []);

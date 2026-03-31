@@ -10,7 +10,7 @@
       "csp": null
     },
     "windows": [],
-    "withGlobalTauri": false
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,

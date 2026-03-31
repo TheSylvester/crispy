@@ -15,9 +15,10 @@ echo "=== Clearing runtime cache ==="
 powershell.exe -Command "if (Test-Path '$WIN_REPO\tauri\src-tauri\runtime') { Remove-Item -Recurse -Force '$WIN_REPO\tauri\src-tauri\runtime'; Write-Host 'Deleted stale runtime/' } else { Write-Host 'No cache to clear' }"
 
 # Sync current branch to Windows clone
+# Cargo dirties Cargo.toml during compilation — restore it before pulling
 BRANCH="$(git branch --show-current)"
 echo "=== Syncing branch '$BRANCH' to Windows clone ==="
-powershell.exe -Command "cd '$WIN_REPO'; git fetch origin; git checkout '$BRANCH'; git pull origin '$BRANCH'"
+powershell.exe -Command "cd '$WIN_REPO'; git checkout -- tauri/src-tauri/Cargo.toml tauri/package-lock.json 2>\$null; git fetch origin; git checkout '$BRANCH'; git pull origin '$BRANCH'"
 
 # Build crispy-code on Windows side (with Git unix utils on PATH for cp/rm)
 echo "=== Installing deps and building crispy-code ==="

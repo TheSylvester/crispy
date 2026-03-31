@@ -379,7 +379,11 @@ fn spawn_new_window(app: &AppHandle) -> Result<(), String> {
     let n = WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed);
     let label = format!("window-{}", n);
 
-    let window = tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::App("index.html".into()))
+    let target = format!("http://localhost:{}{}", port, current_path);
+    let target_url = Url::parse(&target)
+        .map_err(|e| format!("Invalid URL: {}", e))?;
+
+    tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::External(target_url))
         .initialization_script(WINDOW_INIT_SCRIPT)
         .title("Crispy")
         .inner_size(1200.0, 800.0)
@@ -395,12 +399,6 @@ fn spawn_new_window(app: &AppHandle) -> Result<(), String> {
         })
         .build()
         .map_err(|e| format!("Failed to create window: {}", e))?;
-
-    // Navigate to same workspace as the focused window
-    let target = format!("http://localhost:{}{}", port, current_path);
-    if let Ok(url) = Url::parse(&target) {
-        let _ = window.navigate(url);
-    }
 
     Ok(())
 }
