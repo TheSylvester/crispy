@@ -687,7 +687,7 @@ fn detect_wsl() -> Option<WslDetection> {
     // Check if crispy-code is installed (global PATH or ~/.crispy/bin/)
     let which_result = Command::new("wsl.exe")
         .args(["-d", &distro, "-e", "bash", "-lc",
-               "which crispy-code 2>/dev/null || test -x ~/.crispy/bin/crispy-code"])
+               "which crispy 2>/dev/null || test -x ~/.crispy/node_modules/.bin/crispy"])
         .output()
         .ok();
     let crispy_installed = which_result
@@ -721,7 +721,7 @@ async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
         .args([
             "-d", distro,
             "-e", "bash", "-lc",
-            "export PATH=$HOME/.crispy/bin:$PATH; crispy-code _daemon --host 0.0.0.0",
+            "export PATH=$HOME/.crispy/node_modules/.bin:$PATH; crispy _daemon --host 0.0.0.0",
         ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -856,7 +856,7 @@ async fn install_crispy_in_wsl(distro: String) -> Result<String, String> {
         .args([
             "-d", &distro,
             "-e", "bash", "-lc",
-            "mkdir -p ~/.crispy/bin && npm install --prefix ~/.crispy crispy-code 2>&1 && ln -sf ~/.crispy/node_modules/.bin/crispy-code ~/.crispy/bin/crispy-code 2>&1",
+            "npm install --prefix ~/.crispy crispy-code 2>&1",
         ])
         .output()
         .await
