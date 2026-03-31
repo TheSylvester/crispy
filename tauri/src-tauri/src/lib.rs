@@ -370,23 +370,29 @@ fn get_wsl_status(app: AppHandle) -> WslStatus {
 /// Called from menu, tray, keyboard shortcut, or webview split button.
 #[tauri::command]
 fn create_window(app: AppHandle) -> Result<(), String> {
-    spawn_new_window(&app)
+    spawn_new_window(&app);
+    Ok(())
 }
 
 /// Shared window creation logic — used by Tauri command, menu handler, and tray.
 /// Opens a new window pointed at the same workspace as the currently focused window.
-fn spawn_new_window(app: &AppHandle) -> Result<(), String> {
+///
+/// IMPORTANT: WebviewWindowBuilder::build() deadlocks on Windows when called from
+/// synchronous Tauri command/event handlers (wry#583). All callers are sync (menu,
+/// tray, command), so we gather state synchronously then spawn an async task to do
+/// the actual window creation off the main thread.
+fn spawn_new_window(app: &AppHandle) {
     let port = {
         let state = app.state::<Mutex<AppState>>();
         let s = state.lock().unwrap_or_else(|e| e.into_inner());
         s.primary_daemon.as_ref().map_or(0, |d| d.port)
     };
     if port == 0 {
-        return Err("No daemon running".into());
+        log::error!("Cannot create new window: no daemon running");
+        return;
     }
 
     // Grab the focused window's URL to preserve the workspace path.
-    // e.g. http://localhost:3456/dev-crispy/ → new window opens same workspace.
     let current_path = focused_window(app)
         .and_then(|w| w.url().ok())
         .and_then(|u| {
@@ -397,52 +403,43 @@ fn spawn_new_window(app: &AppHandle) -> Result<(), String> {
 
     let n = WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed);
     let label = format!("window-{}", n);
-
     let target = format!("http://localhost:{}{}", port, current_path);
+    let app = app.clone();
 
-    // Navigate from JavaScript after index.html loads — guaranteed WebView2 is ready.
-    // Rust-side navigate() (sync or async-delayed) fires before WebView2 initializes,
-    // producing a blank page. The init script runs in-page after load, so it always works.
-    // Check origin to avoid re-redirecting once the daemon page loads.
-    let redirect_script = format!(
-        r#"window.__CRISPY_DESKTOP__ = true;
-(function() {{
-    var host = window.location.hostname;
-    if (host === 'tauri.localhost') {{
-        window.location.href = "{}";
-        return;
-    }}
-    var ipc = window.__TAURI_INTERNALS__;
-    if (!ipc) return;
-    new MutationObserver(function() {{
-        ipc.invoke('set_window_title', {{ title: document.title }}).catch(function() {{}});
-    }}).observe(document.querySelector('title') || document.head, {{
-        subtree: true, childList: true, characterData: true
-    }});
-}})();"#,
-        target
-    );
+    // Build the window off the main thread to avoid WebView2 deadlock (wry#583).
+    tauri::async_runtime::spawn(async move {
+        let target_url = match Url::parse(&target) {
+            Ok(u) => u,
+            Err(e) => { log::error!("Invalid URL for new window: {}", e); return; }
+        };
 
-    tauri::WebviewWindowBuilder::new(
-            app, &label, tauri::WebviewUrl::App("index.html".into()),
-        )
-        .initialization_script(&redirect_script)
-        .title("Crispy")
-        .inner_size(1200.0, 800.0)
-        .min_inner_size(600.0, 400.0)
-        .center()
-        .on_navigation(|url| {
-            if is_local_url(url.as_str()) {
-                true
-            } else {
-                let _ = open::that(url.as_str());
-                false
-            }
-        })
-        .build()
-        .map_err(|e| format!("Failed to create window: {}", e))?;
+        let window = match tauri::WebviewWindowBuilder::new(
+                &app, &label, tauri::WebviewUrl::App("index.html".into()),
+            )
+            .initialization_script(WINDOW_INIT_SCRIPT)
+            .title("Crispy")
+            .inner_size(1200.0, 800.0)
+            .min_inner_size(600.0, 400.0)
+            .center()
+            .on_navigation(|url| {
+                if is_local_url(url.as_str()) {
+                    true
+                } else {
+                    let _ = open::that(url.as_str());
+                    false
+                }
+            })
+            .build()
+        {
+            Ok(w) => w,
+            Err(e) => { log::error!("Failed to create window: {}", e); return; }
+        };
 
-    Ok(())
+        // Wait for WebView2 to initialize and load the splash,
+        // then navigate to daemon — same pattern as the main window.
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let _ = window.navigate(target_url);
+    });
 }
 
 // ============================================================================
@@ -483,9 +480,7 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
             }
         }
         "new_window" => {
-            if let Err(e) = spawn_new_window(app) {
-                log::error!("Failed to create new window: {}", e);
-            }
+            spawn_new_window(app);
         }
         "open_docs" => {
             let _ = open::that("https://github.com/TheSylvester/crispy");
@@ -622,9 +617,7 @@ fn build_tray(app: &AppHandle, we_own_daemon: bool) -> Result<(), String> {
                     show_any_window(app);
                 }
                 "tray_new_window" => {
-                    if let Err(e) = spawn_new_window(app) {
-                        log::error!("Tray new window failed: {}", e);
-                    }
+                    spawn_new_window(app);
                 }
                 "tray_restart" => {
                     let app_clone = app.clone();
