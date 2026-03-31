@@ -736,10 +736,14 @@ fn detect_wsl() -> Option<WslDetection> {
         .map(|o| o.status.success())
         .unwrap_or(false);
 
-    // If installed, check for running daemon
+    // If installed, check for a LIVE daemon inside WSL.
+    // Must verify the PID is alive inside WSL — not just that the port responds,
+    // because WSL2 localhost forwarding means the Windows daemon's port is also
+    // reachable from the health check, producing false positives.
     let daemon_port = if crispy_installed {
         Command::new("wsl.exe")
-            .args(["-d", &distro, "-e", "bash", "-c", "cat ~/.crispy/run/crispy.port 2>/dev/null"])
+            .args(["-d", &distro, "-e", "bash", "-c",
+                   "pid=$(cat ~/.crispy/run/crispy.pid 2>/dev/null) && kill -0 $pid 2>/dev/null && cat ~/.crispy/run/crispy.port 2>/dev/null"])
             .output()
             .ok()
             .and_then(|o| {
@@ -759,6 +763,13 @@ fn detect_wsl() -> Option<WslDetection> {
 /// Spawn a crispy-code daemon inside WSL.
 #[cfg(windows)]
 async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
+    // Clean up stale run files inside WSL before spawning.
+    // Without this, the daemon may see a stale port file and exit early.
+    let _ = Command::new("wsl.exe")
+        .args(["-d", distro, "-e", "bash", "-c",
+               "rm -f ~/.crispy/run/crispy.pid ~/.crispy/run/crispy.port"])
+        .output();
+
     // Use bash -lic (interactive login) so .bashrc is fully sourced — nvm, fnm, volta
     // etc. only initialize in interactive shells. Without -i, node isn't in PATH.
     // Redirect daemon output to a log file inside WSL for debugging.
@@ -766,7 +777,7 @@ async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
     cmd.args([
             "-d", distro,
             "-e", "bash", "-lic",
-            "mkdir -p ~/.crispy/logs; export PATH=$HOME/.crispy/node_modules/.bin:$PATH; crispy _daemon --host 0.0.0.0 >> ~/.crispy/logs/wsl-daemon.log 2>&1",
+            "mkdir -p ~/.crispy/logs ~/.crispy/run; export PATH=$HOME/.crispy/node_modules/.bin:$PATH; crispy _daemon --host 0.0.0.0 >> ~/.crispy/logs/wsl-daemon.log 2>&1",
         ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
@@ -782,22 +793,21 @@ async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
     let _child = cmd.spawn()
         .map_err(|e| format!("Failed to spawn WSL daemon: {}", e))?;
 
-    // Poll for port file (up to 15s)
+    // Poll for port file AND verify PID is alive inside WSL (up to 15s).
+    // Don't use check_health(port) from Windows — WSL2 localhost forwarding
+    // would make the Windows daemon answer, giving a false positive.
     for _ in 0..75 {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-        // Try reading port file via wsl.exe
+        // Verify PID alive + read port in one shot inside WSL
         if let Ok(out) = Command::new("wsl.exe")
             .args(["-d", distro, "-e", "bash", "-c",
-                   "cat ~/.crispy/run/crispy.port 2>/dev/null"])
+                   "pid=$(cat ~/.crispy/run/crispy.pid 2>/dev/null) && kill -0 $pid 2>/dev/null && cat ~/.crispy/run/crispy.port 2>/dev/null"])
             .output()
         {
             if out.status.success() {
                 if let Ok(port) = String::from_utf8_lossy(&out.stdout).trim().parse::<u16>() {
-                    // Verify health before returning
-                    if check_health(port).await {
-                        return Ok(port);
-                    }
+                    return Ok(port);
                 }
             }
         }
@@ -842,23 +852,12 @@ fn start_wsl_daemon_manager(app_handle: AppHandle) {
         // Try to connect to existing daemon or spawn a new one
         set_status(&app_handle, WslStatus::Starting { distro: detection.distro.clone() });
 
+        // daemon_port is only set if the PID is alive inside WSL (verified via kill -0).
+        // Trust that directly — don't health-check from Windows, because WSL2 localhost
+        // forwarding would make the Windows daemon answer on any port.
         let port = if let Some(port) = detection.daemon_port {
-            if check_health(port).await {
-                log::info!("WSL daemon already running on port {}", port);
-                port
-            } else {
-                match spawn_wsl_daemon(&detection.distro).await {
-                    Ok(p) => p,
-                    Err(e) => {
-                        log::error!("Failed to spawn WSL daemon: {}", e);
-                        set_status(&app_handle, WslStatus::Failed {
-                            distro: detection.distro.clone(),
-                            error: e.clone(),
-                        });
-                        return;
-                    }
-                }
-            }
+            log::info!("WSL daemon already running on port {} (PID alive)", port);
+            port
         } else {
             match spawn_wsl_daemon(&detection.distro).await {
                 Ok(p) => p,
