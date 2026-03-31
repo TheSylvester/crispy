@@ -1007,6 +1007,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // --- Fork execution (shared between control panel button and per-message buttons) ---
     const executeFork = useCallback((atMessageId: string) => {
       if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
+      alert(`[Crispy DIAG] executeFork clicked: session=${selectedSessionId} at=${atMessageId}`);
 
       // Clear fork preview glow — mouseLeave won't fire since we're switching panels
       document.querySelectorAll('.message.crispy-fork-preview').forEach(el =>
@@ -1067,7 +1068,11 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     const handleFork = useCallback(() => {
       if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
-      if (forkTargetRef.current) executeFork(forkTargetRef.current);
+      if (forkTargetRef.current) {
+        executeFork(forkTargetRef.current);
+      } else {
+        alert('[Crispy DIAG] handleFork clicked but no fork target is latched');
+      }
     }, [selectedSessionId, executeFork]);
 
     const handleForkHover = useCallback(
