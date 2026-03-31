@@ -1034,16 +1034,21 @@ fn start_wsl_daemon_manager(app_handle: AppHandle) {
             }
         }
 
-        // Try to connect to existing daemon or spawn a new one
+        // Always kill existing WSL daemon and start fresh — same reasoning as
+        // the native daemon: attaching to a stale daemon serves old JS.
         set_status(&app_handle, WslStatus::Starting { distro: detection.distro.clone() });
 
-        // daemon_port is only set if the PID is alive inside WSL (verified via kill -0).
-        // Trust that directly — don't health-check from Windows, because WSL2 localhost
-        // forwarding would make the Windows daemon answer on any port.
-        let port = if let Some(port) = detection.daemon_port {
-            log::info!("WSL daemon already running on port {} (PID alive)", port);
-            port
-        } else {
+        if detection.daemon_port.is_some() {
+            log::info!("Killing existing WSL daemon to ensure fresh runtime");
+            let _ = wsl_command()
+                .args(["-d", &detection.distro, "-e", "bash", "-c",
+                       "kill $(cat ~/.crispy/run/crispy.pid 2>/dev/null) 2>/dev/null; rm -f ~/.crispy/run/crispy.pid ~/.crispy/run/crispy.port"])
+                .status();
+            // Brief pause for process cleanup
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+
+        let port = {
             match spawn_wsl_daemon(&detection.distro).await {
                 Ok(p) => p,
                 Err(e) => {
