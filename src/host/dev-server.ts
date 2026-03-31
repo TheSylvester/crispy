@@ -23,6 +23,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { urlPathToFsPath } from '../core/url-path-resolver-server.js';
 import { isPathAllowed } from '../core/workspace-roots.js';
 import { listAllSessions } from '../core/session-manager.js';
+import { listAllWorkspaces } from '../core/workspace-roots.js';
 
 import { initSettings, startWatchingSettings } from '../core/settings/index.js';
 import { createClientConnection } from './client-connection.js';
@@ -145,6 +146,19 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     if (url.pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', pid: process.pid, port: actualPort, uptime: process.uptime() }));
+      return;
+    }
+
+    // Workspace list endpoint (unauthenticated — used by Tauri WSL workspace merging).
+    // CORS headers allow cross-origin fetch from the primary daemon's webview.
+    if (url.pathname === '/api/workspaces') {
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      });
+      const sessions = listAllSessions();
+      const workspaces = listAllWorkspaces(sessions);
+      res.end(JSON.stringify({ home: homedir(), workspaces }));
       return;
     }
 

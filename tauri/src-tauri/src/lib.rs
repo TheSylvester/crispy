@@ -777,7 +777,7 @@ async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
     cmd.args([
             "-d", distro,
             "-e", "bash", "-lic",
-            "mkdir -p ~/.crispy/logs ~/.crispy/run; export PATH=$HOME/.crispy/node_modules/.bin:$PATH; crispy _daemon --host 0.0.0.0 >> ~/.crispy/logs/wsl-daemon.log 2>&1",
+            "mkdir -p ~/.crispy/logs ~/.crispy/run; export PATH=$HOME/.crispy/node_modules/.bin:$PATH; crispy _daemon --host 0.0.0.0 --port 3466 >> ~/.crispy/logs/wsl-daemon.log 2>&1",
         ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());

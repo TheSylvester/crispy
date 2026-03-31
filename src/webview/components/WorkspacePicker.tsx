@@ -436,7 +436,25 @@ export function WorkspacePicker(): React.JSX.Element {
   const loadWorkspaces = useCallback(async () => {
     try {
       const result = await transport.listWorkspaces();
-      setWorkspaces(result.workspaces);
+      const primaryWorkspaces = result.workspaces;
+
+      // Merge WSL workspaces if WSL daemon is connected
+      let merged = primaryWorkspaces;
+      if (wslStatus && wslStatus.status === 'connected') {
+        try {
+          const wslResp = await fetch(`http://localhost:${wslStatus.port}/api/workspaces`);
+          if (wslResp.ok) {
+            const wslData = await wslResp.json() as { workspaces: WorkspaceInfo[] };
+            const wslWorkspaces = wslData.workspaces.map(ws => ({
+              ...ws,
+              environment: `WSL`,
+            }));
+            merged = [...primaryWorkspaces, ...wslWorkspaces];
+          }
+        } catch { /* WSL daemon unreachable — show primary only */ }
+      }
+
+      setWorkspaces(merged);
       setHome(result.home);
       setError('');
     } catch (err) {
@@ -449,7 +467,7 @@ export function WorkspacePicker(): React.JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, [transport]);
+  }, [transport, wslStatus]);
 
   useEffect(() => {
     loadWorkspaces();
