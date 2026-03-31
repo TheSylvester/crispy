@@ -118,8 +118,10 @@ Write-Host ">>> Creating WSL install tarball..." -ForegroundColor Yellow
 
 $PackDest = (Resolve-Path "$TauriDir\$RuntimeDir").Path
 Push-Location "$RepoRoot"
-# npm pack writes the tarball filename to stdout; stderr has warnings we ignore
-$TarballName = (npm pack --pack-destination "$PackDest" 2>$null | Select-Object -Last 1).Trim()
+# Use cmd /c to prevent PowerShell from treating npm's stderr warnings as errors.
+# npm pack writes the tarball filename to stdout on its last line.
+$TarballName = (cmd /c "npm pack --pack-destination `"$PackDest`" 2>nul" | Select-Object -Last 1)
+if ($TarballName) { $TarballName = $TarballName.Trim() }
 Pop-Location
 
 if ($TarballName -and (Test-Path "$PackDest\$TarballName")) {
