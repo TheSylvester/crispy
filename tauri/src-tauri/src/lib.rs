@@ -1237,16 +1237,27 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle().clone();
 
-            // Clear WebView2 cache on startup to ensure fresh JS is loaded.
-            // Without this, WebView2 serves stale cached main.js/styles.css
-            // even after the daemon restarts with a new bundle.
+            // Clear ALL WebView2 caches on startup to ensure fresh JS is loaded.
+            // WebView2 aggressively caches HTTP responses from localhost even with
+            // Cache-Control headers. Nuke every cache directory under EBWebView/.
             #[cfg(windows)]
             {
                 if let Ok(data_dir) = app_handle.path().app_local_data_dir() {
-                    let cache_dir = data_dir.join("EBWebView").join("Default").join("Cache");
-                    if cache_dir.exists() {
-                        log::info!("Clearing WebView2 cache at {:?}", cache_dir);
-                        let _ = std::fs::remove_dir_all(&cache_dir);
+                    let webview_dir = data_dir.join("EBWebView");
+                    if webview_dir.exists() {
+                        // Delete cache dirs: Default/Cache, Default/Code Cache,
+                        // ShaderCache, GrShaderCache, GraphiteDawnCache, etc.
+                        for dir_name in &[
+                            "Default\\Cache", "Default\\Code Cache",
+                            "Default\\Service Worker", "ShaderCache",
+                            "GrShaderCache", "GraphiteDawnCache",
+                        ] {
+                            let dir = webview_dir.join(dir_name);
+                            if dir.exists() {
+                                log::info!("Clearing WebView2 cache: {:?}", dir);
+                                let _ = std::fs::remove_dir_all(&dir);
+                            }
+                        }
                     }
                 }
             }
