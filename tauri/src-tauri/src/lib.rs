@@ -663,11 +663,13 @@ fn build_tray(app: &AppHandle, we_own_daemon: bool) -> Result<(), String> {
 // WSL Detection & Daemon Management (Windows only)
 // ============================================================================
 
-/// Result of WSL detection: distro name and whether crispy-code is installed.
+/// Result of WSL detection: distro name, install state, and version info.
 #[allow(dead_code)]
 struct WslDetection {
     distro: String,
     crispy_installed: bool,
+    /// Installed crispy-code version in WSL (e.g. "0.2.8"), if detectable.
+    installed_version: Option<String>,
     daemon_port: Option<u16>,
 }
 
@@ -729,6 +731,25 @@ fn detect_wsl() -> Option<WslDetection> {
         .map(|o| o.status.success())
         .unwrap_or(false);
 
+    // Check installed version
+    let installed_version = if crispy_installed {
+        Command::new("wsl.exe")
+            .args(["-d", &distro, "-e", "bash", "-c",
+                   "node -e \"process.stdout.write(require(process.env.HOME+'/.crispy/node_modules/crispy-code/package.json').version)\" 2>/dev/null"])
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    let v = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                    if !v.is_empty() { Some(v) } else { None }
+                } else {
+                    None
+                }
+            })
+    } else {
+        None
+    };
+
     // If installed, check for a LIVE daemon inside WSL.
     // Must verify the PID is alive inside WSL — not just that the port responds,
     // because WSL2 localhost forwarding means the Windows daemon's port is also
@@ -750,7 +771,7 @@ fn detect_wsl() -> Option<WslDetection> {
         None
     };
 
-    Some(WslDetection { distro, crispy_installed, daemon_port })
+    Some(WslDetection { distro, crispy_installed, installed_version, daemon_port })
 }
 
 /// Spawn a crispy-code daemon inside WSL.
@@ -809,6 +830,50 @@ async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
     Err("WSL daemon did not start within 15 seconds".into())
 }
 
+/// Provision or upgrade crispy-code in WSL from the bundled tarball.
+/// Uses `wslpath` to convert the Windows resource path to a WSL-accessible path.
+#[cfg(windows)]
+async fn provision_wsl_crispy(app: &AppHandle, distro: &str) -> Result<(), String> {
+    let resource_dir = app.path().resource_dir()
+        .map_err(|e| format!("Failed to resolve resource dir: {}", e))?;
+
+    // Find the bundled .tgz tarball
+    let runtime_dir = resource_dir.join("runtime");
+    let tarball = std::fs::read_dir(&runtime_dir)
+        .map_err(|e| format!("Failed to read runtime dir: {}", e))?
+        .filter_map(|e| e.ok())
+        .find(|e| {
+            e.file_name().to_string_lossy().starts_with("crispy-code-")
+                && e.file_name().to_string_lossy().ends_with(".tgz")
+        })
+        .ok_or_else(|| "No crispy-code tarball found in runtime bundle".to_string())?;
+
+    let win_path = tarball.path().to_string_lossy().to_string();
+    log::info!("Provisioning WSL crispy-code from: {}", win_path);
+
+    // Use wslpath inside WSL to convert the Windows path — handles spaces, drive letters, etc.
+    // Then npm install from the tarball to get correct Linux native modules.
+    let install_cmd = format!(
+        r#"src=$(wslpath -a -u '{}'); npm install --prefix "$HOME/.crispy" "$src" 2>&1"#,
+        win_path.replace('\'', "'\\''")
+    );
+
+    let output = tokio::process::Command::new("wsl.exe")
+        .args(["-d", distro, "-e", "bash", "-lic", &install_cmd])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run WSL provision: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+
+    if output.status.success() {
+        log::info!("WSL crispy-code provisioned successfully");
+        Ok(())
+    } else {
+        Err(format!("WSL provision failed (exit {}):\n{}", output.status, stdout))
+    }
+}
+
 /// Start WSL daemon detection and management after primary daemon is ready.
 #[cfg(windows)]
 fn start_wsl_daemon_manager(app_handle: AppHandle) {
@@ -835,11 +900,39 @@ fn start_wsl_daemon_manager(app_handle: AppHandle) {
             }
         };
 
-        log::info!("WSL detected: distro={}, crispy_installed={}", detection.distro, detection.crispy_installed);
+        let app_version = app_handle.package_info().version.to_string();
+        log::info!("WSL detected: distro={}, crispy_installed={}, version={:?}, app={}",
+            detection.distro, detection.crispy_installed,
+            detection.installed_version, app_version);
 
         if !detection.crispy_installed {
-            set_status(&app_handle, WslStatus::NotInstalled { distro: detection.distro.clone() });
-            return;
+            // Not installed at all — try auto-provisioning from bundled tarball
+            log::info!("crispy-code not installed in WSL, attempting auto-provision...");
+            set_status(&app_handle, WslStatus::Starting { distro: detection.distro.clone() });
+            match provision_wsl_crispy(&app_handle, &detection.distro).await {
+                Ok(()) => {
+                    log::info!("Auto-provisioned crispy-code in WSL");
+                }
+                Err(e) => {
+                    log::error!("Auto-provision failed: {}", e);
+                    set_status(&app_handle, WslStatus::NotInstalled { distro: detection.distro.clone() });
+                    return;
+                }
+            }
+        } else if detection.installed_version.as_deref() != Some(&app_version) {
+            // Version mismatch — upgrade from bundled tarball
+            log::info!("WSL crispy-code version mismatch ({:?} vs {}), upgrading...",
+                detection.installed_version, app_version);
+            set_status(&app_handle, WslStatus::Starting { distro: detection.distro.clone() });
+            match provision_wsl_crispy(&app_handle, &detection.distro).await {
+                Ok(()) => {
+                    log::info!("Upgraded crispy-code in WSL to {}", app_version);
+                }
+                Err(e) => {
+                    log::warn!("Upgrade failed, proceeding with existing version: {}", e);
+                    // Don't abort — try with the old version, it might partially work
+                }
+            }
         }
 
         // Try to connect to existing daemon or spawn a new one
@@ -893,26 +986,12 @@ fn start_wsl_daemon_manager(_app_handle: AppHandle) {
 }
 
 /// Tauri command: install crispy-code in WSL (called from install card UI).
+/// Uses the bundled tarball via provision_wsl_crispy for version-matched install.
 #[cfg(windows)]
 #[tauri::command]
-async fn install_crispy_in_wsl(distro: String) -> Result<String, String> {
-    let output = tokio::process::Command::new("wsl.exe")
-        .args([
-            "-d", &distro,
-            "-e", "bash", "-lc",
-            "npm install --prefix ~/.crispy crispy-code 2>&1",
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run install command: {}", e))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-
-    if output.status.success() {
-        Ok(stdout)
-    } else {
-        Err(format!("Install failed (exit {}):\n{}", output.status, stdout))
-    }
+async fn install_crispy_in_wsl(app: AppHandle, distro: String) -> Result<String, String> {
+    provision_wsl_crispy(&app, &distro).await
+        .map(|()| "crispy-code installed successfully".to_string())
 }
 
 #[cfg(not(windows))]

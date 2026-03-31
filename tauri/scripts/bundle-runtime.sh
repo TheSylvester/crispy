@@ -124,7 +124,22 @@ rm -rf node_modules/onnxruntime-node \
 
 cd "$TAURI_DIR"
 
-# ---- Step 4: Report sizes ----
+# ---- Step 4: Create WSL install tarball ----
+# npm pack creates a portable .tgz that can be installed in WSL via
+# `npm install --prefix ~/.crispy <tarball>` — gets correct Linux native deps.
+echo ">>> Creating WSL install tarball..."
+
+cd "$REPO_ROOT"
+TARBALL_NAME=$(npm pack --pack-destination "$TAURI_DIR/$RUNTIME_DIR" 2>/dev/null | tail -1)
+cd "$TAURI_DIR"
+
+if [ -f "$RUNTIME_DIR/$TARBALL_NAME" ]; then
+  echo "    Tarball: $TARBALL_NAME"
+else
+  echo "    WARNING: Failed to create tarball (WSL auto-provision won't work)"
+fi
+
+# ---- Step 5: Report sizes ----
 echo ""
 echo "=== Bundle Summary ==="
 echo "Node.js binary: $(du -sh "$RUNTIME_DIR/node" | cut -f1)"

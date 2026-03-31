@@ -111,7 +111,23 @@ foreach ($dep in $OptionalDeps) {
     if (Test-Path $dep) { Remove-Item -Recurse -Force $dep }
 }
 
-# ---- Step 4: Report sizes ----
+# ---- Step 4: Create WSL install tarball ----
+# npm pack creates a portable .tgz that can be installed in WSL via
+# `npm install --prefix ~/.crispy <tarball>` — gets correct Linux native deps.
+Write-Host ">>> Creating WSL install tarball..." -ForegroundColor Yellow
+
+Push-Location "$RepoRoot"
+$PackOutput = npm pack --pack-destination "$TauriDir\$RuntimeDir" 2>&1
+$TarballName = ($PackOutput | Select-String "crispy-code-.*\.tgz" | ForEach-Object { $_.Matches.Value }) ?? ($PackOutput[-1])
+Pop-Location
+
+if (Test-Path "$TauriDir\$RuntimeDir\$TarballName") {
+    Write-Host "    Tarball: $TarballName"
+} else {
+    Write-Host "    WARNING: Failed to create tarball (WSL auto-provision won't work)" -ForegroundColor Yellow
+}
+
+# ---- Step 5: Report sizes ----
 Write-Host ""
 Write-Host "=== Bundle Summary ===" -ForegroundColor Cyan
 
