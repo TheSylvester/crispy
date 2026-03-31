@@ -145,8 +145,7 @@ export function createWebSocketTransport(url: string): SessionService {
     openPanel: async (params) => {
       if ((window as any).__CRISPY_DESKTOP__) {
         // Tauri: send command via title channel (init script intercepts and calls IPC)
-        const diag = (window as any).__CRISPY_IPC_DIAG__;
-        console.log('[Tauri] openPanel: IPC diag =', JSON.stringify(diag), 'setting title cmd');
+        alert(`[Crispy DIAG] openPanel issuing create_window for sessionId=${params.sessionId}`);
         document.title = `__CMD__:create_window:sessionId=${encodeURIComponent(params.sessionId)}`;
         return { ok: true };
       }
@@ -168,8 +167,7 @@ export function createWebSocketTransport(url: string): SessionService {
 
       if ((window as any).__CRISPY_DESKTOP__) {
         // Tauri: send command via title channel (init script intercepts and calls IPC)
-        const diag = (window as any).__CRISPY_IPC_DIAG__;
-        console.log('[Tauri] forkToNewPanel: IPC diag =', JSON.stringify(diag), 'query =', qp.toString());
+        alert(`[Crispy DIAG] forkToNewPanel issuing create_window: ${qp.toString()}`);
         document.title = `__CMD__:create_window:${qp.toString()}`;
         return { ok: true };
       }

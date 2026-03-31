@@ -27,15 +27,12 @@ window.__CRISPY_DESKTOP__ = true;
 (function() {
     var ipc = window.__TAURI_INTERNALS__;
 
-    // Diagnostic: log IPC availability to console (visible in Rust logs via WebView2).
-    // Also expose on window for page JS to check.
-    window.__CRISPY_IPC_DIAG__ = {
-        hasInternals: !!ipc,
-        href: location.href,
-        ts: Date.now()
-    };
-
-    if (!ipc) return;
+    if (!ipc) {
+        // DEBUG: visible diagnostic — confirms IPC is unavailable on this page.
+        // Remove once fork/new-window is working.
+        alert('[Crispy DIAG] __TAURI_INTERNALS__ is NULL at ' + location.href);
+        return;
+    }
 
     // Title bridge + command channel.
     // Page JS can send commands by setting document.title to "__CMD__:command:arg"
@@ -50,10 +47,15 @@ window.__CRISPY_DESKTOP__ = true;
             var cmd = sep > 0 ? t.slice(7, sep) : t.slice(7);
             var arg = sep > 0 ? t.slice(sep + 1) : '';
             if (cmd === 'create_window') {
+                alert('[Crispy DIAG] create_window command seen: path=' + window.location.pathname + ' query=' + (arg || ''));
                 ipc.invoke('create_window', {
                     query: arg || null,
                     path: window.location.pathname || null
-                }).catch(function() {});
+                }).then(function() {
+                    alert('[Crispy DIAG] create_window IPC invoke ok');
+                }).catch(function(e) {
+                    alert('[Crispy DIAG] create_window IPC failed: ' + e.message);
+                });
             }
             document.title = realTitle;
             return;
@@ -68,10 +70,15 @@ window.__CRISPY_DESKTOP__ = true;
     // The React app may override this later for its own actions.
     window.__CRISPY_MENU_ACTION__ = function(action) {
         if (action === 'new_window') {
+            alert('[Crispy DIAG] new_window menu action seen: path=' + window.location.pathname);
             ipc.invoke('create_window', {
                 query: null,
                 path: window.location.pathname || null
-            }).catch(function() {});
+            }).then(function() {
+                alert('[Crispy DIAG] new_window IPC invoke ok');
+            }).catch(function(e) {
+                alert('[Crispy DIAG] new_window IPC failed: ' + e.message);
+            });
         }
     };
 })();
