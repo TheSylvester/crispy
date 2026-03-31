@@ -361,6 +361,7 @@ export function WorkspacePicker(): React.JSX.Element {
   const transport = useTransport();
   const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([]);
   const [home, setHome] = useState('');
+  const [wslHome, setWslHome] = useState('');
   const [newPath, setNewPath] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -444,12 +445,15 @@ export function WorkspacePicker(): React.JSX.Element {
         try {
           const wslResp = await fetch(`http://localhost:${wslStatus.port}/api/workspaces`);
           if (wslResp.ok) {
-            const wslData = await wslResp.json() as { workspaces: WorkspaceInfo[] };
+            const wslData = await wslResp.json() as { home: string; workspaces: WorkspaceInfo[] };
+            setWslHome(wslData.home);
             const wslWorkspaces = wslData.workspaces.map(ws => ({
               ...ws,
               environment: `WSL`,
             }));
             merged = [...primaryWorkspaces, ...wslWorkspaces];
+            // Sort merged list by recency (most recent first)
+            merged.sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0));
           }
         } catch { /* WSL daemon unreachable — show primary only */ }
       }
@@ -474,7 +478,16 @@ export function WorkspacePicker(): React.JSX.Element {
   }, [loadWorkspaces]);
 
   const handleNavigate = (path: string) => {
-    window.location.href = fsPathToUrlPath(path, home);
+    // Find the workspace to check if it's a WSL workspace
+    const ws = workspaces.find(w => w.path === path);
+    if (ws?.environment === 'WSL' && wslStatus?.status === 'connected') {
+      // WSL workspaces navigate to the WSL daemon port
+      const urlPath = fsPathToUrlPath(path, wslHome);
+      const wslUrl = `http://localhost:${wslStatus.port}${urlPath}`;
+      window.location.href = wslUrl;
+    } else {
+      window.location.href = fsPathToUrlPath(path, home);
+    }
   };
 
   const handleAdd = async () => {

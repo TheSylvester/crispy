@@ -368,20 +368,22 @@ fn get_wsl_status(app: AppHandle) -> WslStatus {
 
 /// Create a new Crispy window pointed at the same daemon.
 /// Called from menu, tray, keyboard shortcut, or webview split button.
+/// Optional `query` param carries fork/openPanel URL params (e.g. "forkFrom=X&forkAt=Y").
 #[tauri::command]
-fn create_window(app: AppHandle) -> Result<(), String> {
-    spawn_new_window(&app);
+fn create_window(app: AppHandle, query: Option<String>) -> Result<(), String> {
+    spawn_new_window(&app, query.as_deref());
     Ok(())
 }
 
 /// Shared window creation logic — used by Tauri command, menu handler, and tray.
 /// Opens a new window pointed at the same workspace as the currently focused window.
+/// Optional `query` is appended as URL search params (for fork/openPanel).
 ///
 /// IMPORTANT: WebviewWindowBuilder::build() deadlocks on Windows when called from
 /// synchronous Tauri command/event handlers (wry#583). All callers are sync (menu,
 /// tray, command), so we gather state synchronously then spawn an async task to do
 /// the actual window creation off the main thread.
-fn spawn_new_window(app: &AppHandle) {
+fn spawn_new_window(app: &AppHandle, query: Option<&str>) {
     let port = {
         let state = app.state::<Mutex<AppState>>();
         let s = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -403,7 +405,10 @@ fn spawn_new_window(app: &AppHandle) {
 
     let n = WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed);
     let label = format!("window-{}", n);
-    let target = format!("http://localhost:{}{}", port, current_path);
+    let target = match query {
+        Some(q) if !q.is_empty() => format!("http://localhost:{}{}?{}", port, current_path, q),
+        _ => format!("http://localhost:{}{}", port, current_path),
+    };
     let app = app.clone();
 
     // Build the window off the main thread to avoid WebView2 deadlock (wry#583).
@@ -480,7 +485,7 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
             }
         }
         "new_window" => {
-            spawn_new_window(app);
+            spawn_new_window(app, None);
         }
         "open_docs" => {
             let _ = open::that("https://github.com/TheSylvester/crispy");
@@ -617,7 +622,7 @@ fn build_tray(app: &AppHandle, we_own_daemon: bool) -> Result<(), String> {
                     show_any_window(app);
                 }
                 "tray_new_window" => {
-                    spawn_new_window(app);
+                    spawn_new_window(app, None);
                 }
                 "tray_restart" => {
                     let app_clone = app.clone();
@@ -673,11 +678,23 @@ struct WslDetection {
     daemon_port: Option<u16>,
 }
 
+/// Create a `wsl.exe` Command with CREATE_NO_WINDOW to prevent console flashing.
+#[cfg(windows)]
+fn wsl_command() -> Command {
+    let mut cmd = Command::new("wsl.exe");
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 /// Detect the default WSL distro and check if crispy-code is available.
 #[cfg(windows)]
 fn detect_wsl() -> Option<WslDetection> {
     // Run `wsl.exe -l -v` to list distros
-    let output = Command::new("wsl.exe")
+    let output = wsl_command()
         .args(["-l", "-v"])
         .output()
         .ok()?;
@@ -722,7 +739,7 @@ fn detect_wsl() -> Option<WslDetection> {
     let distro = default_distro?;
 
     // Check if crispy-code is installed (global PATH or ~/.crispy/bin/)
-    let which_result = Command::new("wsl.exe")
+    let which_result = wsl_command()
         .args(["-d", &distro, "-e", "bash", "-lic",
                "which crispy 2>/dev/null || test -x ~/.crispy/node_modules/.bin/crispy"])
         .output()
@@ -733,7 +750,7 @@ fn detect_wsl() -> Option<WslDetection> {
 
     // Check installed version
     let installed_version = if crispy_installed {
-        Command::new("wsl.exe")
+        wsl_command()
             .args(["-d", &distro, "-e", "bash", "-c",
                    "node -e \"process.stdout.write(require(process.env.HOME+'/.crispy/node_modules/crispy-code/package.json').version)\" 2>/dev/null"])
             .output()
@@ -755,7 +772,7 @@ fn detect_wsl() -> Option<WslDetection> {
     // because WSL2 localhost forwarding means the Windows daemon's port is also
     // reachable from the health check, producing false positives.
     let daemon_port = if crispy_installed {
-        Command::new("wsl.exe")
+        wsl_command()
             .args(["-d", &distro, "-e", "bash", "-c",
                    "pid=$(cat ~/.crispy/run/crispy.pid 2>/dev/null) && kill -0 $pid 2>/dev/null && cat ~/.crispy/run/crispy.port 2>/dev/null"])
             .output()
@@ -779,7 +796,7 @@ fn detect_wsl() -> Option<WslDetection> {
 async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
     // Clean up stale run files inside WSL before spawning.
     // Without this, the daemon may see a stale port file and exit early.
-    let _ = Command::new("wsl.exe")
+    let _ = wsl_command()
         .args(["-d", distro, "-e", "bash", "-c",
                "rm -f ~/.crispy/run/crispy.pid ~/.crispy/run/crispy.port"])
         .output();
@@ -787,7 +804,7 @@ async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
     // Use bash -lic (interactive login) so .bashrc is fully sourced — nvm, fnm, volta
     // etc. only initialize in interactive shells. Without -i, node isn't in PATH.
     // Redirect daemon output to a log file inside WSL for debugging.
-    let mut cmd = Command::new("wsl.exe");
+    let mut cmd = wsl_command();
     cmd.args([
             "-d", distro,
             "-e", "bash", "-lic",
@@ -795,14 +812,6 @@ async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
         ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
-
-    // Prevent a visible console window from appearing
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
 
     let _child = cmd.spawn()
         .map_err(|e| format!("Failed to spawn WSL daemon: {}", e))?;
@@ -814,7 +823,7 @@ async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
         // Verify PID alive + read port in one shot inside WSL
-        if let Ok(out) = Command::new("wsl.exe")
+        if let Ok(out) = wsl_command()
             .args(["-d", distro, "-e", "bash", "-c",
                    "pid=$(cat ~/.crispy/run/crispy.pid 2>/dev/null) && kill -0 $pid 2>/dev/null && cat ~/.crispy/run/crispy.port 2>/dev/null"])
             .output()
@@ -858,8 +867,15 @@ async fn provision_wsl_crispy(app: &AppHandle, distro: &str) -> Result<(), Strin
         win_path.replace('\'', "'\\''")
     );
 
-    let output = tokio::process::Command::new("wsl.exe")
-        .args(["-d", distro, "-e", "bash", "-lic", &install_cmd])
+    let mut cmd = tokio::process::Command::new("wsl.exe");
+    cmd.args(["-d", distro, "-e", "bash", "-lic", &install_cmd]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = cmd
         .output()
         .await
         .map_err(|e| format!("Failed to run WSL provision: {}", e))?;
@@ -1097,7 +1113,7 @@ fn shutdown_daemon(app: &AppHandle) {
             if let Some(ref distro) = d.wsl_distro {
                 let distro = distro.clone();
                 let _ = std::thread::spawn(move || {
-                    let _ = Command::new("wsl.exe")
+                    let _ = wsl_command()
                         .args(["-d", &distro, "-e", "bash", "-c",
                                "kill $(cat ~/.crispy/run/crispy.pid 2>/dev/null) 2>/dev/null"])
                         .status();
