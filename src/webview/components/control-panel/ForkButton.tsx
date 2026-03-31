@@ -24,7 +24,7 @@ export function ForkButton({ disabled, onFork, onHoverChange }: ForkButtonProps)
       title="Fork conversation (Ctrl+Shift+Enter)"
       data-shortcut="Ctrl+Shift+Enter"
       disabled={disabled}
-      onClick={onFork}
+      onClick={() => { alert('[DIAG] ForkButton clicked'); onFork(); }}
       onMouseEnter={() => onHoverChange(true)}
       onMouseLeave={() => onHoverChange(false)}
     >

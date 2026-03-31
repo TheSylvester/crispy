@@ -1067,12 +1067,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     }, [channelState, entries, selectedSessionId]);
 
     const handleFork = useCallback(() => {
+      alert(`[DIAG] handleFork: session=${selectedSessionId} target=${forkTargetRef.current}`);
       if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
-      if (forkTargetRef.current) {
-        executeFork(forkTargetRef.current);
-      } else {
-        alert('[Crispy DIAG] handleFork clicked but no fork target is latched');
-      }
+      if (forkTargetRef.current) executeFork(forkTargetRef.current);
     }, [selectedSessionId, executeFork]);
 
     const handleForkHover = useCallback(
