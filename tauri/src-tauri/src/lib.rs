@@ -437,15 +437,29 @@ fn create_window(app: AppHandle, query: Option<String>, path: Option<String>) ->
 /// tray, command), so we gather state synchronously then spawn an async task to do
 /// the actual window creation off the main thread.
 fn spawn_new_window(app: &AppHandle, query: Option<&str>, explicit_path: Option<&str>) {
-    let port = {
-        let state = app.state::<Mutex<AppState>>();
-        let s = state.lock().unwrap_or_else(|e| e.into_inner());
-        s.primary_daemon.as_ref().map_or(0, |d| d.port)
-    };
-    if port == 0 {
-        log::error!("Cannot create new window: no daemon running");
-        return;
-    }
+    // Determine the base URL. Prefer the focused window's navigated URL (preserves
+    // the correct daemon port — primary vs WSL). Fall back to primary daemon port.
+    let base_url = focused_window(app)
+        .and_then(|w| w.url().ok())
+        .and_then(|u| {
+            // Only use it if it's an http://localhost URL (not tauri:// splash)
+            if u.scheme() == "http" && u.host_str() == Some("localhost") {
+                u.port().map(|p| format!("http://localhost:{}", p))
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| {
+            let port = {
+                let state = app.state::<Mutex<AppState>>();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                s.primary_daemon.as_ref().map_or(0, |d| d.port)
+            };
+            if port == 0 {
+                log::error!("Cannot create new window: no daemon running");
+            }
+            format!("http://localhost:{}", port)
+        });
 
     // Use the explicit path from JS (accurate for SPA pushState routing),
     // falling back to Tauri's window.url() (only accurate for full navigations).
@@ -464,10 +478,10 @@ fn spawn_new_window(app: &AppHandle, query: Option<&str>, explicit_path: Option<
 
     let n = WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed);
     let label = format!("window-{}", n);
-    log::info!("spawn_new_window: path={:?} query={:?}", current_path, query);
+    log::info!("spawn_new_window: base={} path={:?} query={:?}", base_url, current_path, query);
     let target = match query {
-        Some(q) if !q.is_empty() => format!("http://localhost:{}{}?{}", port, current_path, q),
-        _ => format!("http://localhost:{}{}", port, current_path),
+        Some(q) if !q.is_empty() => format!("{}{}?{}", base_url, current_path, q),
+        _ => format!("{}{}", base_url, current_path),
     };
     let app = app.clone();
 
