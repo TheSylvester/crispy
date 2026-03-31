@@ -54,6 +54,8 @@ struct DaemonState {
     port: u16,
     we_own: bool,
     environment: DaemonEnv,
+    /// WSL distro name (only set when environment == Wsl)
+    wsl_distro: Option<String>,
 }
 
 struct AppState {
@@ -383,7 +385,12 @@ fn spawn_new_window(app: &AppHandle) -> Result<(), String> {
     let target_url = Url::parse(&target)
         .map_err(|e| format!("Invalid URL: {}", e))?;
 
-    tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::External(target_url))
+    // Use App("index.html") first, then async-navigate after WebView2 initializes.
+    // WebviewUrl::External opens a blank page because WebView2 isn't ready yet.
+    // The main window works because daemon startup delay gives WebView2 time to init.
+    let window = tauri::WebviewWindowBuilder::new(
+            app, &label, tauri::WebviewUrl::App("index.html".into()),
+        )
         .initialization_script(WINDOW_INIT_SCRIPT)
         .title("Crispy")
         .inner_size(1200.0, 800.0)
@@ -399,6 +406,12 @@ fn spawn_new_window(app: &AppHandle) -> Result<(), String> {
         })
         .build()
         .map_err(|e| format!("Failed to create window: {}", e))?;
+
+    // Delay navigation to give WebView2 time to initialize
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let _ = window.navigate(target_url);
+    });
 
     Ok(())
 }
@@ -697,7 +710,7 @@ fn detect_wsl() -> Option<WslDetection> {
     // If installed, check for running daemon
     let daemon_port = if crispy_installed {
         Command::new("wsl.exe")
-            .args(["-d", &distro, "-e", "cat", &format!("{}/.crispy/run/crispy.port", "~")])
+            .args(["-d", &distro, "-e", "bash", "-c", "cat ~/.crispy/run/crispy.port 2>/dev/null"])
             .output()
             .ok()
             .and_then(|o| {
@@ -717,24 +730,29 @@ fn detect_wsl() -> Option<WslDetection> {
 /// Spawn a crispy-code daemon inside WSL.
 #[cfg(windows)]
 async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
-    let _child = Command::new("wsl.exe")
-        .args([
+    let mut cmd = Command::new("wsl.exe");
+    cmd.args([
             "-d", distro,
             "-e", "bash", "-lc",
             "export PATH=$HOME/.crispy/node_modules/.bin:$PATH; crispy _daemon --host 0.0.0.0",
         ])
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
+        .stderr(std::process::Stdio::null());
+
+    // Prevent a visible console window from appearing
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let _child = cmd.spawn()
         .map_err(|e| format!("Failed to spawn WSL daemon: {}", e))?;
 
     // Poll for port file (up to 15s)
     for _ in 0..75 {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
-        let output = Command::new("wsl.exe")
-            .args(["-d", distro, "-e", "cat", "/tmp/.crispy-port-check"])
-            .output();
 
         // Try reading port file via wsl.exe
         if let Ok(out) = Command::new("wsl.exe")
@@ -751,8 +769,6 @@ async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
                 }
             }
         }
-        // Suppress unused variable warning
-        let _ = output;
     }
 
     Err("WSL daemon did not start within 15 seconds".into())
@@ -828,6 +844,7 @@ fn start_wsl_daemon_manager(app_handle: AppHandle) {
                 port,
                 we_own: true,
                 environment: DaemonEnv::Wsl,
+                wsl_distro: Some(detection.distro.clone()),
             });
         }
 
@@ -904,6 +921,7 @@ async fn restart_daemon(app: &AppHandle) {
                     port,
                     we_own,
                     environment: DaemonEnv::Native,
+                    wsl_distro: None,
                 });
             }
             if let Ok(url) = Url::parse(&format!("http://localhost:{}", port)) {
@@ -930,6 +948,7 @@ async fn reconnect_daemon(app: &AppHandle) {
                         port,
                         we_own: false,
                         environment: DaemonEnv::Native,
+                        wsl_distro: None,
                     });
                 }
             }
@@ -969,16 +988,15 @@ fn shutdown_daemon(app: &AppHandle) {
     #[cfg(windows)]
     if let Some(ref d) = s.wsl_daemon {
         if d.we_own && d.port > 0 {
-            // Send shutdown request via HTTP
-            let port = d.port;
-            let _ = std::thread::spawn(move || {
-                let _ = Command::new("wsl.exe")
-                    .args(["-e", "bash", "-c",
-                           &format!("kill $(cat ~/.crispy/run/crispy.pid 2>/dev/null) 2>/dev/null")])
-                    .status();
-                // Suppress unused variable
-                let _ = port;
-            }).join();
+            if let Some(ref distro) = d.wsl_distro {
+                let distro = distro.clone();
+                let _ = std::thread::spawn(move || {
+                    let _ = Command::new("wsl.exe")
+                        .args(["-d", &distro, "-e", "bash", "-c",
+                               "kill $(cat ~/.crispy/run/crispy.pid 2>/dev/null) 2>/dev/null"])
+                        .status();
+                }).join();
+            }
         }
     }
 }
@@ -1092,6 +1110,7 @@ pub fn run() {
                                 port,
                                 we_own,
                                 environment: DaemonEnv::Native,
+                                wsl_distro: None,
                             });
                         }
 
