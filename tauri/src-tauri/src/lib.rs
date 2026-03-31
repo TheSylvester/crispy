@@ -27,11 +27,20 @@ window.__CRISPY_DESKTOP__ = true;
 (function() {
     var ipc = window.__TAURI_INTERNALS__;
     if (!ipc) return;
+
+    // Title bridge — sync document.title to native window title
     new MutationObserver(function() {
         ipc.invoke('set_window_title', { title: document.title }).catch(function() {});
     }).observe(document.querySelector('title') || document.head, {
         subtree: true, childList: true, characterData: true
     });
+
+    // Expose window creation to page JS — the init script has IPC access
+    // even on http://localhost pages where __TAURI_INTERNALS__ may not be
+    // directly available to page-level JavaScript.
+    window.__CRISPY_CREATE_WINDOW__ = function(query) {
+        return ipc.invoke('create_window', { query: query || null });
+    };
 })();
 "#;
 

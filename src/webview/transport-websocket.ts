@@ -143,9 +143,9 @@ export function createWebSocketTransport(url: string): SessionService {
       request<{ previousSessionId: string; sessionId: string }>('switchSession', params),
 
     openPanel: async (params) => {
-      const ipc = (window as any).__TAURI_INTERNALS__;
-      if (ipc) {
-        await ipc.invoke('create_window', { query: `sessionId=${encodeURIComponent(params.sessionId)}` });
+      const createWindow = (window as any).__CRISPY_CREATE_WINDOW__;
+      if (createWindow) {
+        await createWindow(`sessionId=${encodeURIComponent(params.sessionId)}`);
         return { ok: true };
       }
       const url = new URL(window.location.pathname, window.location.origin);
@@ -164,23 +164,12 @@ export function createWebSocketTransport(url: string): SessionService {
       if (params.bypassEnabled) qp.set('bypass', '1');
       if (params.chromeEnabled) qp.set('chrome', '1');
 
-      // DEBUG: visible diagnostic via title (no DevTools in Tauri prod builds)
-      const dbg = (msg: string) => { document.title = `[FORK] ${msg}`; };
-
-      dbg(`from=${params.fromSessionId?.slice(0,8)} at=${params.atMessageId?.slice(0,8)}`);
-
-      const ipc = (window as any).__TAURI_INTERNALS__;
-      if (ipc) {
-        dbg('ipc found, invoking create_window...');
-        try {
-          await ipc.invoke('create_window', { query: qp.toString() });
-          dbg('invoke OK');
-        } catch (err) {
-          dbg(`invoke FAILED: ${err}`);
-        }
+      const createWindow = (window as any).__CRISPY_CREATE_WINDOW__;
+      if (createWindow) {
+        await createWindow(qp.toString());
         return { ok: true };
       }
-      dbg('NO IPC — using window.open fallback');
+      // Non-Tauri fallback
       const url = new URL(window.location.pathname, window.location.origin);
       url.search = qp.toString();
       window.open(url.toString(), '_blank');
