@@ -377,7 +377,30 @@ export function WorkspacePicker(): React.JSX.Element {
     return () => document.removeEventListener('mousemove', onMove);
   }, []);
 
-  // Listen for WSL detection events from Tauri
+  // Check WSL status on mount (Tauri desktop only) — polls stored state
+  // so it works regardless of when detection completes relative to page load.
+  useEffect(() => {
+    const ipc = (window as any).__TAURI_INTERNALS__;
+    if (!ipc) return;
+
+    // Poll every 2s for up to 20s — detection runs async after daemon starts
+    let attempts = 0;
+    const poll = setInterval(async () => {
+      attempts++;
+      try {
+        const distro = await ipc.invoke('get_wsl_status');
+        if (distro) {
+          setWslDistro(distro);
+          clearInterval(poll);
+        }
+      } catch { /* command not available or failed */ }
+      if (attempts >= 10) clearInterval(poll);
+    }, 2000);
+
+    return () => clearInterval(poll);
+  }, []);
+
+  // Also listen for the event (covers case where page is already loaded)
   useEffect(() => {
     const handler = (action: string) => {
       if (action.startsWith('wsl_detected:') && action.endsWith(':not_installed')) {
@@ -385,7 +408,6 @@ export function WorkspacePicker(): React.JSX.Element {
         setWslDistro(distro);
       }
     };
-    // Register on the global menu action handler used by Tauri
     const prev = (window as any).__CRISPY_MENU_ACTION__;
     (window as any).__CRISPY_MENU_ACTION__ = (action: string) => {
       handler(action);

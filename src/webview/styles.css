@@ -3970,18 +3970,34 @@ h2 {
 .crispy-titlebar__new-split {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 0;
 }
 
-.crispy-titlebar__new-btn {
-  /* inherits .crispy-titlebar__btn via dual class */
+/* Square the inner corners so the two buttons look like one */
+.crispy-titlebar__new-split .crispy-titlebar__new-btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  margin-right: 0;
 }
 
 .crispy-titlebar__new-chevron {
-  padding: 2px 3px !important;
-  margin-left: -2px;
-  border-left: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.2));
+  display: flex;
+  align-items: center;
+  padding: 4px 5px !important;
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #d4d4d4);
+  border: none;
+  border-left: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  cursor: pointer;
+  font-size: var(--font-sm);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  transition: background 0.15s;
+}
+
+.crispy-titlebar__new-chevron:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45484d);
 }
 
 .crispy-titlebar__new-dropdown {

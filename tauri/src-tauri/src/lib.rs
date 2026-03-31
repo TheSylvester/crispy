@@ -61,6 +61,9 @@ struct AppState {
     #[allow(dead_code)]
     wsl_daemon: Option<DaemonState>,   // Phase C: WSL remote daemon
     is_quitting: bool,
+    /// WSL distro name if detected but crispy-code not installed.
+    /// Cleared after install succeeds. Queryable by webview on demand.
+    wsl_needs_install: Option<String>,
 }
 
 // ============================================================================
@@ -333,6 +336,15 @@ async fn start_or_attach_daemon(
 #[tauri::command]
 fn set_window_title(window: WebviewWindow, title: String) {
     let _ = window.set_title(&title);
+}
+
+/// Query WSL state — returns distro name if WSL needs install, null otherwise.
+/// Called by WorkspacePicker on mount so it doesn't depend on event timing.
+#[tauri::command]
+fn get_wsl_status(app: AppHandle) -> Option<String> {
+    let state = app.state::<Mutex<AppState>>();
+    let s = state.lock().unwrap_or_else(|e| e.into_inner());
+    s.wsl_needs_install.clone()
 }
 
 /// Create a new Crispy window pointed at the same daemon.
@@ -770,7 +782,13 @@ fn start_wsl_daemon_manager(app_handle: AppHandle) {
         log::info!("WSL detected: distro={}, crispy_installed={}", detection.distro, detection.crispy_installed);
 
         if !detection.crispy_installed {
-            // Notify webview to show install card
+            // Store in AppState so webview can query via get_wsl_status command
+            {
+                let state = app_handle.state::<Mutex<AppState>>();
+                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+                s.wsl_needs_install = Some(detection.distro.clone());
+            }
+            // Also fire event for any already-loaded pages
             let script = format!(
                 "if (typeof window.__CRISPY_MENU_ACTION__ === 'function') {{ window.__CRISPY_MENU_ACTION__('wsl_detected:{}:not_installed'); }}",
                 detection.distro
@@ -982,11 +1000,12 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![set_window_title, create_window, install_crispy_in_wsl])
+        .invoke_handler(tauri::generate_handler![set_window_title, create_window, get_wsl_status, install_crispy_in_wsl])
         .manage(Mutex::new(AppState {
             primary_daemon: None,
             wsl_daemon: None,
             is_quitting: false,
+            wsl_needs_install: None,
         }))
         .setup(|app| {
             let app_handle = app.handle().clone();
