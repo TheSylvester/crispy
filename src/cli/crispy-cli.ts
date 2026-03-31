@@ -36,6 +36,14 @@ function parsePortFlag(): number {
   return DEFAULT_PORT;
 }
 
+function parseHostFlag(): string {
+  const idx = process.argv.indexOf('--host');
+  if (idx !== -1 && process.argv[idx + 1]) {
+    return process.argv[idx + 1];
+  }
+  return '127.0.0.1';
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -64,11 +72,12 @@ async function startForeground(): Promise<void> {
   delete process.env.CLAUDECODE;
 
   const port = parsePortFlag();
+  const host = parseHostFlag();
   const { startServer } = await import('../host/dev-server.js');
 
   const handle = await startServer({
     port,
-    host: '127.0.0.1',
+    host,
     mode: 'daemon',
     hostType: 'daemon',
   });
@@ -146,11 +155,12 @@ async function runDaemon(): Promise<void> {
   delete process.env.CLAUDECODE;
 
   const port = parsePortFlag();
+  const host = parseHostFlag();
   const { startServer } = await import('../host/dev-server.js');
 
   const handle = await startServer({
     port,
-    host: '127.0.0.1',
+    host,
     mode: 'daemon',
     hostType: 'daemon',
   });

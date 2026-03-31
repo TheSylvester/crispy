@@ -61,6 +61,8 @@ export interface SessionInfo {
   title?: string;
   /** 'user' = user-initiated session, 'system' = internal (Rosie, etc). */
   sessionKind?: 'user' | 'system';
+  /** Remote environment label, e.g. "WSL · Ubuntu". Set by remote-proxy for proxied sessions. */
+  remoteEnvironment?: string;
 }
 
 // ============================================================================

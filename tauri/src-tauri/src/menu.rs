@@ -34,6 +34,11 @@ pub fn build_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
                 .accelerator("CmdOrCtrl+N")
                 .build(app)?,
         )
+        .item(
+            &MenuItemBuilder::with_id("new_window", "New Window")
+                .accelerator("CmdOrCtrl+Shift+N")
+                .build(app)?,
+        )
         .separator()
         .close_window()
         .build()?;

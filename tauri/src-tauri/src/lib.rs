@@ -9,6 +9,7 @@ mod menu;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 use tauri::{
     menu::{MenuEvent, MenuItemBuilder},
@@ -16,15 +17,83 @@ use tauri::{
     AppHandle, Manager, RunEvent, Url, WebviewWindow, WindowEvent,
 };
 
+/// Counter for unique window labels.
+static WINDOW_COUNTER: AtomicU32 = AtomicU32::new(1);
+
+/// Initialization script injected into every Crispy webview window.
+/// Sets the desktop flag and bridges document.title to the native window title.
+const WINDOW_INIT_SCRIPT: &str = r#"
+window.__CRISPY_DESKTOP__ = true;
+(function() {
+    var ipc = window.__TAURI_INTERNALS__;
+    if (!ipc) return;
+    new MutationObserver(function() {
+        ipc.invoke('set_window_title', { title: document.title }).catch(function() {});
+    }).observe(document.querySelector('title') || document.head, {
+        subtree: true, childList: true, characterData: true
+    });
+})();
+"#;
+
 // ============================================================================
 // State
 // ============================================================================
 
+/// Which environment a daemon is running in.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+enum DaemonEnv {
+    Native,                // Windows host or Linux host
+    Wsl,                   // WSL distro (name stored in DaemonState)
+}
+
+/// State for a single daemon instance.
+struct DaemonState {
+    pid: Option<u32>,
+    port: u16,
+    we_own: bool,
+    environment: DaemonEnv,
+}
+
 struct AppState {
-    we_own_daemon: bool,
-    daemon_pid: Option<u32>,
-    daemon_port: u16,
+    primary_daemon: Option<DaemonState>,
+    #[allow(dead_code)]
+    wsl_daemon: Option<DaemonState>,   // Phase C: WSL remote daemon
     is_quitting: bool,
+}
+
+// ============================================================================
+// Window helpers — abstract over single/multi-window
+// ============================================================================
+
+/// Get the focused window, falling back to any visible window, then any window.
+fn focused_window(app: &AppHandle) -> Option<WebviewWindow> {
+    let windows = app.webview_windows();
+    windows.values().find(|w| w.is_focused().unwrap_or(false)).cloned()
+        .or_else(|| windows.values().find(|w| w.is_visible().unwrap_or(false)).cloned())
+        .or_else(|| windows.into_values().next())
+}
+
+/// Dispatch a JS eval to all open windows.
+fn eval_all_windows(app: &AppHandle, script: &str) {
+    for window in app.webview_windows().values() {
+        let _ = window.eval(script);
+    }
+}
+
+/// Navigate all windows to a URL (used when daemon restarts on a new port).
+fn navigate_all_windows(app: &AppHandle, url: &Url) {
+    for window in app.webview_windows().values() {
+        let _ = window.navigate(url.clone());
+    }
+}
+
+/// Show and focus the most appropriate window (focused > visible > any).
+fn show_any_window(app: &AppHandle) {
+    if let Some(w) = focused_window(app) {
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
 }
 
 // ============================================================================
@@ -255,6 +324,61 @@ async fn start_or_attach_daemon(
 }
 
 // ============================================================================
+// Tauri commands
+// ============================================================================
+
+/// Called from webview init script when document.title changes.
+/// Tauri v2 does not auto-propagate document.title to the native window title.
+#[tauri::command]
+fn set_window_title(window: WebviewWindow, title: String) {
+    let _ = window.set_title(&title);
+}
+
+/// Create a new Crispy window pointed at the same daemon.
+/// Called from menu, tray, keyboard shortcut, or webview split button.
+#[tauri::command]
+fn create_window(app: AppHandle) -> Result<(), String> {
+    spawn_new_window(&app)
+}
+
+/// Shared window creation logic — used by Tauri command, menu handler, and tray.
+fn spawn_new_window(app: &AppHandle) -> Result<(), String> {
+    let port = {
+        let state = app.state::<Mutex<AppState>>();
+        let s = state.lock().unwrap_or_else(|e| e.into_inner());
+        s.primary_daemon.as_ref().map_or(0, |d| d.port)
+    };
+    if port == 0 {
+        return Err("No daemon running".into());
+    }
+
+    let n = WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let label = format!("window-{}", n);
+
+    let url = Url::parse(&format!("http://localhost:{}", port))
+        .map_err(|e| format!("Invalid URL: {}", e))?;
+
+    tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::External(url))
+        .initialization_script(WINDOW_INIT_SCRIPT)
+        .title("Crispy")
+        .inner_size(1200.0, 800.0)
+        .min_inner_size(600.0, 400.0)
+        .center()
+        .on_navigation(|url| {
+            if is_local_url(url.as_str()) {
+                true
+            } else {
+                let _ = open::that(url.as_str());
+                false
+            }
+        })
+        .build()
+        .map_err(|e| format!("Failed to create window: {}", e))?;
+
+    Ok(())
+}
+
+// ============================================================================
 // Navigation guard — external links open in system browser
 // ============================================================================
 
@@ -287,8 +411,13 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
 
     match id {
         "new_session" | "toggle_sidebar" | "settings" | "zoom_in" | "zoom_out" | "zoom_reset" => {
-            if let Some(window) = app.get_webview_window("main") {
+            if let Some(window) = focused_window(app) {
                 dispatch_menu_action(&window, id);
+            }
+        }
+        "new_window" => {
+            if let Err(e) = spawn_new_window(app) {
+                log::error!("Failed to create new window: {}", e);
             }
         }
         "open_docs" => {
@@ -302,7 +431,7 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
             let _ = open::that(log_path);
         }
         "bring_all_front" => {
-            if let Some(window) = app.get_webview_window("main") {
+            for window in app.webview_windows().values() {
                 let _ = window.show();
                 let _ = window.set_focus();
             }
@@ -323,15 +452,14 @@ fn start_health_monitor(app_handle: AppHandle) {
             let state = app_handle.state::<Mutex<AppState>>();
             let (we_own, port) = {
                 let s = state.lock().unwrap_or_else(|e| e.into_inner());
-                (s.we_own_daemon, s.daemon_port)
+                let d = s.primary_daemon.as_ref();
+                (d.map_or(false, |d| d.we_own), d.map_or(0, |d| d.port))
             };
 
             if we_own && port > 0 && !check_health(port).await {
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.eval(
-                        "if (typeof window.__CRISPY_MENU_ACTION__ === 'function') { window.__CRISPY_MENU_ACTION__('daemon_crashed'); }"
-                    );
-                }
+                eval_all_windows(&app_handle,
+                    "if (typeof window.__CRISPY_MENU_ACTION__ === 'function') { window.__CRISPY_MENU_ACTION__('daemon_crashed'); }"
+                );
             }
         }
     });
@@ -353,14 +481,12 @@ fn start_update_checker(app_handle: AppHandle) {
                 Ok(updater) => {
                     match updater.check().await {
                         Ok(Some(update)) => {
-                            if let Some(window) = app_handle.get_webview_window("main") {
-                                let version = update.version.clone();
-                                let script = format!(
-                                    "if (typeof window.__CRISPY_MENU_ACTION__ === 'function') {{ window.__CRISPY_MENU_ACTION__('update_available:{}'); }}",
-                                    version
-                                );
-                                let _ = window.eval(&script);
-                            }
+                            let version = update.version.clone();
+                            let script = format!(
+                                "if (typeof window.__CRISPY_MENU_ACTION__ === 'function') {{ window.__CRISPY_MENU_ACTION__('update_available:{}'); }}",
+                                version
+                            );
+                            eval_all_windows(&app_handle, &script);
                         }
                         Ok(None) => { /* up to date */ }
                         Err(e) => {
@@ -387,6 +513,9 @@ fn build_tray(app: &AppHandle, we_own_daemon: bool) -> Result<(), String> {
     let open_item = MenuItemBuilder::with_id("tray_open", "Open Crispy").build(app)
         .map_err(|e| format!("Failed to build menu item: {}", e))?;
 
+    let new_window_item = MenuItemBuilder::with_id("tray_new_window", "New Window").build(app)
+        .map_err(|e| format!("Failed to build menu item: {}", e))?;
+
     let daemon_item = if we_own_daemon {
         MenuItemBuilder::with_id("tray_restart", "Restart Daemon").build(app)
             .map_err(|e| format!("Failed to build menu item: {}", e))?
@@ -403,6 +532,7 @@ fn build_tray(app: &AppHandle, we_own_daemon: bool) -> Result<(), String> {
 
     let tray_menu = tauri::menu::MenuBuilder::new(app)
         .item(&open_item)
+        .item(&new_window_item)
         .item(&daemon_item)
         .item(&separator)
         .item(&quit_item)
@@ -422,9 +552,11 @@ fn build_tray(app: &AppHandle, we_own_daemon: bool) -> Result<(), String> {
             let id = event.id().0.as_str();
             match id {
                 "tray_open" => {
-                    if let Some(w) = app.get_webview_window("main") {
-                        let _ = w.show();
-                        let _ = w.set_focus();
+                    show_any_window(app);
+                }
+                "tray_new_window" => {
+                    if let Err(e) = spawn_new_window(app) {
+                        log::error!("Tray new window failed: {}", e);
                     }
                 }
                 "tray_restart" => {
@@ -458,17 +590,259 @@ fn build_tray(app: &AppHandle, we_own_daemon: bool) -> Result<(), String> {
                 ..
             } = event
             {
-                let app = tray.app_handle();
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.set_focus();
-                }
+                show_any_window(tray.app_handle());
             }
         })
         .build(app)
         .map_err(|e| format!("Failed to build tray icon: {}", e))?;
 
     Ok(())
+}
+
+// ============================================================================
+// WSL Detection & Daemon Management (Windows only)
+// ============================================================================
+
+/// Result of WSL detection: distro name and whether crispy-code is installed.
+#[allow(dead_code)]
+struct WslDetection {
+    distro: String,
+    crispy_installed: bool,
+    daemon_port: Option<u16>,
+}
+
+/// Detect the default WSL distro and check if crispy-code is available.
+#[cfg(windows)]
+fn detect_wsl() -> Option<WslDetection> {
+    // Run `wsl.exe -l -v` to list distros
+    let output = Command::new("wsl.exe")
+        .args(["-l", "-v"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    // wsl.exe -l -v outputs UTF-16LE on Windows
+    let stdout_bytes = &output.stdout;
+    let stdout = String::from_utf16_lossy(
+        &stdout_bytes.chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect::<Vec<u16>>()
+    );
+
+    // Parse lines: "  NAME    STATE   VERSION"
+    // Default distro has a '*' prefix
+    let mut default_distro: Option<String> = None;
+    for line in stdout.lines().skip(1) {
+        let trimmed = line.trim();
+        if trimmed.is_empty() { continue; }
+
+        let is_default = trimmed.starts_with('*');
+        let name_part = if is_default {
+            trimmed[1..].trim_start()
+        } else {
+            trimmed
+        };
+
+        // Extract distro name (first whitespace-delimited token)
+        let distro_name = name_part.split_whitespace().next()?;
+
+        // Check if it's running
+        let is_running = name_part.contains("Running");
+
+        if is_default || (default_distro.is_none() && is_running) {
+            default_distro = Some(distro_name.to_string());
+        }
+    }
+
+    let distro = default_distro?;
+
+    // Check if crispy-code is installed in the distro
+    let which_result = Command::new("wsl.exe")
+        .args(["-d", &distro, "-e", "which", "crispy-code"])
+        .output()
+        .ok();
+    let crispy_installed = which_result
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    // If installed, check for running daemon
+    let daemon_port = if crispy_installed {
+        Command::new("wsl.exe")
+            .args(["-d", &distro, "-e", "cat", &format!("{}/.crispy/run/crispy.port", "~")])
+            .output()
+            .ok()
+            .and_then(|o| {
+                if o.status.success() {
+                    String::from_utf8_lossy(&o.stdout).trim().parse::<u16>().ok()
+                } else {
+                    None
+                }
+            })
+    } else {
+        None
+    };
+
+    Some(WslDetection { distro, crispy_installed, daemon_port })
+}
+
+/// Spawn a crispy-code daemon inside WSL.
+#[cfg(windows)]
+async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
+    let _child = Command::new("wsl.exe")
+        .args([
+            "-d", distro,
+            "-e", "bash", "-lc",
+            "crispy-code _daemon --host 0.0.0.0",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn WSL daemon: {}", e))?;
+
+    // Poll for port file (up to 15s)
+    for _ in 0..75 {
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        let output = Command::new("wsl.exe")
+            .args(["-d", distro, "-e", "cat", "/tmp/.crispy-port-check"])
+            .output();
+
+        // Try reading port file via wsl.exe
+        if let Ok(out) = Command::new("wsl.exe")
+            .args(["-d", distro, "-e", "bash", "-c",
+                   "cat ~/.crispy/run/crispy.port 2>/dev/null"])
+            .output()
+        {
+            if out.status.success() {
+                if let Ok(port) = String::from_utf8_lossy(&out.stdout).trim().parse::<u16>() {
+                    // Verify health before returning
+                    if check_health(port).await {
+                        return Ok(port);
+                    }
+                }
+            }
+        }
+        // Suppress unused variable warning
+        let _ = output;
+    }
+
+    Err("WSL daemon did not start within 15 seconds".into())
+}
+
+/// Start WSL daemon detection and management after primary daemon is ready.
+#[cfg(windows)]
+fn start_wsl_daemon_manager(app_handle: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        // Short delay to let the primary daemon stabilize
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+        // Read WSL settings
+        // TODO: read from %APPDATA%\Crispy\settings.json for wslEnabled/wslDistro
+
+        let detection = detect_wsl();
+        let detection = match detection {
+            Some(d) => d,
+            None => {
+                log::info!("No WSL detected or WSL not available");
+                return;
+            }
+        };
+
+        log::info!("WSL detected: distro={}, crispy_installed={}", detection.distro, detection.crispy_installed);
+
+        if !detection.crispy_installed {
+            // Notify webview to show install card
+            let script = format!(
+                "if (typeof window.__CRISPY_MENU_ACTION__ === 'function') {{ window.__CRISPY_MENU_ACTION__('wsl_detected:{}:not_installed'); }}",
+                detection.distro
+            );
+            eval_all_windows(&app_handle, &script);
+            return;
+        }
+
+        // Try to connect to existing daemon or spawn a new one
+        let port = if let Some(port) = detection.daemon_port {
+            if check_health(port).await {
+                log::info!("WSL daemon already running on port {}", port);
+                port
+            } else {
+                match spawn_wsl_daemon(&detection.distro).await {
+                    Ok(p) => p,
+                    Err(e) => {
+                        log::error!("Failed to spawn WSL daemon: {}", e);
+                        return;
+                    }
+                }
+            }
+        } else {
+            match spawn_wsl_daemon(&detection.distro).await {
+                Ok(p) => p,
+                Err(e) => {
+                    log::error!("Failed to spawn WSL daemon: {}", e);
+                    return;
+                }
+            }
+        };
+
+        // Store WSL daemon state
+        {
+            let state = app_handle.state::<Mutex<AppState>>();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+            s.wsl_daemon = Some(DaemonState {
+                pid: None, // WSL PID not directly accessible from Windows
+                port,
+                we_own: true,
+                environment: DaemonEnv::Wsl,
+            });
+        }
+
+        // Notify webview about WSL daemon availability
+        let script = format!(
+            "if (typeof window.__CRISPY_MENU_ACTION__ === 'function') {{ window.__CRISPY_MENU_ACTION__('wsl_daemon_ready:{}:{}'); }}",
+            detection.distro, port
+        );
+        eval_all_windows(&app_handle, &script);
+
+        log::info!("WSL daemon ready at port {} (distro: {})", port, detection.distro);
+    });
+}
+
+/// Stub for non-Windows platforms.
+#[cfg(not(windows))]
+fn start_wsl_daemon_manager(_app_handle: AppHandle) {
+    // WSL detection only runs on Windows
+}
+
+/// Tauri command: install crispy-code in WSL (called from install card UI).
+#[cfg(windows)]
+#[tauri::command]
+async fn install_crispy_in_wsl(distro: String) -> Result<String, String> {
+    let output = tokio::process::Command::new("wsl.exe")
+        .args([
+            "-d", &distro,
+            "-e", "bash", "-lc",
+            "npm install -g crispy-code 2>&1",
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run install command: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+
+    if output.status.success() {
+        Ok(stdout)
+    } else {
+        Err(format!("Install failed (exit {}):\n{}", output.status, stdout))
+    }
+}
+
+#[cfg(not(windows))]
+#[tauri::command]
+async fn install_crispy_in_wsl(_distro: String) -> Result<String, String> {
+    Err("WSL install only available on Windows".into())
 }
 
 // ============================================================================
@@ -493,14 +867,15 @@ async fn restart_daemon(app: &AppHandle) {
             {
                 let state = app.state::<Mutex<AppState>>();
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                s.we_own_daemon = we_own;
-                s.daemon_pid = pid;
-                s.daemon_port = port;
+                s.primary_daemon = Some(DaemonState {
+                    pid,
+                    port,
+                    we_own,
+                    environment: DaemonEnv::Native,
+                });
             }
-            if let Some(window) = app.get_webview_window("main") {
-                if let Ok(url) = Url::parse(&format!("http://localhost:{}", port)) {
-                    let _ = window.navigate(url);
-                }
+            if let Ok(url) = Url::parse(&format!("http://localhost:{}", port)) {
+                navigate_all_windows(app, &url);
             }
         }
         Err(e) => {
@@ -512,43 +887,66 @@ async fn restart_daemon(app: &AppHandle) {
 async fn reconnect_daemon(app: &AppHandle) {
     if let Some(port) = read_port_file() {
         if check_health(port).await {
-            let state = app.state::<Mutex<AppState>>();
             {
+                let state = app.state::<Mutex<AppState>>();
                 let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                s.daemon_port = port;
-            }
-            if let Some(window) = app.get_webview_window("main") {
-                if let Ok(url) = Url::parse(&format!("http://localhost:{}", port)) {
-                    let _ = window.navigate(url);
+                if let Some(ref mut d) = s.primary_daemon {
+                    d.port = port;
+                } else {
+                    s.primary_daemon = Some(DaemonState {
+                        pid: read_pid_file(),
+                        port,
+                        we_own: false,
+                        environment: DaemonEnv::Native,
+                    });
                 }
+            }
+            if let Ok(url) = Url::parse(&format!("http://localhost:{}", port)) {
+                navigate_all_windows(app, &url);
             }
         }
     }
 }
 
+/// Kill a daemon process gracefully, then force-kill if still alive after 5s.
+fn kill_daemon_graceful(pid: u32) {
+    kill_daemon(pid);
+    for _ in 0..50 {
+        if !is_process_alive(pid) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    kill_daemon_signal(pid, true);
+}
+
 fn shutdown_daemon(app: &AppHandle) {
     let state = app.state::<Mutex<AppState>>();
-    let (we_own, pid) = {
-        let s = state.lock().unwrap_or_else(|e| e.into_inner());
-        (s.we_own_daemon, s.daemon_pid)
-    };
+    let s = state.lock().unwrap_or_else(|e| e.into_inner());
 
-    if we_own {
-        if let Some(pid) = pid {
-            kill_daemon(pid);
-
-            // Wait up to 5s for process to exit
-            for _ in 0..50 {
-                if !is_process_alive(pid) {
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(100));
+    if let Some(ref d) = s.primary_daemon {
+        if d.we_own {
+            if let Some(pid) = d.pid {
+                kill_daemon_graceful(pid);
             }
+        }
+    }
 
-            // Force kill (SIGKILL on Unix) if still alive
-            if is_process_alive(pid) {
-                kill_daemon_signal(pid, true);
-            }
+    // Shutdown WSL daemon if we own it
+    // WSL processes can't be killed via Windows taskkill — use wsl.exe
+    #[cfg(windows)]
+    if let Some(ref d) = s.wsl_daemon {
+        if d.we_own && d.port > 0 {
+            // Send shutdown request via HTTP
+            let port = d.port;
+            let _ = std::thread::spawn(move || {
+                let _ = Command::new("wsl.exe")
+                    .args(["-e", "bash", "-c",
+                           &format!("kill $(cat ~/.crispy/run/crispy.pid 2>/dev/null) 2>/dev/null")])
+                    .status();
+                // Suppress unused variable
+                let _ = port;
+            }).join();
         }
     }
 }
@@ -562,19 +960,16 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
+            show_any_window(app);
         }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .invoke_handler(tauri::generate_handler![set_window_title, create_window, install_crispy_in_wsl])
         .manage(Mutex::new(AppState {
-            we_own_daemon: false,
-            daemon_pid: None,
-            daemon_port: 0,
+            primary_daemon: None,
+            wsl_daemon: None,
             is_quitting: false,
         }))
         .setup(|app| {
@@ -634,7 +1029,7 @@ pub fn run() {
                 "main",
                 tauri::WebviewUrl::App("index.html".into()),
             )
-            .initialization_script("window.__CRISPY_DESKTOP__ = true;")
+            .initialization_script(WINDOW_INIT_SCRIPT)
             .title("Crispy")
             .inner_size(1200.0, 800.0)
             .min_inner_size(600.0, 400.0)
@@ -659,9 +1054,12 @@ pub fn run() {
                         {
                             let state = handle_for_spawn.state::<Mutex<AppState>>();
                             let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                            s.we_own_daemon = we_own;
-                            s.daemon_pid = pid;
-                            s.daemon_port = port;
+                            s.primary_daemon = Some(DaemonState {
+                                pid,
+                                port,
+                                we_own,
+                                environment: DaemonEnv::Native,
+                            });
                         }
 
                         // Navigate to daemon
@@ -676,7 +1074,10 @@ pub fn run() {
 
                         // Start background monitors
                         start_health_monitor(handle_for_spawn.clone());
-                        start_update_checker(handle_for_spawn);
+                        start_update_checker(handle_for_spawn.clone());
+
+                        // Start WSL daemon detection (Windows only, no-op elsewhere)
+                        start_wsl_daemon_manager(handle_for_spawn);
                     }
                     Err(e) => {
                         log::error!("Daemon startup failed: {}", e);
@@ -701,10 +1102,10 @@ pub fn run() {
                     label,
                     event: WindowEvent::CloseRequested { api, .. },
                     ..
-                } if label == "main" => {
+                } => {
                     // Hide window instead of closing — tray persists
                     api.prevent_close();
-                    if let Some(w) = app.get_webview_window("main") {
+                    if let Some(w) = app.get_webview_window(&label) {
                         let _ = w.hide();
                     }
                 }

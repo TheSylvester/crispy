@@ -113,7 +113,9 @@ export function SessionSelector(): React.JSX.Element {
       const labelMatch = s.label?.toLowerCase().includes(q) ?? false;
       const previewMatch = s.lastMessage?.toLowerCase().includes(q) ?? false;
       const lastUserMatch = s.lastUserPrompt?.toLowerCase().includes(q) ?? false;
-      return titleMatch || labelMatch || previewMatch || lastUserMatch;
+      const envMatch = s.remoteEnvironment?.toLowerCase().includes(q) ?? false;
+      const pathMatch = s.projectPath?.toLowerCase().includes(q) ?? false;
+      return titleMatch || labelMatch || previewMatch || lastUserMatch || envMatch || pathMatch;
     });
   }, [vendorFiltered, deferredQuery]);
 
