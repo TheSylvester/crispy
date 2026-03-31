@@ -227,7 +227,10 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
       try {
         const content = await readFile(filePath);
         const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
-        res.writeHead(200, { 'Content-Type': contentType });
+        res.writeHead(200, {
+          'Content-Type': contentType,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        });
         res.end(content);
       } catch {
         res.writeHead(404);
@@ -239,7 +242,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     // ---- Workspace routing ----
     if (pathname === '/') {
       // Root page: serve index.html without CWD meta tag (picker mode)
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache, no-store, must-revalidate' });
       res.end(indexHtml);
       return;
     }
@@ -268,7 +271,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
       '<meta charset="UTF-8">',
       `<meta charset="UTF-8">\n    <base href="/">\n    <meta name="crispy-cwd" content="${escapeHtmlAttr(resolvedPath)}">\n    <meta name="crispy-home" content="${escapeHtmlAttr(homedir())}">`,
     );
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache, no-store, must-revalidate' });
     res.end(injected);
   });
 

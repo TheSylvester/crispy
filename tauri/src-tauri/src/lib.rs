@@ -1232,6 +1232,20 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle().clone();
 
+            // Clear WebView2 cache on startup to ensure fresh JS is loaded.
+            // Without this, WebView2 serves stale cached main.js/styles.css
+            // even after the daemon restarts with a new bundle.
+            #[cfg(windows)]
+            {
+                if let Ok(data_dir) = app_handle.path().app_local_data_dir() {
+                    let cache_dir = data_dir.join("EBWebView").join("Default").join("Cache");
+                    if cache_dir.exists() {
+                        log::info!("Clearing WebView2 cache at {:?}", cache_dir);
+                        let _ = std::fs::remove_dir_all(&cache_dir);
+                    }
+                }
+            }
+
             // Build native menu
             match menu::build_menu(&app_handle) {
                 Ok(menu) => {
