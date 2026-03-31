@@ -118,7 +118,8 @@ Write-Host ">>> Creating WSL install tarball..." -ForegroundColor Yellow
 
 Push-Location "$RepoRoot"
 $PackOutput = npm pack --pack-destination "$TauriDir\$RuntimeDir" 2>&1
-$TarballName = ($PackOutput | Select-String "crispy-code-.*\.tgz" | ForEach-Object { $_.Matches.Value }) ?? ($PackOutput[-1])
+$TarballMatch = $PackOutput | Select-String "crispy-code-.*\.tgz" | ForEach-Object { $_.Matches.Value }
+$TarballName = if ($TarballMatch) { $TarballMatch } else { ($PackOutput | Select-Object -Last 1).Trim() }
 Pop-Location
 
 if (Test-Path "$TauriDir\$RuntimeDir\$TarballName") {
