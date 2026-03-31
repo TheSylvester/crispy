@@ -31,6 +31,15 @@ const ARCHIVE_THRESHOLD_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 
 // ---- WSL Install Card ----
 
+/** WSL lifecycle status from Tauri backend (matches Rust WslStatus enum). */
+type WslBackendStatus =
+  | { status: 'detecting' }
+  | { status: 'not_found' }
+  | { status: 'not_installed'; distro: string }
+  | { status: 'starting'; distro: string }
+  | { status: 'connected'; distro: string; port: number }
+  | { status: 'failed'; distro: string; error: string };
+
 type WslInstallState = 'idle' | 'installing' | 'success' | 'failed';
 
 function WslInstallCard({
@@ -355,8 +364,7 @@ export function WorkspacePicker(): React.JSX.Element {
   const [newPath, setNewPath] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [wslDistro, setWslDistro] = useState<string | null>(null);
-  const [wslDismissed, setWslDismissed] = useState<Set<string>>(new Set());
+  const [wslStatus, setWslStatus] = useState<WslBackendStatus | null>(null);
   const [pinnedPaths, setPinnedPaths] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState('');
   const [showArchived, setShowArchived] = useState(false);
@@ -377,47 +385,28 @@ export function WorkspacePicker(): React.JSX.Element {
     return () => document.removeEventListener('mousemove', onMove);
   }, []);
 
-  // Check WSL status on mount (Tauri desktop only) — polls stored state
-  // so it works regardless of when detection completes relative to page load.
+  // Poll WSL lifecycle status from Tauri backend.
+  // Polls every 2s until a terminal state (not_found, not_installed, connected, failed).
   useEffect(() => {
     const ipc = (window as any).__TAURI_INTERNALS__;
     if (!ipc) return;
 
-    // Poll every 2s for up to 20s — detection runs async after daemon starts
-    let attempts = 0;
+    const isTerminal = (s: WslBackendStatus) =>
+      s.status === 'not_found' || s.status === 'not_installed' ||
+      s.status === 'connected' || s.status === 'failed';
+
+    let cancelled = false;
     const poll = setInterval(async () => {
-      attempts++;
+      if (cancelled) return;
       try {
-        const distro = await ipc.invoke('get_wsl_status');
-        if (distro) {
-          setWslDistro(distro);
-          clearInterval(poll);
-        }
-      } catch { /* command not available or failed */ }
-      if (attempts >= 10) clearInterval(poll);
+        const status: WslBackendStatus = await ipc.invoke('get_wsl_status');
+        setWslStatus(status);
+        if (isTerminal(status)) clearInterval(poll);
+      } catch { /* command not available */ }
     }, 2000);
 
-    return () => clearInterval(poll);
+    return () => { cancelled = true; clearInterval(poll); };
   }, []);
-
-  // Also listen for the event (covers case where page is already loaded)
-  useEffect(() => {
-    const handler = (action: string) => {
-      if (action.startsWith('wsl_detected:') && action.endsWith(':not_installed')) {
-        const distro = action.split(':')[1];
-        setWslDistro(distro);
-      }
-    };
-    const prev = (window as any).__CRISPY_MENU_ACTION__;
-    (window as any).__CRISPY_MENU_ACTION__ = (action: string) => {
-      handler(action);
-      prev?.(action);
-    };
-    return () => { (window as any).__CRISPY_MENU_ACTION__ = prev; };
-  }, []);
-
-  // Dismissed WSL cards are session-only — reappear on app restart
-  // so the user gets another chance if they dismissed by accident.
 
   // Load pinned workspaces from localStorage
   useEffect(() => {
@@ -437,13 +426,8 @@ export function WorkspacePicker(): React.JSX.Element {
     });
   }, []);
 
-  const dismissWsl = useCallback((distro: string) => {
-    setWslDismissed(prev => {
-      const next = new Set(prev);
-      next.add(distro);
-      // Session-only — don't persist to localStorage
-      return next;
-    });
+  const dismissWsl = useCallback(() => {
+    setWslStatus(null);
   }, []);
 
   // Read flash message from URL query
@@ -520,15 +504,53 @@ export function WorkspacePicker(): React.JSX.Element {
           <div className="crispy-workspace-picker__error">{error}</div>
         )}
 
-        {wslDistro && !wslDismissed.has(wslDistro) && (
+        {wslStatus && wslStatus.status === 'not_installed' && (
           <WslInstallCard
-            distro={wslDistro}
-            onDismiss={() => dismissWsl(wslDistro)}
+            distro={wslStatus.distro}
+            onDismiss={dismissWsl}
             onInstallComplete={() => {
-              setWslDistro(null);
+              setWslStatus(null);
               loadWorkspaces();
             }}
           />
+        )}
+
+        {wslStatus && wslStatus.status === 'starting' && (
+          <div className="crispy-wsl-install-card">
+            <div className="crispy-wsl-install-card__title">
+              WSL ({wslStatus.distro})
+            </div>
+            <p className="crispy-wsl-install-card__desc">
+              Starting WSL daemon...
+            </p>
+          </div>
+        )}
+
+        {wslStatus && wslStatus.status === 'connected' && (
+          <div className="crispy-wsl-install-card">
+            <button className="crispy-wsl-install-card__dismiss" onClick={dismissWsl} title="Dismiss">&times;</button>
+            <div className="crispy-wsl-install-card__title">
+              WSL ({wslStatus.distro})
+            </div>
+            <p className="crispy-wsl-install-card__desc crispy-wsl-install-card__desc--success">
+              Connected on port {wslStatus.port}
+            </p>
+          </div>
+        )}
+
+        {wslStatus && wslStatus.status === 'failed' && (
+          <div className="crispy-wsl-install-card">
+            <button className="crispy-wsl-install-card__dismiss" onClick={dismissWsl} title="Dismiss">&times;</button>
+            <div className="crispy-wsl-install-card__title">
+              WSL ({wslStatus.distro})
+            </div>
+            <p className="crispy-wsl-install-card__desc crispy-wsl-install-card__desc--error">
+              {wslStatus.error}
+            </p>
+            <p className="crispy-wsl-install-card__desc" style={{ fontSize: '0.85em', opacity: 0.7 }}>
+              Check ~/.crispy/logs/wsl-daemon.log in WSL for details.
+            </p>
+          </div>
         )}
 
         {loading ? (

@@ -58,14 +58,31 @@ struct DaemonState {
     wsl_distro: Option<String>,
 }
 
+/// WSL lifecycle status, queryable from webview.
+#[derive(Clone, serde::Serialize)]
+#[serde(tag = "status")]
+enum WslStatus {
+    #[serde(rename = "detecting")]
+    Detecting,
+    #[serde(rename = "not_found")]
+    NotFound,
+    #[serde(rename = "not_installed")]
+    NotInstalled { distro: String },
+    #[serde(rename = "starting")]
+    Starting { distro: String },
+    #[serde(rename = "connected")]
+    Connected { distro: String, port: u16 },
+    #[serde(rename = "failed")]
+    Failed { distro: String, error: String },
+}
+
 struct AppState {
     primary_daemon: Option<DaemonState>,
     #[allow(dead_code)]
     wsl_daemon: Option<DaemonState>,   // Phase C: WSL remote daemon
     is_quitting: bool,
-    /// WSL distro name if detected but crispy-code not installed.
-    /// Cleared after install succeeds. Queryable by webview on demand.
-    wsl_needs_install: Option<String>,
+    /// WSL lifecycle status — replaces the old wsl_needs_install field.
+    wsl_status: WslStatus,
 }
 
 // ============================================================================
@@ -340,13 +357,13 @@ fn set_window_title(window: WebviewWindow, title: String) {
     let _ = window.set_title(&title);
 }
 
-/// Query WSL state — returns distro name if WSL needs install, null otherwise.
-/// Called by WorkspacePicker on mount so it doesn't depend on event timing.
+/// Query WSL lifecycle status — returns JSON with status, distro, port, error.
+/// Called by WorkspacePicker on mount and polled until terminal state.
 #[tauri::command]
-fn get_wsl_status(app: AppHandle) -> Option<String> {
+fn get_wsl_status(app: AppHandle) -> WslStatus {
     let state = app.state::<Mutex<AppState>>();
     let s = state.lock().unwrap_or_else(|e| e.into_inner());
-    s.wsl_needs_install.clone()
+    s.wsl_status.clone()
 }
 
 /// Create a new Crispy window pointed at the same daemon.
@@ -382,16 +399,34 @@ fn spawn_new_window(app: &AppHandle) -> Result<(), String> {
     let label = format!("window-{}", n);
 
     let target = format!("http://localhost:{}{}", port, current_path);
-    let target_url = Url::parse(&target)
-        .map_err(|e| format!("Invalid URL: {}", e))?;
 
-    // Use App("index.html") first, then async-navigate after WebView2 initializes.
-    // WebviewUrl::External opens a blank page because WebView2 isn't ready yet.
-    // The main window works because daemon startup delay gives WebView2 time to init.
-    let window = tauri::WebviewWindowBuilder::new(
+    // Navigate from JavaScript after index.html loads — guaranteed WebView2 is ready.
+    // Rust-side navigate() (sync or async-delayed) fires before WebView2 initializes,
+    // producing a blank page. The init script runs in-page after load, so it always works.
+    // Check origin to avoid re-redirecting once the daemon page loads.
+    let redirect_script = format!(
+        r#"window.__CRISPY_DESKTOP__ = true;
+(function() {{
+    var host = window.location.hostname;
+    if (host === 'tauri.localhost') {{
+        window.location.href = "{}";
+        return;
+    }}
+    var ipc = window.__TAURI_INTERNALS__;
+    if (!ipc) return;
+    new MutationObserver(function() {{
+        ipc.invoke('set_window_title', {{ title: document.title }}).catch(function() {{}});
+    }}).observe(document.querySelector('title') || document.head, {{
+        subtree: true, childList: true, characterData: true
+    }});
+}})();"#,
+        target
+    );
+
+    tauri::WebviewWindowBuilder::new(
             app, &label, tauri::WebviewUrl::App("index.html".into()),
         )
-        .initialization_script(WINDOW_INIT_SCRIPT)
+        .initialization_script(&redirect_script)
         .title("Crispy")
         .inner_size(1200.0, 800.0)
         .min_inner_size(600.0, 400.0)
@@ -406,12 +441,6 @@ fn spawn_new_window(app: &AppHandle) -> Result<(), String> {
         })
         .build()
         .map_err(|e| format!("Failed to create window: {}", e))?;
-
-    // Delay navigation to give WebView2 time to initialize
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        let _ = window.navigate(target_url);
-    });
 
     Ok(())
 }
@@ -699,7 +728,7 @@ fn detect_wsl() -> Option<WslDetection> {
 
     // Check if crispy-code is installed (global PATH or ~/.crispy/bin/)
     let which_result = Command::new("wsl.exe")
-        .args(["-d", &distro, "-e", "bash", "-lc",
+        .args(["-d", &distro, "-e", "bash", "-lic",
                "which crispy 2>/dev/null || test -x ~/.crispy/node_modules/.bin/crispy"])
         .output()
         .ok();
@@ -730,11 +759,14 @@ fn detect_wsl() -> Option<WslDetection> {
 /// Spawn a crispy-code daemon inside WSL.
 #[cfg(windows)]
 async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
+    // Use bash -lic (interactive login) so .bashrc is fully sourced — nvm, fnm, volta
+    // etc. only initialize in interactive shells. Without -i, node isn't in PATH.
+    // Redirect daemon output to a log file inside WSL for debugging.
     let mut cmd = Command::new("wsl.exe");
     cmd.args([
             "-d", distro,
-            "-e", "bash", "-lc",
-            "export PATH=$HOME/.crispy/node_modules/.bin:$PATH; crispy _daemon --host 0.0.0.0",
+            "-e", "bash", "-lic",
+            "mkdir -p ~/.crispy/logs; export PATH=$HOME/.crispy/node_modules/.bin:$PATH; crispy _daemon --host 0.0.0.0 >> ~/.crispy/logs/wsl-daemon.log 2>&1",
         ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
@@ -784,11 +816,18 @@ fn start_wsl_daemon_manager(app_handle: AppHandle) {
         // Read WSL settings
         // TODO: read from %APPDATA%\Crispy\settings.json for wslEnabled/wslDistro
 
+        let set_status = |handle: &AppHandle, status: WslStatus| {
+            let state = handle.state::<Mutex<AppState>>();
+            let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
+            s.wsl_status = status;
+        };
+
         let detection = detect_wsl();
         let detection = match detection {
             Some(d) => d,
             None => {
                 log::info!("No WSL detected or WSL not available");
+                set_status(&app_handle, WslStatus::NotFound);
                 return;
             }
         };
@@ -796,22 +835,13 @@ fn start_wsl_daemon_manager(app_handle: AppHandle) {
         log::info!("WSL detected: distro={}, crispy_installed={}", detection.distro, detection.crispy_installed);
 
         if !detection.crispy_installed {
-            // Store in AppState so webview can query via get_wsl_status command
-            {
-                let state = app_handle.state::<Mutex<AppState>>();
-                let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
-                s.wsl_needs_install = Some(detection.distro.clone());
-            }
-            // Also fire event for any already-loaded pages
-            let script = format!(
-                "if (typeof window.__CRISPY_MENU_ACTION__ === 'function') {{ window.__CRISPY_MENU_ACTION__('wsl_detected:{}:not_installed'); }}",
-                detection.distro
-            );
-            eval_all_windows(&app_handle, &script);
+            set_status(&app_handle, WslStatus::NotInstalled { distro: detection.distro.clone() });
             return;
         }
 
         // Try to connect to existing daemon or spawn a new one
+        set_status(&app_handle, WslStatus::Starting { distro: detection.distro.clone() });
+
         let port = if let Some(port) = detection.daemon_port {
             if check_health(port).await {
                 log::info!("WSL daemon already running on port {}", port);
@@ -821,6 +851,10 @@ fn start_wsl_daemon_manager(app_handle: AppHandle) {
                     Ok(p) => p,
                     Err(e) => {
                         log::error!("Failed to spawn WSL daemon: {}", e);
+                        set_status(&app_handle, WslStatus::Failed {
+                            distro: detection.distro.clone(),
+                            error: e.clone(),
+                        });
                         return;
                     }
                 }
@@ -830,6 +864,10 @@ fn start_wsl_daemon_manager(app_handle: AppHandle) {
                 Ok(p) => p,
                 Err(e) => {
                     log::error!("Failed to spawn WSL daemon: {}", e);
+                    set_status(&app_handle, WslStatus::Failed {
+                        distro: detection.distro.clone(),
+                        error: e.clone(),
+                    });
                     return;
                 }
             }
@@ -846,14 +884,11 @@ fn start_wsl_daemon_manager(app_handle: AppHandle) {
                 environment: DaemonEnv::Wsl,
                 wsl_distro: Some(detection.distro.clone()),
             });
+            s.wsl_status = WslStatus::Connected {
+                distro: detection.distro.clone(),
+                port,
+            };
         }
-
-        // Notify webview about WSL daemon availability
-        let script = format!(
-            "if (typeof window.__CRISPY_MENU_ACTION__ === 'function') {{ window.__CRISPY_MENU_ACTION__('wsl_daemon_ready:{}:{}'); }}",
-            detection.distro, port
-        );
-        eval_all_windows(&app_handle, &script);
 
         log::info!("WSL daemon ready at port {} (distro: {})", port, detection.distro);
     });
@@ -1021,7 +1056,7 @@ pub fn run() {
             primary_daemon: None,
             wsl_daemon: None,
             is_quitting: false,
-            wsl_needs_install: None,
+            wsl_status: WslStatus::Detecting,
         }))
         .setup(|app| {
             let app_handle = app.handle().clone();
