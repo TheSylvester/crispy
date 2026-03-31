@@ -8,6 +8,7 @@
  * @module main
  */
 
+alert('[RC5] main.tsx loaded — JS bundle is FRESH');
 import { createRoot } from 'react-dom/client';
 import type { Transport } from './transport.js';
 import { createVSCodeTransport } from './transport-vscode.js';
