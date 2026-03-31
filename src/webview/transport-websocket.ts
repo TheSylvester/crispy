@@ -143,6 +143,11 @@ export function createWebSocketTransport(url: string): SessionService {
       request<{ previousSessionId: string; sessionId: string }>('switchSession', params),
 
     openPanel: async (params) => {
+      const ipc = (window as any).__TAURI_INTERNALS__;
+      if (ipc) {
+        await ipc.invoke('create_window', { query: `sessionId=${encodeURIComponent(params.sessionId)}` });
+        return { ok: true };
+      }
       const url = new URL(window.location.pathname, window.location.origin);
       url.searchParams.set('sessionId', params.sessionId);
       window.open(url.toString(), '_blank');
@@ -150,15 +155,30 @@ export function createWebSocketTransport(url: string): SessionService {
     },
 
     forkToNewPanel: async (params) => {
-      // Browser dev-server: open fork in a new tab via window.open()
+      const qp = new URLSearchParams();
+      qp.set('forkFrom', params.fromSessionId);
+      if (params.atMessageId) qp.set('forkAt', params.atMessageId);
+      if (params.initialPrompt) qp.set('prompt', params.initialPrompt);
+      if (params.model) qp.set('model', params.model);
+      if (params.agencyMode) qp.set('agency', params.agencyMode);
+      if (params.bypassEnabled) qp.set('bypass', '1');
+      if (params.chromeEnabled) qp.set('chrome', '1');
+
+      const ipc = (window as any).__TAURI_INTERNALS__;
+      if (ipc) {
+        try {
+          await ipc.invoke('create_window', { query: qp.toString() });
+        } catch (err) {
+          console.error('[forkToNewPanel] Tauri invoke failed:', err);
+          // Fallback: try window.open
+          const url = new URL(window.location.pathname, window.location.origin);
+          url.search = qp.toString();
+          window.open(url.toString(), '_blank');
+        }
+        return { ok: true };
+      }
       const url = new URL(window.location.pathname, window.location.origin);
-      url.searchParams.set('forkFrom', params.fromSessionId);
-      if (params.atMessageId) url.searchParams.set('forkAt', params.atMessageId);
-      if (params.initialPrompt) url.searchParams.set('prompt', params.initialPrompt);
-      if (params.model) url.searchParams.set('model', params.model);
-      if (params.agencyMode) url.searchParams.set('agency', params.agencyMode);
-      if (params.bypassEnabled) url.searchParams.set('bypass', '1');
-      if (params.chromeEnabled) url.searchParams.set('chrome', '1');
+      url.search = qp.toString();
       window.open(url.toString(), '_blank');
       return { ok: true };
     },

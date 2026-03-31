@@ -405,6 +405,7 @@ fn spawn_new_window(app: &AppHandle, query: Option<&str>) {
 
     let n = WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed);
     let label = format!("window-{}", n);
+    log::info!("spawn_new_window: path={:?} query={:?}", current_path, query);
     let target = match query {
         Some(q) if !q.is_empty() => format!("http://localhost:{}{}?{}", port, current_path, q),
         _ => format!("http://localhost:{}{}", port, current_path),
