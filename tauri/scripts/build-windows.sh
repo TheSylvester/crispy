@@ -10,6 +10,10 @@ WIN_REPO='C:\winDev\crispy'
 # Git for Windows provides cp/rm/chmod needed by npm scripts
 GIT_UNIX='C:\Program Files\Git\usr\bin'
 
+# Always delete runtime cache so fresh webview code gets bundled
+echo "=== Clearing runtime cache ==="
+powershell.exe -Command "if (Test-Path '$WIN_REPO\tauri\src-tauri\runtime') { Remove-Item -Recurse -Force '$WIN_REPO\tauri\src-tauri\runtime'; Write-Host 'Deleted stale runtime/' } else { Write-Host 'No cache to clear' }"
+
 # Sync current branch to Windows clone
 BRANCH="$(git branch --show-current)"
 echo "=== Syncing branch '$BRANCH' to Windows clone ==="

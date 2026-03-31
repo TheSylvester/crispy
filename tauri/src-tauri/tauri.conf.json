@@ -1,6 +1,6 @@
 {
   "productName": "Crispy",
-  "version": "0.2.9",
+  "version": "0.2.9-rc.1",
   "identifier": "io.github.thesylvester.crispy",
   "build": {
     "frontendDist": "../src-frontend/"
@@ -25,7 +25,7 @@
       "runtime/**/*"
     ],
     "createUpdaterArtifacts": false,
-    "targets": "all",
+    "targets": ["nsis"],
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
