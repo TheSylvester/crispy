@@ -3979,12 +3979,13 @@ h2 {
   border-top-right-radius: 0;
   border-bottom-right-radius: 0;
   margin-right: 0;
+  padding-right: 6px;
 }
 
 .crispy-titlebar__new-chevron {
   display: flex;
   align-items: center;
-  padding: 4px 5px !important;
+  padding: 4px 3px !important;
   background: var(--vscode-button-secondaryBackground, #3a3d41);
   color: var(--vscode-button-secondaryForeground, #d4d4d4);
   border: none;

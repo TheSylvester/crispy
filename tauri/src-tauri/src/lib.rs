@@ -343,10 +343,13 @@ async fn start_or_attach_daemon(
     node_bin: &PathBuf,
     cli_js: &PathBuf,
 ) -> Result<(u16, bool, Option<u32>), String> {
-    // Check for an existing healthy daemon
-    if let Some(port) = read_port_file() {
-        if check_health(port).await {
-            return Ok((port, false, read_pid_file()));
+    // Always kill any existing daemon and start fresh. The desktop app bundles
+    // its own daemon runtime — attaching to a stale daemon from a previous
+    // install serves old JS and causes silent failures (no alerts, stale UI).
+    if let Some(pid) = read_pid_file() {
+        if is_process_alive(pid) {
+            log::info!("Killing existing daemon (pid={}) to ensure fresh runtime", pid);
+            kill_daemon_graceful(pid);
         }
     }
 
@@ -1177,19 +1180,20 @@ fn shutdown_daemon(app: &AppHandle) {
     let state = app.state::<Mutex<AppState>>();
     let s = state.lock().unwrap_or_else(|e| e.into_inner());
 
+    // Always kill the primary daemon on quit — even if we attached to an existing one.
+    // The desktop app IS the daemon lifecycle owner. If someone restarts and we left
+    // a stale daemon, the new app attaches to it and serves old JS.
     if let Some(ref d) = s.primary_daemon {
-        if d.we_own {
-            if let Some(pid) = d.pid {
-                kill_daemon_graceful(pid);
-            }
+        if let Some(pid) = d.pid {
+            kill_daemon_graceful(pid);
         }
     }
 
-    // Shutdown WSL daemon if we own it
+    // Always kill WSL daemon too.
     // WSL processes can't be killed via Windows taskkill — use wsl.exe
     #[cfg(windows)]
     if let Some(ref d) = s.wsl_daemon {
-        if d.we_own && d.port > 0 {
+        if d.port > 0 {
             if let Some(ref distro) = d.wsl_distro {
                 let distro = distro.clone();
                 let _ = std::thread::spawn(move || {

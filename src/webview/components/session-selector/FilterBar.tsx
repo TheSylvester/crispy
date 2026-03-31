@@ -77,22 +77,22 @@ export function FilterBar({
 
   return (
     <div className="crispy-filter-bar">
-      {availableCwds.length > 0 && (
-        <select
-          className="crispy-filter-bar__cwd"
-          value={selectedCwd ?? ''}
-          onChange={handleCwdChange}
-          title="Filter by project"
-        >
-          <option value="">All Projects</option>
-          {availableCwds.map(cwd => (
-            <option key={cwd.slug} value={cwd.slug} title={cwd.fullPath}>
-              {cwd.display}
-            </option>
-          ))}
-        </select>
-      )}
       <div className="crispy-filter-bar__tabs">
+        {availableCwds.length > 0 && (
+          <select
+            className="crispy-filter-bar__cwd"
+            value={selectedCwd ?? ''}
+            onChange={handleCwdChange}
+            title="Filter by project"
+          >
+            <option value="">All Projects</option>
+            {availableCwds.map(cwd => (
+              <option key={cwd.slug} value={cwd.slug} title={cwd.fullPath}>
+                {cwd.display}
+              </option>
+            ))}
+          </select>
+        )}
         <div className="crispy-filter-bar__tab-spacer" />
         <VendorChips
           availableVendors={availableVendors}
