@@ -1006,7 +1006,12 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     // --- Fork execution (shared between control panel button and per-message buttons) ---
     const executeFork = useCallback((atMessageId: string) => {
-      if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
+      // DEBUG: visible diagnostic via title
+      document.title = `[FORK] executeFork called, session=${selectedSessionId?.slice(0,8)}, at=${atMessageId?.slice(0,8)}`;
+      if (!selectedSessionId || selectedSessionId.startsWith('pending:')) {
+        document.title = `[FORK] BAILED: session=${selectedSessionId}`;
+        return;
+      }
 
       // Clear fork preview glow — mouseLeave won't fire since we're switching panels
       document.querySelectorAll('.message.crispy-fork-preview').forEach(el =>
@@ -1066,8 +1071,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     }, [channelState, entries, selectedSessionId]);
 
     const handleFork = useCallback(() => {
+      document.title = `[FORK] handleFork: session=${selectedSessionId?.slice(0,8)}, target=${forkTargetRef.current?.slice(0,8) ?? 'NONE'}`;
       if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
       if (forkTargetRef.current) executeFork(forkTargetRef.current);
+      else document.title = '[FORK] BAILED: no forkTargetRef';
     }, [selectedSessionId, executeFork]);
 
     const handleForkHover = useCallback(
