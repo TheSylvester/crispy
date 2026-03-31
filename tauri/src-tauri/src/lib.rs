@@ -48,6 +48,7 @@ enum DaemonEnv {
 }
 
 /// State for a single daemon instance.
+#[allow(dead_code)]
 struct DaemonState {
     pid: Option<u32>,
     port: u16,
@@ -342,6 +343,7 @@ fn create_window(app: AppHandle) -> Result<(), String> {
 }
 
 /// Shared window creation logic — used by Tauri command, menu handler, and tray.
+/// Opens a new window pointed at the same workspace as the currently focused window.
 fn spawn_new_window(app: &AppHandle) -> Result<(), String> {
     let port = {
         let state = app.state::<Mutex<AppState>>();
@@ -352,13 +354,20 @@ fn spawn_new_window(app: &AppHandle) -> Result<(), String> {
         return Err("No daemon running".into());
     }
 
+    // Grab the focused window's URL to preserve the workspace path.
+    // e.g. http://localhost:3456/dev-crispy/ → new window opens same workspace.
+    let current_path = focused_window(app)
+        .and_then(|w| w.url().ok())
+        .and_then(|u| {
+            let path = u.path().to_string();
+            if path.len() > 1 { Some(path) } else { None }
+        })
+        .unwrap_or_default();
+
     let n = WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed);
     let label = format!("window-{}", n);
 
-    let url = Url::parse(&format!("http://localhost:{}", port))
-        .map_err(|e| format!("Invalid URL: {}", e))?;
-
-    tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::External(url))
+    let window = tauri::WebviewWindowBuilder::new(app, &label, tauri::WebviewUrl::App("index.html".into()))
         .initialization_script(WINDOW_INIT_SCRIPT)
         .title("Crispy")
         .inner_size(1200.0, 800.0)
@@ -374,6 +383,12 @@ fn spawn_new_window(app: &AppHandle) -> Result<(), String> {
         })
         .build()
         .map_err(|e| format!("Failed to create window: {}", e))?;
+
+    // Navigate to same workspace as the focused window
+    let target = format!("http://localhost:{}{}", port, current_path);
+    if let Ok(url) = Url::parse(&target) {
+        let _ = window.navigate(url);
+    }
 
     Ok(())
 }
@@ -659,9 +674,10 @@ fn detect_wsl() -> Option<WslDetection> {
 
     let distro = default_distro?;
 
-    // Check if crispy-code is installed in the distro
+    // Check if crispy-code is installed (global PATH or ~/.crispy/bin/)
     let which_result = Command::new("wsl.exe")
-        .args(["-d", &distro, "-e", "which", "crispy-code"])
+        .args(["-d", &distro, "-e", "bash", "-lc",
+               "which crispy-code 2>/dev/null || test -x ~/.crispy/bin/crispy-code"])
         .output()
         .ok();
     let crispy_installed = which_result
@@ -695,7 +711,7 @@ async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
         .args([
             "-d", distro,
             "-e", "bash", "-lc",
-            "crispy-code _daemon --host 0.0.0.0",
+            "export PATH=$HOME/.crispy/bin:$PATH; crispy-code _daemon --host 0.0.0.0",
         ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -824,7 +840,7 @@ async fn install_crispy_in_wsl(distro: String) -> Result<String, String> {
         .args([
             "-d", &distro,
             "-e", "bash", "-lc",
-            "npm install -g crispy-code 2>&1",
+            "mkdir -p ~/.crispy/bin && npm install --prefix ~/.crispy crispy-code 2>&1 && ln -sf ~/.crispy/node_modules/.bin/crispy-code ~/.crispy/bin/crispy-code 2>&1",
         ])
         .output()
         .await

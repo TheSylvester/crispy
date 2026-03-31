@@ -55,7 +55,6 @@ function WslInstallCard({
       const result = await ipc.invoke('install_crispy_in_wsl', { distro });
       setOutput(result);
       setState('success');
-      // Auto-dismiss after success, trigger workspace rescan
       setTimeout(() => onInstallComplete(), 3000);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -92,20 +91,20 @@ function WslInstallCard({
 
       {state === 'installing' && (
         <p className="crispy-wsl-install-card__desc">
-          Running npm install... this may take a minute.
+          Installing to ~/.crispy/... this may take a minute.
         </p>
       )}
 
       {state === 'success' && (
         <p className="crispy-wsl-install-card__desc crispy-wsl-install-card__desc--success">
-          crispy-code installed in WSL ({distro})
+          crispy-code installed in WSL ({distro}). Restart Crispy to connect.
         </p>
       )}
 
       {state === 'failed' && (
         <>
           <p className="crispy-wsl-install-card__desc crispy-wsl-install-card__desc--error">
-            Install failed. Check that Node.js is installed in your WSL environment.
+            Install failed. Check that Node.js is installed in WSL.
           </p>
           <div className="crispy-wsl-install-card__actions">
             {showLog && (

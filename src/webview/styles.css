@@ -6261,6 +6261,23 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   color: #f44;
 }
 
+.crispy-wsl-install-card__command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.crispy-wsl-install-card__command code {
+  flex: 1;
+  font-family: var(--monospace);
+  font-size: 12px;
+  color: var(--text-primary, #ccc);
+}
+
 .crispy-wsl-install-card__actions {
   display: flex;
   flex-wrap: wrap;
