@@ -27,58 +27,32 @@ window.__CRISPY_DESKTOP__ = true;
 (function() {
     var ipc = window.__TAURI_INTERNALS__;
 
-    if (!ipc) {
-        // DEBUG: visible diagnostic — confirms IPC is unavailable on this page.
-        // Remove once fork/new-window is working.
-        alert('[Crispy DIAG] __TAURI_INTERNALS__ is NULL at ' + location.href);
-        return;
-    }
+    if (!ipc) return;
 
-    // Title bridge + command channel.
-    // Page JS can send commands by setting document.title to "__CMD__:command:arg"
-    // — the observer intercepts it, calls ipc.invoke(), and restores the original title.
-    // The `path` param carries window.location.pathname so Rust can open new windows
-    // at the correct workspace (Tauri's window.url() doesn't track SPA pushState).
-    var realTitle = '';
+    // Direct IPC bridge — page JS calls window.__CRISPY_CREATE_WINDOW__(query)
+    // instead of the unreliable title command channel (MutationObserver doesn't
+    // fire reliably in WebView2 for programmatic document.title changes).
+    window.__CRISPY_CREATE_WINDOW__ = function(query) {
+        return ipc.invoke('create_window', {
+            query: query || null,
+            path: window.location.pathname || null
+        });
+    };
+
+    // Title bridge — sync document.title to native window title.
     new MutationObserver(function() {
-        var t = document.title;
-        if (t.startsWith('__CMD__:')) {
-            var sep = t.indexOf(':', 7);
-            var cmd = sep > 0 ? t.slice(7, sep) : t.slice(7);
-            var arg = sep > 0 ? t.slice(sep + 1) : '';
-            if (cmd === 'create_window') {
-                alert('[Crispy DIAG] create_window command seen: path=' + window.location.pathname + ' query=' + (arg || ''));
-                ipc.invoke('create_window', {
-                    query: arg || null,
-                    path: window.location.pathname || null
-                }).then(function() {
-                    alert('[Crispy DIAG] create_window IPC invoke ok');
-                }).catch(function(e) {
-                    alert('[Crispy DIAG] create_window IPC failed: ' + e.message);
-                });
-            }
-            document.title = realTitle;
-            return;
-        }
-        realTitle = t;
-        ipc.invoke('set_window_title', { title: t }).catch(function() {});
+        ipc.invoke('set_window_title', { title: document.title }).catch(function() {});
     }).observe(document.querySelector('title') || document.head, {
         subtree: true, childList: true, characterData: true
     });
 
     // Handle menu actions dispatched from Rust via window.eval().
-    // The React app may override this later for its own actions.
     window.__CRISPY_MENU_ACTION__ = function(action) {
         if (action === 'new_window') {
-            alert('[Crispy DIAG] new_window menu action seen: path=' + window.location.pathname);
             ipc.invoke('create_window', {
                 query: null,
                 path: window.location.pathname || null
-            }).then(function() {
-                alert('[Crispy DIAG] new_window IPC invoke ok');
-            }).catch(function(e) {
-                alert('[Crispy DIAG] new_window IPC failed: ' + e.message);
-            });
+            }).catch(function() {});
         }
     };
 })();

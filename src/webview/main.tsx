@@ -8,15 +8,6 @@
  * @module main
  */
 
-// DEBUG: visible DOM banner — alert() is suppressed by WebView2
-if ((window as any).__CRISPY_DESKTOP__) {
-  const _d = document.createElement('div');
-  _d.id = 'crispy-diag-banner';
-  _d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999999;background:red;color:white;padding:8px;font:bold 14px monospace;text-align:center;pointer-events:none;';
-  _d.textContent = `[RC8] JS FRESH | IPC: ${!!(window as any).__TAURI_INTERNALS__} | ${location.href}`;
-  requestAnimationFrame(() => document.body?.appendChild(_d));
-  setTimeout(() => _d.remove(), 15000); // auto-remove after 15s
-}
 import { createRoot } from 'react-dom/client';
 import type { Transport } from './transport.js';
 import { createVSCodeTransport } from './transport-vscode.js';

@@ -19,15 +19,6 @@ import type { GitDiffResult } from '../core/git-diff-service.js';
 import type { InputCommand } from '../core/input-command-service.js';
 import { float32ToBase64 } from './utils/encoding.js';
 
-/** DEBUG: DOM-based diagnostic since alert() is suppressed in WebView2. */
-function showDiag(msg: string): void {
-  const d = document.createElement('div');
-  d.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999999;background:#c00;color:#fff;padding:8px;font:bold 13px monospace;text-align:center;';
-  d.textContent = msg;
-  document.body?.appendChild(d);
-  setTimeout(() => d.remove(), 10000);
-}
-
 /** Pending request awaiting a response. */
 interface PendingRequest {
   resolve: (result: unknown) => void;
@@ -152,10 +143,10 @@ export function createWebSocketTransport(url: string): SessionService {
       request<{ previousSessionId: string; sessionId: string }>('switchSession', params),
 
     openPanel: async (params) => {
-      if ((window as any).__CRISPY_DESKTOP__) {
-        const ipc = !!(window as any).__TAURI_INTERNALS__;
-        showDiag(`openPanel: IPC=${ipc} sessionId=${params.sessionId}`);
-        document.title = `__CMD__:create_window:sessionId=${encodeURIComponent(params.sessionId)}`;
+      if ((window as any).__CRISPY_CREATE_WINDOW__) {
+        // Tauri: direct IPC via init script bridge
+        const query = `sessionId=${encodeURIComponent(params.sessionId)}`;
+        await (window as any).__CRISPY_CREATE_WINDOW__(query);
         return { ok: true };
       }
       const url = new URL(window.location.pathname, window.location.origin);
@@ -174,10 +165,9 @@ export function createWebSocketTransport(url: string): SessionService {
       if (params.bypassEnabled) qp.set('bypass', '1');
       if (params.chromeEnabled) qp.set('chrome', '1');
 
-      if ((window as any).__CRISPY_DESKTOP__) {
-        const ipc = !!(window as any).__TAURI_INTERNALS__;
-        showDiag(`forkToNewPanel: IPC=${ipc} query=${qp.toString()}`);
-        document.title = `__CMD__:create_window:${qp.toString()}`;
+      if ((window as any).__CRISPY_CREATE_WINDOW__) {
+        // Tauri: direct IPC via init script bridge
+        await (window as any).__CRISPY_CREATE_WINDOW__(qp.toString());
         return { ok: true };
       }
       // Dev server / browser fallback
