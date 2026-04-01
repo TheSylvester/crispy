@@ -381,6 +381,16 @@ export function TitleBar(): React.JSX.Element {
     }
   }, [toolPanelOpen, sidebarView, setToolPanelOpen, setSidebarView]);
 
+  // Listen for native menu actions dispatched via CustomEvent from Tauri init script
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const action = (e as CustomEvent).detail?.action;
+      if (action === 'new_session') handleNew();
+    };
+    window.addEventListener('crispy-menu', handler);
+    return () => window.removeEventListener('crispy-menu', handler);
+  }, [handleNew]);
+
   // Alt+T / Alt+F keyboard shortcuts — toggle sidebar views
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -432,8 +442,14 @@ export function TitleBar(): React.JSX.Element {
 
   return (
     <header className="crispy-titlebar">
-      {/* App icon — brand presence, no dropdown yet */}
-      <AppIcon />
+      {/* App icon — click to return to workspace picker */}
+      {envKind === 'websocket' ? (
+        <a href="/" className="crispy-titlebar__brand-link" title="Switch workspace">
+          <AppIcon />
+        </a>
+      ) : (
+        <AppIcon />
+      )}
 
       {/* Left — Projects + Conversations dropdowns share a positioning wrapper */}
       <div className="crispy-session-dropdown-container" ref={dropdownContainerRef}>

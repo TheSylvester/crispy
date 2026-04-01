@@ -58,6 +58,17 @@ window.__CRISPY_DESKTOP__ = true;
                 query: null,
                 path: window.location.pathname || null
             }).catch(function() {});
+        } else if (action === 'new_session') {
+            // Dispatch a custom event the React app can listen to
+            window.dispatchEvent(new CustomEvent('crispy-menu', { detail: { action: 'new_session' } }));
+        } else if (action === 'switch_workspace') {
+            // Navigate to workspace picker
+            var loc = window.location;
+            if (loc.hostname === 'localhost' && loc.port) {
+                loc.href = 'http://localhost:' + loc.port + '/';
+            }
+        } else if (action.indexOf('update_available:') === 0 || action === 'daemon_crashed') {
+            window.dispatchEvent(new CustomEvent('crispy-menu', { detail: { action: action } }));
         }
     };
 })();
@@ -535,7 +546,7 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
     let id = event.id().0.as_str();
 
     match id {
-        "new_session" | "toggle_sidebar" | "settings" | "zoom_in" | "zoom_out" | "zoom_reset" => {
+        "new_session" | "switch_workspace" => {
             if let Some(window) = focused_window(app) {
                 dispatch_menu_action(&window, id);
             }

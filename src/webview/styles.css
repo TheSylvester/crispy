@@ -4075,6 +4075,17 @@ h2 {
   font-family: Georgia, 'Times New Roman', 'Noto Serif', serif;
 }
 
+.crispy-titlebar__brand-link {
+  text-decoration: none;
+  color: inherit;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.crispy-titlebar__brand-link:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .crispy-titlebar__brand-sep {
   width: 1px;
   height: 16px;

@@ -17,8 +17,6 @@ pub fn build_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
         let app_menu = SubmenuBuilder::new(app, "Crispy")
             .about(None)
             .separator()
-            .item(&MenuItemBuilder::with_id("settings", "Settings").accelerator("CmdOrCtrl+,").build(app)?)
-            .separator()
             .hide()
             .hide_others()
             .show_all()
@@ -40,6 +38,11 @@ pub fn build_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
                 .build(app)?,
         )
         .separator()
+        .item(
+            &MenuItemBuilder::with_id("switch_workspace", "Switch Workspace")
+                .build(app)?,
+        )
+        .separator()
         .close_window()
         .build()?;
 
@@ -53,29 +56,7 @@ pub fn build_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
         .select_all()
         .build()?;
 
-    let view_menu = SubmenuBuilder::new(app, "View")
-        .item(
-            &MenuItemBuilder::with_id("toggle_sidebar", "Toggle Sidebar")
-                .accelerator("CmdOrCtrl+B")
-                .build(app)?,
-        )
-        .separator()
-        .item(
-            &MenuItemBuilder::with_id("zoom_reset", "Actual Size")
-                .accelerator("CmdOrCtrl+0")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("zoom_in", "Zoom In")
-                .accelerator("CmdOrCtrl+=")
-                .build(app)?,
-        )
-        .item(
-            &MenuItemBuilder::with_id("zoom_out", "Zoom Out")
-                .accelerator("CmdOrCtrl+-")
-                .build(app)?,
-        )
-        .build()?;
+    // View menu removed — sidebar/zoom controls live in the webview UI
 
     let window_menu = SubmenuBuilder::new(app, "Window")
         .minimize()
@@ -92,7 +73,6 @@ pub fn build_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
 
     menu.item(&file_menu)
         .item(&edit_menu)
-        .item(&view_menu)
         .item(&window_menu)
         .item(&help_menu)
         .build()
