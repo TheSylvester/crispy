@@ -10,11 +10,18 @@
  * @module workspace-roots
  */
 
+import { platform } from 'os';
 import { log } from './log.js';
 import { getDb } from './crispy-db.js';
 import { dbPath } from './paths.js';
 import { normalizePath } from './url-path-resolver.js';
 import type { SessionInfo } from './agent-adapter.js';
+
+/** True if a path belongs to a different OS (Unix path on Windows, or vice versa). */
+function isForeignPath(p: string): boolean {
+  if (platform() === 'win32') return p.startsWith('/');
+  return /^[A-Za-z]:\\/.test(p);
+}
 
 // ============================================================================
 // Types
@@ -119,6 +126,9 @@ export function listAllWorkspaces(sessions: SessionInfo[]): WorkspaceInfo[] {
   // Session-derived paths + activity timestamps
   for (const session of sessions) {
     if (!session.projectPath) continue;
+    // Skip sessions from a different OS — e.g. WSL sessions with Unix paths
+    // scanned by the Windows daemon via shared ~/.claude/projects/
+    if (isForeignPath(session.projectPath)) continue;
     const normalized = normalizePath(session.projectPath);
     const ts = session.modifiedAt instanceof Date
       ? session.modifiedAt.getTime()
