@@ -4076,9 +4076,14 @@ h2 {
 }
 
 .crispy-titlebar__brand-link {
-  text-decoration: none;
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
   color: inherit;
   border-radius: 4px;
+  cursor: pointer;
   transition: background 0.15s;
 }
 

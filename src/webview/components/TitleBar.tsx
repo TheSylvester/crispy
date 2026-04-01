@@ -444,9 +444,23 @@ export function TitleBar(): React.JSX.Element {
     <header className="crispy-titlebar">
       {/* App icon — click to return to workspace picker */}
       {envKind === 'websocket' ? (
-        <a href="/" className="crispy-titlebar__brand-link" title="Switch workspace">
+        <button
+          className="crispy-titlebar__brand-link"
+          title="Switch workspace"
+          onClick={() => {
+            const ipc = (window as any).__TAURI_INTERNALS__;
+            if (ipc) {
+              // Tauri: let Rust navigate to the primary daemon's root
+              ipc.invoke('switch_to_picker').catch(() => {
+                window.location.href = '/';
+              });
+            } else {
+              window.location.href = '/';
+            }
+          }}
+        >
           <AppIcon />
-        </a>
+        </button>
       ) : (
         <AppIcon />
       )}

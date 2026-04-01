@@ -61,12 +61,6 @@ window.__CRISPY_DESKTOP__ = true;
         } else if (action === 'new_session') {
             // Dispatch a custom event the React app can listen to
             window.dispatchEvent(new CustomEvent('crispy-menu', { detail: { action: 'new_session' } }));
-        } else if (action === 'switch_workspace') {
-            // Navigate to workspace picker
-            var loc = window.location;
-            if (loc.hostname === 'localhost' && loc.port) {
-                loc.href = 'http://localhost:' + loc.port + '/';
-            }
         } else if (action.indexOf('update_available:') === 0 || action === 'daemon_crashed') {
             window.dispatchEvent(new CustomEvent('crispy-menu', { detail: { action: action } }));
         }
@@ -408,6 +402,25 @@ fn get_wsl_status(app: AppHandle) -> WslStatus {
     s.wsl_status.clone()
 }
 
+/// Navigate the calling window to the primary daemon's workspace picker.
+/// Used by the logo click — ensures we always land on the native daemon,
+/// not the WSL daemon (which would cause duplicate workspace entries).
+#[tauri::command]
+fn switch_to_picker(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+    let port = {
+        let state = app.state::<Mutex<AppState>>();
+        let s = state.lock().unwrap_or_else(|e| e.into_inner());
+        s.primary_daemon.as_ref().map_or(0, |d| d.port)
+    };
+    if port == 0 {
+        return Err("No daemon running".into());
+    }
+    let url = Url::parse(&format!("http://localhost:{}/", port))
+        .map_err(|e| format!("Invalid URL: {}", e))?;
+    let _ = window.navigate(url);
+    Ok(())
+}
+
 /// Create a new Crispy window pointed at the same daemon.
 /// Called from menu, tray, keyboard shortcut, or webview split button.
 /// Optional `query` param carries fork/openPanel URL params (e.g. "forkFrom=X&forkAt=Y").
@@ -546,9 +559,25 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
     let id = event.id().0.as_str();
 
     match id {
-        "new_session" | "switch_workspace" => {
+        "new_session" => {
             if let Some(window) = focused_window(app) {
                 dispatch_menu_action(&window, id);
+            }
+        }
+        "switch_workspace" => {
+            // Always navigate to the primary (native) daemon's root — not the
+            // current window's port, which may be the WSL daemon.
+            let port = {
+                let state = app.state::<Mutex<AppState>>();
+                let s = state.lock().unwrap_or_else(|e| e.into_inner());
+                s.primary_daemon.as_ref().map_or(0, |d| d.port)
+            };
+            if port > 0 {
+                if let Some(window) = focused_window(app) {
+                    if let Ok(url) = Url::parse(&format!("http://localhost:{}/", port)) {
+                        let _ = window.navigate(url);
+                    }
+                }
             }
         }
         "new_window" => {
@@ -1217,7 +1246,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![set_window_title, create_window, get_wsl_status, install_crispy_in_wsl])
+        .invoke_handler(tauri::generate_handler![set_window_title, create_window, switch_to_picker, get_wsl_status, install_crispy_in_wsl])
         .manage(Mutex::new(AppState {
             primary_daemon: None,
             wsl_daemon: None,

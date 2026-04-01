@@ -1252,6 +1252,7 @@ export function createClientConnection(
         const workspaces = listAllWorkspaces(sessions);
         return {
           home: homedir(),
+          platform: process.platform,
           workspaces,
         } satisfies WorkspaceListResponse;
       }

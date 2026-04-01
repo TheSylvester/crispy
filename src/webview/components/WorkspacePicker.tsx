@@ -437,7 +437,12 @@ export function WorkspacePicker(): React.JSX.Element {
   const loadWorkspaces = useCallback(async () => {
     try {
       const result = await transport.listWorkspaces();
-      const primaryWorkspaces = result.workspaces;
+      const localPlatform = result.platform ?? 'unknown';
+      const primaryWorkspaces: WorkspaceInfo[] = result.workspaces.map(ws => {
+        if (ws.environment) return ws;
+        if (localPlatform !== 'win32') return { ...ws, environment: localPlatform };
+        return ws;
+      });
 
       // Merge WSL workspaces if WSL daemon is connected
       let merged = primaryWorkspaces;
@@ -445,13 +450,37 @@ export function WorkspacePicker(): React.JSX.Element {
         try {
           const wslResp = await fetch(`http://localhost:${wslStatus.port}/api/workspaces`);
           if (wslResp.ok) {
-            const wslData = await wslResp.json() as { home: string; workspaces: WorkspaceInfo[] };
+            const wslData = await wslResp.json() as { home: string; platform?: string; workspaces: WorkspaceInfo[] };
             setWslHome(wslData.home);
             const wslWorkspaces = wslData.workspaces.map(ws => ({
               ...ws,
               environment: `WSL`,
             }));
-            merged = [...primaryWorkspaces, ...wslWorkspaces];
+
+            // Deduplicate by display name — when both daemons report the same
+            // project (e.g. Windows daemon has ghost Unix paths from shared
+            // ~/.claude/projects/), keep the one with the environment tag
+            // that matches its actual platform. Prefer the tagged (WSL) entry.
+            const allWorkspaces: WorkspaceInfo[] = [...primaryWorkspaces, ...wslWorkspaces];
+            const byDisplay = new Map<string, WorkspaceInfo>();
+            for (const ws of allWorkspaces) {
+              const displayKey = formatCwd(ws.path);
+              const existing = byDisplay.get(displayKey);
+              if (!existing) {
+                byDisplay.set(displayKey, ws);
+              } else {
+                // Prefer the entry with an environment tag (WSL-tagged over untagged ghost)
+                // If both tagged or both untagged, keep the more recent one
+                if (ws.environment && !existing.environment) {
+                  byDisplay.set(displayKey, ws);
+                } else if (!ws.environment && existing.environment) {
+                  // keep existing
+                } else if ((ws.lastActivityAt ?? 0) > (existing.lastActivityAt ?? 0)) {
+                  byDisplay.set(displayKey, ws);
+                }
+              }
+            }
+            merged = Array.from(byDisplay.values());
             // Sort merged list by recency (most recent first)
             merged.sort((a, b) => (b.lastActivityAt ?? 0) - (a.lastActivityAt ?? 0));
           }

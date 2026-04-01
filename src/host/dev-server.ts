@@ -158,7 +158,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
       });
       const sessions = listAllSessions();
       const workspaces = listAllWorkspaces(sessions);
-      res.end(JSON.stringify({ home: homedir(), workspaces }));
+      res.end(JSON.stringify({ home: homedir(), platform: process.platform, workspaces }));
       return;
     }
 
