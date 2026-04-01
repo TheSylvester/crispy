@@ -76,8 +76,11 @@ export function useApprovalRequest(sessionId: string | null): UseApprovalRequest
             reason: event.event.reason,
             options: event.event.options,
           });
-        } else if (event.event.status === 'idle' || event.event.status === 'active') {
-          // Approval resolved or session moved on — clear request
+        } else if (event.event.status === 'idle') {
+          // Turn ended — clear any stale approval state.
+          // We intentionally don't clear on 'active' because parallel tool
+          // results can emit 'active' while an approval is still pending.
+          // The resolve() callback already clears optimistically on user action.
           setRequest(null);
         }
       }

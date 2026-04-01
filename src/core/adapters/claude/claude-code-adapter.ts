@@ -1160,7 +1160,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     // emit 'active' status before the replayed result emits 'idle', causing flicker.
     if ('isReplay' in msg && (msg as { isReplay?: boolean }).isReplay) return;
 
-    if (this._status !== 'active') this.emitStatus('active');
+    if (this._status !== 'active' && this.pendingApprovals.size === 0) this.emitStatus('active');
 
     // Sub-agent assistant messages must NOT update _contextUsage — their usage
     // and model reflect the child session (e.g. Haiku 200k), not the parent.
