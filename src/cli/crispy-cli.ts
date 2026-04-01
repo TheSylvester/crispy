@@ -258,9 +258,9 @@ switch (command) {
   case '--help':
   case '-h':
     console.log(`
-Crispy — zero-compromise infrastructure for AI coding tools
+Crispy v${CRISPY_VERSION} — zero-compromise infrastructure for AI coding tools
 
-Usage: crispy [command]
+Usage: crispy [command] [options]
 
 Commands:
   (none)     Start in foreground (server + browser)
@@ -271,7 +271,20 @@ Commands:
   config     Interactive settings wizard
   add <path> Add a workspace root to the running daemon
   help       Show this help message
+
+Options:
+  --port <number>    Server port (default: 3456)
+  --host <address>   Bind address (default: 127.0.0.1)
+  --token <value>    Set auth token
+  --rotate-token     Rotate auth token and print it
+  -v, --version      Show version
+  -h, --help         Show this help message
 `.trim());
+    process.exit(0);
+    break;
+  case '--version':
+  case '-v':
+    console.log(CRISPY_VERSION);
     process.exit(0);
     break;
   case '':        startForeground(); break;
