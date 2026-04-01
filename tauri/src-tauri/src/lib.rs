@@ -39,12 +39,17 @@ window.__CRISPY_DESKTOP__ = true;
         });
     };
 
-    // Title bridge — sync document.title to native window title.
-    new MutationObserver(function() {
-        ipc.invoke('set_window_title', { title: document.title }).catch(function() {});
-    }).observe(document.querySelector('title') || document.head, {
-        subtree: true, childList: true, characterData: true
-    });
+    // Title bridge — poll document.title and sync to native window title.
+    // MutationObserver doesn't fire for programmatic document.title changes
+    // in WebView2, so we poll instead.
+    var lastTitle = '';
+    setInterval(function() {
+        var t = document.title;
+        if (t && t !== lastTitle) {
+            lastTitle = t;
+            ipc.invoke('set_window_title', { title: t }).catch(function() {});
+        }
+    }, 300);
 
     // Handle menu actions dispatched from Rust via window.eval().
     window.__CRISPY_MENU_ACTION__ = function(action) {
