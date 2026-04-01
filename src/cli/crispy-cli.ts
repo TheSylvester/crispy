@@ -9,6 +9,8 @@
  *   crispy stop     — SIGTERM via PID file
  *   crispy status   — check PID + health
  *   crispy open     — open browser to running instance
+ *   crispy config   — interactive settings wizard
+ *   crispy add      — add a workspace root to the running daemon
  *   crispy _daemon  — (hidden) actual server process invoked by `start`
  *
  * @module crispy-cli
@@ -252,12 +254,39 @@ if (tokenFlagIndex !== -1) {
 const command = process.argv[2] || '';
 
 switch (command) {
+  case 'help':
+  case '--help':
+  case '-h':
+    console.log(`
+Crispy — zero-compromise infrastructure for AI coding tools
+
+Usage: crispy [command]
+
+Commands:
+  (none)     Start in foreground (server + browser)
+  start      Start as background daemon
+  stop       Stop the running daemon
+  status     Check daemon status
+  open       Open browser to running instance
+  config     Interactive settings wizard
+  add <path> Add a workspace root to the running daemon
+  help       Show this help message
+`.trim());
+    process.exit(0);
+    break;
   case '':        startForeground(); break;
   case 'start':   startBackground(); break;
   case 'stop':    stopDaemon(); break;
   case 'status':  showStatus(); break;
   case 'open':    openBrowser(); break;
   case '_daemon': runDaemon(); break;
+  case 'config': {
+    import('./crispy-config.js').then(({ runConfig }) => runConfig()).catch((err) => {
+      console.error('Config failed:', err);
+      process.exit(1);
+    });
+    break;
+  }
   case 'add': {
     const target = process.argv[3];
     if (!target) { console.error('Usage: crispy add <path>'); process.exit(1); }
@@ -288,6 +317,6 @@ switch (command) {
   }
   default:
     console.error(`Unknown command: ${command}`);
-    console.error('Usage: crispy [start|stop|status|open|add]');
+    console.error('Run `crispy help` for usage.');
     process.exit(1);
 }
