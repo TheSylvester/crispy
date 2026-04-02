@@ -44,3 +44,41 @@ jobs:
       - run: npm run build
 
       - run: npm run package:${{ matrix.target }}
+
+  # ── Tauri: validate Windows installer build ───────────────────────────────
+  build-tauri:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tauri/src-tauri
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Install Tauri deps
+        working-directory: tauri
+        run: npm install
+
+      - name: Bundle runtime
+        working-directory: tauri
+        run: pwsh scripts/bundle-runtime.ps1
+
+      - name: Build Tauri app
+        working-directory: tauri
+        run: npx tauri build 2>&1
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ""
