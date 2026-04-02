@@ -3,7 +3,7 @@
   "displayName": "Crispy",
   "icon": "media/crispy-icon.png",
   "description": "An agent workbench for Claude Code and Codex — with local agent memory, multi-agent collaboration, and controls you can't get in a terminal",
-  "version": "0.2.9-rc.13",
+  "version": "0.2.9",
   "publisher": "the-sylvester",
   "license": "MIT",
   "bin": {
