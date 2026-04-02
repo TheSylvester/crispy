@@ -330,7 +330,7 @@ export function TitleBar(): React.JSX.Element {
 
   // Push session label to host tab title and document.title (all environments)
   const tabTitle = currentSession
-    ? `${getSessionDisplayName(currentSession)} — Crispy`
+    ? `${truncateLabel(getSessionDisplayName(currentSession), 70)} — Crispy`
     : 'Crispy';
 
   useEffect(() => {
