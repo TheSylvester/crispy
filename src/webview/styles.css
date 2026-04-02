@@ -3965,10 +3965,78 @@ h2 {
   }
 }
 
-/* --- New session button (right) — extends base btn --- */
+/* --- New session split button (right) --- */
 
-.crispy-titlebar__new-btn {
-  /* inherits .crispy-titlebar__btn via dual class */
+.crispy-titlebar__new-split {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+}
+
+/* Square the inner corners so the two buttons look like one */
+.crispy-titlebar__new-split .crispy-titlebar__new-btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  margin-right: 0;
+  padding-right: 6px;
+}
+
+.crispy-titlebar__new-chevron {
+  display: flex;
+  align-items: center;
+  padding: 4px 3px !important;
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #d4d4d4);
+  border: none;
+  border-left: 1px solid rgba(128, 128, 128, 0.25);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  cursor: pointer;
+  font-size: var(--font-sm);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  transition: background 0.15s;
+}
+
+.crispy-titlebar__new-chevron:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45484d);
+}
+
+.crispy-titlebar__new-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 100;
+  min-width: 220px;
+  margin-top: 4px;
+  padding: 4px 0;
+  background: var(--vscode-dropdown-background, #1e1e1e);
+  border: 1px solid var(--vscode-panel-border, #454545);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.crispy-titlebar__new-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  color: var(--vscode-dropdown-foreground, #ccc);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.crispy-titlebar__new-dropdown-item:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-titlebar__new-dropdown-shortcut {
+  margin-left: auto;
+  color: var(--vscode-descriptionForeground, #888);
+  font-size: 11px;
 }
 
 /* --- App brand (icon + wordmark, far left) --- */
@@ -4005,6 +4073,22 @@ h2 {
   line-height: 1;
   text-transform: uppercase;
   font-family: Georgia, 'Times New Roman', 'Noto Serif', serif;
+}
+
+.crispy-titlebar__brand-link {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.crispy-titlebar__brand-link:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .crispy-titlebar__brand-sep {
@@ -6160,6 +6244,118 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   border-left: 3px solid #f44;
 }
 
+/* --- WSL Install Card --- */
+
+.crispy-wsl-install-card {
+  position: relative;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  border: 1px dashed var(--vscode-panel-border, rgba(128, 128, 128, 0.4));
+  border-radius: var(--radius-sm, 6px);
+  background: rgba(139, 109, 72, 0.08);
+}
+
+.crispy-wsl-install-card__dismiss {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--text-tertiary, #888);
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 2px 6px;
+}
+
+.crispy-wsl-install-card__dismiss:hover {
+  color: var(--text-primary, #ccc);
+}
+
+.crispy-wsl-install-card__title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 6px;
+  color: var(--text-primary, #ccc);
+}
+
+.crispy-wsl-install-card__desc {
+  font-size: 12px;
+  color: var(--text-secondary, #aaa);
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+
+.crispy-wsl-install-card__desc--success {
+  color: #6fbf73;
+}
+
+.crispy-wsl-install-card__desc--error {
+  color: #f44;
+}
+
+.crispy-wsl-install-card__command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.crispy-wsl-install-card__command code {
+  flex: 1;
+  font-family: var(--monospace);
+  font-size: 12px;
+  color: var(--text-primary, #ccc);
+}
+
+.crispy-wsl-install-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.crispy-wsl-install-card__action {
+  padding: 5px 14px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 4px;
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #fff);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.crispy-wsl-install-card__action:hover {
+  background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.crispy-wsl-install-card__action--secondary {
+  background: transparent;
+  color: var(--text-secondary, #aaa);
+  border-color: var(--vscode-panel-border, rgba(128, 128, 128, 0.4));
+}
+
+.crispy-wsl-install-card__action--secondary:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.crispy-wsl-install-card__log {
+  width: 100%;
+  max-height: 150px;
+  overflow: auto;
+  font-size: 11px;
+  font-family: var(--monospace);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 8px;
+  border-radius: 4px;
+  color: var(--text-secondary, #aaa);
+  white-space: pre-wrap;
+  margin: 0 0 4px;
+}
+
 .crispy-workspace-picker__loading {
   color: var(--text-tertiary);
   font-size: var(--font-base);
@@ -6212,6 +6408,126 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   white-space: nowrap;
   flex: 1;
   min-width: 0;
+}
+
+.crispy-workspace-picker__filter {
+  width: 100%;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  background: var(--tint-light);
+  border: 1px solid var(--glass-border-md);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--font-sm);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.crispy-workspace-picker__filter:focus {
+  border-color: var(--accent);
+}
+
+.crispy-workspace-picker__pin-icon {
+  color: #e8a020;
+  font-size: 12px;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.crispy-workspace-picker__item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.crispy-workspace-picker__item-env {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.crispy-workspace-picker__item-time {
+  font-size: var(--font-xs);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.crispy-workspace-picker__item-actions {
+  position: relative;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.crispy-workspace-picker__item:hover .crispy-workspace-picker__item-actions {
+  opacity: 1;
+}
+
+.crispy-workspace-picker__item-menu-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 4px;
+  letter-spacing: 1px;
+}
+
+.crispy-workspace-picker__item-menu-btn:hover {
+  color: var(--text-primary);
+}
+
+.crispy-workspace-picker__item-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 50;
+  min-width: 100px;
+  padding: 4px 0;
+  background: var(--vscode-dropdown-background, #1e1e1e);
+  border: 1px solid var(--vscode-panel-border, #454545);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.crispy-workspace-picker__item-menu button {
+  display: block;
+  width: 100%;
+  padding: 5px 12px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.crispy-workspace-picker__item-menu button:hover {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-workspace-picker__divider {
+  height: 1px;
+  background: var(--glass-border-md);
+  margin: 4px 0;
+}
+
+.crispy-workspace-picker__show-archived {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  text-align: center;
+}
+
+.crispy-workspace-picker__show-archived:hover {
+  color: var(--text-secondary);
 }
 
 .crispy-workspace-picker__item-remove {

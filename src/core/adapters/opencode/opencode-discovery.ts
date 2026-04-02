@@ -299,7 +299,7 @@ class OpenCodeDiscovery implements VendorDiscovery {
   }
 
   private deriveProjectSlug(directory: string): string {
-    return directory.replace(/[\\/]/g, '-');
+    return normalizePath(directory).replace(/[\\/]/g, '-');
   }
 }
 

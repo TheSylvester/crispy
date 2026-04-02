@@ -9,6 +9,8 @@
  *   crispy stop     — SIGTERM via PID file
  *   crispy status   — check PID + health
  *   crispy open     — open browser to running instance
+ *   crispy config   — interactive settings wizard
+ *   crispy add      — add a workspace root to the running daemon
  *   crispy _daemon  — (hidden) actual server process invoked by `start`
  *
  * @module crispy-cli
@@ -20,6 +22,7 @@ import { openSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { logsDir, tokenPath } from '../core/paths.js';
 import { rotateToken } from '../host/auth.js';
+import { CRISPY_VERSION } from '../core/version.js';
 import {
   writePidFile, readPidFile, writePortFile, readPortFile,
   isProcessAlive, cleanupRunFiles,
@@ -33,6 +36,14 @@ function parsePortFlag(): number {
     return parseInt(process.argv[idx + 1], 10);
   }
   return DEFAULT_PORT;
+}
+
+function parseHostFlag(): string {
+  const idx = process.argv.indexOf('--host');
+  if (idx !== -1 && process.argv[idx + 1]) {
+    return process.argv[idx + 1];
+  }
+  return '127.0.0.1';
 }
 
 function sleep(ms: number): Promise<void> {
@@ -63,11 +74,12 @@ async function startForeground(): Promise<void> {
   delete process.env.CLAUDECODE;
 
   const port = parsePortFlag();
+  const host = parseHostFlag();
   const { startServer } = await import('../host/dev-server.js');
 
   const handle = await startServer({
     port,
-    host: '127.0.0.1',
+    host,
     mode: 'daemon',
     hostType: 'daemon',
   });
@@ -99,7 +111,7 @@ async function startBackground(): Promise<void> {
     return;
   }
 
-  console.log('Starting Crispy daemon...');
+  console.log(`Starting Crispy v${CRISPY_VERSION} daemon...`);
   mkdirSync(logsDir(), { recursive: true });
   const logPath = join(logsDir(), 'crispy.log');
   const logFd = openSync(logPath, 'a');
@@ -120,11 +132,20 @@ async function startBackground(): Promise<void> {
 
   child.unref();
 
-  // Wait for daemon to write port file
-  await sleep(2000);
-  const port = readPortFile('prod');
-  if (port && await checkHealth(port)) {
-    console.log(`Crispy daemon started (PID ${child.pid}) on http://localhost:${port}`);
+  // Poll for daemon readiness (port file + health check)
+  let port: number | null = null;
+  let healthy = false;
+  for (let i = 0; i < 30; i++) {
+    await sleep(500);
+    port = readPortFile('prod');
+    if (port && await checkHealth(port)) {
+      healthy = true;
+      break;
+    }
+  }
+
+  if (healthy) {
+    console.log(`Crispy v${CRISPY_VERSION} daemon started (PID ${child.pid}) on http://localhost:${port}`);
     console.log(`Logs: ${logPath}`);
   } else {
     console.error('Daemon may have failed to start. Check logs:', logPath);
@@ -136,11 +157,12 @@ async function runDaemon(): Promise<void> {
   delete process.env.CLAUDECODE;
 
   const port = parsePortFlag();
+  const host = parseHostFlag();
   const { startServer } = await import('../host/dev-server.js');
 
   const handle = await startServer({
     port,
-    host: '127.0.0.1',
+    host,
     mode: 'daemon',
     hostType: 'daemon',
   });
@@ -232,12 +254,52 @@ if (tokenFlagIndex !== -1) {
 const command = process.argv[2] || '';
 
 switch (command) {
+  case 'help':
+  case '--help':
+  case '-h':
+    console.log(`
+Crispy v${CRISPY_VERSION} — zero-compromise infrastructure for AI coding tools
+
+Usage: crispy [command] [options]
+
+Commands:
+  (none)     Start in foreground (server + browser)
+  start      Start as background daemon
+  stop       Stop the running daemon
+  status     Check daemon status
+  open       Open browser to running instance
+  config     Interactive settings wizard
+  add <path> Add a workspace root to the running daemon
+  help       Show this help message
+
+Options:
+  --port <number>    Server port (default: 3456)
+  --host <address>   Bind address (default: 127.0.0.1)
+  --token <value>    Set auth token
+  --rotate-token     Rotate auth token and print it
+  -v, --version      Show version
+  -h, --help         Show this help message
+`.trim());
+    process.exit(0);
+    break;
+  case '--version':
+  case '-v':
+    console.log(CRISPY_VERSION);
+    process.exit(0);
+    break;
   case '':        startForeground(); break;
   case 'start':   startBackground(); break;
   case 'stop':    stopDaemon(); break;
   case 'status':  showStatus(); break;
   case 'open':    openBrowser(); break;
   case '_daemon': runDaemon(); break;
+  case 'config': {
+    import('./crispy-config.js').then(({ runConfig }) => runConfig()).catch((err) => {
+      console.error('Config failed:', err);
+      process.exit(1);
+    });
+    break;
+  }
   case 'add': {
     const target = process.argv[3];
     if (!target) { console.error('Usage: crispy add <path>'); process.exit(1); }
@@ -268,6 +330,6 @@ switch (command) {
   }
   default:
     console.error(`Unknown command: ${command}`);
-    console.error('Usage: crispy [start|stop|status|open|add]');
+    console.error('Run `crispy help` for usage.');
     process.exit(1);
 }

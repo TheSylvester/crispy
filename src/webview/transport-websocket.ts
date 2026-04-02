@@ -82,6 +82,16 @@ export function createWebSocketTransport(url: string): SessionService {
     }
   });
 
+  ws.addEventListener('error', () => {
+    // WebSocket errors don't carry detail — the close event follows immediately.
+    // Reject all pending requests so callers surface the failure.
+    for (const [, req] of pending) {
+      clearTimeout(req.timer);
+      req.reject(new Error('WebSocket connection failed — the daemon may not be running or may have rejected the connection'));
+    }
+    pending.clear();
+  });
+
   ws.addEventListener('close', () => {
     isOpen = false;
     for (const [, req] of pending) {
@@ -133,6 +143,12 @@ export function createWebSocketTransport(url: string): SessionService {
       request<{ previousSessionId: string; sessionId: string }>('switchSession', params),
 
     openPanel: async (params) => {
+      if ((window as any).__CRISPY_CREATE_WINDOW__) {
+        // Tauri: direct IPC via init script bridge
+        const query = `sessionId=${encodeURIComponent(params.sessionId)}`;
+        await (window as any).__CRISPY_CREATE_WINDOW__(query);
+        return { ok: true };
+      }
       const url = new URL(window.location.pathname, window.location.origin);
       url.searchParams.set('sessionId', params.sessionId);
       window.open(url.toString(), '_blank');
@@ -140,15 +156,23 @@ export function createWebSocketTransport(url: string): SessionService {
     },
 
     forkToNewPanel: async (params) => {
-      // Browser dev-server: open fork in a new tab via window.open()
+      const qp = new URLSearchParams();
+      qp.set('forkFrom', params.fromSessionId);
+      if (params.atMessageId) qp.set('forkAt', params.atMessageId);
+      if (params.initialPrompt) qp.set('prompt', params.initialPrompt);
+      if (params.model) qp.set('model', params.model);
+      if (params.agencyMode) qp.set('agency', params.agencyMode);
+      if (params.bypassEnabled) qp.set('bypass', '1');
+      if (params.chromeEnabled) qp.set('chrome', '1');
+
+      if ((window as any).__CRISPY_CREATE_WINDOW__) {
+        // Tauri: direct IPC via init script bridge
+        await (window as any).__CRISPY_CREATE_WINDOW__(qp.toString());
+        return { ok: true };
+      }
+      // Dev server / browser fallback
       const url = new URL(window.location.pathname, window.location.origin);
-      url.searchParams.set('forkFrom', params.fromSessionId);
-      if (params.atMessageId) url.searchParams.set('forkAt', params.atMessageId);
-      if (params.initialPrompt) url.searchParams.set('prompt', params.initialPrompt);
-      if (params.model) url.searchParams.set('model', params.model);
-      if (params.agencyMode) url.searchParams.set('agency', params.agencyMode);
-      if (params.bypassEnabled) url.searchParams.set('bypass', '1');
-      if (params.chromeEnabled) url.searchParams.set('chrome', '1');
+      url.search = qp.toString();
       window.open(url.toString(), '_blank');
       return { ok: true };
     },

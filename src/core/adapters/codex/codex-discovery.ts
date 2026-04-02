@@ -276,8 +276,10 @@ export class CodexDiscovery implements VendorDiscovery {
   }
 
   private deriveProjectSlug(cwd: string): string {
-    // Match Claude's slug format: replace :, / or \ with - (keep leading dash)
-    return cwd.replace(/[:\/\\]/g, '-');
+    // Match Claude's slug format: replace :, / or \ with - (keep leading dash).
+    // Normalize first so the Windows drive letter is always lowercase,
+    // matching the Claude adapter's slug normalization.
+    return normalizePath(cwd).replace(/[:\/\\]/g, '-');
   }
 }
 

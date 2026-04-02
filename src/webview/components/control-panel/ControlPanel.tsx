@@ -78,20 +78,28 @@ const CYCLABLE_AGENCY_MODES: AgencyMode[] = [
 ];
 
 /** Skill hints shown randomly in the chat placeholder. */
-const SKILL_HINTS: Array<{ skill: string; hint: string }> = [
-  { skill: 'recall', hint: 'search past sessions' },
-  { skill: 'spec-mode', hint: 'plan a feature interactively' },
-  { skill: 'superthink', hint: 'multi-agent adversarial review' },
-  { skill: 'handoff', hint: 'rotate to a fresh session' },
-  { skill: 'super-implement', hint: 'turn a plan into execution prompts' },
-  { skill: 'reflect', hint: 'verify a prompt before execution' },
-  { skill: 'backup-transcripts', hint: 'archive session history' },
+const SKILL_HINTS: Array<{ skill: string; hint: string; requiresVendors?: string[] }> = [
+  { skill: 'recall', hint: 'find past decisions and debugging threads' },
+  { skill: 'superthink', hint: 'pit Claude and Codex against each other', requiresVendors: ['claude', 'codex'] },
+  { skill: 'super-implement', hint: 'turn plans into execution prompts' },
+  { skill: 'reflect', hint: 'verify prompts against the codebase' },
+  { skill: 'handoff', hint: 'distill context and rotate fresh' },
+  { skill: 'spec-mode', hint: 'build a spec through conversation' },
 ];
 
-/** Picks a random hint once per mount (avoids flicker on re-render). */
-function useRandomSkillHint(): { skill: string; hint: string } {
-  const ref = useRef(SKILL_HINTS[Math.floor(Math.random() * SKILL_HINTS.length)]);
-  return ref.current;
+/** Picks a random hint, stable once vendors are known. Repicks once on first vendor load. */
+function useRandomSkillHint(availableVendors: string[]): { skill: string; hint: string } {
+  const ref = useRef<{ skill: string; hint: string } | null>(null);
+  const lockedIn = useRef(false);
+  if (!lockedIn.current) {
+    const eligible = SKILL_HINTS.filter(h =>
+      !h.requiresVendors || h.requiresVendors.every(v => availableVendors.includes(v)),
+    );
+    const pool = eligible.length > 0 ? eligible : SKILL_HINTS;
+    ref.current = pool[Math.floor(Math.random() * pool.length)];
+    if (availableVendors.length > 0) lockedIn.current = true;
+  }
+  return ref.current!;
 }
 
 function getChatPlaceholder(vendor: string, pick: { skill: string; hint: string }): string {
@@ -170,7 +178,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       handleForkHistoryLoaded: onForkHistoryLoaded,
       setAgencyMode: ctxSetAgencyMode,
     } = useControlPanel();
-    const skillHint = useRandomSkillHint();
     // Track the DOM element for native drag/drop listeners. A callback ref
     // ensures the useEffect re-runs when the element mounts, unlike a
     // RefObject whose identity never changes.
@@ -189,7 +196,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const rosieLogEntries = useRosieLog();
     const transport = useTransport();
 
-    const { selectedSessionId, selectedCwd, setSelectedSessionId, sessions, workspaceCwdPath } = useSession();
+    const { selectedSessionId, selectedCwd, setSelectedSessionId, sessions, workspaceCwdPath, availableVendors } = useSession();
+    const skillHint = useRandomSkillHint(availableVendors);
     const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
     const togglesDisabled = channelState === 'streaming' || channelState === 'awaiting_approval';
 
@@ -999,7 +1007,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // --- Fork execution (shared between control panel button and per-message buttons) ---
     const executeFork = useCallback((atMessageId: string) => {
       if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
-
       // Clear fork preview glow — mouseLeave won't fire since we're switching panels
       document.querySelectorAll('.message.crispy-fork-preview').forEach(el =>
         el.classList.remove('crispy-fork-preview'),

@@ -1160,7 +1160,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     // emit 'active' status before the replayed result emits 'idle', causing flicker.
     if ('isReplay' in msg && (msg as { isReplay?: boolean }).isReplay) return;
 
-    if (this._status !== 'active') this.emitStatus('active');
+    if (this._status !== 'active' && this.pendingApprovals.size === 0) this.emitStatus('active');
 
     // Sub-agent assistant messages must NOT update _contextUsage — their usage
     // and model reflect the child session (e.g. Haiku 200k), not the parent.
@@ -1802,6 +1802,11 @@ function claudeProjectsDir(): string {
   return join(homedir(), '.claude', 'projects');
 }
 
+/** Normalize a project slug's Windows drive prefix to lowercase (C-- → c--). */
+function normalizeSlug(slug: string): string {
+  return slug.replace(/^([A-Z])(--)/,  (_, d: string, rest: string) => d.toLowerCase() + rest);
+}
+
 /**
  * List all project directory names under ~/.claude/projects/.
  *
@@ -1882,7 +1887,7 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
       sessions.push({
         sessionId,
         path: filePath,
-        projectSlug: slug,
+        projectSlug: normalizeSlug(slug),
         projectPath: meta?.projectPath,
         modifiedAt,
         size: stat.size,
@@ -1935,7 +1940,7 @@ export function findSession(sessionId: string): SessionInfo | undefined {
     return {
       sessionId,
       path: filePath,
-      projectSlug: slug,
+      projectSlug: normalizeSlug(slug),
       projectPath: meta?.projectPath,
       modifiedAt,
       size: stat.size,

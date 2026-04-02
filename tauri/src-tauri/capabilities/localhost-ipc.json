@@ -1,0 +1,11 @@
+{
+  "identifier": "localhost-ipc",
+  "description": "Enable Tauri IPC on http://localhost pages after navigation from tauri:// origin",
+  "windows": ["main", "window-*"],
+  "remote": {
+    "urls": ["http://localhost:*/*"]
+  },
+  "permissions": [
+    "core:default"
+  ]
+}

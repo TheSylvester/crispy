@@ -64,6 +64,25 @@ function PlusIcon(): React.JSX.Element {
   );
 }
 
+/** Overlapping windows icon for "New Window" */
+function WindowIcon(): React.JSX.Element {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="3" width="8" height="8" rx="1" />
+      <path d="M1 9V2a1 1 0 0 1 1-1h7" />
+    </svg>
+  );
+}
+
 /** Crispy logo + wordmark + divider — brand presence in the titlebar */
 function AppIcon(): React.JSX.Element {
   return (
@@ -270,7 +289,9 @@ export function TitleBar(): React.JSX.Element {
   const { channelState } = useSessionStatus(selectedSessionId);
   const dropdownContainerRef = useRef<HTMLDivElement>(null);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
+  const newMenuRef = useRef<HTMLDivElement>(null);
   const [projectsOpen, setProjectsOpen] = useState(false);
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
   const allCwds = useAvailableCwds();
 
   // In websocket mode with workspace routing, CWD changes navigate to the new URL
@@ -307,18 +328,15 @@ export function TitleBar(): React.JSX.Element {
     ? truncateLabel(getSessionDisplayName(currentSession), BUTTON_LABEL_MAX)
     : 'Conversations';
 
-  // Push session label to host tab title
-  const TAB_TITLE_MAX = 24;
+  // Push session label to host tab title and document.title (all environments)
   const tabTitle = currentSession
-    ? truncateLabel(getSessionDisplayName(currentSession), TAB_TITLE_MAX)
+    ? `${truncateLabel(getSessionDisplayName(currentSession), 70)} — Crispy`
     : 'Crispy';
 
   useEffect(() => {
     transport.postRaw?.({ kind: 'setTitle', title: tabTitle });
-    if (envKind === 'websocket') {
-      document.title = tabTitle;
-    }
-  }, [tabTitle, transport, envKind]);
+    document.title = tabTitle;
+  }, [tabTitle, transport]);
 
   const toggleSidebar = useCallback(() => {
     setProjectsOpen(false);
@@ -337,7 +355,22 @@ export function TitleBar(): React.JSX.Element {
 
   const handleNew = useCallback(() => {
     setSelectedSessionId(null);
+    setNewMenuOpen(false);
   }, [setSelectedSessionId]);
+
+  const isDesktop = !!(window as any).__CRISPY_DESKTOP__;
+
+  const handleNewWindow = useCallback(() => {
+    setNewMenuOpen(false);
+    const ipc = (window as any).__TAURI_INTERNALS__;
+    if (ipc) {
+      // Tauri desktop — create a new native window
+      ipc.invoke('create_window').catch(() => {});
+    } else {
+      // Browser / dev server — open a new tab
+      window.open(window.location.href, '_blank');
+    }
+  }, []);
 
   const handleSidebarButton = useCallback((view: SidebarView) => {
     if (toolPanelOpen && sidebarView === view) {
@@ -347,6 +380,16 @@ export function TitleBar(): React.JSX.Element {
       setToolPanelOpen(true);
     }
   }, [toolPanelOpen, sidebarView, setToolPanelOpen, setSidebarView]);
+
+  // Listen for native menu actions dispatched via CustomEvent from Tauri init script
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const action = (e as CustomEvent).detail?.action;
+      if (action === 'new_session') handleNew();
+    };
+    window.addEventListener('crispy-menu', handler);
+    return () => window.removeEventListener('crispy-menu', handler);
+  }, [handleNew]);
 
   // Alt+T / Alt+F keyboard shortcuts — toggle sidebar views
   useEffect(() => {
@@ -374,7 +417,7 @@ export function TitleBar(): React.JSX.Element {
 
   // Click-outside to close dropdowns
   useEffect(() => {
-    if (sidebarCollapsed && !projectsOpen) return;
+    if (sidebarCollapsed && !projectsOpen && !newMenuOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
       if (!sidebarCollapsed &&
@@ -387,15 +430,40 @@ export function TitleBar(): React.JSX.Element {
           !projectDropdownRef.current.contains(target)) {
         setProjectsOpen(false);
       }
+      if (newMenuOpen &&
+          newMenuRef.current &&
+          !newMenuRef.current.contains(target)) {
+        setNewMenuOpen(false);
+      }
     };
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
-  }, [sidebarCollapsed, setSidebarCollapsed, projectsOpen]);
+  }, [sidebarCollapsed, setSidebarCollapsed, projectsOpen, newMenuOpen]);
 
   return (
     <header className="crispy-titlebar">
-      {/* App icon — brand presence, no dropdown yet */}
-      <AppIcon />
+      {/* App icon — click to return to workspace picker */}
+      {envKind === 'websocket' ? (
+        <button
+          className="crispy-titlebar__brand-link"
+          title="Switch workspace"
+          onClick={() => {
+            const ipc = (window as any).__TAURI_INTERNALS__;
+            if (ipc) {
+              // Tauri: let Rust navigate to the primary daemon's root
+              ipc.invoke('switch_to_picker').catch(() => {
+                window.location.href = '/';
+              });
+            } else {
+              window.location.href = '/';
+            }
+          }}
+        >
+          <AppIcon />
+        </button>
+      ) : (
+        <AppIcon />
+      )}
 
       {/* Left — Projects + Conversations dropdowns share a positioning wrapper */}
       <div className="crispy-session-dropdown-container" ref={dropdownContainerRef}>
@@ -471,14 +539,46 @@ export function TitleBar(): React.JSX.Element {
           <ToolPanelIcon />
           <span className="crispy-titlebar__btn-label">Tools</span>
         </button>
-        <button
-          className="crispy-titlebar__btn crispy-titlebar__new-btn"
-          onClick={handleNew}
-          title="New session"
-        >
-          <PlusIcon />
-          <span className="crispy-titlebar__btn-label">New</span>
-        </button>
+        <div className="crispy-titlebar__new-split" ref={newMenuRef}>
+          <button
+            className="crispy-titlebar__btn crispy-titlebar__new-btn"
+            onClick={handleNew}
+            title="New session"
+          >
+            <PlusIcon />
+            <span className="crispy-titlebar__btn-label">New</span>
+          </button>
+          {(isDesktop || envKind === 'websocket') && (
+            <>
+              <button
+                className="crispy-titlebar__btn crispy-titlebar__new-chevron"
+                onClick={() => setNewMenuOpen(prev => !prev)}
+                aria-label={newMenuOpen ? 'Close new menu' : 'Open new menu'}
+                title="More options"
+              >
+                <Chevron open={newMenuOpen} />
+              </button>
+              {newMenuOpen && (
+                <div className="crispy-titlebar__new-dropdown">
+                  <button className="crispy-titlebar__new-dropdown-item" onClick={handleNew}>
+                    <PlusIcon />
+                    <span>New Session</span>
+                    <span className="crispy-titlebar__new-dropdown-shortcut">
+                      {navigator.platform.includes('Mac') ? '\u2318N' : 'Ctrl+N'}
+                    </span>
+                  </button>
+                  <button className="crispy-titlebar__new-dropdown-item" onClick={handleNewWindow}>
+                    <WindowIcon />
+                    <span>New Window</span>
+                    <span className="crispy-titlebar__new-dropdown-shortcut">
+                      {navigator.platform.includes('Mac') ? '\u2318\u21E7N' : 'Ctrl+Shift+N'}
+                    </span>
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </div>
     </header>
   );

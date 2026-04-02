@@ -49,7 +49,7 @@
 }
 
 .crispy-filter-bar__cwd {
-  width: 100%;
+  width: auto;
   padding: 4px 6px;
   background: var(--vscode-dropdown-background, #3c3c3c);
   color: var(--vscode-input-foreground, #d4d4d4);
@@ -375,6 +375,14 @@
   border-radius: var(--radius-sm);
   border: 1px solid currentColor;
   line-height: 1.4;
+}
+
+/* --- Environment Badge --- */
+
+.crispy-session-item__env {
+  color: var(--vscode-descriptionForeground, #888);
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 /* --- LIVE Badge --- */

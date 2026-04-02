@@ -19,43 +19,28 @@
 
 ---
 
-## What's New in v0.2.8
+## What's New in v0.2.9
 
-- **Skill autocomplete** — type `/` (Claude) or `$` (Codex) in the chat input to browse and search skills, filtered per vendor
-- **Single-dollar LaTeX** — inline math with `$...$` now renders correctly alongside display math `$$...$$`
-- **PWA support** — standalone mode is now installable as a desktop app from the browser
-- **Windows path normalization** — fixes path mismatches on native Windows with `\\?\` prefixes, mixed separators, and drive letter casing
+### Native Windows app (Tauri)
 
----
+Crispy now also ships as a standalone Windows desktop app — no VS Code, no Node, no browser required. Get it [here](https://github.com/TheSylvester/crispy/releases/latest).
 
-## What's New in v0.2.7
+- **One-click install** — no admin required
+- **Connects to WSL automatically** — picks up your existing Claude Code or Codex sessions from WSL with no manual configuration
+- **System tray** — runs in the background, accessible from the tray icon
 
-### Your entire workspace, in Discord
+### Headless setup with `crispy config`
 
-Crispy now runs a Discord bot that mirrors your coding sessions into your own
-server — live transcript rendering, inline approval buttons, session
-management, all from your phone or any device with Discord.
+Want to run Crispy as a headless Discord bot on a server? `crispy config`
+walks you through model selection, permission mode, Discord bot token, and
+custom providers — all from the terminal, no browser needed. Pair with
+`crispy start` to run as a background daemon.
 
-This isn't a chatbot. Every competitor (Claude Code Channels, OpenClaw, Hermes
-Agent) builds a text pipe where Discord _is_ the session and tool calls are
-hidden. Crispy is different: Discord is a **live session monitor** with full
-tool-call visibility, structured approvals, and a session browser — the same
-information you see in the Crispy UI, rendered into Discord.
+### Other
 
-![Crispy Discord bot — live session monitor with tool calls, approvals, and forum-based session management](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/discord.png)
-
-- **Forum-based sessions** — each workspace gets a forum channel, each session
-  is a thread. Browse, search, and manage sessions naturally
-- **Inline approvals** — approve or deny tool use with Discord buttons, right
-  from your phone. No copy-pasting confirmation codes
-- **Session management** — `!sessions` to browse, `!open` to resume, `!stop`
-  to close. A concierge bot, not a dumb bridge
-- **Multi-instance support** — run multiple Crispy instances against the same
-  server. PID-scoped channels, automatic health probes, dead-bot cleanup
-- **Setup wizard** — guided onboarding in Settings with token validation,
-  auto-generated invite URL, and step-by-step instructions
-- **Secure by default** — fail-closed authorization, allowlist-based access,
-  OAuth owner resolution. Nobody interacts unless explicitly permitted
+- **Marketplace skills in autocomplete** — third-party plugin skills now appear in the `/` and `$` dropdown
+- **Discord bot management** — delete button for bot configuration in Settings
+- **Approval pane fix** — parallel tool calls no longer clobber the approval panel
 
 ---
 
@@ -127,10 +112,11 @@ information you see in the Crispy UI, rendered into Discord.
 
 ![Workspace picker — select a project to open in standalone mode](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/workspace-picker.png)
 
+- **Native Windows app (Tauri)** — download the installer, no terminal required. Auto-provisions WSL and the Crispy daemon
 - Run `npm i -g crispy-code && crispy` — full UI in your browser, no VS Code required
 - Background daemon with `crispy start` / `crispy stop` / `crispy status`
 - Workspace picker with URL-based routing for multiple projects
-- Multiple browser tabs for parallel agent sessions
+- Multiple browser tabs or native windows for parallel agent sessions
 - Same core features — memory, superthink, fork, rewind
 
 ---
@@ -143,7 +129,13 @@ information you see in the Crispy UI, rendered into Discord.
 
 ## Installation
 
-### Standalone (recommended)
+### Windows Desktop App
+
+Download the installer from the latest
+[GitHub Release](https://github.com/TheSylvester/crispy/releases). Run it —
+Crispy handles WSL setup and daemon provisioning automatically.
+
+### Standalone (npm)
 
 ```bash
 npm i -g crispy-code

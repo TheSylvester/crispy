@@ -218,9 +218,18 @@ export function DiscordSetupWizard({
             <span className="crispy-discord-wizard__summary-label">Guild</span>
             <span className="crispy-discord-wizard__summary-value">{guildId || '(not set)'}</span>
           </div>
-          <button className="crispy-cp-settings__provider-btn" onClick={handleEdit}>
-            Edit
-          </button>
+          <span style={{ display: 'flex', gap: '4px' }}>
+            <button className="crispy-cp-settings__provider-btn" onClick={handleEdit}>
+              Edit
+            </button>
+            <button
+              className="crispy-cp-settings__provider-btn crispy-cp-settings__provider-btn--danger"
+              onClick={() => onUpdateDiscord({ enabled: false, token: '', guildId: '', allowedUserIds: [] })}
+              title="Delete Discord bot configuration"
+            >
+              ×
+            </button>
+          </span>
         </div>
       </div>
     );

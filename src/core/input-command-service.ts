@@ -8,7 +8,7 @@
  * @module core/input-command-service
  */
 
-import { readdirSync, readFileSync } from 'fs';
+import { readdirSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { log } from './log.js';
@@ -67,6 +67,7 @@ export function clearVendorCommands(sessionId: string): void {
 export function setSkillRoot(path: string): void {
   skillRoot = path;
   cachedSkills = undefined;
+  cachedPluginSkills = undefined;
   log({ source: 'input-command-service', level: 'info', summary: `skill root set: ${path}` });
 }
 
@@ -148,6 +149,121 @@ function scanProjectSkills(cwd: string, vendor?: string): SkillEntry[] {
 }
 
 // ============================================================================
+// Installed plugin scanning (marketplace plugins)
+// ============================================================================
+
+interface InstalledPluginsFile {
+  version: number;
+  plugins: Record<string, Array<{ scope: string; installPath: string }>>;
+}
+
+let cachedPluginSkills: SkillEntry[] | undefined;
+
+/**
+ * Scan installed Claude Code plugins for skills and commands.
+ *
+ * Reads ~/.claude/plugins/installed_plugins.json for install paths,
+ * checks ~/.claude/settings.json enabledPlugins for on/off state,
+ * then walks each enabled plugin's skills/ and commands/ directories.
+ *
+ * Results are cached — installed plugins don't change mid-session.
+ */
+function scanInstalledPlugins(): SkillEntry[] {
+  if (cachedPluginSkills) return cachedPluginSkills;
+
+  const home = homedir();
+  const registryPath = join(home, '.claude', 'plugins', 'installed_plugins.json');
+  const settingsPath = join(home, '.claude', 'settings.json');
+
+  let registry: InstalledPluginsFile;
+  try {
+    registry = JSON.parse(readFileSync(registryPath, 'utf-8'));
+  } catch {
+    cachedPluginSkills = [];
+    return cachedPluginSkills;
+  }
+
+  // Read enabled/disabled state from settings.json
+  let enabledPlugins: Record<string, boolean> = {};
+  try {
+    const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+    enabledPlugins = settings.enabledPlugins ?? {};
+  } catch {
+    // If settings unreadable, treat all as enabled
+  }
+
+  const results: SkillEntry[] = [];
+
+  for (const [pluginId, installs] of Object.entries(registry.plugins ?? {})) {
+    // Skip disabled plugins
+    if (enabledPlugins[pluginId] === false) continue;
+
+    const install = installs[0];
+    if (!install?.installPath) continue;
+
+    // Read plugin name from manifest (fall back to ID prefix)
+    let pluginName = pluginId.split('@')[0];
+    try {
+      const manifest = JSON.parse(
+        readFileSync(join(install.installPath, '.claude-plugin', 'plugin.json'), 'utf-8'),
+      );
+      if (manifest.name) pluginName = manifest.name;
+    } catch {
+      // use fallback name
+    }
+
+    // Scan skills/ subdirectories
+    for (const entry of scanSkillDir(join(install.installPath, 'skills'), 'vendor')) {
+      results.push({
+        ...entry,
+        id: `${pluginName}:${entry.id}`,
+        displayName: `${pluginName}:${entry.id}`,
+      });
+    }
+
+    // Scan commands/ (flat .md files, not subdirectories)
+    try {
+      const cmdDir = join(install.installPath, 'commands');
+      if (existsSync(cmdDir)) {
+        const files = readdirSync(cmdDir).filter(f => f.endsWith('.md'));
+        for (const file of files) {
+          const cmdName = file.replace(/\.md$/, '');
+          let description = cmdName;
+          try {
+            const content = readFileSync(join(cmdDir, file), 'utf-8');
+            const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+            if (fmMatch) {
+              const descMatch = fmMatch[1].match(/^description:\s*(.+)$/m);
+              if (descMatch) {
+                description = descMatch[1].trim().replace(/^(['"])(.*)\1$/, '$2');
+              }
+            }
+          } catch {
+            // use fallback description
+          }
+          results.push({
+            id: `${pluginName}:${cmdName}`,
+            displayName: `${pluginName}:${cmdName}`,
+            description,
+            source: 'vendor',
+          });
+        }
+      }
+    } catch {
+      // skip unreadable command dirs
+    }
+  }
+
+  cachedPluginSkills = results;
+  log({
+    source: 'input-command-service',
+    level: 'info',
+    summary: `scanned ${results.length} skill(s)/command(s) from installed plugins`,
+  });
+  return results;
+}
+
+// ============================================================================
 // Public API
 // ============================================================================
 
@@ -167,13 +283,16 @@ export async function listAvailableCommands(vendor?: string, sessionId?: string,
   // 2. Project-level skills (from CWD and ~/)
   const projectSkills = cwd ? scanProjectSkills(cwd, vendor) : [];
 
-  // 3. Vendor-reported commands (if session is known)
+  // 3. Installed marketplace plugins
+  const pluginSkills = vendor !== 'codex' ? scanInstalledPlugins() : [];
+
+  // 4. Vendor-reported commands (if session is known)
   const vendorEntries = sessionId ? (vendorCommands.get(sessionId) ?? []) : [];
 
-  // 4. Merge: bundled first, then project skills, then vendor (skip duplicates)
+  // 5. Merge: bundled first, then project, plugins, vendor (skip duplicates)
   const merged: SkillEntry[] = [...bundled];
 
-  for (const source of [projectSkills, vendorEntries]) {
+  for (const source of [projectSkills, pluginSkills, vendorEntries]) {
     for (const v of source) {
       const nid = normalizeId(v.id);
       if (seenIds.has(nid)) {

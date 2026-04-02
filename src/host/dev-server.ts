@@ -23,6 +23,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import { urlPathToFsPath } from '../core/url-path-resolver-server.js';
 import { isPathAllowed } from '../core/workspace-roots.js';
 import { listAllSessions } from '../core/session-manager.js';
+import { listAllWorkspaces } from '../core/workspace-roots.js';
 
 import { initSettings, startWatchingSettings } from '../core/settings/index.js';
 import { createClientConnection } from './client-connection.js';
@@ -81,7 +82,9 @@ function isLocalhostOrigin(origin: string): boolean {
   if (!origin) return true; // no Origin header → non-browser client (CLI, curl)
   try {
     const { hostname } = new URL(origin);
-    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
+    // "tauri.localhost" is the Tauri v2 webview origin on Windows
+    return hostname === 'localhost' || hostname === 'tauri.localhost'
+      || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
   } catch {
     return false;
   }
@@ -143,6 +146,19 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     if (url.pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', pid: process.pid, port: actualPort, uptime: process.uptime() }));
+      return;
+    }
+
+    // Workspace list endpoint (unauthenticated — used by Tauri WSL workspace merging).
+    // CORS headers allow cross-origin fetch from the primary daemon's webview.
+    if (url.pathname === '/api/workspaces') {
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      });
+      const sessions = listAllSessions();
+      const workspaces = listAllWorkspaces(sessions);
+      res.end(JSON.stringify({ home: homedir(), platform: process.platform, workspaces }));
       return;
     }
 
@@ -211,7 +227,10 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
       try {
         const content = await readFile(filePath);
         const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
-        res.writeHead(200, { 'Content-Type': contentType });
+        res.writeHead(200, {
+          'Content-Type': contentType,
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        });
         res.end(content);
       } catch {
         res.writeHead(404);
@@ -223,7 +242,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     // ---- Workspace routing ----
     if (pathname === '/') {
       // Root page: serve index.html without CWD meta tag (picker mode)
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache, no-store, must-revalidate' });
       res.end(indexHtml);
       return;
     }
@@ -252,7 +271,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
       '<meta charset="UTF-8">',
       `<meta charset="UTF-8">\n    <base href="/">\n    <meta name="crispy-cwd" content="${escapeHtmlAttr(resolvedPath)}">\n    <meta name="crispy-home" content="${escapeHtmlAttr(homedir())}">`,
     );
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache, no-store, must-revalidate' });
     res.end(injected);
   });
 

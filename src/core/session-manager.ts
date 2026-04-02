@@ -53,6 +53,7 @@ import { refreshAndNotify, notifyStatusChange } from './session-list-manager.js'
 import { fireResponseComplete } from './lifecycle-hooks.js';
 import { log } from './log.js';
 import { isSystemSession, setSessionKind } from './activity-index.js';
+import { getRemoteSessions } from './remote-proxy.js';
 
 /** Type guard for session_changed notification events. */
 function isSessionChangedEvent(msg: SubscriberMessage): msg is ChannelMessage & { type: 'event'; event: { type: 'notification'; kind: 'session_changed'; sessionId: string } } {
@@ -458,6 +459,8 @@ export function listAllSessions(): SessionInfo[] {
   for (const { discovery } of adapters.values()) {
     all.push(...discovery.listSessions());
   }
+  // Merge sessions from remote daemons (e.g. WSL proxy)
+  all.push(...getRemoteSessions());
   const result = all
     .filter(s => !s.isSidechain && !isSystemSession(s.sessionId))
     .sort((a, b) => b.modifiedAt.getTime() - a.modifiedAt.getTime());

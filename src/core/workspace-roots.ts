@@ -25,11 +25,17 @@ export interface WorkspaceInfo {
   path: string;
   /** true = manually added root, false = implicit from session history */
   isExplicit: boolean;
+  /** Epoch ms of the most recent session activity under this workspace */
+  lastActivityAt?: number;
+  /** Remote environment label (e.g. "WSL · Ubuntu") — present if from a remote daemon */
+  environment?: string;
 }
 
 export interface WorkspaceListResponse {
   /** Server's os.homedir() — needed by fsPathToUrlPath() in the browser */
   home: string;
+  /** Server's process.platform — used to deduplicate cross-platform workspaces */
+  platform?: string;
   workspaces: WorkspaceInfo[];
 }
 
@@ -102,7 +108,7 @@ export function isPathAllowed(fsPath: string, sessions: SessionInfo[]): boolean 
 
 /**
  * List all known workspaces: explicit roots + unique paths from session history.
- * Deduplicates by normalized path.
+ * Deduplicates by normalized path. Sorted by most recent session activity.
  */
 export function listAllWorkspaces(sessions: SessionInfo[]): WorkspaceInfo[] {
   const seen = new Map<string, WorkspaceInfo>();
@@ -112,15 +118,38 @@ export function listAllWorkspaces(sessions: SessionInfo[]): WorkspaceInfo[] {
     seen.set(root, { path: root, isExplicit: true });
   }
 
-  // Session-derived paths
+  // Session-derived paths + activity timestamps
   for (const session of sessions) {
     if (!session.projectPath) continue;
     const normalized = normalizePath(session.projectPath);
-    if (!seen.has(normalized)) {
-      // Store the normalized path — raw projectPath may contain \\?\ prefix on Windows
-      seen.set(normalized, { path: normalized, isExplicit: false });
+    const ts = session.modifiedAt instanceof Date
+      ? session.modifiedAt.getTime()
+      : new Date(session.modifiedAt).getTime();
+
+    const existing = seen.get(normalized);
+    if (existing) {
+      // Update lastActivityAt if this session is more recent
+      if (!existing.lastActivityAt || ts > existing.lastActivityAt) {
+        existing.lastActivityAt = ts;
+      }
+      // Tag with remote environment if applicable
+      if (session.remoteEnvironment && !existing.environment) {
+        existing.environment = session.remoteEnvironment;
+      }
+    } else {
+      seen.set(normalized, {
+        path: normalized,
+        isExplicit: false,
+        lastActivityAt: ts,
+        environment: session.remoteEnvironment,
+      });
     }
   }
 
-  return Array.from(seen.values());
+  // Sort by last activity (most recent first), workspaces without activity at the end
+  return Array.from(seen.values()).sort((a, b) => {
+    const aTime = a.lastActivityAt ?? 0;
+    const bTime = b.lastActivityAt ?? 0;
+    return bTime - aTime;
+  });
 }

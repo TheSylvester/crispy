@@ -75,10 +75,54 @@ jobs:
           name: vsix-${{ matrix.target }}
           path: "*.vsix"
 
-  # ── Publish: collect all VSIXs and release ───────────────────────────────
+  # ── Tauri: build Windows installer ────────────────────────────────────────
+  build-tauri:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tauri/src-tauri
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Install Tauri deps
+        working-directory: tauri
+        run: npm install
+
+      - name: Bundle runtime
+        working-directory: tauri
+        run: pwsh scripts/bundle-runtime.ps1
+
+      - name: Build Tauri app
+        working-directory: tauri
+        run: npx tauri build 2>&1
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ""
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tauri-windows-installer
+          path: tauri/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+  # ── Publish: collect all VSIXs + Tauri installer and release ─────────────
   publish:
-    needs: build
-    # Run even if some matrix jobs fail — publish whichever VSIXs were built.
+    needs: [build, build-tauri]
+    # Run even if some matrix jobs fail — publish whichever artifacts were built.
     # Skip only if the entire build was cancelled.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
@@ -94,8 +138,20 @@ jobs:
           pattern: vsix-*
           merge-multiple: true
 
+      - name: Download Tauri artifacts (if available)
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          path: tauri
+          pattern: tauri-*
+          merge-multiple: true
+
       - name: List collected artifacts
-        run: ls -lh vsix/ || echo "No artifacts found"
+        run: |
+          echo "=== VSIX ==="
+          ls -lh vsix/ || echo "No VSIX artifacts found"
+          echo "=== Tauri ==="
+          ls -lh tauri/ 2>/dev/null || echo "No Tauri artifacts (build may have failed)"
 
       - name: Publish to OpenVSX
         run: |
@@ -115,7 +171,14 @@ jobs:
             exit 1
           fi
 
+      - name: Collect release files
+        run: |
+          mkdir -p release-files
+          cp vsix/*.vsix release-files/ 2>/dev/null || true
+          cp tauri/*.exe release-files/ 2>/dev/null || true
+          ls -lh release-files/
+
       - uses: softprops/action-gh-release@v2
         with:
-          files: vsix/*.vsix
+          files: release-files/*
           generate_release_notes: true
