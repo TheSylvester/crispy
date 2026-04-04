@@ -13,6 +13,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useMemo, u
 import { useTransport } from './TransportContext.js';
 import { useTabSession } from './TabSessionContext.js';
 import { useActiveTabPanelBridge } from './TabPanelContext.js';
+import { useIsActiveTab } from './TabContainerContext.js';
 import { inferLanguage } from '../renderers/tools/shared/tool-utils.js';
 
 // ============================================================================
@@ -67,11 +68,12 @@ export function FilePanelProvider({ children }: FilePanelProviderProps): React.J
   const { effectiveCwd } = useTabSession();
   const fullPath = effectiveCwd.fullPath;
 
-  // Wrap setFileViewerOpen to also push to the bridge
+  // Wrap setFileViewerOpen to also push to the bridge (only from active tab)
+  const isActiveTab = useIsActiveTab();
   const setFileViewerOpen = useCallback((open: boolean) => {
     setFileViewerOpenRaw(open);
-    bridge?.publishFileViewerOpen(open);
-  }, [bridge]);
+    if (isActiveTab) bridge?.publishFileViewerOpen(open);
+  }, [bridge, isActiveTab]);
   const [activeFileView, setActiveFileView] = useState<ActiveFileView | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

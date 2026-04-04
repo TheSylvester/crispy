@@ -11,7 +11,8 @@
  * @module webview/context/TabContainerContext
  */
 
-import { createContext, useContext, useRef } from 'react';
+import { createContext, useContext, useMemo, useRef } from 'react';
+import { useTabControllerOptional } from './TabControllerContext.js';
 
 interface TabContainerContextValue {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -21,10 +22,16 @@ interface TabContainerContextValue {
 
 const TabContainerContext = createContext<TabContainerContextValue | null>(null);
 
-export function TabContainerProvider({ children, isActiveTab = true }: { children: React.ReactNode; isActiveTab?: boolean }): React.JSX.Element {
+export function TabContainerProvider({ children, tabId }: { children: React.ReactNode; tabId?: string }): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
+  const controller = useTabControllerOptional();
+  // Derive isActiveTab from the controller's activeTabId (reactive)
+  const isActiveTab = tabId ? controller?.activeTabId === tabId : true;
+
+  const value = useMemo(() => ({ containerRef, isActiveTab }), [isActiveTab]);
+
   return (
-    <TabContainerContext.Provider value={{ containerRef, isActiveTab }}>
+    <TabContainerContext.Provider value={value}>
       <div ref={containerRef} style={{ display: 'contents' }}>
         {children}
       </div>

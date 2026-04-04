@@ -10,6 +10,7 @@
  */
 
 import { createContext, useContext, useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useIsActiveTab } from './TabContainerContext.js';
 
 // Re-export SidebarView from PreferencesContext to avoid consumers needing both imports
 export type SidebarView = 'files' | 'tools' | 'git';
@@ -37,19 +38,20 @@ export function TabPanelProvider({ children }: { children: React.ReactNode }): R
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
   const [fileViewerWidthPx, setFileViewerWidthPx] = useState<number | null>(null);
 
-  // Push state changes to the app-level bridge
+  // Push state changes to the app-level bridge — only the active tab publishes
   const bridge = useContext(ActiveTabPanelBridgeCtx);
+  const isActiveTab = useIsActiveTab();
   const stateRef = useRef({ toolPanelOpen, sidebarView, toolPanelWidthPx, fileViewerWidthPx, fileViewerOpen: false });
   stateRef.current = { ...stateRef.current, toolPanelOpen, sidebarView, toolPanelWidthPx, fileViewerWidthPx };
 
   useEffect(() => {
-    if (!bridge) return;
+    if (!bridge || !isActiveTab) return;
     bridge.publish(stateRef.current);
     // Register setters so the bridge can forward TitleBar writes back
     bridge.registerSetters({
       setToolPanelOpen, setSidebarView, setToolPanelWidthPx, setFileViewerWidthPx,
     });
-  }, [bridge, toolPanelOpen, sidebarView, toolPanelWidthPx, fileViewerWidthPx]);
+  }, [bridge, isActiveTab, toolPanelOpen, sidebarView, toolPanelWidthPx, fileViewerWidthPx]);
 
   const value: TabPanelValue = useMemo(() => ({
     toolPanelOpen, setToolPanelOpen,

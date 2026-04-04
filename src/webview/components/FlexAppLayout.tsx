@@ -101,10 +101,10 @@ function saveLayout(model: Model, tabMap: TabSessionMap) {
 // TabContent — inner wrapper per tab
 // ============================================================================
 
-function TabContent({ isActive, forkConfig }: { isActive: boolean; forkConfig?: ForkConfig | null }): React.JSX.Element {
+function TabContent({ tabId, forkConfig }: { tabId: string; forkConfig?: ForkConfig | null }): React.JSX.Element {
   const { effectiveSessionId } = useTabSession();
   return (
-    <TabContainerProvider isActiveTab={isActive}>
+    <TabContainerProvider tabId={tabId}>
       <TabPanelProvider>
         <FileIndexProvider>
           <FilePanelProvider>
@@ -172,6 +172,8 @@ export function FlexAppLayout(): React.JSX.Element {
   sessionsRef.current = sessions;
   const selectedSessionIdRef = useRef(selectedSessionId);
   selectedSessionIdRef.current = selectedSessionId;
+  const activeTabIdRef = useRef(activeTabId);
+  activeTabIdRef.current = activeTabId;
 
   // --- Tab operations (registered with controller) ---
 
@@ -337,7 +339,6 @@ export function FlexAppLayout(): React.JSX.Element {
     if (node.getComponent() === 'transcript') {
       const tabId = node.getId();
       const sessionId = tabSessionMapRef.current.get(tabId) ?? null;
-      const isActive = tabId === activeTabId;
 
       // Callback for when the tab's session changes (user selects a session within the tab)
       const onSessionChange = (newSessionId: string | null) => {
@@ -346,7 +347,7 @@ export function FlexAppLayout(): React.JSX.Element {
         const name = newSessionId ? getTabName(newSessionId, sessionsRef.current) : 'New Tab';
         modelRef.current.doAction(Actions.renameTab(tabId, name));
         // If this is the active tab, update the controller
-        if (tabId === activeTabId) {
+        if (tabId === activeTabIdRef.current) {
           controller.setActiveTabSession(newSessionId);
         }
         bump();
@@ -358,12 +359,12 @@ export function FlexAppLayout(): React.JSX.Element {
 
       return (
         <TabSessionProvider sessionId={sessionId} onSessionChange={onSessionChange}>
-          <TabContent isActive={isActive} forkConfig={forkConfig} />
+          <TabContent tabId={tabId} forkConfig={forkConfig} />
         </TabSessionProvider>
       );
     }
     return null;
-  }, [activeTabId, controller, bump]);
+  }, [controller, bump]);
 
   // --- Tab keyboard shortcuts ---
   const envKind = useEnvironment();
