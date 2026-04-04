@@ -22,6 +22,7 @@ import { ContentErrorBoundary } from './ErrorBoundary.js';
 import { TranscriptViewer } from './TranscriptViewer.js';
 import { useTabController, type TabCreateConfig, type ForkConfig } from '../context/TabControllerContext.js';
 import { useSession } from '../context/SessionContext.js';
+import { useEnvironment } from '../context/EnvironmentContext.js';
 import { getSessionDisplayName } from '../utils/session-display.js';
 import './flexlayout-overrides.css';
 
@@ -283,6 +284,65 @@ export function FlexAppLayout(): React.JSX.Element {
     }
     return null;
   }, [activeTabId, controller, bump]);
+
+  // --- Tab keyboard shortcuts ---
+  const envKind = useEnvironment();
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // VS Code host: Ctrl+Shift+T (new), Ctrl+Shift+W (close), Ctrl+PageUp/Down (cycle)
+      // Dev server / Tauri: Alt+N (new), Alt+W (close), Alt+[/] (cycle)
+      const isVscode = envKind === 'vscode';
+
+      if (isVscode) {
+        if (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey) {
+          if (e.key === 'T' || e.key === 't') {
+            e.preventDefault();
+            createTab();
+          } else if (e.key === 'W' || e.key === 'w') {
+            e.preventDefault();
+            if (activeTabId) closeTab(activeTabId);
+          }
+        }
+        if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+          if (e.key === 'PageDown') {
+            e.preventDefault();
+            cycleTab(1);
+          } else if (e.key === 'PageUp') {
+            e.preventDefault();
+            cycleTab(-1);
+          }
+        }
+      } else {
+        // Dev server / Tauri fallback
+        if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey) {
+          if (e.key === 'n') {
+            e.preventDefault();
+            createTab();
+          } else if (e.key === 'w') {
+            e.preventDefault();
+            if (activeTabId) closeTab(activeTabId);
+          } else if (e.key === ']') {
+            e.preventDefault();
+            cycleTab(1);
+          } else if (e.key === '[') {
+            e.preventDefault();
+            cycleTab(-1);
+          }
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [envKind, activeTabId, createTab, closeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cycle through tabs in order
+  function cycleTab(direction: 1 | -1) {
+    const tabIds = Array.from(tabSessionMapRef.current.keys());
+    if (tabIds.length <= 1) return;
+    const currentIdx = activeTabId ? tabIds.indexOf(activeTabId) : 0;
+    const nextIdx = (currentIdx + direction + tabIds.length) % tabIds.length;
+    activateTab(tabIds[nextIdx]);
+  }
 
   return (
     <Layout
