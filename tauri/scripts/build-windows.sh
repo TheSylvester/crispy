@@ -14,6 +14,23 @@ GIT_UNIX='C:\Program Files\Git\usr\bin'
 echo "=== Clearing runtime cache ==="
 powershell.exe -Command "if (Test-Path '$WIN_REPO\tauri\src-tauri\runtime') { Remove-Item -Recurse -Force '$WIN_REPO\tauri\src-tauri\runtime'; Write-Host 'Deleted stale runtime/' } else { Write-Host 'No cache to clear' }"
 
+# Clear WebView2 cache — prevents stale webview HTML/JS/CSS from persisting across installs
+echo "=== Clearing WebView2 cache ==="
+powershell.exe -Command "
+\$wv2 = Join-Path \$env:LOCALAPPDATA 'io.github.thesylvester.crispy\EBWebView'
+if (Test-Path \$wv2) {
+  Get-Process -Name 'crispy-desktop' -ErrorAction SilentlyContinue | Stop-Process -Force
+  Start-Sleep -Seconds 1
+  Remove-Item -Recurse -Force \$wv2
+  Write-Host 'Cleared WebView2 cache'
+} else { Write-Host 'No WebView2 cache' }
+"
+
+# Rebuild WSL webview dist so the local daemon serves fresh code
+echo "=== Building WSL webview ==="
+REPO_ROOT="$( cd "$(dirname "$0")/../.." && pwd )"
+( cd "$REPO_ROOT" && npm run build:webview )
+
 # Sync current branch to Windows clone
 # Cargo dirties Cargo.toml during compilation — restore it before pulling
 BRANCH="$(git branch --show-current)"
