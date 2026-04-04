@@ -200,6 +200,7 @@ export function FlexAppLayout(): React.JSX.Element {
   }, [bump]);
 
   const closeTab = useCallback((tabId: string) => {
+    if (tabSessionMapRef.current.size <= 1) return; // don't close last tab
     tabSessionMapRef.current.delete(tabId);
     modelRef.current.doAction(Actions.deleteTab(tabId));
     bump();
@@ -260,6 +261,15 @@ export function FlexAppLayout(): React.JSX.Element {
       createTab();
     }
   }, [createTab]);
+
+  // --- Prevent closing the last tab ---
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleAction = useCallback((action: any): any => {
+    if (action.type === Actions.DELETE_TAB) {
+      if (tabSessionMapRef.current.size <= 1) return undefined; // cancel
+    }
+    return action;
+  }, []);
 
   // --- onModelChange: detect tab activations and deletions ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -418,6 +428,7 @@ export function FlexAppLayout(): React.JSX.Element {
     <Layout
       model={modelRef.current}
       factory={factory}
+      onAction={handleAction}
       onModelChange={handleModelChange}
       onRenderTab={handleRenderTab}
       onRenderTabSet={handleRenderTabSet}
