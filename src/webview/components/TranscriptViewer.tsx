@@ -282,27 +282,27 @@ export function TranscriptViewer(): React.JSX.Element {
   // Fork preview glow: add/remove class on last assistant message
   const handleForkHoverChange = useCallback((hovering: boolean) => {
     if (hovering) {
-      const msgs = document.querySelectorAll('.message.assistant');
-      const last = msgs[msgs.length - 1];
+      const msgs = transcriptRef.current?.querySelectorAll('.message.assistant');
+      const last = msgs?.[msgs.length - 1];
       if (last) last.classList.add('crispy-fork-preview');
     } else {
-      document.querySelectorAll('.message.crispy-fork-preview').forEach((el) => {
+      transcriptRef.current?.querySelectorAll('.message.crispy-fork-preview').forEach((el) => {
         el.classList.remove('crispy-fork-preview');
       });
     }
-  }, []);
+  }, [transcriptRef]);
 
   // Per-message fork preview: glow a specific assistant message by UUID
   const handleForkPreviewHover = useCallback((targetMessageId: string, hovering: boolean) => {
     if (hovering) {
-      const el = document.querySelector(`.message[data-uuid="${targetMessageId}"]`);
+      const el = transcriptRef.current?.querySelector(`.message[data-uuid="${targetMessageId}"]`);
       if (el) el.classList.add('crispy-fork-preview');
     } else {
-      document.querySelectorAll('.message.crispy-fork-preview').forEach(el =>
+      transcriptRef.current?.querySelectorAll('.message.crispy-fork-preview').forEach(el =>
         el.classList.remove('crispy-fork-preview')
       );
     }
-  }, []);
+  }, [transcriptRef]);
 
   // Per-message fork handler — delegates to ControlPanel's executeFork via ref
   const forkHandlerRef = useRef<((atMessageId: string) => void) | null>(null);

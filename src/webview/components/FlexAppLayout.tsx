@@ -14,6 +14,7 @@ import { ControlPanelProvider } from '../context/ControlPanelContext.js';
 import { TabPanelProvider } from '../context/TabPanelContext.js';
 import { FileIndexProvider } from '../context/FileIndexContext.js';
 import { FilePanelProvider } from '../context/FilePanelContext.js';
+import { TabContainerProvider } from '../context/TabContainerContext.js';
 import { TranscriptViewer } from './TranscriptViewer.js';
 import './flexlayout-overrides.css';
 
@@ -47,15 +48,17 @@ const model = Model.fromJson(DEFAULT_MODEL);
 function TabContent(): React.JSX.Element {
   const { effectiveSessionId } = useTabSession();
   return (
-    <TabPanelProvider>
-      <FileIndexProvider>
-        <FilePanelProvider>
-          <ControlPanelProvider selectedSessionId={effectiveSessionId}>
-            <TranscriptViewer />
-          </ControlPanelProvider>
-        </FilePanelProvider>
-      </FileIndexProvider>
-    </TabPanelProvider>
+    <TabContainerProvider>
+      <TabPanelProvider>
+        <FileIndexProvider>
+          <FilePanelProvider>
+            <ControlPanelProvider selectedSessionId={effectiveSessionId}>
+              <TranscriptViewer />
+            </ControlPanelProvider>
+          </FilePanelProvider>
+        </FileIndexProvider>
+      </TabPanelProvider>
+    </TabContainerProvider>
   );
 }
 

@@ -18,6 +18,7 @@ import { usePreferences } from '../context/PreferencesContext.js';
 import { useTabPanel } from '../context/TabPanelContext.js';
 import { RenderLocationProvider } from '../context/RenderLocationContext.js';
 import { usePanelState, usePanelDispatch, useSetPanelDisplayIds } from './PanelStateContext.js';
+import { useTabContainer } from '../context/TabContainerContext.js';
 import { ToolBlockRenderer } from './ToolBlockRenderer.js';
 import { getToolRenderCategory } from './tool-definitions.js';
 import type { RichBlock } from './types.js';
@@ -63,6 +64,7 @@ export function BlocksToolPanel(): React.JSX.Element {
   const { toolPanelMode, setToolPanelMode, renderMode } = usePreferences();
   const { setToolPanelWidthPx, setToolPanelOpen } = useTabPanel();
   const lastArrivedId = useBlocksLastArrivedToolId();
+  const { containerRef } = useTabContainer();
   const _pendingGen = registry.usePendingCount(); // triggers re-render on pending changes
   const scrollRef = useRef<HTMLDivElement>(null);
   const wasNearBottomRef = useRef(true);
@@ -124,7 +126,7 @@ export function BlocksToolPanel(): React.JSX.Element {
 
     // Schedule DOM measurement in rAF to avoid layout thrashing during render
     rafIdRef.current = requestAnimationFrame(() => {
-      const scrollRoot = document.querySelector('.crispy-transcript') as HTMLElement | null;
+      const scrollRoot = containerRef.current?.querySelector('.crispy-transcript') as HTMLElement | null;
       if (!scrollRoot) return;
 
       // Update cached Y positions for all visible tools
@@ -188,7 +190,7 @@ export function BlocksToolPanel(): React.JSX.Element {
     });
 
     return () => cancelAnimationFrame(rafIdRef.current);
-  }, [needsIconsGrouping, visibleToolIds, baseDisplayToolIds, lastArrivedId, registry]);
+  }, [needsIconsGrouping, visibleToolIds, baseDisplayToolIds, lastArrivedId, registry, containerRef]);
 
   // Merge base IDs with icons group IDs
   const displayToolIds = useMemo(() => {

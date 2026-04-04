@@ -46,6 +46,7 @@ import { useSessionStatus } from '../../hooks/useSessionStatus.js';
 import { useRosieLog } from '../../hooks/useRosieLog.js';
 import { useVoiceInput } from '../../hooks/useVoiceInput.js';
 import { useControlPanel } from '../../context/ControlPanelContext.js';
+import { useTabContainer } from '../../context/TabContainerContext.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent, TurnTarget } from '../../../core/agent-adapter.js';
@@ -178,6 +179,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       handleForkHistoryLoaded: onForkHistoryLoaded,
       setAgencyMode: ctxSetAgencyMode,
     } = useControlPanel();
+    const { containerRef } = useTabContainer();
     // Track the DOM element for native drag/drop listeners. A callback ref
     // ensures the useEffect re-runs when the element mounts, unlike a
     // RefObject whose identity never changes.
@@ -234,12 +236,12 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       onTranscript: useCallback((text: string) => {
         // Append transcribed text to existing input (hybrid input support).
         // Read current value from DOM since useReducer doesn't support functional updates.
-        const textarea = document.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
+        const textarea = panelEl?.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
         const current = textarea?.value ?? '';
         const separator = current && !current.endsWith(' ') ? ' ' : '';
         dispatch({ type: 'SET_INPUT', value: current + separator + text });
         textarea?.focus();
-      }, []),
+      }, [panelEl]),
       onError: useCallback((error: string) => {
         console.error('[Voice]', error);
         showSendError(`Voice: ${error}`);
@@ -438,11 +440,11 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     /** Read current input from the textarea DOM — avoids closing over stale state. */
     const getTextareaState = useCallback(() => {
-      const textarea = document.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
+      const textarea = panelEl?.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
       return textarea
         ? { textarea, value: textarea.value, start: textarea.selectionStart, end: textarea.selectionEnd }
         : null;
-    }, []);
+    }, [panelEl]);
 
     /** Insert text at cursor position (or append), dispatch SET_INPUT, restore cursor. */
     const insertAtCursor = useCallback((text: string) => {
@@ -901,7 +903,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         }
 
         // Focus textarea after drop so user can immediately type
-        const textarea = document.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
+        const textarea = panelEl?.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
         textarea?.focus();
       };
 
@@ -1008,7 +1010,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const executeFork = useCallback((atMessageId: string) => {
       if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
       // Clear fork preview glow — mouseLeave won't fire since we're switching panels
-      document.querySelectorAll('.message.crispy-fork-preview').forEach(el =>
+      containerRef.current?.querySelectorAll('.message.crispy-fork-preview').forEach(el =>
         el.classList.remove('crispy-fork-preview'),
       );
 

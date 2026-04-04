@@ -17,6 +17,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { usePanelDisplayIds, usePanelState } from './PanelStateContext.js';
+import { useTabContainer } from '../context/TabContainerContext.js';
 
 // ============================================================================
 // Types
@@ -34,13 +35,14 @@ interface ConnectorPath {
 function useConnectorPaths(): ConnectorPath[] {
   const panelDisplayIds = usePanelDisplayIds();
   const panelState = usePanelState();
+  const { containerRef } = useTabContainer();
   const [paths, setPaths] = useState<ConnectorPath[]>([]);
   const rafRef = useRef<number>(0);
   const settleRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const computePaths = useCallback(() => {
-    const transcriptScroll = document.querySelector('.crispy-transcript');
-    const panelScroll = document.querySelector('.crispy-tool-panel__scroll');
+    const transcriptScroll = containerRef.current?.querySelector('.crispy-transcript');
+    const panelScroll = containerRef.current?.querySelector('.crispy-tool-panel__scroll');
     if (!transcriptScroll || !panelScroll) {
       setPaths([]);
       return;
@@ -191,7 +193,7 @@ function useConnectorPaths(): ConnectorPath[] {
     }
 
     setPaths(result);
-  }, [panelDisplayIds]);
+  }, [panelDisplayIds, containerRef]);
 
   // Schedule a rAF-guarded recompute — cancel-and-reschedule so the last
   // layout event always wins (avoids freezing on intermediate coordinates).
@@ -212,9 +214,9 @@ function useConnectorPaths(): ConnectorPath[] {
   }, [computePaths]);
 
   useEffect(() => {
-    const transcriptScroll = document.querySelector('.crispy-transcript');
-    const panelScroll = document.querySelector('.crispy-tool-panel__scroll');
-    const layout = document.querySelector('.crispy-layout');
+    const transcriptScroll = containerRef.current?.querySelector('.crispy-transcript');
+    const panelScroll = containerRef.current?.querySelector('.crispy-tool-panel__scroll');
+    const layout = containerRef.current?.querySelector('.crispy-layout');
 
     // Initial compute — double-rAF to ensure layout has settled after mount
     let cancelled = false;
@@ -250,7 +252,7 @@ function useConnectorPaths(): ConnectorPath[] {
         rafRef.current = 0;
       }
     };
-  }, [computePaths, scheduleUpdate]);
+  }, [computePaths, scheduleUpdate, containerRef]);
 
   // Re-compute when panelDisplayIds changes
   useEffect(() => {
