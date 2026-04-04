@@ -36,31 +36,33 @@ const MAIN_TABSET_ID = 'main-tabset';
 const LAYOUT_STORAGE_KEY = 'crispy-layout';
 const TAB_MAP_STORAGE_KEY = 'crispy-tab-sessions';
 
-const DEFAULT_MODEL: IJsonModel = {
-  global: {
-    splitterSize: 4,
-    tabEnableClose: true,
-    tabEnableRename: false,
-  },
-  layout: {
-    type: 'row',
-    children: [
-      {
-        type: 'tabset',
-        id: MAIN_TABSET_ID,
-        enableTabStrip: true,
-        children: [
-          {
-            type: 'tab',
-            id: 'tab-initial',
-            name: 'New Tab',
-            component: 'transcript',
-          },
-        ],
-      },
-    ],
-  },
-};
+function makeDefaultModel(showTabStrip: boolean): IJsonModel {
+  return {
+    global: {
+      splitterSize: 4,
+      tabEnableClose: showTabStrip,
+      tabEnableRename: false,
+    },
+    layout: {
+      type: 'row',
+      children: [
+        {
+          type: 'tabset',
+          id: MAIN_TABSET_ID,
+          enableTabStrip: showTabStrip,
+          children: [
+            {
+              type: 'tab',
+              id: 'tab-initial',
+              name: 'New Tab',
+              component: 'transcript',
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
 
 // ============================================================================
 // Tab-to-Session Map (stable across renders via ref)
@@ -132,10 +134,13 @@ function TabContent({ tabId, forkConfig }: { tabId: string; forkConfig?: ForkCon
 export function FlexAppLayout(): React.JSX.Element {
   const controller = useTabController();
   const { sessions, selectedSessionId } = useSession();
+  const envKind = useEnvironment();
+  const isVscode = envKind === 'vscode';
 
   // Restore persisted layout or use default
   const [initialState] = useState(() => {
-    const persisted = loadPersistedLayout();
+    const showTabStrip = !isVscode;
+    const persisted = !isVscode ? loadPersistedLayout() : null;
     if (persisted) {
       try {
         const model = Model.fromJson(persisted.model);
@@ -145,7 +150,7 @@ export function FlexAppLayout(): React.JSX.Element {
       }
     }
     return {
-      model: Model.fromJson(DEFAULT_MODEL),
+      model: Model.fromJson(makeDefaultModel(showTabStrip)),
       tabMap: new Map([['tab-initial', null]]) as TabSessionMap,
     };
   });
@@ -324,9 +329,10 @@ export function FlexAppLayout(): React.JSX.Element {
     }
   }, []);
 
-  // Add "+" button to tabset header
+  // Add "+" button to tabset header (multi-tab only)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleRenderTabSet = useCallback((_node: any, renderValues: any) => {
+    if (isVscode) return; // VS Code uses native editor tabs
     renderValues.stickyButtons.push(
       <button
         key="add-tab"
@@ -337,7 +343,7 @@ export function FlexAppLayout(): React.JSX.Element {
         +
       </button>,
     );
-  }, [createTab]);
+  }, [createTab, isVscode]);
 
   // --- Factory: create per-tab provider cascade ---
   const factory = useCallback((node: TabNode): React.JSX.Element | null => {
@@ -371,55 +377,30 @@ export function FlexAppLayout(): React.JSX.Element {
     return null;
   }, [controller, bump]);
 
-  // --- Tab keyboard shortcuts ---
-  const envKind = useEnvironment();
+  // --- Tab keyboard shortcuts (multi-tab only) ---
   useEffect(() => {
+    if (isVscode) return; // VS Code uses native editor tabs
     const handleKeyDown = (e: KeyboardEvent) => {
-      // VS Code host: Ctrl+Shift+T (new), Ctrl+Shift+W (close), Ctrl+PageUp/Down (cycle)
       // Dev server / Tauri: Alt+N (new), Alt+W (close), Alt+[/] (cycle)
-      const isVscode = envKind === 'vscode';
-
-      if (isVscode) {
-        if (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey) {
-          if (e.key === 'T' || e.key === 't') {
-            e.preventDefault();
-            createTab();
-          } else if (e.key === 'W' || e.key === 'w') {
-            e.preventDefault();
-            if (activeTabId) closeTab(activeTabId);
-          }
-        }
-        if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
-          if (e.key === 'PageDown') {
-            e.preventDefault();
-            cycleTab(1);
-          } else if (e.key === 'PageUp') {
-            e.preventDefault();
-            cycleTab(-1);
-          }
-        }
-      } else {
-        // Dev server / Tauri fallback
-        if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey) {
-          if (e.key === 'n') {
-            e.preventDefault();
-            createTab();
-          } else if (e.key === 'w') {
-            e.preventDefault();
-            if (activeTabId) closeTab(activeTabId);
-          } else if (e.key === ']') {
-            e.preventDefault();
-            cycleTab(1);
-          } else if (e.key === '[') {
-            e.preventDefault();
-            cycleTab(-1);
-          }
+      if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey) {
+        if (e.key === 'n') {
+          e.preventDefault();
+          createTab();
+        } else if (e.key === 'w') {
+          e.preventDefault();
+          if (activeTabId) closeTab(activeTabId);
+        } else if (e.key === ']') {
+          e.preventDefault();
+          cycleTab(1);
+        } else if (e.key === '[') {
+          e.preventDefault();
+          cycleTab(-1);
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [envKind, activeTabId, createTab, closeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isVscode, activeTabId, createTab, closeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cycle through tabs in order
   function cycleTab(direction: 1 | -1) {
