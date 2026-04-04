@@ -40,7 +40,7 @@ export function FilePanel(): React.JSX.Element {
     const startX = e.clientX;
     const panel = (e.target as HTMLElement).closest('.crispy-file-panel');
     const startWidth = panel?.clientWidth ?? 350;
-    const layout = document.querySelector('.crispy-layout');
+    const layout = panel?.closest('.crispy-tab-layout') ?? document.querySelector('.crispy-layout');
 
     layout?.setAttribute('data-resizing', '');
 

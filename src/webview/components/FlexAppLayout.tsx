@@ -21,6 +21,7 @@ import { TabContainerProvider } from '../context/TabContainerContext.js';
 import { ContentErrorBoundary } from './ErrorBoundary.js';
 import { TranscriptViewer } from './TranscriptViewer.js';
 import { TabHeader } from './TabHeader.js';
+import { TabLayout } from './TabLayout.js';
 import { useTabController, type TabCreateConfig, type ForkConfig } from '../context/TabControllerContext.js';
 import { useSession } from '../context/SessionContext.js';
 import { useEnvironment } from '../context/EnvironmentContext.js';
@@ -112,7 +113,9 @@ function TabContent({ tabId, forkConfig }: { tabId: string; forkConfig?: ForkCon
             <ControlPanelProvider selectedSessionId={effectiveSessionId} initialForkConfig={forkConfig}>
               <ContentErrorBoundary>
                 <TabHeader />
-                <TranscriptViewer />
+                <TabLayout>
+                  <TranscriptViewer />
+                </TabLayout>
               </ContentErrorBoundary>
             </ControlPanelProvider>
           </FilePanelProvider>

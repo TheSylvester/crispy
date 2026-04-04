@@ -210,7 +210,6 @@ h2 {
   height: calc(100% - var(--titlebar-height));
   margin-top: var(--titlebar-height);
   margin-left: 0;
-  margin-right: var(--right-panels-width, 0px);
   position: relative;
   transition: margin-right var(--sidebar-transition);
 }
@@ -222,16 +221,16 @@ h2 {
    from .crispy-main (set by React via ControlPanelContext). */
 
 /* 1. Set --frame-highlight on .crispy-main per agency mode */
-.crispy-main[data-streaming][data-agency="ask-before-edits"] {
+.crispy-tab-layout[data-streaming][data-agency="ask-before-edits"] {
   --frame-highlight: var(--agency-white);
 }
-.crispy-main[data-streaming][data-agency="edit-automatically"] {
+.crispy-tab-layout[data-streaming][data-agency="edit-automatically"] {
   --frame-highlight: var(--agency-blue);
 }
-.crispy-main[data-streaming][data-agency="plan-mode"] {
+.crispy-tab-layout[data-streaming][data-agency="plan-mode"] {
   --frame-highlight: var(--agency-teal);
 }
-.crispy-main[data-streaming][data-agency="bypass-permissions"] {
+.crispy-tab-layout[data-streaming][data-agency="bypass-permissions"] {
   --frame-highlight: var(--agency-red);
 }
 
@@ -245,12 +244,12 @@ h2 {
   border-radius: inherit;
 }
 
-.crispy-main[data-streaming]::after {
+.crispy-tab-layout[data-streaming]::after {
   animation: crispy-cp-glow 2s ease-in-out infinite;
 }
 
 /* 3. Secondary glow overlay — tool panel (subtler, same rhythm) */
-.crispy-main[data-streaming] .crispy-tool-panel::after {
+.crispy-tab-layout[data-streaming] .crispy-tool-panel::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -344,29 +343,29 @@ h2 {
 }
 
 /* plan-mode → "planning" */
-.crispy-main[data-agency="plan-mode"] .crispy-thinking__label--thinking {
+.crispy-tab-layout[data-agency="plan-mode"] .crispy-thinking__label--thinking {
   display: none;
 }
-.crispy-main[data-agency="plan-mode"] .crispy-thinking__label--planning {
+.crispy-tab-layout[data-agency="plan-mode"] .crispy-thinking__label--planning {
   display: inline;
 }
 
 /* bypass-permissions → "working" */
-.crispy-main[data-agency="bypass-permissions"]
+.crispy-tab-layout[data-agency="bypass-permissions"]
   .crispy-thinking__label--thinking {
   display: none;
 }
-.crispy-main[data-agency="bypass-permissions"]
+.crispy-tab-layout[data-agency="bypass-permissions"]
   .crispy-thinking__label--working {
   display: inline;
 }
 
 /* edit-automatically → "working" */
-.crispy-main[data-agency="edit-automatically"]
+.crispy-tab-layout[data-agency="edit-automatically"]
   .crispy-thinking__label--thinking {
   display: none;
 }
-.crispy-main[data-agency="edit-automatically"]
+.crispy-tab-layout[data-agency="edit-automatically"]
   .crispy-thinking__label--working {
   display: inline;
 }
@@ -439,7 +438,7 @@ h2 {
 /* --- Scroll-to-top (position + entrance) --- */
 
 .crispy-scroll-to-top {
-  top: calc(var(--titlebar-height) + 1rem);
+  top: calc(var(--content-top, var(--titlebar-height)) + 1rem);
   animation: crispy-scroll-fab-in-top 0.15s ease-out both;
 }
 
@@ -1974,17 +1973,17 @@ h2 {
 }
 
 /* Agency-mode colors — data-agency set directly on .crispy-main via React */
-.crispy-main[data-agency="edit-automatically"] .crispy-stop {
+.crispy-tab-layout[data-agency="edit-automatically"] .crispy-stop {
   --stop-color-dim: rgba(64, 168, 232, 0.5);
   --stop-color: rgba(64, 168, 232, 0.7);
   --stop-color-bright: rgba(64, 168, 232, 0.9);
 }
-.crispy-main[data-agency="plan-mode"] .crispy-stop {
+.crispy-tab-layout[data-agency="plan-mode"] .crispy-stop {
   --stop-color-dim: rgba(71, 152, 140, 0.5);
   --stop-color: rgba(71, 152, 140, 0.7);
   --stop-color-bright: rgba(71, 152, 140, 0.9);
 }
-.crispy-main[data-agency="bypass-permissions"] .crispy-stop {
+.crispy-tab-layout[data-agency="bypass-permissions"] .crispy-stop {
   --stop-color-dim: rgba(232, 64, 64, 0.5);
   --stop-color: rgba(232, 64, 64, 0.7);
   --stop-color-bright: rgba(232, 64, 64, 0.9);
@@ -3719,7 +3718,7 @@ h2 {
 
 /* --- Streaming neon glow on container (uses --agency-glow-shadow) --- */
 
-.crispy-main[data-streaming] .crispy-cp {
+.crispy-tab-layout[data-streaming] .crispy-cp {
   box-shadow:
     0 4px 24px rgba(0, 0, 0, 0.4),
     0 1px 4px rgba(0, 0, 0, 0.2),
@@ -4142,6 +4141,19 @@ h2 {
   top: 100%;
   left: 0;
   z-index: 400;
+}
+
+/* ============================================================================
+ * TabLayout — per-tab panel layout container
+ * ========================================================================== */
+
+.crispy-tab-layout {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  margin-right: var(--right-panels-width, 0px);
 }
 
 /* ============================================================================
@@ -4640,10 +4652,10 @@ h2 {
 
 .crispy-tool-panel {
   position: fixed;
-  top: var(--titlebar-height);
+  top: var(--content-top, var(--titlebar-height));
   right: 0;
   width: var(--tool-panel-actual-width, var(--tool-panel-width, 0px));
-  height: calc(100vh - var(--titlebar-height));
+  height: calc(100vh - var(--content-top, var(--titlebar-height)));
   background: var(--glass-bg);
   -webkit-backdrop-filter: blur(40px) saturate(170%);
   backdrop-filter: blur(40px) saturate(170%);
@@ -4863,7 +4875,14 @@ h2 {
 [data-resizing] .crispy-scroll-nav,
 [data-resizing] .crispy-cp,
 [data-resizing] .crispy-stop,
-[data-resizing] .crispy-playback {
+[data-resizing] .crispy-playback,
+.crispy-tab-layout[data-resizing] .crispy-tool-panel,
+.crispy-tab-layout[data-resizing] .crispy-file-panel,
+.crispy-tab-layout[data-resizing] .crispy-git-panel,
+.crispy-tab-layout[data-resizing] .crispy-scroll-nav,
+.crispy-tab-layout[data-resizing] .crispy-cp,
+.crispy-tab-layout[data-resizing] .crispy-stop,
+.crispy-tab-layout[data-resizing] .crispy-playback {
   transition: none !important;
 }
 
@@ -4921,7 +4940,8 @@ h2 {
 }
 
 /* Hide connector lines during panel resize drag (avoids jitter) */
-[data-resizing] .crispy-connector-lines {
+[data-resizing] .crispy-connector-lines,
+.crispy-tab-layout[data-resizing] .crispy-connector-lines {
   display: none;
 }
 
@@ -5704,10 +5724,10 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
 
 .crispy-file-panel {
   position: fixed;
-  top: var(--titlebar-height);
+  top: var(--content-top, var(--titlebar-height));
   right: 0;
   width: var(--tool-panel-actual-width, var(--tool-panel-width, 0px));
-  height: calc(100vh - var(--titlebar-height));
+  height: calc(100vh - var(--content-top, var(--titlebar-height)));
   background: var(--vscode-sideBar-background, #252526);
   border-left: 1px solid var(--border-panel);
   display: flex;
@@ -6007,10 +6027,10 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
 
 .crispy-file-viewer-panel {
   position: fixed;
-  top: var(--titlebar-height);
+  top: var(--content-top, var(--titlebar-height));
   right: var(--tool-panel-actual-width, 0px);
   width: var(--file-viewer-width, 0px);
-  height: calc(100vh - var(--titlebar-height));
+  height: calc(100vh - var(--content-top, var(--titlebar-height)));
   background: var(--vscode-editor-background, #1e1e1e);
   border-left: 1px solid var(--border-panel);
   display: flex;
@@ -6172,7 +6192,8 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
 }
 
 /* Disable transitions on file viewer panel during drag resize */
-[data-resizing] .crispy-file-viewer-panel {
+[data-resizing] .crispy-file-viewer-panel,
+.crispy-tab-layout[data-resizing] .crispy-file-viewer-panel {
   transition: none !important;
 }
 
@@ -6656,10 +6677,10 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
 
 .crispy-git-panel {
   position: fixed;
-  top: var(--titlebar-height);
+  top: var(--content-top, var(--titlebar-height));
   right: 0;
   width: var(--tool-panel-actual-width, var(--tool-panel-width, 0px));
-  height: calc(100vh - var(--titlebar-height));
+  height: calc(100vh - var(--content-top, var(--titlebar-height)));
   background: var(--vscode-sideBar-background, #252526);
   border-left: 1px solid var(--border-panel);
   display: flex;
