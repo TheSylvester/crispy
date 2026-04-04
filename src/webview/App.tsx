@@ -23,6 +23,7 @@ import { SessionStatusProvider, useSessionStatus } from './hooks/useSessionStatu
 import { ContentErrorBoundary } from './components/ErrorBoundary.js';
 import { isPerfMode, PerfOverlay, PerfProfiler } from './perf/index.js';
 import { ActiveTabAgencyProvider, useActiveTabAgency } from './context/ActiveTabAgencyContext.js';
+import { ActiveTabPanelBridgeProvider, useActiveTabPanel } from './context/TabPanelContext.js';
 import { TrackerToast } from './components/notifications/TrackerToast.js';
 import { WorkspacePicker } from './components/WorkspacePicker.js';
 
@@ -88,7 +89,7 @@ function AppLayout(): React.JSX.Element {
 
   const {
     toolPanelOpen, toolPanelWidthPx, fileViewerWidthPx,
-  } = usePreferences();
+  } = useActiveTabPanel();
   const { fileViewerOpen } = useFilePanel();
   const { selectedSessionId } = useSession();
   const { channelState } = useSessionStatus(selectedSessionId);
@@ -143,6 +144,7 @@ function AppLayout(): React.JSX.Element {
     : 'collapsed';
 
   return (
+    <ActiveTabPanelBridgeProvider>
     <ActiveTabAgencyProvider>
       <div
         ref={layoutRef}
@@ -166,6 +168,7 @@ function AppLayout(): React.JSX.Element {
         </AgencyMain>
       </div>
     </ActiveTabAgencyProvider>
+    </ActiveTabPanelBridgeProvider>
   );
 }
 

@@ -12,7 +12,7 @@ import { useState, useCallback } from 'react';
 import { useFileTree } from '../../hooks/useFileTree.js';
 import { useFilePanel } from '../../context/FilePanelContext.js';
 import { useRefreshGitFiles } from '../../context/FileIndexContext.js';
-import { usePreferences } from '../../context/PreferencesContext.js';
+import { useTabPanel } from '../../context/TabPanelContext.js';
 import { FileTree } from './FileTree.js';
 import { FileContextMenu } from './FileContextMenu.js';
 import type { FileNode } from '../../hooks/useFileTree.js';
@@ -31,7 +31,7 @@ function RefreshIcon(): React.JSX.Element {
 export function FilePanel(): React.JSX.Element {
   const { cwd } = useFilePanel();
   const refreshGitFiles = useRefreshGitFiles();
-  const { setToolPanelWidthPx } = usePreferences();
+  const { setToolPanelWidthPx } = useTabPanel();
   const { tree, expanded, toggleExpand, filter, setFilter, fileCount, loading } = useFileTree();
   const [contextMenu, setContextMenu] = useState<{ node: FileNode; x: number; y: number } | null>(null);
 

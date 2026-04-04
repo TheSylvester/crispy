@@ -13,7 +13,7 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useFilePanel } from '../../context/FilePanelContext.js';
-import { usePreferences } from '../../context/PreferencesContext.js';
+import { useTabPanel } from '../../context/TabPanelContext.js';
 import { useEnvironment } from '../../context/EnvironmentContext.js';
 import { FileViewer } from './FileViewer.js';
 
@@ -39,7 +39,7 @@ interface SelectionState {
 
 export function FileViewerPanel(): React.JSX.Element | null {
   const { fileViewerOpen, activeFileView, closeFile, insertIntoChat, loading, error } = useFilePanel();
-  const { setFileViewerWidthPx } = usePreferences();
+  const { setFileViewerWidthPx } = useTabPanel();
   const envKind = useEnvironment();
   const panelRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);

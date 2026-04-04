@@ -15,6 +15,7 @@ import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import { useBlocksToolRegistry } from './BlocksToolRegistryContext.js';
 import { useBlocksVisibleToolIds, useBlocksLastArrivedToolId } from './BlocksVisibilityContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
+import { useTabPanel } from '../context/TabPanelContext.js';
 import { RenderLocationProvider } from '../context/RenderLocationContext.js';
 import { usePanelState, usePanelDispatch, useSetPanelDisplayIds } from './PanelStateContext.js';
 import { ToolBlockRenderer } from './ToolBlockRenderer.js';
@@ -59,7 +60,8 @@ export function BlocksToolPanel(): React.JSX.Element {
   const panelState = usePanelState();
   const visibleToolIds = useBlocksVisibleToolIds();
   const registry = useBlocksToolRegistry();
-  const { toolPanelMode, setToolPanelMode, setToolPanelWidthPx, setToolPanelOpen, renderMode } = usePreferences();
+  const { toolPanelMode, setToolPanelMode, renderMode } = usePreferences();
+  const { setToolPanelWidthPx, setToolPanelOpen } = useTabPanel();
   const lastArrivedId = useBlocksLastArrivedToolId();
   const _pendingGen = registry.usePendingCount(); // triggers re-render on pending changes
   const scrollRef = useRef<HTMLDivElement>(null);

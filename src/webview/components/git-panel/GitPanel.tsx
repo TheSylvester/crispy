@@ -10,7 +10,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTransport } from '../../context/TransportContext.js';
-import { usePreferences } from '../../context/PreferencesContext.js';
+import { useTabPanel } from '../../context/TabPanelContext.js';
 import { useCwd } from '../../hooks/useSessionCwd.js';
 import { useGitInfo } from '../../hooks/useGitInfo.js';
 import { GitDiffView } from './GitDiffView.js';
@@ -99,7 +99,7 @@ type SelectedFile = {
 export function GitPanel(): React.JSX.Element {
   const transport = useTransport();
   const { fullPath } = useCwd();
-  const { setToolPanelWidthPx } = usePreferences();
+  const { setToolPanelWidthPx } = useTabPanel();
   const gitInfo = useGitInfo();
   const [data, setData] = useState<GitDiffResult | null>(null);
   const [loading, setLoading] = useState(false);

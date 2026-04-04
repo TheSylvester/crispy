@@ -22,6 +22,7 @@ import { CopyButton } from '../components/CopyButton.js';
 import { useBlocksChildEntries, useBlocksToolRegistry, useInjectChildEntries } from './BlocksToolRegistryContext.js';
 import { BlocksEntryWithRegistry } from './BlocksEntryWithRegistry.js';
 import { usePreferences } from '../context/PreferencesContext.js';
+import { useTabPanel } from '../context/TabPanelContext.js';
 import { usePanelDispatch, usePanelState, usePanelDisplayIds } from './PanelStateContext.js';
 import { isToolExpanded } from './panel-reducer.js';
 import { useSession } from '../context/SessionContext.js';
@@ -60,7 +61,8 @@ export function ToolBlockRenderer({
   const result = registry.useResult(block.id);
 
   // Debug: global tool view override from preferences (?debug=1 settings)
-  const { toolViewOverride: globalOverride, toolPanelMode, toolPanelOpen, setToolPanelOpen, setSidebarView, renderMode, condensedToolMode, bashBlockInIcons } = usePreferences();
+  const { toolViewOverride: globalOverride, toolPanelMode, renderMode, condensedToolMode, bashBlockInIcons } = usePreferences();
+  const { toolPanelOpen, setToolPanelOpen, setSidebarView } = useTabPanel();
 
   // Panel state: used for expansion override in tool-panel anchors
   const panelState = usePanelState();

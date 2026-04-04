@@ -10,10 +10,12 @@
 
 import { useRef, useEffect } from 'react';
 import { usePreferences } from '../context/PreferencesContext.js';
+import { useTabPanel } from '../context/TabPanelContext.js';
 import type { TranscriptEntry } from '../../core/transcript.js';
 
 export function useToolPanelAutoOpen(entries: TranscriptEntry[]): void {
-  const { toolPanelOpen, toolPanelAutoOpen, setToolPanelOpen, setSidebarView } = usePreferences();
+  const { toolPanelAutoOpen } = usePreferences();
+  const { toolPanelOpen, setToolPanelOpen, setSidebarView } = useTabPanel();
   const firedRef = useRef(false);
 
   useEffect(() => {

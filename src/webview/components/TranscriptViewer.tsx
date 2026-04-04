@@ -24,6 +24,7 @@
 import { useRef, useEffect, useCallback, useMemo } from "react";
 import { useTabSession } from "../context/TabSessionContext.js";
 import { usePreferences } from "../context/PreferencesContext.js";
+import { useTabPanel } from "../context/TabPanelContext.js";
 import { useTranscript } from "../hooks/useTranscript.js";
 import { usePlayback } from "../hooks/usePlayback.js";
 import { useAutoScroll } from "../hooks/useAutoScroll.js";
@@ -92,7 +93,7 @@ function ApprovalBridge({
  * reserved margin-right space isn't a blank gap.
  */
 function ToolPanelShell(): React.JSX.Element {
-  const { setToolPanelOpen, setToolPanelWidthPx } = usePreferences();
+  const { setToolPanelOpen, setToolPanelWidthPx } = useTabPanel();
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -150,7 +151,8 @@ export function TranscriptViewer(): React.JSX.Element {
   const { effectiveSessionId: selectedSessionId, setSelectedSessionId } = useTabSession();
   const transport = useTransport();
   const { entries: liveEntries, isLoading, error } = useTranscript(selectedSessionId);
-  const { renderMode, toolPanelOpen, debugMode, sidebarView } = usePreferences();
+  const { renderMode, debugMode } = usePreferences();
+  const { toolPanelOpen, sidebarView } = useTabPanel();
   const { registerInsertHandler } = useFilePanel();
 
   // Read hasForkHistory and previewEntries from context.

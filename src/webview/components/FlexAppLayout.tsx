@@ -11,6 +11,7 @@ import { Layout, Model, TabNode, type IJsonModel } from 'flexlayout-react';
 import 'flexlayout-react/style/dark.css';
 import { TabSessionProvider, useTabSession } from '../context/TabSessionContext.js';
 import { ControlPanelProvider } from '../context/ControlPanelContext.js';
+import { TabPanelProvider } from '../context/TabPanelContext.js';
 import { TranscriptViewer } from './TranscriptViewer.js';
 import './flexlayout-overrides.css';
 
@@ -44,9 +45,11 @@ const model = Model.fromJson(DEFAULT_MODEL);
 function TabContent(): React.JSX.Element {
   const { effectiveSessionId } = useTabSession();
   return (
-    <ControlPanelProvider selectedSessionId={effectiveSessionId}>
-      <TranscriptViewer />
-    </ControlPanelProvider>
+    <TabPanelProvider>
+      <ControlPanelProvider selectedSessionId={effectiveSessionId}>
+        <TranscriptViewer />
+      </ControlPanelProvider>
+    </TabPanelProvider>
   );
 }
 

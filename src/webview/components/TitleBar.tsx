@@ -14,7 +14,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from '../context/SessionContext.js';
-import { usePreferences, type SidebarView } from '../context/PreferencesContext.js';
+import { usePreferences } from '../context/PreferencesContext.js';
+import { useActiveTabPanel, type SidebarView } from '../context/TabPanelContext.js';
 import { useSessionStatus } from '../hooks/useSessionStatus.js';
 import { useTransport } from '../context/TransportContext.js';
 import { useEnvironment } from '../context/EnvironmentContext.js';
@@ -284,7 +285,8 @@ export function TitleBar(): React.JSX.Element {
   const { sessions, selectedSessionId, setSelectedSessionId, selectedCwd, setSelectedCwd } = useSession();
   const transport = useTransport();
   const envKind = useEnvironment();
-  const { sidebarCollapsed, setSidebarCollapsed, toolPanelOpen, setToolPanelOpen, sidebarView, setSidebarView, rosieBotEnabled } = usePreferences();
+  const { sidebarCollapsed, setSidebarCollapsed, rosieBotEnabled } = usePreferences();
+  const { toolPanelOpen, setToolPanelOpen, sidebarView, setSidebarView } = useActiveTabPanel();
   const { fileViewerOpen, closeFile } = useFilePanel();
   const { channelState } = useSessionStatus(selectedSessionId);
   const dropdownContainerRef = useRef<HTMLDivElement>(null);
