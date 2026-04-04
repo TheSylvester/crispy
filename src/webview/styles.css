@@ -4103,6 +4103,48 @@ h2 {
 /* --- Git branch indicator (right section, passive context) --- */
 
 /* ============================================================================
+ * TabHeader — per-tab header bar (session selector, panel toggles)
+ * ========================================================================== */
+
+.crispy-tab-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--tab-header-height, 32px);
+  padding: 0 8px;
+  background: var(--glass-bg);
+  border-bottom: 1px solid var(--glass-border-frost);
+  user-select: none;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 200;
+}
+
+.crispy-tab-header__left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+  position: relative;
+}
+
+.crispy-tab-header__right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* Session dropdown in tab header needs relative positioning for the overlay */
+.crispy-tab-header__left .crispy-session-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 400;
+}
+
+/* ============================================================================
  * Approval Content — rendered inside .crispy-cp via children slot
  *
  * When an approval is active, the ControlPanel's children prop replaces
