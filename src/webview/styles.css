@@ -267,6 +267,7 @@ h2 {
   min-height: 0;
   overflow-y: auto;
   padding: 16px;
+  box-sizing: border-box;
 }
 
 .crispy-transcript::-webkit-scrollbar {

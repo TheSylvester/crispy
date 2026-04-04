@@ -9,8 +9,14 @@
 .flexlayout__splitter { display: none; }
 .flexlayout__border { display: none; }
 
-/* Layout fills its container */
+/* Layout fills its container — override all dark-theme backgrounds */
 .flexlayout__layout {
+  --color-background: transparent;
+  --color-base: transparent;
+  --color-1: transparent;
+  --color-tabset-background: transparent;
+  --color-tabset-background-selected: transparent;
+  --color-tab-content: transparent;
   background: transparent;
 }
 
@@ -18,5 +24,9 @@
    overflow visible so TranscriptViewer manages its own scroll */
 .flexlayout__tab {
   position: relative;
+  overflow: visible;
+}
+
+.flexlayout__tab_moveable {
   overflow: visible;
 }

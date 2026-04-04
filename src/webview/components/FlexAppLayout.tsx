@@ -8,6 +8,7 @@
  */
 
 import { Layout, Model, TabNode, type IJsonModel } from 'flexlayout-react';
+import 'flexlayout-react/style/dark.css';
 import { TranscriptViewer } from './TranscriptViewer.js';
 import './flexlayout-overrides.css';
 
