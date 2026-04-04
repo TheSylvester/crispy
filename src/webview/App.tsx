@@ -14,9 +14,8 @@ import type { TransportKind } from './main.js';
 import { TransportProvider } from './context/TransportContext.js';
 import { EnvironmentProvider, useEnvironment } from './context/EnvironmentContext.js';
 import { SessionProvider, useSession } from './context/SessionContext.js';
-import { FileIndexProvider } from './context/FileIndexContext.js';
 import { PreferencesProvider, usePreferences } from './context/PreferencesContext.js';
-import { FilePanelProvider, useFilePanel } from './context/FilePanelContext.js';
+// FilePanel is now per-tab; app-level reads come from ActiveTabPanel bridge
 import { FlexAppLayout } from './components/FlexAppLayout.js';
 import { TitleBar } from './components/TitleBar.js';
 import { SessionStatusProvider, useSessionStatus } from './hooks/useSessionStatus.js';
@@ -37,8 +36,6 @@ export function App({ transport, transportKind }: AppProps): React.JSX.Element {
     <TransportProvider transport={transport}>
       <EnvironmentProvider kind={transportKind}>
         <SessionProvider>
-          <FileIndexProvider>
-            <FilePanelProvider>
             <PreferencesProvider>
               <SessionStatusProvider>
                 <PerfProfiler id="App">
@@ -48,8 +45,6 @@ export function App({ transport, transportKind }: AppProps): React.JSX.Element {
                 <TrackerToast />
               </SessionStatusProvider>
             </PreferencesProvider>
-            </FilePanelProvider>
-          </FileIndexProvider>
         </SessionProvider>
       </EnvironmentProvider>
     </TransportProvider>
@@ -88,9 +83,8 @@ function AppLayout(): React.JSX.Element {
   if (isPickerMode) return <WorkspacePicker />;
 
   const {
-    toolPanelOpen, toolPanelWidthPx, fileViewerWidthPx,
+    toolPanelOpen, toolPanelWidthPx, fileViewerWidthPx, fileViewerOpen,
   } = useActiveTabPanel();
-  const { fileViewerOpen } = useFilePanel();
   const { selectedSessionId } = useSession();
   const { channelState } = useSessionStatus(selectedSessionId);
   const isStreaming = channelState === 'streaming';

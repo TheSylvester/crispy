@@ -39,8 +39,8 @@ export function TabPanelProvider({ children }: { children: React.ReactNode }): R
 
   // Push state changes to the app-level bridge
   const bridge = useContext(ActiveTabPanelBridgeCtx);
-  const stateRef = useRef({ toolPanelOpen, sidebarView, toolPanelWidthPx, fileViewerWidthPx });
-  stateRef.current = { toolPanelOpen, sidebarView, toolPanelWidthPx, fileViewerWidthPx };
+  const stateRef = useRef({ toolPanelOpen, sidebarView, toolPanelWidthPx, fileViewerWidthPx, fileViewerOpen: false });
+  stateRef.current = { ...stateRef.current, toolPanelOpen, sidebarView, toolPanelWidthPx, fileViewerWidthPx };
 
   useEffect(() => {
     if (!bridge) return;
@@ -83,6 +83,7 @@ interface PanelState {
   sidebarView: SidebarView;
   toolPanelWidthPx: number | null;
   fileViewerWidthPx: number | null;
+  fileViewerOpen: boolean;
 }
 
 interface PanelSetters {
@@ -95,9 +96,15 @@ interface PanelSetters {
 interface ActiveTabPanelBridgeInner {
   publish: (state: PanelState) => void;
   registerSetters: (setters: PanelSetters) => void;
+  /** Called by FilePanelProvider to push fileViewerOpen changes up. */
+  publishFileViewerOpen: (open: boolean) => void;
+  /** Called by FilePanelProvider to register its closeFile callback. */
+  registerFileViewerCloser: (closer: () => void) => void;
 }
 
-interface ActiveTabPanelBridgeValue extends PanelState, PanelSetters {}
+interface ActiveTabPanelBridgeValue extends PanelState, PanelSetters {
+  closeFile: () => void;
+}
 
 const ActiveTabPanelBridgeCtx = createContext<ActiveTabPanelBridgeInner | null>(null);
 const ActiveTabPanelReadCtx = createContext<ActiveTabPanelBridgeValue | null>(null);
@@ -108,10 +115,12 @@ export function ActiveTabPanelBridgeProvider({ children }: { children: React.Rea
     sidebarView: 'tools',
     toolPanelWidthPx: null,
     fileViewerWidthPx: null,
+    fileViewerOpen: false,
   });
   const settersRef = useRef<PanelSetters | null>(null);
 
-  const publish = useCallback((s: PanelState) => setState(s), []);
+  // Merge rather than replace — fileViewerOpen is published separately by FilePanelProvider
+  const publish = useCallback((s: PanelState) => setState(prev => ({ ...prev, ...s })), []);
   const registerSetters = useCallback((s: PanelSetters) => { settersRef.current = s; }, []);
 
   // Write-through setters: update local state AND forward to active tab
@@ -131,11 +140,25 @@ export function ActiveTabPanelBridgeProvider({ children }: { children: React.Rea
     setState(prev => ({ ...prev, fileViewerWidthPx: px }));
     settersRef.current?.setFileViewerWidthPx(px);
   }, []);
+  const closeFile = useCallback(() => {
+    setState(prev => ({ ...prev, fileViewerOpen: false }));
+    fileViewerCloserRef.current?.();
+  }, []);
 
-  const inner = useMemo(() => ({ publish, registerSetters }), [publish, registerSetters]);
+  const fileViewerCloserRef = useRef<(() => void) | null>(null);
+  const publishFileViewerOpen = useCallback((open: boolean) => {
+    setState(prev => ({ ...prev, fileViewerOpen: open }));
+  }, []);
+  const registerFileViewerCloser = useCallback((closer: () => void) => {
+    fileViewerCloserRef.current = closer;
+  }, []);
+
+  const inner = useMemo(() => ({
+    publish, registerSetters, publishFileViewerOpen, registerFileViewerCloser,
+  }), [publish, registerSetters, publishFileViewerOpen, registerFileViewerCloser]);
   const readValue = useMemo(() => ({
-    ...state, setToolPanelOpen, setSidebarView, setToolPanelWidthPx, setFileViewerWidthPx,
-  }), [state, setToolPanelOpen, setSidebarView, setToolPanelWidthPx, setFileViewerWidthPx]);
+    ...state, setToolPanelOpen, setSidebarView, setToolPanelWidthPx, setFileViewerWidthPx, closeFile,
+  }), [state, setToolPanelOpen, setSidebarView, setToolPanelWidthPx, setFileViewerWidthPx, closeFile]);
 
   return (
     <ActiveTabPanelBridgeCtx.Provider value={inner}>
@@ -151,4 +174,9 @@ export function useActiveTabPanel(): ActiveTabPanelBridgeValue {
   const ctx = useContext(ActiveTabPanelReadCtx);
   if (!ctx) throw new Error('useActiveTabPanel must be used within ActiveTabPanelBridgeProvider');
   return ctx;
+}
+
+/** Access the inner bridge (for FilePanelProvider to push fileViewerOpen). */
+export function useActiveTabPanelBridge(): ActiveTabPanelBridgeInner | null {
+  return useContext(ActiveTabPanelBridgeCtx);
 }

@@ -12,6 +12,8 @@ import 'flexlayout-react/style/dark.css';
 import { TabSessionProvider, useTabSession } from '../context/TabSessionContext.js';
 import { ControlPanelProvider } from '../context/ControlPanelContext.js';
 import { TabPanelProvider } from '../context/TabPanelContext.js';
+import { FileIndexProvider } from '../context/FileIndexContext.js';
+import { FilePanelProvider } from '../context/FilePanelContext.js';
 import { TranscriptViewer } from './TranscriptViewer.js';
 import './flexlayout-overrides.css';
 
@@ -46,9 +48,13 @@ function TabContent(): React.JSX.Element {
   const { effectiveSessionId } = useTabSession();
   return (
     <TabPanelProvider>
-      <ControlPanelProvider selectedSessionId={effectiveSessionId}>
-        <TranscriptViewer />
-      </ControlPanelProvider>
+      <FileIndexProvider>
+        <FilePanelProvider>
+          <ControlPanelProvider selectedSessionId={effectiveSessionId}>
+            <TranscriptViewer />
+          </ControlPanelProvider>
+        </FilePanelProvider>
+      </FileIndexProvider>
     </TabPanelProvider>
   );
 }

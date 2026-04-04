@@ -23,7 +23,7 @@ import { useThemeKind, isLightTheme } from '../hooks/useThemeKind.js';
 import { SessionSelector, ProjectsView } from './session-selector/index.js';
 import { useAvailableCwds } from '../hooks/useAvailableCwds.js';
 import { fsPathToUrlPath } from '../../core/url-path-resolver.js';
-import { useFilePanel } from '../context/FilePanelContext.js';
+// FilePanel is now per-tab; TitleBar reads from ActiveTabPanel bridge
 // esbuild --loader:.svg=text imports the raw SVG markup as a string
 // @ts-expect-error — no type declarations for raw SVG import
 import crispyLogoSvg from '../../../media/crispy-icon.svg';
@@ -286,8 +286,7 @@ export function TitleBar(): React.JSX.Element {
   const transport = useTransport();
   const envKind = useEnvironment();
   const { sidebarCollapsed, setSidebarCollapsed, rosieBotEnabled } = usePreferences();
-  const { toolPanelOpen, setToolPanelOpen, sidebarView, setSidebarView } = useActiveTabPanel();
-  const { fileViewerOpen, closeFile } = useFilePanel();
+  const { toolPanelOpen, setToolPanelOpen, sidebarView, setSidebarView, fileViewerOpen, closeFile } = useActiveTabPanel();
   const { channelState } = useSessionStatus(selectedSessionId);
   const dropdownContainerRef = useRef<HTMLDivElement>(null);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
