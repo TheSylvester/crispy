@@ -12,7 +12,7 @@
  * @module TabSessionContext
  */
 
-import { createContext, useContext, useMemo } from 'react';
+import { createContext, useContext, useCallback, useMemo, useRef } from 'react';
 import { useSession } from './SessionContext.js';
 import { formatCwd, slugToPath } from '../hooks/useSessionCwd.js';
 import type { CwdInfo } from '../hooks/useSessionCwd.js';
@@ -45,6 +45,8 @@ const TabSessionCtx = createContext<TabSessionContextValue | null>(null);
 interface TabSessionProviderProps {
   /** Explicit session ID for this tab. Falls back to global selectedSessionId. */
   sessionId?: string | null;
+  /** Called when the tab's session changes (user selects a session within the tab). */
+  onSessionChange?: (sessionId: string | null) => void;
   children: React.ReactNode;
 }
 
@@ -52,7 +54,7 @@ interface TabSessionProviderProps {
  * Provides per-tab session identity. In single-tab mode (no sessionId prop),
  * delegates entirely to the global SessionContext — zero behavioral change.
  */
-export function TabSessionProvider({ sessionId: sessionIdProp, children }: TabSessionProviderProps): React.JSX.Element {
+export function TabSessionProvider({ sessionId: sessionIdProp, onSessionChange, children }: TabSessionProviderProps): React.JSX.Element {
   const global = useSession();
 
   const effectiveSessionId = sessionIdProp !== undefined ? sessionIdProp : global.selectedSessionId;
@@ -69,20 +71,34 @@ export function TabSessionProvider({ sessionId: sessionIdProp, children }: TabSe
     return { slug, fullPath, display: formatCwd(fullPath) };
   }, [effectiveSessionId, global.sessions, global.selectedCwd]);
 
+  // When onSessionChange is provided, route session selection through it
+  // (FlexAppLayout uses this to update its tab→session map).
+  // Fall back to global setter for single-tab / legacy mode.
+  const onSessionChangeRef = useRef(onSessionChange);
+  onSessionChangeRef.current = onSessionChange;
+
+  const setSelectedSessionId = useCallback((id: string | null) => {
+    if (onSessionChangeRef.current) {
+      onSessionChangeRef.current(id);
+    } else {
+      global.setSelectedSessionId(id);
+    }
+  }, [global.setSelectedSessionId]);
+
   const value: TabSessionContextValue = useMemo(() => ({
     effectiveSessionId,
     effectiveCwd,
     selectedCwd: global.selectedCwd,
     setSelectedCwd: global.setSelectedCwd,
     workspaceCwdPath: global.workspaceCwdPath,
-    setSelectedSessionId: global.setSelectedSessionId,
+    setSelectedSessionId,
   }), [
     effectiveSessionId,
     effectiveCwd,
     global.selectedCwd,
     global.setSelectedCwd,
     global.workspaceCwdPath,
-    global.setSelectedSessionId,
+    setSelectedSessionId,
   ]);
 
   return (

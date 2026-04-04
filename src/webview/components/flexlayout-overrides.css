@@ -1,11 +1,10 @@
 /* ==========================================================================
- * FlexLayout overrides — single-tab mode
- * Hides all FlexLayout chrome. Tab content fills available space.
+ * FlexLayout overrides — multi-tab mode
+ * Tab strip visible, content fills available space.
  * ========================================================================== */
 
-/* Hide all chrome — single tab, nothing to show */
+/* Hide non-tab chrome */
 .flexlayout__tabset_header { display: none; }
-.flexlayout__tabset_tabbar_outer { display: none; }
 .flexlayout__splitter { display: none; }
 .flexlayout__border { display: none; }
 
@@ -29,4 +28,135 @@
 
 .flexlayout__tab_moveable {
   overflow: visible;
+}
+
+/* ==========================================================================
+ * Tab strip styling
+ * ========================================================================== */
+
+.flexlayout__tabset_tabbar_outer {
+  background: var(--vscode-tab-inactiveBackground, var(--vscode-sideBar-background, #1e1e1e));
+  border-bottom: 1px solid var(--vscode-tab-border, rgba(255, 255, 255, 0.06));
+  height: 30px;
+  min-height: 30px;
+}
+
+.flexlayout__tabset_tabbar_inner_tab_container {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  gap: 0;
+}
+
+/* Individual tab */
+.flexlayout__tab_button {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--vscode-tab-inactiveForeground, rgba(255, 255, 255, 0.5));
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--vscode-tab-border, rgba(255, 255, 255, 0.06));
+  cursor: pointer;
+  max-width: 200px;
+  min-width: 80px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.1s, background 0.1s;
+}
+
+.flexlayout__tab_button:hover {
+  color: var(--vscode-tab-activeForeground, rgba(255, 255, 255, 0.8));
+  background: var(--vscode-tab-hoverBackground, rgba(255, 255, 255, 0.04));
+}
+
+.flexlayout__tab_button--selected {
+  color: var(--vscode-tab-activeForeground, #fff);
+  background: var(--vscode-tab-activeBackground, transparent);
+  border-bottom: 2px solid var(--vscode-focusBorder, #007acc);
+}
+
+/* Tab close button */
+.flexlayout__tab_button_trailing {
+  display: flex;
+  align-items: center;
+  margin-left: 6px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.flexlayout__tab_button:hover .flexlayout__tab_button_trailing,
+.flexlayout__tab_button--selected .flexlayout__tab_button_trailing {
+  opacity: 0.6;
+}
+
+.flexlayout__tab_button_trailing:hover {
+  opacity: 1 !important;
+}
+
+/* Tab content text */
+.flexlayout__tab_button_content {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+ * Add tab button
+ * ========================================================================== */
+
+.crispy-tab-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--vscode-tab-inactiveForeground, rgba(255, 255, 255, 0.5));
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  margin: 1px 4px;
+  transition: color 0.1s, background 0.1s;
+}
+
+.crispy-tab-add-btn:hover {
+  color: var(--vscode-tab-activeForeground, #fff);
+  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.1));
+}
+
+/* ==========================================================================
+ * FlexLayout overflow/toolbar buttons
+ * ========================================================================== */
+
+.flexlayout__tab_toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.flexlayout__tab_toolbar_button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.1s;
+}
+
+.flexlayout__tab_toolbar_button:hover {
+  opacity: 1;
+}
+
+/* Drag indicator during tab reorder */
+.flexlayout__tab_button_stamp {
+  background: var(--vscode-tab-activeBackground, #1e1e1e);
+  border: 1px solid var(--vscode-focusBorder, #007acc);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--vscode-tab-activeForeground, #fff);
 }
