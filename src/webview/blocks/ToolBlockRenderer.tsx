@@ -25,7 +25,7 @@ import { usePreferences } from '../context/PreferencesContext.js';
 import { useTabPanel } from '../context/TabPanelContext.js';
 import { usePanelDispatch, usePanelState, usePanelDisplayIds } from './PanelStateContext.js';
 import { isToolExpanded } from './panel-reducer.js';
-import { useSession } from '../context/SessionContext.js';
+import { useTabSession } from '../context/TabSessionContext.js';
 import { useBackgroundAgentTunnel } from '../hooks/useBackgroundAgentTunnel.js';
 
 /** Max children visible in the transcript content tail preview. */
@@ -230,7 +230,7 @@ function TaskChildrenRenderer({ toolId, anchor, result }: TaskChildrenRendererPr
   // Background agent tunnel — activate polling when expanded in panel
   const registry = useBlocksToolRegistry();
   const asyncAgentId = registry.getAsyncAgentId(toolId);
-  const { selectedSessionId } = useSession();
+  const { effectiveSessionId: selectedSessionId } = useTabSession();
   const injectChildEntries = useInjectChildEntries();
   const handlePolledEntries = useCallback(
     (entries: TranscriptEntry[]) => injectChildEntries(toolId, entries),
