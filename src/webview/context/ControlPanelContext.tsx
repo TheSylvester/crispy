@@ -19,7 +19,6 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef } f
 import type { AgencyMode } from '../components/control-panel/types.js';
 import type { TranscriptEntry } from '../../core/transcript.js';
 import { useTransport } from './TransportContext.js';
-import { useActiveTabAgency } from './ActiveTabAgencyContext.js';
 
 interface ControlPanelContextValue {
   /** Whether bypass permissions is enabled (for approval flow). */
@@ -89,13 +88,7 @@ export function ControlPanelProvider({
   const [pendingAgencyMode, setPendingAgencyMode] = useState<{ agencyMode: AgencyMode; bypassEnabled: boolean } | null>(null);
   const [hasForkHistory, setHasForkHistory] = useState(false);
   const [previewEntries, setPreviewEntries] = useState<TranscriptEntry[] | null>(null);
-  const activeTabAgency = useActiveTabAgency();
-  const [agencyMode, setAgencyModeLocal] = useState<AgencyMode>('ask-before-edits');
-  // Push agencyMode changes up to the app-level bridge so AgencyMain can read it
-  const setAgencyMode = useCallback((mode: AgencyMode) => {
-    setAgencyModeLocal(mode);
-    activeTabAgency.setAgencyMode(mode);
-  }, [activeTabAgency]);
+  const [agencyMode, setAgencyMode] = useState<AgencyMode>('ask-before-edits');
 
   const consumePrefillInput = useCallback(() => setPrefillInput(null), []);
   const consumePendingAgencyMode = useCallback(() => setPendingAgencyMode(null), []);

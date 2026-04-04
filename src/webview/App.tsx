@@ -2,8 +2,8 @@
  * App — Root component, layout shell with context providers
  *
  * Wraps the app in TransportProvider and SessionProvider, then renders
- * the two-column layout: sidebar (SessionSelector) + main (TranscriptViewer).
- * AppLayout lives inside providers so it can use context hooks for sidebar state.
+ * the two-column layout: TitleBar (global chrome) + FlexAppLayout (tabs).
+ * Each tab owns its own provider cascade for panels, sessions, and controls.
  *
  * @module App
  */
@@ -17,10 +17,7 @@ import { TabControllerProvider } from './context/TabControllerContext.js';
 import { PreferencesProvider } from './context/PreferencesContext.js';
 import { FlexAppLayout } from './components/FlexAppLayout.js';
 import { TitleBar } from './components/TitleBar.js';
-import { SessionStatusProvider } from './hooks/useSessionStatus.js';
 import { isPerfMode, PerfOverlay, PerfProfiler } from './perf/index.js';
-import { ActiveTabAgencyProvider } from './context/ActiveTabAgencyContext.js';
-import { ActiveTabPanelBridgeProvider } from './context/TabPanelContext.js';
 import { TrackerToast } from './components/notifications/TrackerToast.js';
 import { WorkspacePicker } from './components/WorkspacePicker.js';
 
@@ -36,15 +33,11 @@ export function App({ transport, transportKind }: AppProps): React.JSX.Element {
         <SessionProvider>
           <TabControllerBridge>
             <PreferencesProvider>
-              <SessionStatusProvider>
-                <ActiveTabPanelBridgeProvider>
-                <PerfProfiler id="App">
-                  <AppLayout />
-                </PerfProfiler>
-                </ActiveTabPanelBridgeProvider>
-                {isPerfMode && <PerfOverlay />}
-                <TrackerToast />
-              </SessionStatusProvider>
+              <PerfProfiler id="App">
+                <AppLayout />
+              </PerfProfiler>
+              {isPerfMode && <PerfOverlay />}
+              <TrackerToast />
             </PreferencesProvider>
           </TabControllerBridge>
         </SessionProvider>

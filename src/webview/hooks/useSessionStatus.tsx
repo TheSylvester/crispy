@@ -1,18 +1,13 @@
 /**
  * useSessionStatus — shared session channel state (idle/streaming/etc.)
  *
- * Thin wrapper around useChannelStore. All consumers (App glow, TitleBar dot,
- * StopButton, ThinkingIndicator, ControlPanel) share the same underlying
- * external store per session ID.
- *
- * SessionStatusProvider is retained as a no-op passthrough for backwards
- * compatibility — it no longer manages any state. It will be removed once
- * all providers are scoped per-tab (Phase B3+).
+ * Thin wrapper around useChannelStore. All consumers (ConnectionDot,
+ * StopButton, ThinkingIndicator, ControlPanel, TabLayout) share the same
+ * underlying external store per session ID.
  *
  * @module useSessionStatus
  */
 
-import { type ReactNode } from 'react';
 import type { SessionChannelState } from '../../core/session-channel.js';
 import { useChannelStore } from './useChannelStore.js';
 import { useSession } from '../context/SessionContext.js';
@@ -25,14 +20,6 @@ interface SessionStatusValue {
   lastError: string | null;
   /** Clear the last error (e.g. on manual dismiss). */
   clearError: () => void;
-}
-
-/**
- * No-op provider — kept for tree compatibility during Phase B migration.
- * Will be removed when ControlPanelContext moves per-tab (B3).
- */
-export function SessionStatusProvider({ children }: { children: ReactNode }): React.JSX.Element {
-  return <>{children}</>;
 }
 
 /**

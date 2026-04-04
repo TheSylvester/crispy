@@ -9,11 +9,9 @@
  * @module FilePanelContext
  */
 
-import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { useTransport } from './TransportContext.js';
 import { useTabSession } from './TabSessionContext.js';
-import { useActiveTabPanelBridge } from './TabPanelContext.js';
-import { useIsActiveTab } from './TabContainerContext.js';
 import { inferLanguage } from '../renderers/tools/shared/tool-utils.js';
 
 // ============================================================================
@@ -63,17 +61,9 @@ interface FilePanelProviderProps {
 
 export function FilePanelProvider({ children }: FilePanelProviderProps): React.JSX.Element {
   const transport = useTransport();
-  const bridge = useActiveTabPanelBridge();
-  const [fileViewerOpen, setFileViewerOpenRaw] = useState(false);
+  const [fileViewerOpen, setFileViewerOpen] = useState(false);
   const { effectiveCwd } = useTabSession();
   const fullPath = effectiveCwd.fullPath;
-
-  // Wrap setFileViewerOpen to also push to the bridge (only from active tab)
-  const isActiveTab = useIsActiveTab();
-  const setFileViewerOpen = useCallback((open: boolean) => {
-    setFileViewerOpenRaw(open);
-    if (isActiveTab) bridge?.publishFileViewerOpen(open);
-  }, [bridge, isActiveTab]);
   const [activeFileView, setActiveFileView] = useState<ActiveFileView | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -153,11 +143,6 @@ export function FilePanelProvider({ children }: FilePanelProviderProps): React.J
     setActiveFileView(null);
     setError(null);
   }, [setFileViewerOpen]);
-
-  // Register closeFile with bridge so TitleBar can close the file viewer
-  useEffect(() => {
-    bridge?.registerFileViewerCloser(closeFile);
-  }, [bridge, closeFile]);
 
   const insertIntoChat = useCallback((text: string) => {
     insertHandlerRef.current?.(text);
