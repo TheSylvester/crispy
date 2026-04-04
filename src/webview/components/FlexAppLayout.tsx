@@ -31,6 +31,8 @@ import './flexlayout-overrides.css';
 // ============================================================================
 
 const MAIN_TABSET_ID = 'main-tabset';
+const LAYOUT_STORAGE_KEY = 'crispy-layout';
+const TAB_MAP_STORAGE_KEY = 'crispy-tab-sessions';
 
 const DEFAULT_MODEL: IJsonModel = {
   global: {
@@ -65,6 +67,37 @@ const DEFAULT_MODEL: IJsonModel = {
 type TabSessionMap = Map<string, string | null>;
 
 // ============================================================================
+// Persistence helpers
+// ============================================================================
+
+function loadPersistedLayout(): { model: IJsonModel; tabMap: TabSessionMap } | null {
+  try {
+    const layoutJson = localStorage.getItem(LAYOUT_STORAGE_KEY);
+    const tabMapJson = localStorage.getItem(TAB_MAP_STORAGE_KEY);
+    if (!layoutJson) return null;
+    const model = JSON.parse(layoutJson) as IJsonModel;
+    const tabMap: TabSessionMap = new Map(tabMapJson ? JSON.parse(tabMapJson) : []);
+    return { model, tabMap };
+  } catch {
+    return null;
+  }
+}
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function saveLayout(model: Model, tabMap: TabSessionMap) {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(model.toJson()));
+      localStorage.setItem(TAB_MAP_STORAGE_KEY, JSON.stringify(Array.from(tabMap.entries())));
+    } catch {
+      // Silently fail — localStorage may be full or unavailable
+    }
+  }, 200);
+}
+
+// ============================================================================
 // TabContent — inner wrapper per tab
 // ============================================================================
 
@@ -94,13 +127,45 @@ function TabContent({ isActive, forkConfig }: { isActive: boolean; forkConfig?: 
 export function FlexAppLayout(): React.JSX.Element {
   const controller = useTabController();
   const { sessions, selectedSessionId } = useSession();
-  const modelRef = useRef(Model.fromJson(DEFAULT_MODEL));
-  const tabSessionMapRef = useRef<TabSessionMap>(new Map([['tab-initial', null]]));
-  const [activeTabId, setActiveTabId] = useState<string | null>('tab-initial');
+
+  // Restore persisted layout or use default
+  const [initialState] = useState(() => {
+    const persisted = loadPersistedLayout();
+    if (persisted) {
+      try {
+        const model = Model.fromJson(persisted.model);
+        return { model, tabMap: persisted.tabMap };
+      } catch {
+        // Corrupted layout — fall through to default
+      }
+    }
+    return {
+      model: Model.fromJson(DEFAULT_MODEL),
+      tabMap: new Map([['tab-initial', null]]) as TabSessionMap,
+    };
+  });
+
+  const modelRef = useRef(initialState.model);
+  const tabSessionMapRef = useRef<TabSessionMap>(initialState.tabMap);
+
+  // Determine initial active tab from the restored model
+  const [activeTabId, setActiveTabId] = useState<string | null>(() => {
+    const tabset = initialState.model.getNodeById(MAIN_TABSET_ID);
+    if (tabset && 'getSelectedNode' in tabset) {
+      const selected = (tabset as any).getSelectedNode?.() as TabNode | undefined;
+      if (selected) return selected.getId();
+    }
+    // Fallback: first tab in the map
+    const firstKey = tabSessionMapRef.current.keys().next().value;
+    return firstKey ?? null;
+  });
 
   // Keep a render-triggering version of the map for tab names
   const [, forceUpdate] = useState(0);
-  const bump = useCallback(() => forceUpdate(n => n + 1), []);
+  const bump = useCallback(() => {
+    forceUpdate(n => n + 1);
+    saveLayout(modelRef.current, tabSessionMapRef.current);
+  }, []);
 
   // Stable refs for use in callbacks
   const sessionsRef = useRef(sessions);
