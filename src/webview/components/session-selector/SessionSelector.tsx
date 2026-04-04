@@ -33,12 +33,18 @@ import './session-selector.css';
 /** Number of sessions to render initially before "Show more" */
 const INITIAL_RENDER_CAP = 30;
 
-export function SessionSelector(): React.JSX.Element {
+interface SessionSelectorProps {
+  /** Override the session selection handler. If provided, called instead of the global setSelectedSessionId. */
+  onSelect?: (sessionId: string) => void;
+}
+
+export function SessionSelector({ onSelect }: SessionSelectorProps = {}): React.JSX.Element {
   const {
-    sessions, selectedSessionId, setSelectedSessionId,
+    sessions, selectedSessionId, setSelectedSessionId: globalSetSelectedSessionId,
     selectedCwd, setSelectedCwd, availableVendors, isLoading,
     findAndSelectSession, sessionStatuses,
   } = useSession();
+  const setSelectedSessionId = onSelect ?? globalSetSelectedSessionId;
   const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
   const { channelState } = useSessionStatus(selectedSessionId);
   const transportKind = useEnvironment();

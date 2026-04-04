@@ -244,7 +244,7 @@ export function TabHeader(): React.JSX.Element {
         </button>
         {!sidebarCollapsed && (
           <div className="crispy-session-dropdown">
-            <SessionSelector />
+            <SessionSelector onSelect={setSelectedSessionId} />
           </div>
         )}
         <ConnectionDot channelState={channelState} sessionId={effectiveSessionId} />
