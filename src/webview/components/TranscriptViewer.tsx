@@ -263,6 +263,7 @@ export function TranscriptViewer(): React.JSX.Element {
     sessionId: selectedSessionId,
     scrollRef: transcriptRef,
     remount: hasForkHistory,
+    isActiveTab,
   });
 
   // Track control panel height for CSS custom property --cp-height.
@@ -273,6 +274,8 @@ export function TranscriptViewer(): React.JSX.Element {
     const cpEl = controlPanelRef.current;
     if (!cpEl) return;
 
+    if (!isActiveTab) return;
+
     const observer = new ResizeObserver(() => {
       const cpHeight = Math.round(cpEl.getBoundingClientRect().height);
       const target = containerRef.current ?? document.documentElement;
@@ -281,7 +284,7 @@ export function TranscriptViewer(): React.JSX.Element {
 
     observer.observe(cpEl);
     return () => observer.disconnect();
-  }, []);
+  }, [isActiveTab]);
 
   // Fork preview glow: add/remove class on last assistant message
   const handleForkHoverChange = useCallback((hovering: boolean) => {

@@ -18,7 +18,7 @@ import { usePreferences } from '../context/PreferencesContext.js';
 import { useTabPanel } from '../context/TabPanelContext.js';
 import { RenderLocationProvider } from '../context/RenderLocationContext.js';
 import { usePanelState, usePanelDispatch, useSetPanelDisplayIds } from './PanelStateContext.js';
-import { useTabContainer } from '../context/TabContainerContext.js';
+import { useTabContainer, useIsActiveTab } from '../context/TabContainerContext.js';
 import { ToolBlockRenderer } from './ToolBlockRenderer.js';
 import { getToolRenderCategory } from './tool-definitions.js';
 import type { RichBlock } from './types.js';
@@ -65,6 +65,7 @@ export function BlocksToolPanel(): React.JSX.Element {
   const { setToolPanelWidthPx, setToolPanelOpen } = useTabPanel();
   const lastArrivedId = useBlocksLastArrivedToolId();
   const { containerRef } = useTabContainer();
+  const isActiveTab = useIsActiveTab();
   const _pendingGen = registry.usePendingCount(); // triggers re-render on pending changes
   const scrollRef = useRef<HTMLDivElement>(null);
   const wasNearBottomRef = useRef(true);
@@ -282,6 +283,7 @@ export function BlocksToolPanel(): React.JSX.Element {
   useEffect(() => {
     const scrollEl = scrollRef.current;
     if (!scrollEl) return;
+    if (!isActiveTab) return;
 
     lastScrollHeightRef.current = scrollEl.scrollHeight;
 
@@ -301,7 +303,7 @@ export function BlocksToolPanel(): React.JSX.Element {
     // any child (tool card, task children, streaming output) grows.
     observer.observe(scrollEl);
     return () => observer.disconnect();
-  }, [visibleToolIds.length]);
+  }, [visibleToolIds.length, isActiveTab]);
 
   // ---------------------------------------------------------------------------
   // Drag-to-resize

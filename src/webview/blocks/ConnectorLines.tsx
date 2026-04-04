@@ -17,7 +17,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { usePanelDisplayIds, usePanelState } from './PanelStateContext.js';
-import { useTabContainer } from '../context/TabContainerContext.js';
+import { useTabContainer, useIsActiveTab } from '../context/TabContainerContext.js';
 
 // ============================================================================
 // Types
@@ -36,6 +36,7 @@ function useConnectorPaths(): ConnectorPath[] {
   const panelDisplayIds = usePanelDisplayIds();
   const panelState = usePanelState();
   const { containerRef } = useTabContainer();
+  const isActiveTab = useIsActiveTab();
   const [paths, setPaths] = useState<ConnectorPath[]>([]);
   const rafRef = useRef<number>(0);
   const settleRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -214,6 +215,8 @@ function useConnectorPaths(): ConnectorPath[] {
   }, [computePaths]);
 
   useEffect(() => {
+    if (!isActiveTab) return;
+
     const transcriptScroll = containerRef.current?.querySelector('.crispy-transcript');
     const panelScroll = containerRef.current?.querySelector('.crispy-tool-panel__scroll');
     const layout = containerRef.current?.querySelector('.crispy-layout');
@@ -252,7 +255,7 @@ function useConnectorPaths(): ConnectorPath[] {
         rafRef.current = 0;
       }
     };
-  }, [computePaths, scheduleUpdate, containerRef]);
+  }, [computePaths, scheduleUpdate, containerRef, isActiveTab]);
 
   // Re-compute when panelDisplayIds changes
   useEffect(() => {

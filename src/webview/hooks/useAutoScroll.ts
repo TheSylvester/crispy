@@ -40,6 +40,8 @@ export interface UseAutoScrollOptions {
   scrollRef: RefObject<HTMLDivElement | null>;
   /** Extra signal to re-attach when the scroll container mounts (e.g. fork history preload). */
   remount?: boolean;
+  /** Whether this tab is currently active — observers are disconnected when false. */
+  isActiveTab?: boolean;
 }
 
 export interface UseAutoScrollReturn {
@@ -53,7 +55,7 @@ export interface UseAutoScrollReturn {
 }
 
 export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
-  const { sessionId, scrollRef, remount } = opts;
+  const { sessionId, scrollRef, remount, isActiveTab = true } = opts;
 
   const [parked, setParked] = useState(true);
   const [isAtTop, setIsAtTop] = useState(true);
@@ -124,6 +126,7 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
   useEffect(() => {
     const scrollEl = scrollRef.current;
     if (!scrollEl) return;
+    if (!isActiveTab) return;
 
     const contentEl = scrollEl.querySelector('.crispy-transcript-content');
     if (!contentEl) return;
@@ -143,7 +146,7 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
 
     observer.observe(contentEl);
     return () => observer.disconnect();
-  }, [sessionId, scrollRef, remount]);
+  }, [sessionId, scrollRef, remount, isActiveTab]);
 
   // ── User-initiated smooth scrolls (FAB clicks) ────────────────────
   const scrollToBottom = useCallback(() => {
@@ -178,6 +181,7 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
   useEffect(() => {
     const scrollEl = scrollRef.current;
     if (!scrollEl || !sessionId) return;
+    if (!isActiveTab) return;
 
     const contentEl = scrollEl.querySelector('.crispy-transcript-content');
     if (!contentEl) return;
@@ -217,7 +221,7 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
       observer.disconnect();
       clearTimeout(settleTimer);
     };
-  }, [sessionId, scrollRef, remount]);
+  }, [sessionId, scrollRef, remount, isActiveTab]);
 
   return { parked, isAtTop, scrollToBottom, scrollToTop, pinToBottom };
 }

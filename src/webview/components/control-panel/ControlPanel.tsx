@@ -256,12 +256,13 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     useEffect(() => {
       if (!panelEl) return;
+      if (!isActiveTab) return;
       const ro = new ResizeObserver(([entry]) => {
         setCompact(entry.contentRect.width <= 480);
       });
       ro.observe(panelEl);
       return () => ro.disconnect();
-    }, [panelEl]);
+    }, [panelEl, isActiveTab]);
 
     // --- Dynamic model groups from provider-config ---
     const [modelGroups, setModelGroups] = useState<VendorModelGroup[]>([]);
