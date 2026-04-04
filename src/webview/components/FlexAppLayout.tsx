@@ -209,6 +209,8 @@ export function FlexAppLayout(): React.JSX.Element {
           const sessionId = tabSessionMapRef.current.get(tabId) ?? null;
           setActiveTabId(tabId);
           controller.setActiveTab(tabId, sessionId);
+          // Focus the new tab's input after activation
+          setTimeout(() => window.postMessage({ kind: 'focusInput' }, '*'), 50);
         }
       }
     } else if (action.type === Actions.DELETE_TAB) {
@@ -219,7 +221,10 @@ export function FlexAppLayout(): React.JSX.Element {
         tabSessionMapRef.current.delete(deletedTabId);
       }
       // Use setTimeout to avoid dispatching during render
-      setTimeout(ensureAtLeastOneTab, 0);
+      setTimeout(() => {
+        ensureAtLeastOneTab();
+        window.postMessage({ kind: 'focusInput' }, '*');
+      }, 0);
       bump();
     }
   }, [controller, ensureAtLeastOneTab, bump]);
