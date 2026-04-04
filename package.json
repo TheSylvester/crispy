@@ -54,6 +54,7 @@
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@opencode-ai/sdk": "^1.2.20",
     "extract-zip": "^2.0.1",
+    "flexlayout-react": "^0.8.19",
     "node-sqlite3-wasm": "^0.8.53",
     "open": "^10.2.0",
     "prism-react-renderer": "^2.4.1",

@@ -15,6 +15,7 @@ import { createWebSocketTransport } from './transport-websocket.js';
 import { App } from './App.js';
 import { AppErrorBoundary } from './components/ErrorBoundary.js';
 import { isPerfMode, PerfStore } from './perf/index.js';
+import 'flexlayout-react/style/dark.css';
 
 declare function acquireVsCodeApi(): {
   postMessage(message: unknown): void;
