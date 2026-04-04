@@ -33,8 +33,6 @@ import './flexlayout-overrides.css';
 // ============================================================================
 
 const MAIN_TABSET_ID = 'main-tabset';
-const LAYOUT_STORAGE_KEY = 'crispy-layout';
-const TAB_MAP_STORAGE_KEY = 'crispy-tab-sessions';
 
 function makeDefaultModel(showTabStrip: boolean): IJsonModel {
   return {
@@ -74,32 +72,6 @@ type TabSessionMap = Map<string, string | null>;
 // Persistence helpers
 // ============================================================================
 
-function loadPersistedLayout(): { model: IJsonModel; tabMap: TabSessionMap } | null {
-  try {
-    const layoutJson = localStorage.getItem(LAYOUT_STORAGE_KEY);
-    const tabMapJson = localStorage.getItem(TAB_MAP_STORAGE_KEY);
-    if (!layoutJson) return null;
-    const model = JSON.parse(layoutJson) as IJsonModel;
-    const tabMap: TabSessionMap = new Map(tabMapJson ? JSON.parse(tabMapJson) : []);
-    return { model, tabMap };
-  } catch {
-    return null;
-  }
-}
-
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-
-function saveLayout(model: Model, tabMap: TabSessionMap) {
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try {
-      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(model.toJson()));
-      localStorage.setItem(TAB_MAP_STORAGE_KEY, JSON.stringify(Array.from(tabMap.entries())));
-    } catch {
-      // Silently fail — localStorage may be full or unavailable
-    }
-  }, 200);
-}
 
 // ============================================================================
 // TabContent — inner wrapper per tab
@@ -137,18 +109,9 @@ export function FlexAppLayout(): React.JSX.Element {
   const envKind = useEnvironment();
   const isVscode = envKind === 'vscode';
 
-  // Restore persisted layout or use default
+  // Fresh layout on every load — tabs are ephemeral like browser tabs
   const [initialState] = useState(() => {
     const showTabStrip = !isVscode;
-    const persisted = !isVscode ? loadPersistedLayout() : null;
-    if (persisted) {
-      try {
-        const model = Model.fromJson(persisted.model);
-        return { model, tabMap: persisted.tabMap };
-      } catch {
-        // Corrupted layout — fall through to default
-      }
-    }
     return {
       model: Model.fromJson(makeDefaultModel(showTabStrip)),
       tabMap: new Map([['tab-initial', null]]) as TabSessionMap,
@@ -174,7 +137,6 @@ export function FlexAppLayout(): React.JSX.Element {
   const [, forceUpdate] = useState(0);
   const bump = useCallback(() => {
     forceUpdate(n => n + 1);
-    saveLayout(modelRef.current, tabSessionMapRef.current);
   }, []);
 
   // Stable refs for use in callbacks
