@@ -9,6 +9,7 @@
 
 import { Layout, Model, TabNode, type IJsonModel } from 'flexlayout-react';
 import 'flexlayout-react/style/dark.css';
+import { TabSessionProvider } from '../context/TabSessionContext.js';
 import { TranscriptViewer } from './TranscriptViewer.js';
 import './flexlayout-overrides.css';
 
@@ -40,7 +41,13 @@ const model = Model.fromJson(DEFAULT_MODEL);
 
 function factory(node: TabNode): React.JSX.Element | null {
   if (node.getComponent() === 'transcript') {
-    return <TranscriptViewer />;
+    // TabSessionProvider wraps each tab — in single-tab mode it delegates
+    // to the global SessionContext (no sessionId prop = use global).
+    return (
+      <TabSessionProvider>
+        <TranscriptViewer />
+      </TabSessionProvider>
+    );
   }
   return null;
 }

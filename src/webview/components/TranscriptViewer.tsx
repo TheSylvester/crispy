@@ -22,7 +22,7 @@
  */
 
 import { useRef, useEffect, useCallback, useMemo } from "react";
-import { useSession } from "../context/SessionContext.js";
+import { useTabSession } from "../context/TabSessionContext.js";
 import { usePreferences } from "../context/PreferencesContext.js";
 import { useTranscript } from "../hooks/useTranscript.js";
 import { usePlayback } from "../hooks/usePlayback.js";
@@ -147,7 +147,7 @@ function ToolPanelShell(): React.JSX.Element {
 }
 
 export function TranscriptViewer(): React.JSX.Element {
-  const { selectedSessionId, setSelectedSessionId } = useSession();
+  const { effectiveSessionId: selectedSessionId, setSelectedSessionId } = useTabSession();
   const transport = useTransport();
   const { entries: liveEntries, isLoading, error } = useTranscript(selectedSessionId);
   const { renderMode, toolPanelOpen, debugMode, sidebarView } = usePreferences();
