@@ -19,7 +19,7 @@ import { PreferencesProvider, usePreferences } from './context/PreferencesContex
 import { FlexAppLayout } from './components/FlexAppLayout.js';
 import { TitleBar } from './components/TitleBar.js';
 import { SessionStatusProvider, useSessionStatus } from './hooks/useSessionStatus.js';
-import { ContentErrorBoundary } from './components/ErrorBoundary.js';
+// ContentErrorBoundary moved per-tab (FlexAppLayout)
 import { isPerfMode, PerfOverlay, PerfProfiler } from './perf/index.js';
 import { ActiveTabAgencyProvider, useActiveTabAgency } from './context/ActiveTabAgencyContext.js';
 import { ActiveTabPanelBridgeProvider, useActiveTabPanel } from './context/TabPanelContext.js';
@@ -156,9 +156,7 @@ function AppLayout(): React.JSX.Element {
         <TitleBar />
 
         <AgencyMain isStreaming={isStreaming}>
-          <ContentErrorBoundary>
             <FlexAppLayout />
-          </ContentErrorBoundary>
         </AgencyMain>
       </div>
     </ActiveTabAgencyProvider>

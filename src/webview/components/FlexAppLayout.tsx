@@ -15,6 +15,7 @@ import { TabPanelProvider } from '../context/TabPanelContext.js';
 import { FileIndexProvider } from '../context/FileIndexContext.js';
 import { FilePanelProvider } from '../context/FilePanelContext.js';
 import { TabContainerProvider } from '../context/TabContainerContext.js';
+import { ContentErrorBoundary } from './ErrorBoundary.js';
 import { TranscriptViewer } from './TranscriptViewer.js';
 import './flexlayout-overrides.css';
 
@@ -53,7 +54,9 @@ function TabContent(): React.JSX.Element {
         <FileIndexProvider>
           <FilePanelProvider>
             <ControlPanelProvider selectedSessionId={effectiveSessionId}>
-              <TranscriptViewer />
+              <ContentErrorBoundary>
+                <TranscriptViewer />
+              </ContentErrorBoundary>
             </ControlPanelProvider>
           </FilePanelProvider>
         </FileIndexProvider>
