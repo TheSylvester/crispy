@@ -1,21 +1,15 @@
 /**
- * useApprovalRequest — listens for awaiting_approval status events
+ * useApprovalRequest — approval state from the channel store
  *
- * Provides the current pending approval and a resolve callback.
- * Single request, no queue. If a second arrives
- * while one is showing, it replaces the current (shouldn't happen in
- * practice since the SDK waits for each approval before proceeding).
- *
- * Listens for:
- * - catchup with pendingApprovals (for late subscribers)
- * - status events with awaiting_approval (for new approval requests)
- * - status events with idle/active (clears approval when resolved)
+ * Thin wrapper around useChannelStore. The store handles all transport
+ * event listening and state management for approvals.
  *
  * @module useApprovalRequest
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback } from 'react';
 import { useTransport } from '../context/TransportContext.js';
+import { useChannelStore } from './useChannelStore.js';
 import type { ApprovalRequest, ApprovalExtra } from '../components/approval/types.js';
 
 export interface UseApprovalRequestResult {
@@ -27,85 +21,25 @@ export interface UseApprovalRequestResult {
 
 export function useApprovalRequest(sessionId: string | null): UseApprovalRequestResult {
   const transport = useTransport();
-  const [request, setRequest] = useState<ApprovalRequest | null>(null);
-
-  // Clear on session change — but not on pending→real transitions,
-  // which are the same logical session (just an ID rekey).
-  const prevSessionIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    const prevId = prevSessionIdRef.current;
-    prevSessionIdRef.current = sessionId;
-    const isPendingToReal = prevId?.startsWith('pending:') && sessionId && !sessionId.startsWith('pending:');
-    if (!isPendingToReal) {
-      setRequest(null);
-    }
-  }, [sessionId]);
-
-  // Listen for approval events
-  useEffect(() => {
-    if (!sessionId) return;
-
-    const off = transport.onEvent((sid, event) => {
-      if (sid !== sessionId) return;
-
-      // Handle catchup with pending approvals (for late subscribers)
-      if (event.type === 'catchup') {
-        if (event.pendingApprovals.length > 0) {
-          // Take the first pending approval (single-request model)
-          const approval = event.pendingApprovals[0];
-          setRequest({
-            toolUseId: approval.toolUseId,
-            toolName: approval.toolName,
-            input: approval.input,
-            reason: approval.reason,
-            options: approval.options,
-          });
-        } else {
-          setRequest(null);
-        }
-        return;
-      }
-
-      // Handle status events
-      if (event.type === 'event' && event.event.type === 'status') {
-        if (event.event.status === 'awaiting_approval') {
-          setRequest({
-            toolUseId: event.event.toolUseId,
-            toolName: event.event.toolName,
-            input: event.event.input,
-            reason: event.event.reason,
-            options: event.event.options,
-          });
-        } else if (event.event.status === 'idle') {
-          // Turn ended — clear any stale approval state.
-          // We intentionally don't clear on 'active' because parallel tool
-          // results can emit 'active' while an approval is still pending.
-          // The resolve() callback already clears optimistically on user action.
-          setRequest(null);
-        }
-      }
-    });
-
-    return off;
-  }, [sessionId, transport]);
+  const { approvalRequest, clearApproval, setApproval } = useChannelStore(sessionId);
 
   const resolve = useCallback(
     async (optionId: string, extra?: ApprovalExtra) => {
-      if (!sessionId || !request) return;
-      const { toolUseId } = request;
-      const savedRequest = request;
+      if (!sessionId || !approvalRequest) return;
+      const { toolUseId } = approvalRequest;
+      const savedRequest = approvalRequest;
       // Clear optimistically to prevent double-click
-      setRequest(null);
+      clearApproval();
       try {
         await transport.resolveApproval(sessionId, toolUseId, optionId, extra);
       } catch (err) {
         // Restore the approval UI so the user can retry
-        setRequest(savedRequest);
+        setApproval(savedRequest);
         console.error('[useApprovalRequest] resolveApproval failed:', err);
       }
     },
-    [sessionId, request, transport],
+    [sessionId, approvalRequest, clearApproval, setApproval, transport],
   );
 
-  return { approvalRequest: request, resolve };
+  return { approvalRequest, resolve };
 }

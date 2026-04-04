@@ -8,6 +8,9 @@
  * Consolidates:
  * - Transcript entries (previously useTranscript)
  * - Channel state / session status (previously SessionStatusProvider)
+ * - Approval requests (previously useApprovalRequest)
+ * - Streaming content (previously useStreamingContent)
+ * - Context usage (previously useContextUsage, live portion)
  *
  * Each store subscribes to transport events once. React components read via
  * useSyncExternalStore for tear-free rendering.
@@ -16,11 +19,12 @@
  */
 
 import { useSyncExternalStore, useEffect, useCallback } from 'react';
-import type { TranscriptEntry, ContextUsage } from '../../core/transcript.js';
+import type { TranscriptEntry, ContentBlock, ContextUsage } from '../../core/transcript.js';
 import type { SessionChannelState } from '../../core/session-channel.js';
 import type { ChannelCatchupMessage } from '../../core/channel-events.js';
 import type { EntryMessage, EventMessage } from '../../core/agent-adapter.js';
 import type { HostEvent } from '../../host/client-connection.js';
+import type { ApprovalRequest } from '../components/approval/types.js';
 import type { SessionService } from '../transport.js';
 import { useTransport } from '../context/TransportContext.js';
 
@@ -33,6 +37,8 @@ export interface ChannelStoreSnapshot {
   channelState: SessionChannelState | null;
   lastError: string | null;
   contextUsage: ContextUsage | null;
+  approvalRequest: ApprovalRequest | null;
+  streamingContent: ContentBlock[] | null;
 }
 
 const EMPTY_SNAPSHOT: ChannelStoreSnapshot = {
@@ -40,6 +46,8 @@ const EMPTY_SNAPSHOT: ChannelStoreSnapshot = {
   channelState: null,
   lastError: null,
   contextUsage: null,
+  approvalRequest: null,
+  streamingContent: null,
 };
 
 // ============================================================================
@@ -200,6 +208,20 @@ class ChannelStoreManager {
         store.snapshot.contextUsage = catchup.contextUsage;
       }
 
+      // Sync approval state from catchup
+      if (catchup.pendingApprovals.length > 0) {
+        const a = catchup.pendingApprovals[0];
+        store.snapshot.approvalRequest = {
+          toolUseId: a.toolUseId,
+          toolName: a.toolName,
+          input: a.input,
+          reason: a.reason,
+          options: a.options,
+        };
+      } else {
+        store.snapshot.approvalRequest = null;
+      }
+
       emit(store);
       return;
     }
@@ -220,12 +242,26 @@ class ChannelStoreManager {
             break;
           case 'idle':
             store.snapshot.channelState = 'idle';
+            // Turn ended — clear approval and streaming ghost
+            store.snapshot.approvalRequest = null;
+            store.snapshot.streamingContent = null;
             break;
-          case 'awaiting_approval':
+          case 'awaiting_approval': {
             store.snapshot.channelState = 'awaiting_approval';
+            // Extract approval details from the event
+            const evt = inner as { toolUseId: string; toolName: string; input: unknown; reason?: string; options: Array<{ id: string; label: string; description?: string }> };
+            store.snapshot.approvalRequest = {
+              toolUseId: evt.toolUseId,
+              toolName: evt.toolName,
+              input: evt.input,
+              reason: evt.reason,
+              options: evt.options,
+            };
             break;
+          }
           case 'background':
             store.snapshot.channelState = 'background';
+            store.snapshot.streamingContent = null;
             break;
         }
         emit(store);
@@ -241,6 +277,13 @@ class ChannelStoreManager {
         }
         if (inner.kind === 'session_rotated') {
           store.snapshot.entries = [];
+          store.snapshot.approvalRequest = null;
+          store.snapshot.streamingContent = null;
+          emit(store);
+          return;
+        }
+        if ((inner as { kind: string }).kind === 'streaming_content') {
+          store.snapshot.streamingContent = (inner as unknown as { content: ContentBlock[] | null }).content;
           emit(store);
           return;
         }
@@ -258,10 +301,16 @@ export interface UseChannelStoreResult {
   channelState: SessionChannelState | null;
   lastError: string | null;
   contextUsage: ContextUsage | null;
+  approvalRequest: ApprovalRequest | null;
+  streamingContent: ContentBlock[] | null;
   /** Optimistically override the channel state (e.g. set 'streaming' on send). */
   setOptimistic: (state: SessionChannelState) => void;
   /** Clear the last error. */
   clearError: () => void;
+  /** Clear the approval request (optimistic, e.g. after resolving). */
+  clearApproval: () => void;
+  /** Restore an approval request (e.g. on resolve failure). */
+  setApproval: (req: ApprovalRequest | null) => void;
 }
 
 /**
@@ -319,12 +368,34 @@ export function useChannelStore(sessionId: string | null): UseChannelStoreResult
     }
   }, [sessionId, manager]);
 
+  const clearApproval = useCallback(() => {
+    if (!sessionId) return;
+    const store = manager.getStore(sessionId);
+    if (store) {
+      store.snapshot.approvalRequest = null;
+      emit(store);
+    }
+  }, [sessionId, manager]);
+
+  const setApproval = useCallback((req: ApprovalRequest | null) => {
+    if (!sessionId) return;
+    const store = manager.getStore(sessionId);
+    if (store) {
+      store.snapshot.approvalRequest = req;
+      emit(store);
+    }
+  }, [sessionId, manager]);
+
   return {
     entries: snapshot.entries,
     channelState: snapshot.channelState,
     lastError: snapshot.lastError,
     contextUsage: snapshot.contextUsage,
+    approvalRequest: snapshot.approvalRequest,
+    streamingContent: snapshot.streamingContent,
     setOptimistic,
     clearError,
+    clearApproval,
+    setApproval,
   };
 }
