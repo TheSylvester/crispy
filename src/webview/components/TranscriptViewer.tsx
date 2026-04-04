@@ -61,7 +61,7 @@ import { FileViewerPanel } from "./file-panel/FileViewerPanel.js";
 import { useFilePanel } from "../context/FilePanelContext.js";
 import { useControlPanel } from "../context/ControlPanelContext.js";
 import { useTranscriptAnnotation } from "../hooks/useTranscriptAnnotation.js";
-import { useIsActiveTab } from "../context/TabContainerContext.js";
+import { useIsActiveTab, useTabContainer } from "../context/TabContainerContext.js";
 import { TranscriptAnnotationPopover } from "./TranscriptAnnotationPopover.js";
 
 // Debug mode now lives in PreferencesContext (default: on during development).
@@ -156,6 +156,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const { toolPanelOpen, sidebarView } = useTabPanel();
   const { registerInsertHandler } = useFilePanel();
   const isActiveTab = useIsActiveTab();
+  const { containerRef } = useTabContainer();
 
   // Read hasForkHistory and previewEntries from context.
   // previewEntries takes priority over liveEntries (fork/rewind preview).
@@ -274,7 +275,8 @@ export function TranscriptViewer(): React.JSX.Element {
 
     const observer = new ResizeObserver(() => {
       const cpHeight = Math.round(cpEl.getBoundingClientRect().height);
-      document.documentElement.style.setProperty('--cp-height', String(cpHeight));
+      const target = containerRef.current ?? document.documentElement;
+      target.style.setProperty('--cp-height', String(cpHeight));
     });
 
     observer.observe(cpEl);

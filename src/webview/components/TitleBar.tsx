@@ -28,6 +28,7 @@ import { fsPathToUrlPath } from '../../core/url-path-resolver.js';
 // @ts-expect-error — no type declarations for raw SVG import
 import crispyLogoSvg from '../../../media/crispy-icon.svg';
 import { getSessionDisplayName } from '../utils/session-display.js';
+import { useIsActiveTab } from '../context/TabContainerContext.js';
 
 /** SVG chevron — points down, rotates 180° when sidebar is open */
 function Chevron({ open }: { open: boolean }): React.JSX.Element {
@@ -288,6 +289,7 @@ export function TitleBar(): React.JSX.Element {
   const { sidebarCollapsed, setSidebarCollapsed, rosieBotEnabled } = usePreferences();
   const { toolPanelOpen, setToolPanelOpen, sidebarView, setSidebarView, fileViewerOpen, closeFile } = useActiveTabPanel();
   const { channelState } = useSessionStatus(selectedSessionId);
+  const isActiveTab = useIsActiveTab();
   const dropdownContainerRef = useRef<HTMLDivElement>(null);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
   const newMenuRef = useRef<HTMLDivElement>(null);
@@ -336,8 +338,8 @@ export function TitleBar(): React.JSX.Element {
 
   useEffect(() => {
     transport.postRaw?.({ kind: 'setTitle', title: tabTitle });
-    document.title = tabTitle;
-  }, [tabTitle, transport]);
+    if (isActiveTab) document.title = tabTitle;
+  }, [tabTitle, transport, isActiveTab]);
 
   const toggleSidebar = useCallback(() => {
     setProjectsOpen(false);
