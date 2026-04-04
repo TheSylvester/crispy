@@ -19,15 +19,18 @@
   background: transparent;
 }
 
-/* Tab content: relative positioning for absolute children,
-   overflow visible so TranscriptViewer manages its own scroll */
+/* Tab content fills its slot; transcript scrolls within */
 .flexlayout__tab {
   position: relative;
-  overflow: visible;
+  display: flex;
+  flex-direction: column;
 }
 
 .flexlayout__tab_moveable {
-  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 /* ==========================================================================
