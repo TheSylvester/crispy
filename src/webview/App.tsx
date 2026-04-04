@@ -22,7 +22,7 @@ import { TitleBar } from './components/TitleBar.js';
 import { SessionStatusProvider, useSessionStatus } from './hooks/useSessionStatus.js';
 import { ContentErrorBoundary } from './components/ErrorBoundary.js';
 import { isPerfMode, PerfOverlay, PerfProfiler } from './perf/index.js';
-import { ControlPanelProvider, useControlPanel } from './context/ControlPanelContext.js';
+import { ActiveTabAgencyProvider, useActiveTabAgency } from './context/ActiveTabAgencyContext.js';
 import { TrackerToast } from './components/notifications/TrackerToast.js';
 import { WorkspacePicker } from './components/WorkspacePicker.js';
 
@@ -143,7 +143,7 @@ function AppLayout(): React.JSX.Element {
     : 'collapsed';
 
   return (
-    <ControlPanelProvider selectedSessionId={selectedSessionId}>
+    <ActiveTabAgencyProvider>
       <div
         ref={layoutRef}
         className="crispy-layout"
@@ -165,7 +165,7 @@ function AppLayout(): React.JSX.Element {
           </ContentErrorBoundary>
         </AgencyMain>
       </div>
-    </ControlPanelProvider>
+    </ActiveTabAgencyProvider>
   );
 }
 
@@ -182,7 +182,7 @@ function AgencyMain({
   isStreaming: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
-  const { agencyMode } = useControlPanel();
+  const { agencyMode } = useActiveTabAgency();
   return (
     <main
       className="crispy-main"

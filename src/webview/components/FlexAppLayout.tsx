@@ -9,7 +9,8 @@
 
 import { Layout, Model, TabNode, type IJsonModel } from 'flexlayout-react';
 import 'flexlayout-react/style/dark.css';
-import { TabSessionProvider } from '../context/TabSessionContext.js';
+import { TabSessionProvider, useTabSession } from '../context/TabSessionContext.js';
+import { ControlPanelProvider } from '../context/ControlPanelContext.js';
 import { TranscriptViewer } from './TranscriptViewer.js';
 import './flexlayout-overrides.css';
 
@@ -39,13 +40,21 @@ const DEFAULT_MODEL: IJsonModel = {
 
 const model = Model.fromJson(DEFAULT_MODEL);
 
+/** Inner wrapper — reads effectiveSessionId from TabSession to pass to ControlPanelProvider. */
+function TabContent(): React.JSX.Element {
+  const { effectiveSessionId } = useTabSession();
+  return (
+    <ControlPanelProvider selectedSessionId={effectiveSessionId}>
+      <TranscriptViewer />
+    </ControlPanelProvider>
+  );
+}
+
 function factory(node: TabNode): React.JSX.Element | null {
   if (node.getComponent() === 'transcript') {
-    // TabSessionProvider wraps each tab — in single-tab mode it delegates
-    // to the global SessionContext (no sessionId prop = use global).
     return (
       <TabSessionProvider>
-        <TranscriptViewer />
+        <TabContent />
       </TabSessionProvider>
     );
   }
