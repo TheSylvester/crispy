@@ -216,6 +216,13 @@ export function TabHeader(): React.JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isActiveTab, handleSidebarButton, fileViewerOpen, closeFile]);
 
+  // Update document.title when active tab's session changes
+  useEffect(() => {
+    if (!isActiveTab) return;
+    const label = currentSession ? getSessionDisplayName(currentSession) : 'Crispy';
+    document.title = label;
+  }, [isActiveTab, currentSession]);
+
   // Click-outside to close session dropdown
   useEffect(() => {
     if (sidebarCollapsed) return;

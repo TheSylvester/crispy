@@ -12,7 +12,7 @@
  * @module TabSessionContext
  */
 
-import { createContext, useContext, useCallback, useMemo, useRef } from 'react';
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from './SessionContext.js';
 import { formatCwd, slugToPath } from '../hooks/useSessionCwd.js';
 import type { CwdInfo } from '../hooks/useSessionCwd.js';
@@ -57,7 +57,16 @@ interface TabSessionProviderProps {
 export function TabSessionProvider({ sessionId: sessionIdProp, onSessionChange, children }: TabSessionProviderProps): React.JSX.Element {
   const global = useSession();
 
-  const effectiveSessionId = sessionIdProp !== undefined ? sessionIdProp : global.selectedSessionId;
+  // Internal state tracks the tab's session. Initialized from prop, updated
+  // when user selects a session within the tab (via setSelectedSessionId).
+  const [localSessionId, setLocalSessionId] = useState<string | null | undefined>(sessionIdProp);
+
+  // Sync from prop when it changes externally (e.g., bootstrap assignment)
+  useEffect(() => {
+    setLocalSessionId(sessionIdProp);
+  }, [sessionIdProp]);
+
+  const effectiveSessionId = localSessionId !== undefined ? localSessionId : global.selectedSessionId;
 
   const effectiveCwd: CwdInfo = useMemo(() => {
     if (!effectiveSessionId) return { slug: null, fullPath: null, display: null };
@@ -78,6 +87,7 @@ export function TabSessionProvider({ sessionId: sessionIdProp, onSessionChange, 
   onSessionChangeRef.current = onSessionChange;
 
   const setSelectedSessionId = useCallback((id: string | null) => {
+    setLocalSessionId(id); // Update local state so this tab re-renders immediately
     if (onSessionChangeRef.current) {
       onSessionChangeRef.current(id);
     } else {
