@@ -17,7 +17,7 @@ import { SessionProvider, useSession } from './context/SessionContext.js';
 import { FileIndexProvider } from './context/FileIndexContext.js';
 import { PreferencesProvider, usePreferences } from './context/PreferencesContext.js';
 import { FilePanelProvider, useFilePanel } from './context/FilePanelContext.js';
-import { TranscriptViewer } from './components/TranscriptViewer.js';
+import { FlexAppLayout } from './components/FlexAppLayout.js';
 import { TitleBar } from './components/TitleBar.js';
 import { SessionStatusProvider, useSessionStatus } from './hooks/useSessionStatus.js';
 import { ContentErrorBoundary } from './components/ErrorBoundary.js';
@@ -161,7 +161,7 @@ function AppLayout(): React.JSX.Element {
 
         <AgencyMain isStreaming={isStreaming}>
           <ContentErrorBoundary>
-            <TranscriptViewer />
+            <FlexAppLayout />
           </ContentErrorBoundary>
         </AgencyMain>
       </div>

@@ -1,0 +1,22 @@
+/* ==========================================================================
+ * FlexLayout overrides — single-tab mode
+ * Hides all FlexLayout chrome. Tab content fills available space.
+ * ========================================================================== */
+
+/* Hide all chrome — single tab, nothing to show */
+.flexlayout__tabset_header { display: none; }
+.flexlayout__tabset_tabbar_outer { display: none; }
+.flexlayout__splitter { display: none; }
+.flexlayout__border { display: none; }
+
+/* Layout fills its container */
+.flexlayout__layout {
+  background: transparent;
+}
+
+/* Tab content: relative positioning for absolute children,
+   overflow visible so TranscriptViewer manages its own scroll */
+.flexlayout__tab {
+  position: relative;
+  overflow: visible;
+}
