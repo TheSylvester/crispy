@@ -47,6 +47,7 @@ import { useRosieLog } from '../../hooks/useRosieLog.js';
 import { useVoiceInput } from '../../hooks/useVoiceInput.js';
 import { useControlPanel } from '../../context/ControlPanelContext.js';
 import { useTabContainer, useIsActiveTab } from '../../context/TabContainerContext.js';
+import { useTabControllerOptional } from '../../context/TabControllerContext.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent, TurnTarget } from '../../../core/agent-adapter.js';
@@ -178,6 +179,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       consumePendingAgencyMode,
       handleForkHistoryLoaded: onForkHistoryLoaded,
       setAgencyMode: ctxSetAgencyMode,
+      initialForkConfig,
     } = useControlPanel();
     const { containerRef } = useTabContainer();
     const isActiveTab = useIsActiveTab();
@@ -200,6 +202,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const transport = useTransport();
 
     const { selectedSessionId, selectedCwd, setSelectedSessionId, sessions, workspaceCwdPath, availableVendors } = useSession();
+    const tabController = useTabControllerOptional();
     const skillHint = useRandomSkillHint(availableVendors);
     const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
     const togglesDisabled = channelState === 'streaming' || channelState === 'awaiting_approval';
@@ -1011,6 +1014,24 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       return () => window.removeEventListener('message', onMessage);
     }, [isActiveTab, transport, onForkHistoryLoaded]); // transport is module-level stable, onForkHistoryLoaded is a stable useCallback
 
+    // --- Apply initialForkConfig from context (fork-to-new-tab flow) ---
+    const forkConfigApplied = useRef(false);
+    useEffect(() => {
+      if (!initialForkConfig || forkConfigApplied.current) return;
+      forkConfigApplied.current = true;
+
+      const { fromSessionId, atMessageId, model, agencyMode, bypassEnabled, chromeEnabled } = initialForkConfig;
+
+      // Enter fork mode
+      dispatch({ type: 'SET_FORK_MODE', forkMode: { fromSessionId, atMessageId } });
+
+      // Apply inherited settings
+      if (model) dispatch({ type: 'SET_MODEL', model });
+      if (agencyMode) dispatch({ type: 'SET_AGENCY_MODE', mode: agencyMode as AgencyMode });
+      if (bypassEnabled !== undefined) dispatch({ type: 'SET_BYPASS', enabled: bypassEnabled });
+      if (chromeEnabled !== undefined) dispatch({ type: 'SET_CHROME', enabled: chromeEnabled });
+    }, [initialForkConfig]);
+
     // --- Fork execution (shared between control panel button and per-message buttons) ---
     const executeFork = useCallback((atMessageId: string) => {
       if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
@@ -1021,7 +1042,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
       const currentInput = state.input.trim();
 
-      transport.forkToNewPanel?.({
+      const forkParams = {
         fromSessionId: selectedSessionId,
         atMessageId,
         initialPrompt: currentInput || undefined,
@@ -1029,12 +1050,20 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         agencyMode: state.agencyMode,
         bypassEnabled: state.bypassEnabled,
         chromeEnabled: state.chromeEnabled,
-      })?.catch((err: Error) => {
-        console.error('[ControlPanel] forkToNewPanel failed:', err);
-      });
+      };
+
+      if (tabController) {
+        // Multi-tab mode: create fork in a new tab
+        tabController.createTab({ forkConfig: forkParams });
+      } else {
+        // Legacy: open in new panel/window
+        transport.forkToNewPanel?.(forkParams)?.catch((err: Error) => {
+          console.error('[ControlPanel] forkToNewPanel failed:', err);
+        });
+      }
 
       if (currentInput) dispatch({ type: 'CLEAR_INPUT' });
-    }, [selectedSessionId, state.input, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, transport]);
+    }, [selectedSessionId, state.input, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, transport, tabController]);
 
     // Register executeFork with parent for per-message fork buttons
     useEffect(() => { onRegisterForkHandler?.(executeFork); }, [onRegisterForkHandler, executeFork]);

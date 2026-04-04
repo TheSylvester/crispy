@@ -20,7 +20,7 @@ import { FilePanelProvider } from '../context/FilePanelContext.js';
 import { TabContainerProvider } from '../context/TabContainerContext.js';
 import { ContentErrorBoundary } from './ErrorBoundary.js';
 import { TranscriptViewer } from './TranscriptViewer.js';
-import { useTabController, type TabCreateConfig } from '../context/TabControllerContext.js';
+import { useTabController, type TabCreateConfig, type ForkConfig } from '../context/TabControllerContext.js';
 import { useSession } from '../context/SessionContext.js';
 import { getSessionDisplayName } from '../utils/session-display.js';
 import './flexlayout-overrides.css';
@@ -67,14 +67,14 @@ type TabSessionMap = Map<string, string | null>;
 // TabContent — inner wrapper per tab
 // ============================================================================
 
-function TabContent({ isActive }: { isActive: boolean }): React.JSX.Element {
+function TabContent({ isActive, forkConfig }: { isActive: boolean; forkConfig?: ForkConfig | null }): React.JSX.Element {
   const { effectiveSessionId } = useTabSession();
   return (
     <TabContainerProvider isActiveTab={isActive}>
       <TabPanelProvider>
         <FileIndexProvider>
           <FilePanelProvider>
-            <ControlPanelProvider selectedSessionId={effectiveSessionId}>
+            <ControlPanelProvider selectedSessionId={effectiveSessionId} initialForkConfig={forkConfig}>
               <ContentErrorBoundary>
                 <TranscriptViewer />
               </ContentErrorBoundary>
@@ -271,9 +271,13 @@ export function FlexAppLayout(): React.JSX.Element {
         bump();
       };
 
+      // Read fork config from FlexLayout node config (set during createTab)
+      const nodeConfig = node.getConfig();
+      const forkConfig = nodeConfig?.forkConfig as ForkConfig | undefined;
+
       return (
         <TabSessionProvider sessionId={sessionId} onSessionChange={onSessionChange}>
-          <TabContent isActive={isActive} />
+          <TabContent isActive={isActive} forkConfig={forkConfig} />
         </TabSessionProvider>
       );
     }
