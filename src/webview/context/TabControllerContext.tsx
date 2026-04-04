@@ -1,0 +1,203 @@
+/**
+ * TabControllerContext — cross-component tab routing surface
+ *
+ * Sits ABOVE both TitleBar and FlexAppLayout in the component tree.
+ * FlexAppLayout registers tab operations on mount; TitleBar, SessionSelector,
+ * and SessionContext call controller methods instead of directly mutating
+ * global selectedSessionId.
+ *
+ * Pre-registration queue: if navigateToSession/createTab is called before
+ * FlexAppLayout registers (e.g. during VS Code openPanel bootstrap),
+ * the request is buffered and replayed on registration.
+ *
+ * @module context/TabControllerContext
+ */
+
+import { createContext, useContext, useCallback, useRef, useMemo, useState } from 'react';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface ForkConfig {
+  fromSessionId: string;
+  atMessageId?: string;
+  initialPrompt?: string;
+  model?: string;
+  agencyMode?: string;
+  bypassEnabled?: boolean;
+  chromeEnabled?: boolean;
+}
+
+export interface TabCreateConfig {
+  forkConfig?: ForkConfig;
+  sessionId?: string;
+}
+
+interface TabOperations {
+  createTab: (config?: TabCreateConfig) => string;
+  closeTab: (tabId: string) => void;
+  activateTab: (tabId: string) => void;
+  /** Find tab displaying this session, or null. */
+  findTabBySession: (sessionId: string) => string | null;
+  /** Get session ID for a tab, or null. */
+  getTabSession: (tabId: string) => string | null;
+}
+
+export interface TabControllerValue {
+  /** Create a new tab, optionally with fork config or session ID. Returns tab ID. */
+  createTab: (config?: TabCreateConfig) => string;
+  /** Close a tab by ID. */
+  closeTab: (tabId: string) => void;
+  /** Activate (switch to) a tab by ID. */
+  activateTab: (tabId: string) => void;
+
+  /** Navigate to a session: find existing tab or create new, then activate. */
+  navigateToSession: (sessionId: string) => void;
+  /** Set the active tab's session ID (used by session selector within a tab). */
+  setActiveTabSession: (sessionId: string | null) => void;
+
+  /** Currently active FlexLayout tab ID. */
+  activeTabId: string | null;
+  /** Session ID of the currently active tab. */
+  activeTabSessionId: string | null;
+
+  /** Register FlexLayout tab operations (called once on mount). */
+  registerOperations: (ops: TabOperations) => void;
+  /** Update active tab info (called by FlexAppLayout on tab change). */
+  setActiveTab: (tabId: string | null, sessionId: string | null) => void;
+}
+
+// ============================================================================
+// Context
+// ============================================================================
+
+const TabControllerCtx = createContext<TabControllerValue | null>(null);
+
+// ============================================================================
+// Provider
+// ============================================================================
+
+interface TabControllerProviderProps {
+  /** Callback to update global selectedSessionId when active tab changes. */
+  onSessionChange: (sessionId: string | null) => void;
+  children: React.ReactNode;
+}
+
+export function TabControllerProvider({ onSessionChange, children }: TabControllerProviderProps): React.JSX.Element {
+  const opsRef = useRef<TabOperations | null>(null);
+  const pendingOps = useRef<Array<() => void>>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [activeTabSessionId, setActiveTabSessionId] = useState<string | null>(null);
+
+  // Stable ref for onSessionChange to avoid re-renders
+  const onSessionChangeRef = useRef(onSessionChange);
+  onSessionChangeRef.current = onSessionChange;
+
+  const registerOperations = useCallback((ops: TabOperations) => {
+    opsRef.current = ops;
+    // Flush pending operations
+    const pending = pendingOps.current;
+    pendingOps.current = [];
+    for (const op of pending) op();
+  }, []);
+
+  const setActiveTab = useCallback((tabId: string | null, sessionId: string | null) => {
+    setActiveTabId(tabId);
+    setActiveTabSessionId(sessionId);
+    onSessionChangeRef.current(sessionId);
+  }, []);
+
+  const createTab = useCallback((config?: TabCreateConfig): string => {
+    if (!opsRef.current) {
+      // Buffer — return a placeholder ID, the real one comes on flush
+      const placeholder = `pending-tab-${Date.now()}`;
+      pendingOps.current.push(() => opsRef.current!.createTab(config));
+      return placeholder;
+    }
+    return opsRef.current.createTab(config);
+  }, []);
+
+  const closeTab = useCallback((tabId: string) => {
+    if (!opsRef.current) {
+      pendingOps.current.push(() => opsRef.current!.closeTab(tabId));
+      return;
+    }
+    opsRef.current.closeTab(tabId);
+  }, []);
+
+  const activateTab = useCallback((tabId: string) => {
+    if (!opsRef.current) {
+      pendingOps.current.push(() => opsRef.current!.activateTab(tabId));
+      return;
+    }
+    opsRef.current.activateTab(tabId);
+  }, []);
+
+  const navigateToSession = useCallback((sessionId: string) => {
+    if (!opsRef.current) {
+      pendingOps.current.push(() => {
+        const ops = opsRef.current!;
+        const existing = ops.findTabBySession(sessionId);
+        if (existing) {
+          ops.activateTab(existing);
+        } else {
+          ops.createTab({ sessionId });
+        }
+      });
+      return;
+    }
+    const existing = opsRef.current.findTabBySession(sessionId);
+    if (existing) {
+      opsRef.current.activateTab(existing);
+    } else {
+      opsRef.current.createTab({ sessionId });
+    }
+  }, []);
+
+  const setActiveTabSession = useCallback((sessionId: string | null) => {
+    // This is called when a user selects a session within the active tab.
+    // FlexAppLayout handles updating its internal tab→session map.
+    // We just update the global state.
+    setActiveTabSessionId(sessionId);
+    onSessionChangeRef.current(sessionId);
+  }, []);
+
+  const value: TabControllerValue = useMemo(() => ({
+    createTab,
+    closeTab,
+    activateTab,
+    navigateToSession,
+    setActiveTabSession,
+    activeTabId,
+    activeTabSessionId,
+    registerOperations,
+    setActiveTab,
+  }), [
+    createTab, closeTab, activateTab,
+    navigateToSession, setActiveTabSession,
+    activeTabId, activeTabSessionId,
+    registerOperations, setActiveTab,
+  ]);
+
+  return (
+    <TabControllerCtx.Provider value={value}>
+      {children}
+    </TabControllerCtx.Provider>
+  );
+}
+
+// ============================================================================
+// Hooks
+// ============================================================================
+
+export function useTabController(): TabControllerValue {
+  const ctx = useContext(TabControllerCtx);
+  if (!ctx) throw new Error('useTabController must be used within TabControllerProvider');
+  return ctx;
+}
+
+/** Optional access — returns null outside provider (for gradual migration). */
+export function useTabControllerOptional(): TabControllerValue | null {
+  return useContext(TabControllerCtx);
+}

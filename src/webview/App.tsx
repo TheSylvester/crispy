@@ -14,6 +14,7 @@ import type { TransportKind } from './main.js';
 import { TransportProvider } from './context/TransportContext.js';
 import { EnvironmentProvider, useEnvironment } from './context/EnvironmentContext.js';
 import { SessionProvider, useSession } from './context/SessionContext.js';
+import { TabControllerProvider } from './context/TabControllerContext.js';
 import { PreferencesProvider, usePreferences } from './context/PreferencesContext.js';
 // FilePanel is now per-tab; app-level reads come from ActiveTabPanel bridge
 import { FlexAppLayout } from './components/FlexAppLayout.js';
@@ -36,6 +37,7 @@ export function App({ transport, transportKind }: AppProps): React.JSX.Element {
     <TransportProvider transport={transport}>
       <EnvironmentProvider kind={transportKind}>
         <SessionProvider>
+          <TabControllerBridge>
             <PreferencesProvider>
               <SessionStatusProvider>
                 <ActiveTabPanelBridgeProvider>
@@ -47,9 +49,20 @@ export function App({ transport, transportKind }: AppProps): React.JSX.Element {
                 <TrackerToast />
               </SessionStatusProvider>
             </PreferencesProvider>
+          </TabControllerBridge>
         </SessionProvider>
       </EnvironmentProvider>
     </TransportProvider>
+  );
+}
+
+/** Thin bridge: wires TabControllerProvider's onSessionChange to SessionContext's setter. */
+function TabControllerBridge({ children }: { children: React.ReactNode }): React.JSX.Element {
+  const { setSelectedSessionId } = useSession();
+  return (
+    <TabControllerProvider onSessionChange={setSelectedSessionId}>
+      {children}
+    </TabControllerProvider>
   );
 }
 
