@@ -36,9 +36,11 @@ const INITIAL_RENDER_CAP = 30;
 interface SessionSelectorProps {
   /** Override the session selection handler. If provided, called instead of the global setSelectedSessionId. */
   onSelect?: (sessionId: string) => void;
+  /** Called to close the dropdown after selection. Falls back to global setSidebarCollapsed. */
+  onClose?: () => void;
 }
 
-export function SessionSelector({ onSelect }: SessionSelectorProps = {}): React.JSX.Element {
+export function SessionSelector({ onSelect, onClose }: SessionSelectorProps = {}): React.JSX.Element {
   const {
     sessions, selectedSessionId, setSelectedSessionId: globalSetSelectedSessionId,
     selectedCwd, setSelectedCwd, availableVendors, isLoading,
@@ -169,10 +171,11 @@ export function SessionSelector({ onSelect }: SessionSelectorProps = {}): React.
   }, [visibleGroups]);
 
   // ---- Selection handler ----
+  const closeDropdown = onClose ?? (() => setSidebarCollapsed(true));
   const handleSelect = useCallback((sessionId: string) => {
     setSelectedSessionId(sessionId);
-    setTimeout(() => setSidebarCollapsed(true), 200);
-  }, [setSelectedSessionId, setSidebarCollapsed]);
+    setTimeout(() => closeDropdown(), 200);
+  }, [setSelectedSessionId, closeDropdown]);
 
   // ---- Open by ID handler ----
   const handleSessionIdSubmit = useCallback(async () => {

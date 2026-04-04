@@ -11,7 +11,6 @@
 import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import { useSession } from '../context/SessionContext.js';
 import { useTabSession } from '../context/TabSessionContext.js';
-import { usePreferences } from '../context/PreferencesContext.js';
 import { useTabPanel, type SidebarView } from '../context/TabPanelContext.js';
 import { useFilePanel } from '../context/FilePanelContext.js';
 import { useSessionStatus } from '../hooks/useSessionStatus.js';
@@ -155,7 +154,10 @@ function truncateLabel(text: string, max: number): string {
 export function TabHeader(): React.JSX.Element {
   const { sessions } = useSession();
   const { effectiveSessionId, setSelectedSessionId } = useTabSession();
-  const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
+  // Session dropdown open/close is per-tab (not global sidebarCollapsed)
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const sidebarCollapsed = !dropdownOpen;
+  const setSidebarCollapsed = useCallback((collapsed: boolean) => setDropdownOpen(!collapsed), []);
   const { toolPanelOpen, setToolPanelOpen, sidebarView, setSidebarView } = useTabPanel();
   const { fileViewerOpen, closeFile } = useFilePanel();
   const { channelState } = useSessionStatus(effectiveSessionId);
@@ -251,7 +253,7 @@ export function TabHeader(): React.JSX.Element {
         </button>
         {!sidebarCollapsed && (
           <div className="crispy-session-dropdown">
-            <SessionSelector onSelect={setSelectedSessionId} />
+            <SessionSelector onSelect={setSelectedSessionId} onClose={() => setDropdownOpen(false)} />
           </div>
         )}
         <ConnectionDot channelState={channelState} sessionId={effectiveSessionId} />
