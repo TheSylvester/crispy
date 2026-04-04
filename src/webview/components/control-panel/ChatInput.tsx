@@ -17,6 +17,7 @@ import { useCommandAutocomplete } from '../../hooks/useCommandAutocomplete.js';
 import { MentionDropdown } from './MentionDropdown.js';
 import { CommandDropdown } from './CommandDropdown.js';
 import type { VoiceState } from '../../hooks/useVoiceInput.js';
+import { useIsActiveTab } from '../../context/TabContainerContext.js';
 
 interface ChatInputProps {
   value: string;
@@ -42,6 +43,7 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mention = useMention(textareaRef, value, onInput);
   const command = useCommandAutocomplete(textareaRef, value, onInput, vendor ?? null, sessionId ?? null, cwd ?? null);
+  const isActiveTab = useIsActiveTab();
 
   // Auto-focus textarea on mount
   useEffect(() => {
@@ -50,6 +52,7 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
 
   // Handle host messages: focusInput (keybinding, panel activation), toggleVoiceInput (VS Code keybinding)
   useEffect(() => {
+    if (!isActiveTab) return;
     function onMessage(ev: MessageEvent): void {
       if (ev.data?.kind === 'focusInput') {
         textareaRef.current?.focus();
@@ -59,7 +62,7 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
     }
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [onVoiceToggle]);
+  }, [isActiveTab, onVoiceToggle]);
 
   // Auto-resize textarea when value changes
   useLayoutEffect(() => {

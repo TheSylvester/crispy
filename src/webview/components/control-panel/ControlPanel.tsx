@@ -46,7 +46,7 @@ import { useSessionStatus } from '../../hooks/useSessionStatus.js';
 import { useRosieLog } from '../../hooks/useRosieLog.js';
 import { useVoiceInput } from '../../hooks/useVoiceInput.js';
 import { useControlPanel } from '../../context/ControlPanelContext.js';
-import { useTabContainer } from '../../context/TabContainerContext.js';
+import { useTabContainer, useIsActiveTab } from '../../context/TabContainerContext.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent, TurnTarget } from '../../../core/agent-adapter.js';
@@ -180,6 +180,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       setAgencyMode: ctxSetAgencyMode,
     } = useControlPanel();
     const { containerRef } = useTabContainer();
+    const isActiveTab = useIsActiveTab();
     // Track the DOM element for native drag/drop listeners. A callback ref
     // ensures the useEffect re-runs when the element mounts, unlike a
     // RefObject whose identity never changes.
@@ -532,6 +533,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     // --- Keyboard shortcuts ---
     useEffect(() => {
+      if (!isActiveTab) return;
       const handleKeyDown = (e: KeyboardEvent) => {
         // Alt+`: Toggle bypass
         if (e.key === '`' && e.altKey && !e.ctrlKey && !e.shiftKey) {
@@ -574,7 +576,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
       document.addEventListener('keydown', handleKeyDown);
       return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [state.bypassEnabled, state.agencyMode, state.model, togglesDisabled, allCyclable, voice]);
+    }, [isActiveTab, state.bypassEnabled, state.agencyMode, state.model, togglesDisabled, allCyclable, voice]);
 
     // --- Server → UI: settings sync notifications ---
     // Server-initiated setting changes update the local state. Handles both
@@ -920,6 +922,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     // --- Paste handler for images ---
     useEffect(() => {
+      if (!isActiveTab) return;
       const handlePaste = (e: ClipboardEvent) => {
         const items = e.clipboardData?.items;
         if (!items) return;
@@ -967,12 +970,13 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
       document.addEventListener('paste', handlePaste);
       return () => document.removeEventListener('paste', handlePaste);
-    }, [state.pastedImageCounter, insertAtCursor]);
+    }, [isActiveTab, state.pastedImageCounter, insertAtCursor]);
 
     // --- forkConfig message listener (new panel created via fork) ---
     // Host retries delivery so the listener must be idempotent.
     // Settings dispatches are naturally idempotent; input prefill is idempotent.
     useEffect(() => {
+      if (!isActiveTab) return;
       function onMessage(ev: MessageEvent) {
         if (ev.data?.kind === 'forkConfig') {
           const { fromSessionId, atMessageId, initialPrompt, model, agencyMode, bypassEnabled, chromeEnabled } = ev.data;
@@ -1004,7 +1008,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       }
       window.addEventListener('message', onMessage);
       return () => window.removeEventListener('message', onMessage);
-    }, [transport, onForkHistoryLoaded]); // transport is module-level stable, onForkHistoryLoaded is a stable useCallback
+    }, [isActiveTab, transport, onForkHistoryLoaded]); // transport is module-level stable, onForkHistoryLoaded is a stable useCallback
 
     // --- Fork execution (shared between control panel button and per-message buttons) ---
     const executeFork = useCallback((atMessageId: string) => {

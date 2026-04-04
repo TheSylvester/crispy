@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef, type RefObject } from 'react';
+import { useIsActiveTab } from '../context/TabContainerContext.js';
 
 export interface TranscriptSelection {
   text: string;
@@ -86,6 +87,7 @@ function formatAnnotation(text: string, _isCodeBlock: boolean, comment: string):
 
 export function useTranscriptAnnotation(opts: UseTranscriptAnnotationOpts): TranscriptAnnotationState {
   const { scrollRef, onInsert, enabled } = opts;
+  const isActiveTab = useIsActiveTab();
   const [selection, setSelection] = useState<TranscriptSelection | null>(null);
   const [annotationMode, setAnnotationMode] = useState(false);
   const [annotationText, setAnnotationText] = useState('');
@@ -120,7 +122,7 @@ export function useTranscriptAnnotation(opts: UseTranscriptAnnotationOpts): Tran
 
   // mouseup listener — detect valid selections in assistant entries
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !isActiveTab) return;
 
     const handleMouseUp = () => {
       requestAnimationFrame(() => {
@@ -163,11 +165,11 @@ export function useTranscriptAnnotation(opts: UseTranscriptAnnotationOpts): Tran
 
     document.addEventListener('mouseup', handleMouseUp);
     return () => document.removeEventListener('mouseup', handleMouseUp);
-  }, [enabled, scrollRef]);
+  }, [enabled, isActiveTab, scrollRef]);
 
   // Scroll listener (capture phase) — dismiss popover on scroll
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !isActiveTab) return;
 
     const handleScroll = () => {
       if (annotationModeRef.current) return;
@@ -176,13 +178,13 @@ export function useTranscriptAnnotation(opts: UseTranscriptAnnotationOpts): Tran
 
     document.addEventListener('scroll', handleScroll, true);
     return () => document.removeEventListener('scroll', handleScroll, true);
-  }, [enabled]);
+  }, [enabled, isActiveTab]);
 
   // Click-away listener — dismiss popover when clicking outside
   // The popover's stopPropagation prevents clicks inside it from bubbling,
   // so this only fires for clicks outside the popover.
   useEffect(() => {
-    if (!enabled || !selection) return;
+    if (!enabled || !isActiveTab || !selection) return;
 
     const handleClickAway = () => {
       if (annotationModeRef.current) return;
@@ -191,11 +193,11 @@ export function useTranscriptAnnotation(opts: UseTranscriptAnnotationOpts): Tran
 
     document.addEventListener('click', handleClickAway);
     return () => document.removeEventListener('click', handleClickAway);
-  }, [enabled, selection]);
+  }, [enabled, isActiveTab, selection]);
 
   // ESC listener — dismiss popover (except when typing in textarea)
   useEffect(() => {
-    if (!enabled || !selection) return;
+    if (!enabled || !isActiveTab || !selection) return;
 
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !annotationModeRef.current) {
@@ -206,7 +208,7 @@ export function useTranscriptAnnotation(opts: UseTranscriptAnnotationOpts): Tran
 
     document.addEventListener('keydown', handleEsc);
     return () => document.removeEventListener('keydown', handleEsc);
-  }, [enabled, selection]);
+  }, [enabled, isActiveTab, selection]);
 
   // Cleanup on unmount
   useEffect(() => {

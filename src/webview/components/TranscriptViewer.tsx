@@ -61,6 +61,7 @@ import { FileViewerPanel } from "./file-panel/FileViewerPanel.js";
 import { useFilePanel } from "../context/FilePanelContext.js";
 import { useControlPanel } from "../context/ControlPanelContext.js";
 import { useTranscriptAnnotation } from "../hooks/useTranscriptAnnotation.js";
+import { useIsActiveTab } from "../context/TabContainerContext.js";
 import { TranscriptAnnotationPopover } from "./TranscriptAnnotationPopover.js";
 
 // Debug mode now lives in PreferencesContext (default: on during development).
@@ -154,6 +155,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const { renderMode, debugMode } = usePreferences();
   const { toolPanelOpen, sidebarView } = useTabPanel();
   const { registerInsertHandler } = useFilePanel();
+  const isActiveTab = useIsActiveTab();
 
   // Read hasForkHistory and previewEntries from context.
   // previewEntries takes priority over liveEntries (fork/rewind preview).
@@ -415,6 +417,7 @@ export function TranscriptViewer(): React.JSX.Element {
   // then prefills the input without auto-sending, giving the user a chance
   // to configure settings (bypass, agency, model) before pressing Enter.
   useEffect(() => {
+    if (!isActiveTab) return;
     const handler = (ev: MessageEvent) => {
       if (ev.data?.kind === 'executeInCrispy' && ev.data.content) {
         setSelectedSessionId(null);
@@ -423,14 +426,15 @@ export function TranscriptViewer(): React.JSX.Element {
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [setSelectedSessionId]);
+  }, [isActiveTab, setSelectedSessionId]);
 
   // Register insert handler for FilePanelContext (used by context menu "Insert in Chat")
   useEffect(() => {
+    if (!isActiveTab) return;
     registerInsertHandler((text: string) => {
       cpCtxRef.current.setPrefillInput({ text });
     });
-  }, [registerInsertHandler]);
+  }, [isActiveTab, registerInsertHandler]);
 
   // --- Main content area (conditional) ---
   // ControlPanel is rendered once, outside the conditional branches, so it is

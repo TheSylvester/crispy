@@ -15,6 +15,7 @@ import { createPortal } from 'react-dom';
 import { useFilePanel } from '../../context/FilePanelContext.js';
 import { useTabPanel } from '../../context/TabPanelContext.js';
 import { useEnvironment } from '../../context/EnvironmentContext.js';
+import { useIsActiveTab } from '../../context/TabContainerContext.js';
 import { FileViewer } from './FileViewer.js';
 
 /** Whether the file looks like a prompt/instruction file that can be executed */
@@ -41,6 +42,7 @@ export function FileViewerPanel(): React.JSX.Element | null {
   const { fileViewerOpen, activeFileView, closeFile, insertIntoChat, loading, error } = useFilePanel();
   const { setFileViewerWidthPx } = useTabPanel();
   const envKind = useEnvironment();
+  const isActiveTab = useIsActiveTab();
   const panelRef = useRef<HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -73,10 +75,10 @@ export function FileViewerPanel(): React.JSX.Element | null {
   }, [closeFile, annotationMode, selection]);
 
   useEffect(() => {
-    if (!fileViewerOpen) return;
+    if (!fileViewerOpen || !isActiveTab) return;
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [fileViewerOpen, handleKeyDown]);
+  }, [fileViewerOpen, isActiveTab, handleKeyDown]);
 
   // Detect text selection within the panel body
   useEffect(() => {
