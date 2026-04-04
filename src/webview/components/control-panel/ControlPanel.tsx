@@ -202,8 +202,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const rosieLogEntries = useRosieLog();
     const transport = useTransport();
 
-    const { selectedSessionId, selectedCwd, setSelectedSessionId, sessions, workspaceCwdPath, availableVendors } = useSession();
-    const { effectiveSessionId } = useTabSession();
+    const { sessions, availableVendors } = useSession();
+    const { effectiveSessionId, selectedCwd, setSelectedSessionId, workspaceCwdPath } = useTabSession();
+    const selectedSessionId = effectiveSessionId;
     const tabController = useTabControllerOptional();
     const skillHint = useRandomSkillHint(availableVendors);
     const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(effectiveSessionId);
