@@ -38,9 +38,11 @@ export function App({ transport, transportKind }: AppProps): React.JSX.Element {
         <SessionProvider>
             <PreferencesProvider>
               <SessionStatusProvider>
+                <ActiveTabPanelBridgeProvider>
                 <PerfProfiler id="App">
                   <AppLayout />
                 </PerfProfiler>
+                </ActiveTabPanelBridgeProvider>
                 {isPerfMode && <PerfOverlay />}
                 <TrackerToast />
               </SessionStatusProvider>
@@ -138,7 +140,6 @@ function AppLayout(): React.JSX.Element {
     : 'collapsed';
 
   return (
-    <ActiveTabPanelBridgeProvider>
     <ActiveTabAgencyProvider>
       <div
         ref={layoutRef}
@@ -160,7 +161,6 @@ function AppLayout(): React.JSX.Element {
         </AgencyMain>
       </div>
     </ActiveTabAgencyProvider>
-    </ActiveTabPanelBridgeProvider>
   );
 }
 
