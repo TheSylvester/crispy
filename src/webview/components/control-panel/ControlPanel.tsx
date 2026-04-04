@@ -48,6 +48,7 @@ import { useVoiceInput } from '../../hooks/useVoiceInput.js';
 import { useControlPanel } from '../../context/ControlPanelContext.js';
 import { useTabContainer, useIsActiveTab } from '../../context/TabContainerContext.js';
 import { useTabControllerOptional } from '../../context/TabControllerContext.js';
+import { useTabSession } from '../../context/TabSessionContext.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent, TurnTarget } from '../../../core/agent-adapter.js';
@@ -202,9 +203,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const transport = useTransport();
 
     const { selectedSessionId, selectedCwd, setSelectedSessionId, sessions, workspaceCwdPath, availableVendors } = useSession();
+    const { effectiveSessionId } = useTabSession();
     const tabController = useTabControllerOptional();
     const skillHint = useRandomSkillHint(availableVendors);
-    const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
+    const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(effectiveSessionId);
     const togglesDisabled = channelState === 'streaming' || channelState === 'awaiting_approval';
 
     // --- sendTurn error banner ---

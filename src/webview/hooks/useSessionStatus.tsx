@@ -37,12 +37,13 @@ export function SessionStatusProvider({ children }: { children: ReactNode }): Re
 
 /**
  * Access shared session status. Uses the channel store internally.
- * The sessionId parameter is accepted for backward compatibility but ignored —
- * status is read from the globally selected session.
+ * When sessionId is provided, reads status for that session;
+ * otherwise falls back to the globally selected session.
  */
-export function useSessionStatus(_sessionId?: string | null): SessionStatusValue {
+export function useSessionStatus(sessionId?: string | null): SessionStatusValue {
   const { selectedSessionId } = useSession();
-  const store = useChannelStore(selectedSessionId);
+  const effectiveId = sessionId ?? selectedSessionId;
+  const store = useChannelStore(effectiveId);
   return {
     channelState: store.channelState,
     setOptimistic: store.setOptimistic,
