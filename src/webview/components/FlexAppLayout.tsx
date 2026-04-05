@@ -217,7 +217,15 @@ export function FlexAppLayout(): React.JSX.Element {
         : config?.forkConfig ? `Fork: ${getTabName(config.forkConfig.fromSessionId, sessionsRef.current)}`
         : 'New Tab');
 
-    modelRef.current.doAction(
+    // Resolve target tabset — the requested one may no longer exist if tabs
+    // were dragged around (FlexLayout removes empty tabsets).
+    const model = modelRef.current;
+    const requestedTabsetId = config?.tabsetId ?? MAIN_TABSET_ID;
+    const targetTabsetId = model.getNodeById(requestedTabsetId)
+      ? requestedTabsetId
+      : model.getActiveTabset()?.getId() ?? MAIN_TABSET_ID;
+
+    model.doAction(
       Actions.addNode(
         {
           type: 'tab',
@@ -226,7 +234,7 @@ export function FlexAppLayout(): React.JSX.Element {
           id: tabId,
           config: config?.forkConfig ? { forkConfig: config.forkConfig } : config?.config ?? undefined,
         },
-        config?.tabsetId ?? MAIN_TABSET_ID,
+        targetTabsetId,
         DockLocation.RIGHT,
         -1,
         true, // select the new tab
