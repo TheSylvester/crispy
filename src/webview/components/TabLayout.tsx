@@ -3,7 +3,7 @@
  *
  * Owns the panel width computation and CSS custom properties that were
  * previously in AppLayout. Each tab gets its own layout container with
- * independent panel sizing, data attributes, and --content-top offset.
+ * independent panel sizing and data attributes.
  *
  * @module TabLayout
  */
@@ -41,15 +41,13 @@ export function TabLayout({ children }: { children: React.ReactNode }): React.JS
 
   const layoutRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(window.innerWidth);
-  const [contentTop, setContentTop] = useState(0);
 
-  // ResizeObserver for container width + content-top offset
+  // ResizeObserver for container width (used for panel breakpoint calculations)
   useEffect(() => {
     const el = layoutRef.current;
     if (!el) return;
     const observer = new ResizeObserver(() => {
       setContainerWidth(Math.round(el.getBoundingClientRect().width));
-      setContentTop(Math.round(el.getBoundingClientRect().top));
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -93,8 +91,6 @@ export function TabLayout({ children }: { children: React.ReactNode }): React.JS
         '--tool-panel-actual-width': `${toolPanelOpen ? panelPx : 0}px`,
         '--file-viewer-width': `${fileViewerOpen ? fileViewerPx : 0}px`,
         '--right-panels-width': `${rightPanelsWidth}px`,
-        '--container-width': `${containerWidth}px`,
-        '--content-top': `${contentTop}px`,
       } as React.CSSProperties}
     >
       {children}

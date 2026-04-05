@@ -2,23 +2,14 @@
  * useChannelStore — per-session external store via useSyncExternalStore
  *
  * ChannelStoreManager is a singleton: one store per session ID, shared across
- * all consumers. This eliminates the N-times subscription bug where multiple
- * React hooks each set up their own transport listener for the same session.
- *
- * Consolidates:
- * - Transcript entries (previously useTranscript)
- * - Channel state / session status (previously SessionStatusProvider)
- * - Approval requests (previously useApprovalRequest)
- * - Streaming content (previously useStreamingContent)
- * - Context usage (previously useContextUsage, live portion)
- *
- * Each store subscribes to transport events once. React components read via
- * useSyncExternalStore for tear-free rendering.
+ * all consumers. Transport subscriptions and entries are shared; mutable UI
+ * state (channelState, approvalRequest, streamingContent, lastError) is
+ * per-consumer so that two tabs showing the same session don't interfere.
  *
  * @module useChannelStore
  */
 
-import { useSyncExternalStore, useEffect, useCallback } from 'react';
+import { useSyncExternalStore, useEffect, useCallback, useState, useRef } from 'react';
 import type { TranscriptEntry, ContentBlock, ContextUsage } from '../../core/transcript.js';
 import type { SessionChannelState } from '../../core/session-channel.js';
 import type { ChannelCatchupMessage } from '../../core/channel-events.js';
@@ -32,6 +23,20 @@ import { useTransport } from '../context/TransportContext.js';
 // Store Shape
 // ============================================================================
 
+/** Shared read-only data (same reference across all consumers of a session). */
+interface SharedSnapshot {
+  entries: TranscriptEntry[];
+  contextUsage: ContextUsage | null;
+}
+
+/** Per-consumer mutable UI state (independent per useChannelStore call). */
+interface MutableState {
+  channelState: SessionChannelState | null;
+  lastError: string | null;
+  approvalRequest: ApprovalRequest | null;
+  streamingContent: ContentBlock[] | null;
+}
+
 export interface ChannelStoreSnapshot {
   entries: TranscriptEntry[];
   channelState: SessionChannelState | null;
@@ -41,11 +46,11 @@ export interface ChannelStoreSnapshot {
   streamingContent: ContentBlock[] | null;
 }
 
-const EMPTY_SNAPSHOT: ChannelStoreSnapshot = {
-  entries: [],
+const EMPTY_SHARED: SharedSnapshot = { entries: [], contextUsage: null };
+
+const EMPTY_MUTABLE: MutableState = {
   channelState: null,
   lastError: null,
-  contextUsage: null,
   approvalRequest: null,
   streamingContent: null,
 };
@@ -57,17 +62,30 @@ const EMPTY_SNAPSHOT: ChannelStoreSnapshot = {
 type Listener = () => void;
 
 interface SessionStore {
-  snapshot: ChannelStoreSnapshot;
-  listeners: Set<Listener>;
+  /** Shared read-only snapshot (entries + contextUsage). */
+  snapshot: SharedSnapshot;
+  /** Listeners for snapshot changes (useSyncExternalStore). */
+  snapshotListeners: Set<Listener>;
+
+  /** Latest transport-derived mutable state. Consumers copy to local state. */
+  channelState: SessionChannelState | null;
+  lastError: string | null;
+  approvalRequest: ApprovalRequest | null;
+  streamingContent: ContentBlock[] | null;
+  /** Listeners for mutable state changes (per-consumer useState sync). */
+  stateListeners: Set<Listener>;
+
   refCount: number;
-  unsubscribeTransport: (() => void) | null;
   subscribed: boolean;
 }
 
-function emit(store: SessionStore): void {
-  // Create new snapshot reference so useSyncExternalStore detects the change
+function emitSnapshot(store: SessionStore): void {
   store.snapshot = { ...store.snapshot };
-  for (const fn of store.listeners) fn();
+  for (const fn of store.snapshotListeners) fn();
+}
+
+function emitState(store: SessionStore): void {
+  for (const fn of store.stateListeners) fn();
 }
 
 /** Map catchup state string to SessionChannelState. */
@@ -111,31 +129,29 @@ class ChannelStoreManager {
     return mgr;
   }
 
-  /**
-   * Get or create a store for a session. Increments refCount.
-   * Caller must call release() when done.
-   */
   acquire(sessionId: string): SessionStore {
     let store = this.stores.get(sessionId);
     if (!store) {
       store = {
-        snapshot: { ...EMPTY_SNAPSHOT },
-        listeners: new Set(),
+        snapshot: { ...EMPTY_SHARED },
+        snapshotListeners: new Set(),
+        channelState: null,
+        lastError: null,
+        approvalRequest: null,
+        streamingContent: null,
+        stateListeners: new Set(),
         refCount: 0,
-        unsubscribeTransport: null,
         subscribed: false,
       };
       this.stores.set(sessionId, store);
     }
     store.refCount++;
 
-    // First active store — attach global event listener
     this.activeStoreCount++;
     if (this.activeStoreCount === 1) {
       this.attachGlobalListener();
     }
 
-    // Subscribe to transport for this session (once)
     if (!store.subscribed && !sessionId.startsWith('pending:')) {
       store.subscribed = true;
       this.transport.subscribe(sessionId).catch(() => {});
@@ -144,9 +160,6 @@ class ChannelStoreManager {
     return store;
   }
 
-  /**
-   * Decrement refCount. When it hits 0, clean up the store.
-   */
   release(sessionId: string): void {
     const store = this.stores.get(sessionId);
     if (!store) return;
@@ -160,7 +173,6 @@ class ChannelStoreManager {
       }
     }
 
-    // Last active store — detach global listener
     if (this.activeStoreCount <= 0) {
       this.activeStoreCount = 0;
       this.detachGlobalListener();
@@ -191,27 +203,24 @@ class ChannelStoreManager {
 
     if (event.type === 'catchup') {
       const catchup = event as ChannelCatchupMessage;
+      let snapshotChanged = false;
 
       if (catchup.entries.length > 0) {
         store.snapshot.entries = catchup.entries;
-      }
-
-      const mapped = mapCatchupState(catchup.state);
-      // Don't let catchup downgrade an optimistic 'streaming' state.
-      // The host re-subscribes on sendTurn, firing a catchup with 'idle'
-      // before the adapter starts.
-      if (!(store.snapshot.channelState === 'streaming' && (mapped === 'idle' || mapped === 'background'))) {
-        store.snapshot.channelState = mapped;
+        snapshotChanged = true;
       }
 
       if (catchup.contextUsage) {
         store.snapshot.contextUsage = catchup.contextUsage;
+        snapshotChanged = true;
       }
 
-      // Sync approval state from catchup
+      // Update transport-derived mutable state
+      store.channelState = mapCatchupState(catchup.state);
+
       if (catchup.pendingApprovals.length > 0) {
         const a = catchup.pendingApprovals[0];
-        store.snapshot.approvalRequest = {
+        store.approvalRequest = {
           toolUseId: a.toolUseId,
           toolName: a.toolName,
           input: a.input,
@@ -219,16 +228,17 @@ class ChannelStoreManager {
           options: a.options,
         };
       } else {
-        store.snapshot.approvalRequest = null;
+        store.approvalRequest = null;
       }
 
-      emit(store);
+      if (snapshotChanged) emitSnapshot(store);
+      emitState(store);
       return;
     }
 
     if (event.type === 'entry') {
       store.snapshot.entries = [...store.snapshot.entries, (event as EntryMessage).entry];
-      emit(store);
+      emitSnapshot(store);
       return;
     }
 
@@ -238,19 +248,17 @@ class ChannelStoreManager {
       if (inner.type === 'status') {
         switch (inner.status) {
           case 'active':
-            store.snapshot.channelState = 'streaming';
+            store.channelState = 'streaming';
             break;
           case 'idle':
-            store.snapshot.channelState = 'idle';
-            // Turn ended — clear approval and streaming ghost
-            store.snapshot.approvalRequest = null;
-            store.snapshot.streamingContent = null;
+            store.channelState = 'idle';
+            store.approvalRequest = null;
+            store.streamingContent = null;
             break;
           case 'awaiting_approval': {
-            store.snapshot.channelState = 'awaiting_approval';
-            // Extract approval details from the event
+            store.channelState = 'awaiting_approval';
             const evt = inner as { toolUseId: string; toolName: string; input: unknown; reason?: string; options: Array<{ id: string; label: string; description?: string }> };
-            store.snapshot.approvalRequest = {
+            store.approvalRequest = {
               toolUseId: evt.toolUseId,
               toolName: evt.toolName,
               input: evt.input,
@@ -260,31 +268,32 @@ class ChannelStoreManager {
             break;
           }
           case 'background':
-            store.snapshot.channelState = 'background';
-            store.snapshot.streamingContent = null;
+            store.channelState = 'background';
+            store.streamingContent = null;
             break;
         }
-        emit(store);
+        emitState(store);
         return;
       }
 
       if (inner.type === 'notification') {
         if (inner.kind === 'error') {
           const errVal = inner.error;
-          store.snapshot.lastError = typeof errVal === 'string' ? errVal : errVal instanceof Error ? errVal.message : 'An unknown error occurred';
-          emit(store);
+          store.lastError = typeof errVal === 'string' ? errVal : errVal instanceof Error ? errVal.message : 'An unknown error occurred';
+          emitState(store);
           return;
         }
         if (inner.kind === 'session_rotated') {
           store.snapshot.entries = [];
-          store.snapshot.approvalRequest = null;
-          store.snapshot.streamingContent = null;
-          emit(store);
+          store.approvalRequest = null;
+          store.streamingContent = null;
+          emitSnapshot(store);
+          emitState(store);
           return;
         }
         if ((inner as { kind: string }).kind === 'streaming_content') {
-          store.snapshot.streamingContent = (inner as unknown as { content: ContentBlock[] | null }).content;
-          emit(store);
+          store.streamingContent = (inner as unknown as { content: ContentBlock[] | null }).content;
+          emitState(store);
           return;
         }
       }
@@ -315,8 +324,10 @@ export interface UseChannelStoreResult {
 
 /**
  * Subscribe to a session's channel store. Returns transcript entries,
- * channel state, and error state — all derived from a single transport
- * listener shared across all consumers of this session ID.
+ * channel state, and error state. Entries and contextUsage are shared
+ * across all consumers of the same session ID; mutable UI state
+ * (channelState, approvalRequest, streamingContent, lastError) is
+ * per-consumer so tabs don't interfere with each other.
  */
 export function useChannelStore(sessionId: string | null): UseChannelStoreResult {
   const transport = useTransport();
@@ -329,70 +340,99 @@ export function useChannelStore(sessionId: string | null): UseChannelStoreResult
     return () => manager.release(sessionId);
   }, [sessionId, manager]);
 
-  const subscribe = useCallback(
+  // --- Shared entries/contextUsage via useSyncExternalStore ---
+
+  const snapshotSubscribe = useCallback(
     (onStoreChange: () => void): (() => void) => {
       if (!sessionId) return () => {};
       const store = manager.getStore(sessionId);
       if (!store) return () => {};
-      store.listeners.add(onStoreChange);
-      return () => store.listeners.delete(onStoreChange);
+      store.snapshotListeners.add(onStoreChange);
+      return () => store.snapshotListeners.delete(onStoreChange);
     },
     [sessionId, manager],
   );
 
-  const getSnapshot = useCallback((): ChannelStoreSnapshot => {
-    if (!sessionId) return EMPTY_SNAPSHOT;
-    return manager.getStore(sessionId)?.snapshot ?? EMPTY_SNAPSHOT;
+  const getSnapshot = useCallback((): SharedSnapshot => {
+    if (!sessionId) return EMPTY_SHARED;
+    return manager.getStore(sessionId)?.snapshot ?? EMPTY_SHARED;
   }, [sessionId, manager]);
 
-  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const shared = useSyncExternalStore(snapshotSubscribe, getSnapshot, getSnapshot);
+
+  // --- Per-consumer mutable UI state ---
+
+  const [localState, setLocalState] = useState<MutableState>(EMPTY_MUTABLE);
+  const optimisticRef = useRef<SessionChannelState | null>(null);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setLocalState(EMPTY_MUTABLE);
+      optimisticRef.current = null;
+      return;
+    }
+    const store = manager.getStore(sessionId);
+    if (!store) return;
+
+    const sync = () => {
+      setLocalState(prev => {
+        // Guard: don't let transport downgrade an optimistic 'streaming'
+        const transportChannel = store.channelState;
+        let channelState: SessionChannelState | null;
+        if (
+          optimisticRef.current === 'streaming' &&
+          (transportChannel === 'idle' || transportChannel === 'background')
+        ) {
+          channelState = prev.channelState; // keep optimistic
+        } else {
+          optimisticRef.current = null;
+          channelState = transportChannel;
+        }
+        return {
+          channelState,
+          lastError: store.lastError,
+          approvalRequest: store.approvalRequest,
+          streamingContent: store.streamingContent,
+        };
+      });
+    };
+
+    // Initial sync from current store state
+    sync();
+
+    store.stateListeners.add(sync);
+    return () => { store.stateListeners.delete(sync); };
+  }, [sessionId, manager]);
+
+  // --- Per-consumer mutators (local state only) ---
 
   const setOptimistic = useCallback(
     (state: SessionChannelState) => {
-      if (!sessionId) return;
-      const store = manager.getStore(sessionId);
-      if (store) {
-        store.snapshot.channelState = state;
-        emit(store);
-      }
+      optimisticRef.current = state;
+      setLocalState(prev => ({ ...prev, channelState: state }));
     },
-    [sessionId, manager],
+    [],
   );
 
   const clearError = useCallback(() => {
-    if (!sessionId) return;
-    const store = manager.getStore(sessionId);
-    if (store) {
-      store.snapshot.lastError = null;
-      emit(store);
-    }
-  }, [sessionId, manager]);
+    setLocalState(prev => ({ ...prev, lastError: null }));
+  }, []);
 
   const clearApproval = useCallback(() => {
-    if (!sessionId) return;
-    const store = manager.getStore(sessionId);
-    if (store) {
-      store.snapshot.approvalRequest = null;
-      emit(store);
-    }
-  }, [sessionId, manager]);
+    setLocalState(prev => ({ ...prev, approvalRequest: null }));
+  }, []);
 
   const setApproval = useCallback((req: ApprovalRequest | null) => {
-    if (!sessionId) return;
-    const store = manager.getStore(sessionId);
-    if (store) {
-      store.snapshot.approvalRequest = req;
-      emit(store);
-    }
-  }, [sessionId, manager]);
+    setLocalState(prev => ({ ...prev, approvalRequest: req }));
+  }, []);
 
   return {
-    entries: snapshot.entries,
-    channelState: snapshot.channelState,
-    lastError: snapshot.lastError,
-    contextUsage: snapshot.contextUsage,
-    approvalRequest: snapshot.approvalRequest,
-    streamingContent: snapshot.streamingContent,
+    entries: shared.entries,
+    channelState: localState.channelState,
+    lastError: localState.lastError,
+    contextUsage: shared.contextUsage,
+    approvalRequest: localState.approvalRequest,
+    streamingContent: localState.streamingContent,
     setOptimistic,
     clearError,
     clearApproval,

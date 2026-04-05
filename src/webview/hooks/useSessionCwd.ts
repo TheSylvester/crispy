@@ -15,6 +15,7 @@
 
 import { useMemo } from 'react';
 import { useSession } from '../context/SessionContext.js';
+import { useTabSessionOptional } from '../context/TabSessionContext.js';
 
 export interface CwdInfo {
   /** Raw projectSlug — canonical key for the dropdown */
@@ -61,26 +62,31 @@ export function formatCwd(fullPath: string): string {
 }
 
 /**
- * Primary CWD hook — reads selectedCwd from SessionContext.
+ * Primary CWD hook — reads CWD from TabSessionContext (per-tab) when
+ * available, falling back to global SessionContext for legacy callers.
  *
- * Looks up `projectPath` from the sessions list to get the real absolute
- * path. Falls back to the lossy `slugToPath()` only when no session in
- * the current slug has a projectPath.
+ * Components inside the tab cascade get the tab-local CWD; components
+ * outside (TitleBar, workspace picker) get the global CWD.
  */
 export function useCwd(): CwdInfo {
+  // Try tab-local context first (available inside tab cascade)
+  const tabCtx = useTabSessionOptional();
   const { selectedCwd, sessions } = useSession();
 
   return useMemo(() => {
+    // Prefer tab-local CWD when inside a TabSessionProvider
+    if (tabCtx) return tabCtx.effectiveCwd;
+
+    // Fallback: legacy callers outside the tab cascade
     if (!selectedCwd) return { slug: null, fullPath: null, display: null };
 
-    // Find the real project path from any session sharing this slug
     const realPath = sessions.find(
       (s) => s.projectSlug === selectedCwd && s.projectPath,
     )?.projectPath;
 
     const fullPath = realPath ?? slugToPath(selectedCwd);
     return { slug: selectedCwd, fullPath, display: formatCwd(fullPath) };
-  }, [selectedCwd, sessions]);
+  }, [tabCtx, selectedCwd, sessions]);
 }
 
 /** @deprecated Use `useCwd()` instead — kept for backwards compatibility */

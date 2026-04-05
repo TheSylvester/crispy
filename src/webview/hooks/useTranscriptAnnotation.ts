@@ -37,20 +37,22 @@ export interface TranscriptAnnotationState {
   clear: () => void;
 }
 
-const HIGHLIGHT_KEY = 'crispy-transcript-annotation';
+// Per-tab highlight key counter — each hook instance gets a unique key
+// to avoid cross-tab CSS.highlights collisions.
+let highlightCounter = 0;
 
-function applyHighlight(range: Range): void {
+function applyHighlight(key: string, range: Range): void {
   if (typeof CSS === 'undefined' || !('highlights' in CSS)) return;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const highlights = (CSS as any).highlights;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  highlights.set(HIGHLIGHT_KEY, new (window as any).Highlight(range));
+  highlights.set(key, new (window as any).Highlight(range));
 }
 
-function clearHighlight(): void {
+function clearHighlight(key: string): void {
   if (typeof CSS === 'undefined' || !('highlights' in CSS)) return;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (CSS as any).highlights.delete(HIGHLIGHT_KEY);
+  (CSS as any).highlights.delete(key);
 }
 
 /** Walk up from a node to the nearest `.message[data-uuid]` ancestor */
@@ -94,20 +96,24 @@ export function useTranscriptAnnotation(opts: UseTranscriptAnnotationOpts): Tran
   const annotationModeRef = useRef(false);
   annotationModeRef.current = annotationMode;
 
+  // Stable per-instance highlight key — avoids cross-tab CSS.highlights collisions
+  const highlightKeyRef = useRef(`crispy-transcript-annotation-${++highlightCounter}`);
+  const hk = highlightKeyRef.current;
+
   const clearAll = useCallback(() => {
     setSelection(null);
     setAnnotationMode(false);
     setAnnotationText('');
-    clearHighlight();
-  }, []);
+    clearHighlight(hk);
+  }, [hk]);
 
   const enterAnnotationMode = useCallback(() => {
     if (selection) {
-      applyHighlight(selection.range);
+      applyHighlight(hk, selection.range);
       window.getSelection()?.removeAllRanges();
     }
     setAnnotationMode(true);
-  }, [selection]);
+  }, [selection, hk]);
 
   const submitAnnotation = useCallback(() => {
     if (!selection) return;
@@ -210,10 +216,19 @@ export function useTranscriptAnnotation(opts: UseTranscriptAnnotationOpts): Tran
     return () => document.removeEventListener('keydown', handleEsc);
   }, [enabled, isActiveTab, selection]);
 
+  // Clear selection when tab becomes inactive — prevents portal popovers
+  // from surviving tab switches and appearing over the wrong tab.
+  useEffect(() => {
+    if (!isActiveTab && selection) {
+      clearAll();
+    }
+  }, [isActiveTab, selection, clearAll]);
+
   // Cleanup on unmount
   useEffect(() => {
-    return () => clearHighlight();
-  }, []);
+    const key = hk;
+    return () => clearHighlight(key);
+  }, [hk]);
 
   return {
     selection,

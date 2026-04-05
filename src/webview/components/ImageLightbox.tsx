@@ -10,6 +10,7 @@
 
 import { useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useIsActiveTab } from '../context/TabContainerContext.js';
 
 interface ImageLightboxProps {
   src: string;
@@ -18,12 +19,19 @@ interface ImageLightboxProps {
 }
 
 export function ImageLightbox({ src, alt, onClose }: ImageLightboxProps): React.JSX.Element {
+  const isActiveTab = useIsActiveTab();
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     },
     [onClose],
   );
+
+  // Close lightbox when tab becomes inactive — prevents portal from surviving tab switch
+  useEffect(() => {
+    if (!isActiveTab) onClose();
+  }, [isActiveTab, onClose]);
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);

@@ -184,11 +184,11 @@ h2 {
 }
 
 .crispy-session-dropdown {
-  position: fixed;
+  position: absolute;
   top: var(--titlebar-height);
   left: 1rem;
   min-width: 320px;
-  width: calc(100vw - 2rem);
+  width: calc(100% - 2rem);
   max-width: 60rem;
   max-height: 70vh;
   background: var(--vscode-editor-background, #1e1e1e);
@@ -373,7 +373,7 @@ h2 {
 /* --- Scroll navigation FABs (shared base) --- */
 
 .crispy-scroll-nav {
-  position: fixed;
+  position: absolute;
   right: 1.5rem;
   width: 36px;
   height: 36px;
@@ -438,7 +438,7 @@ h2 {
 /* --- Scroll-to-top (position + entrance) --- */
 
 .crispy-scroll-to-top {
-  top: calc(var(--content-top, var(--titlebar-height)) + 1rem);
+  top: 1rem;
   animation: crispy-scroll-fab-in-top 0.15s ease-out both;
 }
 
@@ -611,11 +611,9 @@ h2 {
 /* --- Playback Controls (pill + popover) --- */
 
 .crispy-playback {
-  position: fixed;
+  position: absolute;
   bottom: calc(var(--cp-height, 80) * 1px + 1.5rem);
-  left: calc(
-    (var(--container-width, 100vw) - var(--right-panels-width, 0px)) / 2
-  );
+  left: calc(50% - var(--right-panels-width, 0px) / 2);
   transform: translateX(-50%);
   z-index: 199;
   display: flex;
@@ -1813,19 +1811,15 @@ h2 {
   backdrop-filter: blur(40px) saturate(170%);
   border: 1px solid var(--glass-border-frost);
   max-width: 800px;
-  width: calc(
-    var(--container-width, 100vw) - var(--right-panels-width, 0px) - 3rem
-  );
+  width: calc(100% - var(--right-panels-width, 0px) - 3rem);
   border-radius: 10px;
   box-shadow:
     0 4px 24px rgba(0, 0, 0, 0.4),
     0 1px 4px rgba(0, 0, 0, 0.2),
     var(--glass-inner-glow);
-  position: fixed;
+  position: absolute;
   bottom: 1rem;
-  left: calc(
-    (var(--container-width, 100vw) - var(--right-panels-width, 0px)) / 2
-  );
+  left: calc(50% - var(--right-panels-width, 0px) / 2);
   transform: translateX(-50%);
   z-index: 200;
   transition:
@@ -1916,11 +1910,9 @@ h2 {
 }
 
 .crispy-stop {
-  position: fixed;
+  position: absolute;
   bottom: calc(var(--cp-height, 80) * 1px + 2rem);
-  left: calc(
-    (var(--container-width, 100vw) - var(--right-panels-width, 0px)) / 2
-  );
+  left: calc(50% - var(--right-panels-width, 0px) / 2);
   transform: translateX(-50%) translateY(8px);
   z-index: 199;
   opacity: 0;
@@ -4651,11 +4643,11 @@ h2 {
  * ============================================================================ */
 
 .crispy-tool-panel {
-  position: fixed;
-  top: var(--content-top, var(--titlebar-height));
+  position: absolute;
+  top: 0;
   right: 0;
   width: var(--tool-panel-actual-width, var(--tool-panel-width, 0px));
-  height: calc(100vh - var(--content-top, var(--titlebar-height)));
+  bottom: 0;
   background: var(--glass-bg);
   -webkit-backdrop-filter: blur(40px) saturate(170%);
   backdrop-filter: blur(40px) saturate(170%);
@@ -5723,11 +5715,11 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
  * ============================================================================ */
 
 .crispy-file-panel {
-  position: fixed;
-  top: var(--content-top, var(--titlebar-height));
+  position: absolute;
+  top: 0;
   right: 0;
   width: var(--tool-panel-actual-width, var(--tool-panel-width, 0px));
-  height: calc(100vh - var(--content-top, var(--titlebar-height)));
+  bottom: 0;
   background: var(--vscode-sideBar-background, #252526);
   border-left: 1px solid var(--border-panel);
   display: flex;
@@ -6026,11 +6018,11 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
    -------------------------------------------------------------------------- */
 
 .crispy-file-viewer-panel {
-  position: fixed;
-  top: var(--content-top, var(--titlebar-height));
+  position: absolute;
+  top: 0;
   right: var(--tool-panel-actual-width, 0px);
   width: var(--file-viewer-width, 0px);
-  height: calc(100vh - var(--content-top, var(--titlebar-height)));
+  bottom: 0;
   background: var(--vscode-editor-background, #1e1e1e);
   border-left: 1px solid var(--border-panel);
   display: flex;
@@ -6676,11 +6668,11 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
  * ============================================================================ */
 
 .crispy-git-panel {
-  position: fixed;
-  top: var(--content-top, var(--titlebar-height));
+  position: absolute;
+  top: 0;
   right: 0;
   width: var(--tool-panel-actual-width, var(--tool-panel-width, 0px));
-  height: calc(100vh - var(--content-top, var(--titlebar-height)));
+  bottom: 0;
   background: var(--vscode-sideBar-background, #252526);
   border-left: 1px solid var(--border-panel);
   display: flex;

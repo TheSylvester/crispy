@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom';
 import type { FileNode } from '../../hooks/useFileTree.js';
 import { useTransport } from '../../context/TransportContext.js';
 import { useFilePanel } from '../../context/FilePanelContext.js';
+import { useIsActiveTab } from '../../context/TabContainerContext.js';
 import {
   getCommandsForNode,
   getGroupOrder,
@@ -29,8 +30,14 @@ interface FileContextMenuProps {
 export function FileContextMenu({ node, position, onClose }: FileContextMenuProps): React.JSX.Element {
   const transport = useTransport();
   const { cwd, openFile, insertIntoChat } = useFilePanel();
+  const isActiveTab = useIsActiveTab();
   const menuRef = useRef<HTMLDivElement>(null);
   const [focusedIdx, setFocusedIdx] = useState(0);
+
+  // Close menu when tab becomes inactive — prevents portal from surviving tab switch
+  useEffect(() => {
+    if (!isActiveTab) onClose();
+  }, [isActiveTab, onClose]);
 
   const context: FileCommandContext = useMemo(
     () => ({ transport, cwd: cwd!, openFile, insertIntoChat }),

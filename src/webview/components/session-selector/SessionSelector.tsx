@@ -17,6 +17,7 @@
 
 import { useState, useMemo, useDeferredValue, useCallback, useRef, useEffect } from 'react';
 import { useSession } from '../../context/SessionContext.js';
+import { useTabSessionOptional } from '../../context/TabSessionContext.js';
 import { usePreferences } from '../../context/PreferencesContext.js';
 import { useEnvironment } from '../../context/EnvironmentContext.js';
 import { useSessionStatus } from '../../hooks/useSessionStatus.js';
@@ -42,21 +43,28 @@ interface SessionSelectorProps {
 
 export function SessionSelector({ onSelect, onClose }: SessionSelectorProps = {}): React.JSX.Element {
   const {
-    sessions, selectedSessionId, setSelectedSessionId: globalSetSelectedSessionId,
-    selectedCwd, setSelectedCwd, availableVendors, isLoading,
+    sessions, selectedSessionId: globalSelectedSessionId, setSelectedSessionId: globalSetSelectedSessionId,
+    selectedCwd: globalSelectedCwd, setSelectedCwd: globalSetSelectedCwd, availableVendors, isLoading,
     findAndSelectSession, sessionStatuses,
   } = useSession();
-  const setSelectedSessionId = onSelect ?? globalSetSelectedSessionId;
+  // Prefer tab-local session/CWD when rendered inside a tab
+  const tabCtx = useTabSessionOptional();
+  const selectedSessionId = tabCtx?.effectiveSessionId ?? globalSelectedSessionId;
+  const selectedCwd = tabCtx?.selectedCwd ?? globalSelectedCwd;
+  const setSelectedCwd = tabCtx?.setSelectedCwd ?? globalSetSelectedCwd;
+  const setSelectedSessionId = onSelect ?? tabCtx?.setSelectedSessionId ?? globalSetSelectedSessionId;
   const { sidebarCollapsed, setSidebarCollapsed } = usePreferences();
   const { channelState } = useSessionStatus(selectedSessionId);
   const transportKind = useEnvironment();
   const allCwds = useAvailableCwds();
 
-  // In websocket mode with workspace routing, CWD changes navigate to the new URL
+  // In websocket mode with workspace routing, CWD changes navigate to the new URL.
+  // But only when rendered OUTSIDE a tab (global workspace picker) — inside a tab,
+  // CWD changes are per-tab and must not trigger full-page navigation.
   const cwdMeta = document.querySelector('meta[name="crispy-cwd"]')?.getAttribute('content');
   const homeMeta = document.querySelector('meta[name="crispy-home"]')?.getAttribute('content');
   const handleCwdChange = useCallback((slug: string | null) => {
-    if (transportKind === 'websocket' && cwdMeta && slug) {
+    if (!tabCtx && transportKind === 'websocket' && cwdMeta && slug) {
       const cwd = allCwds.find(c => c.slug === slug);
       if (cwd && homeMeta) {
         window.location.replace(fsPathToUrlPath(cwd.fullPath, homeMeta));
@@ -64,7 +72,7 @@ export function SessionSelector({ onSelect, onClose }: SessionSelectorProps = {}
       }
     }
     setSelectedCwd(slug);
-  }, [transportKind, cwdMeta, homeMeta, allCwds, setSelectedCwd]);
+  }, [tabCtx, transportKind, cwdMeta, homeMeta, allCwds, setSelectedCwd]);
 
   // ---- Local UI state ----
   const [searchQuery, setSearchQuery] = useState('');

@@ -32,6 +32,8 @@ export interface ForkConfig {
 export interface TabCreateConfig {
   forkConfig?: ForkConfig;
   sessionId?: string;
+  /** Target tabset ID for the new tab (defaults to main tabset). */
+  tabsetId?: string;
 }
 
 interface TabOperations {

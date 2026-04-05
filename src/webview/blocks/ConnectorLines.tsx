@@ -52,10 +52,12 @@ function useConnectorPaths(): ConnectorPath[] {
     const transcriptRect = transcriptScroll.getBoundingClientRect();
     const panelRect = panelScroll.getBoundingClientRect();
 
-    // Get titlebar offset — the SVG top is at var(--titlebar-height)
-    const titlebarHeight = parseFloat(
-      getComputedStyle(document.documentElement).getPropertyValue('--titlebar-height')
-    ) || 36;
+    // Get the tab container's viewport offset — SVG is absolutely positioned
+    // within .crispy-tab-layout, so all coordinates must be container-relative.
+    const container = containerRef.current?.closest('.crispy-tab-layout');
+    const containerRect = container?.getBoundingClientRect();
+    const offsetX = containerRect?.left ?? 0;
+    const offsetY = containerRect?.top ?? 0;
 
     // First pass: collect visible line endpoints, tagging inline tools
     const Y_GROUP_THRESHOLD = 4; // px — inline icons on the same row
@@ -91,10 +93,10 @@ function useConnectorPaths(): ConnectorPath[] {
       items.push({
         toolId,
         inline: transcriptEl.classList.contains('crispy-blocks-tool--inline'),
-        leftX: tRect.right,
-        leftY: (tVisibleTop + tVisibleBottom) / 2 - titlebarHeight,
-        rightX: pRect.left,
-        rightY: (pVisibleTop + pVisibleBottom) / 2 - titlebarHeight,
+        leftX: tRect.right - offsetX,
+        leftY: (tVisibleTop + tVisibleBottom) / 2 - offsetY,
+        rightX: pRect.left - offsetX,
+        rightY: (pVisibleTop + pVisibleBottom) / 2 - offsetY,
       });
     }
 
@@ -284,11 +286,11 @@ export function ConnectorLines(): React.JSX.Element | null {
     <svg
       className="crispy-connector-lines"
       style={{
-        position: 'fixed',
-        top: 'var(--titlebar-height, 36px)',
+        position: 'absolute',
+        top: 0,
         left: 0,
-        width: '100vw',
-        height: 'calc(100vh - var(--titlebar-height, 36px))',
+        width: '100%',
+        height: '100%',
         pointerEvents: 'none',
         zIndex: 150,
       }}

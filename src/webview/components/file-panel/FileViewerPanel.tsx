@@ -80,9 +80,19 @@ export function FileViewerPanel(): React.JSX.Element | null {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [fileViewerOpen, isActiveTab, handleKeyDown]);
 
+  // Clear selection when tab becomes inactive — prevents portal popovers
+  // from surviving tab switches
+  useEffect(() => {
+    if (!isActiveTab && selection) {
+      setSelection(null);
+      setAnnotationMode(false);
+      setAnnotationText('');
+    }
+  }, [isActiveTab, selection]);
+
   // Detect text selection within the panel body
   useEffect(() => {
-    if (!fileViewerOpen || annotationMode) return;
+    if (!fileViewerOpen || !isActiveTab || annotationMode) return;
 
     const handleMouseUp = () => {
       requestAnimationFrame(() => {
@@ -109,7 +119,7 @@ export function FileViewerPanel(): React.JSX.Element | null {
 
     document.addEventListener('mouseup', handleMouseUp);
     return () => document.removeEventListener('mouseup', handleMouseUp);
-  }, [fileViewerOpen, annotationMode]);
+  }, [fileViewerOpen, isActiveTab, annotationMode]);
 
   // Focus textarea when annotation mode opens
   useEffect(() => {

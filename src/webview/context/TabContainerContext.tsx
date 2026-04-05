@@ -25,8 +25,12 @@ const TabContainerContext = createContext<TabContainerContextValue | null>(null)
 export function TabContainerProvider({ children, tabId }: { children: React.ReactNode; tabId?: string }): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const controller = useTabControllerOptional();
-  // Derive isActiveTab from the controller's activeTabId (reactive)
-  const isActiveTab = tabId ? controller?.activeTabId === tabId : true;
+  // Derive isActiveTab from the controller's activeTabId (reactive).
+  // When activeTabId is null (not yet initialized), treat all tabs as active
+  // so first-render effects (ResizeObservers, scroll listeners) can attach.
+  const isActiveTab = tabId
+    ? (controller?.activeTabId == null || controller.activeTabId === tabId)
+    : true;
 
   const value = useMemo(() => ({ containerRef, isActiveTab }), [isActiveTab]);
 

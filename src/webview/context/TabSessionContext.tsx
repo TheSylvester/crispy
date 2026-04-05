@@ -16,6 +16,7 @@ import { createContext, useContext, useCallback, useEffect, useMemo, useRef, use
 import { useSession } from './SessionContext.js';
 import { formatCwd, slugToPath } from '../hooks/useSessionCwd.js';
 import type { CwdInfo } from '../hooks/useSessionCwd.js';
+import { useEnvironment } from './EnvironmentContext.js';
 
 // ============================================================================
 // Context Shape
@@ -56,29 +57,50 @@ interface TabSessionProviderProps {
  */
 export function TabSessionProvider({ sessionId: sessionIdProp, onSessionChange, children }: TabSessionProviderProps): React.JSX.Element {
   const global = useSession();
+  const envKind = useEnvironment();
 
   // Internal state tracks the tab's session. Initialized from prop, updated
   // when user selects a session within the tab (via setSelectedSessionId).
   const [localSessionId, setLocalSessionId] = useState<string | null | undefined>(sessionIdProp);
+
+  // Per-tab CWD slug. `undefined` = inherit from global (unset),
+  // `null` = explicitly "All Projects", `string` = explicit project.
+  const [localCwd, setLocalCwd] = useState<string | null | undefined>(
+    () => global.selectedCwd ?? undefined,
+  );
 
   // Sync from prop when it changes externally (e.g., bootstrap assignment)
   useEffect(() => {
     setLocalSessionId(sessionIdProp);
   }, [sessionIdProp]);
 
+  // In VS Code, sync workspace CWD to tab CWD on first arrival (one-shot).
+  const cwdInitRef = useRef(false);
+  useEffect(() => {
+    if (cwdInitRef.current) return;
+    if (envKind === 'vscode' && global.selectedCwd && localCwd === undefined) {
+      setLocalCwd(global.selectedCwd);
+      cwdInitRef.current = true;
+    }
+  }, [envKind, global.selectedCwd, localCwd]);
+
   const effectiveSessionId = localSessionId !== undefined ? localSessionId : global.selectedSessionId;
 
+  // Derive CWD from the tab's session, then tab-local CWD, then global.
+  // `localCwd === undefined` means "inherit from global".
+  // `localCwd === null` means "All Projects" (explicitly cleared).
   const effectiveCwd: CwdInfo = useMemo(() => {
-    if (!effectiveSessionId) return { slug: null, fullPath: null, display: null };
-
-    const session = global.sessions.find(s => s.sessionId === effectiveSessionId);
-    const slug = session?.projectSlug ?? global.selectedCwd;
+    const session = effectiveSessionId
+      ? global.sessions.find(s => s.sessionId === effectiveSessionId)
+      : null;
+    const resolvedCwd = localCwd !== undefined ? localCwd : global.selectedCwd;
+    const slug = session?.projectSlug ?? resolvedCwd;
     if (!slug) return { slug: null, fullPath: null, display: null };
 
     const realPath = session?.projectPath ?? null;
     const fullPath = realPath ?? slugToPath(slug);
     return { slug, fullPath, display: formatCwd(fullPath) };
-  }, [effectiveSessionId, global.sessions, global.selectedCwd]);
+  }, [effectiveSessionId, global.sessions, localCwd, global.selectedCwd]);
 
   // When onSessionChange is provided, route session selection through it
   // (FlexAppLayout uses this to update its tab→session map).
@@ -95,18 +117,24 @@ export function TabSessionProvider({ sessionId: sessionIdProp, onSessionChange, 
     }
   }, [global.setSelectedSessionId]);
 
+  // Per-tab CWD setter — updates local state, not global.
+  const setSelectedCwd = useCallback((slug: string | null) => {
+    setLocalCwd(slug);
+  }, []);
+
   const value: TabSessionContextValue = useMemo(() => ({
     effectiveSessionId,
     effectiveCwd,
-    selectedCwd: global.selectedCwd,
-    setSelectedCwd: global.setSelectedCwd,
+    selectedCwd: localCwd !== undefined ? localCwd : global.selectedCwd,
+    setSelectedCwd,
     workspaceCwdPath: global.workspaceCwdPath,
     setSelectedSessionId,
   }), [
     effectiveSessionId,
     effectiveCwd,
+    localCwd,
     global.selectedCwd,
-    global.setSelectedCwd,
+    setSelectedCwd,
     global.workspaceCwdPath,
     setSelectedSessionId,
   ]);
@@ -134,6 +162,14 @@ export function useTabSession(): TabSessionContextValue {
   // This keeps components that haven't been migrated yet working.
   // eslint-disable-next-line react-hooks/rules-of-hooks
   return useTabSessionFallback();
+}
+
+/**
+ * Access tab-local session state if inside a TabSessionProvider, or null.
+ * Used by hooks that need tab-local CWD without falling back to global.
+ */
+export function useTabSessionOptional(): TabSessionContextValue | null {
+  return useContext(TabSessionCtx);
 }
 
 /** Construct TabSessionContextValue from global SessionContext. */

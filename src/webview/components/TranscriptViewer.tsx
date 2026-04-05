@@ -274,17 +274,16 @@ export function TranscriptViewer(): React.JSX.Element {
     const cpEl = controlPanelRef.current;
     if (!cpEl) return;
 
-    if (!isActiveTab) return;
-
     const observer = new ResizeObserver(() => {
       const cpHeight = Math.round(cpEl.getBoundingClientRect().height);
-      const target = containerRef.current ?? document.documentElement;
+      const target = containerRef.current;
+      if (!target) return;
       target.style.setProperty('--cp-height', String(cpHeight));
     });
 
     observer.observe(cpEl);
     return () => observer.disconnect();
-  }, [isActiveTab]);
+  }, []);
 
   // Fork preview glow: add/remove class on last assistant message
   const handleForkHoverChange = useCallback((hovering: boolean) => {
