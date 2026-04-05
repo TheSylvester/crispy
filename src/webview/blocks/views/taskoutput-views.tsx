@@ -100,7 +100,7 @@ export function TaskOutputExpandedView({ block, result, status, anchor }: ToolVi
       <span className="crispy-blocks-tool-header">
         <span className="crispy-blocks-tool-icon">{meta.icon}</span>
         <ToolBadge color={meta.color} label="task-output" />
-        {isBlocking && <ToolBadge color="#888" textColor="#d4d4d4" label="blocking" />}
+        {isBlocking && <ToolBadge color="#888" label="blocking" />}
         {taskId && <span className="crispy-blocks-tool-description">{taskId}</span>}
       </span>
       <StatusIndicator status={status} summary={resultSummary} />

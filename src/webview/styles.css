@@ -5623,6 +5623,12 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   --color-diff-removed: #cf222e;
   --color-send-text: #ffffff;
 
+  /* Text hierarchy — dark text on light bg (WCAG AA on #ececec) */
+  --text-primary: #1a1a1a;
+  --text-secondary: #4a4a4a;
+  --text-tertiary: #555;
+  --text-muted: #6b6b6b;
+
   /* Agency */
   --agency-white: #333333;
   --agency-blue: #0066cc;
@@ -5637,16 +5643,21 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   --context-high: #cf222e;
   --context-critical: #a40e26;
 
-  /* Glassmorphism — flip tint direction */
-  --glass-bg: rgba(255, 255, 255, 0.65);
-  --glass-bg-hover: rgba(255, 255, 255, 0.8);
-  --glass-bg-opaque: rgba(255, 255, 255, 0.9);
-  --glass-bg-drag: rgba(240, 240, 240, 0.95);
-  --glass-bg-solid: rgba(255, 255, 255, 0.97);
-  --glass-bg-muted: rgba(230, 230, 230, 0.7);
+  /* Glassmorphism — Mac-like warm gray, not pure white */
+  --glass-bg: rgba(244, 244, 244, 0.8);
+  --glass-bg-hover: rgba(238, 238, 238, 0.9);
+  --glass-bg-opaque: rgba(244, 244, 244, 0.95);
+  --glass-bg-drag: rgba(234, 234, 234, 0.95);
+  --glass-bg-solid: rgba(244, 244, 244, 0.98);
+  --glass-bg-muted: rgba(224, 224, 224, 0.7);
   --glass-border: rgba(0, 0, 0, 0.08);
   --glass-border-md: rgba(0, 0, 0, 0.12);
   --glass-border-strong: rgba(0, 0, 0, 0.2);
+  --glass-border-frost: rgba(0, 0, 0, 0.1);
+  --glass-inner-glow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 0 20px rgba(255, 255, 255, 0.15);
+  --glass-shadow-subtle: 0 2px 12px rgba(0, 0, 0, 0.08);
 
   /* Tints */
   --tint-subtle: rgba(0, 0, 0, 0.02);
@@ -5667,12 +5678,343 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   /* Re-declare shorthand tokens — var() inside custom properties may resolve
      at the :root scope where --vscode-* is still dark. Explicit re-declaration
      ensures these pick up the light-mode VS Code values. */
-  --bg-editor: var(--vscode-editor-background, #ffffff);
+  --bg-editor: var(--vscode-editor-background, #f5f5f5);
   --bg-code: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.05));
-  --border-panel: var(--vscode-panel-border, #e0e0e0);
+  --border-panel: var(--vscode-panel-border, #d5d5d5);
 
   /* Titlebar */
-  --titlebar-bg: rgba(255, 255, 255, 0.65);
+  --titlebar-bg: rgba(240, 240, 240, 0.75);
+}
+
+/* Light mode: override VS Code CSS variables that have dark fallbacks.
+   In the dev server and Tauri, --vscode-* vars don't exist, so fallbacks
+   are used. We must set them explicitly for light mode. */
+body[data-vscode-theme-kind="vscode-light"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] {
+  --vscode-foreground: #333;
+  --vscode-editor-foreground: #1a1a1a;
+  --vscode-sideBar-background: #ececec;
+  --vscode-sideBar-foreground: #333;
+  --vscode-editor-background: #f5f5f5;
+  --vscode-input-foreground: #333;
+  --vscode-input-background: #fff;
+  --vscode-input-border: #d0d0d0;
+  --vscode-input-placeholderForeground: #888;
+  --vscode-button-secondaryBackground: #e0e0e0;
+  --vscode-button-secondaryForeground: #333;
+  --vscode-button-secondaryHoverBackground: #d4d4d4;
+  --vscode-button-background: #0969da;
+  --vscode-button-foreground: #fff;
+  --vscode-button-hoverBackground: #0860ca;
+  --vscode-list-hoverBackground: rgba(0, 0, 0, 0.04);
+  --vscode-list-activeSelectionBackground: #0969da;
+  --vscode-list-activeSelectionForeground: #fff;
+  --vscode-dropdown-background: #fff;
+  --vscode-dropdown-foreground: #333;
+  --vscode-dropdown-border: #d0d0d0;
+  --vscode-tab-inactiveBackground: #e8e8e8;
+  --vscode-tab-inactiveForeground: rgba(0, 0, 0, 0.55);
+  --vscode-tab-activeBackground: #f5f5f5;
+  --vscode-tab-activeForeground: #000;
+  --vscode-tab-border: rgba(0, 0, 0, 0.08);
+  --vscode-tab-hoverBackground: rgba(0, 0, 0, 0.04);
+  --vscode-focusBorder: #0969da;
+  --vscode-panel-border: #d5d5d5;
+  --vscode-toolbar-hoverBackground: rgba(0, 0, 0, 0.06);
+  --vscode-editorWidget-background: #f5f5f5;
+  --vscode-editorWidget-border: #d0d0d0;
+  --vscode-scrollbarSlider-background: rgba(0, 0, 0, 0.15);
+  --vscode-scrollbarSlider-hoverBackground: rgba(0, 0, 0, 0.25);
+  --vscode-textCodeBlock-background: rgba(0, 0, 0, 0.05);
+  --vscode-textPreformat-foreground: #0550ae;
+  --vscode-textLink-foreground: #0969da;
+  --vscode-descriptionForeground: #666;
+  --vscode-errorForeground: #cf222e;
+  --vscode-notificationsWarningIcon-foreground: #9a6700;
+  --vscode-badge-background: #e0e0e0;
+  --vscode-badge-foreground: #333;
+  --vscode-menu-background: #fff;
+  --vscode-menu-foreground: #333;
+  --vscode-menu-selectionBackground: #0969da;
+  --vscode-menu-selectionForeground: #fff;
+  --vscode-menu-separatorBackground: #d0d0d0;
+  color: #1a1a1a;
+  background: #ececec;
+}
+
+/* Light mode: override FlexLayout dark-theme CSS variables.
+   FlexLayout's own stylesheet sets --color-text: #eeeeee on .flexlayout__layout,
+   which cascades into .flexlayout__tab and makes transcript content appear near-white. */
+body[data-vscode-theme-kind="vscode-light"] .flexlayout__layout,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .flexlayout__layout {
+  --color-text: #1a1a1a;
+  --color-background: #ececec;
+  --color-tab-content: #f5f5f5;
+}
+
+/* Light mode: override hardcoded dark-mode box-shadows and borders */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp {
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.08),
+    0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+body[data-vscode-theme-kind="vscode-light"] .crispy-scroll-nav,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-scroll-nav {
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
+}
+
+body[data-vscode-theme-kind="vscode-light"] .crispy-scroll-nav:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-scroll-nav:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+body[data-vscode-theme-kind="vscode-light"] .crispy-scroll-nav:active,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-scroll-nav:active {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Light mode: connector line dots */
+body[data-vscode-theme-kind="vscode-light"] .crispy-blocks-dot-line__dots,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-blocks-dot-line__dots {
+  border-bottom-color: rgba(0, 0, 0, 0.15);
+}
+
+/* Light mode: thinking box glow */
+body[data-vscode-theme-kind="vscode-light"] .crispy-blocks-thinking,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-blocks-thinking {
+  box-shadow:
+    0 0 8px rgba(0, 0, 0, 0.04),
+    0 0 2px rgba(0, 0, 0, 0.03);
+}
+
+/* Light mode: panel-active tool highlight */
+body[data-vscode-theme-kind="vscode-light"] .crispy-blocks-tool[data-panel-active],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-blocks-tool[data-panel-active] {
+  box-shadow: 0 0 6px 1px rgba(0, 0, 0, 0.08);
+}
+
+/* Light mode: fork button border */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-fork,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-fork {
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* Light mode: brand separator */
+body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__brand-sep,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__brand-sep {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+/* Light mode: brand link hover */
+body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__brand-link:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__brand-link:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* Light mode: session dropdown shadow */
+body[data-vscode-theme-kind="vscode-light"] .crispy-session-dropdown,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-session-dropdown {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Light mode: link underline color */
+body[data-vscode-theme-kind="vscode-light"] a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] a {
+  text-decoration-color: rgba(0, 85, 170, 0.4);
+}
+
+body[data-vscode-theme-kind="vscode-light"] .prose a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose a {
+  text-decoration-color: rgba(0, 85, 170, 0.4);
+}
+
+/* Light mode: streaming glow uses darker shadow */
+body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-streaming] .crispy-cp,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-streaming] .crispy-cp {
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.08),
+    0 1px 4px rgba(0, 0, 0, 0.06),
+    var(--agency-glow-shadow, 0 0 12px rgba(0, 0, 0, 0.1));
+}
+
+/* Light mode: send button border */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-send,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-send {
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+/* Light mode: dot-line subject */
+body[data-vscode-theme-kind="vscode-light"] .crispy-blocks-dot-line__subject,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-blocks-dot-line__subject {
+  color: #555;
+}
+
+/* Light mode: stop button conic gradient — use dark tones */
+body[data-vscode-theme-kind="vscode-light"] .crispy-stop,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-stop {
+  --stop-color-dim: rgba(0, 0, 0, 0.2);
+  --stop-color: rgba(0, 0, 0, 0.35);
+  --stop-color-bright: rgba(0, 0, 0, 0.5);
+}
+
+/* Light mode: approval dimming overlay */
+body[data-vscode-theme-kind="vscode-light"] .crispy-main:has(.crispy-approval-header) .crispy-transcript::after,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-main:has(.crispy-approval-header) .crispy-transcript::after {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Light mode: titlebar button shadows */
+body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__btn,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__btn {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* Light mode: new-chevron border */
+body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__new-chevron,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__new-chevron {
+  border-left-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* Light mode: new dropdown shadow */
+body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__new-dropdown,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__new-dropdown {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+/* Light mode: welcome title — use darker gold gradient */
+body[data-vscode-theme-kind="vscode-light"] .crispy-welcome__title,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-welcome__title,
+body[data-vscode-theme-kind="vscode-light"] .crispy-workspace-picker__title,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-workspace-picker__title {
+  background: linear-gradient(90deg, #9a5c10, #b87318, #c98a30, #b87318, #9a5c10);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+
+/* Light mode: diff backgrounds — more visible */
+body[data-vscode-theme-kind="vscode-light"] .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-diff-added {
+  background: rgba(26, 127, 55, 0.12);
+}
+
+body[data-vscode-theme-kind="vscode-light"] .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-diff-removed {
+  background: rgba(207, 34, 46, 0.12);
+}
+
+/* Light mode: tool panel overlay shadow */
+body[data-vscode-theme-kind="vscode-light"] [data-tool-panel="overlay"] .crispy-tool-panel,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] [data-tool-panel="overlay"] .crispy-tool-panel {
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.1);
+}
+
+/* Light mode: autocomplete dropdown shadow */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-autocomplete,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-autocomplete {
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Light mode: workspace picker logo shadow — lighter */
+body[data-vscode-theme-kind="vscode-light"] .crispy-workspace-picker__logo svg,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-workspace-picker__logo svg {
+  filter:
+    drop-shadow(2px 3px 6px rgba(0, 0, 0, 0.2))
+    drop-shadow(-1px -1px 0 rgba(180, 140, 60, 0.2))
+    drop-shadow(1px 2px 0 rgba(0, 0, 0, 0.15));
+}
+
+/* Light mode: inline icon error dot */
+body[data-vscode-theme-kind="vscode-light"] .crispy-inline-icon--error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-inline-icon--error {
+  background: rgba(207, 34, 46, 0.1);
+}
+
+/* Light mode: todo completed icon — darken pastel green */
+body[data-vscode-theme-kind="vscode-light"] .crispy-todo--completed .crispy-todo-icon,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-todo--completed .crispy-todo-icon {
+  color: #15803d;
+}
+
+/* Light mode: titlebar wordmark — darken amber */
+body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__wordmark,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__wordmark {
+  color: #9a5c10;
+}
+
+/* Light mode: workspace picker pin icon */
+body[data-vscode-theme-kind="vscode-light"] .crispy-workspace-picker__pin-icon,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-workspace-picker__pin-icon {
+  color: #9a5c10;
+}
+
+/* Light mode: workspace picker flash accent */
+body[data-vscode-theme-kind="vscode-light"] .crispy-workspace-picker__flash,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-workspace-picker__flash {
+  color: #9a5c10;
+  border-left-color: #9a5c10;
+}
+
+/* Light mode: git status badges — darker for contrast */
+body[data-vscode-theme-kind="vscode-light"] .crispy-git-panel__status-badge--modified,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-git-panel__status-badge--modified {
+  color: #92400e;
+}
+body[data-vscode-theme-kind="vscode-light"] .crispy-git-panel__status-badge--added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-git-panel__status-badge--added {
+  color: #15803d;
+}
+body[data-vscode-theme-kind="vscode-light"] .crispy-git-panel__status-badge--deleted,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-git-panel__status-badge--deleted {
+  color: #b91c1c;
+}
+body[data-vscode-theme-kind="vscode-light"] .crispy-git-panel__status-badge--renamed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-git-panel__status-badge--renamed {
+  color: #1d4ed8;
+}
+
+/* Light mode: git dirty indicators */
+body[data-vscode-theme-kind="vscode-light"] .crispy-git-panel__dirty--yes,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-git-panel__dirty--yes {
+  color: #92400e;
+  background: rgba(146, 64, 14, 0.1);
+}
+body[data-vscode-theme-kind="vscode-light"] .crispy-git-panel__dirty--clean,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-git-panel__dirty--clean {
+  color: #15803d;
+  background: rgba(21, 128, 61, 0.1);
+}
+
+/* Light mode: WSL install card success/error */
+body[data-vscode-theme-kind="vscode-light"] .crispy-wsl-install-card__desc--success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-wsl-install-card__desc--success {
+  color: #15803d;
+}
+body[data-vscode-theme-kind="vscode-light"] .crispy-wsl-install-card__desc--error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-wsl-install-card__desc--error {
+  color: #b91c1c;
+}
+
+/* Light mode: welcome page background */
+body[data-vscode-theme-kind="vscode-light"] .crispy-welcome,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-welcome {
+  background: var(--vscode-sideBar-background, #ececec);
+}
+
+/* Light mode: user text bubble — needs visible contrast */
+body[data-vscode-theme-kind="vscode-light"] .user-text,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .user-text {
+  background: var(--vscode-button-secondaryBackground, #e0e0e0);
+}
+
+/* Light mode: copied dot flash */
+body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__dot--copied,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__dot--copied {
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.4) !important;
 }
 
 /* ============================================================================
@@ -6697,6 +7039,32 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
 [data-tool-panel="overlay"] .crispy-git-panel {
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
   z-index: 250;
+}
+
+/* --- Git panel as border panel --- */
+.crispy-git-panel--tab {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  z-index: auto;
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+
+/* --- TitleBar git button with branch label --- */
+.crispy-titlebar__git-btn {
+  gap: 5px;
+}
+
+.crispy-titlebar__git-label {
+  font-size: 11px;
+  opacity: 0.7;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* --- Git panel header --- */

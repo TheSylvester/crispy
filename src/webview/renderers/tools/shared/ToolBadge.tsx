@@ -11,6 +11,29 @@
 
 import { usePreferences } from '../../../context/PreferencesContext.js';
 
+/** Light-mode color overrides — darker, more saturated versions of Dracula pastels
+ *  that meet WCAG AA contrast on light (#f5f5f5) backgrounds. */
+const LIGHT_MODE_COLORS: Record<string, string> = {
+  '#ffb86c': '#92400e', // Bash: orange → amber-800
+  '#8be9fd': '#0369a1', // Read: cyan → sky-700
+  '#50fa7b': '#15803d', // Write: green → green-700
+  '#ff5555': '#b91c1c', // Edit: red → red-700
+  '#ff79c6': '#a21caf', // Glob: pink → fuchsia-700
+  '#7dcfff': '#0e7490', // Grep: light-cyan → cyan-700
+  '#bd93f9': '#6d28d9', // WebSearch: purple → violet-700
+  '#e0e0e0': '#475569', // Task: gray → slate-600
+  '#6272a4': '#374151', // default: blue-gray → gray-700
+  '#6366f1': '#4338ca', // MCP: indigo → indigo-700
+  '#888': '#555',       // secondary badges (background, timeout) → gray-600
+  '#888888': '#555',    // alias
+};
+
+function isLightMode(): boolean {
+  if (typeof document === 'undefined') return false;
+  const kind = document.body.dataset.vscodeThemeKind;
+  return kind === 'vscode-light' || kind === 'vscode-high-contrast-light';
+}
+
 interface ToolBadgeProps {
   color: string;
   textColor?: string;
@@ -67,9 +90,12 @@ function hexToRgba(hex: string, alpha: number): string | null {
 
 export function ToolBadge({ color, textColor, label }: ToolBadgeProps): React.JSX.Element {
   const { badgeStyle } = usePreferences();
+  const light = isLightMode();
+  // In light mode, remap Dracula pastels to darker variants for contrast
+  const effectiveColor = light && !textColor ? (LIGHT_MODE_COLORS[color] ?? color) : color;
 
   if (badgeStyle === 'solid') {
-    const solidBg = SOLID_COLORS[color] ?? color;
+    const solidBg = SOLID_COLORS[effectiveColor] ?? effectiveColor;
     return (
       <span
         className="crispy-tool-badge"
@@ -84,12 +110,12 @@ export function ToolBadge({ color, textColor, label }: ToolBadgeProps): React.JS
   }
 
   if (badgeStyle === 'tinted') {
-    const bg = hexToRgba(color, 0.12);
+    const bg = hexToRgba(effectiveColor, light ? 0.1 : 0.12);
     return (
       <span
         className="crispy-tool-badge"
         style={{
-          color: textColor ?? color,
+          color: textColor ?? effectiveColor,
           background: bg ?? 'var(--tint-soft)',
         }}
       >
@@ -99,16 +125,16 @@ export function ToolBadge({ color, textColor, label }: ToolBadgeProps): React.JS
   }
 
   // frosted (default)
-  const bg = hexToRgba(color, 0.10);
-  const border = hexToRgba(color, 0.25);
+  const bg = hexToRgba(effectiveColor, light ? 0.08 : 0.10);
+  const border = hexToRgba(effectiveColor, light ? 0.2 : 0.25);
   return (
     <span
       className="crispy-tool-badge"
       style={{
-        color: textColor ?? color,
+        color: textColor ?? effectiveColor,
         background: bg ?? 'var(--tint-soft)',
         border: `1px solid ${border ?? 'var(--glass-border)'}`,
-        boxShadow: `inset 0 0 8px ${hexToRgba(color, 0.04) ?? 'transparent'}`,
+        boxShadow: `inset 0 0 8px ${hexToRgba(effectiveColor, 0.04) ?? 'transparent'}`,
       }}
     >
       {label.toLowerCase()}

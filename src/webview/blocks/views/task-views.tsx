@@ -88,7 +88,7 @@ export function TaskExpandedView({ block, result, status, anchor, children }: To
       <span className="crispy-blocks-tool-header">
         <span className="crispy-blocks-tool-icon">{meta.icon}</span>
         <ToolBadge color={meta.color} label={agentType} />
-        {isAsync && <ToolBadge color="#888" textColor="#d4d4d4" label="background" />}
+        {isAsync && <ToolBadge color="#888" label="background" />}
         <span className="crispy-blocks-tool-description">{description}</span>
       </span>
       <StatusIndicator status={status} summary={resultSummary} />
