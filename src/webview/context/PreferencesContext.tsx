@@ -25,7 +25,7 @@ export type ToolPanelMode = 'inspector' | 'viewport';
 export type BadgeStyle = 'solid' | 'tinted' | 'frosted';
 
 /** Which view is shown in the unified right sidebar. */
-export type SidebarView = 'files' | 'tools' | 'git';
+export type SidebarView = 'files' | 'tools';
 
 interface Preferences {
   renderMode: RenderMode;
@@ -54,6 +54,8 @@ interface Preferences {
   fileViewerWidthPx: number | null;
   /** Auto-invoke /reflect after creating implementation plans. */
   autoReflect: boolean;
+  /** Which side the Git border panel docks to. */
+  gitPanelSide: 'left' | 'right';
   /** Whether the Rosie bot tracker is enabled. Read-only from settings. */
   rosieBotEnabled: boolean;
 }
@@ -74,6 +76,7 @@ interface PreferencesContextValue extends Preferences {
   setBadgeStyle: (style: BadgeStyle) => void;
   setBashBlockInIcons: (enabled: boolean) => void;
   setSidebarView: (view: SidebarView) => void;
+  setGitPanelSide: (side: 'left' | 'right') => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
@@ -121,6 +124,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [toolPanelAutoOpen, setToolPanelAutoOpenLocal] = useState(false);
   const [autoReflect, setAutoReflectLocal] = useState(true);
   const [bashBlockInIcons, setBashBlockInIconsLocal] = useState(true);
+  const [gitPanelSide, setGitPanelSideLocal] = useState<'left' | 'right'>('left');
 
   /** Latest known revision from settings RPC or incoming events. */
   const revisionRef = useRef(0);
@@ -141,6 +145,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setToolPanelAutoOpenLocal(prefs.toolPanelAutoOpen);
       setAutoReflectLocal(prefs.autoReflect ?? true);
       setBashBlockInIconsLocal(prefs.bashBlockInIcons);
+      if (prefs.gitPanelSide) setGitPanelSideLocal(prefs.gitPanelSide);
       setRosieBotEnabled(snapshot.settings.rosie?.bot?.enabled ?? false);
     }).catch((err) => {
       console.error('[PreferencesContext] Failed to load settings:', err);
@@ -169,6 +174,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         setToolPanelAutoOpenLocal(prefs.toolPanelAutoOpen);
         setAutoReflectLocal(prefs.autoReflect ?? true);
         setBashBlockInIconsLocal(prefs.bashBlockInIcons);
+        if (prefs.gitPanelSide) setGitPanelSideLocal(prefs.gitPanelSide);
       }
       if (changedSections.includes('rosie')) {
         setRosieBotEnabled(snapshot.settings.rosie?.bot?.enabled ?? false);
@@ -238,6 +244,11 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     persistPreference({ bashBlockInIcons: enabled });
   }, [persistPreference]);
 
+  const setGitPanelSide = useCallback((side: 'left' | 'right') => {
+    setGitPanelSideLocal(side);
+    persistPreference({ gitPanelSide: side });
+  }, [persistPreference]);
+
   // ============================================================================
   // Context value
   // ============================================================================
@@ -274,6 +285,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setBadgeStyle,
     setBashBlockInIcons,
     setSidebarView,
+    gitPanelSide,
+    setGitPanelSide,
   }), [
     renderMode,
     settingsPinned,
@@ -290,6 +303,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     badgeStyle,
     bashBlockInIcons,
     sidebarView,
+    gitPanelSide,
     rosieBotEnabled,
     setRenderMode,
     setSettingsPinned,
@@ -306,6 +320,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setBadgeStyle,
     setBashBlockInIcons,
     setSidebarView,
+    setGitPanelSide,
   ]);
 
   return (

@@ -18,6 +18,7 @@ import { ProjectsView } from './session-selector/index.js';
 import { useAvailableCwds } from '../hooks/useAvailableCwds.js';
 import { fsPathToUrlPath } from '../../core/url-path-resolver.js';
 import { useTabControllerOptional } from '../context/TabControllerContext.js';
+import { useGitInfo } from '../hooks/useGitInfo.js';
 // esbuild --loader:.svg=text imports the raw SVG markup as a string
 // @ts-expect-error — no type declarations for raw SVG import
 import crispyLogoSvg from '../../../media/crispy-icon.svg';
@@ -73,6 +74,19 @@ function ProjectsIcon(): React.JSX.Element {
       <line x1="4.5" y1="4" x2="8" y2="4" />
       <line x1="4.5" y1="6.5" x2="8" y2="6.5" />
       <line x1="4.5" y1="9" x2="7" y2="9" />
+    </svg>
+  );
+}
+
+/** Git branch icon — reused from TabHeader */
+function GitBranchIcon(): React.JSX.Element {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="6" y1="3" x2="6" y2="13" />
+      <circle cx="6" cy="3" r="2" />
+      <circle cx="6" cy="13" r="2" />
+      <circle cx="12" cy="5" r="2" />
+      <path d="M12 7c0 2-2 3-6 4" />
     </svg>
   );
 }
@@ -140,6 +154,12 @@ export function TitleBar(): React.JSX.Element {
     }
     return top;
   }, [allCwds, selectedCwd]);
+
+  const gitInfo = useGitInfo();
+
+  const handleToggleGit = useCallback(() => {
+    tabController?.toggleGitBorder();
+  }, [tabController]);
 
   const toggleProjects = useCallback(() => {
     setProjectsOpen(prev => !prev);
@@ -217,8 +237,23 @@ export function TitleBar(): React.JSX.Element {
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
-      {/* Right — Theme toggle (dev server only) */}
+      {/* Right — Git button + Theme toggle (non-VS Code only) */}
       <div className="crispy-titlebar__right">
+        {envKind !== 'vscode' && (
+          <button
+            className="crispy-titlebar__btn crispy-titlebar__git-btn"
+            onClick={handleToggleGit}
+            title="Toggle Git panel (Alt+G)"
+            aria-label="Toggle Git panel"
+          >
+            <GitBranchIcon />
+            {gitInfo && (
+              <span className="crispy-titlebar__git-label">
+                {gitInfo.branch}{gitInfo.dirty ? ' *' : ''}
+              </span>
+            )}
+          </button>
+        )}
         {envKind === 'websocket' && <ThemeToggle />}
       </div>
     </header>

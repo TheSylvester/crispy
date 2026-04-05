@@ -10,7 +10,7 @@
 import { createContext, useContext, useState, useMemo } from 'react';
 
 // Re-export SidebarView from PreferencesContext to avoid consumers needing both imports
-export type SidebarView = 'files' | 'tools' | 'git';
+export type SidebarView = 'files' | 'tools';
 
 // ============================================================================
 // Per-Tab Panel State
@@ -56,4 +56,9 @@ export function useTabPanel(): TabPanelValue {
   const ctx = useContext(TabPanelCtx);
   if (!ctx) throw new Error('useTabPanel must be used within TabPanelProvider');
   return ctx;
+}
+
+/** Optional access — returns null outside TabPanelProvider. */
+export function useTabPanelOptional(): TabPanelValue | null {
+  return useContext(TabPanelCtx);
 }

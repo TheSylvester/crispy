@@ -26,6 +26,7 @@ import { TabLayout } from './TabLayout.js';
 import { useTabController, type TabCreateConfig, type ForkConfig } from '../context/TabControllerContext.js';
 import { useSession } from '../context/SessionContext.js';
 import { useEnvironment } from '../context/EnvironmentContext.js';
+import { usePreferences } from '../context/PreferencesContext.js';
 import { getSessionDisplayName } from '../utils/session-display.js';
 import './flexlayout-overrides.css';
 
@@ -35,13 +36,35 @@ import './flexlayout-overrides.css';
 
 const MAIN_TABSET_ID = 'main-tabset';
 
-function makeDefaultModel(showTabStrip: boolean): IJsonModel {
+function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' = 'left'): IJsonModel {
   return {
     global: {
       splitterSize: 4,
       tabEnableClose: showTabStrip,
       tabEnableRename: false,
+      borderSize: 300,
+      borderMinSize: 200,
+      borderMaxSize: 600,
+      borderEnableAutoHide: true,
     },
+    borders: [
+      {
+        type: 'border',
+        location: gitPanelSide,
+        size: 300,
+        selected: -1, // closed by default
+        children: [
+          {
+            type: 'tab',
+            id: 'git-border-tab',
+            name: 'Git',
+            component: 'git',
+            enableClose: false,
+            enableDrag: false,
+          },
+        ],
+      },
+    ],
     layout: {
       type: 'row',
       children: [
@@ -109,18 +132,20 @@ export function FlexAppLayout(): React.JSX.Element {
   const { sessions, selectedSessionId } = useSession();
   const envKind = useEnvironment();
   const isVscode = envKind === 'vscode';
+  const { gitPanelSide } = usePreferences();
 
   // Fresh layout on every load — tabs are ephemeral like browser tabs
   const [initialState] = useState(() => {
     const showTabStrip = !isVscode;
     return {
-      model: Model.fromJson(makeDefaultModel(showTabStrip)),
+      model: Model.fromJson(makeDefaultModel(showTabStrip, gitPanelSide)),
       tabMap: new Map([['tab-initial', null]]) as TabSessionMap,
     };
   });
 
   const modelRef = useRef(initialState.model);
   const tabSessionMapRef = useRef<TabSessionMap>(initialState.tabMap);
+  const gitPanelSideRef = useRef(gitPanelSide);
 
   // Determine initial active tab from the restored model
   const [activeTabId, setActiveTabId] = useState<string | null>(() => {
@@ -139,6 +164,23 @@ export function FlexAppLayout(): React.JSX.Element {
   const bump = useCallback(() => {
     forceUpdate(n => n + 1);
   }, []);
+
+  // Rebuild model borders when gitPanelSide changes
+  useEffect(() => {
+    if (gitPanelSide === gitPanelSideRef.current) return;
+    gitPanelSideRef.current = gitPanelSide;
+    const json = modelRef.current.toJson();
+    if (json.borders) {
+      for (const border of json.borders) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (border.children?.some((c: any) => c.component === 'git')) {
+          border.location = gitPanelSide;
+        }
+      }
+    }
+    modelRef.current = Model.fromJson(json);
+    bump();
+  }, [gitPanelSide, bump]);
 
   // Stable refs for use in callbacks
   const sessionsRef = useRef(sessions);
@@ -208,6 +250,22 @@ export function FlexAppLayout(): React.JSX.Element {
     return tabSessionMapRef.current.get(tabId) ?? null;
   }, []);
 
+  /** Toggle the left border's Git panel open/closed */
+  const toggleGitBorder = useCallback(() => {
+    modelRef.current.doAction(Actions.selectTab('git-border-tab'));
+  }, []);
+
+  const findTabByComponent = useCallback((component: string): string | null => {
+    let found: string | null = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    modelRef.current.visitNodes((node: any) => {
+      if (node.getType() === 'tab' && (node as TabNode).getComponent() === component) {
+        found = node.getId();
+      }
+    });
+    return found;
+  }, []);
+
   // Register operations with controller on mount
   useEffect(() => {
     controller.registerOperations({
@@ -216,8 +274,10 @@ export function FlexAppLayout(): React.JSX.Element {
       activateTab,
       findTabBySession,
       getTabSession,
+      findTabByComponent,
+      toggleGitBorder,
     });
-  }, [controller, createTab, closeTab, activateTab, findTabBySession, getTabSession]);
+  }, [controller, createTab, closeTab, activateTab, findTabBySession, getTabSession, findTabByComponent, toggleGitBorder]);
 
   // --- Sync initial session: when selectedSessionId is set (e.g. openSession bootstrap),
   //     assign it to the initial tab if that tab has no session yet. ---
@@ -253,7 +313,10 @@ export function FlexAppLayout(): React.JSX.Element {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleAction = useCallback((action: any): any => {
     if (action.type === Actions.DELETE_TAB) {
-      if (tabSessionMapRef.current.size <= 1) return undefined; // cancel
+      const tabId = action.data?.node;
+      const isTranscriptTab = tabId && tabSessionMapRef.current.has(tabId);
+      // Block closing the last transcript tab, but always allow closing non-transcript tabs
+      if (isTranscriptTab && tabSessionMapRef.current.size <= 1) return undefined;
     }
     return action;
   }, []);
@@ -296,6 +359,8 @@ export function FlexAppLayout(): React.JSX.Element {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleRenderTab = useCallback((node: TabNode, renderValues: any) => {
     const tabId = node.getId();
+    // Non-transcript tabs use FlexLayout's node name directly
+    if (!tabSessionMapRef.current.has(tabId)) return;
     const sessionId = tabSessionMapRef.current.get(tabId);
     if (sessionId) {
       const name = getTabName(sessionId, sessionsRef.current);
@@ -349,6 +414,12 @@ export function FlexAppLayout(): React.JSX.Element {
         <TabSessionProvider sessionId={sessionId} onSessionChange={onSessionChange}>
           <TabContent tabId={tabId} forkConfig={forkConfig} />
         </TabSessionProvider>
+      );
+    } else if (node.getComponent() === 'git') {
+      return (
+        <ContentErrorBoundary>
+          <GitPanel mode="tab" />
+        </ContentErrorBoundary>
       );
     }
     return null;

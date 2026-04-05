@@ -38,6 +38,8 @@ interface SettingsPopupProps {
   onBashBlockInIconsChange: (enabled: boolean) => void;
   autoReflect: boolean;
   onAutoReflectChange: (enabled: boolean) => void;
+  gitPanelSide: 'left' | 'right';
+  onGitPanelSideChange: (side: 'left' | 'right') => void;
   rosieEnabled: boolean;
   rosieModel?: string;
   onUpdateRosie: (patch: { enabled?: boolean; model?: string }) => void;
@@ -142,7 +144,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordAllowedUserIds, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, gitPanelSide, onGitPanelSideChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordAllowedUserIds, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -293,6 +295,16 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               checked={autoReflect}
               onChange={(e) => onAutoReflectChange(e.target.checked)}
             />
+          </label>
+          <label className="crispy-cp-settings__row">
+            <span>Git Panel Side</span>
+            <select
+              value={gitPanelSide}
+              onChange={(e) => onGitPanelSideChange(e.target.value as 'left' | 'right')}
+            >
+              <option value="left">Left</option>
+              <option value="right">Right</option>
+            </select>
           </label>
 
           {/* --- Defaults Section --- */}

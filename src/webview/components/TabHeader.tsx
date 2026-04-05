@@ -49,18 +49,6 @@ function PlusIcon(): React.JSX.Element {
   );
 }
 
-function GitBranchIcon(): React.JSX.Element {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="6" y1="3" x2="6" y2="13" />
-      <circle cx="6" cy="3" r="2" />
-      <circle cx="6" cy="13" r="2" />
-      <circle cx="12" cy="5" r="2" />
-      <path d="M12 7c0 2-2 3-6 4" />
-    </svg>
-  );
-}
-
 function FilePanelIcon(): React.JSX.Element {
   return (
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -207,7 +195,7 @@ export function TabHeader(): React.JSX.Element {
           handleSidebarButton('files');
         } else if (key === 'g') {
           e.preventDefault();
-          handleSidebarButton('git');
+          tabController?.toggleGitBorder();
         } else if (key === 'v') {
           e.preventDefault();
           if (fileViewerOpen) closeFile();
@@ -261,15 +249,6 @@ export function TabHeader(): React.JSX.Element {
 
       {/* Right — Git + Files + Tools + New */}
       <div className="crispy-tab-header__right">
-        <button
-          className={`crispy-titlebar__btn crispy-titlebar__sidebar-btn${toolPanelOpen && sidebarView === 'git' ? ' crispy-titlebar__sidebar-btn--active' : ''}`}
-          onClick={() => handleSidebarButton('git')}
-          title="Toggle git panel (Alt+G)"
-          aria-label={toolPanelOpen && sidebarView === 'git' ? 'Close git panel' : 'Open git panel'}
-        >
-          <GitBranchIcon />
-          <span className="crispy-titlebar__btn-label">Git</span>
-        </button>
         <button
           className={`crispy-titlebar__btn crispy-titlebar__sidebar-btn${toolPanelOpen && sidebarView === 'files' ? ' crispy-titlebar__sidebar-btn--active' : ''}`}
           onClick={() => handleSidebarButton('files')}

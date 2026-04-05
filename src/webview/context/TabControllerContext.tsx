@@ -50,6 +50,8 @@ interface TabOperations {
   getTabSession: (tabId: string) => string | null;
   /** Find first tab with the given component type, or null. */
   findTabByComponent: (component: string) => string | null;
+  /** Toggle the Git border panel open/closed. */
+  toggleGitBorder: () => void;
 }
 
 export interface TabControllerValue {
@@ -67,6 +69,8 @@ export interface TabControllerValue {
 
   /** Find first tab with the given component type, or null. */
   findTabByComponent: (component: string) => string | null;
+  /** Toggle the Git border panel open/closed. */
+  toggleGitBorder: () => void;
 
   /** Currently active FlexLayout tab ID. */
   activeTabId: string | null;
@@ -150,6 +154,11 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     return opsRef.current.findTabByComponent(component);
   }, []);
 
+  const toggleGitBorder = useCallback(() => {
+    if (!opsRef.current) return;
+    opsRef.current.toggleGitBorder();
+  }, []);
+
   const navigateToSession = useCallback((sessionId: string) => {
     if (!opsRef.current) {
       pendingOps.current.push(() => {
@@ -184,6 +193,7 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     closeTab,
     activateTab,
     findTabByComponent,
+    toggleGitBorder,
     navigateToSession,
     setActiveTabSession,
     activeTabId,
@@ -191,7 +201,7 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     registerOperations,
     setActiveTab,
   }), [
-    createTab, closeTab, activateTab, findTabByComponent,
+    createTab, closeTab, activateTab, findTabByComponent, toggleGitBorder,
     navigateToSession, setActiveTabSession,
     activeTabId, activeTabSessionId,
     registerOperations, setActiveTab,

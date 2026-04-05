@@ -33,6 +33,8 @@ export interface SettingsPreferences {
   badgeStyle: string;
   /** Auto-invoke /reflect after creating implementation plans. Default: true. */
   autoReflect: boolean;
+  /** Which side the Git border panel docks to. Default: 'left'. */
+  gitPanelSide: 'left' | 'right';
 }
 
 // ============================================================================
@@ -236,6 +238,7 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     renderMode: 'icons',
     badgeStyle: 'frosted',
     autoReflect: true,
+    gitPanelSide: 'left',
   },
   providers: {},
   hooks: {
