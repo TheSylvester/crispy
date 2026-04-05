@@ -433,15 +433,28 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       await transport.stopEmbeddingBackfill();
     }, [transport]);
 
-    // Clear forkMode when switching sessions; reset model + agency to defaults for new conversations
+    // Clear forkMode when switching sessions (not when defaults change).
+    // Skip the initial run for fork tabs — initialForkConfig sets forkMode via its own effect,
+    // and the settings event could trigger default changes that would prematurely clear it.
+    const sessionChangeCount = useRef(0);
+    const prevSessionRef = useRef(selectedSessionId);
     useEffect(() => {
-      dispatch({ type: 'SET_FORK_MODE', forkMode: null });
-      if (!selectedSessionId) {
+      if (prevSessionRef.current !== selectedSessionId) {
+        prevSessionRef.current = selectedSessionId;
+        sessionChangeCount.current++;
+        dispatch({ type: 'SET_FORK_MODE', forkMode: null });
+      }
+    }, [selectedSessionId]);
+
+    // Reset model + agency to defaults for new conversations (no session selected).
+    // Skip for fork tabs on mount — initialForkConfig applies inherited settings.
+    useEffect(() => {
+      if (!selectedSessionId && !(initialForkConfig && sessionChangeCount.current === 0)) {
         dispatch({ type: 'SET_MODEL', model: defaultModel });
         dispatch({ type: 'SET_AGENCY_MODE', mode: defaultPermissionMode });
         dispatch({ type: 'SET_BYPASS', enabled: defaultPermissionMode === 'bypass-permissions' });
       }
-    }, [selectedSessionId, defaultModel, defaultPermissionMode]);
+    }, [selectedSessionId, defaultModel, defaultPermissionMode, initialForkConfig]);
 
     // Ref to always call the latest handleSend (avoids stale closure in forkConfig auto-send)
     const handleSendRef = useRef<() => void>(() => {});
@@ -979,11 +992,12 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       return () => document.removeEventListener('paste', handlePaste);
     }, [isActiveTab, state.pastedImageCounter, insertAtCursor]);
 
-    // --- forkConfig message listener (new panel created via fork) ---
+    // --- forkConfig message listener (legacy VS Code panel-to-panel fork) ---
     // Host retries delivery so the listener must be idempotent.
     // Settings dispatches are naturally idempotent; input prefill is idempotent.
+    // Skipped when initialForkConfig was already applied (multi-tab context path).
     useEffect(() => {
-      if (!isActiveTab) return;
+      if (!isActiveTab || initialForkConfig) return;
       function onMessage(ev: MessageEvent) {
         if (ev.data?.kind === 'forkConfig') {
           const { fromSessionId, atMessageId, initialPrompt, model, agencyMode, bypassEnabled, chromeEnabled } = ev.data;
@@ -1015,7 +1029,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       }
       window.addEventListener('message', onMessage);
       return () => window.removeEventListener('message', onMessage);
-    }, [isActiveTab, transport, onForkHistoryLoaded]); // transport is module-level stable, onForkHistoryLoaded is a stable useCallback
+    }, [isActiveTab, initialForkConfig, transport, onForkHistoryLoaded]); // transport is module-level stable, onForkHistoryLoaded is a stable useCallback
 
     // --- Apply initialForkConfig from context (fork-to-new-tab flow) ---
     const forkConfigApplied = useRef(false);
@@ -1228,7 +1242,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           </span>
         </div>
       </div>
-      {catchupStatus && (
+      {isActiveTab && catchupStatus && (
         <EmbeddingPrompt
           status={catchupStatus}
           onStart={handleStartEmbedding}

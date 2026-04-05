@@ -86,7 +86,7 @@ export function ControlPanelProvider({
   const [bypassEnabled, setBypassEnabled] = useState(false);
   const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean; append?: boolean } | null>(null);
   const [pendingAgencyMode, setPendingAgencyMode] = useState<{ agencyMode: AgencyMode; bypassEnabled: boolean } | null>(null);
-  const [hasForkHistory, setHasForkHistory] = useState(false);
+  const [hasForkHistory, setHasForkHistory] = useState(!!initialForkConfig);
   const [previewEntries, setPreviewEntries] = useState<TranscriptEntry[] | null>(null);
   const [agencyMode, setAgencyMode] = useState<AgencyMode>('ask-before-edits');
 

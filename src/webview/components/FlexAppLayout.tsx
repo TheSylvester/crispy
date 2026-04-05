@@ -158,7 +158,9 @@ export function FlexAppLayout(): React.JSX.Element {
       Actions.addNode(
         {
           type: 'tab',
-          name: sessionId ? getTabName(sessionId, sessionsRef.current) : 'New Tab',
+          name: sessionId ? getTabName(sessionId, sessionsRef.current)
+            : config?.forkConfig ? `Fork: ${getTabName(config.forkConfig.fromSessionId, sessionsRef.current)}`
+            : 'New Tab',
           component: 'transcript',
           id: tabId,
           config: config?.forkConfig ? { forkConfig: config.forkConfig } : undefined,
