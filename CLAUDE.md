@@ -169,7 +169,7 @@ Every rebuild that needs testing requires a version bump. Always use
 
 **Visual verification:** Use the `browser-qa` sub-agent with Chrome automation
 tools (`mcp__claude-in-chrome__*`) to navigate to `http://localhost:3456`,
-interact, and screenshot. Kill the server when done (`lsof -i :3456`).
+interact, and screenshot. Kill the server when done (`kill $(lsof -i :3456 -t -sTCP:LISTEN)`).
 
 ## Reference files (`.ai-reference/`, not committed)
 
