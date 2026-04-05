@@ -5,7 +5,14 @@
 
 /* Hide non-tab chrome */
 .flexlayout__tabset_header { display: none; }
-.flexlayout__splitter { display: none; }
+/* Splitter between tab groups — visible and draggable for resizing */
+.flexlayout__splitter {
+  background: var(--vscode-tab-border, rgba(255, 255, 255, 0.06));
+  transition: background 0.15s;
+}
+.flexlayout__splitter:hover {
+  background: var(--vscode-focusBorder, #007acc);
+}
 .flexlayout__border { display: none; }
 
 /* Layout fills its container — override all dark-theme backgrounds */
@@ -31,6 +38,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  overflow: visible;
 }
 
 /* ==========================================================================
@@ -62,7 +70,7 @@
   border: none;
   border-right: 1px solid var(--vscode-tab-border, rgba(255, 255, 255, 0.06));
   cursor: pointer;
-  max-width: 200px;
+  max-width: 280px;
   min-width: 80px;
   white-space: nowrap;
   overflow: hidden;

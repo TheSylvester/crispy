@@ -163,7 +163,7 @@ export function FlexAppLayout(): React.JSX.Element {
           id: tabId,
           config: config?.forkConfig ? { forkConfig: config.forkConfig } : undefined,
         },
-        MAIN_TABSET_ID,
+        config?.tabsetId ?? MAIN_TABSET_ID,
         DockLocation.CENTER,
         -1,
         true, // select the new tab
@@ -293,14 +293,15 @@ export function FlexAppLayout(): React.JSX.Element {
 
   // Add "+" button to tabset header (multi-tab only)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleRenderTabSet = useCallback((_node: any, renderValues: any) => {
+  const handleRenderTabSet = useCallback((node: any, renderValues: any) => {
     if (isVscode) return; // VS Code uses native editor tabs
+    const tabsetId = node.getId() as string;
     renderValues.stickyButtons.push(
       <button
         key="add-tab"
         className="crispy-tab-add-btn"
         title="New tab"
-        onClick={() => createTab()}
+        onClick={() => createTab({ tabsetId })}
       >
         +
       </button>,
@@ -393,7 +394,7 @@ function getTabName(sessionId: string, sessions: Array<{ sessionId: string; titl
   const session = sessions.find(s => s.sessionId === sessionId);
   if (session) {
     const name = getSessionDisplayName(session as any);
-    return name.length > 30 ? name.slice(0, 30) + '\u2026' : name;
+    return name.length > 42 ? name.slice(0, 42) + '\u2026' : name;
   }
   return sessionId.slice(0, 8) + '\u2026';
 }
