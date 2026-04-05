@@ -24,9 +24,6 @@ export type ToolPanelMode = 'inspector' | 'viewport';
 /** Badge style for tool name pills. */
 export type BadgeStyle = 'solid' | 'tinted' | 'frosted';
 
-/** Which view is shown in the unified right sidebar. */
-export type SidebarView = 'files' | 'tools';
-
 interface Preferences {
   renderMode: RenderMode;
   sidebarCollapsed: boolean;
@@ -47,10 +44,6 @@ interface Preferences {
   badgeStyle: BadgeStyle;
   /** In Icons mode, render Bash as a full block instead of condensed single-line. */
   bashBlockInIcons: boolean;
-  /** Which view is shown in the unified right sidebar. */
-  sidebarView: SidebarView;
-  /** User-dragged file viewer panel width override (px). null = use auto-computed width. */
-  fileViewerWidthPx: number | null;
   /** Auto-invoke /reflect after creating implementation plans. */
   autoReflect: boolean;
   /** Which side the Git border panel docks to. */
@@ -64,7 +57,6 @@ interface PreferencesContextValue extends Preferences {
   setSidebarCollapsed: (collapsed: boolean) => void;
   setToolPanelOpen: (open: boolean) => void;
   setToolPanelWidthPx: (px: number | null) => void;
-  setFileViewerWidthPx: (px: number | null) => void;
   setToolPanelMode: (mode: ToolPanelMode) => void;
   setToolViewOverride: (override: ToolViewOverride) => void;
   setDebugMode: (enabled: boolean) => void;
@@ -73,7 +65,6 @@ interface PreferencesContextValue extends Preferences {
   setCondensedToolMode: (enabled: boolean) => void;
   setBadgeStyle: (style: BadgeStyle) => void;
   setBashBlockInIcons: (enabled: boolean) => void;
-  setSidebarView: (view: SidebarView) => void;
   setGitPanelSide: (side: 'left' | 'right') => void;
 }
 
@@ -105,11 +96,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [toolPanelOpen, setToolPanelOpen] = useState(false);
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
-  const [fileViewerWidthPx, setFileViewerWidthPx] = useState<number | null>(null);
   const [toolPanelMode, setToolPanelMode] = useState<ToolPanelMode>('inspector');
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
   const [condensedToolMode, setCondensedToolMode] = useState(false);
-  const [sidebarView, setSidebarView] = useState<SidebarView>('tools');
   const [rosieBotEnabled, setRosieBotEnabled] = useState(false);
 
   // ============================================================================
@@ -256,7 +245,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     sidebarCollapsed,
     toolPanelOpen,
     toolPanelWidthPx,
-    fileViewerWidthPx,
     toolPanelMode,
     toolViewOverride,
     debugMode,
@@ -265,14 +253,12 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     condensedToolMode,
     badgeStyle,
     bashBlockInIcons,
-    sidebarView,
     rosieBotEnabled,
     setRenderMode,
 
     setSidebarCollapsed,
     setToolPanelOpen,
     setToolPanelWidthPx,
-    setFileViewerWidthPx,
     setToolPanelMode,
     setToolViewOverride,
     setDebugMode,
@@ -281,7 +267,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setCondensedToolMode,
     setBadgeStyle,
     setBashBlockInIcons,
-    setSidebarView,
     gitPanelSide,
     setGitPanelSide,
   }), [
@@ -290,7 +275,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     sidebarCollapsed,
     toolPanelOpen,
     toolPanelWidthPx,
-    fileViewerWidthPx,
     toolPanelMode,
     toolViewOverride,
     debugMode,
@@ -299,7 +283,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     condensedToolMode,
     badgeStyle,
     bashBlockInIcons,
-    sidebarView,
     gitPanelSide,
     rosieBotEnabled,
     setRenderMode,
@@ -307,7 +290,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setSidebarCollapsed,
     setToolPanelOpen,
     setToolPanelWidthPx,
-    setFileViewerWidthPx,
     setToolPanelMode,
     setToolViewOverride,
     setDebugMode,
@@ -316,7 +298,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setCondensedToolMode,
     setBadgeStyle,
     setBashBlockInIcons,
-    setSidebarView,
     setGitPanelSide,
   ]);
 

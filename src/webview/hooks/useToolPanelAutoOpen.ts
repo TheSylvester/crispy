@@ -16,7 +16,7 @@ import type { TranscriptEntry } from '../../core/transcript.js';
 
 export function useToolPanelAutoOpen(entries: TranscriptEntry[]): void {
   const { toolPanelAutoOpen } = usePreferences();
-  const { toolPanelOpen, setToolPanelOpen, setSidebarView } = useTabPanel();
+  const { toolPanelOpen, setToolPanelOpen } = useTabPanel();
   const { containerRef } = useTabContainer();
   const isActiveTab = useIsActiveTab();
   const firedRef = useRef(false);
@@ -35,9 +35,8 @@ export function useToolPanelAutoOpen(entries: TranscriptEntry[]): void {
       // Skip on narrow containers — panel would overlay content
       const containerWidth = containerRef.current?.getBoundingClientRect().width ?? window.innerWidth;
       if (containerWidth < 800) return;
-      setSidebarView('tools');
       setToolPanelOpen(true);
       firedRef.current = true;
     }
-  }, [entries, toolPanelAutoOpen, toolPanelOpen, isActiveTab, setToolPanelOpen, setSidebarView, containerRef]);
+  }, [entries, toolPanelAutoOpen, toolPanelOpen, isActiveTab, setToolPanelOpen, containerRef]);
 }

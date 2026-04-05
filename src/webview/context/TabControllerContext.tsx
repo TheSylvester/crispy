@@ -38,6 +38,8 @@ export interface TabCreateConfig {
   component?: string;
   /** Tab display name (defaults to session name or 'New Tab'). */
   name?: string;
+  /** Arbitrary config passed to the FlexLayout node (accessible via node.getConfig()). */
+  config?: Record<string, unknown>;
 }
 
 interface TabOperations {
@@ -52,6 +54,12 @@ interface TabOperations {
   findTabByComponent: (component: string) => string | null;
   /** Toggle the Git border panel open/closed. */
   toggleGitBorder: () => void;
+  /** Toggle the Files border panel open/closed. */
+  toggleFilesBorder: () => void;
+  /** Find a file-viewer tab by path, or null. */
+  findFileViewerTab: (path: string) => string | null;
+  /** Update a tab's config. */
+  updateTabConfig: (tabId: string, config: Record<string, unknown>) => void;
 }
 
 export interface TabControllerValue {
@@ -71,11 +79,19 @@ export interface TabControllerValue {
   findTabByComponent: (component: string) => string | null;
   /** Toggle the Git border panel open/closed. */
   toggleGitBorder: () => void;
+  /** Toggle the Files border panel open/closed. */
+  toggleFilesBorder: () => void;
+  /** Find a file-viewer tab by path, or null. */
+  findFileViewerTab: (path: string) => string | null;
+  /** Update a tab's config (e.g. to change line number for file-viewer). */
+  updateTabConfig: (tabId: string, config: Record<string, unknown>) => void;
 
   /** Currently active FlexLayout tab ID. */
   activeTabId: string | null;
   /** Session ID of the currently active tab. */
   activeTabSessionId: string | null;
+  /** Last transcript tab that was active (not reset by border tab selection). */
+  lastActiveTranscriptTabId: string | null;
 
   /** Register FlexLayout tab operations (called once on mount). */
   registerOperations: (ops: TabOperations) => void;
@@ -104,6 +120,7 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
   const pendingOps = useRef<Array<() => void>>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [activeTabSessionId, setActiveTabSessionId] = useState<string | null>(null);
+  const [lastActiveTranscriptTabId, setLastActiveTranscriptTabId] = useState<string | null>(null);
 
   // Stable ref for onSessionChange to avoid re-renders
   const onSessionChangeRef = useRef(onSessionChange);
@@ -120,7 +137,12 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
   const setActiveTab = useCallback((tabId: string | null, sessionId: string | null) => {
     setActiveTabId(tabId);
     setActiveTabSessionId(sessionId);
-    onSessionChangeRef.current(sessionId);
+    if (sessionId !== null) {
+      // Transcript tab — update last active and propagate session
+      setLastActiveTranscriptTabId(tabId);
+      onSessionChangeRef.current(sessionId);
+    }
+    // Border tab (sessionId === null) — don't null out global selectedSessionId
   }, []);
 
   const createTab = useCallback((config?: TabCreateConfig): string => {
@@ -159,6 +181,21 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     opsRef.current.toggleGitBorder();
   }, []);
 
+  const toggleFilesBorder = useCallback(() => {
+    if (!opsRef.current) return;
+    opsRef.current.toggleFilesBorder();
+  }, []);
+
+  const findFileViewerTab = useCallback((path: string): string | null => {
+    if (!opsRef.current) return null;
+    return opsRef.current.findFileViewerTab(path);
+  }, []);
+
+  const updateTabConfig = useCallback((tabId: string, config: Record<string, unknown>) => {
+    if (!opsRef.current) return;
+    opsRef.current.updateTabConfig(tabId, config);
+  }, []);
+
   const navigateToSession = useCallback((sessionId: string) => {
     if (!opsRef.current) {
       pendingOps.current.push(() => {
@@ -194,16 +231,21 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     activateTab,
     findTabByComponent,
     toggleGitBorder,
+    toggleFilesBorder,
+    findFileViewerTab,
+    updateTabConfig,
     navigateToSession,
     setActiveTabSession,
     activeTabId,
     activeTabSessionId,
+    lastActiveTranscriptTabId,
     registerOperations,
     setActiveTab,
   }), [
     createTab, closeTab, activateTab, findTabByComponent, toggleGitBorder,
+    toggleFilesBorder, findFileViewerTab, updateTabConfig,
     navigateToSession, setActiveTabSession,
-    activeTabId, activeTabSessionId,
+    activeTabId, activeTabSessionId, lastActiveTranscriptTabId,
     registerOperations, setActiveTab,
   ]);
 

@@ -21,6 +21,8 @@ import { TabContainerProvider } from '../context/TabContainerContext.js';
 import { ContentErrorBoundary } from './ErrorBoundary.js';
 import { TranscriptViewer } from './TranscriptViewer.js';
 import { GitPanel } from './git-panel/GitPanel.js';
+import { FilePanel } from './file-panel/FilePanel.js';
+import { FileViewerTab } from './file-panel/FileViewerTab.js';
 import { TabHeader } from './TabHeader.js';
 import { TabLayout } from './TabLayout.js';
 import { useTabController, type TabCreateConfig, type ForkConfig } from '../context/TabControllerContext.js';
@@ -59,6 +61,14 @@ function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' 
             id: 'git-border-tab',
             name: 'Git',
             component: 'git',
+            enableClose: false,
+            enableDrag: false,
+          },
+          {
+            type: 'tab',
+            id: 'files-border-tab',
+            name: 'Files',
+            component: 'files',
             enableClose: false,
             enableDrag: false,
           },
@@ -214,7 +224,7 @@ export function FlexAppLayout(): React.JSX.Element {
           name,
           component,
           id: tabId,
-          config: config?.forkConfig ? { forkConfig: config.forkConfig } : undefined,
+          config: config?.forkConfig ? { forkConfig: config.forkConfig } : config?.config ?? undefined,
         },
         config?.tabsetId ?? MAIN_TABSET_ID,
         DockLocation.RIGHT,
@@ -255,6 +265,30 @@ export function FlexAppLayout(): React.JSX.Element {
     modelRef.current.doAction(Actions.selectTab('git-border-tab'));
   }, []);
 
+  /** Toggle the Files border panel open/closed */
+  const toggleFilesBorder = useCallback(() => {
+    modelRef.current.doAction(Actions.selectTab('files-border-tab'));
+  }, []);
+
+  /** Find a file-viewer tab by file path */
+  const findFileViewerTab = useCallback((path: string): string | null => {
+    let found: string | null = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    modelRef.current.visitNodes((node: any) => {
+      if (node.getType() === 'tab'
+          && (node as TabNode).getComponent() === 'file-viewer'
+          && node.getConfig()?.path === path) {
+        found = node.getId();
+      }
+    });
+    return found;
+  }, []);
+
+  /** Update a tab's config (e.g. line number for file-viewer) */
+  const updateTabConfig = useCallback((tabId: string, config: Record<string, unknown>) => {
+    modelRef.current.doAction(Actions.updateNodeAttributes(tabId, { config }));
+  }, []);
+
   const findTabByComponent = useCallback((component: string): string | null => {
     let found: string | null = null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -276,8 +310,11 @@ export function FlexAppLayout(): React.JSX.Element {
       getTabSession,
       findTabByComponent,
       toggleGitBorder,
+      toggleFilesBorder,
+      findFileViewerTab,
+      updateTabConfig,
     });
-  }, [controller, createTab, closeTab, activateTab, findTabBySession, getTabSession, findTabByComponent, toggleGitBorder]);
+  }, [controller, createTab, closeTab, activateTab, findTabBySession, getTabSession, findTabByComponent, toggleGitBorder, toggleFilesBorder, findFileViewerTab, updateTabConfig]);
 
   // --- Sync initial session: when selectedSessionId is set (e.g. openSession bootstrap),
   //     assign it to the initial tab if that tab has no session yet. ---
@@ -420,6 +457,28 @@ export function FlexAppLayout(): React.JSX.Element {
         <ContentErrorBoundary>
           <GitPanel mode="tab" />
         </ContentErrorBoundary>
+      );
+    } else if (node.getComponent() === 'files') {
+      return (
+        <FileIndexProvider>
+          <FilePanelProvider>
+            <ContentErrorBoundary>
+              <FilePanel mode="tab" />
+            </ContentErrorBoundary>
+          </FilePanelProvider>
+        </FileIndexProvider>
+      );
+    } else if (node.getComponent() === 'file-viewer') {
+      const config = node.getConfig() as { path: string; line?: number } | undefined;
+      if (!config?.path) return null;
+      return (
+        <FileIndexProvider>
+          <FilePanelProvider>
+            <ContentErrorBoundary>
+              <FileViewerTab path={config.path} line={config.line} />
+            </ContentErrorBoundary>
+          </FilePanelProvider>
+        </FileIndexProvider>
       );
     }
     return null;

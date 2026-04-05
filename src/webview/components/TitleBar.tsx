@@ -161,6 +161,10 @@ export function TitleBar(): React.JSX.Element {
     tabController?.toggleGitBorder();
   }, [tabController]);
 
+  const handleToggleFiles = useCallback(() => {
+    tabController?.toggleFilesBorder();
+  }, [tabController]);
+
   const toggleProjects = useCallback(() => {
     setProjectsOpen(prev => !prev);
   }, []);
@@ -240,19 +244,31 @@ export function TitleBar(): React.JSX.Element {
       {/* Right — Git button + Theme toggle (non-VS Code only) */}
       <div className="crispy-titlebar__right">
         {envKind !== 'vscode' && (
-          <button
-            className="crispy-titlebar__btn crispy-titlebar__git-btn"
-            onClick={handleToggleGit}
-            title="Toggle Git panel (Alt+G)"
-            aria-label="Toggle Git panel"
-          >
-            <GitBranchIcon />
-            {gitInfo && (
-              <span className="crispy-titlebar__git-label">
-                {gitInfo.branch}{gitInfo.dirty ? ' *' : ''}
-              </span>
-            )}
-          </button>
+          <>
+            <button
+              className="crispy-titlebar__btn crispy-titlebar__files-btn"
+              onClick={handleToggleFiles}
+              title="Toggle Files panel (Alt+F)"
+              aria-label="Toggle Files panel"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M2 2h5l2 2h5v10H2V2z" />
+              </svg>
+            </button>
+            <button
+              className="crispy-titlebar__btn crispy-titlebar__git-btn"
+              onClick={handleToggleGit}
+              title="Toggle Git panel (Alt+G)"
+              aria-label="Toggle Git panel"
+            >
+              <GitBranchIcon />
+              {gitInfo && (
+                <span className="crispy-titlebar__git-label">
+                  {gitInfo.branch}{gitInfo.dirty ? ' *' : ''}
+                </span>
+              )}
+            </button>
+          </>
         )}
         {envKind === 'websocket' && <ThemeToggle />}
       </div>

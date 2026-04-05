@@ -55,8 +55,6 @@ import { BlocksVisibilityProvider } from "../blocks/BlocksVisibilityContext.js";
 import { ConnectorLines } from "../blocks/ConnectorLines.js";
 import { PanelStateProvider } from "../blocks/PanelStateContext.js";
 import { BlocksToolPanel } from "../blocks/BlocksToolPanel.js";
-import { FilePanel } from "./file-panel/FilePanel.js";
-import { FileViewerPanel } from "./file-panel/FileViewerPanel.js";
 import { useFilePanel } from "../context/FilePanelContext.js";
 import { useControlPanel } from "../context/ControlPanelContext.js";
 import { useTranscriptAnnotation } from "../hooks/useTranscriptAnnotation.js";
@@ -152,7 +150,7 @@ export function TranscriptViewer(): React.JSX.Element {
   const transport = useTransport();
   const { entries: liveEntries, isLoading, error } = useTranscript(selectedSessionId);
   const { renderMode, debugMode } = usePreferences();
-  const { toolPanelOpen, sidebarView } = useTabPanel();
+  const { toolPanelOpen } = useTabPanel();
   const { registerInsertHandler } = useFilePanel();
   const isActiveTab = useIsActiveTab();
   const { containerRef } = useTabContainer();
@@ -439,6 +437,18 @@ export function TranscriptViewer(): React.JSX.Element {
     });
   }, [isActiveTab, registerInsertHandler]);
 
+  // Listen for insertIntoChat postMessage from border panel's FilePanelContext
+  useEffect(() => {
+    if (!isActiveTab) return;
+    const handler = (ev: MessageEvent) => {
+      if (ev.data?.kind === 'insertIntoChat' && ev.data.text) {
+        cpCtxRef.current.setPrefillInput({ text: ev.data.text });
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [isActiveTab]);
+
   // --- Main content area (conditional) ---
   // ControlPanel is rendered once, outside the conditional branches, so it is
   // never unmounted when selectedSessionId transitions from null -> pending.
@@ -525,8 +535,8 @@ export function TranscriptViewer(): React.JSX.Element {
         <PanelStateProvider>
           <BlocksVisibilityProvider scrollRef={transcriptRef}>
             {transcriptArea}
-            {toolPanelOpen && sidebarView === 'tools' && <BlocksToolPanel />}
-            {toolPanelOpen && sidebarView === 'tools' && <ConnectorLines />}
+            {toolPanelOpen && <BlocksToolPanel />}
+            {toolPanelOpen && <ConnectorLines />}
           </BlocksVisibilityProvider>
         </PanelStateProvider>
       </BlocksToolRegistryProvider>
@@ -536,9 +546,7 @@ export function TranscriptViewer(): React.JSX.Element {
   return (
     <>
       {mainContent}
-      {toolPanelOpen && sidebarView === 'tools' && !selectedSessionId && !hasForkHistory && <ToolPanelShell />}
-      {toolPanelOpen && sidebarView === 'files' && <FilePanel />}
-      <FileViewerPanel />
+      {toolPanelOpen && !selectedSessionId && !hasForkHistory && <ToolPanelShell />}
       <TranscriptAnnotationPopover {...annotation} />
       {selectedSessionId && !error && <StopButton ref={stopButtonRef} />}
       {debugMode && (

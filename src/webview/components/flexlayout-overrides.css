@@ -18,7 +18,7 @@
   background: var(--vscode-sideBar-background, #1e1e1e);
 }
 
-/* Border tab strip (vertical icons on the edge) — hide it since we toggle via TitleBar */
+/* Border tab content panel fills available space */
 .flexlayout__border_tab_contents {
   display: flex;
   flex-direction: column;
@@ -26,19 +26,6 @@
 
 .flexlayout__border_button_content {
   font-size: 11px;
-}
-
-/* Border tab content fills available space */
-.flexlayout__border_inner_tab_container {
-  display: flex;
-  flex-direction: column;
-}
-
-.flexlayout__border_inner_tab_container_inner {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
 }
 
 /* Layout fills its container — override all dark-theme backgrounds and text */

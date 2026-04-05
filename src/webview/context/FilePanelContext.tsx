@@ -12,6 +12,7 @@
 import { createContext, useContext, useState, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import { useTransport } from './TransportContext.js';
 import { useTabSession } from './TabSessionContext.js';
+import { useTabControllerOptional } from './TabControllerContext.js';
 import { inferLanguage } from '../renderers/tools/shared/tool-utils.js';
 
 // ============================================================================
@@ -61,12 +62,11 @@ interface FilePanelProviderProps {
 
 export function FilePanelProvider({ children }: FilePanelProviderProps): React.JSX.Element {
   const transport = useTransport();
-  const [fileViewerOpen, setFileViewerOpen] = useState(false);
   const { effectiveCwd } = useTabSession();
   const fullPath = effectiveCwd.fullPath;
-  const [activeFileView, setActiveFileView] = useState<ActiveFileView | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const tabController = useTabControllerOptional();
+  // Track selected file path for tree highlighting
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
 
   // Ref-based insert handler — registered by TranscriptViewer, called by context menu commands.
   // Avoids prop-drilling through the component tree.
@@ -76,90 +76,65 @@ export function FilePanelProvider({ children }: FilePanelProviderProps): React.J
     insertHandlerRef.current = handler;
   }, []);
 
+  const openFileAsTab = useCallback((absolutePath: string, relativePath: string, line?: number) => {
+    setSelectedFilePath(relativePath);
+
+    if (tabController) {
+      const existing = tabController.findFileViewerTab(absolutePath);
+      if (existing) {
+        tabController.activateTab(existing);
+        if (line != null) {
+          tabController.updateTabConfig(existing, { path: absolutePath, line });
+        }
+        return;
+      }
+      const filename = relativePath.split('/').pop() ?? relativePath;
+      tabController.createTab({
+        component: 'file-viewer',
+        name: filename,
+        config: { path: absolutePath, line },
+      });
+    }
+  }, [tabController]);
+
   const openFile = useCallback(async (relativePath: string, line?: number) => {
     if (!fullPath) return;
-
     const absolutePath = `${fullPath}/${relativePath}`;
-    setLoading(true);
-    setError(null);
-
-    try {
-      const { content, size } = await transport.readFile(absolutePath);
-      setActiveFileView({
-        path: absolutePath,
-        relativePath,
-        content,
-        language: inferLanguage(relativePath),
-        size,
-        line,
-      });
-      // Open file viewer panel
-      setFileViewerOpen(true);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
-      // Still open panel to show the error
-      setFileViewerOpen(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [fullPath, transport]);
+    openFileAsTab(absolutePath, relativePath, line);
+  }, [fullPath, openFileAsTab]);
 
   const openFileAbsolute = useCallback(async (absolutePath: string, line?: number) => {
-    // Derive relativePath by stripping cwd prefix
     let relativePath: string;
     if (fullPath && absolutePath.startsWith(fullPath + '/')) {
       relativePath = absolutePath.slice(fullPath.length + 1);
     } else {
-      // Outside cwd or no cwd — use filename
       relativePath = absolutePath.split('/').pop() ?? absolutePath;
     }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const { content, size } = await transport.readFile(absolutePath);
-      setActiveFileView({
-        path: absolutePath,
-        relativePath,
-        content,
-        language: inferLanguage(relativePath),
-        size,
-        line,
-      });
-      setFileViewerOpen(true);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
-      setFileViewerOpen(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [fullPath, transport]);
-
-  const closeFile = useCallback(() => {
-    setFileViewerOpen(false);
-    setActiveFileView(null);
-    setError(null);
-  }, [setFileViewerOpen]);
+    openFileAsTab(absolutePath, relativePath, line);
+  }, [fullPath, openFileAsTab]);
 
   const insertIntoChat = useCallback((text: string) => {
-    insertHandlerRef.current?.(text);
+    // Try ref-based handler first (works within same tab's FilePanelProvider),
+    // fall back to postMessage for border panel → transcript tab communication
+    if (insertHandlerRef.current) {
+      insertHandlerRef.current(text);
+    } else {
+      window.postMessage({ kind: 'insertIntoChat', text }, '*');
+    }
   }, []);
 
   const value: FilePanelContextValue = useMemo(() => ({
-    activeFileView,
-    fileViewerOpen,
+    activeFileView: selectedFilePath ? { relativePath: selectedFilePath } as ActiveFileView : null,
+    fileViewerOpen: false,
     openFile,
     openFileAbsolute,
     insertIntoChat,
     registerInsertHandler,
-    closeFile,
+    closeFile: () => {},
     cwd: fullPath,
-    loading,
-    error,
-  }), [activeFileView, fileViewerOpen, openFile, openFileAbsolute, insertIntoChat, registerInsertHandler, closeFile, fullPath, loading, error]);
+    loading: false,
+    error: null,
+  }), [selectedFilePath, openFile, openFileAbsolute, insertIntoChat, registerInsertHandler, fullPath]);
 
   return (
     <FilePanelContext.Provider value={value}>

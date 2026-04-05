@@ -29,7 +29,9 @@ export function TabContainerProvider({ children, tabId }: { children: React.Reac
   // When activeTabId is null (not yet initialized), treat all tabs as active
   // so first-render effects (ResizeObservers, scroll listeners) can attach.
   const isActiveTab = tabId
-    ? (controller?.activeTabId == null || controller.activeTabId === tabId)
+    ? (controller?.activeTabId == null
+      || controller.activeTabId === tabId
+      || controller.lastActiveTranscriptTabId === tabId)
     : true;
 
   const value = useMemo(() => ({ containerRef, isActiveTab }), [isActiveTab]);

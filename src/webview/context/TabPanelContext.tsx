@@ -1,16 +1,13 @@
 /**
  * TabPanelContext — per-tab panel layout state
  *
- * Owns toolPanelOpen, sidebarView, toolPanelWidthPx, fileViewerWidthPx
+ * Owns toolPanelOpen, toolPanelWidthPx
  * per-tab. Each tab gets its own independent panel state via TabPanelProvider.
  *
  * @module context/TabPanelContext
  */
 
 import { createContext, useContext, useState, useMemo } from 'react';
-
-// Re-export SidebarView from PreferencesContext to avoid consumers needing both imports
-export type SidebarView = 'files' | 'tools';
 
 // ============================================================================
 // Per-Tab Panel State
@@ -19,12 +16,8 @@ export type SidebarView = 'files' | 'tools';
 interface TabPanelValue {
   toolPanelOpen: boolean;
   setToolPanelOpen: (open: boolean) => void;
-  sidebarView: SidebarView;
-  setSidebarView: (view: SidebarView) => void;
   toolPanelWidthPx: number | null;
   setToolPanelWidthPx: (px: number | null) => void;
-  fileViewerWidthPx: number | null;
-  setFileViewerWidthPx: (px: number | null) => void;
   settingsPinned: boolean;
   setSettingsPinned: (pinned: boolean) => void;
 }
@@ -33,18 +26,14 @@ const TabPanelCtx = createContext<TabPanelValue | null>(null);
 
 export function TabPanelProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
   const [toolPanelOpen, setToolPanelOpen] = useState(false);
-  const [sidebarView, setSidebarView] = useState<SidebarView>('tools');
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
-  const [fileViewerWidthPx, setFileViewerWidthPx] = useState<number | null>(null);
   const [settingsPinned, setSettingsPinned] = useState(false);
 
   const value: TabPanelValue = useMemo(() => ({
     toolPanelOpen, setToolPanelOpen,
-    sidebarView, setSidebarView,
     toolPanelWidthPx, setToolPanelWidthPx,
-    fileViewerWidthPx, setFileViewerWidthPx,
     settingsPinned, setSettingsPinned,
-  }), [toolPanelOpen, sidebarView, toolPanelWidthPx, fileViewerWidthPx, settingsPinned]);
+  }), [toolPanelOpen, toolPanelWidthPx, settingsPinned]);
 
   return (
     <TabPanelCtx.Provider value={value}>

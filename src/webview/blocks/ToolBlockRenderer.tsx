@@ -62,7 +62,7 @@ export function ToolBlockRenderer({
 
   // Debug: global tool view override from preferences (?debug=1 settings)
   const { toolViewOverride: globalOverride, toolPanelMode, renderMode, condensedToolMode, bashBlockInIcons } = usePreferences();
-  const { toolPanelOpen, setToolPanelOpen, setSidebarView } = useTabPanel();
+  const { toolPanelOpen, setToolPanelOpen } = useTabPanel();
 
   // Panel state: used for expansion override in tool-panel anchors
   const panelState = usePanelState();
@@ -90,10 +90,9 @@ export function ToolBlockRenderer({
     panelDispatch({ type: 'USER_CLICKED', toolId: block.id });
     // Auto-open the tools panel when clicking a compact tool in the transcript
     if (!toolPanelOpen && anchor.type === 'main-thread') {
-      setSidebarView('tools');
       setToolPanelOpen(true);
     }
-  }, [panelDispatch, block.id, anchor.type, toolPanelOpen, setToolPanelOpen, setSidebarView]);
+  }, [panelDispatch, block.id, anchor.type, toolPanelOpen, setToolPanelOpen]);
 
   // Compute status
   const status: ToolViewProps['status'] = !result

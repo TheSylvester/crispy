@@ -8,11 +8,10 @@
  * @module TabHeader
  */
 
-import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '../context/SessionContext.js';
 import { useTabSession } from '../context/TabSessionContext.js';
-import { useTabPanel, type SidebarView } from '../context/TabPanelContext.js';
-import { useFilePanel } from '../context/FilePanelContext.js';
+import { useTabPanel } from '../context/TabPanelContext.js';
 import { useSessionStatus } from '../hooks/useSessionStatus.js';
 import { useTabControllerOptional } from '../context/TabControllerContext.js';
 import { useIsActiveTab } from '../context/TabContainerContext.js';
@@ -45,16 +44,6 @@ function PlusIcon(): React.JSX.Element {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
       <path d="M6 2V10M2 6H10" />
-    </svg>
-  );
-}
-
-function FilePanelIcon(): React.JSX.Element {
-  return (
-    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-      <line x1="2" y1="3" x2="14" y2="3" />
-      <line x1="5" y1="8" x2="14" y2="8" />
-      <line x1="5" y1="13" x2="14" y2="13" />
     </svg>
   );
 }
@@ -146,8 +135,7 @@ export function TabHeader(): React.JSX.Element {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const sidebarCollapsed = !dropdownOpen;
   const setSidebarCollapsed = useCallback((collapsed: boolean) => setDropdownOpen(!collapsed), []);
-  const { toolPanelOpen, setToolPanelOpen, sidebarView, setSidebarView } = useTabPanel();
-  const { fileViewerOpen, closeFile } = useFilePanel();
+  const { toolPanelOpen, setToolPanelOpen } = useTabPanel();
   const { channelState } = useSessionStatus(effectiveSessionId);
   const tabController = useTabControllerOptional();
   const isActiveTab = useIsActiveTab();
@@ -172,15 +160,6 @@ export function TabHeader(): React.JSX.Element {
     }
   }, [tabController, setSelectedSessionId]);
 
-  const handleSidebarButton = useCallback((view: SidebarView) => {
-    if (toolPanelOpen && sidebarView === view) {
-      setToolPanelOpen(false);
-    } else {
-      setSidebarView(view);
-      setToolPanelOpen(true);
-    }
-  }, [toolPanelOpen, sidebarView, setToolPanelOpen, setSidebarView]);
-
   // Alt+T / Alt+F / Alt+G keyboard shortcuts — per-tab panel toggles
   useEffect(() => {
     if (!isActiveTab) return;
@@ -189,22 +168,19 @@ export function TabHeader(): React.JSX.Element {
         const key = e.key.toLowerCase();
         if (key === 't') {
           e.preventDefault();
-          handleSidebarButton('tools');
+          setToolPanelOpen(!toolPanelOpen);
         } else if (key === 'f') {
           e.preventDefault();
-          handleSidebarButton('files');
+          tabController?.toggleFilesBorder();
         } else if (key === 'g') {
           e.preventDefault();
           tabController?.toggleGitBorder();
-        } else if (key === 'v') {
-          e.preventDefault();
-          if (fileViewerOpen) closeFile();
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isActiveTab, handleSidebarButton, fileViewerOpen, closeFile]);
+  }, [isActiveTab, toolPanelOpen, setToolPanelOpen, tabController]);
 
   // Update document.title when active tab's session changes
   useEffect(() => {
@@ -247,22 +223,13 @@ export function TabHeader(): React.JSX.Element {
         <ConnectionDot channelState={channelState} sessionId={effectiveSessionId} />
       </div>
 
-      {/* Right — Git + Files + Tools + New */}
+      {/* Right — Tools + New */}
       <div className="crispy-tab-header__right">
         <button
-          className={`crispy-titlebar__btn crispy-titlebar__sidebar-btn${toolPanelOpen && sidebarView === 'files' ? ' crispy-titlebar__sidebar-btn--active' : ''}`}
-          onClick={() => handleSidebarButton('files')}
-          title="Toggle file panel (Alt+F)"
-          aria-label={toolPanelOpen && sidebarView === 'files' ? 'Close file panel' : 'Open file panel'}
-        >
-          <FilePanelIcon />
-          <span className="crispy-titlebar__btn-label">Files</span>
-        </button>
-        <button
-          className={`crispy-titlebar__btn crispy-titlebar__sidebar-btn${toolPanelOpen && sidebarView === 'tools' ? ' crispy-titlebar__sidebar-btn--active' : ''}`}
-          onClick={() => handleSidebarButton('tools')}
+          className={`crispy-titlebar__btn crispy-titlebar__sidebar-btn${toolPanelOpen ? ' crispy-titlebar__sidebar-btn--active' : ''}`}
+          onClick={() => setToolPanelOpen(!toolPanelOpen)}
           title="Toggle tool panel (Alt+T)"
-          aria-label={toolPanelOpen && sidebarView === 'tools' ? 'Close tool panel' : 'Open tool panel'}
+          aria-label={toolPanelOpen ? 'Close tool panel' : 'Open tool panel'}
         >
           <ToolPanelIcon />
           <span className="crispy-titlebar__btn-label">Tools</span>
