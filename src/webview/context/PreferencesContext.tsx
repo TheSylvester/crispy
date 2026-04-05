@@ -29,7 +29,6 @@ export type SidebarView = 'files' | 'tools';
 
 interface Preferences {
   renderMode: RenderMode;
-  settingsPinned: boolean;
   sidebarCollapsed: boolean;
   toolPanelOpen: boolean;
   /** User-dragged panel width override (px). null = use auto-computed width. */
@@ -62,7 +61,6 @@ interface Preferences {
 
 interface PreferencesContextValue extends Preferences {
   setRenderMode: (mode: RenderMode) => void;
-  setSettingsPinned: (pinned: boolean) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setToolPanelOpen: (open: boolean) => void;
   setToolPanelWidthPx: (px: number | null) => void;
@@ -104,7 +102,6 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   // ============================================================================
 
   const [debugMode, setDebugMode] = useState(false);
-  const [settingsPinned, setSettingsPinned] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [toolPanelOpen, setToolPanelOpen] = useState(false);
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
@@ -255,7 +252,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 
   const value: PreferencesContextValue = useMemo(() => ({
     renderMode,
-    settingsPinned,
+
     sidebarCollapsed,
     toolPanelOpen,
     toolPanelWidthPx,
@@ -271,7 +268,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     sidebarView,
     rosieBotEnabled,
     setRenderMode,
-    setSettingsPinned,
+
     setSidebarCollapsed,
     setToolPanelOpen,
     setToolPanelWidthPx,
@@ -289,7 +286,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setGitPanelSide,
   }), [
     renderMode,
-    settingsPinned,
+
     sidebarCollapsed,
     toolPanelOpen,
     toolPanelWidthPx,
@@ -306,7 +303,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     gitPanelSide,
     rosieBotEnabled,
     setRenderMode,
-    setSettingsPinned,
+
     setSidebarCollapsed,
     setToolPanelOpen,
     setToolPanelWidthPx,

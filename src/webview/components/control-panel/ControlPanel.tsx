@@ -38,6 +38,7 @@ import { RosiePanel } from './RosiePanel.js';
 import { ForkButton } from './ForkButton.js';
 import { EmbeddingPrompt } from '../EmbeddingPrompt.js';
 import { usePreferences } from '../../context/PreferencesContext.js';
+import { useTabPanel } from '../../context/TabPanelContext.js';
 import { useTransport } from '../../context/TransportContext.js';
 import { useSession } from '../../context/SessionContext.js';
 import { slugToPath } from '../../hooks/useSessionCwd.js';
@@ -197,7 +198,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         (ref as React.RefObject<HTMLDivElement | null>).current = node;
       }
     }, [ref]);
-    const { renderMode, setRenderMode, settingsPinned, setSettingsPinned, toolViewOverride, setToolViewOverride, debugMode, setDebugMode, toolPanelAutoOpen, setToolPanelAutoOpen, autoReflect, setAutoReflect, badgeStyle, setBadgeStyle, bashBlockInIcons, setBashBlockInIcons, gitPanelSide, setGitPanelSide } = usePreferences();
+    const { renderMode, setRenderMode, toolViewOverride, setToolViewOverride, debugMode, setDebugMode, toolPanelAutoOpen, setToolPanelAutoOpen, autoReflect, setAutoReflect, badgeStyle, setBadgeStyle, bashBlockInIcons, setBashBlockInIcons, gitPanelSide, setGitPanelSide } = usePreferences();
+    const { settingsPinned, setSettingsPinned } = useTabPanel();
     const [rosiePanelPinned, setRosiePanelPinned] = useState(false);
     const rosieLogEntries = useRosieLog();
     const transport = useTransport();

@@ -25,6 +25,8 @@ interface TabPanelValue {
   setToolPanelWidthPx: (px: number | null) => void;
   fileViewerWidthPx: number | null;
   setFileViewerWidthPx: (px: number | null) => void;
+  settingsPinned: boolean;
+  setSettingsPinned: (pinned: boolean) => void;
 }
 
 const TabPanelCtx = createContext<TabPanelValue | null>(null);
@@ -34,13 +36,15 @@ export function TabPanelProvider({ children }: { children: React.ReactNode }): R
   const [sidebarView, setSidebarView] = useState<SidebarView>('tools');
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
   const [fileViewerWidthPx, setFileViewerWidthPx] = useState<number | null>(null);
+  const [settingsPinned, setSettingsPinned] = useState(false);
 
   const value: TabPanelValue = useMemo(() => ({
     toolPanelOpen, setToolPanelOpen,
     sidebarView, setSidebarView,
     toolPanelWidthPx, setToolPanelWidthPx,
     fileViewerWidthPx, setFileViewerWidthPx,
-  }), [toolPanelOpen, sidebarView, toolPanelWidthPx, fileViewerWidthPx]);
+    settingsPinned, setSettingsPinned,
+  }), [toolPanelOpen, sidebarView, toolPanelWidthPx, fileViewerWidthPx, settingsPinned]);
 
   return (
     <TabPanelCtx.Provider value={value}>
