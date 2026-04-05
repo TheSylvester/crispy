@@ -20,6 +20,7 @@ import { FilePanelProvider } from '../context/FilePanelContext.js';
 import { TabContainerProvider } from '../context/TabContainerContext.js';
 import { ContentErrorBoundary } from './ErrorBoundary.js';
 import { TranscriptViewer } from './TranscriptViewer.js';
+import { GitPanel } from './git-panel/GitPanel.js';
 import { TabHeader } from './TabHeader.js';
 import { TabLayout } from './TabLayout.js';
 import { useTabController, type TabCreateConfig, type ForkConfig } from '../context/TabControllerContext.js';
@@ -151,17 +152,25 @@ export function FlexAppLayout(): React.JSX.Element {
 
   const createTab = useCallback((config?: TabCreateConfig): string => {
     const tabId = `tab-${Date.now()}`;
+    const component = config?.component ?? 'transcript';
     const sessionId = config?.sessionId ?? null;
-    tabSessionMapRef.current.set(tabId, sessionId);
+
+    // Only track transcript tabs in the session map
+    if (component === 'transcript') {
+      tabSessionMapRef.current.set(tabId, sessionId);
+    }
+
+    const name = config?.name
+      ?? (sessionId ? getTabName(sessionId, sessionsRef.current)
+        : config?.forkConfig ? `Fork: ${getTabName(config.forkConfig.fromSessionId, sessionsRef.current)}`
+        : 'New Tab');
 
     modelRef.current.doAction(
       Actions.addNode(
         {
           type: 'tab',
-          name: sessionId ? getTabName(sessionId, sessionsRef.current)
-            : config?.forkConfig ? `Fork: ${getTabName(config.forkConfig.fromSessionId, sessionsRef.current)}`
-            : 'New Tab',
-          component: 'transcript',
+          name,
+          component,
           id: tabId,
           config: config?.forkConfig ? { forkConfig: config.forkConfig } : undefined,
         },
@@ -176,8 +185,10 @@ export function FlexAppLayout(): React.JSX.Element {
   }, [bump]);
 
   const closeTab = useCallback((tabId: string) => {
-    if (tabSessionMapRef.current.size <= 1) return; // don't close last tab
-    tabSessionMapRef.current.delete(tabId);
+    const isTranscriptTab = tabSessionMapRef.current.has(tabId);
+    // Don't close the last transcript tab
+    if (isTranscriptTab && tabSessionMapRef.current.size <= 1) return;
+    if (isTranscriptTab) tabSessionMapRef.current.delete(tabId);
     modelRef.current.doAction(Actions.deleteTab(tabId));
     bump();
   }, [bump]);
@@ -250,10 +261,11 @@ export function FlexAppLayout(): React.JSX.Element {
   // --- onModelChange: detect tab activations and deletions ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleModelChange = useCallback((_model: Model, action: any) => {
-    if (action.type === Actions.SELECT_TAB || action.type === Actions.ADD_NODE) {
-      // Find the selected tab in the main tabset
-      const tabset = modelRef.current.getNodeById(MAIN_TABSET_ID);
-      if (tabset && 'getSelectedNode' in tabset) {
+    if (action.type === Actions.SELECT_TAB || action.type === Actions.ADD_NODE ||
+        action.type === Actions.SET_ACTIVE_TABSET || action.type === Actions.MOVE_NODE) {
+      // Find the selected tab in the currently active tabset (works across splits)
+      const tabset = modelRef.current.getActiveTabset();
+      if (tabset) {
         const selected = (tabset as any).getSelectedNode?.() as TabNode | undefined;
         if (selected) {
           const tabId = selected.getId();

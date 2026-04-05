@@ -34,6 +34,10 @@ export interface TabCreateConfig {
   sessionId?: string;
   /** Target tabset ID for the new tab (defaults to main tabset). */
   tabsetId?: string;
+  /** Tab component type (defaults to 'transcript'). */
+  component?: string;
+  /** Tab display name (defaults to session name or 'New Tab'). */
+  name?: string;
 }
 
 interface TabOperations {
@@ -44,6 +48,8 @@ interface TabOperations {
   findTabBySession: (sessionId: string) => string | null;
   /** Get session ID for a tab, or null. */
   getTabSession: (tabId: string) => string | null;
+  /** Find first tab with the given component type, or null. */
+  findTabByComponent: (component: string) => string | null;
 }
 
 export interface TabControllerValue {
@@ -58,6 +64,9 @@ export interface TabControllerValue {
   navigateToSession: (sessionId: string) => void;
   /** Set the active tab's session ID (used by session selector within a tab). */
   setActiveTabSession: (sessionId: string | null) => void;
+
+  /** Find first tab with the given component type, or null. */
+  findTabByComponent: (component: string) => string | null;
 
   /** Currently active FlexLayout tab ID. */
   activeTabId: string | null;
@@ -136,6 +145,11 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     opsRef.current.activateTab(tabId);
   }, []);
 
+  const findTabByComponent = useCallback((component: string): string | null => {
+    if (!opsRef.current) return null;
+    return opsRef.current.findTabByComponent(component);
+  }, []);
+
   const navigateToSession = useCallback((sessionId: string) => {
     if (!opsRef.current) {
       pendingOps.current.push(() => {
@@ -169,6 +183,7 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     createTab,
     closeTab,
     activateTab,
+    findTabByComponent,
     navigateToSession,
     setActiveTabSession,
     activeTabId,
@@ -176,7 +191,7 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     registerOperations,
     setActiveTab,
   }), [
-    createTab, closeTab, activateTab,
+    createTab, closeTab, activateTab, findTabByComponent,
     navigateToSession, setActiveTabSession,
     activeTabId, activeTabSessionId,
     registerOperations, setActiveTab,

@@ -54,7 +54,7 @@ function useConnectorPaths(): ConnectorPath[] {
 
     // Get the tab container's viewport offset — SVG is absolutely positioned
     // within .crispy-tab-layout, so all coordinates must be container-relative.
-    const container = containerRef.current?.closest('.crispy-tab-layout');
+    const container = containerRef.current?.querySelector('.crispy-tab-layout');
     const containerRect = container?.getBoundingClientRect();
     const offsetX = containerRect?.left ?? 0;
     const offsetY = containerRect?.top ?? 0;
@@ -221,7 +221,7 @@ function useConnectorPaths(): ConnectorPath[] {
 
     const transcriptScroll = containerRef.current?.querySelector('.crispy-transcript');
     const panelScroll = containerRef.current?.querySelector('.crispy-tool-panel__scroll');
-    const layout = containerRef.current?.closest('.crispy-tab-layout') ?? containerRef.current?.querySelector('.crispy-layout');
+    const layout = containerRef.current?.querySelector('.crispy-tab-layout') ?? containerRef.current?.querySelector('.crispy-layout');
 
     // Initial compute — double-rAF to ensure layout has settled after mount
     let cancelled = false;

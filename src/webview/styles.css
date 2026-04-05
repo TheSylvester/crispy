@@ -4145,7 +4145,9 @@ h2 {
   flex-direction: column;
   overflow: hidden;
   position: relative;
-  margin-right: var(--right-panels-width, 0px);
+  padding-right: var(--right-panels-width, 0px);
+  transition: padding-right var(--sidebar-transition);
+  box-sizing: border-box;
 }
 
 /* ============================================================================
