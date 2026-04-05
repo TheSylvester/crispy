@@ -217,7 +217,7 @@ export function FlexAppLayout(): React.JSX.Element {
           config: config?.forkConfig ? { forkConfig: config.forkConfig } : undefined,
         },
         config?.tabsetId ?? MAIN_TABSET_ID,
-        config?.forkConfig ? DockLocation.RIGHT : DockLocation.CENTER,
+        DockLocation.RIGHT,
         -1,
         true, // select the new tab
       ),
