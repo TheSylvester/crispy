@@ -99,6 +99,11 @@ import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-rea
 // import { transcribeAudio } from '../core/voice/index.js'; // <-- lazy below
 import { startCapture, stopCapture, cancelCapture, cleanupOrphanedVoiceFiles } from './audio-capture.js';
 import { openPanel as openPanelFn } from './panel-opener.js';
+import {
+  createTerminal, writeTerminal, resizeTerminal,
+  closeTerminal, listTerminals, attachTerminal, detachTerminal,
+  type SendEventFn,
+} from './terminal-manager.js';
 
 // Clean up any orphaned voice temp files from previous sessions on module load.
 cleanupOrphanedVoiceFiles();
@@ -269,6 +274,9 @@ export function createClientConnection(
 
   /** Child sessions registered via provenance — cleaned up on dispose (fix #7). */
   const registeredChildren = new Set<string>();
+
+  /** Terminal IDs owned by this client — detached on disconnect. */
+  const ownedTerminals = new Set<string>();
 
   /**
    * Validate that `filePath` is inside an allowed directory before performing
@@ -1276,6 +1284,43 @@ export function createClientConnection(
         return listAvailableCommands(vendor, sessionId, cwd);
       }
 
+      // --- Terminal RPCs (standalone/Tauri only) ---
+      case "createTerminal": {
+        const termSendEvent: SendEventFn = (event) => sendFn(event as any);
+        const result = await createTerminal(
+          { cwd: params.cwd as string | undefined, cols: params.cols as number | undefined, rows: params.rows as number | undefined },
+          termSendEvent,
+        );
+        ownedTerminals.add(result.terminalId);
+        return result;
+      }
+
+      case "writeTerminal": {
+        writeTerminal(params.terminalId as string, params.data as string);
+        return { ok: true };
+      }
+
+      case "resizeTerminal": {
+        resizeTerminal(params.terminalId as string, params.cols as number, params.rows as number);
+        return { ok: true };
+      }
+
+      case "closeTerminal": {
+        closeTerminal(params.terminalId as string);
+        return { ok: true };
+      }
+
+      case "listTerminals": {
+        return listTerminals();
+      }
+
+      case "attachTerminal": {
+        const termSendEvent: SendEventFn = (event) => sendFn(event as any);
+        const attached = attachTerminal(params.terminalId as string, termSendEvent);
+        if (attached) ownedTerminals.add(params.terminalId as string);
+        return attached;
+      }
+
       default:
         throw new Error(`Unknown method: ${method}`);
     }
@@ -1309,6 +1354,12 @@ export function createClientConnection(
       }
     }
     subscriptions.clear();
+
+    // Detach terminals owned by this client (PTY stays alive for reconnect)
+    for (const termId of ownedTerminals) {
+      try { detachTerminal(termId); } catch { /* best-effort */ }
+    }
+    ownedTerminals.clear();
 
     // Close child sessions registered via provenance (fix #7: prevent memory leak)
     for (const childId of registeredChildren) {

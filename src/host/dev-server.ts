@@ -28,6 +28,7 @@ import { listAllWorkspaces } from '../core/workspace-roots.js';
 import { initSettings, startWatchingSettings } from '../core/settings/index.js';
 import { createClientConnection } from './client-connection.js';
 import { createAgentDispatch } from './agent-dispatch.js';
+import { closeAllTerminals } from './terminal-manager.js';
 import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
 import { initRosieBot, shutdownRosieBot } from '../core/rosie/index.js';
@@ -442,7 +443,9 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     await new Promise<void>(resolve => wss.close(() => resolve()));
     // 3. Close HTTP server
     await new Promise<void>(resolve => server.close(() => resolve()));
-    // 4. Existing cleanup
+    // 4. Kill all terminal PTYs
+    closeAllTerminals();
+    // 5. Existing cleanup
     ipcHandle?.close();
     shutdownMessageView();
     shutdownRosieBot();

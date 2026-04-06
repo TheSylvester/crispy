@@ -193,6 +193,15 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     getDiscordAppInfo: (token) =>
       request<{ appId: string; name: string } | null>('getDiscordAppInfo', { token }),
 
+    // --- Terminal (not available in VS Code — it has its own terminal) ---
+    createTerminal: () => { throw new Error('Terminal not available in VS Code mode'); },
+    writeTerminal: () => { throw new Error('Terminal not available in VS Code mode'); },
+    resizeTerminal: () => { throw new Error('Terminal not available in VS Code mode'); },
+    closeTerminal: () => { throw new Error('Terminal not available in VS Code mode'); },
+    listTerminals: () => { throw new Error('Terminal not available in VS Code mode'); },
+    attachTerminal: () => { throw new Error('Terminal not available in VS Code mode'); },
+    onTerminalData: () => { throw new Error('Terminal not available in VS Code mode'); },
+
     onEvent(handler) {
       eventHandlers.push(handler);
       return () => {

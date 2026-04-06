@@ -265,6 +265,27 @@ export function createWebSocketTransport(url: string): SessionService {
     getDiscordAppInfo: (token) =>
       request<{ appId: string; name: string } | null>('getDiscordAppInfo', { token }),
 
+    // --- Terminal ---
+    createTerminal: (opts) =>
+      request<{ terminalId: string }>('createTerminal', opts as Record<string, unknown>),
+    writeTerminal: (terminalId, data) =>
+      request<void>('writeTerminal', { terminalId, data }),
+    resizeTerminal: (terminalId, cols, rows) =>
+      request<void>('resizeTerminal', { terminalId, cols, rows }),
+    closeTerminal: (terminalId) =>
+      request<void>('closeTerminal', { terminalId }),
+    listTerminals: () =>
+      request<string[]>('listTerminals'),
+    attachTerminal: (terminalId) =>
+      request<boolean>('attachTerminal', { terminalId }),
+    onTerminalData(terminalId: string, cb: (data: string) => void): () => void {
+      return this.onEvent((sessionId, event) => {
+        if (sessionId === `terminal:${terminalId}` && (event as any).type === 'terminal_data') {
+          cb((event as any).data);
+        }
+      });
+    },
+
     dispose() {
       ws.close();
       for (const [, req] of pending) {

@@ -62,6 +62,8 @@ interface TabOperations {
   updateTabConfig: (tabId: string, config: Record<string, unknown>) => void;
   /** Equalize weights of all tabsets in the root row. */
   equalizeLayout: () => void;
+  /** Toggle the Terminal border panel open/closed. */
+  toggleTerminalBorder: () => void;
 }
 
 export interface TabControllerValue {
@@ -89,6 +91,8 @@ export interface TabControllerValue {
   updateTabConfig: (tabId: string, config: Record<string, unknown>) => void;
   /** Equalize weights of all tabsets in the root row. */
   equalizeLayout: () => void;
+  /** Toggle the Terminal border panel open/closed. */
+  toggleTerminalBorder: () => void;
 
   /** Currently active FlexLayout tab ID. */
   activeTabId: string | null;
@@ -209,6 +213,11 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     opsRef.current.equalizeLayout();
   }, []);
 
+  const toggleTerminalBorder = useCallback(() => {
+    if (!opsRef.current) return;
+    opsRef.current.toggleTerminalBorder();
+  }, []);
+
   const navigateToSession = useCallback((sessionId: string) => {
     if (!opsRef.current) {
       pendingOps.current.push(() => {
@@ -248,6 +257,7 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     findFileViewerTab,
     updateTabConfig,
     equalizeLayout,
+    toggleTerminalBorder,
     navigateToSession,
     setActiveTabSession,
     activeTabId,
@@ -258,7 +268,7 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
   }), [
     createTab, closeTab, activateTab, findTabByComponent, toggleGitBorder,
     toggleFilesBorder, findFileViewerTab, updateTabConfig, equalizeLayout,
-    navigateToSession, setActiveTabSession,
+    toggleTerminalBorder, navigateToSession, setActiveTabSession,
     activeTabId, activeTabSessionId, lastActiveTranscriptTabId,
     registerOperations, setActiveTab,
   ]);

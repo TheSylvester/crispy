@@ -235,6 +235,21 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-add-btn:ho
   background: var(--vscode-toolbar-hoverBackground, rgba(0, 0, 0, 0.06));
 }
 
+/* ==========================================================================
+ * Terminal panel
+ * ========================================================================== */
+
+.crispy-terminal {
+  width: 100%;
+  height: 100%;
+  background: var(--vscode-terminal-background, #1e1e1e);
+}
+
+.crispy-terminal-loading {
+  padding: 1rem;
+  color: var(--vscode-descriptionForeground, #888);
+}
+
 body[data-vscode-theme-kind="vscode-light"] .flexlayout__tab_button_stamp,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .flexlayout__tab_button_stamp {
   background: var(--vscode-tab-activeBackground, #f5f5f5);

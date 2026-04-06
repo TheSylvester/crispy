@@ -23,6 +23,7 @@ import { TranscriptViewer } from './TranscriptViewer.js';
 import { GitPanel } from './git-panel/GitPanel.js';
 import { FilePanel } from './file-panel/FilePanel.js';
 import { FileViewerTab } from './file-panel/FileViewerTab.js';
+import { XTermPanel } from './XTermPanel.js';
 import { TabHeader } from './TabHeader.js';
 import { TabLayout } from './TabLayout.js';
 import { useTabController, type TabCreateConfig, type ForkConfig } from '../context/TabControllerContext.js';
@@ -37,8 +38,9 @@ import './flexlayout-overrides.css';
 // ============================================================================
 
 const MAIN_TABSET_ID = 'main-tabset';
+const TERMINAL_BORDER_TAB_ID = 'terminal-border-tab';
 
-function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' = 'left'): IJsonModel {
+function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' = 'left', showTerminal = false): IJsonModel {
   return {
     global: {
       splitterSize: 4,
@@ -74,6 +76,21 @@ function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' 
           },
         ],
       },
+      ...(showTerminal ? [{
+        type: 'border' as const,
+        location: 'bottom' as const,
+        selected: -1,
+        children: [
+          {
+            type: 'tab' as const,
+            id: TERMINAL_BORDER_TAB_ID,
+            name: 'Terminal',
+            component: 'terminal',
+            enableClose: false,
+            enableDrag: false,
+          },
+        ],
+      }] : []),
     ],
     layout: {
       type: 'row',
@@ -148,7 +165,7 @@ export function FlexAppLayout(): React.JSX.Element {
   const [initialState] = useState(() => {
     const showTabStrip = !isVscode;
     return {
-      model: Model.fromJson(makeDefaultModel(showTabStrip, gitPanelSide)),
+      model: Model.fromJson(makeDefaultModel(showTabStrip, gitPanelSide, !isVscode)),
       tabMap: new Map([['tab-initial', null]]) as TabSessionMap,
     };
   });
@@ -284,6 +301,11 @@ export function FlexAppLayout(): React.JSX.Element {
     modelRef.current.doAction(Actions.selectTab('files-border-tab'));
   }, []);
 
+  /** Toggle the Terminal border panel open/closed */
+  const toggleTerminalBorder = useCallback(() => {
+    modelRef.current.doAction(Actions.selectTab(TERMINAL_BORDER_TAB_ID));
+  }, []);
+
   /** Equalize weights of all children in the root row */
   const equalizeLayout = useCallback(() => {
     const model = modelRef.current;
@@ -337,11 +359,12 @@ export function FlexAppLayout(): React.JSX.Element {
       findTabByComponent,
       toggleGitBorder,
       toggleFilesBorder,
+      toggleTerminalBorder,
       findFileViewerTab,
       updateTabConfig,
       equalizeLayout,
     });
-  }, [controller, createTab, closeTab, activateTab, findTabBySession, getTabSession, findTabByComponent, toggleGitBorder, toggleFilesBorder, findFileViewerTab, updateTabConfig, equalizeLayout]);
+  }, [controller, createTab, closeTab, activateTab, findTabBySession, getTabSession, findTabByComponent, toggleGitBorder, toggleFilesBorder, toggleTerminalBorder, findFileViewerTab, updateTabConfig, equalizeLayout]);
 
   // Seed initial active tab so lastActiveTranscriptTabId is set even before
   // any model change fires (needed for file-viewer → transcript tab inserts)
@@ -455,6 +478,8 @@ export function FlexAppLayout(): React.JSX.Element {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleRenderTabSet = useCallback((node: any, renderValues: any) => {
     if (isVscode) return; // VS Code uses native editor tabs
+    // Don't add "+" to border panels (git, files, terminal)
+    if (node.getType() === 'border') return;
     const tabsetId = node.getId() as string;
     renderValues.stickyButtons.push(
       <button
@@ -513,6 +538,12 @@ export function FlexAppLayout(): React.JSX.Element {
           </FilePanelProvider>
         </FileIndexProvider>
       );
+    } else if (node.getComponent() === 'terminal') {
+      return (
+        <ContentErrorBoundary>
+          <XTermPanel node={node} />
+        </ContentErrorBoundary>
+      );
     } else if (node.getComponent() === 'file-viewer') {
       const config = node.getConfig() as { path: string; relativePath?: string; line?: number } | undefined;
       if (!config?.path) return null;
@@ -550,6 +581,9 @@ export function FlexAppLayout(): React.JSX.Element {
         } else if (e.key === 'e') {
           e.preventDefault();
           equalizeLayout();
+        } else if (e.key === 'j') {
+          e.preventDefault();
+          toggleTerminalBorder();
         }
       }
     };

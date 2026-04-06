@@ -18,6 +18,7 @@
   --vscode-foreground: #cccccc;
   --vscode-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
   --vscode-font-size: 13px;
+  --vscode-editor-font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', Menlo, Monaco, 'Courier New', monospace;
 
   /* Lists */
   --vscode-list-hoverBackground: #2a2d2e;
