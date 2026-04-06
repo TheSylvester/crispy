@@ -1,9 +1,9 @@
 {
-  "name": "crispy-code",
+  "name": "crispy",
   "displayName": "Crispy",
   "icon": "media/crispy-icon.png",
   "description": "An agent workbench for Claude Code and Codex — with local agent memory, multi-agent collaboration, and controls you can't get in a terminal",
-  "version": "0.2.9",
+  "version": "0.3.0-rc1",
   "publisher": "the-sylvester",
   "license": "MIT",
   "bin": {
@@ -34,14 +34,6 @@
     "agent",
     "coding-assistant",
     "vscode"
-  ],
-  "files": [
-    "dist/",
-    "media/crispy-icon.png",
-    "media/crispy-icon.svg",
-    "LICENSE",
-    "THIRD-PARTY-LICENSES",
-    "README.md"
   ],
   "engines": {
     "node": ">=18",
