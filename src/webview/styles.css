@@ -4091,6 +4091,14 @@ h2 {
   margin-left: 3px;
 }
 
+.crispy-titlebar__group-sep {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+
 /* --- Git branch indicator (right section, passive context) --- */
 
 /* ============================================================================
@@ -5804,7 +5812,9 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-fork {
 
 /* Light mode: brand separator */
 body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__brand-sep,
-body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__brand-sep {
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__brand-sep,
+body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__group-sep,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__group-sep {
   background: rgba(0, 0, 0, 0.1);
 }
 

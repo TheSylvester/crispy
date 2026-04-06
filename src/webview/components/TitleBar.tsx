@@ -165,6 +165,10 @@ export function TitleBar(): React.JSX.Element {
     tabController?.toggleFilesBorder();
   }, [tabController]);
 
+  const handleEqualizeLayout = useCallback(() => {
+    tabController?.equalizeLayout();
+  }, [tabController]);
+
   const toggleProjects = useCallback(() => {
     setProjectsOpen(prev => !prev);
   }, []);
@@ -241,10 +245,25 @@ export function TitleBar(): React.JSX.Element {
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
-      {/* Right — Git button + Theme toggle (non-VS Code only) */}
+      {/* Right — Layout utilities, then content panel toggles */}
       <div className="crispy-titlebar__right">
         {envKind !== 'vscode' && (
+          <button
+            className="crispy-titlebar__btn"
+            onClick={handleEqualizeLayout}
+            title="Equalize tab widths (Alt+E)"
+            aria-label="Equalize tab widths"
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <rect x="1" y="3" width="5" height="10" rx="1" />
+              <rect x="10" y="3" width="5" height="10" rx="1" />
+            </svg>
+          </button>
+        )}
+        {envKind === 'websocket' && <ThemeToggle />}
+        {envKind !== 'vscode' && (
           <>
+            <span className="crispy-titlebar__group-sep" />
             <button
               className="crispy-titlebar__btn crispy-titlebar__files-btn"
               onClick={handleToggleFiles}
@@ -270,7 +289,6 @@ export function TitleBar(): React.JSX.Element {
             </button>
           </>
         )}
-        {envKind === 'websocket' && <ThemeToggle />}
       </div>
     </header>
   );

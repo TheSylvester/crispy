@@ -278,6 +278,18 @@ export function FlexAppLayout(): React.JSX.Element {
     modelRef.current.doAction(Actions.selectTab('files-border-tab'));
   }, []);
 
+  /** Equalize weights of all children in the root row */
+  const equalizeLayout = useCallback(() => {
+    const model = modelRef.current;
+    const root = model.getRoot();
+    const children = root.getChildren();
+    if (children.length <= 1) return;
+    const equalWeight = 100 / children.length;
+    for (const child of children) {
+      model.doAction(Actions.updateNodeAttributes(child.getId(), { weight: equalWeight }));
+    }
+  }, []);
+
   /** Find a file-viewer tab by file path */
   const findFileViewerTab = useCallback((path: string): string | null => {
     let found: string | null = null;
@@ -321,8 +333,9 @@ export function FlexAppLayout(): React.JSX.Element {
       toggleFilesBorder,
       findFileViewerTab,
       updateTabConfig,
+      equalizeLayout,
     });
-  }, [controller, createTab, closeTab, activateTab, findTabBySession, getTabSession, findTabByComponent, toggleGitBorder, toggleFilesBorder, findFileViewerTab, updateTabConfig]);
+  }, [controller, createTab, closeTab, activateTab, findTabBySession, getTabSession, findTabByComponent, toggleGitBorder, toggleFilesBorder, findFileViewerTab, updateTabConfig, equalizeLayout]);
 
   // --- Sync initial session: when selectedSessionId is set (e.g. openSession bootstrap),
   //     assign it to the initial tab if that tab has no session yet. ---
@@ -510,6 +523,9 @@ export function FlexAppLayout(): React.JSX.Element {
         } else if (e.key === '[') {
           e.preventDefault();
           cycleTab(-1);
+        } else if (e.key === 'e') {
+          e.preventDefault();
+          equalizeLayout();
         }
       }
     };

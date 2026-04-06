@@ -60,6 +60,8 @@ interface TabOperations {
   findFileViewerTab: (path: string) => string | null;
   /** Update a tab's config. */
   updateTabConfig: (tabId: string, config: Record<string, unknown>) => void;
+  /** Equalize weights of all tabsets in the root row. */
+  equalizeLayout: () => void;
 }
 
 export interface TabControllerValue {
@@ -85,6 +87,8 @@ export interface TabControllerValue {
   findFileViewerTab: (path: string) => string | null;
   /** Update a tab's config (e.g. to change line number for file-viewer). */
   updateTabConfig: (tabId: string, config: Record<string, unknown>) => void;
+  /** Equalize weights of all tabsets in the root row. */
+  equalizeLayout: () => void;
 
   /** Currently active FlexLayout tab ID. */
   activeTabId: string | null;
@@ -196,6 +200,11 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     opsRef.current.updateTabConfig(tabId, config);
   }, []);
 
+  const equalizeLayout = useCallback(() => {
+    if (!opsRef.current) return;
+    opsRef.current.equalizeLayout();
+  }, []);
+
   const navigateToSession = useCallback((sessionId: string) => {
     if (!opsRef.current) {
       pendingOps.current.push(() => {
@@ -234,6 +243,7 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     toggleFilesBorder,
     findFileViewerTab,
     updateTabConfig,
+    equalizeLayout,
     navigateToSession,
     setActiveTabSession,
     activeTabId,
@@ -243,7 +253,7 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     setActiveTab,
   }), [
     createTab, closeTab, activateTab, findTabByComponent, toggleGitBorder,
-    toggleFilesBorder, findFileViewerTab, updateTabConfig,
+    toggleFilesBorder, findFileViewerTab, updateTabConfig, equalizeLayout,
     navigateToSession, setActiveTabSession,
     activeTabId, activeTabSessionId, lastActiveTranscriptTabId,
     registerOperations, setActiveTab,
