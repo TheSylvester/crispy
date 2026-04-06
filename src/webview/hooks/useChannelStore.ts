@@ -183,6 +183,14 @@ class ChannelStoreManager {
     return this.stores.get(sessionId);
   }
 
+  /** Set optimistic channel state on the shared store so all consumers see it. */
+  setOptimisticState(sessionId: string, state: SessionChannelState): void {
+    const store = this.stores.get(sessionId);
+    if (!store) return;
+    store.channelState = state;
+    emitState(store);
+  }
+
   private attachGlobalListener(): void {
     if (this.globalUnsub) return;
     this.globalUnsub = this.transport.onEvent((sid, event) => {
@@ -415,9 +423,13 @@ export function useChannelStore(sessionId: string | null): UseChannelStoreResult
   const setOptimistic = useCallback(
     (state: SessionChannelState) => {
       optimisticRef.current = state;
+      // Update the shared store so all consumers (TabLayout glow, StopButton,
+      // ThinkingIndicator) see the optimistic state immediately — not just
+      // the consumer that called setOptimistic.
+      if (sessionId) manager.setOptimisticState(sessionId, state);
       setLocalState(prev => (prev.channelState === state ? prev : { ...prev, channelState: state }));
     },
-    [],
+    [sessionId, manager],
   );
 
   const clearError = useCallback(() => {

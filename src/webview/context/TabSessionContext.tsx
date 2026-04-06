@@ -14,6 +14,7 @@
 
 import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from './SessionContext.js';
+import { useTransport } from './TransportContext.js';
 import { formatCwd, slugToPath } from '../hooks/useSessionCwd.js';
 import type { CwdInfo } from '../hooks/useSessionCwd.js';
 import { useEnvironment } from './EnvironmentContext.js';
@@ -83,6 +84,31 @@ export function TabSessionProvider({ sessionId: sessionIdProp, onSessionChange, 
       cwdInitRef.current = true;
     }
   }, [envKind, global.selectedCwd, localCwd]);
+
+  // --- Pending→real session rekey ---
+  // Mirror SessionContext's global rekey handler, but for per-tab sessions.
+  // When a session_changed notification arrives for this tab's pending session,
+  // update localSessionId to the real ID so useChannelStore subscribes correctly.
+  const transport = useTransport();
+  useEffect(() => {
+    if (!localSessionId?.startsWith('pending:')) return;
+    const off = transport.onEvent((sid, event) => {
+      if (sid !== localSessionId) return;
+      if (
+        event.type === 'event' &&
+        event.event.type === 'notification' &&
+        event.event.kind === 'session_changed' &&
+        'sessionId' in event.event
+      ) {
+        const realId = event.event.sessionId as string;
+        setLocalSessionId(realId);
+        if (onSessionChangeRef.current) {
+          onSessionChangeRef.current(realId);
+        }
+      }
+    });
+    return off;
+  }, [localSessionId, transport]);
 
   const effectiveSessionId = localSessionId !== undefined ? localSessionId : global.selectedSessionId;
 

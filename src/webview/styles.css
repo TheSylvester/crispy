@@ -5686,7 +5686,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   /* Re-declare shorthand tokens — var() inside custom properties may resolve
      at the :root scope where --vscode-* is still dark. Explicit re-declaration
      ensures these pick up the light-mode VS Code values. */
-  --bg-editor: var(--vscode-editor-background, #f5f5f5);
+  --bg-editor: var(--vscode-editor-background, #ffffff);
   --bg-code: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.05));
   --border-panel: var(--vscode-panel-border, #d5d5d5);
 

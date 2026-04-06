@@ -28,7 +28,9 @@
   font-size: 11px;
 }
 
-/* Layout fills its container — override all dark-theme backgrounds and text */
+/* Layout fills its container — override all dark-theme backgrounds and text.
+   Also reset font-family/size so flexlayout's Roboto doesn't leak into the
+   VS Code webview (which inherits --vscode-font-family from the host). */
 .flexlayout__layout {
   --color-background: transparent;
   --color-base: transparent;
@@ -37,6 +39,8 @@
   --color-tabset-background-selected: transparent;
   --color-tab-content: transparent;
   --color-text: var(--vscode-foreground, #d4d4d4);
+  --font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  --font-size: var(--vscode-font-size, 13px);
   background: transparent;
 }
 
