@@ -260,7 +260,6 @@ export function TranscriptViewer(): React.JSX.Element {
     sessionId: selectedSessionId,
     scrollRef: transcriptRef,
     remount: hasForkHistory,
-    isActiveTab,
   });
 
   // Track control panel height for CSS custom property --cp-height.

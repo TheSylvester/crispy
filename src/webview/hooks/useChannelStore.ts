@@ -9,7 +9,7 @@
  * @module useChannelStore
  */
 
-import { useSyncExternalStore, useEffect, useCallback, useState, useRef } from 'react';
+import { useSyncExternalStore, useEffect, useCallback, useMemo, useState, useRef } from 'react';
 import type { TranscriptEntry, ContentBlock, ContextUsage } from '../../core/transcript.js';
 import type { SessionChannelState } from '../../core/session-channel.js';
 import type { ChannelCatchupMessage } from '../../core/channel-events.js';
@@ -331,7 +331,7 @@ export interface UseChannelStoreResult {
  */
 export function useChannelStore(sessionId: string | null): UseChannelStoreResult {
   const transport = useTransport();
-  const manager = ChannelStoreManager.for(transport);
+  const manager = useMemo(() => ChannelStoreManager.for(transport), [transport]);
 
   // Acquire/release store on mount/unmount or sessionId change
   useEffect(() => {
@@ -388,12 +388,18 @@ export function useChannelStore(sessionId: string | null): UseChannelStoreResult
           optimisticRef.current = null;
           channelState = transportChannel;
         }
-        return {
+        const next = {
           channelState,
           lastError: store.lastError,
           approvalRequest: store.approvalRequest,
           streamingContent: store.streamingContent,
         };
+        return prev.channelState === next.channelState
+          && prev.lastError === next.lastError
+          && prev.approvalRequest === next.approvalRequest
+          && prev.streamingContent === next.streamingContent
+          ? prev
+          : next;
       });
     };
 
@@ -409,21 +415,21 @@ export function useChannelStore(sessionId: string | null): UseChannelStoreResult
   const setOptimistic = useCallback(
     (state: SessionChannelState) => {
       optimisticRef.current = state;
-      setLocalState(prev => ({ ...prev, channelState: state }));
+      setLocalState(prev => (prev.channelState === state ? prev : { ...prev, channelState: state }));
     },
     [],
   );
 
   const clearError = useCallback(() => {
-    setLocalState(prev => ({ ...prev, lastError: null }));
+    setLocalState(prev => (prev.lastError === null ? prev : { ...prev, lastError: null }));
   }, []);
 
   const clearApproval = useCallback(() => {
-    setLocalState(prev => ({ ...prev, approvalRequest: null }));
+    setLocalState(prev => (prev.approvalRequest === null ? prev : { ...prev, approvalRequest: null }));
   }, []);
 
   const setApproval = useCallback((req: ApprovalRequest | null) => {
-    setLocalState(prev => ({ ...prev, approvalRequest: req }));
+    setLocalState(prev => (prev.approvalRequest === req ? prev : { ...prev, approvalRequest: req }));
   }, []);
 
   return {

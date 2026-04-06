@@ -156,12 +156,8 @@ export function TabSessionProvider({ sessionId: sessionIdProp, onSessionChange, 
  */
 export function useTabSession(): TabSessionContextValue {
   const tabCtx = useContext(TabSessionCtx);
-  if (tabCtx) return tabCtx;
-
-  // Fallback: no TabSessionProvider in tree — construct from global context.
-  // This keeps components that haven't been migrated yet working.
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  return useTabSessionFallback();
+  const fallback = useTabSessionFallback();
+  return tabCtx ?? fallback;
 }
 
 /**

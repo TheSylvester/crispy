@@ -18,14 +18,6 @@ import { useTransport } from '../context/TransportContext.js';
 import { useTabController } from '../context/TabControllerContext.js';
 import { useCwd } from '../hooks/useSessionCwd.js';
 
-function debounce<T extends (...args: any[]) => void>(fn: T, ms: number): T {
-  let timer: ReturnType<typeof setTimeout>;
-  return ((...args: any[]) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn(...args), ms);
-  }) as unknown as T;
-}
-
 export function XTermPanel({ node }: { node: TabNode }): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const transport = useTransport();
@@ -92,22 +84,31 @@ export function XTermPanel({ node }: { node: TabNode }): React.JSX.Element {
     // observation fires immediately without debounce so the PTY gets correct
     // dimensions before any output arrives.
     let firstFit = true;
-    const debouncedFit = debounce(() => {
-      fitAddon.fit();
-      transport.resizeTerminal(terminalId, term.cols, term.rows);
-    }, 100);
+    let fitTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleFit = () => {
+      clearTimeout(fitTimer);
+      fitTimer = setTimeout(() => {
+        fitTimer = undefined;
+        fitAddon.fit();
+        transport.resizeTerminal(terminalId, term.cols, term.rows);
+      }, 100);
+    };
     const ro = new ResizeObserver(() => {
+      clearTimeout(fitTimer);
+      if (!containerRef.current?.isConnected) return;
       if (firstFit) {
         firstFit = false;
         fitAddon.fit();
         transport.resizeTerminal(terminalId, term.cols, term.rows);
       } else {
-        debouncedFit();
+        scheduleFit();
       }
     });
     ro.observe(containerRef.current);
 
     return () => {
+      clearTimeout(fitTimer);
+      fitTimer = undefined;
       unsub();
       inputDispose.dispose();
       ro.disconnect();

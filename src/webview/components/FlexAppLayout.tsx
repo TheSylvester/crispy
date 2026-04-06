@@ -39,6 +39,8 @@ import './flexlayout-overrides.css';
 
 const MAIN_TABSET_ID = 'main-tabset';
 const TERMINAL_BORDER_TAB_ID = 'terminal-border-tab';
+const GIT_BORDER_TAB_ID = 'git-border-tab';
+const FILES_BORDER_TAB_ID = 'files-border-tab';
 
 function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' = 'left', showTerminal = false): IJsonModel {
   return {
@@ -60,7 +62,7 @@ function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' 
         children: [
           {
             type: 'tab',
-            id: 'git-border-tab',
+            id: GIT_BORDER_TAB_ID,
             name: 'Git',
             component: 'git',
             enableClose: false,
@@ -68,7 +70,7 @@ function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' 
           },
           {
             type: 'tab',
-            id: 'files-border-tab',
+            id: FILES_BORDER_TAB_ID,
             name: 'Files',
             component: 'files',
             enableClose: false,
@@ -293,12 +295,12 @@ export function FlexAppLayout(): React.JSX.Element {
 
   /** Toggle the left border's Git panel open/closed */
   const toggleGitBorder = useCallback(() => {
-    modelRef.current.doAction(Actions.selectTab('git-border-tab'));
+    modelRef.current.doAction(Actions.selectTab(GIT_BORDER_TAB_ID));
   }, []);
 
   /** Toggle the Files border panel open/closed */
   const toggleFilesBorder = useCallback(() => {
-    modelRef.current.doAction(Actions.selectTab('files-border-tab'));
+    modelRef.current.doAction(Actions.selectTab(FILES_BORDER_TAB_ID));
   }, []);
 
   /** Toggle the Terminal border panel open/closed */
@@ -445,8 +447,7 @@ export function FlexAppLayout(): React.JSX.Element {
       }
     } else if (action.type === Actions.DELETE_TAB) {
       // Tab was closed — clean up and ensure at least one tab
-      const data = action as any;
-      const deletedTabId = data.data?.node ?? null;
+      const deletedTabId = action.data?.node ?? null;
       if (deletedTabId) {
         tabSessionMapRef.current.delete(deletedTabId);
       }

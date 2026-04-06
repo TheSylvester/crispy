@@ -28,8 +28,6 @@ export interface UseAutoScrollOptions {
   scrollRef: RefObject<HTMLDivElement | null>;
   /** Extra signal to re-attach when the scroll container mounts (e.g. fork history preload). */
   remount?: boolean;
-  /** Whether this tab is currently active — listeners/observers are disconnected when false. */
-  isActiveTab?: boolean;
 }
 
 export interface UseAutoScrollReturn {
@@ -49,8 +47,6 @@ function clampScrollTop(el: HTMLDivElement, top: number): number {
 
 export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
   const { sessionId, scrollRef, remount } = opts;
-  // isActiveTab from props is ignored — we derive visibility from the DOM
-  // because FlexLayout split views have multiple visible tabs simultaneously.
 
   const [parked, setParked] = useState(true);
   const [isAtTop, setIsAtTop] = useState(true);

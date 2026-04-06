@@ -41,8 +41,8 @@ export function TabLayout({ children }: { children: React.ReactNode }): React.JS
   useEffect(() => {
     const el = layoutRef.current;
     if (!el) return;
-    const observer = new ResizeObserver(() => {
-      setContainerWidth(Math.round(el.getBoundingClientRect().width));
+    const observer = new ResizeObserver(([entry]) => {
+      setContainerWidth(Math.round(entry.contentRect.width));
     });
     observer.observe(el);
     return () => observer.disconnect();

@@ -29,17 +29,19 @@ async function loadPty(): Promise<typeof import('@homebridge/node-pty-prebuilt-m
   }
 }
 
-/** Resolve the default shell for the current platform. */
+/** Resolve the default shell for the current platform (cached after first call). */
+let cachedShell: string | undefined;
 function resolveShell(): string {
-  if (process.platform === 'win32') return process.env.COMSPEC || 'cmd.exe';
-  if (process.env.SHELL) return process.env.SHELL;
+  if (cachedShell) return cachedShell;
+  if (process.platform === 'win32') return (cachedShell = process.env.COMSPEC || 'cmd.exe');
+  if (process.env.SHELL) return (cachedShell = process.env.SHELL);
   for (const sh of ['/usr/bin/zsh', '/bin/zsh', '/usr/bin/bash', '/bin/bash', '/bin/sh']) {
     try {
       accessSync(sh, constants.X_OK);
-      return sh;
+      return (cachedShell = sh);
     } catch { /* next */ }
   }
-  return 'sh';
+  return (cachedShell = 'sh');
 }
 
 // ============================================================================

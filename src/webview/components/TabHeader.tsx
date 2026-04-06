@@ -8,7 +8,7 @@
  * @module TabHeader
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from '../context/SessionContext.js';
 import { useTabSession } from '../context/TabSessionContext.js';
 import { useTabPanel } from '../context/TabPanelContext.js';
@@ -131,26 +131,29 @@ function truncateLabel(text: string, max: number): string {
 export function TabHeader(): React.JSX.Element {
   const { sessions } = useSession();
   const { effectiveSessionId, setSelectedSessionId } = useTabSession();
-  // Session dropdown open/close is per-tab (not global sidebarCollapsed)
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const sidebarCollapsed = !dropdownOpen;
-  const setSidebarCollapsed = useCallback((collapsed: boolean) => setDropdownOpen(!collapsed), []);
   const { toolPanelOpen, setToolPanelOpen } = useTabPanel();
   const { channelState } = useSessionStatus(effectiveSessionId);
   const tabController = useTabControllerOptional();
   const isActiveTab = useIsActiveTab();
   const dropdownContainerRef = useRef<HTMLDivElement>(null);
 
-  const currentSession = effectiveSessionId
-    ? sessions.find(s => s.sessionId === effectiveSessionId)
-    : null;
-  const buttonLabel = currentSession
-    ? truncateLabel(getSessionDisplayName(currentSession), BUTTON_LABEL_MAX)
-    : 'Conversations';
+  const currentSession = useMemo(
+    () => (effectiveSessionId
+      ? sessions.find(s => s.sessionId === effectiveSessionId) ?? null
+      : null),
+    [effectiveSessionId, sessions],
+  );
+  const buttonLabel = useMemo(
+    () => currentSession
+      ? truncateLabel(getSessionDisplayName(currentSession), BUTTON_LABEL_MAX)
+      : 'Conversations',
+    [currentSession],
+  );
 
-  const toggleSidebar = useCallback(() => {
-    setSidebarCollapsed(!sidebarCollapsed);
-  }, [sidebarCollapsed, setSidebarCollapsed]);
+  const toggleDropdown = useCallback(() => {
+    setDropdownOpen(open => !open);
+  }, []);
 
   const handleNew = useCallback(() => {
     if (tabController) {
@@ -191,16 +194,16 @@ export function TabHeader(): React.JSX.Element {
 
   // Click-outside to close session dropdown
   useEffect(() => {
-    if (sidebarCollapsed) return;
+    if (!dropdownOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
       if (dropdownContainerRef.current && !dropdownContainerRef.current.contains(target)) {
-        setSidebarCollapsed(true);
+        setDropdownOpen(false);
       }
     };
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
-  }, [sidebarCollapsed, setSidebarCollapsed]);
+  }, [dropdownOpen]);
 
   return (
     <div className="crispy-tab-header">
@@ -208,14 +211,14 @@ export function TabHeader(): React.JSX.Element {
       <div className="crispy-tab-header__left" ref={dropdownContainerRef}>
         <button
           className="crispy-titlebar__btn crispy-titlebar__session-btn"
-          onClick={toggleSidebar}
-          aria-label={sidebarCollapsed ? 'Open sessions' : 'Close sessions'}
+          onClick={toggleDropdown}
+          aria-label={dropdownOpen ? 'Close sessions' : 'Open sessions'}
           title={currentSession?.title || 'Toggle session list'}
         >
           <span className="crispy-titlebar__label">{buttonLabel}</span>
-          <Chevron open={!sidebarCollapsed} />
+          <Chevron open={dropdownOpen} />
         </button>
-        {!sidebarCollapsed && (
+        {dropdownOpen && (
           <div className="crispy-session-dropdown">
             <SessionSelector onSelect={setSelectedSessionId} onClose={() => setDropdownOpen(false)} />
           </div>
