@@ -13,6 +13,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useTransport } from '../../context/TransportContext.js';
 import { inferLanguage } from '../../renderers/tools/shared/tool-utils.js';
 import { useTabControllerOptional } from '../../context/TabControllerContext.js';
+import { useEnvironment } from '../../context/EnvironmentContext.js';
 import { FileViewer } from './FileViewer.js';
 import { TranscriptAnnotationPopover } from '../TranscriptAnnotationPopover.js';
 import type { TranscriptAnnotationState } from '../../hooks/useTranscriptAnnotation.js';
@@ -162,6 +163,7 @@ function useFileViewerSelection(
 export function FileViewerTab({ path, relativePath: relPath, line }: FileViewerTabProps): React.JSX.Element {
   const transport = useTransport();
   const tabController = useTabControllerOptional();
+  const envKind = useEnvironment();
   const [file, setFile] = useState<ActiveFileView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -208,13 +210,14 @@ export function FileViewerTab({ path, relativePath: relPath, line }: FileViewerT
 
   const handleExecute = useCallback(() => {
     if (!file) return;
-    if (tabController) {
-      tabController.createTab({ config: { prefillContent: file.content } });
-    } else {
-      // Fallback for non-flex-layout environments
+    if (envKind === 'vscode') {
+      // VS Code: clear current session and prefill input via postMessage
       window.postMessage({ kind: 'executeInCrispy', content: file.content }, '*');
+    } else if (tabController) {
+      // Standalone/desktop: open in a new tab with prefilled content
+      tabController.createTab({ config: { prefillContent: file.content } });
     }
-  }, [file, tabController]);
+  }, [file, tabController, envKind]);
 
   const handleInsertIntoChat = useCallback(() => {
     if (!file) return;

@@ -42,7 +42,7 @@ const TERMINAL_BORDER_TAB_ID = 'terminal-border-tab';
 const GIT_BORDER_TAB_ID = 'git-border-tab';
 const FILES_BORDER_TAB_ID = 'files-border-tab';
 
-function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' = 'left', showTerminal = false): IJsonModel {
+function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' = 'left', showBorders = false): IJsonModel {
   return {
     global: {
       splitterSize: 4,
@@ -54,14 +54,14 @@ function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' 
       borderEnableAutoHide: true,
     },
     borders: [
-      {
-        type: 'border',
+      ...(showBorders ? [{
+        type: 'border' as const,
         location: gitPanelSide,
         size: 300,
         selected: -1, // closed by default
         children: [
           {
-            type: 'tab',
+            type: 'tab' as const,
             id: GIT_BORDER_TAB_ID,
             name: 'Git',
             component: 'git',
@@ -69,7 +69,7 @@ function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' 
             enableDrag: false,
           },
           {
-            type: 'tab',
+            type: 'tab' as const,
             id: FILES_BORDER_TAB_ID,
             name: 'Files',
             component: 'files',
@@ -77,8 +77,8 @@ function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' 
             enableDrag: false,
           },
         ],
-      },
-      ...(showTerminal ? [{
+      }] : []),
+      ...(showBorders ? [{
         type: 'border' as const,
         location: 'bottom' as const,
         selected: -1,
@@ -167,7 +167,7 @@ export function FlexAppLayout(): React.JSX.Element {
   const [initialState] = useState(() => {
     const showTabStrip = !isVscode;
     return {
-      model: Model.fromJson(makeDefaultModel(showTabStrip, gitPanelSide, !isVscode)),
+      model: Model.fromJson(makeDefaultModel(showTabStrip, gitPanelSide, !isVscode)),  // borders only in standalone/desktop
       tabMap: new Map([['tab-initial', null]]) as TabSessionMap,
     };
   });
