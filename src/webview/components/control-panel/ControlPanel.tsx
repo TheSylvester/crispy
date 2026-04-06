@@ -1071,14 +1071,14 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         chromeEnabled: state.chromeEnabled,
       };
 
-      if (tabController) {
-        // Multi-tab mode: create fork in a new tab
-        tabController.createTab({ forkConfig: forkParams });
-      } else {
-        // Legacy: open in new panel/window
-        transport.forkToNewPanel?.(forkParams)?.catch((err: Error) => {
+      if (transport.forkToNewPanel) {
+        // VS Code: open fork in a new editor panel
+        transport.forkToNewPanel(forkParams).catch((err: Error) => {
           console.error('[ControlPanel] forkToNewPanel failed:', err);
         });
+      } else if (tabController) {
+        // Standalone/desktop: create fork in a new tab
+        tabController.createTab({ forkConfig: forkParams });
       }
 
       if (currentInput) dispatch({ type: 'CLEAR_INPUT' });
