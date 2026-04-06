@@ -156,6 +156,7 @@ export function FlexAppLayout(): React.JSX.Element {
   const modelRef = useRef(initialState.model);
   const tabSessionMapRef = useRef<TabSessionMap>(initialState.tabMap);
   const gitPanelSideRef = useRef(gitPanelSide);
+  const prevActiveTabRef = useRef<string | null>(null);
 
   // Determine initial active tab from the restored model
   const [activeTabId, setActiveTabId] = useState<string | null>(() => {
@@ -168,6 +169,11 @@ export function FlexAppLayout(): React.JSX.Element {
     const firstKey = tabSessionMapRef.current.keys().next().value;
     return firstKey ?? null;
   });
+
+  // Seed the previous-tab ref so the first model change doesn't spuriously focus
+  if (prevActiveTabRef.current === null && activeTabId !== null) {
+    prevActiveTabRef.current = activeTabId;
+  }
 
   // Keep a render-triggering version of the map for tab names
   const [, forceUpdate] = useState(0);
@@ -391,10 +397,14 @@ export function FlexAppLayout(): React.JSX.Element {
         if (selected) {
           const tabId = selected.getId();
           const sessionId = tabSessionMapRef.current.get(tabId) ?? null;
+          const tabChanged = tabId !== prevActiveTabRef.current;
+          prevActiveTabRef.current = tabId;
           setActiveTabId(tabId);
           controller.setActiveTab(tabId, sessionId);
-          // Focus the new tab's input after activation
-          setTimeout(() => window.postMessage({ kind: 'focusInput' }, '*'), 50);
+          // Only focus when the active tab actually changed (not on internal layout updates)
+          if (tabChanged) {
+            setTimeout(() => window.postMessage({ kind: 'focusInput' }, '*'), 50);
+          }
         }
       }
     } else if (action.type === Actions.DELETE_TAB) {
