@@ -156,12 +156,8 @@ export function TabHeader(): React.JSX.Element {
   }, []);
 
   const handleNew = useCallback(() => {
-    if (tabController) {
-      tabController.createTab();
-    } else {
-      setSelectedSessionId(null);
-    }
-  }, [tabController, setSelectedSessionId]);
+    setSelectedSessionId(null);
+  }, [setSelectedSessionId]);
 
   // Alt+T / Alt+F / Alt+G keyboard shortcuts — per-tab panel toggles
   useEffect(() => {
