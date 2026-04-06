@@ -76,15 +76,20 @@ interface ControlPanelProviderProps {
   selectedSessionId: string | null;
   /** Initial fork config — auto-enters fork mode on mount (from fork-to-new-tab). */
   initialForkConfig?: { fromSessionId: string; atMessageId?: string; initialPrompt?: string; model?: string; agencyMode?: string; bypassEnabled?: boolean; chromeEnabled?: boolean } | null;
+  /** Initial prefill content — pre-fills the chat input on mount (from file Execute). */
+  initialPrefill?: string | null;
 }
 
 export function ControlPanelProvider({
   children,
   selectedSessionId,
   initialForkConfig,
+  initialPrefill,
 }: ControlPanelProviderProps): React.JSX.Element {
   const [bypassEnabled, setBypassEnabled] = useState(false);
-  const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean; append?: boolean } | null>(null);
+  const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean; append?: boolean } | null>(
+    initialPrefill ? { text: initialPrefill } : null,
+  );
   const [pendingAgencyMode, setPendingAgencyMode] = useState<{ agencyMode: AgencyMode; bypassEnabled: boolean } | null>(null);
   const [hasForkHistory, setHasForkHistory] = useState(!!initialForkConfig);
   const [previewEntries, setPreviewEntries] = useState<TranscriptEntry[] | null>(null);

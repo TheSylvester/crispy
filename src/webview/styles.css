@@ -7138,8 +7138,27 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__dot-
 
 .crispy-file-viewer-tab__body {
   flex: 1;
-  overflow: auto;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* CodePreview inside file viewer tab — no max-height, scroll handled by code-preview */
+.crispy-file-viewer-tab__body .crispy-code-preview {
+  max-height: none;
+  min-width: 0;
+}
+
+/* Wrap OFF: code-preview scrolls both axes */
+.crispy-file-viewer-tab__body:not([data-word-wrap]) .crispy-code-preview {
+  overflow: auto;
+}
+
+/* Wrap ON: pre-wrap handles line breaking, no scroll needed */
+.crispy-file-viewer-tab__body[data-word-wrap] .crispy-code-preview {
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 /* --- TitleBar git button with branch label --- */

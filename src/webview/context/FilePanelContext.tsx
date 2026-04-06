@@ -92,7 +92,7 @@ export function FilePanelProvider({ children }: FilePanelProviderProps): React.J
       tabController.createTab({
         component: 'file-viewer',
         name: filename,
-        config: { path: absolutePath, line },
+        config: { path: absolutePath, relativePath, line },
       });
     }
   }, [tabController]);

@@ -111,14 +111,14 @@ type TabSessionMap = Map<string, string | null>;
 // TabContent — inner wrapper per tab
 // ============================================================================
 
-function TabContent({ tabId, forkConfig }: { tabId: string; forkConfig?: ForkConfig | null }): React.JSX.Element {
+function TabContent({ tabId, forkConfig, prefillContent }: { tabId: string; forkConfig?: ForkConfig | null; prefillContent?: string | null }): React.JSX.Element {
   const { effectiveSessionId } = useTabSession();
   return (
     <TabContainerProvider tabId={tabId}>
       <TabPanelProvider>
         <FileIndexProvider>
           <FilePanelProvider>
-            <ControlPanelProvider selectedSessionId={effectiveSessionId} initialForkConfig={forkConfig}>
+            <ControlPanelProvider selectedSessionId={effectiveSessionId} initialForkConfig={forkConfig} initialPrefill={prefillContent}>
               <ContentErrorBoundary>
                 <TabHeader />
                 <TabLayout>
@@ -343,6 +343,18 @@ export function FlexAppLayout(): React.JSX.Element {
     });
   }, [controller, createTab, closeTab, activateTab, findTabBySession, getTabSession, findTabByComponent, toggleGitBorder, toggleFilesBorder, findFileViewerTab, updateTabConfig, equalizeLayout]);
 
+  // Seed initial active tab so lastActiveTranscriptTabId is set even before
+  // any model change fires (needed for file-viewer → transcript tab inserts)
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current) return;
+    seeded.current = true;
+    if (activeTabId) {
+      const sessionId = tabSessionMapRef.current.get(activeTabId) ?? null;
+      controller.setActiveTab(activeTabId, sessionId, true);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // --- Sync initial session: when selectedSessionId is set (e.g. openSession bootstrap),
   //     assign it to the initial tab if that tab has no session yet. ---
   useEffect(() => {
@@ -397,10 +409,11 @@ export function FlexAppLayout(): React.JSX.Element {
         if (selected) {
           const tabId = selected.getId();
           const sessionId = tabSessionMapRef.current.get(tabId) ?? null;
+          const isTranscriptTab = !selected.getComponent() || selected.getComponent() === 'transcript';
           const tabChanged = tabId !== prevActiveTabRef.current;
           prevActiveTabRef.current = tabId;
           setActiveTabId(tabId);
-          controller.setActiveTab(tabId, sessionId);
+          controller.setActiveTab(tabId, sessionId, isTranscriptTab);
           // Only focus when the active tab actually changed (not on internal layout updates)
           if (tabChanged) {
             setTimeout(() => window.postMessage({ kind: 'focusInput' }, '*'), 50);
@@ -477,10 +490,11 @@ export function FlexAppLayout(): React.JSX.Element {
       // Read fork config from FlexLayout node config (set during createTab)
       const nodeConfig = node.getConfig();
       const forkConfig = nodeConfig?.forkConfig as ForkConfig | undefined;
+      const prefillContent = nodeConfig?.prefillContent as string | undefined;
 
       return (
         <TabSessionProvider sessionId={sessionId} onSessionChange={onSessionChange}>
-          <TabContent tabId={tabId} forkConfig={forkConfig} />
+          <TabContent tabId={tabId} forkConfig={forkConfig} prefillContent={prefillContent} />
         </TabSessionProvider>
       );
     } else if (node.getComponent() === 'git') {
@@ -500,13 +514,13 @@ export function FlexAppLayout(): React.JSX.Element {
         </FileIndexProvider>
       );
     } else if (node.getComponent() === 'file-viewer') {
-      const config = node.getConfig() as { path: string; line?: number } | undefined;
+      const config = node.getConfig() as { path: string; relativePath?: string; line?: number } | undefined;
       if (!config?.path) return null;
       return (
         <FileIndexProvider>
           <FilePanelProvider>
             <ContentErrorBoundary>
-              <FileViewerTab path={config.path} line={config.line} />
+              <FileViewerTab path={config.path} relativePath={config.relativePath} line={config.line} />
             </ContentErrorBoundary>
           </FilePanelProvider>
         </FileIndexProvider>

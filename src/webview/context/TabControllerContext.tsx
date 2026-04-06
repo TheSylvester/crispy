@@ -100,7 +100,7 @@ export interface TabControllerValue {
   /** Register FlexLayout tab operations (called once on mount). */
   registerOperations: (ops: TabOperations) => void;
   /** Update active tab info (called by FlexAppLayout on tab change). */
-  setActiveTab: (tabId: string | null, sessionId: string | null) => void;
+  setActiveTab: (tabId: string | null, sessionId: string | null, isTranscriptTab?: boolean) => void;
 }
 
 // ============================================================================
@@ -138,15 +138,19 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     for (const op of pending) op();
   }, []);
 
-  const setActiveTab = useCallback((tabId: string | null, sessionId: string | null) => {
+  const setActiveTab = useCallback((tabId: string | null, sessionId: string | null, isTranscriptTab?: boolean) => {
     setActiveTabId(tabId);
     setActiveTabSessionId(sessionId);
     if (sessionId !== null) {
-      // Transcript tab — update last active and propagate session
+      // Transcript tab with session — update last active and propagate session
       setLastActiveTranscriptTabId(tabId);
       onSessionChangeRef.current(sessionId);
+    } else if (isTranscriptTab) {
+      // Transcript tab without session (new tab) — still track as last active
+      // so file-viewer tabs can insert into its chat input
+      setLastActiveTranscriptTabId(tabId);
     }
-    // Border tab (sessionId === null) — don't null out global selectedSessionId
+    // Non-transcript tab (file-viewer, git, etc.) — don't update lastActiveTranscriptTabId
   }, []);
 
   const createTab = useCallback((config?: TabCreateConfig): string => {
