@@ -215,12 +215,12 @@ h2 {
 }
 
 /* Streaming glow — agency-colored inset glow on both the main content area
-   and the tool panel.  --frame-highlight is set on .crispy-main itself (not
-   just ::after) so descendants — including the tool panel's ::after — inherit
-   the current agency color.  Reads data-streaming and data-agency directly
-   from .crispy-main (set by React via ControlPanelContext). */
+   and the tool panel.  --frame-highlight is set on .crispy-tab-layout itself
+   (not just ::after) so descendants — including the tool panel's ::after —
+   inherit the current agency color.  Reads data-streaming and data-agency
+   directly from .crispy-tab-layout (set by React via TabLayout). */
 
-/* 1. Set --frame-highlight on .crispy-main per agency mode */
+/* 1. Set --frame-highlight on .crispy-tab-layout per agency mode */
 .crispy-tab-layout[data-streaming][data-agency="ask-before-edits"] {
   --frame-highlight: var(--agency-white);
 }
@@ -234,8 +234,8 @@ h2 {
   --frame-highlight: var(--agency-red);
 }
 
-/* 2. Primary glow overlay — main content area */
-.crispy-main::after {
+/* 2. Primary glow overlay — per-tab content area */
+.crispy-tab-layout::after {
   content: "";
   position: absolute;
   inset: 0;
