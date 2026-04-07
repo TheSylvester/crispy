@@ -44,6 +44,7 @@ import { useSession } from '../../context/SessionContext.js';
 import { slugToPath } from '../../hooks/useSessionCwd.js';
 import { useContextUsage } from '../../hooks/useContextUsage.js';
 import { useSessionStatus } from '../../hooks/useSessionStatus.js';
+import { setOptimisticForSession } from '../../hooks/useChannelStore.js';
 import { useRosieLog } from '../../hooks/useRosieLog.js';
 import { useVoiceInput } from '../../hooks/useVoiceInput.js';
 import { useControlPanel } from '../../context/ControlPanelContext.js';
@@ -759,11 +760,15 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       // Clear input immediately (optimistic)
       dispatch({ type: 'CLEAR_INPUT' });
       onScrollToBottom?.();
-      setOptimisticStatus('streaming');
 
-      // Preselect the pending session so useTranscript sees events on it
       if (pendingId) {
+        // Pre-seed 'streaming' on the pending session's store BEFORE switching
+        // tabs, so the glow appears immediately when the store is acquired.
+        // setOptimisticStatus would target the old session (closure-captured).
+        setOptimisticForSession(transport, pendingId, 'streaming');
         setSelectedSessionId(pendingId);
+      } else {
+        setOptimisticStatus('streaming');
       }
 
       transport.sendTurn(intent, pendingId)
@@ -775,7 +780,11 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           }
         })
         .catch((err) => {
-          setOptimisticStatus('idle');
+          if (pendingId) {
+            setOptimisticForSession(transport, pendingId, 'idle');
+          } else {
+            setOptimisticStatus('idle');
+          }
           console.error('[ControlPanel] sendTurn failed:', err);
           // Surface error to user
           const msg = err instanceof Error ? err.message : String(err);

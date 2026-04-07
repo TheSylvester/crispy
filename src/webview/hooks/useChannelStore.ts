@@ -112,6 +112,7 @@ const managers = new WeakMap<SessionService, ChannelStoreManager>();
 
 class ChannelStoreManager {
   private stores = new Map<string, SessionStore>();
+  private seededState = new Map<string, SessionChannelState>();
   private transport: SessionService;
   private globalUnsub: (() => void) | null = null;
   private activeStoreCount = 0;
@@ -132,10 +133,12 @@ class ChannelStoreManager {
   acquire(sessionId: string): SessionStore {
     let store = this.stores.get(sessionId);
     if (!store) {
+      const seeded = this.seededState.get(sessionId);
+      this.seededState.delete(sessionId);
       store = {
         snapshot: { ...EMPTY_SHARED },
         snapshotListeners: new Set(),
-        channelState: null,
+        channelState: seeded ?? null,
         lastError: null,
         approvalRequest: null,
         streamingContent: null,
@@ -183,10 +186,15 @@ class ChannelStoreManager {
     return this.stores.get(sessionId);
   }
 
-  /** Set optimistic channel state on the shared store so all consumers see it. */
+  /** Set optimistic channel state on the shared store so all consumers see it.
+   *  If the store doesn't exist yet (e.g. pending session), seeds the state
+   *  so it's applied when the store is acquired. */
   setOptimisticState(sessionId: string, state: SessionChannelState): void {
     const store = this.stores.get(sessionId);
-    if (!store) return;
+    if (!store) {
+      this.seededState.set(sessionId, state);
+      return;
+    }
     store.channelState = state;
     emitState(store);
   }
@@ -307,6 +315,23 @@ class ChannelStoreManager {
       }
     }
   }
+}
+
+// ============================================================================
+// Standalone helpers
+// ============================================================================
+
+/**
+ * Set optimistic channel state for a session that may not have a store yet.
+ * Used by ControlPanel to pre-seed 'streaming' on pending sessions before
+ * the tab re-renders and acquires the store.
+ */
+export function setOptimisticForSession(
+  transport: SessionService,
+  sessionId: string,
+  state: SessionChannelState,
+): void {
+  ChannelStoreManager.for(transport).setOptimisticState(sessionId, state);
 }
 
 // ============================================================================
