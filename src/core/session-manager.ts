@@ -49,7 +49,7 @@ import {
   broadcastUserEntry as channelBroadcastUserEntry,
   broadcastEvent,
 } from './session-channel.js';
-import { refreshAndNotify, notifyStatusChange } from './session-list-manager.js';
+import { refreshAndNotify, notifyStatusChange, broadcastCloseChannel } from './session-list-manager.js';
 import { fireResponseComplete } from './lifecycle-hooks.js';
 import { log } from './log.js';
 import { isSystemSession, setSessionKind } from './activity-index.js';
@@ -380,7 +380,13 @@ export function findSession(sessionId: string): SessionInfo | undefined {
   const resolved = resolveSessionPrefix(sessionId);
   for (const { discovery } of adapters.values()) {
     const info = discovery.findSession(resolved);
-    if (info) return info;
+    if (info) {
+      // Enrich with sessionKind so consumers (webview, session list) can reason about it
+      if (info.sessionKind === undefined && isSystemSession(resolved)) {
+        return { ...info, sessionKind: 'system' };
+      }
+      return info;
+    }
   }
   return undefined;
 }
@@ -1212,9 +1218,17 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
     }
 
     case 'new': {
+      // Resolve CWD: explicit cwd > parent session's projectPath > process.cwd()
+      let cwd = intent.target.cwd;
+      if (!cwd && intent.target.parentSessionId) {
+        const parentInfo = findSession(intent.target.parentSessionId);
+        if (parentInfo?.projectPath) cwd = normalizePath(parentInfo.projectPath);
+      }
+      if (!cwd) cwd = normalizePath(process.cwd());
+
       const created = createSession(
         intent.target.vendor as Vendor,
-        intent.target.cwd,
+        cwd,
         subscriber,
         {
           ...intent.settings,

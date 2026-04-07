@@ -182,7 +182,7 @@ export interface EphemeralTargetOptions {
  */
 export type TurnTarget =
   | { kind: 'existing'; sessionId: string; model?: string }
-  | { kind: 'new'; vendor: Vendor; cwd: string } & EphemeralTargetOptions
+  | { kind: 'new'; vendor: Vendor; cwd?: string; parentSessionId?: string } & EphemeralTargetOptions
   | { kind: 'fork'; vendor: Vendor; fromSessionId: string; atMessageId?: string } & EphemeralTargetOptions
   | { kind: 'hydrated'; vendor: Vendor; cwd: string; history: TranscriptEntry[]; sourceVendor: Vendor; sourceSessionId?: string } & EphemeralTargetOptions;
 

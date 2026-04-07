@@ -44,6 +44,22 @@ Capture their session IDs from the `[session_id: ...]` output.
 start verification after only one returns — the second agent's perspective
 may change your verification strategy.
 
+**Codex routinely takes 2-3x longer than Claude.** Do not assume Codex is
+dead, timed out, or stuck just because Claude finished first. Before
+declaring any agent finished:
+
+1. **Check if the process is still running:** `ps aux | grep codex` (or
+   `grep claude`). The PID is in the dispatch log filename.
+2. **Check the dispatch log's mtime:** `stat -c '%Y' <log-file>` — if it
+   was modified in the last 5 minutes, the agent is likely still working.
+3. **Only declare dead if the process is genuinely gone** — not because the
+   output file is empty. Codex writes its output file only at the very end,
+   not incrementally.
+
+If the background task notification fires but the output file is empty or
+missing, check ps before concluding. The notification may fire for the
+wrapper process while the inner Codex process is still running.
+
 Check if either agent's output is only intermediate narration (tool-use
 summaries like "Let me read...", "I'm checking...") without a final analysis.
 This happens when agents spend their entire turn researching without

@@ -54,6 +54,7 @@ import type { ChildSessionOptions, ResumeChildOptions } from "../core/session-ma
 import {
   subscribeSessionList,
   unsubscribeSessionList,
+  broadcastOpenChannel,
   type SessionListSubscriber,
 } from "../core/session-list-manager.js";
 import { SESSION_LIST_CHANNEL_ID } from "../core/session-list-events.js";
@@ -272,9 +273,6 @@ export function createClientConnection(
   /** Extra allowed roots (e.g. VS Code workspace CWD before any session exists). */
   const extraAllowedRoots = new Set<string>();
 
-  /** Child sessions registered via provenance — cleaned up on dispose (fix #7). */
-  const registeredChildren = new Set<string>();
-
   /** Terminal IDs owned by this client — detached on disconnect. */
   const ownedTerminals = new Set<string>();
 
@@ -436,6 +434,7 @@ export function createClientConnection(
           parentSessionId: string;
           autoClose: boolean;
           visible: boolean;
+          background?: boolean;
         } | undefined;
 
         // For existing sessions — may trigger vendor switch internally
@@ -466,7 +465,6 @@ export function createClientConnection(
           // Register provenance if this is an IPC-dispatched child
           if (provenance) {
             registerChildSession(result.sessionId, provenance);
-            registeredChildren.add(result.sessionId);
           }
 
           // If vendor switch happened, update subscription tracking
@@ -485,8 +483,11 @@ export function createClientConnection(
                 // Core provenance must always update, even after client disconnect (fix #2)
                 if (provenance) {
                   rekeyChildSession(result.sessionId, realId);
-                  registeredChildren.delete(result.sessionId);
-                  registeredChildren.add(realId);
+                  if (provenance.visible && !provenance.background) {
+                    refreshAndNotify(realId);
+                    const promptText = typeof intent.content === 'string' ? intent.content : undefined;
+                    broadcastOpenChannel(realId, promptText);
+                  }
                 }
                 if (disposed) return; // transport-only ops below
                 mutable.rekey(realId);
@@ -511,7 +512,6 @@ export function createClientConnection(
         // Register provenance before sendTurn so the child is tracked immediately
         if (provenance) {
           registerChildSession(pendingId, provenance);
-          registeredChildren.add(pendingId);
         }
 
         const result = await sendTurn(intent, mutable.subscriber, pendingId);
@@ -522,8 +522,13 @@ export function createClientConnection(
         // Migrate provenance from pending to resolved ID
         if (provenance && result.sessionId !== pendingId) {
           rekeyChildSession(pendingId, result.sessionId);
-          registeredChildren.delete(pendingId);
-          registeredChildren.add(result.sessionId);
+        }
+
+        // If no rekey promise, the session ID is already final — broadcast now
+        if (!result.rekeyPromise && provenance?.visible && !provenance.background) {
+          refreshAndNotify(result.sessionId);
+          const promptText = typeof intent.content === 'string' ? intent.content : undefined;
+          broadcastOpenChannel(result.sessionId, promptText);
         }
 
         // Handle rekey from rekeyPromise (pending → real ID)
@@ -533,8 +538,11 @@ export function createClientConnection(
               // Core provenance must always update, even after client disconnect (fix #2)
               if (provenance) {
                 rekeyChildSession(result.sessionId, realId);
-                registeredChildren.delete(result.sessionId);
-                registeredChildren.add(realId);
+                if (provenance.visible && !provenance.background) {
+                  refreshAndNotify(realId);
+                  const promptText = typeof intent.content === 'string' ? intent.content : undefined;
+                  broadcastOpenChannel(realId, promptText);
+                }
               }
               if (disposed) return; // transport-only ops below
               mutable.rekey(realId);
@@ -1364,15 +1372,6 @@ export function createClientConnection(
     }
     ownedTerminals.clear();
 
-    // Close child sessions registered via provenance (fix #7: prevent memory leak)
-    for (const childId of registeredChildren) {
-      try {
-        closeSession(childId);
-      } catch {
-        // Best-effort — session may already be closed
-      }
-    }
-    registeredChildren.clear();
   }
 
   return {

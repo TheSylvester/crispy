@@ -75,7 +75,7 @@ export interface TabControllerValue {
   activateTab: (tabId: string) => void;
 
   /** Navigate to a session: find existing tab or create new, then activate. */
-  navigateToSession: (sessionId: string) => void;
+  navigateToSession: (sessionId: string, name?: string) => void;
   /** Set the active tab's session ID (used by session selector within a tab). */
   setActiveTabSession: (sessionId: string | null) => void;
 
@@ -218,7 +218,7 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     opsRef.current.toggleTerminalBorder();
   }, []);
 
-  const navigateToSession = useCallback((sessionId: string) => {
+  const navigateToSession = useCallback((sessionId: string, name?: string) => {
     if (!opsRef.current) {
       pendingOps.current.push(() => {
         const ops = opsRef.current!;
@@ -226,7 +226,7 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
         if (existing) {
           ops.activateTab(existing);
         } else {
-          ops.createTab({ sessionId });
+          ops.createTab({ sessionId, name });
         }
       });
       return;
@@ -235,7 +235,7 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     if (existing) {
       opsRef.current.activateTab(existing);
     } else {
-      opsRef.current.createTab({ sessionId });
+      opsRef.current.createTab({ sessionId, name });
     }
   }, []);
 

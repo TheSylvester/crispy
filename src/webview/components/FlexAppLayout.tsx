@@ -29,8 +29,10 @@ import { TabLayout } from './TabLayout.js';
 import { useTabController, type TabCreateConfig, type ForkConfig } from '../context/TabControllerContext.js';
 import { useSession } from '../context/SessionContext.js';
 import { useEnvironment } from '../context/EnvironmentContext.js';
+import { useTransport } from '../context/TransportContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
 import { getSessionDisplayName } from '../utils/session-display.js';
+import { SESSION_LIST_CHANNEL_ID } from '../../core/session-list-events.js';
 import './flexlayout-overrides.css';
 
 // ============================================================================
@@ -158,6 +160,7 @@ function TabContent({ tabId, forkConfig, prefillContent }: { tabId: string; fork
 
 export function FlexAppLayout(): React.JSX.Element {
   const controller = useTabController();
+  const transport = useTransport();
   const { sessions, selectedSessionId } = useSession();
   const envKind = useEnvironment();
   const isVscode = envKind === 'vscode';
@@ -426,12 +429,15 @@ export function FlexAppLayout(): React.JSX.Element {
   // --- onModelChange: detect tab activations and deletions ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleModelChange = useCallback((_model: Model, action: any) => {
-    // Auto-equalize when a new tabset (tab group) is created
+    // Auto-equalize when a new tabset (tab group) is created.
+    // Update ref BEFORE calling equalizeLayout to prevent infinite recursion —
+    // equalizeLayout triggers doAction which re-enters onModelChange.
     const currentTabsetCount = modelRef.current.getRoot().getChildren().length;
-    if (currentTabsetCount > prevTabsetCountRef.current) {
+    const tabsetCountChanged = currentTabsetCount > prevTabsetCountRef.current;
+    prevTabsetCountRef.current = currentTabsetCount;
+    if (tabsetCountChanged) {
       equalizeLayout();
     }
-    prevTabsetCountRef.current = currentTabsetCount;
 
     if (action.type === Actions.SELECT_TAB || action.type === Actions.ADD_NODE ||
         action.type === Actions.SET_ACTIVE_TABSET || action.type === Actions.MOVE_NODE) {
@@ -477,7 +483,16 @@ export function FlexAppLayout(): React.JSX.Element {
     const sessionId = tabSessionMapRef.current.get(tabId);
     if (sessionId) {
       const name = getTabName(sessionId, sessionsRef.current);
-      renderValues.content = name;
+      // If getTabName found real metadata, use it. Otherwise preserve the
+      // node's current name — it may have been set from displayName at creation
+      // time (e.g. broadcastOpenChannel carries the prompt text).
+      if (name !== sessionId.slice(0, 8) + '\u2026') {
+        renderValues.content = name;
+      } else if (node.getName() && node.getName() !== 'New Tab') {
+        renderValues.content = node.getName();
+      } else {
+        renderValues.content = name;
+      }
     } else {
       renderValues.content = 'New Tab';
     }
@@ -599,6 +614,31 @@ export function FlexAppLayout(): React.JSX.Element {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isVscode, activeTabId, createTab, closeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Channel lifecycle watcher: open/close tabs from session-list events ---
+  useEffect(() => {
+    return transport.onEvent((channelId, event) => {
+      if (channelId !== SESSION_LIST_CHANNEL_ID) return;
+      if (event.type === 'session_open_channel') {
+        controller.navigateToSession(event.sessionId, event.displayName);
+      } else if (event.type === 'session_close_channel') {
+        const tabIds: string[] = [];
+        for (const [tabId, sid] of tabSessionMapRef.current) {
+          if (sid === event.sessionId) tabIds.push(tabId);
+        }
+        for (const tabId of tabIds) {
+          if (tabSessionMapRef.current.size <= 1) {
+            tabSessionMapRef.current.set(tabId, null);
+            const model = modelRef.current;
+            model.doAction(Actions.renameTab(tabId, 'New Tab'));
+            bump();
+          } else {
+            closeTab(tabId);
+          }
+        }
+      }
+    });
+  }, [transport, controller, closeTab, bump]);
 
   // Cycle through tabs in order
   function cycleTab(direction: 1 | -1) {

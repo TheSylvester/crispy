@@ -31,8 +31,8 @@ MODEL=""
 RESUME=""
 APPROVAL="bypass"
 TIMEOUT=""
-AUTO_CLOSE="--no-auto-close"
-VISIBLE=""
+AUTO_CLOSE=""
+VISIBLE="--open"
 FORK=""
 RESUME_AT=""
 PERSIST=""
@@ -66,8 +66,12 @@ while [[ $# -gt 0 ]]; do
       AUTO_CLOSE=""
       shift
       ;;
-    --visible)
-      VISIBLE="--visible"
+    --visible|--open)
+      VISIBLE="--open"
+      shift
+      ;;
+    --no-open)
+      VISIBLE=""
       shift
       ;;
     --fork|-f)

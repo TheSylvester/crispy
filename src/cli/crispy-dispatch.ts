@@ -73,6 +73,7 @@ interface CliArgs {
   timeoutMs: number;
   autoClose: boolean;
   visible: boolean;
+  background: boolean;
   resume?: string;
   fork: boolean;
   resumeAt?: string;
@@ -97,6 +98,7 @@ function parseArgs(argv: string[]): CliArgs {
     timeoutMs: 600_000,
     autoClose: true,
     visible: false,
+    background: false,
     fork: false,
     persist: false,
     approval: approvalEnv && ['fail', 'bypass', 'manual'].includes(approvalEnv)
@@ -147,7 +149,12 @@ function parseArgs(argv: string[]): CliArgs {
         args.autoClose = false;
         break;
       case '--visible':
+      case '--open':
         args.visible = true;
+        break;
+      case '--background':
+        args.visible = true;
+        args.background = true;
         break;
       case '--resume':
       case '-r':
@@ -235,8 +242,9 @@ Vendor & Model:
   -m, --model <model>       Model override
 
 Behavior:
-  --visible                 Show session in editor UI (uses sendTurn instead of dispatchChild)
-  --parent-session <id>     Parent session ID (or set CRISPY_PARENT_SESSION)
+  --open, --visible         Show session in editor UI (uses sendTurn instead of dispatchChild)
+  --background              Visible in sidebar but no tab opens (combine with --open)
+  --parent-session <id>     Parent session ID (default: $CRISPY_SESSION_ID)
   --timeout <ms>            Timeout in milliseconds (default: 600000)
   --persist                 Save session to disk (default: ephemeral)
   --no-auto-close           Keep session alive after completion
@@ -252,7 +260,7 @@ Exit Codes:
 
 Environment:
   CRISPY_SOCK               Override socket path (skip discovery)
-  CRISPY_PARENT_SESSION     Default parent session ID
+  CRISPY_SESSION_ID         Parent session ID (auto-set in managed sessions)
   PROMPT_FILE               Read prompt from file
   BYPASS_PERMISSIONS=1      Shorthand for --approval bypass
   CRISPY_DISPATCH_APPROVAL  Default approval mode (fail|bypass|manual)
@@ -382,8 +390,7 @@ async function main(): Promise<void> {
 
   try {
     if (args.visible) {
-      console.error('[crispy-dispatch] --visible mode is temporarily disabled');
-      process.exit(EXIT_USAGE);
+      await runVisibleMode(router, args, prompt!, settings, outputFile);
     } else if (args.resume && !args.fork) {
       await runResumeMode(router, args, prompt!, settings, outputFile);
     } else {
@@ -414,9 +421,14 @@ async function runVisibleMode(
   outputFile: string | null,
 ): Promise<void> {
   const skipPersistSession = !args.persist;
-  const cwd = process.cwd();
 
-  // Build TurnTarget
+  const parentSessionId = args.parentSessionId
+    || process.env.CRISPY_SESSION_ID
+    || `cli-${Date.now()}`;
+
+  // Build TurnTarget — omit cwd for new sessions so the server resolves it
+  // from the parent session's projectPath (via parentSessionId on the target).
+  // Falls back to process.cwd() only when there's no parent.
   let target: Record<string, unknown>;
   if (args.resume && args.fork) {
     target = {
@@ -432,7 +444,7 @@ async function runVisibleMode(
     target = {
       kind: 'new',
       vendor: args.vendor,
-      cwd,
+      parentSessionId,
       ...(skipPersistSession && { skipPersistSession }),
     };
   }
@@ -443,14 +455,11 @@ async function runVisibleMode(
     clientMessageId: crypto.randomUUID(),
     settings,
   };
-
-  const parentSessionId = args.parentSessionId
-    || process.env.CRISPY_PARENT_SESSION
-    || `cli-${Date.now()}`;
   const provenance = {
     parentSessionId,
     autoClose: args.autoClose,
     visible: true,
+    background: args.background,
   };
 
   // State for event collection
@@ -461,12 +470,15 @@ async function runVisibleMode(
 
   // Install event handler BEFORE any RPCs — no event gap (fix #1)
   const done = new Promise<ResultStatus>((resolve) => {
-    const timer = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        resolve('timeout');
-      }
-    }, args.timeoutMs);
+    // timeoutMs === 0 means "no timeout" (wait indefinitely for turn completion)
+    const timer = args.timeoutMs > 0
+      ? setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            resolve('timeout');
+          }
+        }, args.timeoutMs)
+      : undefined;
 
     router.setEventHandler((evt) => {
       if (settled) return;
@@ -636,7 +648,7 @@ async function runDispatchMode(
   outputFile: string | null,
 ): Promise<void> {
   const parentSessionId = args.parentSessionId
-    || process.env.CRISPY_PARENT_SESSION
+    || process.env.CRISPY_SESSION_ID
     || `cli-${Date.now()}`;
 
   const dispatchParams: Record<string, unknown> = {
@@ -647,7 +659,6 @@ async function runDispatchMode(
     autoClose: args.autoClose,
     skipPersistSession: !args.persist,
     forceNew: !args.resume,
-    cwd: process.cwd(),
   };
 
   if (Object.keys(settings).length > 0) {

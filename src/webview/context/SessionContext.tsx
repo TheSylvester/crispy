@@ -113,6 +113,9 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
       if (event.type === 'session_list_upsert') {
         // JSON serialization converts Date→string, so it arrives as WireSessionInfo
         const upserted = event.session as unknown as WireSessionInfo;
+        // Defense-in-depth: skip system sessions (server already filters, but
+        // notifyUpsert can broadcast before the session is tagged)
+        if ((upserted as { sessionKind?: string }).sessionKind === 'system') return;
         setSessions((prev) => {
           const filtered = prev.filter((s) => s.sessionId !== upserted.sessionId);
           const next = [upserted, ...filtered];

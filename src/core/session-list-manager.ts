@@ -90,6 +90,16 @@ export function notifyStatusChange(sessionId: string, status: SessionChannelStat
   broadcast({ type: 'session_status_changed', sessionId, status });
 }
 
+/** Notify subscribers that a session channel should be opened (tab created) in the UI. */
+export function broadcastOpenChannel(sessionId: string, displayName?: string): void {
+  broadcast({ type: 'session_open_channel', sessionId, displayName });
+}
+
+/** Notify subscribers that a session channel should be closed (tab removed) in the UI. */
+export function broadcastCloseChannel(sessionId: string): void {
+  broadcast({ type: 'session_close_channel', sessionId });
+}
+
 /**
  * Re-read a session's metadata from disk and push an upsert if found.
  *
