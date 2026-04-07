@@ -8,7 +8,7 @@
  * @module core/input-command-service
  */
 
-import { readdirSync, readFileSync, existsSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { log } from './log.js';
@@ -71,6 +71,18 @@ export function setSkillRoot(path: string): void {
   log({ source: 'input-command-service', level: 'info', summary: `skill root set: ${path}` });
 }
 
+/** Extract description from YAML frontmatter in a markdown string. */
+function extractFrontmatterDescription(content: string, fallback: string): string {
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (fmMatch) {
+    const descMatch = fmMatch[1].match(/^description:\s*(.+)$/m);
+    if (descMatch) {
+      return descMatch[1].trim().replace(/^(['"])(.*)\1$/, '$2');
+    }
+  }
+  return fallback;
+}
+
 /**
  * Synchronously scan a skill directory for SKILL.md frontmatter.
  * Each subdirectory containing a SKILL.md is treated as one skill entry.
@@ -88,21 +100,42 @@ function scanSkillDir(root: string, source: SkillEntry['source']): SkillEntry[] 
   const results: SkillEntry[] = [];
 
   for (const dir of entries) {
-    let description = dir;
     try {
       const content = readFileSync(join(root, dir, 'SKILL.md'), 'utf-8');
-      const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-      if (fmMatch) {
-        const descMatch = fmMatch[1].match(/^description:\s*(.+)$/m);
-        if (descMatch) {
-          description = descMatch[1].trim().replace(/^(['"])(.*)\1$/, '$2');
-        }
-      }
+      const description = extractFrontmatterDescription(content, dir);
+      results.push({ id: dir, displayName: dir, description, source });
     } catch {
       continue;
     }
+  }
 
-    results.push({ id: dir, displayName: dir, description, source });
+  return results;
+}
+
+/**
+ * Synchronously scan a commands directory for flat .md files.
+ * Claude Code loads these from .claude/commands/ (project + global).
+ */
+function scanCommandDir(root: string, source: SkillEntry['source']): SkillEntry[] {
+  let files: string[];
+  try {
+    files = readdirSync(root).filter(f => f.endsWith('.md'));
+  } catch {
+    return [];
+  }
+
+  const results: SkillEntry[] = [];
+
+  for (const file of files) {
+    const cmdName = file.replace(/\.md$/, '');
+    let description = cmdName;
+    try {
+      const content = readFileSync(join(root, file), 'utf-8');
+      description = extractFrontmatterDescription(content, cmdName);
+    } catch {
+      // use fallback description
+    }
+    results.push({ id: cmdName, displayName: cmdName, description, source });
   }
 
   return results;
@@ -122,8 +155,8 @@ function scanBundledSkills(root: string): SkillEntry[] {
 }
 
 /**
- * Scan project-level and user-level skill directories.
- * Claude: .claude/skills/   Codex: .agents/skills/
+ * Scan project-level and user-level skill AND command directories.
+ * Claude: .claude/skills/, .claude/commands/   Codex: .agents/skills/
  *
  * Live sessions also register vendor commands via adapter RPCs, but this
  * disk scan provides immediate availability on the splash screen before
@@ -132,11 +165,19 @@ function scanBundledSkills(root: string): SkillEntry[] {
  * Not cached — CWD can change between sessions.
  */
 function scanProjectSkills(cwd: string, vendor?: string): SkillEntry[] {
-  const skillDirs = vendor === 'codex'
-    ? [join(cwd, '.agents', 'skills'), join(homedir(), '.agents', 'skills')]
-    : [join(cwd, '.claude', 'skills'), join(homedir(), '.claude', 'skills')];
+  const isCodex = vendor === 'codex';
+  const dotDir = isCodex ? '.agents' : '.claude';
+  const home = homedir();
+
+  // Skills: subdirectories with SKILL.md
+  const skillDirs = [join(cwd, dotDir, 'skills'), join(home, dotDir, 'skills')];
+
+  // Commands: flat .md files (Claude Code convention, not used by Codex)
+  const commandDirs = isCodex ? [] : [join(cwd, dotDir, 'commands'), join(home, dotDir, 'commands')];
+
   const seen = new Set<string>();
   const results: SkillEntry[] = [];
+
   for (const dir of skillDirs) {
     for (const entry of scanSkillDir(dir, 'vendor')) {
       if (!seen.has(entry.id)) {
@@ -145,6 +186,16 @@ function scanProjectSkills(cwd: string, vendor?: string): SkillEntry[] {
       }
     }
   }
+
+  for (const dir of commandDirs) {
+    for (const entry of scanCommandDir(dir, 'vendor')) {
+      if (!seen.has(entry.id)) {
+        seen.add(entry.id);
+        results.push(entry);
+      }
+    }
+  }
+
   return results;
 }
 
@@ -222,35 +273,12 @@ function scanInstalledPlugins(): SkillEntry[] {
     }
 
     // Scan commands/ (flat .md files, not subdirectories)
-    try {
-      const cmdDir = join(install.installPath, 'commands');
-      if (existsSync(cmdDir)) {
-        const files = readdirSync(cmdDir).filter(f => f.endsWith('.md'));
-        for (const file of files) {
-          const cmdName = file.replace(/\.md$/, '');
-          let description = cmdName;
-          try {
-            const content = readFileSync(join(cmdDir, file), 'utf-8');
-            const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-            if (fmMatch) {
-              const descMatch = fmMatch[1].match(/^description:\s*(.+)$/m);
-              if (descMatch) {
-                description = descMatch[1].trim().replace(/^(['"])(.*)\1$/, '$2');
-              }
-            }
-          } catch {
-            // use fallback description
-          }
-          results.push({
-            id: `${pluginName}:${cmdName}`,
-            displayName: `${pluginName}:${cmdName}`,
-            description,
-            source: 'vendor',
-          });
-        }
-      }
-    } catch {
-      // skip unreadable command dirs
+    for (const entry of scanCommandDir(join(install.installPath, 'commands'), 'vendor')) {
+      results.push({
+        ...entry,
+        id: `${pluginName}:${entry.id}`,
+        displayName: `${pluginName}:${entry.id}`,
+      });
     }
   }
 
