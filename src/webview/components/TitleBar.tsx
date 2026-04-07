@@ -254,8 +254,9 @@ export function TitleBar(): React.JSX.Element {
             aria-label="Equalize tab widths"
           >
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <rect x="1" y="3" width="5" height="10" rx="1" />
-              <rect x="10" y="3" width="5" height="10" rx="1" />
+              <rect x="1" y="3" width="3.5" height="10" rx="1" />
+              <rect x="6.25" y="3" width="3.5" height="10" rx="1" />
+              <rect x="11.5" y="3" width="3.5" height="10" rx="1" />
             </svg>
           </button>
         )}

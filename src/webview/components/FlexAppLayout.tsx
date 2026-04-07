@@ -176,6 +176,7 @@ export function FlexAppLayout(): React.JSX.Element {
   const tabSessionMapRef = useRef<TabSessionMap>(initialState.tabMap);
   const gitPanelSideRef = useRef(gitPanelSide);
   const prevActiveTabRef = useRef<string | null>(null);
+  const prevTabsetCountRef = useRef(modelRef.current.getRoot().getChildren().length);
 
   // Determine initial active tab from the restored model
   const [activeTabId, setActiveTabId] = useState<string | null>(() => {
@@ -425,6 +426,13 @@ export function FlexAppLayout(): React.JSX.Element {
   // --- onModelChange: detect tab activations and deletions ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleModelChange = useCallback((_model: Model, action: any) => {
+    // Auto-equalize when a new tabset (tab group) is created
+    const currentTabsetCount = modelRef.current.getRoot().getChildren().length;
+    if (currentTabsetCount > prevTabsetCountRef.current) {
+      equalizeLayout();
+    }
+    prevTabsetCountRef.current = currentTabsetCount;
+
     if (action.type === Actions.SELECT_TAB || action.type === Actions.ADD_NODE ||
         action.type === Actions.SET_ACTIVE_TABSET || action.type === Actions.MOVE_NODE) {
       // Find the selected tab in the currently active tabset (works across splits)
@@ -458,7 +466,7 @@ export function FlexAppLayout(): React.JSX.Element {
       }, 0);
       bump();
     }
-  }, [controller, ensureAtLeastOneTab, bump]);
+  }, [controller, ensureAtLeastOneTab, equalizeLayout, bump]);
 
   // --- Tab rendering customization ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
