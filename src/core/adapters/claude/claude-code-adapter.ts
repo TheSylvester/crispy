@@ -528,6 +528,11 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       if (settings.permissionMode !== undefined) {
         this.activeQuery.setPermissionMode(settings.permissionMode as PermissionMode);
       }
+      // Transition to active immediately so subscribers see 'streaming' status.
+      // Without this, the channel stays 'idle' until handleAssistantMessage fires
+      // at the END of the response, causing the status indicator to remain idle
+      // during the entire streaming period.
+      this.emitStatus('active');
       this.pendingSendCount++;
       this.inputQueue.enqueue(sdkMessage);
     } else {

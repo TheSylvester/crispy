@@ -246,11 +246,12 @@ export function _resetRegistry(): void {
 export function subscribe(
   channel: SessionChannel,
   subscriber: Subscriber,
+  opts?: { skipCatchup?: boolean },
 ): void {
   channel.subscribers.set(subscriber.id, subscriber);
 
   // Emit catchup with current state (skip 'unattached' — no useful state)
-  if (channel.state !== 'unattached') {
+  if (!opts?.skipCatchup && channel.state !== 'unattached') {
     try {
       const catchup: ChannelCatchupMessage = {
         type: 'catchup',
