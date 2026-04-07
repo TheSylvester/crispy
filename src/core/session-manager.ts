@@ -539,6 +539,7 @@ function wireLifecycleHooks(channel: SessionChannel): void {
         const currentId = channel.adapter?.sessionId ?? sessionId;
         refreshAndNotify(currentId);
         if (childMeta.autoClose) {
+          broadcastCloseChannel(currentId);
           closeSession(currentId);
           childSessions.delete(currentId);
           if (currentId !== sessionId) childSessions.delete(sessionId);
