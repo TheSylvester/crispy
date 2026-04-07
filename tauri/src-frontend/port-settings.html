@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #1e1e2e; color: #cdd6f4; margin: 0; padding: 20px;
+    font-size: 13px; user-select: none;
+  }
+  h2 { margin: 0 0 16px; font-size: 15px; font-weight: 600; color: #cba6f7; }
+  .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  label { opacity: 0.8; }
+  input {
+    width: 80px; padding: 4px 8px; border: 1px solid #45475a; border-radius: 4px;
+    background: #313244; color: #cdd6f4; font-size: 13px; text-align: center;
+  }
+  input:focus { outline: none; border-color: #cba6f7; }
+  .hint { font-size: 11px; opacity: 0.5; margin-bottom: 16px; }
+  .buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+  button {
+    padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer;
+    font-size: 12px; font-weight: 500;
+  }
+  .save { background: #cba6f7; color: #1e1e2e; }
+  .save:hover { background: #b4befe; }
+  .cancel { background: #45475a; color: #cdd6f4; }
+  .cancel:hover { background: #585b70; }
+  .saved { color: #a6e3a1; font-size: 12px; margin-top: 8px; text-align: center; display: none; }
+</style>
+</head>
+<body>
+  <h2>Daemon Port Settings</h2>
+  <div class="row">
+    <label>Native Port</label>
+    <input type="number" id="native" min="1024" max="65535" />
+  </div>
+  <div class="row">
+    <label>WSL Port</label>
+    <input type="number" id="wsl" min="1024" max="65535" />
+  </div>
+  <div class="hint">Changes take effect on next daemon restart.</div>
+  <div class="buttons">
+    <button class="cancel" id="cancelBtn">Cancel</button>
+    <button class="save" id="saveBtn">Save</button>
+  </div>
+  <div class="saved" id="msg">Saved!</div>
+  <script>
+    var ipc = window.__TAURI_INTERNALS__;
+
+    // Load current config on open
+    ipc.invoke('get_port_config').then(function(config) {
+      document.getElementById('native').value = config.nativePort;
+      document.getElementById('wsl').value = config.wslPort;
+    });
+
+    document.getElementById('cancelBtn').addEventListener('click', function() {
+      ipc.invoke('close_port_settings');
+    });
+
+    document.getElementById('saveBtn').addEventListener('click', function() {
+      var np = parseInt(document.getElementById('native').value);
+      var wp = parseInt(document.getElementById('wsl').value);
+      if (np < 1024 || np > 65535 || wp < 1024 || wp > 65535) return;
+      ipc.invoke('set_port_config', { nativePort: np, wslPort: wp }).then(function() {
+        var msg = document.getElementById('msg');
+        msg.style.display = 'block';
+        setTimeout(function() {
+          ipc.invoke('close_port_settings');
+        }, 800);
+      }).catch(function(e) {
+        // WebView2 suppresses alert() — show inline instead
+        var msg = document.getElementById('msg');
+        msg.style.color = '#f38ba8';
+        msg.textContent = 'Error: ' + e;
+        msg.style.display = 'block';
+      });
+    });
+  </script>
+</body>
+</html>

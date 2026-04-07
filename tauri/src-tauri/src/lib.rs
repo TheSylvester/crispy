@@ -179,6 +179,53 @@ fn logs_dir() -> PathBuf {
 }
 
 // ============================================================================
+// Port configuration — persisted to ~/.crispy/tauri.json
+// ============================================================================
+
+const DEFAULT_NATIVE_PORT: u16 = 3456;
+const DEFAULT_WSL_PORT: u16 = 3466;
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PortConfig {
+    #[serde(default = "default_native_port")]
+    native_port: u16,
+    #[serde(default = "default_wsl_port")]
+    wsl_port: u16,
+}
+
+fn default_native_port() -> u16 { DEFAULT_NATIVE_PORT }
+fn default_wsl_port() -> u16 { DEFAULT_WSL_PORT }
+
+impl Default for PortConfig {
+    fn default() -> Self {
+        Self {
+            native_port: DEFAULT_NATIVE_PORT,
+            wsl_port: DEFAULT_WSL_PORT,
+        }
+    }
+}
+
+fn read_port_config() -> PortConfig {
+    let path = crispy_root().join("tauri.json");
+    match std::fs::read_to_string(&path) {
+        Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
+        Err(_) => PortConfig::default(),
+    }
+}
+
+fn write_port_config(config: &PortConfig) -> Result<(), String> {
+    let path = crispy_root().join("tauri.json");
+    std::fs::create_dir_all(crispy_root())
+        .map_err(|e| format!("Failed to create config directory: {}", e))?;
+    let json = serde_json::to_string_pretty(config)
+        .map_err(|e| format!("Failed to serialize port config: {}", e))?;
+    std::fs::write(&path, json)
+        .map_err(|e| format!("Failed to write tauri.json: {}", e))?;
+    Ok(())
+}
+
+// ============================================================================
 // Health check
 // ============================================================================
 
@@ -279,6 +326,7 @@ fn cleanup_stale_run_files() {
 fn spawn_daemon(
     node_bin: &PathBuf,
     cli_js: &PathBuf,
+    port: u16,
 ) -> Result<u32, String> {
     // Ensure directories exist
     let log_dir = logs_dir();
@@ -302,6 +350,8 @@ fn spawn_daemon(
     let mut cmd = Command::new(node_bin);
     cmd.arg(cli_js)
         .arg("_daemon")
+        .arg("--port")
+        .arg(port.to_string())
         .current_dir(&home)
         .stdout(std::process::Stdio::from(log_file))
         .stderr(std::process::Stdio::from(log_stderr));
@@ -326,6 +376,7 @@ fn spawn_daemon(
 async fn start_or_attach_daemon(
     node_bin: &PathBuf,
     cli_js: &PathBuf,
+    port: u16,
 ) -> Result<(u16, bool, Option<u32>), String> {
     // Always kill any existing daemon and start fresh. The desktop app bundles
     // its own daemon runtime — attaching to a stale daemon from a previous
@@ -341,7 +392,7 @@ async fn start_or_attach_daemon(
     cleanup_stale_run_files();
 
     // Spawn new daemon
-    let pid = spawn_daemon(node_bin, cli_js)?;
+    let pid = spawn_daemon(node_bin, cli_js, port)?;
 
     // Wait for port file (up to 15s, polling every 200ms)
     let mut port: Option<u16> = None;
@@ -391,6 +442,21 @@ async fn start_or_attach_daemon(
 #[tauri::command]
 fn set_window_title(window: WebviewWindow, title: String) {
     let _ = window.set_title(&title);
+}
+
+/// Return the current port configuration from ~/.crispy/tauri.json.
+#[tauri::command]
+fn get_port_config() -> PortConfig {
+    read_port_config()
+}
+
+/// Save port configuration to ~/.crispy/tauri.json.
+/// Changes take effect on next daemon restart.
+#[tauri::command]
+fn set_port_config(native_port: u16, wsl_port: u16) -> Result<String, String> {
+    let config = PortConfig { native_port, wsl_port };
+    write_port_config(&config)?;
+    Ok("Port config saved — restart daemon to apply".to_string())
 }
 
 /// Query WSL lifecycle status — returns JSON with status, distro, port, error.
@@ -580,6 +646,9 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
                 }
             }
         }
+        "port_settings" => {
+            open_port_settings_window(app);
+        }
         "new_window" => {
             // Route through JS so the init script can capture window.location.pathname
             // (Tauri's window.url() doesn't track SPA pushState navigation).
@@ -675,6 +744,36 @@ fn start_update_checker(app_handle: AppHandle) {
 }
 
 // ============================================================================
+// Port settings window
+// ============================================================================
+
+fn open_port_settings_window(app: &AppHandle) {
+    // If already open, just focus it
+    if let Some(w) = app.get_webview_window("port-settings") {
+        let _ = w.set_focus();
+        return;
+    }
+
+    let _ = tauri::WebviewWindowBuilder::new(
+        app,
+        "port-settings",
+        tauri::WebviewUrl::App("port-settings.html".into()),
+    )
+    .title("Port Settings")
+    .inner_size(320.0, 240.0)
+    .resizable(false)
+    .center()
+    .build();
+}
+
+#[tauri::command]
+fn close_port_settings(app: AppHandle) {
+    if let Some(w) = app.get_webview_window("port-settings") {
+        let _ = w.close();
+    }
+}
+
+// ============================================================================
 // Tray
 // ============================================================================
 
@@ -696,6 +795,9 @@ fn build_tray(app: &AppHandle, we_own_daemon: bool) -> Result<(), String> {
     let separator = tauri::menu::PredefinedMenuItem::separator(app)
         .map_err(|e| format!("Failed to build separator: {}", e))?;
 
+    let port_settings_item = MenuItemBuilder::with_id("tray_port_settings", "Port Settings…").build(app)
+        .map_err(|e| format!("Failed to build menu item: {}", e))?;
+
     let quit_item = MenuItemBuilder::with_id("tray_quit", "Quit").build(app)
         .map_err(|e| format!("Failed to build menu item: {}", e))?;
 
@@ -703,6 +805,7 @@ fn build_tray(app: &AppHandle, we_own_daemon: bool) -> Result<(), String> {
         .item(&open_item)
         .item(&new_window_item)
         .item(&daemon_item)
+        .item(&port_settings_item)
         .item(&separator)
         .item(&quit_item)
         .build()
@@ -737,6 +840,9 @@ fn build_tray(app: &AppHandle, we_own_daemon: bool) -> Result<(), String> {
                     tauri::async_runtime::spawn(async move {
                         reconnect_daemon(&app_clone).await;
                     });
+                }
+                "tray_port_settings" => {
+                    open_port_settings_window(app);
                 }
                 "tray_quit" => {
                     {
@@ -895,7 +1001,7 @@ fn detect_wsl() -> Option<WslDetection> {
 
 /// Spawn a crispy-code daemon inside WSL.
 #[cfg(windows)]
-async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
+async fn spawn_wsl_daemon(distro: &str, wsl_port: u16) -> Result<u16, String> {
     // Clean up stale run files inside WSL before spawning.
     // Without this, the daemon may see a stale port file and exit early.
     let _ = wsl_command()
@@ -906,11 +1012,15 @@ async fn spawn_wsl_daemon(distro: &str) -> Result<u16, String> {
     // Use bash -lic (interactive login) so .bashrc is fully sourced — nvm, fnm, volta
     // etc. only initialize in interactive shells. Without -i, node isn't in PATH.
     // Redirect daemon output to a log file inside WSL for debugging.
+    let spawn_cmd = format!(
+        "mkdir -p ~/.crispy/logs ~/.crispy/run; export PATH=$HOME/.crispy/node_modules/.bin:$PATH; crispy _daemon --host 0.0.0.0 --port {} >> ~/.crispy/logs/wsl-daemon.log 2>&1",
+        wsl_port
+    );
     let mut cmd = wsl_command();
     cmd.args([
             "-d", distro,
             "-e", "bash", "-lic",
-            "mkdir -p ~/.crispy/logs ~/.crispy/run; export PATH=$HOME/.crispy/node_modules/.bin:$PATH; crispy _daemon --host 0.0.0.0 --port 3466 >> ~/.crispy/logs/wsl-daemon.log 2>&1",
+            &spawn_cmd,
         ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
@@ -1068,7 +1178,8 @@ fn start_wsl_daemon_manager(app_handle: AppHandle) {
         }
 
         let port = {
-            match spawn_wsl_daemon(&detection.distro).await {
+            let wsl_port = read_port_config().wsl_port;
+            match spawn_wsl_daemon(&detection.distro, wsl_port).await {
                 Ok(p) => p,
                 Err(e) => {
                     log::error!("Failed to spawn WSL daemon: {}", e);
@@ -1139,8 +1250,9 @@ async fn restart_daemon(app: &AppHandle) {
     // Kill current daemon if we own it
     shutdown_daemon(app);
 
-    // Spawn new one
-    match start_or_attach_daemon(&node_bin, &cli_js).await {
+    // Spawn new one — read port config for restart too
+    let port_config = read_port_config();
+    match start_or_attach_daemon(&node_bin, &cli_js, port_config.native_port).await {
         Ok((port, we_own, pid)) => {
             {
                 let state = app.state::<Mutex<AppState>>();
@@ -1246,7 +1358,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![set_window_title, create_window, switch_to_picker, get_wsl_status, install_crispy_in_wsl])
+        .invoke_handler(tauri::generate_handler![set_window_title, create_window, switch_to_picker, get_wsl_status, install_crispy_in_wsl, get_port_config, set_port_config, close_port_settings])
         .manage(Mutex::new(AppState {
             primary_daemon: None,
             wsl_daemon: None,
@@ -1354,7 +1466,8 @@ pub fn run() {
             let handle_for_spawn = app_handle.clone();
             let window_clone = window.clone();
             tauri::async_runtime::spawn(async move {
-                match start_or_attach_daemon(&node_bin, &cli_js).await {
+                let port_config = read_port_config();
+                match start_or_attach_daemon(&node_bin, &cli_js, port_config.native_port).await {
                     Ok((port, we_own, pid)) => {
                         // Update state
                         {

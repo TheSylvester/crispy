@@ -42,6 +42,10 @@ pub fn build_menu(app: &AppHandle) -> Result<Menu<Wry>, tauri::Error> {
             &MenuItemBuilder::with_id("switch_workspace", "Switch Workspace")
                 .build(app)?,
         )
+        .item(
+            &MenuItemBuilder::with_id("port_settings", "Port Settings…")
+                .build(app)?,
+        )
         .separator()
         .close_window()
         .build()?;
