@@ -748,8 +748,9 @@ fn start_update_checker(app_handle: AppHandle) {
 // ============================================================================
 
 fn open_port_settings_window(app: &AppHandle) {
-    // If already open, just focus it
+    // If already open, show and focus it
     if let Some(w) = app.get_webview_window("port-settings") {
+        let _ = w.show();
         let _ = w.set_focus();
         return;
     }
@@ -1523,10 +1524,12 @@ pub fn run() {
                     event: WindowEvent::CloseRequested { api, .. },
                     ..
                 } => {
-                    // Hide window instead of closing — tray persists
-                    api.prevent_close();
-                    if let Some(w) = app.get_webview_window(&label) {
-                        let _ = w.hide();
+                    // Only hide the main window (tray persists) — let dialogs close normally
+                    if label == "main" {
+                        api.prevent_close();
+                        if let Some(w) = app.get_webview_window(&label) {
+                            let _ = w.hide();
+                        }
                     }
                 }
                 RunEvent::ExitRequested { api, .. } => {

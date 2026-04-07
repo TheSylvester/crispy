@@ -46,36 +46,41 @@
   </div>
   <div class="saved" id="msg">Saved!</div>
   <script>
-    var ipc = window.__TAURI_INTERNALS__;
+    // Wait for Tauri IPC bridge — WebView2 may not have it ready at parse time
+    function init() {
+      var ipc = window.__TAURI_INTERNALS__;
+      if (!ipc) { setTimeout(init, 50); return; }
 
-    // Load current config on open
-    ipc.invoke('get_port_config').then(function(config) {
-      document.getElementById('native').value = config.nativePort;
-      document.getElementById('wsl').value = config.wslPort;
-    });
-
-    document.getElementById('cancelBtn').addEventListener('click', function() {
-      ipc.invoke('close_port_settings');
-    });
-
-    document.getElementById('saveBtn').addEventListener('click', function() {
-      var np = parseInt(document.getElementById('native').value);
-      var wp = parseInt(document.getElementById('wsl').value);
-      if (np < 1024 || np > 65535 || wp < 1024 || wp > 65535) return;
-      ipc.invoke('set_port_config', { nativePort: np, wslPort: wp }).then(function() {
-        var msg = document.getElementById('msg');
-        msg.style.display = 'block';
-        setTimeout(function() {
-          ipc.invoke('close_port_settings');
-        }, 800);
-      }).catch(function(e) {
-        // WebView2 suppresses alert() — show inline instead
-        var msg = document.getElementById('msg');
-        msg.style.color = '#f38ba8';
-        msg.textContent = 'Error: ' + e;
-        msg.style.display = 'block';
+      // Load current config on open
+      ipc.invoke('get_port_config').then(function(config) {
+        document.getElementById('native').value = config.nativePort;
+        document.getElementById('wsl').value = config.wslPort;
       });
-    });
+
+      document.getElementById('cancelBtn').addEventListener('click', function() {
+        ipc.invoke('close_port_settings');
+      });
+
+      document.getElementById('saveBtn').addEventListener('click', function() {
+        var np = parseInt(document.getElementById('native').value);
+        var wp = parseInt(document.getElementById('wsl').value);
+        if (np < 1024 || np > 65535 || wp < 1024 || wp > 65535) return;
+        ipc.invoke('set_port_config', { nativePort: np, wslPort: wp }).then(function() {
+          var msg = document.getElementById('msg');
+          msg.style.display = 'block';
+          setTimeout(function() {
+            ipc.invoke('close_port_settings');
+          }, 800);
+        }).catch(function(e) {
+          // WebView2 suppresses alert() — show inline instead
+          var msg = document.getElementById('msg');
+          msg.style.color = '#f38ba8';
+          msg.textContent = 'Error: ' + e;
+          msg.style.display = 'block';
+        });
+      });
+    }
+    init();
   </script>
 </body>
 </html>
