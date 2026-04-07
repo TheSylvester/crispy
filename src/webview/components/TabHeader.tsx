@@ -16,6 +16,7 @@ import { useSessionStatus } from '../hooks/useSessionStatus.js';
 import { useTabControllerOptional } from '../context/TabControllerContext.js';
 import { useIsActiveTab } from '../context/TabContainerContext.js';
 import { SessionSelector } from './session-selector/index.js';
+import { useTransport } from '../context/TransportContext.js';
 import { getSessionDisplayName } from '../utils/session-display.js';
 
 // ============================================================================
@@ -136,6 +137,7 @@ export function TabHeader(): React.JSX.Element {
   const { channelState } = useSessionStatus(effectiveSessionId);
   const tabController = useTabControllerOptional();
   const isActiveTab = useIsActiveTab();
+  const transport = useTransport();
   const dropdownContainerRef = useRef<HTMLDivElement>(null);
 
   const currentSession = useMemo(
@@ -181,12 +183,13 @@ export function TabHeader(): React.JSX.Element {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isActiveTab, toolPanelOpen, setToolPanelOpen, tabController]);
 
-  // Update document.title when active tab's session changes
+  // Update document.title and VS Code editor tab when active tab's session changes
   useEffect(() => {
     if (!isActiveTab) return;
     const label = currentSession ? getSessionDisplayName(currentSession) : 'Crispy';
     document.title = label;
-  }, [isActiveTab, currentSession]);
+    transport.postRaw?.({ kind: 'setTitle', title: label });
+  }, [isActiveTab, currentSession, transport]);
 
   // Click-outside to close session dropdown
   useEffect(() => {

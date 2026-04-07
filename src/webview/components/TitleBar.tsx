@@ -11,7 +11,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from '../context/SessionContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
-import { useTransport } from '../context/TransportContext.js';
 import { useEnvironment } from '../context/EnvironmentContext.js';
 import { useThemeKind, isLightTheme } from '../hooks/useThemeKind.js';
 import { ProjectsView } from './session-selector/index.js';
