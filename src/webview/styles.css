@@ -4666,19 +4666,10 @@ h2 {
   display: flex;
   flex-direction: column;
   z-index: 100;
-  opacity: 1;
-  transform: translateX(0);
-  transition:
-    opacity var(--sidebar-transition),
-    transform var(--sidebar-transition),
-    width var(--sidebar-transition);
-}
-
-/* Hidden state — driven by data attribute on .crispy-layout */
-[data-tool-panel="collapsed"] .crispy-tool-panel {
-  opacity: 0;
-  transform: translateX(8px);
-  pointer-events: none;
+  /* No transition — panel is conditionally rendered (mounts/unmounts),
+     so CSS transitions can't drive open/close. The layout shift is
+     animated by sibling elements (transcript margin-right, etc.).
+     Intermittent mount-time transition firing caused janky slide-in. */
 }
 
 /* Overlay mode — panel floats over content with shadow, above control panel */

@@ -37,12 +37,19 @@ export function TabLayout({ children }: { children: React.ReactNode }): React.JS
   const layoutRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(window.innerWidth);
 
-  // ResizeObserver for container width (used for panel breakpoint calculations)
+  // ResizeObserver for container width (used for panel breakpoint calculations).
+  // IMPORTANT: use borderBoxSize (full element width) not contentRect.width.
+  // contentRect excludes padding, and padding-right is animated when the tool
+  // panel opens. Reading contentRect during that transition causes a feedback
+  // loop: shrinking content → overlay breakpoint → padding removed → content
+  // grows → breakpoint un-triggers → rapid oscillation.
   useEffect(() => {
     const el = layoutRef.current;
     if (!el) return;
     const observer = new ResizeObserver(([entry]) => {
-      setContainerWidth(Math.round(entry.contentRect.width));
+      const bbs = entry.borderBoxSize?.[0];
+      const w = bbs ? Math.round(bbs.inlineSize) : Math.round(entry.contentRect.width);
+      setContainerWidth(w);
     });
     observer.observe(el);
     return () => observer.disconnect();
