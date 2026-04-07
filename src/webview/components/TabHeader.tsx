@@ -186,7 +186,9 @@ export function TabHeader(): React.JSX.Element {
   // Update document.title and VS Code editor tab when active tab's session changes
   useEffect(() => {
     if (!isActiveTab) return;
-    const label = currentSession ? getSessionDisplayName(currentSession) : 'Crispy';
+    const label = currentSession
+      ? `${truncateLabel(getSessionDisplayName(currentSession), 70)} — Crispy`
+      : 'Crispy';
     document.title = label;
     transport.postRaw?.({ kind: 'setTitle', title: label });
   }, [isActiveTab, currentSession, transport]);
