@@ -18,6 +18,7 @@ import { useAvailableCwds } from '../hooks/useAvailableCwds.js';
 import { fsPathToUrlPath } from '../../core/url-path-resolver.js';
 import { useTabControllerOptional } from '../context/TabControllerContext.js';
 import { useGitInfo } from '../hooks/useGitInfo.js';
+import { useConnectionState } from '../hooks/useConnectionState.js';
 // esbuild --loader:.svg=text imports the raw SVG markup as a string
 // @ts-expect-error — no type declarations for raw SVG import
 import crispyLogoSvg from '../../../media/crispy-icon.svg';
@@ -87,6 +88,25 @@ function GitBranchIcon(): React.JSX.Element {
       <circle cx="12" cy="5" r="2" />
       <path d="M12 7c0 2-2 3-6 4" />
     </svg>
+  );
+}
+
+/** Connection status indicator — only visible when disconnected or reconnecting */
+function ConnectionIndicator(): React.JSX.Element | null {
+  const state = useConnectionState();
+  if (state === 'connected' || state === 'connecting') return null;
+
+  const isReconnecting = state === 'reconnecting';
+  return (
+    <div
+      className={`crispy-titlebar__conn-status crispy-titlebar__conn-status--${state}`}
+      title={isReconnecting ? 'Reconnecting to daemon...' : 'Disconnected from daemon'}
+    >
+      <span className={`crispy-titlebar__conn-dot crispy-titlebar__conn-dot--${state}`} />
+      <span className="crispy-titlebar__conn-label">
+        {isReconnecting ? 'Reconnecting...' : 'Disconnected'}
+      </span>
+    </div>
   );
 }
 
@@ -240,6 +260,9 @@ export function TitleBar(): React.JSX.Element {
           )}
         </div>
       )}
+
+      {/* Connection status — only visible when disconnected/reconnecting */}
+      {envKind === 'websocket' && <ConnectionIndicator />}
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />

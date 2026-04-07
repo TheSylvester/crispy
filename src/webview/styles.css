@@ -3957,6 +3957,50 @@ h2 {
   }
 }
 
+/* --- Connection status indicator (WebSocket transport only) --- */
+
+.crispy-titlebar__conn-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.crispy-titlebar__conn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.crispy-titlebar__conn-dot--reconnecting {
+  background: var(--context-moderate, #dcdc9a);
+  box-shadow: 0 0 4px rgba(220, 220, 170, 0.5);
+  animation: crispy-dot-pulse-amber 1.5s ease-in-out infinite;
+}
+
+.crispy-titlebar__conn-dot--disconnected {
+  background: var(--vscode-testing-iconFailed, #f14c4c);
+  box-shadow: 0 0 4px rgba(241, 76, 76, 0.5);
+}
+
+.crispy-titlebar__conn-label {
+  color: var(--vscode-descriptionForeground, #888);
+  white-space: nowrap;
+}
+
+.crispy-titlebar__conn-status--reconnecting .crispy-titlebar__conn-label {
+  color: var(--context-moderate, #dcdc9a);
+}
+
+.crispy-titlebar__conn-status--disconnected .crispy-titlebar__conn-label {
+  color: var(--vscode-testing-iconFailed, #f14c4c);
+}
+
 /* --- New session split button (right) --- */
 
 .crispy-titlebar__new-split {

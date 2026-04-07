@@ -303,6 +303,24 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
   let connectionCounter = 0;
 
+  // ---- Ping/pong keepalive ----
+  const PING_INTERVAL_MS = 30_000;
+  const PONG_TIMEOUT_MS = 10_000;
+  const aliveClients = new Map<WebSocket, ReturnType<typeof setTimeout> | null>();
+
+  const pingInterval = setInterval(() => {
+    for (const client of wss.clients) {
+      if (client.readyState !== 1 /* OPEN */) continue;
+      // Set a pong deadline — terminate if no response
+      const timeout = setTimeout(() => {
+        console.warn(`[server] Client pong timeout, terminating`);
+        client.terminate();
+      }, PONG_TIMEOUT_MS);
+      aliveClients.set(client, timeout);
+      client.ping();
+    }
+  }, PING_INTERVAL_MS);
+
   wss.on('connection', (ws: WebSocket) => {
     const clientId = `ws-client-${++connectionCounter}`;
     console.log(`[server] Client connected: ${clientId}`);
@@ -310,6 +328,14 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     const handler = createClientConnection(clientId, (msg) => {
       if (ws.readyState === ws.OPEN) {
         ws.send(JSON.stringify(msg));
+      }
+    });
+
+    ws.on('pong', () => {
+      const timeout = aliveClients.get(ws);
+      if (timeout) {
+        clearTimeout(timeout);
+        aliveClients.set(ws, null);
       }
     });
 
@@ -321,6 +347,9 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
     ws.on('close', () => {
       console.log(`[server] Client disconnected: ${clientId}`);
+      const timeout = aliveClients.get(ws);
+      if (timeout) clearTimeout(timeout);
+      aliveClients.delete(ws);
       handler.dispose();
     });
 
@@ -432,6 +461,12 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
   // ---- Shutdown ----
   async function shutdown(): Promise<void> {
+    // 0. Stop ping/pong interval
+    clearInterval(pingInterval);
+    for (const [, timeout] of aliveClients) {
+      if (timeout) clearTimeout(timeout);
+    }
+    aliveClients.clear();
     // 1. Notify connected WebSocket clients
     for (const client of wss.clients) {
       if (client.readyState === 1 /* OPEN */) {
