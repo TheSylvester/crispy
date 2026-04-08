@@ -1080,14 +1080,11 @@ async fn provision_wsl_crispy(app: &AppHandle, distro: &str) -> Result<(), Strin
         win_path.replace('\'', "'\\''")
     );
 
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
     let mut cmd = tokio::process::Command::new("wsl.exe");
     cmd.args(["-d", distro, "-e", "bash", "-lic", &install_cmd]);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
+    cmd.creation_flags(CREATE_NO_WINDOW);
     let output = cmd
         .output()
         .await
