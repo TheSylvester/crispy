@@ -63,10 +63,16 @@ node -e "
     }
   "
 
-# Skip if runtime/ already exists and looks valid
+# Skip if runtime/ already exists, looks valid, AND version matches
 if [ -f "$RUNTIME_DIR/node" ] && [ -d "$RUNTIME_DIR/crispy/dist" ]; then
-  echo "runtime/ already exists — skipping. Delete src-tauri/runtime/ to rebuild."
-  exit 0
+  CACHED_VERSION="$(node -p "require('./$RUNTIME_DIR/crispy/package.json').version" 2>/dev/null || echo "")"
+  if [ "$CACHED_VERSION" = "$ROOT_VERSION" ]; then
+    echo "runtime/ already exists at v${ROOT_VERSION} — skipping. Delete src-tauri/runtime/ to rebuild."
+    exit 0
+  else
+    echo "runtime/ version mismatch (${CACHED_VERSION:-unknown} → ${ROOT_VERSION}), rebuilding..."
+    rm -rf "$RUNTIME_DIR"
+  fi
 fi
 
 # Clean previous partial builds

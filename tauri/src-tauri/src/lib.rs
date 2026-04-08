@@ -961,7 +961,7 @@ fn detect_wsl() -> Option<WslDetection> {
     let installed_version = if crispy_installed {
         wsl_command()
             .args(["-d", &distro, "-e", "bash", "-c",
-                   "node -e \"process.stdout.write(require(process.env.HOME+'/.crispy/node_modules/crispy-code/package.json').version)\" 2>/dev/null"])
+                   "node -e \"try{process.stdout.write(require(process.env.HOME+'/.crispy/node_modules/crispy/package.json').version)}catch{process.stdout.write(require(process.env.HOME+'/.crispy/node_modules/crispy-code/package.json').version)}\" 2>/dev/null"])
             .output()
             .ok()
             .and_then(|o| {
@@ -1065,10 +1065,10 @@ async fn provision_wsl_crispy(app: &AppHandle, distro: &str) -> Result<(), Strin
         .map_err(|e| format!("Failed to read runtime dir: {}", e))?
         .filter_map(|e| e.ok())
         .find(|e| {
-            e.file_name().to_string_lossy().starts_with("crispy-code-")
+            e.file_name().to_string_lossy().starts_with("crispy-")
                 && e.file_name().to_string_lossy().ends_with(".tgz")
         })
-        .ok_or_else(|| "No crispy-code tarball found in runtime bundle".to_string())?;
+        .ok_or_else(|| "No crispy tarball found in runtime bundle".to_string())?;
 
     let win_path = tarball.path().to_string_lossy().to_string();
     log::info!("Provisioning WSL crispy-code from: {}", win_path);

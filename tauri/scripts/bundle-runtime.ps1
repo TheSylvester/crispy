@@ -42,10 +42,16 @@ foreach ($ConfigFile in @("$TauriDir\package.json", "$TauriDir\src-tauri\tauri.c
     }
 }
 
-# Skip if runtime/ already exists and looks valid
+# Skip if runtime/ already exists, looks valid, AND version matches
 if ((Test-Path "$RuntimeDir\node.exe") -and (Test-Path "$RuntimeDir\crispy\dist")) {
-    Write-Host "runtime/ already exists - skipping. Delete src-tauri\runtime\ to rebuild."
-    exit 0
+    $CachedVersion = try { (Get-Content "$RuntimeDir\crispy\package.json" | ConvertFrom-Json).version } catch { "" }
+    if ($CachedVersion -eq $RootVersion) {
+        Write-Host "runtime/ already exists at v$RootVersion - skipping. Delete src-tauri\runtime\ to rebuild."
+        exit 0
+    } else {
+        Write-Host "runtime/ version mismatch ($CachedVersion -> $RootVersion), rebuilding..."
+        Remove-Item -Recurse -Force $RuntimeDir
+    }
 }
 
 # Clean previous partial builds
