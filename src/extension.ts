@@ -134,7 +134,9 @@ export function activate(context: vscode.ExtensionContext): void {
   registerPanelOpener((sessionId) => {
     const panel = createCrispyPanel(context, vscode.ViewColumn.Beside);
     sessionPanels.set(sessionId, panel);
-    panel.onDidDispose(() => sessionPanels.delete(sessionId));
+    panel.onDidDispose(() => {
+      if (sessionPanels.get(sessionId) === panel) sessionPanels.delete(sessionId);
+    });
     const msg = { kind: 'openSession', sessionId };
     const delays = [100, 500, 1500];
     for (const delay of delays) {

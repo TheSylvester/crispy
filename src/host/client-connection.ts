@@ -489,6 +489,11 @@ export function createClientConnection(
             mutable.rekey(result.sessionId);
           }
 
+          // If no rekey promise, the session ID is already final — open now
+          if (!result.rekeyPromise && provenance?.visible && !provenance.background) {
+            openVisibleSession(result.sessionId);
+          }
+
           // Handle rekey from rekeyPromise (pending → real ID)
           if (result.rekeyPromise) {
             result.rekeyPromise
@@ -795,10 +800,8 @@ export function createClientConnection(
             // In VS Code mode, close the native panel instead of forwarding
             // the event to the webview (which would only clear the FlexLayout tab)
             if (event.type === 'session_close_channel') {
-              try {
-                closePanelFn(event.sessionId);
-                return;
-              } catch { /* no panel closer — forward event to webview */ }
+              if (closePanelFn(event.sessionId)) return;
+              // No panel closer registered — forward event to webview for FlexLayout
             }
             sendFn({ kind: "event", sessionId: SESSION_LIST_CHANNEL_ID, event });
           },

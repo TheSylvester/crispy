@@ -21,10 +21,6 @@ export function registerPanelCloser(fn: PanelCloser): void {
   closer = fn;
 }
 
-export function hasPanelOpener(): boolean {
-  return opener !== null;
-}
-
 export function openPanel(sessionId: string): void {
   if (!opener) {
     throw new Error('No panel opener registered (headless mode?)');
@@ -32,6 +28,8 @@ export function openPanel(sessionId: string): void {
   opener(sessionId);
 }
 
-export function closePanel(sessionId: string): void {
-  if (closer) closer(sessionId);
+export function closePanel(sessionId: string): boolean {
+  if (!closer) return false;
+  closer(sessionId);
+  return true;
 }

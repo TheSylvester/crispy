@@ -486,7 +486,8 @@ export function FlexAppLayout(): React.JSX.Element {
       // If getTabName found real metadata, use it. Otherwise preserve the
       // node's current name — it may have been set from displayName at creation
       // time (e.g. broadcastOpenChannel carries the prompt text).
-      if (name !== sessionId.slice(0, 8) + '\u2026') {
+      const isIdFallback = name.endsWith('\u2026') && sessionId.startsWith(name.slice(0, -1));
+      if (!isIdFallback) {
         renderValues.content = name;
       } else if (node.getName() && node.getName() !== 'New Tab') {
         renderValues.content = node.getName();
