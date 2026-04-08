@@ -377,7 +377,7 @@ export function resolveSessionPrefix(sessionId: string): string {
  * resolveSessionPrefix() before lookup.
  */
 export function findSession(sessionId: string): SessionInfo | undefined {
-  const resolved = resolveSessionPrefix(sessionId);
+  const resolved = resolveSessionPrefix(resolveSessionId(sessionId));
   for (const { discovery } of adapters.values()) {
     const info = discovery.findSession(resolved);
     if (info) {
