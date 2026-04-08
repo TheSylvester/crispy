@@ -304,8 +304,10 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
   let connectionCounter = 0;
 
   // ---- Ping/pong keepalive ----
-  const PING_INTERVAL_MS = 30_000;
-  const PONG_TIMEOUT_MS = 10_000;
+  // Aggressive intervals so stale connections (e.g. browser refresh without
+  // close frame) are detected within ~20s instead of ~40s.
+  const PING_INTERVAL_MS = 15_000;
+  const PONG_TIMEOUT_MS = 5_000;
   const aliveClients = new Map<WebSocket, ReturnType<typeof setTimeout> | null>();
 
   const pingInterval = setInterval(() => {
@@ -325,11 +327,18 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     const clientId = `ws-client-${++connectionCounter}`;
     console.log(`[server] Client connected: ${clientId}`);
 
+    let handlerDisposed = false;
     const handler = createClientConnection(clientId, (msg) => {
       if (ws.readyState === ws.OPEN) {
         ws.send(JSON.stringify(msg));
       }
     });
+
+    function disposeOnce(): void {
+      if (handlerDisposed) return;
+      handlerDisposed = true;
+      handler.dispose();
+    }
 
     ws.on('pong', () => {
       const timeout = aliveClients.get(ws);
@@ -350,12 +359,13 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
       const timeout = aliveClients.get(ws);
       if (timeout) clearTimeout(timeout);
       aliveClients.delete(ws);
-      handler.dispose();
+      disposeOnce();
     });
 
     ws.on('error', (err) => {
       console.error(`[server] WebSocket error (${clientId}):`, err);
-      handler.dispose();
+      // Don't dispose here — 'close' always follows 'error' and handles cleanup.
+      // Disposing on error + close caused double-dispose bugs.
     });
   });
 

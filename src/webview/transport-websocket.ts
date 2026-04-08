@@ -54,6 +54,8 @@ export function createWebSocketTransport(url: string): SessionService & {
   let disposed = false;
   let reconnectAttempt = 0;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Monotonic generation counter — prevents stale close handlers from clobbering a newer connection. */
+  let wsGeneration = 0;
 
   /** Queue messages until the socket is open. */
   const sendQueue: string[] = [];
@@ -76,9 +78,21 @@ export function createWebSocketTransport(url: string): SessionService & {
   function connect(): void {
     if (disposed) return;
 
-    ws = new WebSocket(url);
+    // Close any lingering previous socket to avoid stale close events.
+    // The browser may not have fired close yet for the old instance.
+    if (ws) {
+      try { ws.close(); } catch { /* already closed */ }
+      ws = null;
+    }
 
-    ws.addEventListener('open', () => {
+    const gen = ++wsGeneration;
+    const socket = new WebSocket(url);
+    ws = socket;
+
+    socket.addEventListener('open', () => {
+      // Stale open from a superseded connection — ignore
+      if (gen !== wsGeneration) { try { socket.close(); } catch {} return; }
+
       isOpen = true;
       reconnectAttempt = 0;
       setConnectionState('connected');
@@ -90,12 +104,12 @@ export function createWebSocketTransport(url: string): SessionService & {
 
       // Flush queued messages (sent while disconnected/reconnecting)
       for (const queued of sendQueue) {
-        ws!.send(queued);
+        socket.send(queued);
       }
       sendQueue.length = 0;
     });
 
-    ws.addEventListener('message', (ev) => {
+    socket.addEventListener('message', (ev) => {
       let msg: Record<string, unknown>;
       try {
         msg = JSON.parse(String(ev.data)) as Record<string, unknown>;
@@ -126,11 +140,14 @@ export function createWebSocketTransport(url: string): SessionService & {
       }
     });
 
-    ws.addEventListener('error', () => {
+    socket.addEventListener('error', () => {
       // WebSocket errors don't carry detail — the close event follows immediately.
     });
 
-    ws.addEventListener('close', () => {
+    socket.addEventListener('close', () => {
+      // Stale close from a superseded connection — ignore
+      if (gen !== wsGeneration) return;
+
       isOpen = false;
       ws = null;
 
@@ -153,6 +170,7 @@ export function createWebSocketTransport(url: string): SessionService & {
   }
 
   function scheduleReconnect(): void {
+    if (reconnectTimer) return; // already scheduled
     setConnectionState('reconnecting');
     const delay = BACKOFF_MS[Math.min(reconnectAttempt, BACKOFF_MS.length - 1)];
     reconnectAttempt++;
@@ -407,6 +425,7 @@ export function createWebSocketTransport(url: string): SessionService & {
 
     dispose() {
       disposed = true;
+      wsGeneration++; // invalidate any in-flight connection events
       setConnectionState('disconnected');
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
