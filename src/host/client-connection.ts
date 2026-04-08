@@ -99,7 +99,7 @@ import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-rea
 // at extension activation time (crashes VS Code's Electron host).
 // import { transcribeAudio } from '../core/voice/index.js'; // <-- lazy below
 import { startCapture, stopCapture, cancelCapture, cleanupOrphanedVoiceFiles } from './audio-capture.js';
-import { openPanel as openPanelFn } from './panel-opener.js';
+import { openPanel as openPanelFn, closePanel as closePanelFn } from './panel-opener.js';
 import {
   createTerminal, writeTerminal, resizeTerminal,
   closeTerminal, listTerminals, attachTerminal, detachTerminal,
@@ -437,6 +437,19 @@ export function createClientConnection(
           background?: boolean;
         } | undefined;
 
+        // Open a visible child session in the UI — VS Code gets a native
+        // editor panel, browser/dev-server gets a FlexLayout tab via event.
+        function openVisibleSession(sessionId: string): void {
+          refreshAndNotify(sessionId);
+          try {
+            openPanelFn(sessionId);
+          } catch {
+            // No panel opener (dev-server/headless) — fall back to FlexLayout event
+            const promptText = typeof intent.content === 'string' ? intent.content : undefined;
+            broadcastOpenChannel(sessionId, promptText);
+          }
+        }
+
         // For existing sessions — may trigger vendor switch internally
         if (intent.target.kind === 'existing') {
           const targetSessionId = intent.target.sessionId;
@@ -484,9 +497,7 @@ export function createClientConnection(
                 if (provenance) {
                   rekeyChildSession(result.sessionId, realId);
                   if (provenance.visible && !provenance.background) {
-                    refreshAndNotify(realId);
-                    const promptText = typeof intent.content === 'string' ? intent.content : undefined;
-                    broadcastOpenChannel(realId, promptText);
+                    openVisibleSession(realId);
                   }
                 }
                 if (disposed) return; // transport-only ops below
@@ -524,11 +535,9 @@ export function createClientConnection(
           rekeyChildSession(pendingId, result.sessionId);
         }
 
-        // If no rekey promise, the session ID is already final — broadcast now
+        // If no rekey promise, the session ID is already final — open now
         if (!result.rekeyPromise && provenance?.visible && !provenance.background) {
-          refreshAndNotify(result.sessionId);
-          const promptText = typeof intent.content === 'string' ? intent.content : undefined;
-          broadcastOpenChannel(result.sessionId, promptText);
+          openVisibleSession(result.sessionId);
         }
 
         // Handle rekey from rekeyPromise (pending → real ID)
@@ -539,9 +548,7 @@ export function createClientConnection(
               if (provenance) {
                 rekeyChildSession(result.sessionId, realId);
                 if (provenance.visible && !provenance.background) {
-                  refreshAndNotify(realId);
-                  const promptText = typeof intent.content === 'string' ? intent.content : undefined;
-                  broadcastOpenChannel(realId, promptText);
+                  openVisibleSession(realId);
                 }
               }
               if (disposed) return; // transport-only ops below
@@ -785,6 +792,14 @@ export function createClientConnection(
         sessionListSub = {
           id: clientId,
           send(event) {
+            // In VS Code mode, close the native panel instead of forwarding
+            // the event to the webview (which would only clear the FlexLayout tab)
+            if (event.type === 'session_close_channel') {
+              try {
+                closePanelFn(event.sessionId);
+                return;
+              } catch { /* no panel closer — forward event to webview */ }
+            }
             sendFn({ kind: "event", sessionId: SESSION_LIST_CHANNEL_ID, event });
           },
         };
