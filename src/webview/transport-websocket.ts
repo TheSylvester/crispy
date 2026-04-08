@@ -261,27 +261,7 @@ export function createWebSocketTransport(url: string): SessionService & {
       return { ok: true };
     },
 
-    forkToNewPanel: async (params) => {
-      const qp = new URLSearchParams();
-      qp.set('forkFrom', params.fromSessionId);
-      if (params.atMessageId) qp.set('forkAt', params.atMessageId);
-      if (params.initialPrompt) qp.set('prompt', params.initialPrompt);
-      if (params.model) qp.set('model', params.model);
-      if (params.agencyMode) qp.set('agency', params.agencyMode);
-      if (params.bypassEnabled) qp.set('bypass', '1');
-      if (params.chromeEnabled) qp.set('chrome', '1');
-
-      if ((window as any).__CRISPY_CREATE_WINDOW__) {
-        // Tauri: direct IPC via init script bridge
-        await (window as any).__CRISPY_CREATE_WINDOW__(qp.toString());
-        return { ok: true };
-      }
-      // Dev server / browser fallback
-      const url = new URL(window.location.pathname, window.location.origin);
-      url.search = qp.toString();
-      window.open(url.toString(), '_blank');
-      return { ok: true };
-    },
+    // forkToNewPanel intentionally omitted — flex-layout handles fork via tabController
 
     subscribe: (sessionId) => {
       activeSubscriptions.add(sessionId);
