@@ -1080,6 +1080,7 @@ async fn provision_wsl_crispy(app: &AppHandle, distro: &str) -> Result<(), Strin
         win_path.replace('\'', "'\\''")
     );
 
+    #[allow(unused_imports)]
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
     let mut cmd = tokio::process::Command::new("wsl.exe");
