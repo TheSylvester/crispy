@@ -437,15 +437,21 @@ export function createClientConnection(
           background?: boolean;
         } | undefined;
 
+        if (provenance) {
+          log({ source: 'client-connection', level: 'info', summary: `sendTurn: provenance received — visible=${provenance.visible}, background=${!!provenance.background}, autoClose=${provenance.autoClose}, parent=${provenance.parentSessionId.slice(0, 12)}…` });
+        }
+
         // Open a visible child session in the UI — VS Code gets a native
         // editor panel, browser/dev-server gets a FlexLayout tab via event.
         function openVisibleSession(sessionId: string): void {
+          log({ source: 'client-connection', level: 'info', summary: `openVisibleSession: opening ${sessionId.slice(0, 12)}…` });
           refreshAndNotify(sessionId);
           try {
             openPanelFn(sessionId);
           } catch {
             // No panel opener (dev-server/headless) — fall back to FlexLayout event
             const promptText = typeof intent.content === 'string' ? intent.content : undefined;
+            log({ source: 'client-connection', level: 'info', summary: `openVisibleSession: broadcasting open_channel for ${sessionId.slice(0, 12)}…` });
             broadcastOpenChannel(sessionId, promptText);
           }
         }
@@ -547,8 +553,10 @@ export function createClientConnection(
 
         // Handle rekey from rekeyPromise (pending → real ID)
         if (result.rekeyPromise) {
+          log({ source: 'client-connection', level: 'debug', summary: `sendTurn: awaiting rekeyPromise for ${result.sessionId.slice(0, 12)}…` });
           result.rekeyPromise
             .then(realId => {
+              log({ source: 'client-connection', level: 'info', summary: `sendTurn: rekey resolved ${result.sessionId.slice(0, 12)}… → ${realId.slice(0, 12)}…, provenance=${!!provenance}, visible=${provenance?.visible}, bg=${provenance?.background}` });
               // Core provenance must always update, even after client disconnect (fix #2)
               if (provenance) {
                 rekeyChildSession(result.sessionId, realId);
