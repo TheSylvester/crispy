@@ -1,11 +1,20 @@
 {
-  "name": "crispy",
+  "name": "crispy-code",
   "displayName": "Crispy",
   "icon": "media/crispy-icon.png",
   "description": "An agent workbench for Claude Code and Codex — with local agent memory, multi-agent collaboration, and controls you can't get in a terminal",
   "version": "0.3.0-rc.16",
   "publisher": "the-sylvester",
   "license": "MIT",
+  "files": [
+    "dist/crispy-cli.js",
+    "dist/crispy-dispatch.js",
+    "dist/crispy-plugin/",
+    "dist/crispy-tracker.mjs",
+    "dist/node-sqlite3-wasm.wasm",
+    "dist/recall.js",
+    "dist/webview/"
+  ],
   "bin": {
     "crispy": "./dist/crispy-cli.js"
   },
