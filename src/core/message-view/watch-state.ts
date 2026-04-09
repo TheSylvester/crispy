@@ -16,6 +16,7 @@
  * @module message-view/watch-state
  */
 
+import { homedir } from 'node:os';
 import { log } from '../log.js';
 import { subscribeSession, sendTurn } from '../session-manager.js';
 import { unsubscribe, resolveApproval } from '../session-channel.js';
@@ -247,7 +248,7 @@ export async function createWatchedSession(
 
   const discordChannelId = post.id;
   const starterMessageId = post.messageId;
-  const sessionCwd = cwd ?? process.cwd();
+  const sessionCwd = cwd ?? homedir();
   const intent: TurnIntent = {
     target: { kind: 'new', vendor, cwd: sessionCwd },
     content: [{ type: 'text', text: promptText }],

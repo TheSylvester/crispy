@@ -21,7 +21,7 @@ import { initRecallIngest, shutdownRecallIngest } from './core/recall/ingest-hoo
 import { startRecallCatchup, stopEmbeddingBackfill } from './core/recall/catchup-manager.js';
 import { disposeEmbedder } from './core/recall/embedder.js';
 import { startIpcServer, getSocketPath } from './host/ipc-server.js';
-import { setHostSocketPath } from './core/session-manager.js';
+import { setHostSocketPath, setDefaultCwd } from './core/session-manager.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const bootStart = performance.now();
@@ -61,6 +61,7 @@ export function activate(context: vscode.ExtensionContext): void {
   done();
   context.subscriptions.push({ dispose: disposeAdapters });
 
+  setDefaultCwd(cwd);
   setHostSocketPath(getSocketPath(undefined, 'server'));
 
   const workspaceOpts = { workspaceCwd: cwd };

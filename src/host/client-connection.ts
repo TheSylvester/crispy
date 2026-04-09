@@ -664,7 +664,7 @@ export function createClientConnection(
         const vendor = (params.vendor as Vendor) ?? sessionInfo?.vendor;
         if (!vendor) throw new Error(`Cannot determine vendor for session "${sessionId}"`);
 
-        const cwd = (params.cwd as string) ?? sessionInfo?.projectPath ?? process.cwd();
+        const cwd = (params.cwd as string) ?? sessionInfo?.projectPath ?? homedir();
 
         const spec: SessionOpenSpec = {
           mode: 'fresh',

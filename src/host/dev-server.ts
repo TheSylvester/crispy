@@ -37,7 +37,7 @@ import { initRecallIngest, shutdownRecallIngest } from '../core/recall/ingest-ho
 import { startRecallCatchup, stopEmbeddingBackfill } from '../core/recall/catchup-manager.js';
 import { disposeEmbedder } from '../core/recall/embedder.js';
 import { startIpcServer, getSocketPath } from './ipc-server.js';
-import { setHostSocketPath } from '../core/session-manager.js';
+import { setHostSocketPath, setDefaultCwd } from '../core/session-manager.js';
 import { isLocalConnection, validateToken, parseCookie, cookieName, setTokenCookie, getOrCreateToken } from './auth.js';
 import { registerPanelOpener } from './panel-opener.js';
 
@@ -373,7 +373,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
   let done: () => void;
 
   done = phase('create agent dispatch');
-  const cwd = process.cwd();
+  const cwd = homedir();
   const dispatch = createAgentDispatch();
   done();
 
@@ -388,6 +388,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
   });
 
   done = phase('register adapters');
+  setDefaultCwd(cwd);
   registerAllAdapters({ cwd, hostType, dispatch, extensionPath });
   done();
 

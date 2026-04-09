@@ -37,6 +37,13 @@ export function setHostSocketPath(path: string): void { hostSocketPath = path; }
 let toolEnv: Record<string, string> = {};
 export function setToolEnv(env: Record<string, string>): void { toolEnv = env; }
 
+// ---------------------------------------------------------------------------
+// Default session CWD — set by host layer so core never calls process.cwd().
+// In VS Code this is the workspace folder; in daemon mode it's $HOME.
+// ---------------------------------------------------------------------------
+let defaultCwd = '';
+export function setDefaultCwd(cwd: string): void { defaultCwd = cwd; }
+
 import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, ChannelMessage, TurnIntent, TurnTarget, TurnSettings, SubagentEntriesResult, EphemeralTargetOptions, LocalPlugin } from './agent-adapter.js';
 import type { TranscriptEntry, MessageContent, Vendor, Usage } from './transcript.js';
 import type { SessionChannel, Subscriber, SubscriberMessage } from './session-channel.js';
@@ -360,6 +367,7 @@ export function _resetRegistry(): void {
   pending.clear();
   adapters.clear();
   toolEnv = {};
+  defaultCwd = '';
   invalidateSessionCache();
 }
 
@@ -1224,7 +1232,7 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
 
           const spec: SessionOpenSpec = {
             mode: 'hydrated',
-            cwd: normalizePath(sourceInfo?.projectPath ?? process.cwd()),
+            cwd: normalizePath(sourceInfo?.projectPath ?? defaultCwd),
             history,
             sourceVendor: currentVendor,
             sourceSessionId: sessionId,
@@ -1250,13 +1258,13 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
     }
 
     case 'new': {
-      // Resolve CWD: explicit cwd > parent session's projectPath > process.cwd()
+      // Resolve CWD: explicit cwd > parent session's projectPath > host default
       let cwd = intent.target.cwd;
       if (!cwd && intent.target.parentSessionId) {
         const parentInfo = findSession(intent.target.parentSessionId);
         if (parentInfo?.projectPath) cwd = normalizePath(parentInfo.projectPath);
       }
-      if (!cwd) cwd = normalizePath(process.cwd());
+      if (!cwd) cwd = normalizePath(defaultCwd);
 
       const created = createSession(
         intent.target.vendor as Vendor,
@@ -1468,7 +1476,7 @@ export async function dispatchChildSession(
 
   // Get parent's project path for cross-vendor cwd
   const parentInfo = findSession(parentSessionId);
-  const cwd = normalizePath(options.cwd ?? parentInfo?.projectPath ?? process.cwd());
+  const cwd = normalizePath(options.cwd ?? parentInfo?.projectPath ?? defaultCwd);
 
   // Common ephemeral options shared by all target kinds
   // openChannel implies persistence — can't view a session that isn't persisted

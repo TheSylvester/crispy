@@ -26,6 +26,7 @@ import type { DiscordProviderConfig } from './config.js';
 import type { AgentDispatch } from '../agent-dispatch-types.js';
 import type { Vendor } from '../transcript.js';
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { resolve as resolvePath } from 'node:path';
 import { normalizePath } from '../url-path-resolver.js';
 import {
@@ -149,7 +150,7 @@ function getForumForWorkspace(cwd: string): string | null {
 
 /** Get the forum channel ID for the primary workspace. */
 function getPrimaryForumChannelId(): string | null {
-  return getForumForWorkspace(workspaceCwd ?? process.cwd());
+  return getForumForWorkspace(workspaceCwd ?? homedir());
 }
 
 /** Find the workspace cwd that matches a session's projectPath. */
@@ -483,7 +484,7 @@ async function handleUserCreatedPost(threadId: string, forumChannelId: string, t
   if (!promptText) return;
 
   // Get workspace cwd for this forum
-  const cwd = getWorkspaceForForum(forumChannelId) ?? process.cwd();
+  const cwd = getWorkspaceForForum(forumChannelId) ?? workspaceCwd ?? homedir();
 
   // Spawn session via AgentDispatch RPC
   const receipt = await currentDispatch.sendTurn({
