@@ -152,6 +152,10 @@ CMD+=(--approval "$APPROVAL")
 [[ -n "$PERSIST" ]] && CMD+=("$PERSIST")
 [[ -n "$DEBUG" ]] && CMD+=("$DEBUG")
 
+# Create sidecar path for early session ID access
+SESSION_ID_SIDECAR="${OUTPUT_DIR}/crispy-agent-$(date +%s)-$$.session-id"
+CMD+=(--session-id-file "$SESSION_ID_SIDECAR")
+
 # Set up persistent output file
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_FILE="${OUTPUT_DIR}/crispy-agent-$(date +%s)-$$.log"
@@ -160,7 +164,7 @@ echo "[output_file: $OUTPUT_FILE]" >&2
 # Write prompt to a temp file for PROMPT_FILE passthrough
 PROMPT_TMPFILE=$(mktemp /tmp/crispy-agent-prompt-XXXXXX.md)
 echo "$PROMPT" > "$PROMPT_TMPFILE"
-trap 'rm -f "$PROMPT_TMPFILE" "$STDERR_FILE" 2>/dev/null' EXIT
+trap 'rm -f "$PROMPT_TMPFILE" "$STDERR_FILE" "$SESSION_ID_SIDECAR" 2>/dev/null' EXIT
 
 # Run crispy-dispatch, capture stdout and stderr separately
 STDERR_FILE=$(mktemp /tmp/crispy-agent-stderr-XXXXXX)
@@ -169,12 +173,14 @@ OUTPUT=$(PROMPT_FILE="$PROMPT_TMPFILE" "${CMD[@]}" 2>"$STDERR_FILE") || {
   STDERR_CONTENT=$(cat "$STDERR_FILE")
   rm -f "$STDERR_FILE"
 
-  # Still try to extract session ID from stderr metadata
+  # Try sidecar first, fall back to stderr metadata
   SESSION_ID=""
-  if [[ -n "$STDERR_CONTENT" ]]; then
+  if [[ -f "$SESSION_ID_SIDECAR" ]]; then
+    SESSION_ID=$(cat "$SESSION_ID_SIDECAR")
+  elif [[ -n "$STDERR_CONTENT" ]]; then
     SESSION_ID=$(echo "$STDERR_CONTENT" | grep -oP '"sessionId"\s*:\s*"\K[^"]+' | tail -1 || true)
-    echo "$STDERR_CONTENT" >&2
   fi
+  [[ -n "$STDERR_CONTENT" ]] && echo "$STDERR_CONTENT" >&2
 
   # Write whatever output we got
   if [[ -n "$OUTPUT" ]]; then
@@ -189,11 +195,15 @@ OUTPUT=$(PROMPT_FILE="$PROMPT_TMPFILE" "${CMD[@]}" 2>"$STDERR_FILE") || {
 STDERR_CONTENT=$(cat "$STDERR_FILE")
 rm -f "$STDERR_FILE"
 
-# Extract session ID from stderr JSON metadata
+# Extract session ID — prefer sidecar, fall back to stderr JSON metadata
 SESSION_ID=""
-if [[ -n "$STDERR_CONTENT" ]]; then
+if [[ -f "$SESSION_ID_SIDECAR" ]]; then
+  SESSION_ID=$(cat "$SESSION_ID_SIDECAR")
+elif [[ -n "$STDERR_CONTENT" ]]; then
   SESSION_ID=$(echo "$STDERR_CONTENT" | grep -oP '"sessionId"\s*:\s*"\K[^"]+' | tail -1 || true)
-  # Forward non-metadata stderr lines
+fi
+# Forward non-metadata stderr lines
+if [[ -n "$STDERR_CONTENT" ]]; then
   echo "$STDERR_CONTENT" | grep -v '^{' >&2 || true
 fi
 

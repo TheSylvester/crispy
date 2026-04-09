@@ -31,7 +31,7 @@ import {
 import { SETTINGS_CHANNEL_ID } from '../core/settings/events.js';
 import type { SettingsChangedGlobalEvent } from '../core/settings/events.js';
 import type { SettingsPatch, ProviderConfig } from '../core/settings/types.js';
-import { resolveApproval, subscribe, unsubscribe } from "../core/session-channel.js";
+import { resolveApproval, subscribe, unsubscribe, getChannel } from "../core/session-channel.js";
 import {
   listAllSessions,
   findSession,
@@ -46,6 +46,7 @@ import {
   resumeChildSession,
   registerChildSession,
   rekeyChildSession,
+  listChildSessions,
   resolveSessionId,
   resolveSessionPrefix,
   switchSession,
@@ -54,7 +55,6 @@ import type { ChildSessionOptions, ResumeChildOptions } from "../core/session-ma
 import {
   subscribeSessionList,
   unsubscribeSessionList,
-  broadcastOpenChannel,
   type SessionListSubscriber,
 } from "../core/session-list-manager.js";
 import { SESSION_LIST_CHANNEL_ID } from "../core/session-list-events.js";
@@ -391,6 +391,21 @@ export function createClientConnection(
         return allTurns.filter(t => t.turn >= from && t.turn <= to);
       }
 
+      case "listChildSessions": {
+        const parentId = params.sessionId as string;
+        if (!parentId) throw new Error('Missing sessionId (parent)');
+        const children = listChildSessions(parentId);
+        const enriched = children.map(child => {
+          const ch = getChannel(child.sessionId);
+          return {
+            ...child,
+            vendor: ch?.adapter?.vendor ?? 'unknown',
+            status: ch?.state ?? (child.closed ? 'closed' : 'unknown'),
+          };
+        });
+        return { sessions: enriched };
+      }
+
       case "subscribe": {
         const sessionId = params.sessionId as string;
 
@@ -437,22 +452,15 @@ export function createClientConnection(
           background?: boolean;
         } | undefined;
 
+        // Map legacy provenance sidecar → TurnIntent visibility fields.
+        // sendTurn handles the broadcast centrally; we just set intent flags here.
         if (provenance) {
-          log({ source: 'client-connection', level: 'info', summary: `sendTurn: provenance received — visible=${provenance.visible}, background=${!!provenance.background}, autoClose=${provenance.autoClose}, parent=${provenance.parentSessionId.slice(0, 12)}…` });
-        }
-
-        // Open a visible child session in the UI — VS Code gets a native
-        // editor panel, browser/dev-server gets a FlexLayout tab via event.
-        function openVisibleSession(sessionId: string): void {
-          log({ source: 'client-connection', level: 'info', summary: `openVisibleSession: opening ${sessionId.slice(0, 12)}…` });
-          refreshAndNotify(sessionId);
-          try {
-            openPanelFn(sessionId);
-          } catch {
-            // No panel opener (dev-server/headless) — fall back to FlexLayout event
-            const promptText = typeof intent.content === 'string' ? intent.content : undefined;
-            log({ source: 'client-connection', level: 'info', summary: `openVisibleSession: broadcasting open_channel for ${sessionId.slice(0, 12)}…` });
-            broadcastOpenChannel(sessionId, promptText);
+          if (provenance.visible && !provenance.background) {
+            intent.openChannel = true;
+            intent.autoClose = provenance.autoClose;
+          }
+          if (provenance.parentSessionId && !('parentSessionId' in intent.target)) {
+            (intent.target as Record<string, unknown>).parentSessionId = provenance.parentSessionId;
           }
         }
 
@@ -495,11 +503,6 @@ export function createClientConnection(
             mutable.rekey(result.sessionId);
           }
 
-          // If no rekey promise, the session ID is already final — open now
-          if (!result.rekeyPromise && provenance?.visible && !provenance.background) {
-            openVisibleSession(result.sessionId);
-          }
-
           // Handle rekey from rekeyPromise (pending → real ID)
           if (result.rekeyPromise) {
             result.rekeyPromise
@@ -507,9 +510,6 @@ export function createClientConnection(
                 // Core provenance must always update, even after client disconnect (fix #2)
                 if (provenance) {
                   rekeyChildSession(result.sessionId, realId);
-                  if (provenance.visible && !provenance.background) {
-                    openVisibleSession(realId);
-                  }
                 }
                 if (disposed) return; // transport-only ops below
                 mutable.rekey(realId);
@@ -546,23 +546,13 @@ export function createClientConnection(
           rekeyChildSession(pendingId, result.sessionId);
         }
 
-        // If no rekey promise, the session ID is already final — open now
-        if (!result.rekeyPromise && provenance?.visible && !provenance.background) {
-          openVisibleSession(result.sessionId);
-        }
-
         // Handle rekey from rekeyPromise (pending → real ID)
         if (result.rekeyPromise) {
-          log({ source: 'client-connection', level: 'debug', summary: `sendTurn: awaiting rekeyPromise for ${result.sessionId.slice(0, 12)}…` });
           result.rekeyPromise
             .then(realId => {
-              log({ source: 'client-connection', level: 'info', summary: `sendTurn: rekey resolved ${result.sessionId.slice(0, 12)}… → ${realId.slice(0, 12)}…, provenance=${!!provenance}, visible=${provenance?.visible}, bg=${provenance?.background}` });
               // Core provenance must always update, even after client disconnect (fix #2)
               if (provenance) {
                 rekeyChildSession(result.sessionId, realId);
-                if (provenance.visible && !provenance.background) {
-                  openVisibleSession(realId);
-                }
               }
               if (disposed) return; // transport-only ops below
               mutable.rekey(realId);
@@ -805,8 +795,16 @@ export function createClientConnection(
         sessionListSub = {
           id: clientId,
           send(event) {
-            // In VS Code mode, close the native panel instead of forwarding
-            // the event to the webview (which would only clear the FlexLayout tab)
+            // In VS Code mode, open/close native panels instead of forwarding
+            // to the webview (which would only affect FlexLayout tabs)
+            if (event.type === 'session_open_channel') {
+              try {
+                openPanelFn(event.sessionId);
+                return; // native panel opened — don't forward to webview
+              } catch {
+                // No panel opener (dev-server) — fall through to webview FlexLayout
+              }
+            }
             if (event.type === 'session_close_channel') {
               if (closePanelFn(event.sessionId)) return;
               // No panel closer registered — forward event to webview for FlexLayout

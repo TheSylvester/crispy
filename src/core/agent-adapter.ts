@@ -197,6 +197,18 @@ export interface TurnIntent {
   content: MessageContent;
   clientMessageId: string;
   settings: TurnSettings;
+  /** Open a visible tab/panel for this session. */
+  openChannel?: boolean;
+  /**
+   * Close the tab/panel when the session idles.
+   * Only meaningful when `openChannel` is true. Defaults to true.
+   *
+   * When a parent dispatches with `openChannel + autoClose`, two close paths fire:
+   * 1. wireLifecycleHooks at ~150ms (broadcastCloseChannel + closeSession)
+   * 2. dispatchChildSession idle handler at ~2000ms (cleanup → closeSession)
+   * This is safe: closeSession is idempotent (guards on sessions.has()).
+   */
+  autoClose?: boolean;
 }
 
 /**

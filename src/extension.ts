@@ -132,6 +132,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const sessionPanels = new Map<string, vscode.WebviewPanel>();
 
   registerPanelOpener((sessionId) => {
+    if (sessionPanels.has(sessionId)) return; // dedup guard — openPanelFn is not idempotent
     const panel = createCrispyPanel(context, vscode.ViewColumn.Beside);
     sessionPanels.set(sessionId, panel);
     panel.onDidDispose(() => {

@@ -79,6 +79,7 @@ interface CliArgs {
   resumeAt?: string;
   persist: boolean;
   approval: ApprovalMode;
+  sessionIdFile?: string;
   debug: boolean;
 }
 
@@ -188,6 +189,10 @@ function parseArgs(argv: string[]): CliArgs {
       }
       case '--debug':
         args.debug = true;
+        break;
+      case '--session-id-file':
+        args.sessionIdFile = requireValue('--session-id-file', argv, i);
+        i++;
         break;
       case '--help':
       case '-h':
@@ -559,6 +564,11 @@ async function runVisibleMode(
   const turnResult = await router.sendRpc('sendTurn', { intent, provenance }) as { sessionId: string };
   if (!sessionId) sessionId = turnResult.sessionId;
   if (args.debug) console.error(`[crispy-dispatch] Turn sent, sessionId: ${sessionId}`);
+
+  // Write session ID to sidecar file for early access by callers
+  if (args.sessionIdFile) {
+    try { writeFileSync(args.sessionIdFile, sessionId, 'utf8'); } catch { /* best-effort */ }
+  }
 
   // Subscribe to the session for events (existing sessions already subscribed)
   if (target.kind !== 'existing') {

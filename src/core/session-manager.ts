@@ -49,7 +49,7 @@ import {
   broadcastUserEntry as channelBroadcastUserEntry,
   broadcastEvent,
 } from './session-channel.js';
-import { refreshAndNotify, notifyStatusChange, broadcastCloseChannel } from './session-list-manager.js';
+import { refreshAndNotify, notifyStatusChange, broadcastCloseChannel, broadcastOpenChannel } from './session-list-manager.js';
 import { fireResponseComplete } from './lifecycle-hooks.js';
 import { log } from './log.js';
 import { isSystemSession, setSessionKind } from './activity-index.js';
@@ -134,6 +134,8 @@ export interface ChildSessionOptions {
   systemPrompt?: string;
   /** Whether this is a user-initiated or system-initiated session. */
   sessionKind?: 'user' | 'system';
+  /** Open a visible tab/panel for this child session. */
+  openChannel?: boolean;
   /** Called for each channel message — use for streaming log output. */
   onEntry?: (msg: ChannelMessage) => void;
 }
@@ -218,6 +220,7 @@ const childSessions = new Map<string, {
   parentSessionId: string;
   autoClose: boolean;
   visible: boolean;
+  closed?: boolean;
 }>();
 
 /** Check if a session was spawned by dispatchChildSession or registered as a child
@@ -234,7 +237,7 @@ export function isChildSession(sessionId: string): boolean {
  */
 export function registerChildSession(
   sessionId: string,
-  meta: { parentSessionId: string; autoClose: boolean; visible: boolean },
+  meta: { parentSessionId: string; autoClose: boolean; visible: boolean; closed?: boolean },
 ): void {
   childSessions.set(sessionId, meta);
 }
@@ -249,6 +252,31 @@ export function rekeyChildSession(oldId: string, newId: string): void {
     childSessions.delete(oldId);
     childSessions.set(newId, entry);
   }
+}
+
+/**
+ * List child sessions spawned by a parent session.
+ * Returns all children (including closed ones) so callers can read transcripts.
+ * Filters out pending:* IDs that haven't been rekeyed yet.
+ */
+export function listChildSessions(parentSessionId: string): Array<{
+  sessionId: string;
+  visible: boolean;
+  autoClose: boolean;
+  closed: boolean;
+}> {
+  const results: Array<{ sessionId: string; visible: boolean; autoClose: boolean; closed: boolean }> = [];
+  for (const [id, meta] of childSessions) {
+    if (meta.parentSessionId === parentSessionId && !id.startsWith('pending:')) {
+      results.push({
+        sessionId: id,
+        visible: meta.visible,
+        autoClose: meta.autoClose,
+        closed: !!meta.closed,
+      });
+    }
+  }
+  return results;
 }
 
 /**
@@ -547,8 +575,12 @@ function wireLifecycleHooks(channel: SessionChannel): void {
         if (childMeta.autoClose) {
           broadcastCloseChannel(currentId);
           closeSession(currentId);
-          childSessions.delete(currentId);
-          if (currentId !== sessionId) childSessions.delete(sessionId);
+          const meta1 = childSessions.get(currentId);
+          if (meta1) childSessions.set(currentId, { ...meta1, closed: true });
+          if (currentId !== sessionId) {
+            const meta2 = childSessions.get(sessionId);
+            if (meta2) childSessions.set(sessionId, { ...meta2, closed: true });
+          }
         }
       }, 150);
       return;
@@ -1293,6 +1325,26 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
     }
   }
 
+  // Visibility: broadcast open channel event so the UI creates a tab.
+  // Registration is handled by callers (dispatchChildSession sets childSessions
+  // directly; client-connection maps provenance to registerChildSession).
+  // sendTurn only broadcasts — single place for the event, no registration duplication.
+  if (intent.openChannel) {
+    const displayName = typeof intent.content === 'string'
+      ? intent.content.slice(0, 80)
+      : undefined;
+
+    if (rekeyPromise) {
+      rekeyPromise.then((realId) => {
+        refreshAndNotify(realId);
+        broadcastOpenChannel(realId, displayName);
+      }).catch(() => {});
+    } else {
+      refreshAndNotify(sessionId);
+      broadcastOpenChannel(sessionId, displayName);
+    }
+  }
+
   log({
     source: 'session',
     level: 'info',
@@ -1376,10 +1428,10 @@ export function closeSession(sessionId: string): void {
   log({ source: 'session', level: 'info', summary: `Session: destroyed ${sessionId.slice(0, 12)}…` });
   destroyChannel(sessionId);
   sessions.delete(sessionId);
-  // Clean up child session tracking to prevent unbounded map growth.
-  // closeSession() can be called directly (e.g. rosie-bot cleanup) outside
-  // the normal dispatch/resume cleanup paths that gate on autoClose.
-  childSessions.delete(sessionId);
+  // Mark child session as closed instead of deleting — closed children must
+  // remain queryable so callers (e.g. superthink) can read their transcripts.
+  const closeMeta = childSessions.get(sessionId);
+  if (closeMeta) childSessions.set(sessionId, { ...closeMeta, closed: true });
 }
 
 // ============================================================================
@@ -1419,8 +1471,9 @@ export async function dispatchChildSession(
   const cwd = normalizePath(options.cwd ?? parentInfo?.projectPath ?? process.cwd());
 
   // Common ephemeral options shared by all target kinds
+  // openChannel implies persistence — can't view a session that isn't persisted
   const ephemeral: EphemeralTargetOptions = {
-    skipPersistSession,
+    skipPersistSession: options.openChannel ? false : skipPersistSession,
     ...(options.mcpServers && { mcpServers: options.mcpServers }),
     ...(options.plugins && { plugins: options.plugins }),
     ...(options.env && { env: options.env }),
@@ -1470,6 +1523,8 @@ export async function dispatchChildSession(
     content: prompt,
     clientMessageId: crypto.randomUUID(),
     settings,
+    ...(options.openChannel && { openChannel: true }),
+    ...(autoClose !== undefined && { autoClose }),
   };
 
   // Allocate a deterministic pending ID up front so cleanup always has a
@@ -1538,11 +1593,12 @@ export async function dispatchChildSession(
             closeSession(id);
           }
         }
-        // Only remove child tracking when closing. For autoClose: false (no force),
+        // Mark child as closed when shutting down. For autoClose: false (no force),
         // the child stays alive for resumeChildSession — isChildSession() must
         // still recognize it to prevent lifecycle hooks from firing on it.
         if (shouldClose) {
-          childSessions.delete(id);
+          const cleanupMeta = childSessions.get(id);
+          if (cleanupMeta) childSessions.set(id, { ...cleanupMeta, closed: true });
         }
       }
     };
@@ -1657,7 +1713,7 @@ export async function dispatchChildSession(
           if (!autoClose && rekeyPromise) {
             rekeyPromise.then((realId) => {
               childSessions.delete(pendingId);
-              childSessions.set(realId, { parentSessionId, autoClose, visible: false });
+              childSessions.set(realId, { parentSessionId, autoClose, visible: !!options.openChannel });
               finalize(realId);
             }).catch(() => finalize(currentId));
           } else {
@@ -1692,7 +1748,7 @@ export async function dispatchChildSession(
 
     // Register the pending ID as a child session before sendTurn so cleanup
     // always has something to work with.
-    childSessions.set(pendingId, { parentSessionId, autoClose, visible: false });
+    childSessions.set(pendingId, { parentSessionId, autoClose, visible: !!options.openChannel });
 
     // Fire the turn with the explicit pending ID
     const promptLen = typeof prompt === 'string' ? prompt.length : Array.isArray(prompt) ? prompt.reduce((n, b) => n + ((b as { text?: string }).text?.length ?? 0), 0) : 0;
@@ -1704,7 +1760,7 @@ export async function dispatchChildSession(
         currentId = result.sessionId;
         // Migrate child tracking from pending to real ID
         childSessions.delete(pendingId);
-        childSessions.set(currentId, { parentSessionId, autoClose, visible: false });
+        childSessions.set(currentId, { parentSessionId, autoClose, visible: !!options.openChannel });
 
         // Handle pending->real ID re-keying
         if (result.rekeyPromise) {
@@ -1712,7 +1768,7 @@ export async function dispatchChildSession(
           result.rekeyPromise.then((realId) => {
             if (settled) return;
             childSessions.delete(currentId);
-            childSessions.set(realId, { parentSessionId, autoClose, visible: false });
+            childSessions.set(realId, { parentSessionId, autoClose, visible: !!options.openChannel });
             currentId = realId;
             // Persist session kind so system sessions stay hidden across restarts
             if (options.sessionKind) {
@@ -1842,7 +1898,8 @@ export async function resumeChildSession(
         }
       }
       if (autoClose) {
-        childSessions.delete(sessionId);
+        const closedMeta = childSessions.get(sessionId);
+        if (closedMeta) childSessions.set(sessionId, { ...closedMeta, closed: true });
       } else {
         // Update autoClose tracking for the next resume
         const entry = childSessions.get(sessionId);
