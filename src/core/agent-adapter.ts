@@ -209,6 +209,21 @@ export interface TurnIntent {
    * This is safe: closeSession is idempotent (guards on sessions.has()).
    */
   autoClose?: boolean;
+  /**
+   * Session participates in UI lifecycle events (sidebar, status changes, autoClose).
+   * Independent from `openChannel` — a session can be visible (sidebar) without
+   * opening a tab (e.g. `--background` mode).
+   */
+  visible?: boolean;
+  /**
+   * Parent session ID for child registration (IPC path only).
+   *
+   * When set, `sendTurn` registers this session as a child of the parent.
+   * Distinct from `target.parentSessionId` on `kind: 'new'` targets, which
+   * is used for CWD resolution only. `dispatchChildSession` manages its own
+   * child registration — only the IPC path (crispy-dispatch → sendTurn) sets this.
+   */
+  parentSessionId?: string;
 }
 
 /**

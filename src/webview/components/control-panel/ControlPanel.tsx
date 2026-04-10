@@ -627,8 +627,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             if (agencyMode) {
               dispatch({ type: 'SET_AGENCY_MODE', mode: agencyMode });
             }
-            // Sync bypass from session's explicit setting
-            dispatch({ type: 'SET_BYPASS', enabled: settings.allowDangerouslySkipPermissions });
+            // Sync bypass from session's explicit setting, or derive from permission mode
+            dispatch({ type: 'SET_BYPASS', enabled: settings.allowDangerouslySkipPermissions || settings.permissionMode === 'bypassPermissions' });
           } else {
             // Session has no permission mode — reset to user's saved default.
             // Use ref (not state) so the closure always sees the latest value.

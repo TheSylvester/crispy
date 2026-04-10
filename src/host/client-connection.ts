@@ -44,8 +44,6 @@ import {
   getRegisteredVendors,
   dispatchChildSession,
   resumeChildSession,
-  registerChildSession,
-  rekeyChildSession,
   listChildSessions,
   resolveSessionId,
   resolveSessionPrefix,
@@ -443,26 +441,8 @@ export function createClientConnection(
       case "sendTurn": {
         const intent = params.intent as TurnIntent;
 
-        // Optional provenance: marks this session as an IPC-dispatched child.
-        // Prevents Rosie from processing it while optionally allowing UI visibility.
-        const provenance = params.provenance as {
-          parentSessionId: string;
-          autoClose: boolean;
-          visible: boolean;
-          background?: boolean;
-        } | undefined;
-
-        // Map legacy provenance sidecar → TurnIntent visibility fields.
-        // sendTurn handles the broadcast centrally; we just set intent flags here.
-        if (provenance) {
-          if (provenance.visible && !provenance.background) {
-            intent.openChannel = true;
-            intent.autoClose = provenance.autoClose;
-          }
-          if (provenance.parentSessionId && !('parentSessionId' in intent.target)) {
-            (intent.target as Record<string, unknown>).parentSessionId = provenance.parentSessionId;
-          }
-        }
+        // Child registration is now handled by core's sendTurn when
+        // intent.parentSessionId is set. No provenance mapping needed.
 
         // For existing sessions — may trigger vendor switch internally
         if (intent.target.kind === 'existing') {
@@ -489,11 +469,6 @@ export function createClientConnection(
 
           const result = await sendTurn(intent, mutable.subscriber);
 
-          // Register provenance if this is an IPC-dispatched child
-          if (provenance) {
-            registerChildSession(result.sessionId, provenance);
-          }
-
           // If vendor switch happened, update subscription tracking
           if (result.sessionId !== targetSessionId) {
             subscriptions.delete(targetSessionId);
@@ -507,10 +482,6 @@ export function createClientConnection(
           if (result.rekeyPromise) {
             result.rekeyPromise
               .then(realId => {
-                // Core provenance must always update, even after client disconnect (fix #2)
-                if (provenance) {
-                  rekeyChildSession(result.sessionId, realId);
-                }
                 if (disposed) return; // transport-only ops below
                 mutable.rekey(realId);
                 const entry = subscriptions.get(result.sessionId);
@@ -531,29 +502,15 @@ export function createClientConnection(
         const pendingId = (params.pendingId as string) || `pending:${crypto.randomUUID()}`;
         const mutable = createMutableSubscriber(pendingId);
 
-        // Register provenance before sendTurn so the child is tracked immediately
-        if (provenance) {
-          registerChildSession(pendingId, provenance);
-        }
-
         const result = await sendTurn(intent, mutable.subscriber, pendingId);
         subscriptions.set(result.sessionId, {
           channel: result.channel, subscriber: mutable.subscriber,
         });
 
-        // Migrate provenance from pending to resolved ID
-        if (provenance && result.sessionId !== pendingId) {
-          rekeyChildSession(pendingId, result.sessionId);
-        }
-
         // Handle rekey from rekeyPromise (pending → real ID)
         if (result.rekeyPromise) {
           result.rekeyPromise
             .then(realId => {
-              // Core provenance must always update, even after client disconnect (fix #2)
-              if (provenance) {
-                rekeyChildSession(result.sessionId, realId);
-              }
               if (disposed) return; // transport-only ops below
               mutable.rekey(realId);
               const entry = subscriptions.get(result.sessionId);

@@ -1334,9 +1334,6 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
   }
 
   // Visibility: broadcast open channel event so the UI creates a tab.
-  // Registration is handled by callers (dispatchChildSession sets childSessions
-  // directly; client-connection maps provenance to registerChildSession).
-  // sendTurn only broadcasts — single place for the event, no registration duplication.
   if (intent.openChannel) {
     const displayName = typeof intent.content === 'string'
       ? intent.content.slice(0, 80)
@@ -1350,6 +1347,23 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
     } else {
       refreshAndNotify(sessionId);
       broadcastOpenChannel(sessionId, displayName);
+    }
+  }
+
+  // Child registration for IPC-dispatched sessions (crispy-dispatch → sendTurn).
+  // dispatchChildSession manages its own childSessions map — only the IPC path sets
+  // intent.parentSessionId, so this block won't fire for internal callers.
+  if (intent.parentSessionId) {
+    registerChildSession(sessionId, {
+      parentSessionId: intent.parentSessionId,
+      autoClose: !!intent.autoClose,
+      visible: !!intent.visible,
+    });
+
+    if (rekeyPromise) {
+      rekeyPromise.then((realId) => {
+        rekeyChildSession(sessionId, realId);
+      }).catch(() => {});
     }
   }
 
@@ -1469,7 +1483,7 @@ export async function dispatchChildSession(
     parentVendor,
     prompt,
     settings = {},
-    skipPersistSession = true,
+    skipPersistSession = false,
     autoClose = true,
     timeoutMs = 60_000,
   } = options;
@@ -1479,9 +1493,8 @@ export async function dispatchChildSession(
   const cwd = normalizePath(options.cwd ?? parentInfo?.projectPath ?? defaultCwd);
 
   // Common ephemeral options shared by all target kinds
-  // openChannel implies persistence — can't view a session that isn't persisted
   const ephemeral: EphemeralTargetOptions = {
-    skipPersistSession: options.openChannel ? false : skipPersistSession,
+    skipPersistSession,
     ...(options.mcpServers && { mcpServers: options.mcpServers }),
     ...(options.plugins && { plugins: options.plugins }),
     ...(options.env && { env: options.env }),

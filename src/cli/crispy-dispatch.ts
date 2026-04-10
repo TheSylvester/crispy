@@ -4,10 +4,9 @@
  * Connects to the running Crispy extension host over a Unix domain socket
  * (or Windows named pipe) and dispatches sessions via JSON-RPC.
  *
- * Three modes:
- *   1. dispatchChild (default) — hidden child session, collects text, exits
- *   2. sendTurn (--visible)    — real session visible in editor, streams events
- *   3. resumeChild (--resume)  — follow-up turn on existing child session
+ * Single unified mode: all dispatches go through `sendTurn` RPC with
+ * event streaming. Visibility, persistence, and child registration are
+ * controlled via TurnIntent fields (openChannel, visible, parentSessionId).
  *
  * Exit codes:
  *   0   completed
@@ -21,7 +20,7 @@
 
 import { connect, type Socket } from 'node:net';
 import { join, resolve } from 'node:path';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
 
 import {
   EXIT_OK, EXIT_APPROVAL, EXIT_TIMEOUT, EXIT_TRANSPORT, EXIT_USAGE,
@@ -101,7 +100,7 @@ function parseArgs(argv: string[]): CliArgs {
     visible: false,
     background: false,
     fork: false,
-    persist: false,
+    persist: true,
     approval: approvalEnv && ['fail', 'bypass', 'manual'].includes(approvalEnv)
       ? approvalEnv : 'fail',
     debug: process.env.CRISPY_DISPATCH_DEBUG === '1',
@@ -171,11 +170,10 @@ function parseArgs(argv: string[]): CliArgs {
         i++;
         break;
       case '--persist':
-        args.persist = true;
+        // No-op — persist is now the default. Kept for backwards compatibility.
         break;
       case '--no-persist':
-        // Deprecated alias — default is already ephemeral
-        if (args.debug) console.error('[crispy-dispatch] --no-persist is deprecated (ephemeral is the default). Use --persist to opt-in to persistence.');
+        args.persist = false;
         break;
       case '--approval': {
         const val = requireValue('--approval', argv, i) as ApprovalMode;
@@ -247,11 +245,11 @@ Vendor & Model:
   -m, --model <model>       Model override
 
 Behavior:
-  --open, --visible         Show session in editor UI (uses sendTurn instead of dispatchChild)
-  --background              Visible in sidebar but no tab opens (combine with --open)
+  --open, --visible         Show session in editor UI (tab + sidebar)
+  --background              Visible in sidebar but no tab opens
   --parent-session <id>     Parent session ID (default: $CRISPY_SESSION_ID)
   --timeout <ms>            Timeout in milliseconds (default: 600000)
-  --persist                 Save session to disk (default: ephemeral)
+  --no-persist              Don't save session to disk (default: persist)
   --no-auto-close           Keep session alive after completion
   --approval <mode>         Approval handling: fail (default), bypass, manual
   --debug                   Print diagnostics to stderr
@@ -394,13 +392,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    if (args.visible) {
-      await runVisibleMode(router, args, prompt!, settings, outputFile);
-    } else if (args.resume && !args.fork) {
-      await runResumeMode(router, args, prompt!, settings, outputFile);
-    } else {
-      await runDispatchMode(router, args, prompt!, settings, outputFile);
-    }
+    await runMode(router, args, prompt!, settings, outputFile);
   } catch (err) {
     emitResult({
       status: 'error',
@@ -415,10 +407,46 @@ async function main(): Promise<void> {
 }
 
 // ============================================================================
-// Mode: Visible (sendTurn — fix #1: event handler installed before RPC)
+// Unified Mode — all dispatches via sendTurn RPC with client-side event streaming
 // ============================================================================
 
-async function runVisibleMode(
+/** Format a channel message for log file streaming (matches server-side formatLogEntry). */
+function formatLogEntry(event: Record<string, unknown>): string | null {
+  const d = new Date();
+  const ts = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+
+  if (event.type === 'entry' && event.entry) {
+    const entry = event.entry as { type?: string; message?: { content?: unknown } };
+    if (entry.type === 'assistant' && entry.message) {
+      const content = entry.message.content;
+      if (Array.isArray(content)) {
+        const texts: string[] = [];
+        for (const block of content) {
+          if (block.type === 'text' && block.text) texts.push(block.text);
+          else if (block.type === 'tool_use') texts.push(`[tool: ${(block as { name?: string }).name ?? '?'}]`);
+        }
+        return texts.length > 0 ? `[${ts}] ${texts.join(' ')}` : null;
+      }
+      if (typeof content === 'string') return `[${ts}] ${content}`;
+    }
+    if (entry.type === 'result' && entry.message) {
+      const content = entry.message.content;
+      let text = '';
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === 'text' && block.text) text += block.text;
+        }
+      } else if (typeof content === 'string') {
+        text = content;
+      }
+      if (text) return `[${ts}] result: ${text.length > 200 ? text.slice(0, 200) + '…' : text}`;
+    }
+    return null;
+  }
+  return null;
+}
+
+async function runMode(
   router: MessageRouter,
   args: CliArgs,
   prompt: string,
@@ -454,32 +482,44 @@ async function runVisibleMode(
     };
   }
 
-  const intent = {
+  // Build intent with visibility fields directly — no provenance sidecar.
+  // visible and openChannel are independent:
+  //   --open:       visible=true, openChannel=true (tab + sidebar)
+  //   --background: visible=true, openChannel=false (sidebar only)
+  //   hidden:       neither set
+  const intent: Record<string, unknown> = {
     target,
     content: prompt,
     clientMessageId: crypto.randomUUID(),
     settings,
+    ...(args.visible && !args.background && { openChannel: true }),
+    ...(args.visible && { visible: true }),
+    ...(args.autoClose !== undefined && { autoClose: args.autoClose }),
+    ...(parentSessionId && { parentSessionId }),
   };
-  const provenance = {
-    parentSessionId,
-    autoClose: args.autoClose,
-    visible: true,
-    background: args.background,
-  };
+
+  // Write log header
+  if (outputFile) {
+    writeFileSync(outputFile,
+      `# crispy-dispatch vendor=${args.vendor} started=${new Date().toISOString()}\n---\n`,
+      'utf8');
+  }
 
   // State for event collection
   let sessionId = '';
   let text = '';
   let settled = false;
   let approvalInfo: { toolName: string; toolUseId: string } | null = null;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
-  // Install event handler BEFORE any RPCs — no event gap (fix #1)
+  // Install event handler BEFORE any RPCs — no event gap
   const done = new Promise<ResultStatus>((resolve) => {
     // timeoutMs === 0 means "no timeout" (wait indefinitely for turn completion)
     const timer = args.timeoutMs > 0
       ? setTimeout(() => {
           if (!settled) {
             settled = true;
+            if (idleTimer) clearTimeout(idleTimer);
             resolve('timeout');
           }
         }, args.timeoutMs)
@@ -518,17 +558,47 @@ async function runVisibleMode(
             text += content;
           }
         }
+
+        // Stream formatted entries to log file
+        if (outputFile) {
+          try {
+            const line = formatLogEntry(event);
+            if (line) appendFileSync(outputFile, line + '\n', 'utf8');
+          } catch { /* best-effort */ }
+        }
       }
 
-      // Turn complete
+      // Turn complete — two-tier detection:
+      // 1. turnComplete flag on idle → resolve immediately (authoritative)
+      // 2. Debounced idle fallback → resolve after 2s stable idle
       if (inner.type === 'status' && inner.status === 'idle') {
-        if (args.debug) console.error(`[crispy-dispatch] Session idle — turn complete`);
-        settled = true;
-        clearTimeout(timer);
-        resolve('completed');
+        if (args.debug) console.error(`[crispy-dispatch] Session idle (turnComplete: ${'turnComplete' in inner && inner.turnComplete})`);
+
+        if ('turnComplete' in inner && inner.turnComplete) {
+          // Authoritative completion — resolve immediately
+          settled = true;
+          if (idleTimer) clearTimeout(idleTimer);
+          clearTimeout(timer);
+          resolve('completed');
+        } else {
+          // Debounced fallback — wait 2s for stable idle
+          if (idleTimer) clearTimeout(idleTimer);
+          idleTimer = setTimeout(() => {
+            if (!settled) {
+              settled = true;
+              clearTimeout(timer);
+              resolve('completed');
+            }
+          }, 2000);
+        }
       }
 
-      // Approval required (fix #5)
+      // Non-idle status cancels the idle debounce timer
+      if (inner.type === 'status' && inner.status !== 'idle') {
+        if (idleTimer) { clearTimeout(idleTimer); idleTimer = undefined; }
+      }
+
+      // Approval required
       if (inner.type === 'status' && inner.status === 'awaiting_approval') {
         if (args.approval === 'fail') {
           approvalInfo = {
@@ -536,6 +606,7 @@ async function runVisibleMode(
             toolUseId: (inner.toolUseId as string) ?? '',
           };
           settled = true;
+          if (idleTimer) clearTimeout(idleTimer);
           clearTimeout(timer);
           resolve('approval_required');
         } else if (args.approval === 'manual') {
@@ -561,7 +632,7 @@ async function runVisibleMode(
   }
 
   // Send the turn
-  const turnResult = await router.sendRpc('sendTurn', { intent, provenance }) as { sessionId: string };
+  const turnResult = await router.sendRpc('sendTurn', { intent }) as { sessionId: string };
   if (!sessionId) sessionId = turnResult.sessionId;
   if (args.debug) console.error(`[crispy-dispatch] Turn sent, sessionId: ${sessionId}`);
 
@@ -578,7 +649,7 @@ async function runVisibleMode(
   // Wait for completion
   const status = await done;
 
-  // Write output file
+  // Write output file (bulk fallback — streaming writes happen above)
   if (outputFile && text) {
     try { writeFileSync(outputFile, text, 'utf8'); } catch { /* best-effort */ }
   }
@@ -601,113 +672,6 @@ async function runVisibleMode(
   emitResult(meta);
 
   process.exit(exitForStatus(status));
-}
-
-// ============================================================================
-// Mode: Resume (resumeChild)
-// ============================================================================
-
-async function runResumeMode(
-  router: MessageRouter,
-  args: CliArgs,
-  prompt: string,
-  settings: Record<string, unknown>,
-  outputFile: string | null,
-): Promise<void> {
-  const resumeParams: Record<string, unknown> = {
-    sessionId: args.resume,
-    prompt,
-    settings,
-    autoClose: args.autoClose,
-    timeoutMs: args.timeoutMs,
-  };
-  if (outputFile) {
-    resumeParams.logFile = outputFile;
-    writeFileSync(outputFile,
-      `# crispy-dispatch resume vendor=${args.vendor} started=${new Date().toISOString()}\n---\n`,
-      'utf8');
-  }
-
-  const result = await router.sendRpc('resumeChild', resumeParams) as {
-    sessionId: string; text: string; structured?: unknown;
-  } | null;
-
-  if (result) {
-    if (result.text) {
-      process.stdout.write(result.text);
-      if (!result.text.endsWith('\n')) process.stdout.write('\n');
-    }
-    // Log file is now streamed via onEntry — no all-at-once write needed
-    emitResult({ status: 'completed', sessionId: result.sessionId, textLength: result.text.length });
-    process.exit(EXIT_OK);
-  } else {
-    emitResult({ status: 'timeout', sessionId: args.resume!, textLength: 0 });
-    process.exit(EXIT_TIMEOUT);
-  }
-}
-
-// ============================================================================
-// Mode: Dispatch (dispatchChild — default)
-// ============================================================================
-
-async function runDispatchMode(
-  router: MessageRouter,
-  args: CliArgs,
-  prompt: string,
-  settings: Record<string, unknown>,
-  outputFile: string | null,
-): Promise<void> {
-  const parentSessionId = args.parentSessionId
-    || process.env.CRISPY_SESSION_ID
-    || `cli-${Date.now()}`;
-
-  const dispatchParams: Record<string, unknown> = {
-    parentSessionId,
-    vendor: args.vendor,
-    parentVendor: args.parentVendor ?? args.vendor,
-    prompt,
-    autoClose: args.autoClose,
-    skipPersistSession: !args.persist,
-    forceNew: !args.resume,
-  };
-
-  if (Object.keys(settings).length > 0) {
-    dispatchParams.settings = settings;
-  }
-  dispatchParams.timeoutMs = args.timeoutMs;
-
-  // Stream log entries to the output file as they arrive (instead of all-at-once at the end)
-  if (outputFile) {
-    dispatchParams.logFile = outputFile;
-    writeFileSync(outputFile,
-      `# crispy-dispatch vendor=${args.vendor} started=${new Date().toISOString()}\n---\n`,
-      'utf8');
-  }
-
-  // Fork mode with dispatchChild
-  if (args.resume && args.fork) {
-    dispatchParams.parentSessionId = args.resume;
-    dispatchParams.forceNew = false;
-  }
-
-  const result = await router.sendRpc('dispatchChild', dispatchParams) as {
-    sessionId: string;
-    text: string;
-    structured?: unknown;
-  } | null;
-
-  if (result) {
-    if (result.text) {
-      process.stdout.write(result.text);
-      if (!result.text.endsWith('\n')) process.stdout.write('\n');
-    }
-    // Log file is now streamed via onEntry — no all-at-once write needed
-    emitResult({ status: 'completed', sessionId: result.sessionId, textLength: result.text.length });
-    process.exit(EXIT_OK);
-  } else {
-    emitResult({ status: 'timeout', sessionId: '', textLength: 0 });
-    process.exit(EXIT_TIMEOUT);
-  }
 }
 
 main().catch((err) => {

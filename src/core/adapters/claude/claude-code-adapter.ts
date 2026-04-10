@@ -1343,6 +1343,13 @@ export class ClaudeAgentAdapter implements AgentAdapter {
           this.options.permissionMode = this._metadata.permissionMode as Options['permissionMode'];
           settingsChanged = true;
         }
+        // Derive bypass flag from permission mode — resumed sessions only have
+        // permissionMode from the SDK init, not the explicit bypass flag.
+        if (this.options.permissionMode === 'bypassPermissions'
+            && !this.options.allowDangerouslySkipPermissions) {
+          this.options.allowDangerouslySkipPermissions = true;
+          settingsChanged = true;
+        }
 
         // Emit settings_changed so ControlPanel picks up the corrected
         // model and permissionMode. Only emit when init actually backfilled
