@@ -755,11 +755,15 @@ export function createClientConnection(
             // In VS Code mode, open/close native panels instead of forwarding
             // to the webview (which would only affect FlexLayout tabs)
             if (event.type === 'session_open_channel') {
-              try {
-                openPanelFn(event.sessionId);
-                return; // native panel opened — don't forward to webview
-              } catch {
-                // No panel opener (dev-server) — fall through to webview FlexLayout
+              // autoClose children → FlexLayout background tab (observer mode)
+              // non-autoClose → native VS Code panel (full interactivity)
+              if (!event.autoClose) {
+                try {
+                  openPanelFn(event.sessionId);
+                  return; // native panel opened — don't forward to webview
+                } catch {
+                  // No panel opener (dev-server) — fall through to webview FlexLayout
+                }
               }
             }
             if (event.type === 'session_close_channel') {

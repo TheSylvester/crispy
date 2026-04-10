@@ -149,7 +149,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
   registerPanelCloser((sessionId) => {
     const panel = sessionPanels.get(sessionId);
-    if (panel) panel.dispose();
+    if (!panel) return false;
+    panel.dispose();
+    return true;
   });
 
   // Defer session list scan to next tick so the webview can initialize first

@@ -9,7 +9,7 @@
  */
 
 type PanelOpener = (sessionId: string) => void;
-type PanelCloser = (sessionId: string) => void;
+type PanelCloser = (sessionId: string) => boolean;
 let opener: PanelOpener | null = null;
 let closer: PanelCloser | null = null;
 
@@ -30,6 +30,5 @@ export function openPanel(sessionId: string): void {
 
 export function closePanel(sessionId: string): boolean {
   if (!closer) return false;
-  closer(sessionId);
-  return true;
+  return closer(sessionId);
 }
