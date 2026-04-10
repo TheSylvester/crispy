@@ -276,12 +276,16 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
     const el = scrollRef.current;
     if (!el) return;
 
-    clearProgrammaticGuard();
     setParkedState(true);
     savedScrollTopRef.current = null;
     el.scrollTop = el.scrollHeight;
+    // Guard against the async scroll event racing with content growth.
+    // Without this, React can render new entries (e.g. the user's own message)
+    // between the scrollTop assignment and the scroll handler, causing
+    // distFromBottom > UNPARK_THRESHOLD → spurious unpark.
+    beginProgrammaticGuard();
     syncFromElement(el, false);
-  }, [clearProgrammaticGuard, scrollRef, setParkedState, syncFromElement]);
+  }, [beginProgrammaticGuard, scrollRef, setParkedState, syncFromElement]);
 
   useEffect(() => {
     return () => {
