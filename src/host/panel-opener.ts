@@ -8,7 +8,7 @@
  * @module panel-opener
  */
 
-type PanelOpener = (sessionId: string) => void;
+type PanelOpener = (sessionId: string, options?: { autoClose?: boolean }) => void;
 type PanelCloser = (sessionId: string) => boolean;
 let opener: PanelOpener | null = null;
 let closer: PanelCloser | null = null;
@@ -21,11 +21,11 @@ export function registerPanelCloser(fn: PanelCloser): void {
   closer = fn;
 }
 
-export function openPanel(sessionId: string): void {
+export function openPanel(sessionId: string, options?: { autoClose?: boolean }): void {
   if (!opener) {
     throw new Error('No panel opener registered (headless mode?)');
   }
-  opener(sessionId);
+  opener(sessionId, options);
 }
 
 export function closePanel(sessionId: string): boolean {

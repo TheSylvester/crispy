@@ -133,9 +133,12 @@ export function activate(context: vscode.ExtensionContext): void {
   // Register panel opener/closer so CLI callers (ipc-server) can open/close VS Code panels
   const sessionPanels = new Map<string, vscode.WebviewPanel>();
 
-  registerPanelOpener((sessionId) => {
+  registerPanelOpener((sessionId, options) => {
     if (sessionPanels.has(sessionId)) return; // dedup guard — openPanelFn is not idempotent
-    const panel = createCrispyPanel(context, vscode.ViewColumn.Beside);
+    const column = options?.autoClose
+      ? { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }
+      : vscode.ViewColumn.Beside;
+    const panel = createCrispyPanel(context, column);
     sessionPanels.set(sessionId, panel);
     panel.onDidDispose(() => {
       if (sessionPanels.get(sessionId) === panel) sessionPanels.delete(sessionId);

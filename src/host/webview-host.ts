@@ -104,7 +104,7 @@ export function openCrispyPanel(
  */
 export function createCrispyPanel(
   context: vscode.ExtensionContext,
-  viewColumn: vscode.ViewColumn = vscode.ViewColumn.Beside,
+  viewColumn: vscode.ViewColumn | { viewColumn: vscode.ViewColumn; preserveFocus: boolean } = vscode.ViewColumn.Beside,
   options?: { workspaceCwd?: string },
 ): vscode.WebviewPanel {
   const panel = vscode.window.createWebviewPanel(
