@@ -51,6 +51,9 @@ window.__CRISPY_DESKTOP__ = true;
         }
     }, 300);
 
+    // Suppress the default WebView2 context menu (browser-like "More Tools > Share" etc.)
+    document.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+
     // Handle menu actions dispatched from Rust via window.eval().
     window.__CRISPY_MENU_ACTION__ = function(action) {
         if (action === 'new_window') {
