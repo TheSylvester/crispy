@@ -191,7 +191,11 @@ OUTPUT=$(PROMPT_FILE="$PROMPT_TMPFILE" "${CMD[@]}" 2>"$STDERR_FILE") || {
     echo "$OUTPUT"
     echo "$OUTPUT" > "$OUTPUT_FILE"
   fi
-  [[ -n "$SESSION_ID" ]] && echo "" && echo "[session_id: $SESSION_ID]"
+  if [[ -n "$SESSION_ID" ]]; then
+    echo ""
+    echo "[session_id: $SESSION_ID]"
+    echo "To resume: \$CRISPY_AGENT --resume $SESSION_ID \"Your follow-up message\""
+  fi
 
   exit $EXIT_CODE
 }
@@ -216,14 +220,19 @@ if [[ -n "$OUTPUT" ]]; then
   echo "$OUTPUT"
 fi
 
-# Output session ID (matching super-agent/codex-agent convention)
+# Output session ID and resume hint (helps LLMs continue the conversation)
 if [[ -n "$SESSION_ID" ]]; then
   echo ""
   echo "[session_id: $SESSION_ID]"
+  echo "To resume: \$CRISPY_AGENT --resume $SESSION_ID \"Your follow-up message\""
 fi
 
 # Write to persistent output file
 {
   [[ -n "$OUTPUT" ]] && echo "$OUTPUT"
-  [[ -n "$SESSION_ID" ]] && echo "" && echo "[session_id: $SESSION_ID]"
+  if [[ -n "$SESSION_ID" ]]; then
+    echo ""
+    echo "[session_id: $SESSION_ID]"
+    echo "To resume: \$CRISPY_AGENT --resume $SESSION_ID \"Your follow-up message\""
+  fi
 } > "$OUTPUT_FILE"

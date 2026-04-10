@@ -539,6 +539,10 @@ async function runMode(
         const newId = inner.sessionId as string;
         if (args.debug) console.error(`[crispy-dispatch] Session rekey: ${sessionId} → ${newId}`);
         sessionId = newId;
+        // Update sidecar so callers see the real ID, not the pending one
+        if (args.sessionIdFile) {
+          try { writeFileSync(args.sessionIdFile, newId, 'utf8'); } catch { /* best-effort */ }
+        }
       }
 
       // Collect assistant text from entry messages
