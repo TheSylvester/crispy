@@ -73,6 +73,8 @@ interface ControlPanelProps {
   onRegisterForkHandler?: (handler: (atMessageId: string) => void) => void;
   /** Register a handler for per-message rewind execution (fork-in-same-panel). */
   onRegisterRewindHandler?: (handler: (atMessageId: string) => void) => void;
+  /** When true, hide interactive input (chat, attachments) but keep settings-sync running. */
+  observerMode?: boolean;
 }
 
 /** Agency modes for keyboard cycling (excluding bypass-permissions). */
@@ -172,7 +174,7 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange, onScrollToBottom, entries, children, onRegisterForkHandler, onRegisterRewindHandler }, ref) {
+  function ControlPanel({ onForkHoverChange, onScrollToBottom, entries, children, onRegisterForkHandler, onRegisterRewindHandler, observerMode }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     const {
       setBypassEnabled: ctxSetBypassEnabled,
@@ -199,7 +201,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         (ref as React.RefObject<HTMLDivElement | null>).current = node;
       }
     }, [ref]);
-    const { renderMode, setRenderMode, toolViewOverride, setToolViewOverride, debugMode, setDebugMode, toolPanelAutoOpen, setToolPanelAutoOpen, autoReflect, setAutoReflect, badgeStyle, setBadgeStyle, bashBlockInIcons, setBashBlockInIcons, gitPanelSide, setGitPanelSide } = usePreferences();
+    const { renderMode, setRenderMode, toolViewOverride, setToolViewOverride, debugMode, setDebugMode, toolPanelAutoOpen, setToolPanelAutoOpen, autoReflect, setAutoReflect, badgeStyle, setBadgeStyle, markdownSkin, setMarkdownSkin, bashBlockInIcons, setBashBlockInIcons, gitPanelSide, setGitPanelSide } = usePreferences();
     const { settingsPinned, setSettingsPinned } = useTabPanel();
     const [rosiePanelPinned, setRosiePanelPinned] = useState(false);
     const rosieLogEntries = useRosieLog();
@@ -1153,7 +1155,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             <button className="crispy-control-panel__error-dismiss" onClick={clearSendError} aria-label="Dismiss error">×</button>
           </div>
         )}
-        {children ?? (
+        {observerMode ? null : children ?? (
           <>
             <AttachmentsRow
               images={state.attachedImages}
@@ -1221,6 +1223,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onToolPanelAutoOpenChange={setToolPanelAutoOpen}
               badgeStyle={badgeStyle}
               onBadgeStyleChange={setBadgeStyle}
+              markdownSkin={markdownSkin}
+              onMarkdownSkinChange={setMarkdownSkin}
               bashBlockInIcons={bashBlockInIcons}
               onBashBlockInIconsChange={setBashBlockInIcons}
               autoReflect={autoReflect}

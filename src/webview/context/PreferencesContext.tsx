@@ -24,6 +24,19 @@ export type ToolPanelMode = 'inspector' | 'viewport';
 /** Badge style for tool name pills. */
 export type BadgeStyle = 'solid' | 'tinted' | 'frosted';
 
+/** Visual skin for assistant markdown rendering. */
+export type MarkdownSkin =
+  | 'crispy'
+  | 't3'
+  | 'chatgpt'
+  | 'claude'
+  | 'gemini'
+  | 'cursor'
+  | 'copilot'
+  | 'deepseek'
+  | 'perplexity'
+  | 'terminal';
+
 interface Preferences {
   renderMode: RenderMode;
   sidebarCollapsed: boolean;
@@ -42,6 +55,8 @@ interface Preferences {
   condensedToolMode: boolean;
   /** Badge style for tool name pills. */
   badgeStyle: BadgeStyle;
+  /** Visual skin for assistant markdown rendering. */
+  markdownSkin: MarkdownSkin;
   /** In Icons mode, render Bash as a full block instead of condensed single-line. */
   bashBlockInIcons: boolean;
   /** Auto-invoke /reflect after creating implementation plans. */
@@ -64,6 +79,7 @@ interface PreferencesContextValue extends Preferences {
   setAutoReflect: (enabled: boolean) => void;
   setCondensedToolMode: (enabled: boolean) => void;
   setBadgeStyle: (style: BadgeStyle) => void;
+  setMarkdownSkin: (skin: MarkdownSkin) => void;
   setBashBlockInIcons: (enabled: boolean) => void;
   setGitPanelSide: (side: 'left' | 'right') => void;
 }
@@ -107,6 +123,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 
   const [renderMode, setRenderModeLocal] = useState<RenderMode>(getInitialRenderMode);
   const [badgeStyle, setBadgeStyleLocal] = useState<BadgeStyle>('frosted');
+  const [markdownSkin, setMarkdownSkinLocal] = useState<MarkdownSkin>('crispy');
   const [toolPanelAutoOpen, setToolPanelAutoOpenLocal] = useState(false);
   const [autoReflect, setAutoReflectLocal] = useState(true);
   const [bashBlockInIcons, setBashBlockInIconsLocal] = useState(true);
@@ -128,6 +145,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       const urlMode = new URLSearchParams(window.location.search).get('mode');
       if (!urlMode && prefs.renderMode) setRenderModeLocal(prefs.renderMode as RenderMode);
       if (prefs.badgeStyle) setBadgeStyleLocal(prefs.badgeStyle as BadgeStyle);
+      if (prefs.markdownSkin) setMarkdownSkinLocal(prefs.markdownSkin as MarkdownSkin);
       setToolPanelAutoOpenLocal(prefs.toolPanelAutoOpen);
       setAutoReflectLocal(prefs.autoReflect ?? true);
       setBashBlockInIconsLocal(prefs.bashBlockInIcons);
@@ -157,6 +175,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         const urlMode = new URLSearchParams(window.location.search).get('mode');
         if (!urlMode && prefs.renderMode) setRenderModeLocal(prefs.renderMode as RenderMode);
         if (prefs.badgeStyle) setBadgeStyleLocal(prefs.badgeStyle as BadgeStyle);
+        if (prefs.markdownSkin) setMarkdownSkinLocal(prefs.markdownSkin as MarkdownSkin);
         setToolPanelAutoOpenLocal(prefs.toolPanelAutoOpen);
         setAutoReflectLocal(prefs.autoReflect ?? true);
         setBashBlockInIconsLocal(prefs.bashBlockInIcons);
@@ -215,6 +234,11 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     persistPreference({ badgeStyle: style });
   }, [persistPreference]);
 
+  const setMarkdownSkin = useCallback((skin: MarkdownSkin) => {
+    setMarkdownSkinLocal(skin);
+    persistPreference({ markdownSkin: skin });
+  }, [persistPreference]);
+
   const setToolPanelAutoOpen = useCallback((enabled: boolean) => {
     setToolPanelAutoOpenLocal(enabled);
     persistPreference({ toolPanelAutoOpen: enabled });
@@ -252,6 +276,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     autoReflect,
     condensedToolMode,
     badgeStyle,
+    markdownSkin,
     bashBlockInIcons,
     rosieBotEnabled,
     setRenderMode,
@@ -266,6 +291,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setAutoReflect,
     setCondensedToolMode,
     setBadgeStyle,
+    setMarkdownSkin,
     setBashBlockInIcons,
     gitPanelSide,
     setGitPanelSide,
@@ -282,6 +308,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     autoReflect,
     condensedToolMode,
     badgeStyle,
+    markdownSkin,
     bashBlockInIcons,
     gitPanelSide,
     rosieBotEnabled,
@@ -297,6 +324,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setAutoReflect,
     setCondensedToolMode,
     setBadgeStyle,
+    setMarkdownSkin,
     setBashBlockInIcons,
     setGitPanelSide,
   ]);

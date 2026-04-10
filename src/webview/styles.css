@@ -1058,6 +1058,198 @@ h2 {
   background: var(--tint-soft);
 }
 
+/* ============================================================================
+ * Markdown Skins — visual style overrides for .prose
+ *
+ * Each skin overrides fonts, colors, spacing, and code styling.
+ * The default (crispy) skin uses the base .prose rules above.
+ * ============================================================================ */
+
+/* ── Skin: T3 Code ── */
+.prose.skin-t3 {
+  font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+.prose.skin-t3 a { color: #0ea5e9; text-decoration: underline; text-decoration-color: rgba(14,165,233,0.4); }
+.prose.skin-t3 blockquote { border-left: 2px solid rgba(255,255,255,0.15); color: rgba(245,245,245,0.55); font-style: normal; }
+.prose.skin-t3 code {
+  font-family: "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.04);
+}
+.prose.skin-t3 .md-code-block { border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; background: rgba(255,255,255,0.04); }
+.prose.skin-t3 .md-code-block code { font-size: 14px; }
+.prose.skin-t3 th, .prose.skin-t3 td { border-color: rgba(255,255,255,0.06); }
+.prose.skin-t3 th { background: rgba(255,255,255,0.03); }
+
+/* ── Skin: ChatGPT ── */
+.prose.skin-chatgpt {
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-feature-settings: "palt";
+}
+.prose.skin-chatgpt a { color: #60a5fa; text-decoration: underline; text-decoration-color: rgba(96,165,250,0.4); }
+.prose.skin-chatgpt blockquote { border-left: 3px solid #4b5563; color: #9ca3af; font-style: normal; }
+.prose.skin-chatgpt code {
+  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #2f2f2f;
+  color: #eab38a;
+}
+.prose.skin-chatgpt .md-code-block { border-radius: 8px; background: #171717; border: none; }
+.prose.skin-chatgpt .md-code-block code { font-size: 14px; color: inherit; background: none; }
+.prose.skin-chatgpt th, .prose.skin-chatgpt td { border-color: #374151; }
+.prose.skin-chatgpt th { background: #2f2f2f; }
+
+/* ── Skin: Claude.ai ── */
+.prose.skin-claude {
+  font-family: 'Source Serif 4', 'Literata', ui-serif, Georgia, Cambria, 'Times New Roman', serif;
+}
+.prose.skin-claude h2, .prose.skin-claude h3 { font-family: 'Literata', 'Source Serif 4', Georgia, serif; }
+.prose.skin-claude a { color: #da7756; text-decoration: underline; text-decoration-color: rgba(218,119,86,0.4); }
+.prose.skin-claude blockquote { border-left: 3px solid #ae5630; color: #9a9893; font-style: normal; }
+.prose.skin-claude code {
+  font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.08);
+}
+.prose.skin-claude .md-code-block { border-radius: 6px; background: #1f1e1b; border: 1px solid rgba(255,255,255,0.06); }
+.prose.skin-claude .md-code-block code { font-size: 13.5px; background: none; }
+.prose.skin-claude th, .prose.skin-claude td { border-color: rgba(255,255,255,0.08); }
+.prose.skin-claude th { background: rgba(255,255,255,0.04); }
+
+/* ── Skin: Gemini ── */
+.prose.skin-gemini {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+.prose.skin-gemini a { color: #8ab4f8; text-decoration: none; }
+.prose.skin-gemini a:hover { text-decoration: underline; }
+.prose.skin-gemini blockquote { border-left: 3px solid #5f6368; color: #9aa0a6; font-style: normal; }
+.prose.skin-gemini code {
+  font-family: 'Roboto Mono', 'Fira Code', ui-monospace, monospace;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #303134;
+}
+.prose.skin-gemini .md-code-block { border-radius: 8px; background: #1e1f20; border: none; }
+.prose.skin-gemini .md-code-block code { font-size: 14px; background: none; }
+.prose.skin-gemini th, .prose.skin-gemini td { border: none; border-bottom: 1px solid #5f6368; }
+.prose.skin-gemini th { font-weight: 600; border-bottom-width: 2px; background: transparent; }
+
+/* ── Skin: Cursor ── */
+.prose.skin-cursor {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.prose.skin-cursor a { color: #4da6ff; text-decoration: none; }
+.prose.skin-cursor a:hover { text-decoration: underline; }
+.prose.skin-cursor blockquote { border-left: 3px solid #3e3e3e; color: #858585; font-style: normal; }
+.prose.skin-cursor code {
+  font-family: 'Fira Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #2d2d30;
+}
+.prose.skin-cursor .md-code-block { border-radius: 6px; background: #1a1a1a; border: 1px solid #333333; }
+.prose.skin-cursor .md-code-block code { font-size: 12px; background: none; }
+.prose.skin-cursor th, .prose.skin-cursor td { border-color: #333333; padding: 6px 10px; }
+.prose.skin-cursor th { background: #252526; }
+
+/* ── Skin: Copilot ── */
+.prose.skin-copilot {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+.prose.skin-copilot a { color: #3794ff; text-decoration: none; }
+.prose.skin-copilot a:hover { text-decoration: underline; }
+.prose.skin-copilot blockquote { border-left: 3px solid #404040; color: #969696; font-style: normal; }
+.prose.skin-copilot code {
+  font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #1e1e1e;
+}
+.prose.skin-copilot .md-code-block { border-radius: 6px; background: #1e1e1e; border: 1px solid #3c3c3c; }
+.prose.skin-copilot .md-code-block code { font-size: 12px; background: none; }
+.prose.skin-copilot th, .prose.skin-copilot td { border-color: #3c3c3c; padding: 6px 10px; }
+.prose.skin-copilot th { background: #1e1e1e; }
+
+/* ── Skin: DeepSeek ── */
+.prose.skin-deepseek {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+}
+.prose.skin-deepseek a { color: #4d6bfe; text-decoration: underline; text-decoration-color: rgba(77,107,254,0.4); }
+.prose.skin-deepseek blockquote { border-left: 3px solid #4d6bfe; color: #8e8e8e; font-style: normal; }
+.prose.skin-deepseek code {
+  font-family: 'Fira Code', 'Source Code Pro', 'JetBrains Mono', Consolas, monospace;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #2c2d33;
+}
+.prose.skin-deepseek .md-code-block { border-radius: 6px; background: #191a1e; border: 1px solid #2c2d33; }
+.prose.skin-deepseek .md-code-block code { font-size: 13.5px; background: none; }
+.prose.skin-deepseek th, .prose.skin-deepseek td { border-color: #2c2d33; }
+.prose.skin-deepseek th { background: #282930; }
+
+/* ── Skin: Perplexity ── */
+.prose.skin-perplexity {
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+.prose.skin-perplexity a { color: #20b8cd; text-decoration: none; }
+.prose.skin-perplexity a:hover { text-decoration: underline; }
+.prose.skin-perplexity blockquote { border-left: 3px solid #20b8cd; color: #8a8a8a; font-style: normal; }
+.prose.skin-perplexity code {
+  font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #242424;
+}
+.prose.skin-perplexity .md-code-block { border-radius: 8px; background: #282c34; border: 1px solid #3a3a3a; }
+.prose.skin-perplexity .md-code-block code { font-size: 14px; background: none; }
+.prose.skin-perplexity th, .prose.skin-perplexity td { border-color: #3a3a3a; }
+.prose.skin-perplexity th { background: #242424; }
+
+/* ── Skin: Terminal ── */
+.prose.skin-terminal {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Hack', Consolas, monospace;
+  color: rgba(51,255,51,0.9);
+  text-shadow: 0 0 4px rgba(51,255,51,0.3);
+  position: relative;
+}
+.prose.skin-terminal h2, .prose.skin-terminal h3 {
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-bottom-color: rgba(51,255,51,0.3);
+}
+.prose.skin-terminal a { color: #00aaff; text-decoration: underline; }
+.prose.skin-terminal blockquote { border-left: 2px solid #33ff33; color: #676767; font-style: normal; }
+.prose.skin-terminal code {
+  font-family: inherit;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: #373737;
+  color: #cb4a6e;
+}
+.prose.skin-terminal .md-code-block {
+  border-radius: 4px;
+  background: #0a0a0a;
+  border: 1px solid rgba(51,255,51,0.15);
+}
+.prose.skin-terminal .md-code-block code { font-size: 13px; color: inherit; background: none; text-shadow: inherit; }
+.prose.skin-terminal th, .prose.skin-terminal td { border-color: rgba(51,255,51,0.2); padding: 4px 10px; }
+.prose.skin-terminal th { background: rgba(51,255,51,0.05); }
+.prose.skin-terminal strong { color: #ffff33; }
+.prose.skin-terminal em { color: #00d787; }
+/* CRT scanline overlay */
+.prose.skin-terminal::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,0.08) 0px, transparent 1px, transparent 3px);
+  z-index: 1;
+}
+
 /* --- User Text — right-aligned bubble --- */
 .user-text {
   margin: 4px 0;

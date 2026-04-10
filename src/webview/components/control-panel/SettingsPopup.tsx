@@ -15,7 +15,7 @@ import { ModelSelect } from './ModelSelect.js';
 import type { VendorModelGroup, AgencyMode } from './types.js';
 import { AgencyModeSelect } from './AgencyModeSelect.js';
 import type { RenderMode } from '../../types.js';
-import type { ToolViewOverride, BadgeStyle } from '../../context/PreferencesContext.js';
+import type { ToolViewOverride, BadgeStyle, MarkdownSkin } from '../../context/PreferencesContext.js';
 import type { WireProviderConfig, ProviderConfig, DiscordBotSettings } from '../../../core/settings/types.js';
 import type { CatchupStatus } from '../../../core/recall/catchup-types.js';
 import { formatDuration } from '../../utils/format.js';
@@ -34,6 +34,8 @@ interface SettingsPopupProps {
   onToolPanelAutoOpenChange: (enabled: boolean) => void;
   badgeStyle: BadgeStyle;
   onBadgeStyleChange: (style: BadgeStyle) => void;
+  markdownSkin: MarkdownSkin;
+  onMarkdownSkinChange: (skin: MarkdownSkin) => void;
   bashBlockInIcons: boolean;
   onBashBlockInIconsChange: (enabled: boolean) => void;
   autoReflect: boolean;
@@ -72,6 +74,19 @@ const BADGE_STYLES: { value: BadgeStyle; label: string }[] = [
   { value: 'frosted', label: 'Frosted' },
   { value: 'tinted', label: 'Tinted' },
   { value: 'solid', label: 'Solid' },
+];
+
+const MARKDOWN_SKINS: { value: MarkdownSkin; label: string }[] = [
+  { value: 'crispy',     label: 'Crispy (default)' },
+  { value: 't3',         label: 'T3 Code' },
+  { value: 'chatgpt',    label: 'ChatGPT' },
+  { value: 'claude',     label: 'Claude.ai' },
+  { value: 'gemini',     label: 'Gemini' },
+  { value: 'cursor',     label: 'Cursor' },
+  { value: 'copilot',    label: 'Copilot' },
+  { value: 'deepseek',   label: 'DeepSeek' },
+  { value: 'perplexity', label: 'Perplexity' },
+  { value: 'terminal',   label: 'Terminal' },
 ];
 
 const TOOL_VIEW_MODES: { value: string; label: string }[] = [
@@ -144,7 +159,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, gitPanelSide, onGitPanelSideChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordAllowedUserIds, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, markdownSkin, onMarkdownSkinChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, gitPanelSide, onGitPanelSideChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordAllowedUserIds, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -241,6 +256,17 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
                 <option key={m.value} value={m.value}>
                   {m.label}
                 </option>
+              ))}
+            </select>
+          </label>
+          <label className="crispy-cp-settings__row">
+            <span>Markdown Skin</span>
+            <select
+              value={markdownSkin}
+              onChange={(e) => onMarkdownSkinChange(e.target.value as MarkdownSkin)}
+            >
+              {MARKDOWN_SKINS.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
           </label>
