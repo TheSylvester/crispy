@@ -1155,7 +1155,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             <button className="crispy-control-panel__error-dismiss" onClick={clearSendError} aria-label="Dismiss error">×</button>
           </div>
         )}
-        {observerMode ? null : children ?? (
+        {children ?? (observerMode ? null : (
           <>
             <AttachmentsRow
               images={state.attachedImages}
@@ -1176,7 +1176,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               cwd={workspaceCwdPath}
             />
           </>
-        )}
+        ))}
         <div className="crispy-cp-controls">
           <BypassToggle
             checked={state.bypassEnabled}

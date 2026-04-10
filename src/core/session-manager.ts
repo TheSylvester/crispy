@@ -1342,11 +1342,11 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
     if (rekeyPromise) {
       rekeyPromise.then((realId) => {
         refreshAndNotify(realId);
-        broadcastOpenChannel(realId, displayName);
+        broadcastOpenChannel(realId, displayName, intent.autoClose);
       }).catch(() => {});
     } else {
       refreshAndNotify(sessionId);
-      broadcastOpenChannel(sessionId, displayName);
+      broadcastOpenChannel(sessionId, displayName, intent.autoClose);
     }
   }
 

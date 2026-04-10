@@ -40,6 +40,8 @@ export interface TabCreateConfig {
   name?: string;
   /** Arbitrary config passed to the FlexLayout node (accessible via node.getConfig()). */
   config?: Record<string, unknown>;
+  /** Create the tab without activating it (appears in tab bar but doesn't steal focus). */
+  background?: boolean;
 }
 
 interface TabOperations {
@@ -75,7 +77,7 @@ export interface TabControllerValue {
   activateTab: (tabId: string) => void;
 
   /** Navigate to a session: find existing tab or create new, then activate. */
-  navigateToSession: (sessionId: string, name?: string) => void;
+  navigateToSession: (sessionId: string, name?: string, options?: { background?: boolean; config?: Record<string, unknown> }) => void;
   /** Set the active tab's session ID (used by session selector within a tab). */
   setActiveTabSession: (sessionId: string | null) => void;
 
@@ -218,24 +220,25 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     opsRef.current.toggleTerminalBorder();
   }, []);
 
-  const navigateToSession = useCallback((sessionId: string, name?: string) => {
+  const navigateToSession = useCallback((sessionId: string, name?: string, options?: { background?: boolean; config?: Record<string, unknown> }) => {
+    const bg = options?.background;
     if (!opsRef.current) {
       pendingOps.current.push(() => {
         const ops = opsRef.current!;
         const existing = ops.findTabBySession(sessionId);
         if (existing) {
-          ops.activateTab(existing);
+          if (!bg) ops.activateTab(existing);
         } else {
-          ops.createTab({ sessionId, name });
+          ops.createTab({ sessionId, name, background: bg, config: options?.config });
         }
       });
       return;
     }
     const existing = opsRef.current.findTabBySession(sessionId);
     if (existing) {
-      opsRef.current.activateTab(existing);
+      if (!bg) opsRef.current.activateTab(existing);
     } else {
-      opsRef.current.createTab({ sessionId, name });
+      opsRef.current.createTab({ sessionId, name, background: bg, config: options?.config });
     }
   }, []);
 

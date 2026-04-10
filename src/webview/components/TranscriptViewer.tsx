@@ -145,7 +145,7 @@ function ToolPanelShell(): React.JSX.Element {
   );
 }
 
-export function TranscriptViewer(): React.JSX.Element {
+export function TranscriptViewer({ observerMode }: { observerMode?: boolean }): React.JSX.Element {
   const { effectiveSessionId: selectedSessionId, setSelectedSessionId } = useTabSession();
   const transport = useTransport();
   const { entries: liveEntries, isLoading, error } = useTranscript(selectedSessionId);
@@ -571,6 +571,7 @@ export function TranscriptViewer(): React.JSX.Element {
         onRegisterRewindHandler={handleRegisterRewindHandler}
         onScrollToBottom={pinToBottom}
         entries={entries}
+        observerMode={observerMode}
       >
         {approvalRequest && (
           <ApprovalBridge

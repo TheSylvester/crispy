@@ -18,7 +18,7 @@ export type SessionListEvent =
   | { type: 'session_list_upsert'; session: SessionInfo }
   | { type: 'session_list_remove'; sessionId: string }
   | { type: 'session_status_changed'; sessionId: string; status: SessionChannelState }
-  | { type: 'session_open_channel'; sessionId: string; displayName?: string }
+  | { type: 'session_open_channel'; sessionId: string; displayName?: string; autoClose?: boolean }
   | { type: 'session_close_channel'; sessionId: string };
 
 /** Sentinel sessionId used to route session-list events on the shared event channel. */

@@ -91,8 +91,8 @@ export function notifyStatusChange(sessionId: string, status: SessionChannelStat
 }
 
 /** Notify subscribers that a session channel should be opened (tab created) in the UI. */
-export function broadcastOpenChannel(sessionId: string, displayName?: string): void {
-  broadcast({ type: 'session_open_channel', sessionId, displayName });
+export function broadcastOpenChannel(sessionId: string, displayName?: string, autoClose?: boolean): void {
+  broadcast({ type: 'session_open_channel', sessionId, displayName, autoClose });
 }
 
 /** Notify subscribers that a session channel should be closed (tab removed) in the UI. */

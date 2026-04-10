@@ -132,7 +132,7 @@ type TabSessionMap = Map<string, string | null>;
 // TabContent — inner wrapper per tab
 // ============================================================================
 
-function TabContent({ tabId, forkConfig, prefillContent }: { tabId: string; forkConfig?: ForkConfig | null; prefillContent?: string | null }): React.JSX.Element {
+function TabContent({ tabId, forkConfig, prefillContent, observerMode }: { tabId: string; forkConfig?: ForkConfig | null; prefillContent?: string | null; observerMode?: boolean }): React.JSX.Element {
   const { effectiveSessionId } = useTabSession();
   return (
     <TabContainerProvider tabId={tabId}>
@@ -143,7 +143,7 @@ function TabContent({ tabId, forkConfig, prefillContent }: { tabId: string; fork
               <ContentErrorBoundary>
                 <TabHeader />
                 <TabLayout>
-                  <TranscriptViewer />
+                  <TranscriptViewer observerMode={observerMode} />
                 </TabLayout>
               </ContentErrorBoundary>
             </ControlPanelProvider>
@@ -266,7 +266,7 @@ export function FlexAppLayout(): React.JSX.Element {
         targetTabsetId,
         DockLocation.RIGHT,
         -1,
-        true, // select the new tab
+        !config?.background, // select the new tab (false for background tabs)
       ),
     );
     bump();
@@ -541,10 +541,11 @@ export function FlexAppLayout(): React.JSX.Element {
       const nodeConfig = node.getConfig();
       const forkConfig = nodeConfig?.forkConfig as ForkConfig | undefined;
       const prefillContent = nodeConfig?.prefillContent as string | undefined;
+      const autoClose = nodeConfig?.autoClose as boolean | undefined;
 
       return (
         <TabSessionProvider sessionId={sessionId} onSessionChange={onSessionChange}>
-          <TabContent tabId={tabId} forkConfig={forkConfig} prefillContent={prefillContent} />
+          <TabContent tabId={tabId} forkConfig={forkConfig} prefillContent={prefillContent} observerMode={!!autoClose} />
         </TabSessionProvider>
       );
     } else if (node.getComponent() === 'git') {
@@ -621,7 +622,10 @@ export function FlexAppLayout(): React.JSX.Element {
     return transport.onEvent((channelId, event) => {
       if (channelId !== SESSION_LIST_CHANNEL_ID) return;
       if (event.type === 'session_open_channel') {
-        controller.navigateToSession(event.sessionId, event.displayName);
+        controller.navigateToSession(event.sessionId, event.displayName, {
+          background: event.autoClose,
+          config: event.autoClose ? { autoClose: true } : undefined,
+        });
       } else if (event.type === 'session_close_channel') {
         const tabIds: string[] = [];
         for (const [tabId, sid] of tabSessionMapRef.current) {
