@@ -1165,7 +1165,7 @@ h2 {
 .prose.skin-copilot blockquote { border-left: 3px solid #2A2B2C; color: #969696; font-style: normal; }
 .prose.skin-copilot code {
   font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
-  padding: 1px 4px;
+  padding: 1px 3px;
   border-radius: 3px;
   background: #262626;
   color: #8C8C8C;
@@ -1187,8 +1187,8 @@ h2 {
   border-radius: 4px;
   background: #2c2d33;
 }
-.prose.skin-deepseek .md-code-block { border-radius: 6px; background: #191a1e; border: 1px solid #2c2d33; }
-.prose.skin-deepseek .md-code-block code { font-size: 13.5px; background: none; }
+.prose.skin-deepseek .md-code-block { border-radius: 10px; background: #191a1e; border: 1px solid #2c2d33; }
+.prose.skin-deepseek .md-code-block code { font-size: 14px; background: none; }
 .prose.skin-deepseek th, .prose.skin-deepseek td { border-color: #2c2d33; }
 .prose.skin-deepseek th { background: #282930; }
 
@@ -1232,7 +1232,7 @@ h2 {
   color: #cb4a6e;
 }
 .prose.skin-terminal .md-code-block {
-  border-radius: 4px;
+  border-radius: 2px;
   background: #0a0a0a;
   border: 1px solid rgba(51,255,51,0.15);
 }
@@ -1262,7 +1262,7 @@ h2 {
 
 /* ChatGPT tool styling */
 .skin-chatgpt .crispy-tool-badge { border-radius: 6px; }
-.skin-chatgpt .crispy-blocks-bash-output { border: none; }
+.skin-chatgpt .crispy-blocks-bash-output { border: none; border-radius: 8px; }
 .skin-chatgpt .crispy-diff { border-color: #374151; }
 .skin-chatgpt .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.15); }
 .skin-chatgpt .crispy-blocks-dot-line__subject { color: #9b9b9b; }
@@ -1276,7 +1276,7 @@ h2 {
 .skin-claude .crispy-tool-filepath { color: #da7756; }
 .skin-claude .crispy-blocks-dot-line__subject { color: #9a9893; }
 .skin-claude .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.15); }
-.skin-claude .crispy-blocks-bash-output { background: #1f1e1b; color: #c8c4be; border: 1px solid rgba(255,255,255,0.06); }
+.skin-claude .crispy-blocks-bash-output { background: #1f1e1b; color: #c8c4be; border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; }
 .skin-claude .crispy-diff { border-color: rgba(255,255,255,0.08); }
 .skin-claude .crispy-status-success { color: #8aba7f; }
 .skin-claude .crispy-status-error { color: #d4644e; }
@@ -1289,7 +1289,7 @@ h2 {
 .skin-gemini .crispy-tool-badge { border-radius: 16px; }
 .skin-gemini .crispy-tool-filepath { color: #a8c7fa; }
 .skin-gemini .crispy-blocks-dot-line__subject { color: #9aa0a6; }
-.skin-gemini .crispy-blocks-bash-output { background: #1e1f20; border: none; }
+.skin-gemini .crispy-blocks-bash-output { background: #1e1f20; border: none; border-radius: 8px; }
 .skin-gemini .crispy-diff { border-color: #3c4043; }
 .skin-gemini .crispy-status-success { color: #81c995; }
 .skin-gemini .crispy-status-error { color: #f28b82; }
@@ -1301,7 +1301,7 @@ h2 {
 /* Cursor tool styling */
 .skin-cursor .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.18); }
 .skin-cursor .crispy-blocks-dot-line__subject { color: #9D9D9D; }
-.skin-cursor .crispy-blocks-bash-output { background: #2B2B2B; border: 1px solid #313131; }
+.skin-cursor .crispy-blocks-bash-output { background: #2B2B2B; border: 1px solid #313131; border-radius: 6px; }
 .skin-cursor .crispy-diff { border-color: #313131; }
 .skin-cursor .crispy-diff-added { background: rgba(35,134,54,0.25); }
 .skin-cursor .crispy-diff-removed { background: rgba(218,54,51,0.25); }
@@ -1312,7 +1312,7 @@ h2 {
 .skin-copilot .crispy-blocks-dot-line__subject { color: #8C8C8C; }
 .skin-copilot .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.12); }
 .skin-copilot .crispy-blocks-dot-line:hover { background: rgba(72,160,199,0.06); }
-.skin-copilot .crispy-blocks-bash-output { background: #242526; border: 1px solid #2A2B2C; }
+.skin-copilot .crispy-blocks-bash-output { background: #242526; border: 1px solid #2A2B2C; border-radius: 6px; }
 .skin-copilot .crispy-diff { border-color: #2A2B2C; }
 .skin-copilot .crispy-status-success { color: #54B054; }
 .skin-copilot .crispy-status-error { color: #FC6A6A; }
@@ -1338,7 +1338,7 @@ h2 {
 .skin-perplexity .crispy-tool-filepath { color: #20b8cd; }
 .skin-perplexity .crispy-blocks-dot-line__dots { border-bottom-color: rgba(32,184,205,0.2); }
 .skin-perplexity .crispy-blocks-dot-line:hover { background: rgba(32,184,205,0.06); }
-.skin-perplexity .crispy-blocks-bash-output { background: #282c34; border: 1px solid #454545; }
+.skin-perplexity .crispy-blocks-bash-output { background: #282c34; border: 1px solid #454545; border-radius: 8px; }
 .skin-perplexity .crispy-diff { border-color: #454545; }
 .skin-perplexity .crispy-status-success { color: #5dc983; }
 .skin-perplexity .crispy-status-error { color: #f06060; }
