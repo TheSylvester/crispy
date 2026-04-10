@@ -77,10 +77,11 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!content.trim()) return;
 
       const panel = getOrCreatePanelForPrefill(context, workspaceOpts);
-      // Small delay for newly created panels to initialize their webview JS
-      setTimeout(() => {
-        panel.webview.postMessage({ kind: 'executeInCrispy', content: `Execute the following:\n\n${content}` });
-      }, 100);
+      // Retry with increasing delays — FlexLayout + React init can exceed 100ms
+      const msg = { kind: 'executeInCrispy', content: `Execute the following:\n\n${content}` };
+      for (const delay of [200, 600, 1500]) {
+        setTimeout(() => panel.webview.postMessage(msg), delay);
+      }
     }),
     vscode.commands.registerCommand('crispy.toggleVoiceInput', () => {
       const panel = getActivePanel();
