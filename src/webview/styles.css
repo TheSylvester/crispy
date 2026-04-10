@@ -1087,7 +1087,9 @@ h2 {
 .prose.skin-chatgpt {
   font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-feature-settings: "palt";
+  color: #ececec;
 }
+.prose.skin-chatgpt h2 { border-bottom-color: #374151; }
 .prose.skin-chatgpt a { color: #60a5fa; text-decoration: underline; text-decoration-color: rgba(96,165,250,0.4); }
 .prose.skin-chatgpt blockquote { border-left: 3px solid #4b5563; color: #9ca3af; font-style: normal; }
 .prose.skin-chatgpt code {
@@ -1105,8 +1107,10 @@ h2 {
 /* ── Skin: Claude.ai ── */
 .prose.skin-claude {
   font-family: 'Source Serif 4', 'Literata', ui-serif, Georgia, Cambria, 'Times New Roman', serif;
+  color: #eeeeee;
 }
 .prose.skin-claude h2, .prose.skin-claude h3 { font-family: 'Literata', 'Source Serif 4', Georgia, serif; }
+.prose.skin-claude h2 { border-bottom-color: rgba(255,255,255,0.08); }
 .prose.skin-claude a { color: #da7756; text-decoration: underline; text-decoration-color: rgba(218,119,86,0.4); }
 .prose.skin-claude blockquote { border-left: 3px solid #ae5630; color: #9a9893; font-style: normal; }
 .prose.skin-claude code {
@@ -1262,10 +1266,11 @@ h2 {
 
 /* ChatGPT tool styling */
 .skin-chatgpt .crispy-tool-badge { border-radius: 6px; }
-.skin-chatgpt .crispy-blocks-bash-output { border: none; border-radius: 8px; }
+.skin-chatgpt .crispy-blocks-bash-output { background: #171717; border: none; border-radius: 8px; }
 .skin-chatgpt .crispy-diff { border-color: #374151; }
 .skin-chatgpt .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.15); }
 .skin-chatgpt .crispy-blocks-dot-line__subject { color: #9b9b9b; }
+.skin-chatgpt .crispy-blocks-dot-line:hover { background: rgba(255,255,255,0.04); }
 .skin-chatgpt .crispy-status-success { color: #73d676; }
 .skin-chatgpt .crispy-status-error { color: #ef6b6b; }
 .skin-chatgpt .crispy-diff-added { background: rgba(76,175,80,0.15); }
@@ -1276,6 +1281,7 @@ h2 {
 .skin-claude .crispy-tool-filepath { color: #da7756; }
 .skin-claude .crispy-blocks-dot-line__subject { color: #9a9893; }
 .skin-claude .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.15); }
+.skin-claude .crispy-blocks-dot-line:hover { background: rgba(255,255,255,0.04); }
 .skin-claude .crispy-blocks-bash-output { background: #1f1e1b; color: #c8c4be; border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; }
 .skin-claude .crispy-diff { border-color: rgba(255,255,255,0.08); }
 .skin-claude .crispy-status-success { color: #8aba7f; }
@@ -6454,7 +6460,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-
 }
 body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-blocks-bash-output,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-blocks-bash-output {
-  background: #f7f7f8; border: none;
+  background: #f7f7f8; border: none; color: #1a1a1a;
 }
 body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-diff-added,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-diff-added {
@@ -6467,6 +6473,22 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-
 body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-status-pending,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-status-pending {
   color: #b45309;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt h2,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt h2 {
+  border-bottom-color: #e5e7eb;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-blocks-dot-line__subject,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-blocks-dot-line__subject {
+  color: #666;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-blocks-dot-line:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-blocks-dot-line:hover {
+  background: rgba(0,0,0,0.04);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-diff-gutter,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-diff-gutter {
+  color: #aaa;
 }
 
 /* ── Skin: Claude.ai (light) ── */
@@ -6527,6 +6549,22 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-d
 body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-diff-removed,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-diff-removed {
   background: rgba(181,67,46,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude h2,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude h2 {
+  border-bottom-color: rgba(0,0,0,0.08);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-blocks-dot-line__subject,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-blocks-dot-line__subject {
+  color: #6b6a68;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-blocks-dot-line:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-blocks-dot-line:hover {
+  background: rgba(0,0,0,0.04);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-diff-gutter,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-diff-gutter {
+  color: #aaa;
 }
 
 /* ── Skin: Gemini (light) ── */
