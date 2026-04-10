@@ -116,6 +116,21 @@ cp -r "$REPO_ROOT/dist" "$RUNTIME_DIR/crispy/dist"
 cp "$REPO_ROOT/package.json" "$RUNTIME_DIR/crispy/"
 cp "$REPO_ROOT/package-lock.json" "$RUNTIME_DIR/crispy/" 2>/dev/null || true
 
+# Fix executable permissions and line endings for scripts with shebangs.
+# npm pack on Windows strips Unix execute bits and may introduce CRLF endings,
+# which breaks #!/usr/bin/env shebangs when extracted in WSL.
+echo ">>> Normalizing script permissions and line endings..."
+for f in "$RUNTIME_DIR/crispy/dist/crispy-dispatch.js" \
+         "$RUNTIME_DIR/crispy/dist/crispy-cli.js" \
+         "$RUNTIME_DIR/crispy/dist/recall.js" \
+         "$RUNTIME_DIR/crispy/dist/crispy-plugin/scripts/crispy-agent" \
+         "$RUNTIME_DIR/crispy/dist/crispy-plugin/scripts/crispy-session"; do
+  if [ -f "$f" ]; then
+    sed -i 's/\r$//' "$f"
+    chmod +x "$f"
+  fi
+done
+
 # ---- Step 3: Install production dependencies ----
 echo ">>> Installing production dependencies (this may take a moment)..."
 
