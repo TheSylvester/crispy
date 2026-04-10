@@ -85,13 +85,15 @@ export function TabSessionProvider({ sessionId: sessionIdProp, onSessionChange, 
     }
   }, [envKind, global.selectedCwd, localCwd]);
 
-  // --- Pending→real session rekey ---
-  // Mirror SessionContext's global rekey handler, but for per-tab sessions.
-  // When a session_changed notification arrives for this tab's pending session,
-  // update localSessionId to the real ID so useChannelStore subscribes correctly.
+  // --- Session rekey: pending→real AND server-initiated rotation ---
+  // Handles two cases:
+  // 1. Pending→real: tab created with pending:xxx, adapter reports real ID
+  // 2. Server-initiated rotation: clear-and-execute rotates an existing real
+  //    session to a new one. The non-mutable subscriber tags the event with
+  //    the old session ID, so sid matches localSessionId.
   const transport = useTransport();
   useEffect(() => {
-    if (!localSessionId?.startsWith('pending:')) return;
+    if (!localSessionId) return;
     const off = transport.onEvent((sid, event) => {
       if (sid !== localSessionId) return;
       if (
@@ -101,6 +103,7 @@ export function TabSessionProvider({ sessionId: sessionIdProp, onSessionChange, 
         'sessionId' in event.event
       ) {
         const realId = event.event.sessionId as string;
+        if (realId === localSessionId) return; // no-op if same ID
         setLocalSessionId(realId);
         if (onSessionChangeRef.current) {
           onSessionChangeRef.current(realId);
