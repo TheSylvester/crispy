@@ -1069,7 +1069,7 @@ h2 {
 .prose.skin-t3 {
   font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 }
-.prose.skin-t3 a { color: #0ea5e9; text-decoration: underline; text-decoration-color: rgba(14,165,233,0.4); }
+.prose.skin-t3 a { color: #1d4ed8; text-decoration: underline; text-decoration-color: rgba(29,78,216,0.4); }
 .prose.skin-t3 blockquote { border-left: 2px solid rgba(255,255,255,0.15); color: rgba(245,245,245,0.55); font-style: normal; }
 .prose.skin-t3 code {
   font-family: "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
@@ -1124,14 +1124,14 @@ h2 {
 .prose.skin-gemini {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
-.prose.skin-gemini a { color: #8ab4f8; text-decoration: none; }
+.prose.skin-gemini a { color: #a8c7fa; text-decoration: none; }
 .prose.skin-gemini a:hover { text-decoration: underline; }
 .prose.skin-gemini blockquote { border-left: 3px solid #5f6368; color: #9aa0a6; font-style: normal; }
 .prose.skin-gemini code {
   font-family: 'Roboto Mono', 'Fira Code', ui-monospace, monospace;
   padding: 2px 6px;
   border-radius: 4px;
-  background: #303134;
+  background: #2c2c2c;
 }
 .prose.skin-gemini .md-code-block { border-radius: 8px; background: #1e1f20; border: none; }
 .prose.skin-gemini .md-code-block code { font-size: 14px; background: none; }
@@ -1142,37 +1142,38 @@ h2 {
 .prose.skin-cursor {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
-.prose.skin-cursor a { color: #4da6ff; text-decoration: none; }
+.prose.skin-cursor a { color: #4daafc; text-decoration: none; }
 .prose.skin-cursor a:hover { text-decoration: underline; }
 .prose.skin-cursor blockquote { border-left: 3px solid #3e3e3e; color: #858585; font-style: normal; }
 .prose.skin-cursor code {
   font-family: 'Fira Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
   padding: 1px 4px;
   border-radius: 3px;
-  background: #2d2d30;
+  background: #3C3C3C;
 }
-.prose.skin-cursor .md-code-block { border-radius: 6px; background: #1a1a1a; border: 1px solid #333333; }
+.prose.skin-cursor .md-code-block { border-radius: 6px; background: #2B2B2B; border: 1px solid #313131; }
 .prose.skin-cursor .md-code-block code { font-size: 12px; background: none; }
-.prose.skin-cursor th, .prose.skin-cursor td { border-color: #333333; padding: 6px 10px; }
+.prose.skin-cursor th, .prose.skin-cursor td { border-color: #313131; padding: 6px 10px; }
 .prose.skin-cursor th { background: #252526; }
 
 /* ── Skin: Copilot ── */
 .prose.skin-copilot {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
-.prose.skin-copilot a { color: #3794ff; text-decoration: none; }
+.prose.skin-copilot a { color: #48A0C7; text-decoration: none; }
 .prose.skin-copilot a:hover { text-decoration: underline; }
-.prose.skin-copilot blockquote { border-left: 3px solid #404040; color: #969696; font-style: normal; }
+.prose.skin-copilot blockquote { border-left: 3px solid #2A2B2C; color: #969696; font-style: normal; }
 .prose.skin-copilot code {
   font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
   padding: 1px 4px;
   border-radius: 3px;
-  background: #1e1e1e;
+  background: #262626;
+  color: #8C8C8C;
 }
-.prose.skin-copilot .md-code-block { border-radius: 6px; background: #1e1e1e; border: 1px solid #3c3c3c; }
+.prose.skin-copilot .md-code-block { border-radius: 6px; background: #242526; border: 1px solid #2A2B2C; }
 .prose.skin-copilot .md-code-block code { font-size: 12px; background: none; }
-.prose.skin-copilot th, .prose.skin-copilot td { border-color: #3c3c3c; padding: 6px 10px; }
-.prose.skin-copilot th { background: #1e1e1e; }
+.prose.skin-copilot th, .prose.skin-copilot td { border-color: #2A2B2C; padding: 6px 10px; }
+.prose.skin-copilot th { background: #242526; }
 
 /* ── Skin: DeepSeek ── */
 .prose.skin-deepseek {
@@ -1202,11 +1203,11 @@ h2 {
   font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
   padding: 2px 6px;
   border-radius: 4px;
-  background: #242424;
+  background: #2A2A2A;
 }
-.prose.skin-perplexity .md-code-block { border-radius: 8px; background: #282c34; border: 1px solid #3a3a3a; }
+.prose.skin-perplexity .md-code-block { border-radius: 8px; background: #282c34; border: 1px solid #454545; }
 .prose.skin-perplexity .md-code-block code { font-size: 14px; background: none; }
-.prose.skin-perplexity th, .prose.skin-perplexity td { border-color: #3a3a3a; }
+.prose.skin-perplexity th, .prose.skin-perplexity td { border-color: #454545; }
 .prose.skin-perplexity th { background: #242424; }
 
 /* ── Skin: Terminal ── */
@@ -1249,6 +1250,116 @@ h2 {
   background: repeating-linear-gradient(0deg, rgba(0,0,0,0.08) 0px, transparent 1px, transparent 3px);
   z-index: 1;
 }
+
+/* ============================================================================
+ * Per-Skin Tool Styling — tool element overrides per skin (dark mode)
+ * ============================================================================ */
+
+/* T3 tool styling */
+.skin-t3 .crispy-tool-badge { border-radius: 6px; }
+.skin-t3 .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.1); }
+.skin-t3 .crispy-blocks-dot-line__subject { color: rgba(245,245,245,0.5); }
+
+/* ChatGPT tool styling */
+.skin-chatgpt .crispy-tool-badge { border-radius: 6px; }
+.skin-chatgpt .crispy-blocks-bash-output { border: none; }
+.skin-chatgpt .crispy-diff { border-color: #374151; }
+.skin-chatgpt .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.15); }
+.skin-chatgpt .crispy-blocks-dot-line__subject { color: #9b9b9b; }
+.skin-chatgpt .crispy-status-success { color: #73d676; }
+.skin-chatgpt .crispy-status-error { color: #ef6b6b; }
+.skin-chatgpt .crispy-diff-added { background: rgba(76,175,80,0.15); }
+.skin-chatgpt .crispy-diff-removed { background: rgba(244,67,54,0.15); }
+
+/* Claude.ai tool styling */
+.skin-claude .crispy-tool-badge { border-radius: 4px; }
+.skin-claude .crispy-tool-filepath { color: #da7756; }
+.skin-claude .crispy-blocks-dot-line__subject { color: #9a9893; }
+.skin-claude .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.15); }
+.skin-claude .crispy-blocks-bash-output { background: #1f1e1b; color: #c8c4be; border: 1px solid rgba(255,255,255,0.06); }
+.skin-claude .crispy-diff { border-color: rgba(255,255,255,0.08); }
+.skin-claude .crispy-status-success { color: #8aba7f; }
+.skin-claude .crispy-status-error { color: #d4644e; }
+.skin-claude .crispy-status-pending { color: #c8b878; }
+.skin-claude .crispy-diff-added { background: rgba(138,186,127,0.18); }
+.skin-claude .crispy-diff-removed { background: rgba(212,100,78,0.18); }
+.skin-claude .crispy-diff-gutter { color: #5a5852; }
+
+/* Gemini tool styling */
+.skin-gemini .crispy-tool-badge { border-radius: 16px; }
+.skin-gemini .crispy-tool-filepath { color: #a8c7fa; }
+.skin-gemini .crispy-blocks-dot-line__subject { color: #9aa0a6; }
+.skin-gemini .crispy-blocks-bash-output { background: #1e1f20; border: none; }
+.skin-gemini .crispy-diff { border-color: #3c4043; }
+.skin-gemini .crispy-status-success { color: #81c995; }
+.skin-gemini .crispy-status-error { color: #f28b82; }
+.skin-gemini .crispy-status-pending { color: #fdd663; }
+.skin-gemini .crispy-diff-added { background: rgba(129,201,149,0.15); }
+.skin-gemini .crispy-diff-removed { background: rgba(242,139,130,0.15); }
+.skin-gemini .crispy-diff-gutter { color: #5f6368; }
+
+/* Cursor tool styling */
+.skin-cursor .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.18); }
+.skin-cursor .crispy-blocks-dot-line__subject { color: #9D9D9D; }
+.skin-cursor .crispy-blocks-bash-output { background: #2B2B2B; border: 1px solid #313131; }
+.skin-cursor .crispy-diff { border-color: #313131; }
+.skin-cursor .crispy-diff-added { background: rgba(35,134,54,0.25); }
+.skin-cursor .crispy-diff-removed { background: rgba(218,54,51,0.25); }
+
+/* Copilot tool styling */
+.skin-copilot .crispy-tool-badge { border-radius: 4px; }
+.skin-copilot .crispy-tool-filepath { color: #48A0C7; }
+.skin-copilot .crispy-blocks-dot-line__subject { color: #8C8C8C; }
+.skin-copilot .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.12); }
+.skin-copilot .crispy-blocks-dot-line:hover { background: rgba(72,160,199,0.06); }
+.skin-copilot .crispy-blocks-bash-output { background: #242526; border: 1px solid #2A2B2C; }
+.skin-copilot .crispy-diff { border-color: #2A2B2C; }
+.skin-copilot .crispy-status-success { color: #54B054; }
+.skin-copilot .crispy-status-error { color: #FC6A6A; }
+.skin-copilot .crispy-status-pending { color: #C8C862; }
+.skin-copilot .crispy-diff-added { background: rgba(84,176,84,0.18); }
+.skin-copilot .crispy-diff-removed { background: rgba(252,106,106,0.18); }
+
+/* DeepSeek tool styling */
+.skin-deepseek .crispy-tool-badge { border-radius: 10px; }
+.skin-deepseek .crispy-tool-filepath { color: #4d6bfe; }
+.skin-deepseek .crispy-blocks-dot-line__dots { border-bottom-color: rgba(77,107,254,0.2); }
+.skin-deepseek .crispy-blocks-dot-line:hover { background: rgba(77,107,254,0.06); }
+.skin-deepseek .crispy-blocks-bash-output { background: #191a1e; border: 1px solid #2c2d33; border-radius: 10px; }
+.skin-deepseek .crispy-diff { border-color: #2c2d33; border-radius: 10px; }
+.skin-deepseek .crispy-status-success { color: #73d676; }
+.skin-deepseek .crispy-status-error { color: #f06060; }
+.skin-deepseek .crispy-status-pending { color: #4d6bfe; }
+.skin-deepseek .crispy-diff-added { background: rgba(115,214,118,0.15); }
+.skin-deepseek .crispy-diff-removed { background: rgba(240,96,96,0.15); }
+
+/* Perplexity tool styling */
+.skin-perplexity .crispy-tool-badge { border-radius: 10px; }
+.skin-perplexity .crispy-tool-filepath { color: #20b8cd; }
+.skin-perplexity .crispy-blocks-dot-line__dots { border-bottom-color: rgba(32,184,205,0.2); }
+.skin-perplexity .crispy-blocks-dot-line:hover { background: rgba(32,184,205,0.06); }
+.skin-perplexity .crispy-blocks-bash-output { background: #282c34; border: 1px solid #454545; }
+.skin-perplexity .crispy-diff { border-color: #454545; }
+.skin-perplexity .crispy-status-success { color: #5dc983; }
+.skin-perplexity .crispy-status-error { color: #f06060; }
+.skin-perplexity .crispy-status-pending { color: #20b8cd; }
+.skin-perplexity .crispy-diff-added { background: rgba(93,201,131,0.15); }
+.skin-perplexity .crispy-diff-removed { background: rgba(240,96,96,0.15); }
+
+/* Terminal tool styling */
+.skin-terminal .crispy-tool-filepath { color: #00aaff; }
+.skin-terminal .crispy-blocks-dot-line__subject { color: rgba(51,255,51,0.6); }
+.skin-terminal .crispy-blocks-dot-line__dots { border-bottom-color: rgba(51,255,51,0.2); }
+.skin-terminal .crispy-blocks-dot-line:hover { background: rgba(51,255,51,0.06); }
+.skin-terminal .crispy-blocks-bash-output { background: #0a0a0a; color: #33ff33; border: 1px solid rgba(51,255,51,0.15); text-shadow: 0 0 4px rgba(51,255,51,0.2); }
+.skin-terminal .crispy-diff { border-color: rgba(51,255,51,0.15); }
+.skin-terminal .crispy-status-success { color: #33ff33; }
+.skin-terminal .crispy-status-error { color: #ff3333; }
+.skin-terminal .crispy-status-pending { color: #ffff33; }
+.skin-terminal .crispy-diff-added { background: rgba(51,255,51,0.12); }
+.skin-terminal .crispy-diff-removed { background: rgba(255,51,51,0.12); }
+.skin-terminal .crispy-diff-gutter { color: rgba(51,255,51,0.4); }
+.skin-terminal .crispy-tool-badge { text-shadow: none; }
 
 /* --- User Text — right-aligned bubble --- */
 .user-text {
@@ -6252,6 +6363,584 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .user-text {
 body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__dot--copied,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__dot--copied {
   box-shadow: 0 0 6px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* ============================================================================
+ * Light-Mode Skin Overrides — per-skin markdown + tool styling for light themes
+ * ============================================================================ */
+
+/* ── Skin: T3 Code (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-t3 {
+  color: #1a1a1a;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3 a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-t3 a {
+  color: #1d4ed8; text-decoration-color: rgba(29,78,216,0.4);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3 code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-t3 code {
+  background: rgba(0,0,0,0.04); border: 1px solid rgba(0,0,0,0.08);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3 .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-t3 .md-code-block {
+  background: rgba(0,0,0,0.04); border: 1px solid rgba(0,0,0,0.08);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3 blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-t3 blockquote {
+  border-left: 2px solid rgba(0,0,0,0.08); color: rgba(26,26,26,0.55);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3 th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-t3 th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3 td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-t3 td {
+  border-color: rgba(0,0,0,0.08);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3 th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-t3 th {
+  background: rgba(0,0,0,0.03);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-t3 .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-t3 .crispy-tool-filepath {
+  color: #1d4ed8;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-t3 .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-t3 .crispy-status-pending {
+  color: #b45309;
+}
+
+/* ── Skin: ChatGPT (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt {
+  color: #0d0d0d;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt a {
+  color: #2563eb; text-decoration-color: rgba(37,99,235,0.4);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt code {
+  background: #f7f7f8; color: #ab5b3a;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt .md-code-block {
+  background: #f7f7f8; border: none;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt blockquote {
+  border-left: 3px solid #d1d5db; color: #6b7280;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt td {
+  border-color: #e5e7eb;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt th {
+  background: #f3f4f6;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-tool-filepath {
+  color: #2563eb;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-status-success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-status-success {
+  color: #16a34a;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-status-error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-status-error {
+  color: #dc2626;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-blocks-bash-output,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-blocks-bash-output {
+  background: #f7f7f8; border: none;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-diff-added {
+  background: rgba(76,175,80,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-diff-removed {
+  background: rgba(244,67,54,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-status-pending {
+  color: #b45309;
+}
+
+/* ── Skin: Claude.ai (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude {
+  color: #1a1a18;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude a {
+  color: #ae5630; text-decoration-color: rgba(174,86,48,0.4);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude code {
+  background: rgba(0,0,0,0.05);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude .md-code-block {
+  background: #f5f3ef; border: 1px solid rgba(0,0,0,0.06);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude blockquote {
+  color: #6b6a68;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude td {
+  border-color: rgba(0,0,0,0.08);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude th {
+  background: rgba(0,0,0,0.04);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-tool-filepath {
+  color: #ae5630;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-status-success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-status-success {
+  color: #3d7a32;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-status-error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-status-error {
+  color: #b5432e;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-status-pending {
+  color: #8a7a30;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-blocks-bash-output,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-blocks-bash-output {
+  background: #f5f3ef; border: 1px solid rgba(0,0,0,0.06); color: #333;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-diff-added {
+  background: rgba(61,122,50,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-diff-removed {
+  background: rgba(181,67,46,0.12);
+}
+
+/* ── Skin: Gemini (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-gemini,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-gemini {
+  color: #1f1f1f;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-gemini a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-gemini a {
+  color: #0b57d0;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-gemini code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-gemini code {
+  background: #f1f3f4;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-gemini .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-gemini .md-code-block {
+  background: #f8f9fa; border: none;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-gemini blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-gemini blockquote {
+  border-left: 3px solid #dadce0; color: #5f6368;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-gemini th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-gemini th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-gemini td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-gemini td {
+  border-bottom-color: #dadce0;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-tool-filepath {
+  color: #0b57d0;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-tool-badge,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-tool-badge {
+  border-radius: 16px;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-status-success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-status-success {
+  color: #137333;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-status-error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-status-error {
+  color: #c5221f;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-status-pending {
+  color: #b06000;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-blocks-bash-output,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-blocks-bash-output {
+  background: #f8f9fa; border: none;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-diff-added {
+  background: rgba(19,115,51,0.1);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-diff-removed {
+  background: rgba(197,34,31,0.1);
+}
+
+/* ── Skin: Cursor (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-cursor,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-cursor {
+  color: #3B3B3B;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-cursor a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-cursor a {
+  color: #005FB8;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-cursor code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-cursor code {
+  background: rgba(0,0,0,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-cursor .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-cursor .md-code-block {
+  background: #F8F8F8; border: 1px solid #E5E5E5;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-cursor blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-cursor blockquote {
+  border-left: 3px solid #E5E5E5; color: #616161;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-cursor th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-cursor th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-cursor td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-cursor td {
+  border-color: #E5E5E5;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-cursor th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-cursor th {
+  background: #F0F0F0;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-cursor .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-cursor .crispy-tool-filepath {
+  color: #005FB8;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-cursor .crispy-status-success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-cursor .crispy-status-success {
+  color: #388a34;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-cursor .crispy-status-error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-cursor .crispy-status-error {
+  color: #cd3131;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-cursor .crispy-blocks-bash-output,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-cursor .crispy-blocks-bash-output {
+  background: #F8F8F8; border: 1px solid #E5E5E5;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-cursor .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-cursor .crispy-diff-added {
+  background: rgba(35,134,54,0.15);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-cursor .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-cursor .crispy-diff-removed {
+  background: rgba(218,54,51,0.15);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-cursor .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-cursor .crispy-status-pending {
+  color: #b45309;
+}
+
+/* ── Skin: Copilot (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-copilot,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot {
+  color: #202020;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-copilot a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot a {
+  color: #0069CC;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-copilot code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot code {
+  background: #ECECEC; color: #606060;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-copilot .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot .md-code-block {
+  background: #EAEAEA; border: 1px solid #F0F1F2;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-copilot blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot blockquote {
+  border-left: 3px solid #F0F1F2; color: #606060;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-copilot th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-copilot td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot td {
+  border-color: #E4E5E6;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-copilot th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot th {
+  background: #EAEAEA;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-tool-filepath {
+  color: #0069CC;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-status-success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-status-success {
+  color: #107C10;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-status-error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-status-error {
+  color: #BC2F32;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-blocks-bash-output,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-blocks-bash-output {
+  background: #EAEAEA; border: 1px solid #F0F1F2;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-diff-added {
+  background: rgba(16,124,16,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-diff-removed {
+  background: rgba(188,47,50,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-blocks-dot-line:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-blocks-dot-line:hover {
+  background: rgba(0,105,204,0.06);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-status-pending {
+  color: #b45309;
+}
+
+/* ── Skin: DeepSeek (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-deepseek,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-deepseek {
+  color: #1a1a1a;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-deepseek a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-deepseek a {
+  color: #3b54d4; text-decoration-color: rgba(59,84,212,0.4);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-deepseek code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-deepseek code {
+  background: #eef0f4;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-deepseek .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-deepseek .md-code-block {
+  background: #f6f8fa; border: 1px solid #e2e4e9;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-deepseek blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-deepseek blockquote {
+  border-left: 3px solid #4d6bfe; color: #6b6b6b;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-deepseek th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-deepseek th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-deepseek td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-deepseek td {
+  border-color: #e2e4e9;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-deepseek th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-deepseek th {
+  background: #f0f2f6;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-tool-filepath {
+  color: #3b54d4;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-tool-badge,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-tool-badge {
+  border-radius: 10px;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-status-success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-status-success {
+  color: #16a34a;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-status-error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-status-error {
+  color: #dc2626;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-status-pending {
+  color: #3b54d4;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-blocks-bash-output,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-blocks-bash-output {
+  background: #f6f8fa; border: 1px solid #e2e4e9;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-diff-added {
+  background: rgba(22,163,74,0.1);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-diff-removed {
+  background: rgba(220,38,38,0.1);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-blocks-dot-line:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-blocks-dot-line:hover {
+  background: rgba(59,84,212,0.06);
+}
+
+/* ── Skin: Perplexity (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-perplexity,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-perplexity {
+  color: #1C1C19;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-perplexity a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-perplexity a {
+  color: #0e8c9e;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-perplexity code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-perplexity code {
+  background: #F4F4F1;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-perplexity .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-perplexity .md-code-block {
+  background: #F4F4F1; border: 1px solid #CECECA;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-perplexity blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-perplexity blockquote {
+  border-left: 3px solid #20808D; color: #6B6B67;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-perplexity th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-perplexity th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-perplexity td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-perplexity td {
+  border-color: #CECECA;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-perplexity th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-perplexity th {
+  background: #F4F4F1;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-tool-filepath {
+  color: #0e8c9e;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-tool-badge,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-tool-badge {
+  border-radius: 10px;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-status-success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-status-success {
+  color: #0e7a3a;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-status-error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-status-error {
+  color: #c5221f;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-status-pending {
+  color: #0e8c9e;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-blocks-bash-output,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-blocks-bash-output {
+  background: #F4F4F1; border: 1px solid #CECECA;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-diff-added {
+  background: rgba(14,122,58,0.1);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-diff-removed {
+  background: rgba(197,34,31,0.1);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-blocks-dot-line:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-blocks-dot-line:hover {
+  background: rgba(14,140,158,0.06);
+}
+
+/* ── Skin: Terminal (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal {
+  color: #005f00; text-shadow: none;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal::after,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal::after {
+  display: none;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal a {
+  color: #005faf;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal code {
+  background: rgba(0,60,0,0.08); color: #af005f;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal .md-code-block {
+  background: #e8f0e8; border: 1px solid rgba(0,80,0,0.15);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal blockquote {
+  color: #6b6b6b;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal td {
+  border-color: rgba(0,80,0,0.2);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal th {
+  background: rgba(0,80,0,0.05);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal strong,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal strong {
+  color: #5f5f00;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal em,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal em {
+  color: #00875f;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-tool-filepath {
+  color: #005faf;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-status-success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-status-success {
+  color: #005f00;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-status-error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-status-error {
+  color: #af0000;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-status-pending {
+  color: #5f5f00;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-blocks-bash-output,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-blocks-bash-output {
+  background: #e8f0e8; color: #005f00; border: 1px solid rgba(0,80,0,0.15); text-shadow: none;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-diff-added {
+  background: rgba(0,80,0,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-diff-removed {
+  background: rgba(175,0,0,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-blocks-dot-line__dots,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-blocks-dot-line__dots {
+  border-bottom-color: rgba(0,80,0,0.2);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-blocks-dot-line__subject,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-blocks-dot-line__subject {
+  color: rgba(0,80,0,0.6);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-diff-gutter,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-diff-gutter {
+  color: rgba(0,80,0,0.4);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-tool-badge,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-tool-badge {
+  text-shadow: none;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal h2,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal h2,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal h3,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal h3 {
+  border-bottom-color: rgba(0,80,0,0.2);
 }
 
 /* ============================================================================

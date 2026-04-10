@@ -14,7 +14,7 @@ import { usePreferences } from '../../../context/PreferencesContext.js';
 /** Light-mode color overrides — darker, more saturated versions of Dracula pastels
  *  that meet WCAG AA contrast on light (#f5f5f5) backgrounds. */
 const LIGHT_MODE_COLORS: Record<string, string> = {
-  '#ffb86c': '#92400e', // Bash: orange → amber-800
+  '#ffb86c': '#c2410c', // Bash: orange → orange-700 (warmer)
   '#8be9fd': '#0369a1', // Read: cyan → sky-700
   '#50fa7b': '#15803d', // Write: green → green-700
   '#ff5555': '#b91c1c', // Edit: red → red-700
