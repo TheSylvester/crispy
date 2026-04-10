@@ -138,7 +138,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const column = options?.autoClose
       ? { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }
       : vscode.ViewColumn.Beside;
-    const panel = createCrispyPanel(context, column);
+    const panel = createCrispyPanel(context, column, { autoClose: options?.autoClose });
     sessionPanels.set(sessionId, panel);
     panel.onDidDispose(() => {
       if (sessionPanels.get(sessionId) === panel) sessionPanels.delete(sessionId);

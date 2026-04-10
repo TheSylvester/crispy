@@ -45,8 +45,9 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
   const command = useCommandAutocomplete(textareaRef, value, onInput, vendor ?? null, sessionId ?? null, cwd ?? null);
   const isActiveTab = useIsActiveTab();
 
-  // Auto-focus textarea on mount
+  // Auto-focus textarea on mount (skip for autoClose panels to prevent focus steal)
   useEffect(() => {
+    if (document.querySelector('meta[name="crispy-auto-close"]')) return;
     textareaRef.current?.focus();
   }, []);
 

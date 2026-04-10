@@ -105,7 +105,7 @@ export function openCrispyPanel(
 export function createCrispyPanel(
   context: vscode.ExtensionContext,
   viewColumn: vscode.ViewColumn | { viewColumn: vscode.ViewColumn; preserveFocus: boolean } = vscode.ViewColumn.Beside,
-  options?: { workspaceCwd?: string },
+  options?: { workspaceCwd?: string; autoClose?: boolean },
 ): vscode.WebviewPanel {
   const panel = vscode.window.createWebviewPanel(
     'crispy',
@@ -265,7 +265,7 @@ export function createCrispyPanel(
   );
 
   // Set HTML AFTER listener is wired — this triggers webview JS to load
-  panel.webview.html = getWebviewHtml(panel.webview, scriptUri, cssUri, stylesUri, mainCssUri, nonce);
+  panel.webview.html = getWebviewHtml(panel.webview, scriptUri, cssUri, stylesUri, mainCssUri, nonce, options?.autoClose);
 
   panels.set(panelId, panel);
 
@@ -311,11 +311,13 @@ function getWebviewHtml(
   stylesUri: vscode.Uri,
   mainCssUri: vscode.Uri,
   nonce: string,
+  autoClose?: boolean,
 ): string {
+  const autoCloseMeta = autoClose ? '\n  <meta name="crispy-auto-close" content="true">' : '';
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8">${autoCloseMeta}
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta
     http-equiv="Content-Security-Policy"

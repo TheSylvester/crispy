@@ -44,6 +44,7 @@ import { useApprovalRequest } from "../hooks/useApprovalRequest.js";
 import { constructExitPlanHandoffPrompt } from "./approval/approval-utils.js";
 import { useTransport } from "../context/TransportContext.js";
 import { useSessionStatus } from "../hooks/useSessionStatus.js";
+import { useSession } from "../context/SessionContext.js";
 import type { ApprovalExtra } from "./approval/types.js";
 import { WelcomePage } from "./WelcomePage.js";
 import { useStreamingContent } from "../hooks/useStreamingContent.js";
@@ -147,6 +148,8 @@ function ToolPanelShell(): React.JSX.Element {
 
 export function TranscriptViewer({ observerMode }: { observerMode?: boolean }): React.JSX.Element {
   const { effectiveSessionId: selectedSessionId, setSelectedSessionId } = useTabSession();
+  const { isAutoClosePanel } = useSession();
+  const effectiveObserverMode = observerMode || isAutoClosePanel;
   const transport = useTransport();
   const { entries: liveEntries, isLoading, error } = useTranscript(selectedSessionId);
   const { renderMode, debugMode } = usePreferences();
@@ -571,7 +574,7 @@ export function TranscriptViewer({ observerMode }: { observerMode?: boolean }): 
         onRegisterRewindHandler={handleRegisterRewindHandler}
         onScrollToBottom={pinToBottom}
         entries={entries}
-        observerMode={observerMode}
+        observerMode={effectiveObserverMode}
       >
         {approvalRequest && (
           <ApprovalBridge

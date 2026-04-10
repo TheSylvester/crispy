@@ -38,6 +38,8 @@ interface SessionContextValue extends SessionState {
   workspaceCwdPath: string | null;
   /** Live status of non-selected sessions (streaming/idle/etc.). */
   sessionStatuses: Map<string, SessionChannelState>;
+  /** True when this panel was opened with autoClose (child session observer). */
+  isAutoClosePanel: boolean;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -49,6 +51,7 @@ interface SessionProviderProps {
 export function SessionProvider({ children }: SessionProviderProps): React.JSX.Element {
   const transport = useTransport();
   const transportKind = useEnvironment();
+  const isAutoClosePanel = !!document.querySelector('meta[name="crispy-auto-close"]')?.getAttribute('content');
   const [sessions, setSessions] = useState<WireSessionInfo[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
@@ -291,6 +294,7 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     availableVendors,
     workspaceCwdPath,
     sessionStatuses,
+    isAutoClosePanel,
   }), [
     sessions,
     selectedSessionId,
@@ -304,6 +308,7 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     availableVendors,
     workspaceCwdPath,
     sessionStatuses,
+    isAutoClosePanel,
   ]);
 
   return (
