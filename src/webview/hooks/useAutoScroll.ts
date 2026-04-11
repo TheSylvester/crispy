@@ -189,6 +189,7 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
           if (!scrollRef.current || scrollRef.current.clientHeight === 0) return;
           const target = scrollRef.current;
           if (parkedRef.current) {
+            beginProgrammaticGuard();
             target.scrollTop = target.scrollHeight;
             savedScrollTopRef.current = null;
           } else if (savedScrollTopRef.current != null) {
@@ -201,6 +202,11 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
 
       // Normal resize while visible: apply parked policy.
       if (parkedRef.current) {
+        // Guard against the scroll event that fires from this assignment.
+        // Without the guard, rapidly changing dimensions during streaming
+        // can cause distFromBottom > UNPARK_THRESHOLD between the assignment
+        // and the scroll handler, accidentally unparking the user.
+        beginProgrammaticGuard();
         el.scrollTop = el.scrollHeight;
         savedScrollTopRef.current = null;
 
@@ -249,7 +255,7 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
       cancelAnimationFrame(frameId);
       observer.disconnect();
     };
-  }, [remount, scrollRef, sessionId, syncFromElement]);
+  }, [beginProgrammaticGuard, remount, scrollRef, sessionId, syncFromElement]);
 
   // ── User-initiated scroll commands ────────────────────────────────
   const scrollToBottom = useCallback(() => {

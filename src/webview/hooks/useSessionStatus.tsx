@@ -29,7 +29,11 @@ interface SessionStatusValue {
  */
 export function useSessionStatus(sessionId?: string | null): SessionStatusValue {
   const { selectedSessionId } = useSession();
-  const effectiveId = sessionId ?? selectedSessionId;
+  // Distinguish "no argument" (undefined → fall back to global session)
+  // from "explicitly null" (null → no session, don't fall back).
+  // The ?? operator treats both as fallback triggers, which caused
+  // null-session tabs to mirror the global session's status.
+  const effectiveId = sessionId === undefined ? selectedSessionId : sessionId;
   const store = useChannelStore(effectiveId);
   return {
     channelState: store.channelState,

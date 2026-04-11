@@ -234,17 +234,18 @@ h2 {
   --frame-highlight: var(--agency-red);
 }
 
-/* 2. Primary glow overlay — per-tab content area */
-.crispy-tab-layout::after {
+/* 2. Primary glow overlay — per-tab content area.
+   Only create the pseudo-element when streaming. Previously content: ""
+   was always set, leaving an invisible position:absolute z-index:50
+   overlay covering the entire tab — WebView2 can let this interfere
+   with scroll event handling on the underlying .crispy-transcript. */
+.crispy-tab-layout[data-streaming]::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 50;
   border-radius: inherit;
-}
-
-.crispy-tab-layout[data-streaming]::after {
   animation: crispy-cp-glow 2s ease-in-out infinite;
 }
 
