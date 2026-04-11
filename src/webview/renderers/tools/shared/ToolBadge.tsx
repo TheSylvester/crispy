@@ -104,7 +104,7 @@ export function ToolBadge({ color, textColor, label }: ToolBadgeProps): React.JS
           background: solidBg,
         }}
       >
-        {label.toLowerCase()}
+        {label}
       </span>
     );
   }
@@ -119,7 +119,7 @@ export function ToolBadge({ color, textColor, label }: ToolBadgeProps): React.JS
           background: bg ?? 'var(--tint-soft)',
         }}
       >
-        {label.toLowerCase()}
+        {label}
       </span>
     );
   }
@@ -137,7 +137,7 @@ export function ToolBadge({ color, textColor, label }: ToolBadgeProps): React.JS
         boxShadow: `inset 0 0 8px ${hexToRgba(effectiveColor, 0.04) ?? 'transparent'}`,
       }}
     >
-      {label.toLowerCase()}
+      {label}
     </span>
   );
 }

@@ -896,9 +896,11 @@ h2 {
   line-height: 1.5;
 }
 
-.md-code-block code {
+.md-code-block code,
+.prose .md-code-block code {
   padding: 0;
   background: transparent;
+  border: none;
   border-radius: 0;
   font-size: inherit;
 }
@@ -1066,10 +1068,56 @@ h2 {
  * The default (crispy) skin uses the base .prose rules above.
  * ============================================================================ */
 
-/* ── Skin: T3 Code ── */
+/* ── Common skin resets — structural overrides for all skinned views ── */
+.prose[class*="skin-"] h2 { font-size: 1.3em; }
+.prose[class*="skin-"] h3 { font-size: 1.1em; }
+.prose[class*="skin-"] li { margin: 0; }
+.prose[class*="skin-"] li + li { margin-top: 0.25rem; }
+.prose[class*="skin-"] blockquote { padding: 0 0 0 1em; }
+.prose[class*="skin-"] .md-code-block code { padding: 0; background: none; border: none; border-radius: 0; }
+.prose[class*="skin-"] .md-code-block { padding: 0.8rem 0.9rem; }
+.prose[class*="skin-"] table { display: table; }
+.prose[class*="skin-"] th,
+.prose[class*="skin-"] td { padding: 0.35rem 0.6rem; font-size: 0.9em; }
+.prose[class*="skin-"] tr:nth-child(even) td { background: transparent; }
+.prose[class*="skin-"] tr:hover td { background: transparent; }
+
+/* Per-skin background — applied to the transcript scroll container */
+.crispy-transcript.skin-t3 { background: #161616; }
+.crispy-transcript.skin-chatgpt { background: #212121; }
+.crispy-transcript.skin-claude { background: #2b2a27; }
+.crispy-transcript.skin-gemini { background: #131314; }
+.crispy-transcript.skin-cursor { background: #1F1F1F; }
+.crispy-transcript.skin-copilot { background: #191A1B; }
+.crispy-transcript.skin-deepseek { background: #1a1c24; }
+.crispy-transcript.skin-perplexity { background: #191A1A; }
+.crispy-transcript.skin-terminal { background: #000000; }
+
+/* Per-skin user text — inherits skin font/size */
+[class*="skin-"] .user-text { font-size: 14px; }
+.skin-t3 .user-text { font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+.skin-chatgpt .user-text { font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+.skin-claude .user-text { font-family: 'Source Serif 4', 'Literata', ui-serif, Georgia, Cambria, 'Times New Roman', serif; }
+.skin-gemini .user-text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+.skin-cursor .user-text { font-family: 'Segoe WPC', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
+.skin-copilot .user-text { font-family: 'Segoe WPC', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
+.skin-deepseek .user-text { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif; }
+.skin-perplexity .user-text { font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif; }
+.skin-terminal .user-text { font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', Consolas, monospace; }
+
+/* ── Skin: T3 Code — 15px / 1.5 / 0.65rem margin ── */
 .prose.skin-t3 {
   font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 15px; line-height: 1.5;
 }
+.prose.skin-t3 p, .prose.skin-t3 ul, .prose.skin-t3 ol,
+.prose.skin-t3 blockquote, .prose.skin-t3 .md-code-block,
+.prose.skin-t3 table { margin: 0.65rem 0; }
+.prose.skin-t3 h2 { margin: 1rem 0 0.65rem; }
+.prose.skin-t3 h3 { margin: 0.8rem 0 0.65rem; }
+.prose.skin-t3 ul, .prose.skin-t3 ol { padding-left: 1.25rem; }
+.prose.skin-t3 li { line-height: 1.5; }
+.prose.skin-t3 code { font-size: 13px; }
 .prose.skin-t3 a { color: #1d4ed8; text-decoration: underline; text-decoration-color: rgba(29,78,216,0.4); }
 .prose.skin-t3 blockquote { border-left: 2px solid rgba(255,255,255,0.15); color: rgba(245,245,245,0.55); font-style: normal; }
 .prose.skin-t3 code {
@@ -1079,22 +1127,30 @@ h2 {
   border-radius: 6px;
   background: rgba(255,255,255,0.04);
 }
-.prose.skin-t3 .md-code-block { border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; background: rgba(255,255,255,0.04); }
+.prose.skin-t3 .md-code-block { border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; background: rgba(255,255,255,0.04); }
 .prose.skin-t3 .md-code-block code { font-size: 14px; }
 .prose.skin-t3 th, .prose.skin-t3 td { border-color: rgba(255,255,255,0.06); }
 .prose.skin-t3 th { background: rgba(255,255,255,0.03); }
 
-/* ── Skin: ChatGPT ── */
+/* ── Skin: ChatGPT — 16px / 1.7 / 1rem margin ── */
 .prose.skin-chatgpt {
   font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 16px; line-height: 1.7;
   font-feature-settings: "palt";
   color: #ececec;
 }
-.prose.skin-chatgpt h2 { border-bottom-color: #374151; }
+.prose.skin-chatgpt p, .prose.skin-chatgpt ul, .prose.skin-chatgpt ol,
+.prose.skin-chatgpt blockquote, .prose.skin-chatgpt .md-code-block,
+.prose.skin-chatgpt table { margin: 1rem 0; }
+.prose.skin-chatgpt h2 { margin: 1rem 0 1rem; border-bottom-color: #374151; }
+.prose.skin-chatgpt h3 { margin: 0.8rem 0 1rem; }
+.prose.skin-chatgpt ul, .prose.skin-chatgpt ol { padding-left: 1.5rem; }
+.prose.skin-chatgpt li { line-height: 1.7; }
 .prose.skin-chatgpt a { color: #60a5fa; text-decoration: underline; text-decoration-color: rgba(96,165,250,0.4); }
 .prose.skin-chatgpt blockquote { border-left: 3px solid #4b5563; color: #9ca3af; font-style: normal; }
 .prose.skin-chatgpt code {
   font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+  font-size: 14px;
   padding: 2px 6px;
   border-radius: 4px;
   background: #2f2f2f;
@@ -1105,18 +1161,27 @@ h2 {
 .prose.skin-chatgpt th, .prose.skin-chatgpt td { border-color: #374151; }
 .prose.skin-chatgpt th { background: #2f2f2f; }
 
-/* ── Skin: Claude.ai ── */
+/* ── Skin: Claude.ai — 16px / 1.65 / 1.25rem margin ── */
 .prose.skin-claude {
   font-family: 'Source Serif 4', 'Literata', ui-serif, Georgia, Cambria, 'Times New Roman', serif;
+  font-size: 16px; line-height: 1.65;
   color: #eeeeee;
 }
+.prose.skin-claude p, .prose.skin-claude ul, .prose.skin-claude ol,
+.prose.skin-claude blockquote, .prose.skin-claude .md-code-block,
+.prose.skin-claude table { margin: 1.25rem 0; }
+.prose.skin-claude h2 { margin: 1rem 0 1.25rem; }
+.prose.skin-claude h3 { margin: 0.8rem 0 1.25rem; }
+.prose.skin-claude ul, .prose.skin-claude ol { padding-left: 1.5rem; }
+.prose.skin-claude li { line-height: 1.65; }
+.prose.skin-claude code { font-size: 13.5px; }
 .prose.skin-claude h2, .prose.skin-claude h3 { font-family: 'Literata', 'Source Serif 4', Georgia, serif; }
 .prose.skin-claude h2 { border-bottom-color: rgba(255,255,255,0.08); }
 .prose.skin-claude a { color: #da7756; text-decoration: underline; text-decoration-color: rgba(218,119,86,0.4); }
 .prose.skin-claude blockquote { border-left: 3px solid #ae5630; color: #9a9893; font-style: normal; }
 .prose.skin-claude code {
   font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
-  padding: 2px 5px;
+  padding: 2px 6px;
   border-radius: 3px;
   background: rgba(255,255,255,0.08);
 }
@@ -1125,10 +1190,19 @@ h2 {
 .prose.skin-claude th, .prose.skin-claude td { border-color: rgba(255,255,255,0.08); }
 .prose.skin-claude th { background: rgba(255,255,255,0.04); }
 
-/* ── Skin: Gemini ── */
+/* ── Skin: Gemini — 16px / 1.5 / 1rem margin ── */
 .prose.skin-gemini {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 16px; line-height: 1.5;
 }
+.prose.skin-gemini p, .prose.skin-gemini ul, .prose.skin-gemini ol,
+.prose.skin-gemini blockquote, .prose.skin-gemini .md-code-block,
+.prose.skin-gemini table { margin: 1rem 0; }
+.prose.skin-gemini h2 { margin: 1rem 0 1rem; }
+.prose.skin-gemini h3 { margin: 0.8rem 0 1rem; }
+.prose.skin-gemini ul, .prose.skin-gemini ol { padding-left: 1.25rem; }
+.prose.skin-gemini li { line-height: 1.5; }
+.prose.skin-gemini code { font-size: 14px; }
 .prose.skin-gemini a { color: #a8c7fa; text-decoration: none; }
 .prose.skin-gemini a:hover { text-decoration: underline; }
 .prose.skin-gemini blockquote { border-left: 3px solid #5f6368; color: #9aa0a6; font-style: normal; }
@@ -1143,10 +1217,19 @@ h2 {
 .prose.skin-gemini th, .prose.skin-gemini td { border: none; border-bottom: 1px solid #5f6368; }
 .prose.skin-gemini th { font-weight: 600; border-bottom-width: 2px; background: transparent; }
 
-/* ── Skin: Cursor ── */
+/* ── Skin: Cursor — 13px / 1.5 / 0.5rem margin (compact) ── */
 .prose.skin-cursor {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px; line-height: 1.5;
 }
+.prose.skin-cursor p, .prose.skin-cursor ul, .prose.skin-cursor ol,
+.prose.skin-cursor blockquote, .prose.skin-cursor .md-code-block,
+.prose.skin-cursor table { margin: 0.5rem 0; }
+.prose.skin-cursor h2 { margin: 1rem 0 0.5rem; }
+.prose.skin-cursor h3 { margin: 0.8rem 0 0.5rem; }
+.prose.skin-cursor ul, .prose.skin-cursor ol { padding-left: 1.25rem; }
+.prose.skin-cursor li { line-height: 1.5; }
+.prose.skin-cursor code { font-size: 12px; }
 .prose.skin-cursor a { color: #4daafc; text-decoration: none; }
 .prose.skin-cursor a:hover { text-decoration: underline; }
 .prose.skin-cursor blockquote { border-left: 3px solid #3e3e3e; color: #858585; font-style: normal; }
@@ -1158,13 +1241,22 @@ h2 {
 }
 .prose.skin-cursor .md-code-block { border-radius: 6px; background: #2B2B2B; border: 1px solid #313131; }
 .prose.skin-cursor .md-code-block code { font-size: 12px; background: none; }
-.prose.skin-cursor th, .prose.skin-cursor td { border-color: #313131; padding: 6px 10px; }
+.prose.skin-cursor th, .prose.skin-cursor td { border-color: #313131; }
 .prose.skin-cursor th { background: #252526; }
 
-/* ── Skin: Copilot ── */
+/* ── Skin: Copilot — 13px / 1.5 / 0.5rem margin (compact) ── */
 .prose.skin-copilot {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px; line-height: 1.5;
 }
+.prose.skin-copilot p, .prose.skin-copilot ul, .prose.skin-copilot ol,
+.prose.skin-copilot blockquote, .prose.skin-copilot .md-code-block,
+.prose.skin-copilot table { margin: 0.5rem 0; }
+.prose.skin-copilot h2 { margin: 1rem 0 0.5rem; }
+.prose.skin-copilot h3 { margin: 0.8rem 0 0.5rem; }
+.prose.skin-copilot ul, .prose.skin-copilot ol { padding-left: 1.25rem; }
+.prose.skin-copilot li { line-height: 1.5; }
+.prose.skin-copilot code { font-size: 12px; }
 .prose.skin-copilot a { color: #48A0C7; text-decoration: none; }
 .prose.skin-copilot a:hover { text-decoration: underline; }
 .prose.skin-copilot blockquote { border-left: 3px solid #2A2B2C; color: #969696; font-style: normal; }
@@ -1177,13 +1269,22 @@ h2 {
 }
 .prose.skin-copilot .md-code-block { border-radius: 6px; background: #242526; border: 1px solid #2A2B2C; }
 .prose.skin-copilot .md-code-block code { font-size: 12px; background: none; }
-.prose.skin-copilot th, .prose.skin-copilot td { border-color: #2A2B2C; padding: 6px 10px; }
+.prose.skin-copilot th, .prose.skin-copilot td { border-color: #2A2B2C; }
 .prose.skin-copilot th { background: #242526; }
 
-/* ── Skin: DeepSeek ── */
+/* ── Skin: DeepSeek — 16px / 1.75 / 0.75rem margin ── */
 .prose.skin-deepseek {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+  font-size: 16px; line-height: 1.75;
 }
+.prose.skin-deepseek p, .prose.skin-deepseek ul, .prose.skin-deepseek ol,
+.prose.skin-deepseek blockquote, .prose.skin-deepseek .md-code-block,
+.prose.skin-deepseek table { margin: 0.75rem 0; }
+.prose.skin-deepseek h2 { margin: 1rem 0 0.75rem; }
+.prose.skin-deepseek h3 { margin: 0.8rem 0 0.75rem; }
+.prose.skin-deepseek ul, .prose.skin-deepseek ol { padding-left: 1.5rem; }
+.prose.skin-deepseek li { line-height: 1.75; }
+.prose.skin-deepseek code { font-size: 14px; }
 .prose.skin-deepseek a { color: #4d6bfe; text-decoration: underline; text-decoration-color: rgba(77,107,254,0.4); }
 .prose.skin-deepseek blockquote { border-left: 3px solid #4d6bfe; color: #8e8e8e; font-style: normal; }
 .prose.skin-deepseek code {
@@ -1197,10 +1298,19 @@ h2 {
 .prose.skin-deepseek th, .prose.skin-deepseek td { border-color: #2c2d33; }
 .prose.skin-deepseek th { background: #282930; }
 
-/* ── Skin: Perplexity ── */
+/* ── Skin: Perplexity — 14px / 1.36 / 0.75rem margin ── */
 .prose.skin-perplexity {
   font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 14px; line-height: 1.36;
 }
+.prose.skin-perplexity p, .prose.skin-perplexity ul, .prose.skin-perplexity ol,
+.prose.skin-perplexity blockquote, .prose.skin-perplexity .md-code-block,
+.prose.skin-perplexity table { margin: 0.75rem 0; }
+.prose.skin-perplexity h2 { margin: 1rem 0 0.75rem; }
+.prose.skin-perplexity h3 { margin: 0.8rem 0 0.75rem; }
+.prose.skin-perplexity ul, .prose.skin-perplexity ol { padding-left: 1.25rem; }
+.prose.skin-perplexity li { line-height: 1.36; }
+.prose.skin-perplexity code { font-size: 13px; }
 .prose.skin-perplexity a { color: #20b8cd; text-decoration: none; }
 .prose.skin-perplexity a:hover { text-decoration: underline; }
 .prose.skin-perplexity blockquote { border-left: 3px solid #20b8cd; color: #8a8a8a; font-style: normal; }
@@ -1215,13 +1325,22 @@ h2 {
 .prose.skin-perplexity th, .prose.skin-perplexity td { border-color: #454545; }
 .prose.skin-perplexity th { background: #242424; }
 
-/* ── Skin: Terminal ── */
+/* ── Skin: Terminal — 14px / 1.3 / 0.6rem margin ── */
 .prose.skin-terminal {
   font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Hack', Consolas, monospace;
+  font-size: 14px; line-height: 1.3;
   color: rgba(51,255,51,0.9);
   text-shadow: 0 0 4px rgba(51,255,51,0.3);
   position: relative;
 }
+.prose.skin-terminal p, .prose.skin-terminal ul, .prose.skin-terminal ol,
+.prose.skin-terminal blockquote, .prose.skin-terminal .md-code-block,
+.prose.skin-terminal table { margin: 0.6rem 0; }
+.prose.skin-terminal h2 { margin: 1rem 0 0.6rem; }
+.prose.skin-terminal h3 { margin: 0.8rem 0 0.6rem; }
+.prose.skin-terminal ul, .prose.skin-terminal ol { padding-left: 1.5rem; }
+.prose.skin-terminal li { line-height: 1.3; }
+.prose.skin-terminal code { font-size: 13px; }
 .prose.skin-terminal h2, .prose.skin-terminal h3 {
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -1242,7 +1361,7 @@ h2 {
   border: 1px solid rgba(51,255,51,0.15);
 }
 .prose.skin-terminal .md-code-block code { font-size: 13px; color: inherit; background: none; text-shadow: inherit; }
-.prose.skin-terminal th, .prose.skin-terminal td { border-color: rgba(51,255,51,0.2); padding: 4px 10px; }
+.prose.skin-terminal th, .prose.skin-terminal td { border-color: rgba(51,255,51,0.2); }
 .prose.skin-terminal th { background: rgba(51,255,51,0.05); }
 .prose.skin-terminal strong { color: #ffff33; }
 .prose.skin-terminal em { color: #00d787; }
@@ -6375,6 +6494,32 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__dot-
 /* ============================================================================
  * Light-Mode Skin Overrides — per-skin markdown + tool styling for light themes
  * ============================================================================ */
+
+/* Light-mode code-inside-codeblock reset — prevents inline code styling from leaking into fenced blocks */
+body[data-vscode-theme-kind="vscode-light"] .prose[class*="skin-"] .md-code-block code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose[class*="skin-"] .md-code-block code {
+  padding: 0; background: none; border: none; border-radius: 0;
+}
+
+/* Per-skin light-mode backgrounds */
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-t3,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-t3 { background: #ffffff; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-chatgpt,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-chatgpt { background: #ffffff; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-claude,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-claude { background: #F5F5F0; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-gemini,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-gemini { background: #ffffff; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-cursor,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-cursor { background: #FFFFFF; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-copilot,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-copilot { background: #FAFAFD; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-deepseek,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-deepseek { background: #ffffff; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-perplexity,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-perplexity { background: #FCFCF9; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-terminal,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-terminal { background: #f0f5f0; }
 
 /* ── Skin: T3 Code (light) ── */
 body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3,

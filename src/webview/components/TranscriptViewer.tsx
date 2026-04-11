@@ -152,7 +152,7 @@ export function TranscriptViewer({ observerMode }: { observerMode?: boolean }): 
   const effectiveObserverMode = observerMode || isAutoClosePanel;
   const transport = useTransport();
   const { entries: liveEntries, isLoading, error } = useTranscript(selectedSessionId);
-  const { renderMode, debugMode } = usePreferences();
+  const { renderMode, debugMode, markdownSkin } = usePreferences();
   const { toolPanelOpen } = useTabPanel();
   const { registerInsertHandler } = useFilePanel();
   const isActiveTab = useIsActiveTab();
@@ -473,7 +473,7 @@ export function TranscriptViewer({ observerMode }: { observerMode?: boolean }): 
         isStreaming={channelState === 'streaming'}
         forkTargets={forkTargets}
       >
-        <div className="crispy-transcript" ref={transcriptRef} data-render-mode={renderMode}>
+        <div className={`crispy-transcript${markdownSkin !== 'crispy' ? ` skin-${markdownSkin}` : ''}`} ref={transcriptRef} data-render-mode={renderMode}>
           <div className="crispy-transcript-content">
             {lastError && (
               <div className="crispy-channel-error" role="alert">

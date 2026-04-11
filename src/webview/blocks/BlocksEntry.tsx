@@ -81,7 +81,7 @@ export function BlocksEntry({
   // Get role for message class
   const role = blocks[0]?.context.role ?? 'unknown';
   const { markdownSkin } = usePreferences();
-  const skinClass = role === 'assistant' && markdownSkin !== 'crispy' ? ` skin-${markdownSkin}` : '';
+  const skinClass = markdownSkin !== 'crispy' ? ` skin-${markdownSkin}` : '';
 
   // Show fork/rewind on user messages only (not tool_results with role='user')
   const showActions = role === 'user' && entry.type === 'user' && forkTargetId !== undefined;
