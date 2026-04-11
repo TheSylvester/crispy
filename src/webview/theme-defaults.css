@@ -77,6 +77,9 @@
   /* Code blocks */
   --vscode-textCodeBlock-background: rgba(255, 255, 255, 0.05);
 
+  /* Terminal */
+  --vscode-terminal-background: #1e1e1e;
+
   /* Diff editor */
   --vscode-diffEditor-insertedLineBackground: rgba(155, 185, 85, 0.2);
   --vscode-diffEditor-removedLineBackground: rgba(255, 0, 0, 0.2);
@@ -157,6 +160,9 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
 
   /* Code blocks */
   --vscode-textCodeBlock-background: rgba(0, 0, 0, 0.05);
+
+  /* Terminal */
+  --vscode-terminal-background: #ffffff;
 
   /* Diff editor */
   --vscode-diffEditor-insertedLineBackground: rgba(156, 236, 156, 0.31);
