@@ -287,12 +287,14 @@ export function TranscriptViewer({ observerMode }: { observerMode?: boolean }): 
     return () => observer.disconnect();
   }, []);
 
-  // Fork preview glow: add/remove class on last assistant message
-  const handleForkHoverChange = useCallback((hovering: boolean) => {
+  // Fork preview glow: add/remove class on the fork target message
+  const handleForkHoverChange = useCallback((hovering: boolean, targetUuid?: string) => {
     if (hovering) {
-      const msgs = transcriptRef.current?.querySelectorAll('.message.assistant');
-      const last = msgs?.[msgs.length - 1];
-      if (last) last.classList.add('crispy-fork-preview');
+      const msgs = transcriptRef.current?.querySelectorAll(
+        targetUuid ? `.message[data-uuid="${targetUuid}"]` : '.message.assistant',
+      );
+      const el = msgs?.[msgs.length - 1];
+      if (el) el.classList.add('crispy-fork-preview');
     } else {
       transcriptRef.current?.querySelectorAll('.message.crispy-fork-preview').forEach((el) => {
         el.classList.remove('crispy-fork-preview');

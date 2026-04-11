@@ -62,7 +62,7 @@ import type { CatchupStatus } from '../../../core/recall/catchup-types.js';
 import type { RecallCatchupEvent } from '../../../core/channel-events.js';
 
 interface ControlPanelProps {
-  onForkHoverChange?: (hovering: boolean) => void;
+  onForkHoverChange?: (hovering: boolean, targetUuid?: string) => void;
   /** Instantly pin transcript scroll to bottom (called on send). */
   onScrollToBottom?: () => void;
   /** Transcript entries for historical context usage fallback. */
@@ -219,6 +219,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const [sendError, setSendError] = useState<string | null>(null);
     const sendErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const forkTargetRef = useRef<string | undefined>(undefined);
+    const forkTargetSessionRef = useRef<string | null | undefined>(undefined);
 
     /** Show a send error with auto-dismiss after 8s. */
     const showSendError = useCallback((msg: string) => {
@@ -1118,9 +1119,13 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     // --- Latched fork target — freezes during streaming, updates only when idle ---
     useEffect(() => {
-      // Clear stale target when switching sessions
-      forkTargetRef.current = undefined;
+      // Clear stale target when switching sessions, but preserve across streaming
+      if (forkTargetSessionRef.current !== selectedSessionId) {
+        forkTargetRef.current = undefined;
+        forkTargetSessionRef.current = selectedSessionId;
+      }
       if (channelState !== 'idle' && channelState !== null) return;
+      forkTargetRef.current = undefined;
       if (!entries || entries.length === 0) return;
       for (let i = entries.length - 1; i >= 0; i--) {
         if (entries[i].type === 'assistant' && entries[i].uuid && !entries[i].isSidechain) {
@@ -1132,12 +1137,14 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     const handleFork = useCallback(() => {
       if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
-      if (forkTargetRef.current) executeFork(forkTargetRef.current);
+      if (forkTargetRef.current && forkTargetSessionRef.current === selectedSessionId) {
+        executeFork(forkTargetRef.current);
+      }
     }, [selectedSessionId, executeFork]);
 
     const handleForkHover = useCallback(
       (hovering: boolean) => {
-        onForkHoverChange?.(hovering);
+        onForkHoverChange?.(hovering, forkTargetRef.current);
       },
       [onForkHoverChange],
     );
