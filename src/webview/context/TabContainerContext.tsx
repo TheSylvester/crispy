@@ -16,8 +16,13 @@ import { useTabControllerOptional } from './TabControllerContext.js';
 
 interface TabContainerContextValue {
   containerRef: React.RefObject<HTMLDivElement | null>;
-  /** True when this tab is the currently focused/visible tab. Always true in single-tab mode. */
+  /** True when this tab is the currently focused/visible tab OR the last active transcript tab
+   *  (sticky — stays true when a non-transcript tab like a file viewer is selected).
+   *  Use for input routing: keyboard events, chat inserts, file-panel actions. */
   isActiveTab: boolean;
+  /** True only when this tab is the currently visible tab. False when hidden behind any other tab.
+   *  Use for observers/listeners that depend on DOM visibility (scroll, resize). */
+  isVisibleTab: boolean;
 }
 
 const TabContainerContext = createContext<TabContainerContextValue | null>(null);
@@ -34,7 +39,14 @@ export function TabContainerProvider({ children, tabId }: { children: React.Reac
       || controller.lastActiveTranscriptTabId === tabId)
     : true;
 
-  const value = useMemo(() => ({ containerRef, isActiveTab }), [isActiveTab]);
+  // Strict visibility: only the tab FlexLayout is actually showing.
+  // Unlike isActiveTab, this goes false when a non-transcript tab (file viewer,
+  // git panel) is selected — even if this tab is lastActiveTranscriptTabId.
+  const isVisibleTab = tabId
+    ? (controller?.activeTabId == null || controller.activeTabId === tabId)
+    : true;
+
+  const value = useMemo(() => ({ containerRef, isActiveTab, isVisibleTab }), [isActiveTab, isVisibleTab]);
 
   return (
     <TabContainerContext.Provider value={value}>
@@ -56,4 +68,11 @@ export function useIsActiveTab(): boolean {
   const ctx = useContext(TabContainerContext);
   // Outside a TabContainerProvider (e.g. single-panel legacy mode) — always active.
   return ctx?.isActiveTab ?? true;
+}
+
+/** Returns whether this tab is strictly visible (not hidden behind any other tab).
+ *  Use for observers/listeners that depend on DOM visibility (scroll, resize). */
+export function useIsVisibleTab(): boolean {
+  const ctx = useContext(TabContainerContext);
+  return ctx?.isVisibleTab ?? true;
 }

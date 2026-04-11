@@ -59,7 +59,7 @@ import { BlocksToolPanel } from "../blocks/BlocksToolPanel.js";
 import { useFilePanel } from "../context/FilePanelContext.js";
 import { useControlPanel } from "../context/ControlPanelContext.js";
 import { useTranscriptAnnotation } from "../hooks/useTranscriptAnnotation.js";
-import { useIsActiveTab, useTabContainer } from "../context/TabContainerContext.js";
+import { useIsActiveTab, useIsVisibleTab, useTabContainer } from "../context/TabContainerContext.js";
 import { TranscriptAnnotationPopover } from "./TranscriptAnnotationPopover.js";
 
 // Debug mode now lives in PreferencesContext (default: on during development).
@@ -152,10 +152,11 @@ export function TranscriptViewer({ observerMode }: { observerMode?: boolean }): 
   const effectiveObserverMode = observerMode || isAutoClosePanel;
   const transport = useTransport();
   const { entries: liveEntries, isLoading, error } = useTranscript(selectedSessionId);
-  const { renderMode, debugMode, markdownSkin } = usePreferences();
+  const { renderMode, debugMode, displayStyle } = usePreferences();
   const { toolPanelOpen } = useTabPanel();
   const { registerInsertHandler } = useFilePanel();
   const isActiveTab = useIsActiveTab();
+  const isVisibleTab = useIsVisibleTab();
   const { containerRef } = useTabContainer();
 
   // Read hasForkHistory and previewEntries from context.
@@ -263,6 +264,8 @@ export function TranscriptViewer({ observerMode }: { observerMode?: boolean }): 
     sessionId: selectedSessionId,
     scrollRef: transcriptRef,
     remount: hasForkHistory,
+    isVisible: isVisibleTab,
+    observerMode: effectiveObserverMode,
   });
 
   // Track control panel height for CSS custom property --cp-height.
@@ -473,7 +476,7 @@ export function TranscriptViewer({ observerMode }: { observerMode?: boolean }): 
         isStreaming={channelState === 'streaming'}
         forkTargets={forkTargets}
       >
-        <div className={`crispy-transcript${markdownSkin !== 'crispy' ? ` skin-${markdownSkin}` : ''}`} ref={transcriptRef} data-render-mode={renderMode}>
+        <div className={`crispy-transcript${displayStyle !== 'crispy' ? ` skin-${displayStyle}` : ''}`} ref={transcriptRef} data-render-mode={renderMode}>
           <div className="crispy-transcript-content">
             {lastError && (
               <div className="crispy-channel-error" role="alert">

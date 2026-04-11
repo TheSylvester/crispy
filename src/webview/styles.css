@@ -266,6 +266,7 @@ h2 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-anchor: none; /* Disable browser scroll anchoring — useAutoScroll manages position explicitly */
   padding: 16px;
   box-sizing: border-box;
 }
@@ -1062,7 +1063,7 @@ h2 {
 }
 
 /* ============================================================================
- * Markdown Skins — visual style overrides for .prose
+ * Display Styles — visual style overrides for .prose
  *
  * Each skin overrides fonts, colors, spacing, and code styling.
  * The default (crispy) skin uses the base .prose rules above.
