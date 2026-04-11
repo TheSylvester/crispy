@@ -48,6 +48,7 @@ function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' 
   return {
     global: {
       splitterSize: 4,
+      tabEnableDrag: showTabStrip,
       tabEnableClose: showTabStrip,
       tabEnableRename: false,
       borderSize: 300,
