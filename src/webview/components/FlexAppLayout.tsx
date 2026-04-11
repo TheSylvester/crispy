@@ -213,6 +213,9 @@ export function FlexAppLayout(): React.JSX.Element {
     gitPanelSideRef.current = gitPanelSide;
     if (isVscode) return;
     const json = modelRef.current.toJson();
+    // Re-apply global settings that toJson() may not round-trip
+    const showTabStrip = !isVscode;
+    json.global = { ...json.global, tabEnableDrag: showTabStrip, tabEnableClose: showTabStrip };
     if (json.borders) {
       for (const border of json.borders) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
