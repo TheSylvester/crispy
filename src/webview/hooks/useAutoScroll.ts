@@ -1,12 +1,10 @@
 /**
- * useAutoScroll — intent-driven scroll management for multi-tab layouts.
+ * useAutoScroll v2 — intent-driven scroll for multi-tab layouts.
  *
- * Single source of truth: `parked` boolean = "user wants to stay at bottom."
- *
- * FlexLayout hides inactive tabs with `display: none`, so hidden tabs cannot be
- * measured reliably. This hook saves the transcript scroll position on
- * deactivation, restores it on activation when the user has scrolled away, and
- * otherwise keeps parked tabs pinned to the bottom.
+ * Single source of truth: `stickToBottom` boolean.
+ * Visibility: driven by FlexLayout's TabNode.isVisible(), not heuristics.
+ * Save/restore: explicit, because display:none zeroes scrollTop (CSSOM View spec).
+ * No timers, no guards, no intro animation.
  *
  * @module useAutoScroll
  */
@@ -19,29 +17,22 @@ const UNPARK_THRESHOLD = 100;
 const REPARK_THRESHOLD = 10;
 /** Distance from top before we show the scroll-to-top button. */
 const AT_TOP_THRESHOLD = 50;
-/** Timeout fallback for smooth-scroll completion. */
-const PROGRAMMATIC_SCROLL_GUARD_MS = 450;
-/** How long a user scroll gesture suppresses ResizeObserver auto-pin.
- *  Must be long enough for the scroll event to fire and evaluate unpark
- *  after the user's wheel/touch, but short enough to not delay re-park
- *  when the user stops scrolling near the bottom. */
-const USER_SCROLL_SUPPRESS_MS = 400;
 
 export interface UseAutoScrollOptions {
   sessionId: string | null;
   /** Ref to the scrollable container (.crispy-transcript) */
   scrollRef: RefObject<HTMLDivElement | null>;
+  /** FlexLayout ground-truth DOM visibility (from TabContainerContext) */
+  isDomVisible: boolean;
+  /** Register a callback that fires synchronously before display:none (from TabContainerContext) */
+  registerOnBeforeHide: (cb: (() => void) | null) => void;
   /** Extra signal to re-attach when the scroll container mounts (e.g. fork history preload). */
   remount?: boolean;
-  /** When false, detach observers/listeners so hidden tabs don't corrupt scroll state. */
-  isVisible?: boolean;
-  /** Skip intro animation for observer-mode (autoClose) tabs. */
-  observerMode?: boolean;
 }
 
 export interface UseAutoScrollReturn {
   /** True when the user intends to stay at the bottom of the transcript. */
-  parked: boolean;
+  stickToBottom: boolean;
   /** True when scrolled to the very top (hides scroll-to-top button). */
   isAtTop: boolean;
   scrollToBottom: () => void;
@@ -49,302 +40,199 @@ export interface UseAutoScrollReturn {
   pinToBottom: () => void;
 }
 
-function clampScrollTop(el: HTMLDivElement, top: number): number {
-  const max = Math.max(0, el.scrollHeight - el.clientHeight);
-  return Math.max(0, Math.min(top, max));
-}
+type ScrollSource = "programmatic" | "user" | null;
 
 export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
-  const { sessionId, scrollRef, remount, isVisible = true, observerMode = false } = opts;
+  const { sessionId, scrollRef, isDomVisible, registerOnBeforeHide, remount } = opts;
 
-  const [parked, setParked] = useState(true);
+  const [stickToBottom, setStickToBottom] = useState(true);
   const [isAtTop, setIsAtTop] = useState(true);
 
-  const parkedRef = useRef(true);
-  const savedScrollTopRef = useRef<number | null>(null);
-  const programmaticScrollRef = useRef(false);
-  const programmaticTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  // Track DOM visibility (display:none → clientHeight===0).
-  const wasVisibleRef = useRef(false);
-  // One-shot intro animation per session: small "peek" scroll to hint at history above.
-  const introPlayedForRef = useRef<string | null>(null);
-  const introSettleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  // Deadline (performance.now) until which ResizeObserver must not auto-pin.
-  // Set by wheel/touch/pointerdown so the user's scroll event has time to
-  // evaluate unpark before a resize snaps them back to bottom.
-  const userScrollSuppressUntilRef = useRef(0);
+  const stickRef = useRef(true);
+  const savedScrollTop = useRef<number | null>(null);
+  const scrollSource = useRef<ScrollSource>(null);
+  const prevVisibleRef = useRef(isDomVisible);
 
-  const setParkedState = useCallback((next: boolean) => {
-    parkedRef.current = next;
-    setParked(prev => (prev === next ? prev : next));
+  const setStick = useCallback((next: boolean) => {
+    stickRef.current = next;
+    setStickToBottom(prev => (prev === next ? prev : next));
   }, []);
 
-  const clearProgrammaticGuard = useCallback(() => {
-    programmaticScrollRef.current = false;
-    clearTimeout(programmaticTimerRef.current);
-  }, []);
-
-  const beginProgrammaticGuard = useCallback(() => {
-    clearTimeout(programmaticTimerRef.current);
-    programmaticScrollRef.current = true;
-    programmaticTimerRef.current = setTimeout(() => {
-      programmaticScrollRef.current = false;
-    }, PROGRAMMATIC_SCROLL_GUARD_MS);
-  }, []);
-
-  const syncFromElement = useCallback((el: HTMLDivElement, allowUnpark: boolean) => {
-    const { scrollTop, scrollHeight, clientHeight } = el;
-    const distFromBottom = scrollHeight - scrollTop - clientHeight;
-
-    setIsAtTop(prev => {
-      const next = scrollTop < AT_TOP_THRESHOLD;
-      return prev === next ? prev : next;
-    });
-
-    if (distFromBottom <= REPARK_THRESHOLD) {
-      setParkedState(true);
-      savedScrollTopRef.current = null;
-      return;
-    }
-
-    if (allowUnpark && distFromBottom >= UNPARK_THRESHOLD) {
-      setParkedState(false);
-    }
-
-    if (!parkedRef.current) {
-      savedScrollTopRef.current = scrollTop;
-    }
-  }, [setParkedState]);
-
-  // ── Session / fork reset → always park ────────────────────────────
+  // ── Effect 1: Session/fork reset → always stick ──────────────────
   useEffect(() => {
-    clearProgrammaticGuard();
-    clearTimeout(introSettleTimerRef.current);
-    userScrollSuppressUntilRef.current = 0;
-    setParkedState(true);
+    setStick(true);
     setIsAtTop(true);
-    savedScrollTopRef.current = null;
-    introPlayedForRef.current = null;
-  }, [clearProgrammaticGuard, remount, sessionId, setParkedState]);
+    savedScrollTop.current = null;
+    scrollSource.current = null;
+  }, [sessionId, remount, setStick]);
 
-  // ── Scroll listener — only attached for the active tab ─────────────
+  // ── Save scroll position before FlexLayout hides the tab ─────────
+  useEffect(() => {
+    registerOnBeforeHide(() => {
+      if (scrollRef.current) savedScrollTop.current = scrollRef.current.scrollTop;
+    });
+    return () => registerOnBeforeHide(null);
+  }, [scrollRef, registerOnBeforeHide]);
+
+  // ── Effect 2: Scroll listener — only when DOM visible ────────────
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || !isVisible) return;
+    if (!el || !isDomVisible) return;
 
-    const onScroll = () => {
-      const currentEl = scrollRef.current;
-      if (!currentEl || currentEl.clientHeight === 0) return;
-      syncFromElement(currentEl, !programmaticScrollRef.current);
-    };
+    const evaluate = (allowUnpark: boolean) => {
+      const cur = scrollRef.current;
+      if (!cur || cur.clientHeight === 0) return;
+      const dist = cur.scrollHeight - cur.scrollTop - cur.clientHeight;
 
-    const cancelProgrammaticScroll = () => {
-      clearProgrammaticGuard();
-      // Suppress ResizeObserver auto-pin so the user's scroll event has
-      // time to travel past UNPARK_THRESHOLD before a resize snaps back.
-      userScrollSuppressUntilRef.current = performance.now() + USER_SCROLL_SUPPRESS_MS;
-    };
+      setIsAtTop(prev => {
+        const next = cur.scrollTop < AT_TOP_THRESHOLD;
+        return prev === next ? prev : next;
+      });
 
-    const onScrollEnd = () => {
-      clearProgrammaticGuard();
-      userScrollSuppressUntilRef.current = 0;
-      if (scrollRef.current && scrollRef.current.clientHeight > 0) {
-        // Evaluate honestly — this is the final resting position after the
-        // user's gesture, so allow unpark if they scrolled far enough.
-        syncFromElement(scrollRef.current, true);
+      if (dist <= REPARK_THRESHOLD) {
+        setStick(true);
+        savedScrollTop.current = null;
+        return;
+      }
+
+      if (allowUnpark && dist >= UNPARK_THRESHOLD) {
+        setStick(false);
+      }
+
+      if (!stickRef.current) {
+        savedScrollTop.current = cur.scrollTop;
       }
     };
 
-    el.addEventListener("scroll", onScroll, { passive: true });
-    el.addEventListener("wheel", cancelProgrammaticScroll, { passive: true });
-    el.addEventListener("touchstart", cancelProgrammaticScroll, { passive: true });
-    el.addEventListener("pointerdown", cancelProgrammaticScroll, { passive: true });
-    el.addEventListener("scrollend", onScrollEnd as EventListener);
+    const onScroll = () => {
+      evaluate(scrollSource.current !== "programmatic");
+    };
 
-    // Sync on attach if visible.
-    if (el.clientHeight > 0) onScroll();
+    const markUserScroll = () => {
+      scrollSource.current = "user";
+    };
+
+    // Keyboard navigation keys (PageUp/Down, arrows, Home/End, Space)
+    // don't fire wheel/touch/pointer events. Without this, keyboard scrolls
+    // during active streaming can't unpark because ResizeObserver keeps
+    // re-arming scrollSource to "programmatic" between scroll events.
+    const onKeyDown = (e: KeyboardEvent) => {
+      const navKeys = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "]);
+      if (navKeys.has(e.key)) scrollSource.current = "user";
+    };
+
+    const onScrollEnd = () => {
+      scrollSource.current = null;
+      evaluate(true); // final honest position
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("wheel", markUserScroll, { passive: true });
+    el.addEventListener("touchstart", markUserScroll, { passive: true });
+    el.addEventListener("pointerdown", markUserScroll, { passive: true });
+    el.addEventListener("scrollend", onScrollEnd);
+    // keydown on window — keyboard events fire on the focused element (chat input),
+    // not on the scroll container. The browser still scrolls the nearest scrollable
+    // ancestor, so scroll events fire on `el`, but keydown doesn't.
+    window.addEventListener("keydown", onKeyDown);
+
+    // Sync on attach — but skip during visibility restore (false→true transition).
+    // Effect 3 handles restore via rAF; evaluating here would clobber
+    // savedScrollTop with the post-display:none zero value.
+    if (el.clientHeight > 0 && prevVisibleRef.current) evaluate(false);
 
     return () => {
       el.removeEventListener("scroll", onScroll);
-      el.removeEventListener("wheel", cancelProgrammaticScroll);
-      el.removeEventListener("touchstart", cancelProgrammaticScroll);
-      el.removeEventListener("pointerdown", cancelProgrammaticScroll);
-      el.removeEventListener("scrollend", onScrollEnd as EventListener);
+      el.removeEventListener("wheel", markUserScroll);
+      el.removeEventListener("touchstart", markUserScroll);
+      el.removeEventListener("pointerdown", markUserScroll);
+      el.removeEventListener("scrollend", onScrollEnd);
+      window.removeEventListener("keydown", onKeyDown);
     };
-  }, [clearProgrammaticGuard, isVisible, remount, scrollRef, sessionId, syncFromElement]);
+  }, [isDomVisible, remount, scrollRef, sessionId, setStick]);
 
-  // ── ResizeObserver: content growth, viewport resize, AND visibility
-  // When the tab transitions from display:none to visible, the scroll
-  // container goes from 0×0 to real dimensions — the observer fires.
-  // We detect this transition and restore/pin scroll position.
-  //
-  // Gated on isVisible so hidden tabs don't attach observers that
-  // corrupt scroll state during multi-tab mount races.
+  // ── Effect 3: ResizeObserver + visibility restore ────────────────
   useEffect(() => {
     const scrollEl = scrollRef.current;
-    if (!scrollEl || !isVisible) return;
+    if (!scrollEl) return;
+
+    // Visibility restore: false→true transition
+    if (isDomVisible && !prevVisibleRef.current) {
+      requestAnimationFrame(() => {
+        const el = scrollRef.current;
+        if (!el || el.clientHeight === 0) return;
+        if (stickRef.current) {
+          scrollSource.current = "programmatic";
+          el.scrollTop = el.scrollHeight;
+          savedScrollTop.current = null;
+        } else if (savedScrollTop.current != null) {
+          el.scrollTop = Math.max(0, Math.min(savedScrollTop.current, el.scrollHeight - el.clientHeight));
+        }
+      });
+    }
+    prevVisibleRef.current = isDomVisible;
+
+    if (!isDomVisible) return;
 
     const contentEl = scrollEl.querySelector('.crispy-transcript-content');
     if (!(contentEl instanceof HTMLElement)) return;
 
-    // Seed initial visibility.
-    wasVisibleRef.current = scrollEl.clientHeight > 0;
-
-    const handleResize = () => {
-      const el = scrollRef.current;
-      if (!el) return;
-
-      const isDomVisible = el.clientHeight > 0;
-      const wasVisible = wasVisibleRef.current;
-
-      // Guard against transient zero-height during layout reflow (FlexLayout
-      // tab drag, window resize, split creation). A momentary clientHeight===0
-      // would flip wasVisibleRef to false, and when the element regains height
-      // the "becoming visible" branch would restore a stale scroll position
-      // instead of keeping parked state. Only trust zero-height when the tab
-      // is actually hidden (isVisible===false from the hook parameter).
-      if (!isDomVisible && isVisible) {
-        // DOM says zero-height but we're supposed to be visible — transient
-        // reflow. Don't update wasVisibleRef, just skip this resize.
-        return;
-      }
-      wasVisibleRef.current = isDomVisible;
-
-      if (!isDomVisible) {
-        // Going hidden: save scroll position.
-        if (wasVisible && !parkedRef.current) {
-          savedScrollTopRef.current = el.scrollTop;
-        }
-        return;
-      }
-
-      if (!wasVisible && isDomVisible) {
-        // Becoming visible: restore or pin.
-        requestAnimationFrame(() => {
-          if (!scrollRef.current || scrollRef.current.clientHeight === 0) return;
-          const target = scrollRef.current;
-          if (parkedRef.current) {
-            beginProgrammaticGuard();
-            target.scrollTop = target.scrollHeight;
-            savedScrollTopRef.current = null;
-          } else if (savedScrollTopRef.current != null) {
-            target.scrollTop = clampScrollTop(target, savedScrollTopRef.current);
-          }
-          syncFromElement(target, false);
-        });
-        return;
-      }
-
-      // Normal resize while visible: apply parked policy.
-      // Skip auto-pin while the user is actively scrolling — otherwise the
-      // ResizeObserver re-arms the guard before the scroll event can unpark.
-      const suppressAutoPin = performance.now() < userScrollSuppressUntilRef.current;
-      if (parkedRef.current && !suppressAutoPin) {
-        // Guard against the scroll event that fires from this assignment.
-        // Without the guard, rapidly changing dimensions during streaming
-        // can cause distFromBottom > UNPARK_THRESHOLD between the assignment
-        // and the scroll handler, accidentally unparking the user.
-        beginProgrammaticGuard();
-        el.scrollTop = el.scrollHeight;
-        savedScrollTopRef.current = null;
-
-        // Intro scroll: after content stops growing for 250ms, start
-        // one viewport above the bottom and smooth-scroll down. Gives
-        // spatial context that there's history above. One-shot per session.
-        // Skip for observer-mode tabs — they're background child sessions
-        // where the peek animation adds no value and can corrupt scroll state.
-        if (!observerMode && sessionId && introPlayedForRef.current !== sessionId) {
-          clearTimeout(introSettleTimerRef.current);
-          introSettleTimerRef.current = setTimeout(() => {
-            if (!scrollRef.current || introPlayedForRef.current === sessionId) return;
-            const target = scrollRef.current;
-            // Check visibility BEFORE marking as played so a hidden tab
-            // doesn't consume the one-shot without actually animating.
-            if (!parkedRef.current || target.clientHeight === 0) return;
-            introPlayedForRef.current = sessionId;
-            const { scrollHeight, clientHeight } = target;
-            if (scrollHeight <= clientHeight * 1.5) return; // not enough content to bother
-
-            // Start one viewport above the bottom, smooth-scroll to bottom.
-            const startAt = Math.max(0, scrollHeight - clientHeight * 2);
-            target.scrollTop = startAt;
-            beginProgrammaticGuard();
-            target.scrollTo({ top: scrollHeight, behavior: "smooth" });
-          }, 250);
-        }
-      } else {
-        savedScrollTopRef.current = el.scrollTop;
-      }
-
-      syncFromElement(el, false);
-    };
-
     const observer = new ResizeObserver(() => {
-      handleResize();
+      const el = scrollRef.current;
+      if (!el || el.clientHeight === 0) return;
+
+      if (stickRef.current) {
+        scrollSource.current = "programmatic";
+        el.scrollTop = el.scrollHeight;
+        savedScrollTop.current = null;
+      }
     });
 
     observer.observe(scrollEl);
     observer.observe(contentEl);
 
-    // Initial pin if visible and parked.
+    // Initial pin if visible and stuck
     const frameId = requestAnimationFrame(() => {
-      if (scrollRef.current && scrollRef.current.clientHeight > 0) {
-        handleResize();
+      const el = scrollRef.current;
+      if (el && el.clientHeight > 0 && stickRef.current) {
+        scrollSource.current = "programmatic";
+        el.scrollTop = el.scrollHeight;
       }
     });
 
     return () => {
       cancelAnimationFrame(frameId);
       observer.disconnect();
-      // Reset visibility tracking on teardown so re-activation always
-      // sees a clean hidden→visible transition instead of stale state.
-      wasVisibleRef.current = false;
-      savedScrollTopRef.current = null;
     };
-  }, [beginProgrammaticGuard, isVisible, observerMode, remount, scrollRef, sessionId, syncFromElement]);
+  }, [isDomVisible, remount, scrollRef, sessionId]);
 
-  // ── User-initiated scroll commands ────────────────────────────────
+  // ── User-initiated scroll commands ───────────────────────────────
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-
-    setParkedState(true);
-    savedScrollTopRef.current = null;
-    beginProgrammaticGuard();
+    setStick(true);
+    savedScrollTop.current = null;
+    scrollSource.current = "programmatic";
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [beginProgrammaticGuard, scrollRef, setParkedState]);
+  }, [scrollRef, setStick]);
 
   const scrollToTop = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-
-    setParkedState(false);
-    savedScrollTopRef.current = 0;
-    beginProgrammaticGuard();
+    setStick(false);
+    savedScrollTop.current = 0;
+    scrollSource.current = "programmatic";
     el.scrollTo({ top: 0, behavior: "smooth" });
-  }, [beginProgrammaticGuard, scrollRef, setParkedState]);
+  }, [scrollRef, setStick]);
 
   const pinToBottom = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-
-    setParkedState(true);
-    savedScrollTopRef.current = null;
+    setStick(true);
+    savedScrollTop.current = null;
+    scrollSource.current = "programmatic";
     el.scrollTop = el.scrollHeight;
-    // Guard against the async scroll event racing with content growth.
-    // Without this, React can render new entries (e.g. the user's own message)
-    // between the scrollTop assignment and the scroll handler, causing
-    // distFromBottom > UNPARK_THRESHOLD → spurious unpark.
-    beginProgrammaticGuard();
-    syncFromElement(el, false);
-  }, [beginProgrammaticGuard, scrollRef, setParkedState, syncFromElement]);
+  }, [scrollRef, setStick]);
 
-  useEffect(() => {
-    return () => {
-      clearProgrammaticGuard();
-      clearTimeout(introSettleTimerRef.current);
-    };
-  }, [clearProgrammaticGuard]);
-
-  return { parked, isAtTop, scrollToBottom, scrollToTop, pinToBottom };
+  return { stickToBottom, isAtTop, scrollToBottom, scrollToTop, pinToBottom };
 }

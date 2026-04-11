@@ -1,17 +1,19 @@
 /**
- * TabContainerContext — provides a ref to the tab's outermost container div
- * and an `isActiveTab` flag for scoping global event listeners per-tab.
+ * TabContainerContext — provides a ref to the tab's outermost container div,
+ * an `isActiveTab` flag for scoping global event listeners per-tab, and
+ * `isDomVisible` driven by FlexLayout's native TabNode visibility API.
  *
- * Used to scope DOM queries (querySelector/querySelectorAll) to the current
- * tab's content area, preventing cross-tab element matches in multi-tab layouts.
- * In single-tab mode `isActiveTab` is always `true`; multi-tab hosts set it to
- * `false` for background tabs so global listeners (keyboard, paste, message)
- * only fire for the visible tab.
+ * `isDomVisible` is the ground truth for whether this tab's DOM is actually
+ * rendered (not display:none). It correctly handles splits, maximized tabsets,
+ * and all FlexLayout layouts. Use it for observers/listeners that depend on
+ * DOM visibility (scroll, resize). Use `isActiveTab` (sticky last-active-
+ * transcript-tab) for input routing (keyboard, paste, message).
  *
  * @module webview/context/TabContainerContext
  */
 
-import { createContext, useContext, useMemo, useRef } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import type { TabNode } from 'flexlayout-react';
 import { useTabControllerOptional } from './TabControllerContext.js';
 
 interface TabContainerContextValue {
@@ -20,14 +22,19 @@ interface TabContainerContextValue {
    *  (sticky — stays true when a non-transcript tab like a file viewer is selected).
    *  Use for input routing: keyboard events, chat inserts, file-panel actions. */
   isActiveTab: boolean;
-  /** True only when this tab is the currently visible tab. False when hidden behind any other tab.
-   *  Use for observers/listeners that depend on DOM visibility (scroll, resize). */
-  isVisibleTab: boolean;
+  /** True when FlexLayout reports this tab's DOM is rendered (not display:none).
+   *  Correctly handles split layouts where multiple tabs are visible simultaneously.
+   *  Use for scroll save/restore, ResizeObservers, IntersectionObservers. */
+  isDomVisible: boolean;
+  /** Register a callback to fire synchronously BEFORE display:none is applied.
+   *  This is the only moment where scrollTop is still valid for saving.
+   *  Pass null to unregister. */
+  registerOnBeforeHide: (cb: (() => void) | null) => void;
 }
 
 const TabContainerContext = createContext<TabContainerContextValue | null>(null);
 
-export function TabContainerProvider({ children, tabId }: { children: React.ReactNode; tabId?: string }): React.JSX.Element {
+export function TabContainerProvider({ children, tabId, tabNode }: { children: React.ReactNode; tabId?: string; tabNode?: TabNode }): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const controller = useTabControllerOptional();
   // Derive isActiveTab from the controller's activeTabId (reactive).
@@ -39,14 +46,33 @@ export function TabContainerProvider({ children, tabId }: { children: React.Reac
       || controller.lastActiveTranscriptTabId === tabId)
     : true;
 
-  // Strict visibility: only the tab FlexLayout is actually showing.
-  // Unlike isActiveTab, this goes false when a non-transcript tab (file viewer,
-  // git panel) is selected — even if this tab is lastActiveTranscriptTabId.
-  const isVisibleTab = tabId
-    ? (controller?.activeTabId == null || controller.activeTabId === tabId)
-    : true;
+  // --- FlexLayout native DOM visibility ---
+  const [isDomVisible, setIsDomVisible] = useState(() => tabNode?.isVisible() ?? true);
+  const onBeforeHideRef = useRef<(() => void) | null>(null);
 
-  const value = useMemo(() => ({ containerRef, isActiveTab, isVisibleTab }), [isActiveTab, isVisibleTab]);
+  useEffect(() => {
+    if (!tabNode) return;
+    setIsDomVisible(tabNode.isVisible()); // seed
+    const handler = ({ visible }: { visible: boolean }) => {
+      // CRITICAL: Save scroll position SYNCHRONOUSLY in this handler.
+      // FlexLayout fires setVisible(false) BEFORE React commits display:none to DOM.
+      // This is the ONLY moment where scrollTop is still valid. By the time any
+      // React effect processes the state change, scrollTop is already 0.
+      if (!visible) onBeforeHideRef.current?.();
+      setIsDomVisible(visible);
+    };
+    tabNode.setEventListener("visibility", handler);
+    return () => tabNode.removeEventListener("visibility");
+  }, [tabNode]);
+
+  const registerOnBeforeHide = useCallback((cb: (() => void) | null) => {
+    onBeforeHideRef.current = cb;
+  }, []);
+
+  const value = useMemo(
+    () => ({ containerRef, isActiveTab, isDomVisible, registerOnBeforeHide }),
+    [isActiveTab, isDomVisible, registerOnBeforeHide],
+  );
 
   return (
     <TabContainerContext.Provider value={value}>
@@ -70,9 +96,17 @@ export function useIsActiveTab(): boolean {
   return ctx?.isActiveTab ?? true;
 }
 
-/** Returns whether this tab is strictly visible (not hidden behind any other tab).
- *  Use for observers/listeners that depend on DOM visibility (scroll, resize). */
-export function useIsVisibleTab(): boolean {
+/** Returns FlexLayout ground-truth DOM visibility.
+ *  True for ALL visible tabs in split layouts. */
+export function useIsDomVisible(): boolean {
   const ctx = useContext(TabContainerContext);
-  return ctx?.isVisibleTab ?? true;
+  return ctx?.isDomVisible ?? true;
 }
+
+/** Returns the registerOnBeforeHide callback for saving state before display:none. */
+export function useRegisterOnBeforeHide(): (cb: (() => void) | null) => void {
+  const ctx = useContext(TabContainerContext);
+  return ctx?.registerOnBeforeHide ?? NOOP_REGISTER;
+}
+
+const NOOP_REGISTER = (_cb: (() => void) | null): void => {};

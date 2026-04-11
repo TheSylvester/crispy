@@ -59,7 +59,7 @@ import { BlocksToolPanel } from "../blocks/BlocksToolPanel.js";
 import { useFilePanel } from "../context/FilePanelContext.js";
 import { useControlPanel } from "../context/ControlPanelContext.js";
 import { useTranscriptAnnotation } from "../hooks/useTranscriptAnnotation.js";
-import { useIsActiveTab, useIsVisibleTab, useTabContainer } from "../context/TabContainerContext.js";
+import { useIsActiveTab, useIsDomVisible, useRegisterOnBeforeHide, useTabContainer } from "../context/TabContainerContext.js";
 import { TranscriptAnnotationPopover } from "./TranscriptAnnotationPopover.js";
 
 // Debug mode now lives in PreferencesContext (default: on during development).
@@ -156,7 +156,8 @@ export function TranscriptViewer({ observerMode }: { observerMode?: boolean }): 
   const { toolPanelOpen } = useTabPanel();
   const { registerInsertHandler } = useFilePanel();
   const isActiveTab = useIsActiveTab();
-  const isVisibleTab = useIsVisibleTab();
+  const isDomVisible = useIsDomVisible();
+  const registerOnBeforeHide = useRegisterOnBeforeHide();
   const { containerRef } = useTabContainer();
 
   // Read hasForkHistory and previewEntries from context.
@@ -260,12 +261,12 @@ export function TranscriptViewer({ observerMode }: { observerMode?: boolean }): 
     return () => clearTimeout(approvalWatchdogRef.current);
   }, [channelState, approvalRequest, selectedSessionId, transport]);
 
-  const { parked, isAtTop, scrollToBottom, scrollToTop, pinToBottom } = useAutoScroll({
+  const { stickToBottom, isAtTop, scrollToBottom, scrollToTop, pinToBottom } = useAutoScroll({
     sessionId: selectedSessionId,
     scrollRef: transcriptRef,
     remount: hasForkHistory,
-    isVisible: isVisibleTab,
-    observerMode: effectiveObserverMode,
+    isDomVisible,
+    registerOnBeforeHide,
   });
 
   // Track control panel height for CSS custom property --cp-height.
@@ -525,7 +526,7 @@ export function TranscriptViewer({ observerMode }: { observerMode?: boolean }): 
         </svg>
       </button>
       <button
-        className={`crispy-scroll-nav crispy-scroll-to-bottom ${parked ? 'crispy-scroll-to-bottom--hidden' : ''}`}
+        className={`crispy-scroll-nav crispy-scroll-to-bottom ${stickToBottom ? 'crispy-scroll-to-bottom--hidden' : ''}`}
         onClick={scrollToBottom}
         aria-label="Scroll to bottom"
       >

@@ -133,10 +133,10 @@ type TabSessionMap = Map<string, string | null>;
 // TabContent — inner wrapper per tab
 // ============================================================================
 
-function TabContent({ tabId, forkConfig, prefillContent, observerMode }: { tabId: string; forkConfig?: ForkConfig | null; prefillContent?: string | null; observerMode?: boolean }): React.JSX.Element {
+function TabContent({ tabId, tabNode, forkConfig, prefillContent, observerMode }: { tabId: string; tabNode?: TabNode; forkConfig?: ForkConfig | null; prefillContent?: string | null; observerMode?: boolean }): React.JSX.Element {
   const { effectiveSessionId } = useTabSession();
   return (
-    <TabContainerProvider tabId={tabId}>
+    <TabContainerProvider tabId={tabId} tabNode={tabNode}>
       <TabPanelProvider>
         <FileIndexProvider>
           <FilePanelProvider>
@@ -552,7 +552,7 @@ export function FlexAppLayout(): React.JSX.Element {
 
       return (
         <TabSessionProvider sessionId={sessionId} onSessionChange={onSessionChange}>
-          <TabContent tabId={tabId} forkConfig={forkConfig} prefillContent={prefillContent} observerMode={!!autoClose} />
+          <TabContent tabId={tabId} tabNode={node} forkConfig={forkConfig} prefillContent={prefillContent} observerMode={!!autoClose} />
         </TabSessionProvider>
       );
     } else if (node.getComponent() === 'git') {
