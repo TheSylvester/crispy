@@ -6115,20 +6115,18 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   --context-high: #cf222e;
   --context-critical: #a40e26;
 
-  /* Glassmorphism — Mac-like warm gray, not pure white */
-  --glass-bg: rgba(244, 244, 244, 0.8);
-  --glass-bg-hover: rgba(238, 238, 238, 0.9);
-  --glass-bg-opaque: rgba(244, 244, 244, 0.95);
-  --glass-bg-drag: rgba(234, 234, 234, 0.95);
-  --glass-bg-solid: rgba(244, 244, 244, 0.98);
-  --glass-bg-muted: rgba(224, 224, 224, 0.7);
+  /* Glassmorphism — cool gray, matching tab bar tone */
+  --glass-bg: rgba(228, 228, 228, 0.85);
+  --glass-bg-hover: rgba(220, 220, 220, 0.9);
+  --glass-bg-opaque: rgba(228, 228, 228, 0.95);
+  --glass-bg-drag: rgba(218, 218, 218, 0.95);
+  --glass-bg-solid: rgba(228, 228, 228, 0.98);
+  --glass-bg-muted: rgba(210, 210, 210, 0.7);
   --glass-border: rgba(0, 0, 0, 0.08);
   --glass-border-md: rgba(0, 0, 0, 0.12);
   --glass-border-strong: rgba(0, 0, 0, 0.2);
   --glass-border-frost: rgba(0, 0, 0, 0.1);
-  --glass-inner-glow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    inset 0 0 20px rgba(255, 255, 255, 0.15);
+  --glass-inner-glow: none;
   --glass-shadow-subtle: 0 2px 12px rgba(0, 0, 0, 0.08);
 
   /* Tints */
@@ -6155,7 +6153,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   --border-panel: var(--vscode-panel-border, #d5d5d5);
 
   /* Titlebar */
-  --titlebar-bg: rgba(240, 240, 240, 0.75);
+  --titlebar-bg: rgba(228, 228, 228, 0.8);
 }
 
 /* Light mode: override VS Code CSS variables that have dark fallbacks.
@@ -6172,9 +6170,9 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   --vscode-input-background: #fff;
   --vscode-input-border: #d0d0d0;
   --vscode-input-placeholderForeground: #888;
-  --vscode-button-secondaryBackground: #e0e0e0;
-  --vscode-button-secondaryForeground: #333;
-  --vscode-button-secondaryHoverBackground: #d4d4d4;
+  --vscode-button-secondaryBackground: #f0f0f0;
+  --vscode-button-secondaryForeground: #222;
+  --vscode-button-secondaryHoverBackground: #e6e6e6;
   --vscode-button-background: #0969da;
   --vscode-button-foreground: #fff;
   --vscode-button-hoverBackground: #0860ca;
@@ -6184,9 +6182,9 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   --vscode-dropdown-background: #fff;
   --vscode-dropdown-foreground: #333;
   --vscode-dropdown-border: #d0d0d0;
-  --vscode-tab-inactiveBackground: #e8e8e8;
+  --vscode-tab-inactiveBackground: #e4e4e4;
   --vscode-tab-inactiveForeground: rgba(0, 0, 0, 0.55);
-  --vscode-tab-activeBackground: #f5f5f5;
+  --vscode-tab-activeBackground: #efefef;
   --vscode-tab-activeForeground: #000;
   --vscode-tab-border: rgba(0, 0, 0, 0.08);
   --vscode-tab-hoverBackground: rgba(0, 0, 0, 0.04);
