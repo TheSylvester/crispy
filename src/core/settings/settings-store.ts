@@ -204,7 +204,10 @@ function sanitizeSettings(data: unknown): CrispySettings {
   }
 
   const settings = data as Record<string, unknown>;
-  const result: CrispySettings = { ...DEFAULT_SETTINGS };
+  const result: CrispySettings = {
+    ...DEFAULT_SETTINGS,
+    preferences: { ...DEFAULT_SETTINGS.preferences },
+  };
 
   // Preferences — accept any field whose type matches the default
   if (settings.preferences && typeof settings.preferences === 'object') {

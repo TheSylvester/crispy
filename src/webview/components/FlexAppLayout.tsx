@@ -205,10 +205,13 @@ export function FlexAppLayout(): React.JSX.Element {
     forceUpdate(n => n + 1);
   }, []);
 
-  // Rebuild model borders when gitPanelSide changes
+  // Rebuild model borders when gitPanelSide changes.
+  // Skip in VS Code mode — no borders to move, and Model.fromJson()
+  // during async preference load crashes the Layout component.
   useEffect(() => {
     if (gitPanelSide === gitPanelSideRef.current) return;
     gitPanelSideRef.current = gitPanelSide;
+    if (isVscode) return;
     const json = modelRef.current.toJson();
     if (json.borders) {
       for (const border of json.borders) {
@@ -220,7 +223,7 @@ export function FlexAppLayout(): React.JSX.Element {
     }
     modelRef.current = Model.fromJson(json);
     bump();
-  }, [gitPanelSide, bump]);
+  }, [gitPanelSide, bump, isVscode]);
 
   // Stable refs for use in callbacks
   const sessionsRef = useRef(sessions);
