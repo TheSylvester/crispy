@@ -575,6 +575,7 @@ fn spawn_new_window(app: &AppHandle, query: Option<&str>, explicit_path: Option<
             .inner_size(1200.0, 800.0)
             .min_inner_size(600.0, 400.0)
             .center()
+            .disable_drag_drop_handler()
             .on_navigation(|url| {
                 if is_local_url(url.as_str()) {
                     true
@@ -1463,6 +1464,7 @@ pub fn run() {
             .inner_size(1200.0, 800.0)
             .min_inner_size(600.0, 400.0)
             .center()
+            .disable_drag_drop_handler()
             .on_navigation(|url| {
                 if is_local_url(url.as_str()) {
                     true
