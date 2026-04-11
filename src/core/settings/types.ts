@@ -37,6 +37,8 @@ export interface SettingsPreferences {
   autoReflect: boolean;
   /** Which side the Git border panel docks to. Default: 'left'. */
   gitPanelSide: 'left' | 'right';
+  /** Use the display style accent color instead of permission-mode colors. */
+  useDisplayStyleAccent: boolean;
 }
 
 // ============================================================================
@@ -242,6 +244,7 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     displayStyle: 'crispy',
     autoReflect: true,
     gitPanelSide: 'left',
+    useDisplayStyleAccent: false,
   },
   providers: {},
   hooks: {

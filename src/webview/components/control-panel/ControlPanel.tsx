@@ -201,7 +201,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         (ref as React.RefObject<HTMLDivElement | null>).current = node;
       }
     }, [ref]);
-    const { renderMode, setRenderMode, toolViewOverride, setToolViewOverride, debugMode, setDebugMode, toolPanelAutoOpen, setToolPanelAutoOpen, autoReflect, setAutoReflect, badgeStyle, setBadgeStyle, displayStyle, setDisplayStyle, bashBlockInIcons, setBashBlockInIcons, gitPanelSide, setGitPanelSide } = usePreferences();
+    const { renderMode, setRenderMode, toolViewOverride, setToolViewOverride, debugMode, setDebugMode, toolPanelAutoOpen, setToolPanelAutoOpen, autoReflect, setAutoReflect, badgeStyle, setBadgeStyle, displayStyle, setDisplayStyle, bashBlockInIcons, setBashBlockInIcons, gitPanelSide, setGitPanelSide, useDisplayStyleAccent, setUseDisplayStyleAccent } = usePreferences();
     const { settingsPinned, setSettingsPinned } = useTabPanel();
     const [rosiePanelPinned, setRosiePanelPinned] = useState(false);
     const rosieLogEntries = useRosieLog();
@@ -1238,6 +1238,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onAutoReflectChange={setAutoReflect}
               gitPanelSide={gitPanelSide}
               onGitPanelSideChange={setGitPanelSide}
+              useDisplayStyleAccent={useDisplayStyleAccent}
+              onUseDisplayStyleAccentChange={setUseDisplayStyleAccent}
               rosieEnabled={rosieEnabled}
               rosieModel={rosieModel}
               onUpdateRosie={handleUpdateRosie}

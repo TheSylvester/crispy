@@ -13,6 +13,7 @@ import { useTabPanel } from '../context/TabPanelContext.js';
 import { useControlPanel } from '../context/ControlPanelContext.js';
 import { useTabSession } from '../context/TabSessionContext.js';
 import { useSessionStatus } from '../hooks/useSessionStatus.js';
+import { usePreferences } from '../context/PreferencesContext.js';
 
 // ============================================================================
 // Sizing constants (moved from App.tsx)
@@ -33,6 +34,7 @@ export function TabLayout({ children }: { children: React.ReactNode }): React.JS
   const { effectiveSessionId } = useTabSession();
   const { channelState } = useSessionStatus(effectiveSessionId);
   const isStreaming = channelState === 'streaming';
+  const { displayStyle, useDisplayStyleAccent } = usePreferences();
 
   const layoutRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(window.innerWidth);
@@ -70,6 +72,8 @@ export function TabLayout({ children }: { children: React.ReactNode }): React.JS
       data-tool-panel={toolPanelOpen ? (isSidebarOverlay ? 'overlay' : 'open') : 'collapsed'}
       data-agency={agencyMode}
       data-streaming={isStreaming || undefined}
+      data-display-style={displayStyle}
+      data-accent-mode={useDisplayStyleAccent ? 'skin' : undefined}
       style={{
         '--tool-panel-width': `${toolPanelWidth}px`,
         '--tool-panel-actual-width': `${toolPanelOpen ? panelPx : 0}px`,

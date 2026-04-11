@@ -63,6 +63,8 @@ interface Preferences {
   autoReflect: boolean;
   /** Which side the Git border panel docks to. */
   gitPanelSide: 'left' | 'right';
+  /** Use the display style accent color instead of permission-mode colors. */
+  useDisplayStyleAccent: boolean;
   /** Whether the Rosie bot tracker is enabled. Read-only from settings. */
   rosieBotEnabled: boolean;
 }
@@ -82,6 +84,7 @@ interface PreferencesContextValue extends Preferences {
   setDisplayStyle: (skin: DisplayStyle) => void;
   setBashBlockInIcons: (enabled: boolean) => void;
   setGitPanelSide: (side: 'left' | 'right') => void;
+  setUseDisplayStyleAccent: (enabled: boolean) => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
@@ -128,6 +131,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [autoReflect, setAutoReflectLocal] = useState(true);
   const [bashBlockInIcons, setBashBlockInIconsLocal] = useState(true);
   const [gitPanelSide, setGitPanelSideLocal] = useState<'left' | 'right'>('left');
+  const [useDisplayStyleAccent, setUseDisplayStyleAccentLocal] = useState(false);
 
   /** Latest known revision from settings RPC or incoming events. */
   const revisionRef = useRef(0);
@@ -150,6 +154,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       setAutoReflectLocal(prefs.autoReflect ?? true);
       setBashBlockInIconsLocal(prefs.bashBlockInIcons);
       if (prefs.gitPanelSide) setGitPanelSideLocal(prefs.gitPanelSide);
+      setUseDisplayStyleAccentLocal(prefs.useDisplayStyleAccent ?? false);
       setRosieBotEnabled(snapshot.settings.rosie?.bot?.enabled ?? false);
     }).catch((err) => {
       console.error('[PreferencesContext] Failed to load settings:', err);
@@ -180,6 +185,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         setAutoReflectLocal(prefs.autoReflect ?? true);
         setBashBlockInIconsLocal(prefs.bashBlockInIcons);
         if (prefs.gitPanelSide) setGitPanelSideLocal(prefs.gitPanelSide);
+        setUseDisplayStyleAccentLocal(prefs.useDisplayStyleAccent ?? false);
       }
       if (changedSections.includes('rosie')) {
         setRosieBotEnabled(snapshot.settings.rosie?.bot?.enabled ?? false);
@@ -259,6 +265,11 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     persistPreference({ gitPanelSide: side });
   }, [persistPreference]);
 
+  const setUseDisplayStyleAccent = useCallback((enabled: boolean) => {
+    setUseDisplayStyleAccentLocal(enabled);
+    persistPreference({ useDisplayStyleAccent: enabled });
+  }, [persistPreference]);
+
   // ============================================================================
   // Context value
   // ============================================================================
@@ -295,6 +306,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setBashBlockInIcons,
     gitPanelSide,
     setGitPanelSide,
+    useDisplayStyleAccent,
+    setUseDisplayStyleAccent,
   }), [
     renderMode,
 
@@ -327,6 +340,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setDisplayStyle,
     setBashBlockInIcons,
     setGitPanelSide,
+    useDisplayStyleAccent,
+    setUseDisplayStyleAccent,
   ]);
 
   return (

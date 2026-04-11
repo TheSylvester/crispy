@@ -42,6 +42,8 @@ interface SettingsPopupProps {
   onAutoReflectChange: (enabled: boolean) => void;
   gitPanelSide: 'left' | 'right';
   onGitPanelSideChange: (side: 'left' | 'right') => void;
+  useDisplayStyleAccent: boolean;
+  onUseDisplayStyleAccentChange: (enabled: boolean) => void;
   rosieEnabled: boolean;
   rosieModel?: string;
   onUpdateRosie: (patch: { enabled?: boolean; model?: string }) => void;
@@ -159,7 +161,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, displayStyle, onDisplayStyleChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, gitPanelSide, onGitPanelSideChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordAllowedUserIds, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, displayStyle, onDisplayStyleChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, gitPanelSide, onGitPanelSideChange, useDisplayStyleAccent, onUseDisplayStyleAccentChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordAllowedUserIds, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -269,6 +271,14 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
+          </label>
+          <label className="crispy-cp-settings__row">
+            <span>Use display style accent</span>
+            <input
+              type="checkbox"
+              checked={useDisplayStyleAccent}
+              onChange={(e) => onUseDisplayStyleAccentChange(e.target.checked)}
+            />
           </label>
           {renderMode === 'icons' && (
             <label className="crispy-cp-settings__row">
