@@ -466,7 +466,7 @@ export function TranscriptViewer({ observerMode }: { observerMode?: boolean }): 
   let mainContent: React.JSX.Element;
 
   if (!selectedSessionId && !hasForkHistory) {
-    mainContent = <WelcomePage loading={isLoading} />;
+    mainContent = <WelcomePage loading={isLoading} skinClass={displayStyle !== 'crispy' ? `skin-${displayStyle}` : undefined} />;
   } else if (error) {
     mainContent = <div className="crispy-error">{error}</div>;
   } else {

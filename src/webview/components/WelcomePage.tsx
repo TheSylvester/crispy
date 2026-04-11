@@ -12,11 +12,12 @@ import { CRISPY_VERSION } from "../../core/version.js";
 
 interface WelcomePageProps {
   loading?: boolean;
+  skinClass?: string;
 }
 
-export function WelcomePage({ loading }: WelcomePageProps): React.JSX.Element {
+export function WelcomePage({ loading, skinClass }: WelcomePageProps): React.JSX.Element {
   return (
-    <div className="crispy-welcome">
+    <div className={`crispy-welcome${skinClass ? ` ${skinClass}` : ''}`}>
       <div className="crispy-welcome__content">
         <div
           className="crispy-welcome__icon"
