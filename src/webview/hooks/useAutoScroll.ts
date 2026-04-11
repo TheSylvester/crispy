@@ -194,11 +194,23 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
       const el = scrollRef.current;
       if (!el) return;
 
-      const isVisible = el.clientHeight > 0;
+      const isDomVisible = el.clientHeight > 0;
       const wasVisible = wasVisibleRef.current;
-      wasVisibleRef.current = isVisible;
 
-      if (!isVisible) {
+      // Guard against transient zero-height during layout reflow (FlexLayout
+      // tab drag, window resize, split creation). A momentary clientHeight===0
+      // would flip wasVisibleRef to false, and when the element regains height
+      // the "becoming visible" branch would restore a stale scroll position
+      // instead of keeping parked state. Only trust zero-height when the tab
+      // is actually hidden (isVisible===false from the hook parameter).
+      if (!isDomVisible && isVisible) {
+        // DOM says zero-height but we're supposed to be visible — transient
+        // reflow. Don't update wasVisibleRef, just skip this resize.
+        return;
+      }
+      wasVisibleRef.current = isDomVisible;
+
+      if (!isDomVisible) {
         // Going hidden: save scroll position.
         if (wasVisible && !parkedRef.current) {
           savedScrollTopRef.current = el.scrollTop;
@@ -206,7 +218,7 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
         return;
       }
 
-      if (!wasVisible && isVisible) {
+      if (!wasVisible && isDomVisible) {
         // Becoming visible: restore or pin.
         requestAnimationFrame(() => {
           if (!scrollRef.current || scrollRef.current.clientHeight === 0) return;
