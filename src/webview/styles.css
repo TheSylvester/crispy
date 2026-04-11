@@ -6224,12 +6224,64 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .flexlayout__layout {
   --color-tab-content: #f5f5f5;
 }
 
-/* Light mode: override hardcoded dark-mode box-shadows and borders */
+/* Light mode: control panel — white card with clear elevation */
 body[data-vscode-theme-kind="vscode-light"] .crispy-cp,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp {
+  background: rgba(210, 210, 210, 0.72);
+  border-color: rgba(0, 0, 0, 0.12);
   box-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.08),
+    0 4px 24px rgba(0, 0, 0, 0.10),
     0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+/* Light mode: text input — recessed into gray shell */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-input,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-input {
+  background: rgba(255, 255, 255, 0.35);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* Light mode: select dropdowns — semi-transparent on gray shell */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-controls select,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-controls select {
+  background: rgba(255, 255, 255, 0.45);
+  border-color: rgba(0, 0, 0, 0.15);
+  color: #333;
+}
+
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-controls select:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-controls select:hover {
+  background: rgba(255, 255, 255, 0.6);
+  color: #111;
+}
+
+/* Light mode: agency select glow — softer on gray surface */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-agency,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-agency {
+  box-shadow: 0 0 5px
+    color-mix(in srgb, var(--frame-highlight) 35%, transparent);
+}
+
+/* Light mode: icon toggles — readable on gray shell */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-bypass svg,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-bypass svg,
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-chrome svg,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-chrome svg {
+  color: #444;
+}
+
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-bypass:hover svg,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-bypass:hover svg {
+  color: #111;
+}
+
+/* Light mode: settings/rosie/fork icons — readable on gray shell */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-settings__btn,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-settings__btn,
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-rosie__btn,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-rosie__btn {
+  color: #444;
 }
 
 body[data-vscode-theme-kind="vscode-light"] .crispy-scroll-nav,
@@ -6305,12 +6357,12 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose a {
   text-decoration-color: rgba(0, 85, 170, 0.4);
 }
 
-/* Light mode: streaming glow uses darker shadow */
+/* Light mode: streaming glow uses elevated panel shadow */
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-streaming] .crispy-cp,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-streaming] .crispy-cp {
   box-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.08),
-    0 1px 4px rgba(0, 0, 0, 0.06),
+    0 4px 24px rgba(0, 0, 0, 0.10),
+    0 1px 4px rgba(0, 0, 0, 0.08),
     var(--agency-glow-shadow, 0 0 12px rgba(0, 0, 0, 0.1));
 }
 
