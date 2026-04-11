@@ -21,6 +21,11 @@ const REPARK_THRESHOLD = 10;
 const AT_TOP_THRESHOLD = 50;
 /** Timeout fallback for smooth-scroll completion. */
 const PROGRAMMATIC_SCROLL_GUARD_MS = 450;
+/** How long a user scroll gesture suppresses ResizeObserver auto-pin.
+ *  Must be long enough for the scroll event to fire and evaluate unpark
+ *  after the user's wheel/touch, but short enough to not delay re-park
+ *  when the user stops scrolling near the bottom. */
+const USER_SCROLL_SUPPRESS_MS = 400;
 
 export interface UseAutoScrollOptions {
   sessionId: string | null;
@@ -28,6 +33,10 @@ export interface UseAutoScrollOptions {
   scrollRef: RefObject<HTMLDivElement | null>;
   /** Extra signal to re-attach when the scroll container mounts (e.g. fork history preload). */
   remount?: boolean;
+  /** When false, detach observers/listeners so hidden tabs don't corrupt scroll state. */
+  isVisible?: boolean;
+  /** Skip intro animation for observer-mode (autoClose) tabs. */
+  observerMode?: boolean;
 }
 
 export interface UseAutoScrollReturn {
@@ -46,7 +55,7 @@ function clampScrollTop(el: HTMLDivElement, top: number): number {
 }
 
 export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
-  const { sessionId, scrollRef, remount } = opts;
+  const { sessionId, scrollRef, remount, isVisible = true, observerMode = false } = opts;
 
   const [parked, setParked] = useState(true);
   const [isAtTop, setIsAtTop] = useState(true);
@@ -60,6 +69,10 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
   // One-shot intro animation per session: small "peek" scroll to hint at history above.
   const introPlayedForRef = useRef<string | null>(null);
   const introSettleTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Deadline (performance.now) until which ResizeObserver must not auto-pin.
+  // Set by wheel/touch/pointerdown so the user's scroll event has time to
+  // evaluate unpark before a resize snaps them back to bottom.
+  const userScrollSuppressUntilRef = useRef(0);
 
   const setParkedState = useCallback((next: boolean) => {
     parkedRef.current = next;
@@ -107,16 +120,17 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
   useEffect(() => {
     clearProgrammaticGuard();
     clearTimeout(introSettleTimerRef.current);
+    userScrollSuppressUntilRef.current = 0;
     setParkedState(true);
     setIsAtTop(true);
     savedScrollTopRef.current = null;
     introPlayedForRef.current = null;
   }, [clearProgrammaticGuard, remount, sessionId, setParkedState]);
 
-  // ── Scroll listener — always attached, guards on visibility ────────
+  // ── Scroll listener — only attached for the active tab ─────────────
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el) return;
+    if (!el || !isVisible) return;
 
     const onScroll = () => {
       const currentEl = scrollRef.current;
@@ -126,12 +140,18 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
 
     const cancelProgrammaticScroll = () => {
       clearProgrammaticGuard();
+      // Suppress ResizeObserver auto-pin so the user's scroll event has
+      // time to travel past UNPARK_THRESHOLD before a resize snaps back.
+      userScrollSuppressUntilRef.current = performance.now() + USER_SCROLL_SUPPRESS_MS;
     };
 
     const onScrollEnd = () => {
       clearProgrammaticGuard();
+      userScrollSuppressUntilRef.current = 0;
       if (scrollRef.current && scrollRef.current.clientHeight > 0) {
-        syncFromElement(scrollRef.current, false);
+        // Evaluate honestly — this is the final resting position after the
+        // user's gesture, so allow unpark if they scrolled far enough.
+        syncFromElement(scrollRef.current, true);
       }
     };
 
@@ -151,15 +171,18 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
       el.removeEventListener("pointerdown", cancelProgrammaticScroll);
       el.removeEventListener("scrollend", onScrollEnd as EventListener);
     };
-  }, [clearProgrammaticGuard, remount, scrollRef, sessionId, syncFromElement]);
+  }, [clearProgrammaticGuard, isVisible, remount, scrollRef, sessionId, syncFromElement]);
 
   // ── ResizeObserver: content growth, viewport resize, AND visibility
   // When the tab transitions from display:none to visible, the scroll
   // container goes from 0×0 to real dimensions — the observer fires.
   // We detect this transition and restore/pin scroll position.
+  //
+  // Gated on isVisible so hidden tabs don't attach observers that
+  // corrupt scroll state during multi-tab mount races.
   useEffect(() => {
     const scrollEl = scrollRef.current;
-    if (!scrollEl) return;
+    if (!scrollEl || !isVisible) return;
 
     const contentEl = scrollEl.querySelector('.crispy-transcript-content');
     if (!(contentEl instanceof HTMLElement)) return;
@@ -201,7 +224,10 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
       }
 
       // Normal resize while visible: apply parked policy.
-      if (parkedRef.current) {
+      // Skip auto-pin while the user is actively scrolling — otherwise the
+      // ResizeObserver re-arms the guard before the scroll event can unpark.
+      const suppressAutoPin = performance.now() < userScrollSuppressUntilRef.current;
+      if (parkedRef.current && !suppressAutoPin) {
         // Guard against the scroll event that fires from this assignment.
         // Without the guard, rapidly changing dimensions during streaming
         // can cause distFromBottom > UNPARK_THRESHOLD between the assignment
@@ -213,13 +239,17 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
         // Intro scroll: after content stops growing for 250ms, start
         // one viewport above the bottom and smooth-scroll down. Gives
         // spatial context that there's history above. One-shot per session.
-        if (sessionId && introPlayedForRef.current !== sessionId) {
+        // Skip for observer-mode tabs — they're background child sessions
+        // where the peek animation adds no value and can corrupt scroll state.
+        if (!observerMode && sessionId && introPlayedForRef.current !== sessionId) {
           clearTimeout(introSettleTimerRef.current);
           introSettleTimerRef.current = setTimeout(() => {
             if (!scrollRef.current || introPlayedForRef.current === sessionId) return;
-            introPlayedForRef.current = sessionId;
             const target = scrollRef.current;
+            // Check visibility BEFORE marking as played so a hidden tab
+            // doesn't consume the one-shot without actually animating.
             if (!parkedRef.current || target.clientHeight === 0) return;
+            introPlayedForRef.current = sessionId;
             const { scrollHeight, clientHeight } = target;
             if (scrollHeight <= clientHeight * 1.5) return; // not enough content to bother
 
@@ -254,8 +284,12 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
     return () => {
       cancelAnimationFrame(frameId);
       observer.disconnect();
+      // Reset visibility tracking on teardown so re-activation always
+      // sees a clean hidden→visible transition instead of stale state.
+      wasVisibleRef.current = false;
+      savedScrollTopRef.current = null;
     };
-  }, [beginProgrammaticGuard, remount, scrollRef, sessionId, syncFromElement]);
+  }, [beginProgrammaticGuard, isVisible, observerMode, remount, scrollRef, sessionId, syncFromElement]);
 
   // ── User-initiated scroll commands ────────────────────────────────
   const scrollToBottom = useCallback(() => {
