@@ -201,7 +201,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         (ref as React.RefObject<HTMLDivElement | null>).current = node;
       }
     }, [ref]);
-    const { renderMode, setRenderMode, toolViewOverride, setToolViewOverride, debugMode, setDebugMode, toolPanelAutoOpen, setToolPanelAutoOpen, autoReflect, setAutoReflect, badgeStyle, setBadgeStyle, markdownSkin, setMarkdownSkin, bashBlockInIcons, setBashBlockInIcons, gitPanelSide, setGitPanelSide } = usePreferences();
+    const { renderMode, setRenderMode, toolViewOverride, setToolViewOverride, debugMode, setDebugMode, toolPanelAutoOpen, setToolPanelAutoOpen, autoReflect, setAutoReflect, badgeStyle, setBadgeStyle, displayStyle, setDisplayStyle, bashBlockInIcons, setBashBlockInIcons, gitPanelSide, setGitPanelSide } = usePreferences();
     const { settingsPinned, setSettingsPinned } = useTabPanel();
     const [rosiePanelPinned, setRosiePanelPinned] = useState(false);
     const rosieLogEntries = useRosieLog();
@@ -1223,8 +1223,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onToolPanelAutoOpenChange={setToolPanelAutoOpen}
               badgeStyle={badgeStyle}
               onBadgeStyleChange={setBadgeStyle}
-              markdownSkin={markdownSkin}
-              onMarkdownSkinChange={setMarkdownSkin}
+              displayStyle={displayStyle}
+              onDisplayStyleChange={setDisplayStyle}
               bashBlockInIcons={bashBlockInIcons}
               onBashBlockInIconsChange={setBashBlockInIcons}
               autoReflect={autoReflect}

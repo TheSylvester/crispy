@@ -31,8 +31,8 @@ export interface SettingsPreferences {
   bashBlockInIcons: boolean;
   renderMode: string;
   badgeStyle: string;
-  /** Visual skin for assistant markdown rendering. Default: 'crispy'. */
-  markdownSkin: string;
+  /** Display style for assistant markdown rendering. Default: 'crispy'. */
+  displayStyle: string;
   /** Auto-invoke /reflect after creating implementation plans. Default: true. */
   autoReflect: boolean;
   /** Which side the Git border panel docks to. Default: 'left'. */
@@ -239,7 +239,7 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     bashBlockInIcons: true,
     renderMode: 'icons',
     badgeStyle: 'frosted',
-    markdownSkin: 'crispy',
+    displayStyle: 'crispy',
     autoReflect: true,
     gitPanelSide: 'left',
   },

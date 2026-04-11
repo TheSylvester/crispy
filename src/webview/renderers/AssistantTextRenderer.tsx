@@ -35,8 +35,8 @@ export function AssistantTextRenderer({
   trailingInlineContent,
 }: AssistantTextRendererProps): React.JSX.Element {
   const { text } = block as TextBlock;
-  const { markdownSkin } = usePreferences();
-  const skinClass = markdownSkin !== 'crispy' ? ` skin-${markdownSkin}` : '';
+  const { displayStyle } = usePreferences();
+  const skinClass = displayStyle !== 'crispy' ? ` skin-${displayStyle}` : '';
   const inlineTail = trailingInlineContent && canAppendInlineTail(text)
     ? {
         p: (props: React.HTMLAttributes<HTMLParagraphElement>) => (

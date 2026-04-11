@@ -49,7 +49,7 @@ export const BlocksEntryWithRegistry = memo(function BlocksEntryWithRegistry({
   isLastEntry = false,
 }: BlocksEntryWithRegistryProps): React.JSX.Element | null {
   const registry = useBlocksToolRegistry();
-  const { renderMode, markdownSkin } = usePreferences();
+  const { renderMode, displayStyle } = usePreferences();
 
   // Normalize entry to rich blocks
   const blocks = useMemo(
@@ -74,7 +74,7 @@ export const BlocksEntryWithRegistry = memo(function BlocksEntryWithRegistry({
 
   // Get role for message class
   const role = blocks[0]?.context.role ?? 'unknown';
-  const skinClass = markdownSkin !== 'crispy' ? ` skin-${markdownSkin}` : '';
+  const skinClass = displayStyle !== 'crispy' ? ` skin-${displayStyle}` : '';
 
   // Fork/rewind only on root-level user messages (no parentToolUseId, actual user type)
   const showActions = !parentToolUseId && role === 'user' && entry.type === 'user' && forkTargetId !== undefined;

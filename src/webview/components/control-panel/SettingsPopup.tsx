@@ -15,7 +15,7 @@ import { ModelSelect } from './ModelSelect.js';
 import type { VendorModelGroup, AgencyMode } from './types.js';
 import { AgencyModeSelect } from './AgencyModeSelect.js';
 import type { RenderMode } from '../../types.js';
-import type { ToolViewOverride, BadgeStyle, MarkdownSkin } from '../../context/PreferencesContext.js';
+import type { ToolViewOverride, BadgeStyle, DisplayStyle } from '../../context/PreferencesContext.js';
 import type { WireProviderConfig, ProviderConfig, DiscordBotSettings } from '../../../core/settings/types.js';
 import type { CatchupStatus } from '../../../core/recall/catchup-types.js';
 import { formatDuration } from '../../utils/format.js';
@@ -34,8 +34,8 @@ interface SettingsPopupProps {
   onToolPanelAutoOpenChange: (enabled: boolean) => void;
   badgeStyle: BadgeStyle;
   onBadgeStyleChange: (style: BadgeStyle) => void;
-  markdownSkin: MarkdownSkin;
-  onMarkdownSkinChange: (skin: MarkdownSkin) => void;
+  displayStyle: DisplayStyle;
+  onDisplayStyleChange: (skin: DisplayStyle) => void;
   bashBlockInIcons: boolean;
   onBashBlockInIconsChange: (enabled: boolean) => void;
   autoReflect: boolean;
@@ -76,7 +76,7 @@ const BADGE_STYLES: { value: BadgeStyle; label: string }[] = [
   { value: 'solid', label: 'Solid' },
 ];
 
-const MARKDOWN_SKINS: { value: MarkdownSkin; label: string }[] = [
+const DISPLAY_STYLES: { value: DisplayStyle; label: string }[] = [
   { value: 'crispy',     label: 'Crispy (default)' },
   { value: 't3',         label: 'T3 Code' },
   { value: 'chatgpt',    label: 'ChatGPT' },
@@ -159,7 +159,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, markdownSkin, onMarkdownSkinChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, gitPanelSide, onGitPanelSideChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordAllowedUserIds, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, displayStyle, onDisplayStyleChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, gitPanelSide, onGitPanelSideChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordAllowedUserIds, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -260,12 +260,12 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
             </select>
           </label>
           <label className="crispy-cp-settings__row">
-            <span>Markdown Skin</span>
+            <span>Display Style</span>
             <select
-              value={markdownSkin}
-              onChange={(e) => onMarkdownSkinChange(e.target.value as MarkdownSkin)}
+              value={displayStyle}
+              onChange={(e) => onDisplayStyleChange(e.target.value as DisplayStyle)}
             >
-              {MARKDOWN_SKINS.map((s) => (
+              {DISPLAY_STYLES.map((s) => (
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
