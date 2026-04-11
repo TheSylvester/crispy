@@ -53,7 +53,6 @@ export function MessageActions({ targetAssistantId, copygetText }: MessageAction
         <button
           className="crispy-message-action"
           title="Fork from here"
-          disabled={isStreaming}
           onClick={() => onFork(targetAssistantId)}
           onMouseEnter={() => onForkPreviewHover(targetAssistantId, true)}
           onMouseLeave={() => onForkPreviewHover(targetAssistantId, false)}
