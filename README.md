@@ -1,6 +1,6 @@
 # Crispy
 
-**A power-user's workbench for multiple Claude Code and Codex instances at a time — run it in VS Code, in your browser, or from Discord on your phone.**
+**A GUI for Claude Code and Codex, built for multi-agent orchestration — with 'superthink' adversarial verification, agent memory, and Discord remote access.**
 
 [![npm](https://img.shields.io/npm/v/crispy-code?label=npm&color=blue)](https://www.npmjs.com/package/crispy-code)
 [![Version](https://img.shields.io/open-vsx/v/the-sylvester/crispy?label=OpenVSX&color=blue)](https://open-vsx.org/extension/the-sylvester/crispy)
@@ -28,9 +28,9 @@ The Windows native app and standalone browser now work like a full IDE — multi
 ![Multi-tab workbench — split sessions, file browser, terminal, and model selector in the Windows native app](https://raw.githubusercontent.com/TheSylvester/crispy/feat/flex-layout/media/multi-tab-workbench.png)
 
 - **Multi-tab sessions** — open multiple Claude/Codex conversations side-by-side in split views, each fully isolated with its own transcript, scroll position, and tool panel
-- **Visible agent orchestration** — sub-agent sessions surface as live read-only tabs you can watch in real time and fork at any point. No more black-box tool calls
+- **Visible agent orchestration** — agents from /superthink surface as live read-only tabs you can watch in real time and fork at any point. No more black-box tool calls
 
-![Superthink visible dispatch — sub-agent sessions open as live tabs you can watch and fork](https://raw.githubusercontent.com/TheSylvester/crispy/feat/flex-layout/media/superthink-visual-full-1.gif)
+![Superthink visible dispatch — agents open as live tabs you can watch and fork](https://raw.githubusercontent.com/TheSylvester/crispy/feat/flex-layout/media/superthink-visual-full-1.gif)
 
 - **Built-in terminal** — integrated terminal docked at the bottom, just like VS Code
 - **Dockable side panels** — Files and Git panels dock to left or right borders independently, with persisted layout preference
