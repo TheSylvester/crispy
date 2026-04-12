@@ -114,7 +114,7 @@
 .flexlayout__tab_button--selected {
   color: var(--vscode-tab-activeForeground, #fff);
   background: var(--vscode-tab-activeBackground, transparent);
-  border-bottom: 2px solid var(--vscode-focusBorder, #007acc);
+  border-bottom: 2px solid var(--color-accent);
 }
 
 /* Tab close button */

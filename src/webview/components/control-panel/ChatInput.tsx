@@ -11,7 +11,7 @@
 
 import { useRef, useLayoutEffect, useEffect, useCallback } from 'react';
 import type { AttachedImage } from './types.js';
-import { ForkIcon, MicIcon } from './icons.js';
+import { ForkIcon, MicIcon, SendIcon } from './icons.js';
 import { useMention } from '../../hooks/useMention.js';
 import { useCommandAutocomplete } from '../../hooks/useCommandAutocomplete.js';
 import { MentionDropdown } from './MentionDropdown.js';
@@ -176,7 +176,7 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
         onClick={onSend}
       >
         <span className="crispy-cp-send__icon">
-          {forkMode ? <ForkIcon /> : <>&#9654;</>}
+          {forkMode ? <ForkIcon /> : <SendIcon />}
         </span>
       </button>
     </div>

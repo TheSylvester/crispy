@@ -373,50 +373,75 @@ h2 {
 }
 
 /* === Skin accent colors — per display style, used when accent mode is on === */
-.crispy-tab-layout[data-display-style="crispy"] { --skin-accent: #e8a020; }
-.crispy-tab-layout[data-display-style="t3"] { --skin-accent: #1d4ed8; }
-.crispy-tab-layout[data-display-style="chatgpt"] { --skin-accent: #10a37f; }
-.crispy-tab-layout[data-display-style="claude"] { --skin-accent: #d97757; }
-.crispy-tab-layout[data-display-style="gemini"] { --skin-accent: #8ab4f8; }
-.crispy-tab-layout[data-display-style="cursor"] { --skin-accent: #4daafc; }
-.crispy-tab-layout[data-display-style="copilot"] { --skin-accent: #8957e5; }
-.crispy-tab-layout[data-display-style="deepseek"] { --skin-accent: #4d6bfe; }
-.crispy-tab-layout[data-display-style="perplexity"] { --skin-accent: #1fb8cd; }
-.crispy-tab-layout[data-display-style="terminal"] { --skin-accent: #33ff33; }
+/* Duplicated on body so elements outside .crispy-tab-layout (FlexLayout tabs, session selector) inherit */
+.crispy-tab-layout[data-display-style="crispy"], body[data-display-style="crispy"] { --skin-accent: #e8a020; }
+.crispy-tab-layout[data-display-style="t3"], body[data-display-style="t3"] { --skin-accent: #1d4ed8; }
+.crispy-tab-layout[data-display-style="chatgpt"], body[data-display-style="chatgpt"] { --skin-accent: #10a37f; }
+.crispy-tab-layout[data-display-style="claude"], body[data-display-style="claude"] { --skin-accent: #d97757; }
+.crispy-tab-layout[data-display-style="gemini"], body[data-display-style="gemini"] { --skin-accent: #8ab4f8; }
+.crispy-tab-layout[data-display-style="cursor"], body[data-display-style="cursor"] { --skin-accent: #4daafc; }
+.crispy-tab-layout[data-display-style="copilot"], body[data-display-style="copilot"] { --skin-accent: #8957e5; }
+.crispy-tab-layout[data-display-style="deepseek"], body[data-display-style="deepseek"] { --skin-accent: #4d6bfe; }
+.crispy-tab-layout[data-display-style="perplexity"], body[data-display-style="perplexity"] { --skin-accent: #1fb8cd; }
+.crispy-tab-layout[data-display-style="terminal"], body[data-display-style="terminal"] { --skin-accent: #33ff33; }
 
-/* Light-mode skin accent overrides */
+/* Light-mode skin accent overrides (on both .crispy-tab-layout and body for full cascade) */
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="crispy"],
-body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="crispy"]
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="crispy"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="crispy"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="crispy"]
   { --skin-accent: #b87318; }
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="t3"],
-body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="t3"]
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="t3"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="t3"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="t3"]
   { --skin-accent: #1e40af; }
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="claude"],
-body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="claude"]
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="claude"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="claude"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="claude"]
   { --skin-accent: #ae5630; }
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="chatgpt"],
-body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="chatgpt"]
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="chatgpt"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="chatgpt"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="chatgpt"]
   { --skin-accent: #0d8a6a; }
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="gemini"],
-body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="gemini"]
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="gemini"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="gemini"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="gemini"]
   { --skin-accent: #1a73e8; }
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="cursor"],
-body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="cursor"]
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="cursor"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="cursor"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="cursor"]
   { --skin-accent: #2563eb; }
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="copilot"],
-body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="copilot"]
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="copilot"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="copilot"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="copilot"]
   { --skin-accent: #7c3aed; }
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="deepseek"],
-body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="deepseek"]
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="deepseek"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="deepseek"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="deepseek"]
   { --skin-accent: #3b52cc; }
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="perplexity"],
-body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="perplexity"]
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="perplexity"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="perplexity"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="perplexity"]
   { --skin-accent: #0d9488; }
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="terminal"],
-body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="terminal"]
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="terminal"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="terminal"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="terminal"]
   { --skin-accent: #007f00; }
 
 /* === Accent mode: replace agency color tokens with display style accent === */
+body[data-accent-mode="skin"] {
+  --color-accent: var(--skin-accent);
+  --color-accent-hover: color-mix(in srgb, var(--skin-accent) 80%, black);
+}
 .crispy-tab-layout[data-accent-mode="skin"] {
   --agency-white: var(--skin-accent);
   --agency-blue: var(--skin-accent);
@@ -2677,10 +2702,11 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
   font-weight: 600;
   background: transparent;
   color: var(--color-accent);
-  border: 2px solid var(--color-accent);
-  border-radius: calc(var(--radius-xl) - 2px);
+  border: 1px solid var(--color-accent);
+  border-radius: 4px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, color 0.15s;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 30%, transparent);
   appearance: none;
   -webkit-appearance: none;
   box-shadow: none;
@@ -2690,6 +2716,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
 .crispy-cp-send:hover:not(:disabled) {
   background: var(--color-accent);
   color: var(--color-send-text);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--color-accent) 50%, transparent);
 }
 
 .crispy-cp-send:disabled {
@@ -2731,24 +2758,24 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
   background: transparent;
   color: var(--agency-red);
   border-color: var(--agency-red);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--agency-red) 30%, transparent);
 }
 .crispy-cp[data-agency="bypass-permissions"]
   .crispy-cp-send:hover:not(:disabled) {
   background: var(--agency-red);
   color: var(--color-send-text);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--agency-red) 50%, transparent);
 }
 
 /* Fork mode variant — different background for fork action */
 .crispy-cp-send--fork {
   background: transparent;
   color: var(--color-accent);
-  border-color: var(--color-accent);
 }
 
 .crispy-cp-send--fork:hover:not(:disabled) {
   background: var(--color-accent);
   color: var(--color-send-text);
-  border-color: var(--color-accent);
 }
 
 /* --------------------------------------------------------------------------
@@ -5380,7 +5407,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
 
 .crispy-titlebar__tool-panel-btn--active,
 .crispy-titlebar__sidebar-btn--active {
-  background: var(--vscode-list-activeSelectionBackground, #094771);
+  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
 }
 
 /* --- Disable transitions during drag resize --- */
@@ -6413,7 +6440,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
 /* Light mode: send button border */
 body[data-vscode-theme-kind="vscode-light"] .crispy-cp-send,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-send {
-  border-color: var(--color-accent);
+  border-color: transparent;
 }
 
 /* Light mode: dot-line subject */

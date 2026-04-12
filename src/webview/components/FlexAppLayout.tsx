@@ -165,7 +165,18 @@ export function FlexAppLayout(): React.JSX.Element {
   const { sessions, selectedSessionId } = useSession();
   const envKind = useEnvironment();
   const isVscode = envKind === 'vscode';
-  const { gitPanelSide } = usePreferences();
+  const { gitPanelSide, displayStyle, useDisplayStyleAccent } = usePreferences();
+
+  // Mirror display-style and accent-mode on <body> so CSS vars cascade
+  // to elements outside .crispy-tab-layout (e.g. FlexLayout tab strip).
+  useEffect(() => {
+    document.body.dataset.displayStyle = displayStyle;
+    document.body.dataset.accentMode = useDisplayStyleAccent ? 'skin' : '';
+    return () => {
+      delete document.body.dataset.displayStyle;
+      delete document.body.dataset.accentMode;
+    };
+  }, [displayStyle, useDisplayStyleAccent]);
 
   // Fresh layout on every load — tabs are ephemeral like browser tabs
   const [initialState] = useState(() => {
