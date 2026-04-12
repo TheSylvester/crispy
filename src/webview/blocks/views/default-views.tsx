@@ -163,7 +163,7 @@ function DefaultCompactView({ block, status, def }: DefaultCompactViewProps): Re
     <CompactBlock
       icon={def.icon}
       color={def.color}
-      name={block.name.toLowerCase()}
+      name={block.name}
       subject={subject}
       status={status}
     />
