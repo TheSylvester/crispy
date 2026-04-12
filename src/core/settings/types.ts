@@ -244,7 +244,7 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     displayStyle: 'crispy',
     autoReflect: true,
     gitPanelSide: 'left',
-    useDisplayStyleAccent: false,
+    useDisplayStyleAccent: true,
   },
   providers: {},
   hooks: {

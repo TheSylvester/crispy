@@ -373,21 +373,21 @@ h2 {
 }
 
 /* === Skin accent colors — per display style, used when accent mode is on === */
-.crispy-tab-layout[data-display-style="crispy"] { --skin-accent: var(--color-accent); }
+.crispy-tab-layout[data-display-style="crispy"] { --skin-accent: #e8a020; }
 .crispy-tab-layout[data-display-style="t3"] { --skin-accent: #1d4ed8; }
-.crispy-tab-layout[data-display-style="chatgpt"] { --skin-accent: #60a5fa; }
-.crispy-tab-layout[data-display-style="claude"] { --skin-accent: #da7756; }
-.crispy-tab-layout[data-display-style="gemini"] { --skin-accent: #a8c7fa; }
+.crispy-tab-layout[data-display-style="chatgpt"] { --skin-accent: #10a37f; }
+.crispy-tab-layout[data-display-style="claude"] { --skin-accent: #d97757; }
+.crispy-tab-layout[data-display-style="gemini"] { --skin-accent: #8ab4f8; }
 .crispy-tab-layout[data-display-style="cursor"] { --skin-accent: #4daafc; }
-.crispy-tab-layout[data-display-style="copilot"] { --skin-accent: #48A0C7; }
+.crispy-tab-layout[data-display-style="copilot"] { --skin-accent: #8957e5; }
 .crispy-tab-layout[data-display-style="deepseek"] { --skin-accent: #4d6bfe; }
-.crispy-tab-layout[data-display-style="perplexity"] { --skin-accent: #20b8cd; }
-.crispy-tab-layout[data-display-style="terminal"] { --skin-accent: #00aaff; }
+.crispy-tab-layout[data-display-style="perplexity"] { --skin-accent: #1fb8cd; }
+.crispy-tab-layout[data-display-style="terminal"] { --skin-accent: #33ff33; }
 
 /* Light-mode skin accent overrides */
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="crispy"],
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="crispy"]
-  { --skin-accent: var(--color-accent); }
+  { --skin-accent: #b87318; }
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="t3"],
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="t3"]
   { --skin-accent: #1e40af; }
@@ -396,7 +396,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
   { --skin-accent: #ae5630; }
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="chatgpt"],
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="chatgpt"]
-  { --skin-accent: #2563eb; }
+  { --skin-accent: #0d8a6a; }
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="gemini"],
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="gemini"]
   { --skin-accent: #1a73e8; }
@@ -405,7 +405,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
   { --skin-accent: #2563eb; }
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="copilot"],
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="copilot"]
-  { --skin-accent: #0969da; }
+  { --skin-accent: #7c3aed; }
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="deepseek"],
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="deepseek"]
   { --skin-accent: #3b52cc; }
@@ -414,7 +414,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
   { --skin-accent: #0d9488; }
 body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="terminal"],
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="terminal"]
-  { --skin-accent: #0077b6; }
+  { --skin-accent: #007f00; }
 
 /* === Accent mode: replace agency color tokens with display style accent === */
 .crispy-tab-layout[data-accent-mode="skin"] {
@@ -2876,25 +2876,13 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
   border-color: var(--frame-highlight);
 }
 
-/* --- Agency Mode dropdown — colored border/text for current mode --- */
+/* --- Agency Mode dropdown — plain style, no colored border/glow --- */
 
 .crispy-cp-agency {
-  color: var(--frame-highlight) !important;
-  border-color: var(--frame-highlight) !important;
   font-weight: 500;
-  box-shadow: 0 0 6px
-    color-mix(in srgb, var(--frame-highlight) 50%, transparent);
-}
-
-@supports not (color: color-mix(in srgb, red 50%, blue)) {
-  .crispy-cp-agency {
-    box-shadow: 0 0 6px rgba(255, 255, 255, 0.15);
-  }
 }
 
 .crispy-cp-agency:hover {
-  color: var(--frame-highlight) !important;
-  border-color: var(--frame-highlight) !important;
   background: var(--vscode-list-hoverBackground, #2a2d2e);
 }
 
@@ -6307,12 +6295,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-controls se
   color: #111;
 }
 
-/* Light mode: agency select glow — softer on gray surface */
-body[data-vscode-theme-kind="vscode-light"] .crispy-cp-agency,
-body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-agency {
-  box-shadow: 0 0 5px
-    color-mix(in srgb, var(--frame-highlight) 35%, transparent);
-}
+/* Light mode: agency select — no special styling */
 
 /* Light mode: icon toggles — readable on gray shell */
 body[data-vscode-theme-kind="vscode-light"] .crispy-cp-bypass svg,

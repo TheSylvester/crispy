@@ -131,7 +131,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [autoReflect, setAutoReflectLocal] = useState(true);
   const [bashBlockInIcons, setBashBlockInIconsLocal] = useState(true);
   const [gitPanelSide, setGitPanelSideLocal] = useState<'left' | 'right'>('left');
-  const [useDisplayStyleAccent, setUseDisplayStyleAccentLocal] = useState(false);
+  const [useDisplayStyleAccent, setUseDisplayStyleAccentLocal] = useState(true);
 
   /** Latest known revision from settings RPC or incoming events. */
   const revisionRef = useRef(0);
