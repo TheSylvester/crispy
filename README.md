@@ -13,34 +13,38 @@
 - **Discord bot** — live session monitor with inline approval buttons, session browser, and forum-based workspace channels. Approve tool use from your phone.
 - **Agent memory** — every transcript indexed locally with full-text search (instant) and semantic search (local model downloaded on first use). Backfills from your existing transcripts across vendors.
 - **/superthink** — pit Claude and Codex against each other on the same question. Catches bugs and blind spots a single model misses.
-- **Fork or rewind** from any message — opens side-by-side with full context
+- **Fork or rewind** from any message — opens as a split tab with full context
 - **Tool audit panel** — every tool call and sub-agent's work in a collapsible panel with timing and status badges
 - **Agency modes** — plan, auto-accept, `--dangerously-skip-permissions` — one click, persisted per session
 
 ---
 
-## What's New in v0.2.9
+## What's New in v0.3.0
 
-### Native Windows app (Tauri)
+### Multi-tab agent workbench
 
-Crispy now also ships as a standalone Windows desktop app — no VS Code, no Node, no browser required. Get it [here](https://github.com/TheSylvester/crispy/releases/latest).
+The Windows native app and standalone browser now work like a full IDE — multiple agent sessions open as tabs you can split, resize, and drag into any arrangement, with a built-in terminal, file browser, and Git panel.
 
-- **One-click install** — no admin required
-- **Connects to WSL automatically** — picks up your existing Claude Code or Codex sessions from WSL with no manual configuration
-- **System tray** — runs in the background, accessible from the tray icon
+![Superthink visible dispatch — sub-agent sessions open as live tabs you can watch and fork](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/superthink-visual-full-1.gif)
 
-### Headless setup with `crispy config`
+- **Multi-tab sessions** — open multiple Claude/Codex conversations side-by-side in split views, each fully isolated with its own transcript, scroll position, and tool panel
+- **Visible agent orchestration** — sub-agent sessions surface as live read-only tabs you can watch in real time and fork at any point. No more black-box tool calls
+- **Built-in terminal** — integrated terminal docked at the bottom, just like VS Code
+- **Dockable side panels** — Files and Git panels dock to left or right borders independently, with persisted layout preference
+- **File viewer tabs** — open files as editor-style tabs alongside your sessions, with syntax highlighting and "Execute in Crispy"
+- **Auto-reconnect** — the UI recovers automatically from connection drops and re-subscribes to all your sessions
 
-Want to run Crispy as a headless Discord bot on a server? `crispy config`
-walks you through model selection, permission mode, Discord bot token, and
-custom providers — all from the terminal, no browser needed. Pair with
-`crispy start` to run as a background daemon.
+### 10 display styles
+
+![Display styles — Crispy, T3, ChatGPT, Claude.ai, Gemini, Cursor, Copilot, DeepSeek, Perplexity, Terminal](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/crispy-markdown-skins-dark-supercut.gif)
+
+Customize how Crispy looks with 10 display styles (Crispy, T3, ChatGPT, Claude.ai, Gemini, Cursor, Copilot, DeepSeek, Perplexity, Terminal), 3 badge styles (Frosted, Tinted, Solid), and an accent color toggle.
 
 ### Other
 
-- **Marketplace skills in autocomplete** — third-party plugin skills now appear in the `/` and `$` dropdown
-- **Discord bot management** — delete button for bot configuration in Settings
-- **Approval pane fix** — parallel tool calls no longer clobber the approval panel
+- Improved light mode support
+- Fork button now works during streaming
+- Fixed an issue where the activity database could become corrupted under concurrent access
 
 ---
 
@@ -53,11 +57,11 @@ custom providers — all from the terminal, no browser needed. Pair with
 - Every session indexed locally with full-text and semantic search across all vendors
 - Find past decisions, debugging threads, and design discussions — full transcripts, not summaries
 - Backfills from your existing Claude Code and Codex transcripts automatically
-- Claude Code and Codex adapters shipping
+- Works with Claude Code and Codex transcripts out of the box
 
 ### Multi-agent coordination
 
-- `/superthink` — pit Claude and Codex against each other on the same question. Catches bugs and blind spots a single model misses
+- `/superthink` — pit Claude and Codex against each other on the same question. Sub-agents open as live tabs you can watch. Catches bugs and blind spots a single model misses
 - `/super-implement` — turn plans into self-contained execution prompts, auto-decomposed if too large
 - `/reflect` — verify prompts and plans against the codebase before execution
 - `/handoff` — distill context and rotate into a fresh session when context gets long
@@ -83,8 +87,8 @@ custom providers — all from the terminal, no browser needed. Pair with
 
 ![Fork a conversation into a new side-by-side panel](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/fork.gif)
 
-- Fork and rewind at any point — new session opens side-by-side with full context
-- Side-by-side agent windows — as many as your editor can tile
+- Fork and rewind at any point — new session opens as a split tab with full context
+- Multi-tab workspace — as many agent sessions as you want, arranged however you like
 - Session rotation — switch between Claude and Codex mid-conversation without losing context
 - Execute prompts in Markdown files with one click from the Explorer or file panel
 - Session browser with search and vendor filtering
@@ -95,7 +99,7 @@ custom providers — all from the terminal, no browser needed. Pair with
 
 - File viewer side panel with word wrap, markdown preview, and quoting
 - Git diff panel — staged, modified, and untracked files with syntax-highlighted diffs
-- Four rendering modes — Icons (default), Blocks, Compact, YAML
+- 10 display styles and 3 badge styles — make Crispy look like ChatGPT, Claude.ai, Cursor, or your own thing
 - Inline quoting and copy-to-markdown
 - Voice input with local VAD and speech-to-text
 - Image attachments, @mentions, linkified file paths and URLs
@@ -116,7 +120,7 @@ custom providers — all from the terminal, no browser needed. Pair with
 - Run `npm i -g crispy-code && crispy` — full UI in your browser, no VS Code required
 - Background daemon with `crispy start` / `crispy stop` / `crispy status`
 - Workspace picker with URL-based routing for multiple projects
-- Multiple browser tabs or native windows for parallel agent sessions
+- Multi-tab workbench with split views, dockable panels, and built-in terminal
 - Same core features — memory, superthink, fork, rewind
 
 ---
