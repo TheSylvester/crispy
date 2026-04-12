@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/github/license/TheSylvester/crispy)](LICENSE)
 [![Discord](https://img.shields.io/discord/1483243664389177479?color=5865F2&logo=discord&logoColor=white&label=Discord)](https://discord.gg/e2vw4bTPup)
 
-![Crispy — reading project docs, explaining the codebase, and making an edit in one conversation](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/hero.gif)
+![Crispy — multi-tab agent workbench with visible sub-agent orchestration](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/hero.gif)
 
 - **Discord bot** — live session monitor with inline approval buttons, session browser, and forum-based workspace channels. Approve tool use from your phone.
 - **Agent memory** — every transcript indexed locally with full-text search (instant) and semantic search (local model downloaded on first use). Backfills from your existing transcripts across vendors.
