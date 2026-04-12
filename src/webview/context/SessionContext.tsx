@@ -31,8 +31,8 @@ interface SessionContextValue extends SessionState {
   setSelectedSessionId: (id: string | null) => void;
   setSelectedCwd: (slug: string | null) => void;
   refreshSessions: () => void;
-  /** Look up a session by ID and select it if found. */
-  findAndSelectSession: (id: string) => Promise<{ found: boolean }>;
+  /** Look up a session by ID (prefix or full) and return the resolved ID if found. */
+  findSession: (id: string) => Promise<{ found: true; sessionId: string } | { found: false }>;
   availableVendors: string[];
   /** Original workspace CWD path from the host (VS Code only). */
   workspaceCwdPath: string | null;
@@ -270,13 +270,12 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     return [...native, ...dynamic];
   }, [sessions]);
 
-  const findAndSelectSession = useCallback(async (id: string): Promise<{ found: boolean }> => {
+  const findSession = useCallback(async (id: string): Promise<{ found: true; sessionId: string } | { found: false }> => {
     const trimmed = id.trim();
     if (!trimmed) return { found: false };
     const session = await transport.findSession(trimmed);
     if (session) {
-      setSelectedSessionId(session.sessionId);
-      return { found: true };
+      return { found: true, sessionId: session.sessionId };
     }
     return { found: false };
   }, [transport]);
@@ -290,7 +289,7 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     setSelectedSessionId,
     setSelectedCwd,
     refreshSessions: loadSessions,
-    findAndSelectSession,
+    findSession,
     availableVendors,
     workspaceCwdPath,
     sessionStatuses,
@@ -304,7 +303,7 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     setSelectedSessionId,
     setSelectedCwd,
     loadSessions,
-    findAndSelectSession,
+    findSession,
     availableVendors,
     workspaceCwdPath,
     sessionStatuses,

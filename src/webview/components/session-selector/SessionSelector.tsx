@@ -45,7 +45,7 @@ export function SessionSelector({ onSelect, onClose }: SessionSelectorProps = {}
   const {
     sessions, selectedSessionId: globalSelectedSessionId, setSelectedSessionId: globalSetSelectedSessionId,
     selectedCwd: globalSelectedCwd, setSelectedCwd: globalSetSelectedCwd, availableVendors, isLoading,
-    findAndSelectSession, sessionStatuses,
+    findSession, sessionStatuses,
   } = useSession();
   // Prefer tab-local session/CWD when rendered inside a tab
   const tabCtx = useTabSessionOptional();
@@ -192,10 +192,11 @@ export function SessionSelector({ onSelect, onClose }: SessionSelectorProps = {}
     setSessionIdError('');
     setSessionIdLoading(true);
     try {
-      const result = await findAndSelectSession(id);
+      const result = await findSession(id);
       if (result.found) {
+        setSelectedSessionId(result.sessionId);
         setSessionIdQuery('');
-        setTimeout(() => setSidebarCollapsed(true), 200);
+        setTimeout(() => closeDropdown(), 200);
       } else {
         setSessionIdError('Session not found');
       }
@@ -204,7 +205,7 @@ export function SessionSelector({ onSelect, onClose }: SessionSelectorProps = {}
     } finally {
       setSessionIdLoading(false);
     }
-  }, [sessionIdQuery, findAndSelectSession, setSidebarCollapsed]);
+  }, [sessionIdQuery, findSession, setSelectedSessionId, closeDropdown]);
 
   // ---- Keyboard navigation ----
   const onKeyboardSelect = useCallback((index: number) => {
