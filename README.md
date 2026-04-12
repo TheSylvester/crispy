@@ -27,7 +27,7 @@ The Windows native app and standalone browser now work like a full IDE — multi
 
 ![Multi-tab workbench — split sessions, file browser, terminal, and model selector in the Windows native app](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/multi-tab-workbench.png)
 
-- **Multi-tab sessions** — open multiple Claude/Codex conversations side-by-side in split views, each fully isolated with its own transcript, scroll position, and tool panel
+- **Multi-tab sessions** — open multiple Claude/Codex conversations side-by-side in split views
 - **Visible agent orchestration** — agents from /superthink surface as live read-only tabs you can watch in real time. No more black-box tool calls
 
 ![Superthink visible dispatch — agents open as live tabs you can watch and fork](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/superthink-visual-full-1.gif)
@@ -41,7 +41,7 @@ The Windows native app and standalone browser now work like a full IDE — multi
 
 ![Display styles — Crispy, T3, ChatGPT, Claude.ai, Gemini, Cursor, Copilot, DeepSeek, Perplexity, Terminal](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/crispy-markdown-skins-dark-supercut.gif)
 
-Customize how Crispy looks with 10 display styles (Crispy, T3, ChatGPT, Claude.ai, Gemini, Cursor, Copilot, DeepSeek, Perplexity, Terminal), 3 badge styles (Frosted, Tinted, Solid), and an accent color toggle.
+Customize how Crispy looks with 10 display styles (Crispy, T3, ChatGPT, Claude.ai, Gemini, Cursor, Copilot, DeepSeek, Perplexity, Terminal) and 3 badge styles (Frosted, Tinted, Solid).
 
 ### Other
 
