@@ -8,7 +8,7 @@
 [![License](https://img.shields.io/github/license/TheSylvester/crispy)](LICENSE)
 [![Discord](https://img.shields.io/discord/1483243664389177479?color=5865F2&logo=discord&logoColor=white&label=Discord)](https://discord.gg/e2vw4bTPup)
 
-![Crispy — multi-tab agent workbench with visible sub-agent orchestration](https://raw.githubusercontent.com/TheSylvester/crispy/feat/flex-layout/media/hero.gif)
+![Crispy — multi-tab agent workbench with visible sub-agent orchestration](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/hero.gif)
 
 - **Discord bot** — live session monitor with inline approval buttons, session browser, and forum-based workspace channels. Approve tool use from your phone.
 - **Agent memory** — every transcript indexed locally with full-text search (instant) and semantic search (local model downloaded on first use). Backfills from your existing transcripts across vendors.
@@ -25,12 +25,12 @@
 
 The Windows native app and standalone browser now work like a full IDE — multiple agent sessions open as tabs you can split, resize, and drag into any arrangement, with a built-in terminal, file browser, and Git panel.
 
-![Multi-tab workbench — split sessions, file browser, terminal, and model selector in the Windows native app](https://raw.githubusercontent.com/TheSylvester/crispy/feat/flex-layout/media/multi-tab-workbench.png)
+![Multi-tab workbench — split sessions, file browser, terminal, and model selector in the Windows native app](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/multi-tab-workbench.png)
 
 - **Multi-tab sessions** — open multiple Claude/Codex conversations side-by-side in split views, each fully isolated with its own transcript, scroll position, and tool panel
-- **Visible agent orchestration** — agents from /superthink surface as live read-only tabs you can watch in real time and fork at any point. No more black-box tool calls
+- **Visible agent orchestration** — agents from /superthink surface as live read-only tabs you can watch in real time. No more black-box tool calls
 
-![Superthink visible dispatch — agents open as live tabs you can watch and fork](https://raw.githubusercontent.com/TheSylvester/crispy/feat/flex-layout/media/superthink-visual-full-1.gif)
+![Superthink visible dispatch — agents open as live tabs you can watch and fork](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/superthink-visual-full-1.gif)
 
 - **Built-in terminal** — integrated terminal docked at the bottom, just like VS Code
 - **Dockable side panels** — Files and Git panels dock to left or right borders independently, with persisted layout preference
@@ -39,7 +39,7 @@ The Windows native app and standalone browser now work like a full IDE — multi
 
 ### 10 display styles
 
-![Display styles — Crispy, T3, ChatGPT, Claude.ai, Gemini, Cursor, Copilot, DeepSeek, Perplexity, Terminal](https://raw.githubusercontent.com/TheSylvester/crispy/feat/flex-layout/media/crispy-markdown-skins-dark-supercut.gif)
+![Display styles — Crispy, T3, ChatGPT, Claude.ai, Gemini, Cursor, Copilot, DeepSeek, Perplexity, Terminal](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/crispy-markdown-skins-dark-supercut.gif)
 
 Customize how Crispy looks with 10 display styles (Crispy, T3, ChatGPT, Claude.ai, Gemini, Cursor, Copilot, DeepSeek, Perplexity, Terminal), 3 badge styles (Frosted, Tinted, Solid), and an accent color toggle.
 
@@ -55,12 +55,21 @@ Customize how Crispy looks with 10 display styles (Crispy, T3, ChatGPT, Claude.a
 
 ### Agent recall
 
-![Agent memory — recall searching past sessions with skill and agent badges](https://raw.githubusercontent.com/TheSylvester/crispy/feat/flex-layout/media/agent-memory-recall.png)
+![Agent memory — recall searching past sessions with skill and agent badges](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/agent-memory-recall.png)
 
 - Every session indexed locally with full-text and semantic search across all vendors
 - Find past decisions, debugging threads, and design discussions — full transcripts, not summaries
 - Backfills from your existing Claude Code and Codex transcripts automatically
 - Works with Claude Code and Codex transcripts out of the box
+
+### Discord remote
+
+![Crispy Discord bot — live session monitor with tool calls, approvals, and forum-based session management](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/discord.png)
+
+- Live session monitor — browse, open, and manage sessions with full tool-call visibility from Discord
+- Inline approval buttons — approve or deny tool use from your phone
+- Multi-instance — multiple Crispy instances share one server without conflicts
+- Secure by default — fail-closed auth, allowlist access, guided setup wizard
 
 ### Multi-agent coordination
 
@@ -70,18 +79,9 @@ Customize how Crispy looks with 10 display styles (Crispy, T3, ChatGPT, Claude.a
 - `/handoff` — distill context and rotate into a fresh session when context gets long
 - `/spec-mode` — interactive spec-building through conversation
 
-### Discord remote
-
-![Crispy Discord bot — live session monitor with tool calls, approvals, and forum-based session management](https://raw.githubusercontent.com/TheSylvester/crispy/feat/flex-layout/media/discord.png)
-
-- Live session monitor — browse, open, and manage sessions with full tool-call visibility from Discord
-- Inline approval buttons — approve or deny tool use from your phone
-- Multi-instance — multiple Crispy instances share one server without conflicts
-- Secure by default — fail-closed auth, allowlist access, guided setup wizard
-
 ### Observability and control
 
-![Tool audit panel — sub-agent badge, expanded tool output with timing and status](https://raw.githubusercontent.com/TheSylvester/crispy/feat/flex-layout/media/tool-panel.gif)
+![Tool audit panel — sub-agent badge, expanded tool output with timing and status](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/tool-panel.gif)
 
 - See everything your sub-agents are doing in the tool audit panel — timing, status badges, and nested sub-agent trees
 - Sub-agents open as live tabs you can watch and fork — visible orchestration, not black-box tool calls
@@ -89,7 +89,7 @@ Customize how Crispy looks with 10 display styles (Crispy, T3, ChatGPT, Claude.a
 
 ### Conversations
 
-![Fork a conversation into a new side-by-side panel](https://raw.githubusercontent.com/TheSylvester/crispy/feat/flex-layout/media/fork.gif)
+![Fork a conversation into a new side-by-side panel](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/fork.gif)
 
 - Fork and rewind at any point — new session opens as a split tab with full context
 - Multi-tab workspace — as many agent sessions as you want, arranged however you like
@@ -99,7 +99,7 @@ Customize how Crispy looks with 10 display styles (Crispy, T3, ChatGPT, Claude.a
 
 ### UI
 
-![File viewer panel with markdown preview, titlebar with git branch, and file tree](https://raw.githubusercontent.com/TheSylvester/crispy/feat/flex-layout/media/file-viewer-panel.png)
+![File viewer panel with markdown preview, titlebar with git branch, and file tree](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/file-viewer-panel.png)
 
 - File viewer side panel with word wrap, markdown preview, and quoting
 - Git diff panel — staged, modified, and untracked files with syntax-highlighted diffs
@@ -111,14 +111,14 @@ Customize how Crispy looks with 10 display styles (Crispy, T3, ChatGPT, Claude.a
 
 ### Providers
 
-![Model selector showing multiple vendors, and the provider configuration form](https://raw.githubusercontent.com/TheSylvester/crispy/feat/flex-layout/media/models.gif)
+![Model selector showing multiple vendors, and the provider configuration form](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/models.gif)
 
 - Custom model providers — add Anthropic-compatible providers with a custom base URL and model names
 - Start a conversation with Claude, continue it in Codex — switch vendors mid-session
 
 ### Standalone mode
 
-![Workspace picker — select a project to open in standalone mode](https://raw.githubusercontent.com/TheSylvester/crispy/feat/flex-layout/media/workspace-picker.png)
+![Workspace picker — select a project to open in standalone mode](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/workspace-picker.png)
 
 - **Native Windows app (Tauri)** — download the installer, no terminal required. Auto-provisions WSL and the Crispy daemon
 - Run `npm i -g crispy-code && crispy` — full UI in your browser, no VS Code required
@@ -139,9 +139,7 @@ Customize how Crispy looks with 10 display styles (Crispy, T3, ChatGPT, Claude.a
 
 ### Windows Desktop App
 
-Download the installer from the latest
-[GitHub Release](https://github.com/TheSylvester/crispy/releases). Run it —
-Crispy handles WSL setup and daemon provisioning automatically.
+[Download the installer](https://github.com/TheSylvester/crispy/releases/latest/download/Crispy-windows-x64-setup.exe) — run it and Crispy handles WSL setup and daemon provisioning automatically. The app auto-updates after install.
 
 ### Standalone (npm)
 
