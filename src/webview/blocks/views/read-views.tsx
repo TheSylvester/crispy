@@ -45,7 +45,7 @@ export function ReadCompactView({ block, result, status }: ToolViewProps): React
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="read"
+      name="Read"
       subject={<FilePath path={filePath} />}
       status={status}
     />

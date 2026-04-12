@@ -41,7 +41,7 @@ export function EditCompactView({ block, result, status }: ToolViewProps): React
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="edit"
+      name="Edit"
       subject={<FilePath path={filePath} />}
       meta={<span className="crispy-diff-stats">
         <span className="crispy-diff-stats-added">+{newLines}</span>

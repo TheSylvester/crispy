@@ -182,7 +182,7 @@ export interface EphemeralTargetOptions {
  */
 export type TurnTarget =
   | { kind: 'existing'; sessionId: string; model?: string }
-  | { kind: 'new'; vendor: Vendor; cwd: string } & EphemeralTargetOptions
+  | { kind: 'new'; vendor: Vendor; cwd?: string; parentSessionId?: string } & EphemeralTargetOptions
   | { kind: 'fork'; vendor: Vendor; fromSessionId: string; atMessageId?: string } & EphemeralTargetOptions
   | { kind: 'hydrated'; vendor: Vendor; cwd: string; history: TranscriptEntry[]; sourceVendor: Vendor; sourceSessionId?: string } & EphemeralTargetOptions;
 
@@ -197,6 +197,33 @@ export interface TurnIntent {
   content: MessageContent;
   clientMessageId: string;
   settings: TurnSettings;
+  /** Open a visible tab/panel for this session. */
+  openChannel?: boolean;
+  /**
+   * Close the tab/panel when the session idles.
+   * Only meaningful when `openChannel` is true. Defaults to true.
+   *
+   * When a parent dispatches with `openChannel + autoClose`, two close paths fire:
+   * 1. wireLifecycleHooks at ~150ms (broadcastCloseChannel + closeSession)
+   * 2. dispatchChildSession idle handler at ~2000ms (cleanup → closeSession)
+   * This is safe: closeSession is idempotent (guards on sessions.has()).
+   */
+  autoClose?: boolean;
+  /**
+   * Session participates in UI lifecycle events (sidebar, status changes, autoClose).
+   * Independent from `openChannel` — a session can be visible (sidebar) without
+   * opening a tab (e.g. `--background` mode).
+   */
+  visible?: boolean;
+  /**
+   * Parent session ID for child registration (IPC path only).
+   *
+   * When set, `sendTurn` registers this session as a child of the parent.
+   * Distinct from `target.parentSessionId` on `kind: 'new'` targets, which
+   * is used for CWD resolution only. `dispatchChildSession` manages its own
+   * child registration — only the IPC path (crispy-dispatch → sendTurn) sets this.
+   */
+  parentSessionId?: string;
 }
 
 /**

@@ -8,7 +8,7 @@ import * as vscode from 'vscode';
 
 import { initSettings, startWatchingSettings, stopWatchingSettings } from './core/settings/index.js';
 import { openCrispyPanel, getOrCreatePanelForPrefill, getMostRecentPanel, getActivePanel, createCrispyPanel } from './host/webview-host.js';
-import { registerPanelOpener } from './host/panel-opener.js';
+import { registerPanelOpener, registerPanelCloser } from './host/panel-opener.js';
 import { startRescan, stopRescan } from './core/session-list-manager.js';
 import { findClaudeBinary } from './core/find-claude-binary.js';
 import { registerAllAdapters } from './host/adapter-registry.js';
@@ -21,7 +21,7 @@ import { initRecallIngest, shutdownRecallIngest } from './core/recall/ingest-hoo
 import { startRecallCatchup, stopEmbeddingBackfill } from './core/recall/catchup-manager.js';
 import { disposeEmbedder } from './core/recall/embedder.js';
 import { startIpcServer, getSocketPath } from './host/ipc-server.js';
-import { setHostSocketPath } from './core/session-manager.js';
+import { setHostSocketPath, setDefaultCwd } from './core/session-manager.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const bootStart = performance.now();
@@ -61,6 +61,7 @@ export function activate(context: vscode.ExtensionContext): void {
   done();
   context.subscriptions.push({ dispose: disposeAdapters });
 
+  setDefaultCwd(cwd);
   setHostSocketPath(getSocketPath(undefined, 'server'));
 
   const workspaceOpts = { workspaceCwd: cwd };
@@ -76,10 +77,11 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!content.trim()) return;
 
       const panel = getOrCreatePanelForPrefill(context, workspaceOpts);
-      // Small delay for newly created panels to initialize their webview JS
-      setTimeout(() => {
-        panel.webview.postMessage({ kind: 'executeInCrispy', content: `Execute the following:\n\n${content}` });
-      }, 100);
+      // Retry with increasing delays — FlexLayout + React init can exceed 100ms
+      const msg = { kind: 'executeInCrispy', content: `Execute the following:\n\n${content}` };
+      for (const delay of [200, 600, 1500]) {
+        setTimeout(() => panel.webview.postMessage(msg), delay);
+      }
     }),
     vscode.commands.registerCommand('crispy.toggleVoiceInput', () => {
       const panel = getActivePanel();
@@ -128,14 +130,31 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   });
 
-  // Register panel opener so CLI callers (ipc-server) can open VS Code panels
-  registerPanelOpener((sessionId) => {
-    const panel = createCrispyPanel(context, vscode.ViewColumn.Beside);
+  // Register panel opener/closer so CLI callers (ipc-server) can open/close VS Code panels
+  const sessionPanels = new Map<string, vscode.WebviewPanel>();
+
+  registerPanelOpener((sessionId, options) => {
+    if (sessionPanels.has(sessionId)) return; // dedup guard — openPanelFn is not idempotent
+    const column = options?.autoClose
+      ? { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }
+      : vscode.ViewColumn.Beside;
+    const panel = createCrispyPanel(context, column, { autoClose: options?.autoClose });
+    sessionPanels.set(sessionId, panel);
+    panel.onDidDispose(() => {
+      if (sessionPanels.get(sessionId) === panel) sessionPanels.delete(sessionId);
+    });
     const msg = { kind: 'openSession', sessionId };
     const delays = [100, 500, 1500];
     for (const delay of delays) {
       setTimeout(() => panel.webview.postMessage(msg), delay);
     }
+  });
+
+  registerPanelCloser((sessionId) => {
+    const panel = sessionPanels.get(sessionId);
+    if (!panel) return false;
+    panel.dispose();
+    return true;
   });
 
   // Defer session list scan to next tick so the webview can initialize first

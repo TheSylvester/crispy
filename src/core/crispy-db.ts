@@ -13,7 +13,7 @@
  * @module crispy-db
  */
 
-import { rmSync, existsSync } from 'node:fs';
+import { rmSync, existsSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { log } from './log.js';
 import type { Database } from 'node-sqlite3-wasm';
 import { Database as DatabaseConstructor } from 'node-sqlite3-wasm';
@@ -43,13 +43,16 @@ export function getDb(dbPath: string): Database {
   // node-sqlite3-wasm uses a directory (${dbPath}.lock) as a filesystem
   // semaphore. If a prior process crashed without calling db.close(), the
   // lock directory is left behind and every subsequent open enters an
-  // emscripten busy-wait spin (100% CPU, no recovery). Since getDb() is a
-  // singleton — we haven't opened the DB yet in this process — any existing
-  // lock is orphaned. Safe to remove.
+  // emscripten busy-wait spin (100% CPU, no recovery).
+  //
+  // Only remove the lock if the owning process is dead. A live process's
+  // lock must never be removed — that defeats the concurrency guard and
+  // causes B-tree corruption from unsynchronized concurrent writes.
   clearStaleLock(dbPath);
 
   db = new DatabaseConstructor(dbPath);
   currentDbPath = dbPath;
+  writeOwnerFile(dbPath);
 
   // Concurrency: wait up to 5s if another process holds the lock
   db.exec('PRAGMA busy_timeout = 5000');
@@ -73,6 +76,7 @@ export function getDb(dbPath: string): Database {
 export function closeDb(): void {
   if (db) {
     db.close();
+    if (currentDbPath) removeOwnerFile(currentDbPath);
     db = null;
     currentDbPath = null;
   }
@@ -86,6 +90,46 @@ export function _resetDb(): void {
 }
 
 // ============================================================================
+// Owner file — tracks which PID holds the DB open
+// ============================================================================
+
+/** Path to the PID owner file for a given database. */
+function ownerFilePath(dbPath: string): string {
+  return `${dbPath}.owner`;
+}
+
+/** Write our PID to the owner file after opening the DB. */
+function writeOwnerFile(dbPath: string): void {
+  try {
+    writeFileSync(ownerFilePath(dbPath), String(process.pid), 'utf-8');
+  } catch {
+    // Best-effort — don't break DB init if the file can't be written
+  }
+}
+
+/** Remove the owner file on clean shutdown. */
+function removeOwnerFile(dbPath: string): void {
+  try {
+    unlinkSync(ownerFilePath(dbPath));
+  } catch {
+    // Best-effort — file may already be gone
+  }
+}
+
+/**
+ * Check whether a process is still alive.
+ * `kill(pid, 0)` sends no signal but throws if the process doesn't exist.
+ */
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ============================================================================
 // Stale lock cleanup
 // ============================================================================
 
@@ -96,19 +140,36 @@ export function _resetDb(): void {
  * `rmdirSync(…)` to release. A crash leaves the directory behind, and every
  * future open spins at 100% CPU in an emscripten busy-wait loop.
  *
- * Called once per getDb() init, before the DatabaseConstructor runs —
- * so the lock cannot belong to *this* process.
+ * We check the owner file (written by the process that opened the DB) to
+ * determine if the lock belongs to a live process. Only truly orphaned
+ * locks are removed — removing a live process's lock causes concurrent
+ * writes without synchronization, corrupting the B-tree.
  */
 function clearStaleLock(dbPath: string): void {
   const lockDir = `${dbPath}.lock`;
   if (!existsSync(lockDir)) return;
+
+  // Check if the owning process is still alive
+  const ownerFile = ownerFilePath(dbPath);
+  if (existsSync(ownerFile)) {
+    try {
+      const pid = parseInt(readFileSync(ownerFile, 'utf-8').trim(), 10);
+      if (!isNaN(pid) && isProcessAlive(pid)) {
+        // Lock belongs to a live process — do NOT remove it.
+        // The WASM VFS will handle contention via busy_timeout.
+        return;
+      }
+    } catch {
+      // Can't read owner file — fall through to remove the lock
+    }
+  }
 
   try {
     rmSync(lockDir, { recursive: true, force: true });
     log({
       source: 'db',
       level: 'warn',
-      summary: `DB: removed stale lock directory (${lockDir}) — likely from a crashed process`,
+      summary: `DB: removed stale lock directory (${lockDir}) — owning process is dead`,
     });
   } catch (err) {
     log({

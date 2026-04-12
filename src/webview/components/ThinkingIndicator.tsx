@@ -17,12 +17,12 @@
  * @module ThinkingIndicator
  */
 
-import { useSession } from '../context/SessionContext.js';
+import { useTabSession } from '../context/TabSessionContext.js';
 import { useSessionStatus } from '../hooks/useSessionStatus.js';
 
 export function ThinkingIndicator(): React.JSX.Element | null {
-  const { selectedSessionId } = useSession();
-  const { channelState } = useSessionStatus(selectedSessionId);
+  const { effectiveSessionId } = useTabSession();
+  const { channelState } = useSessionStatus(effectiveSessionId);
 
   const visible =
     channelState === 'streaming' || channelState === 'awaiting_approval';

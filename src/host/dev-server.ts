@@ -28,6 +28,7 @@ import { listAllWorkspaces } from '../core/workspace-roots.js';
 import { initSettings, startWatchingSettings } from '../core/settings/index.js';
 import { createClientConnection } from './client-connection.js';
 import { createAgentDispatch } from './agent-dispatch.js';
+import { closeAllTerminals } from './terminal-manager.js';
 import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
 import { initRosieBot, shutdownRosieBot } from '../core/rosie/index.js';
@@ -36,7 +37,7 @@ import { initRecallIngest, shutdownRecallIngest } from '../core/recall/ingest-ho
 import { startRecallCatchup, stopEmbeddingBackfill } from '../core/recall/catchup-manager.js';
 import { disposeEmbedder } from '../core/recall/embedder.js';
 import { startIpcServer, getSocketPath } from './ipc-server.js';
-import { setHostSocketPath } from '../core/session-manager.js';
+import { setHostSocketPath, setDefaultCwd } from '../core/session-manager.js';
 import { isLocalConnection, validateToken, parseCookie, cookieName, setTokenCookie, getOrCreateToken } from './auth.js';
 import { registerPanelOpener } from './panel-opener.js';
 
@@ -302,13 +303,48 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
   let connectionCounter = 0;
 
+  // ---- Ping/pong keepalive ----
+  // Aggressive intervals so stale connections (e.g. browser refresh without
+  // close frame) are detected within ~20s instead of ~40s.
+  const PING_INTERVAL_MS = 15_000;
+  const PONG_TIMEOUT_MS = 5_000;
+  const aliveClients = new Map<WebSocket, ReturnType<typeof setTimeout> | null>();
+
+  const pingInterval = setInterval(() => {
+    for (const client of wss.clients) {
+      if (client.readyState !== 1 /* OPEN */) continue;
+      // Set a pong deadline — terminate if no response
+      const timeout = setTimeout(() => {
+        console.warn(`[server] Client pong timeout, terminating`);
+        client.terminate();
+      }, PONG_TIMEOUT_MS);
+      aliveClients.set(client, timeout);
+      client.ping();
+    }
+  }, PING_INTERVAL_MS);
+
   wss.on('connection', (ws: WebSocket) => {
     const clientId = `ws-client-${++connectionCounter}`;
     console.log(`[server] Client connected: ${clientId}`);
 
+    let handlerDisposed = false;
     const handler = createClientConnection(clientId, (msg) => {
       if (ws.readyState === ws.OPEN) {
         ws.send(JSON.stringify(msg));
+      }
+    });
+
+    function disposeOnce(): void {
+      if (handlerDisposed) return;
+      handlerDisposed = true;
+      handler.dispose();
+    }
+
+    ws.on('pong', () => {
+      const timeout = aliveClients.get(ws);
+      if (timeout) {
+        clearTimeout(timeout);
+        aliveClients.set(ws, null);
       }
     });
 
@@ -320,12 +356,16 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
     ws.on('close', () => {
       console.log(`[server] Client disconnected: ${clientId}`);
-      handler.dispose();
+      const timeout = aliveClients.get(ws);
+      if (timeout) clearTimeout(timeout);
+      aliveClients.delete(ws);
+      disposeOnce();
     });
 
     ws.on('error', (err) => {
       console.error(`[server] WebSocket error (${clientId}):`, err);
-      handler.dispose();
+      // Don't dispose here — 'close' always follows 'error' and handles cleanup.
+      // Disposing on error + close caused double-dispose bugs.
     });
   });
 
@@ -333,7 +373,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
   let done: () => void;
 
   done = phase('create agent dispatch');
-  const cwd = process.cwd();
+  const cwd = homedir();
   const dispatch = createAgentDispatch();
   done();
 
@@ -348,6 +388,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
   });
 
   done = phase('register adapters');
+  setDefaultCwd(cwd);
   registerAllAdapters({ cwd, hostType, dispatch, extensionPath });
   done();
 
@@ -431,6 +472,12 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
   // ---- Shutdown ----
   async function shutdown(): Promise<void> {
+    // 0. Stop ping/pong interval
+    clearInterval(pingInterval);
+    for (const [, timeout] of aliveClients) {
+      if (timeout) clearTimeout(timeout);
+    }
+    aliveClients.clear();
     // 1. Notify connected WebSocket clients
     for (const client of wss.clients) {
       if (client.readyState === 1 /* OPEN */) {
@@ -442,7 +489,9 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     await new Promise<void>(resolve => wss.close(() => resolve()));
     // 3. Close HTTP server
     await new Promise<void>(resolve => server.close(() => resolve()));
-    // 4. Existing cleanup
+    // 4. Kill all terminal PTYs
+    closeAllTerminals();
+    // 5. Existing cleanup
     ipcHandle?.close();
     shutdownMessageView();
     shutdownRosieBot();

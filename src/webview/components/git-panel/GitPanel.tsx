@@ -10,7 +10,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTransport } from '../../context/TransportContext.js';
-import { usePreferences } from '../../context/PreferencesContext.js';
+import { useTabPanelOptional } from '../../context/TabPanelContext.js';
 import { useCwd } from '../../hooks/useSessionCwd.js';
 import { useGitInfo } from '../../hooks/useGitInfo.js';
 import { GitDiffView } from './GitDiffView.js';
@@ -96,10 +96,15 @@ type SelectedFile = {
   filePath: string;
 };
 
-export function GitPanel(): React.JSX.Element {
+interface GitPanelProps {
+  mode?: 'sidebar' | 'tab';
+}
+
+export function GitPanel({ mode = 'sidebar' }: GitPanelProps): React.JSX.Element {
   const transport = useTransport();
   const { fullPath } = useCwd();
-  const { setToolPanelWidthPx } = usePreferences();
+  const tabPanel = useTabPanelOptional();
+  const setToolPanelWidthPx = tabPanel?.setToolPanelWidthPx ?? null;
   const gitInfo = useGitInfo();
   const [data, setData] = useState<GitDiffResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -137,11 +142,12 @@ export function GitPanel(): React.JSX.Element {
   }, [fullPath, fetchDiff]);
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    if (!setToolPanelWidthPx) return;
     e.preventDefault();
     const startX = e.clientX;
     const panel = (e.target as HTMLElement).closest('.crispy-git-panel');
     const startWidth = panel?.clientWidth ?? 350;
-    const layout = document.querySelector('.crispy-layout');
+    const layout = panel?.closest('.crispy-tab-layout') ?? document.querySelector('.crispy-layout');
     layout?.setAttribute('data-resizing', '');
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
@@ -174,11 +180,13 @@ export function GitPanel(): React.JSX.Element {
     setSelected(prev => prev?.key === key ? null : { key, diff, filePath });
   }, []);
 
+  const panelClass = mode === 'tab' ? 'crispy-git-panel crispy-git-panel--tab' : 'crispy-git-panel';
+
   // No CWD
   if (!fullPath) {
     return (
-      <div className="crispy-git-panel">
-        <div className="crispy-tool-panel__resize-handle" onMouseDown={handleResizeStart} />
+      <div className={panelClass}>
+        {mode === 'sidebar' && <div className="crispy-tool-panel__resize-handle" onMouseDown={handleResizeStart} />}
         <div className="crispy-git-panel__header">
           <span className="crispy-git-panel__title">GIT</span>
         </div>
@@ -249,8 +257,8 @@ export function GitPanel(): React.JSX.Element {
   };
 
   return (
-    <div className="crispy-git-panel">
-      <div className="crispy-tool-panel__resize-handle" onMouseDown={handleResizeStart} />
+    <div className={panelClass}>
+      {mode === 'sidebar' && <div className="crispy-tool-panel__resize-handle" onMouseDown={handleResizeStart} />}
       <div className="crispy-git-panel__header">
         {gitInfo && (
           <div className="crispy-git-panel__branch-row">

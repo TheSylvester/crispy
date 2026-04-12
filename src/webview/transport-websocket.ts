@@ -2,7 +2,8 @@
  * WebSocket Transport — Browser WebSocket implementation
  *
  * Used in Chrome dev mode. Same request/response correlation pattern
- * as the VS Code transport.
+ * as the VS Code transport. Includes auto-reconnect with exponential
+ * backoff and connection state tracking.
  *
  * @module transport-websocket
  */
@@ -26,7 +27,12 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>;
 }
 
+export type ConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+
 const REQUEST_TIMEOUT_MS = 30_000;
+
+/** Backoff schedule: 1s, 2s, 4s, 8s, 10s (cap) */
+const BACKOFF_MS = [1000, 2000, 4000, 8000, 10000];
 
 let requestCounter = 0;
 
@@ -34,75 +40,167 @@ function nextId(): string {
   return `ws-${++requestCounter}-${Date.now()}`;
 }
 
-export function createWebSocketTransport(url: string): SessionService {
+export function createWebSocketTransport(url: string): SessionService & {
+  onConnectionStateChange(handler: (state: ConnectionState) => void): () => void;
+  getConnectionState(): ConnectionState;
+} {
   const pending = new Map<string, PendingRequest>();
   const eventHandlers: Array<(sessionId: string, event: HostEvent) => void> = [];
-  const ws = new WebSocket(url);
+  const connectionStateHandlers: Array<(state: ConnectionState) => void> = [];
+
+  let ws: WebSocket | null = null;
+  let connectionState: ConnectionState = 'connecting';
+  let isOpen = false;
+  let disposed = false;
+  let reconnectAttempt = 0;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Monotonic generation counter — prevents stale close handlers from clobbering a newer connection. */
+  let wsGeneration = 0;
 
   /** Queue messages until the socket is open. */
   const sendQueue: string[] = [];
-  let isOpen = false;
 
-  ws.addEventListener('open', () => {
-    isOpen = true;
-    for (const queued of sendQueue) {
-      ws.send(queued);
+  /** Subscriptions to re-establish on reconnect */
+  const activeSubscriptions = new Set<string>();
+  let sessionListSubscribed = false;
+  let logSubscribed = false;
+  let trackerNotifySubscribed = false;
+  let recallCatchupSubscribed = false;
+
+  function setConnectionState(state: ConnectionState): void {
+    if (state === connectionState) return;
+    connectionState = state;
+    for (const handler of connectionStateHandlers) {
+      handler(state);
     }
-    sendQueue.length = 0;
-  });
+  }
 
-  ws.addEventListener('message', (ev) => {
-    let msg: Record<string, unknown>;
-    try {
-      msg = JSON.parse(String(ev.data)) as Record<string, unknown>;
-    } catch {
-      return;
+  function connect(): void {
+    if (disposed) return;
+
+    // Close any lingering previous socket to avoid stale close events.
+    // The browser may not have fired close yet for the old instance.
+    if (ws) {
+      try { ws.close(); } catch { /* already closed */ }
+      ws = null;
     }
 
-    if (msg.kind === 'response' || msg.kind === 'error') {
-      const req = pending.get(msg.id as string);
-      if (!req) return;
-      pending.delete(msg.id as string);
-      clearTimeout(req.timer);
+    const gen = ++wsGeneration;
+    const socket = new WebSocket(url);
+    ws = socket;
 
-      if (msg.kind === 'error') {
-        req.reject(new Error(msg.error as string));
-      } else {
-        req.resolve(msg.result);
+    socket.addEventListener('open', () => {
+      // Stale open from a superseded connection — ignore
+      if (gen !== wsGeneration) { try { socket.close(); } catch {} return; }
+
+      isOpen = true;
+      reconnectAttempt = 0;
+      setConnectionState('connected');
+
+      // Re-establish subscriptions before flushing the queue.
+      // The server rejects RPCs like sendTurn if the connection hasn't
+      // subscribed to the target session yet.
+      resubscribe();
+
+      // Flush queued messages (sent while disconnected/reconnecting)
+      for (const queued of sendQueue) {
+        socket.send(queued);
       }
-      return;
-    }
+      sendQueue.length = 0;
+    });
 
-    if (msg.kind === 'event') {
-      const event = msg.event as HostEvent;
-      const sessionId = msg.sessionId as string;
-      for (const handler of eventHandlers) {
-        handler(sessionId, event);
+    socket.addEventListener('message', (ev) => {
+      let msg: Record<string, unknown>;
+      try {
+        msg = JSON.parse(String(ev.data)) as Record<string, unknown>;
+      } catch {
+        return;
       }
-    }
-  });
 
-  ws.addEventListener('error', () => {
-    // WebSocket errors don't carry detail — the close event follows immediately.
-    // Reject all pending requests so callers surface the failure.
-    for (const [, req] of pending) {
-      clearTimeout(req.timer);
-      req.reject(new Error('WebSocket connection failed — the daemon may not be running or may have rejected the connection'));
-    }
-    pending.clear();
-  });
+      if (msg.kind === 'response' || msg.kind === 'error') {
+        const req = pending.get(msg.id as string);
+        if (!req) return;
+        pending.delete(msg.id as string);
+        clearTimeout(req.timer);
 
-  ws.addEventListener('close', () => {
-    isOpen = false;
-    for (const [, req] of pending) {
-      clearTimeout(req.timer);
-      req.reject(new Error('WebSocket closed'));
+        if (msg.kind === 'error') {
+          req.reject(new Error(msg.error as string));
+        } else {
+          req.resolve(msg.result);
+        }
+        return;
+      }
+
+      if (msg.kind === 'event') {
+        const event = msg.event as HostEvent;
+        const sessionId = msg.sessionId as string;
+        for (const handler of eventHandlers) {
+          handler(sessionId, event);
+        }
+      }
+    });
+
+    socket.addEventListener('error', () => {
+      // WebSocket errors don't carry detail — the close event follows immediately.
+    });
+
+    socket.addEventListener('close', () => {
+      // Stale close from a superseded connection — ignore
+      if (gen !== wsGeneration) return;
+
+      isOpen = false;
+      ws = null;
+
+      // Reject pending requests — they won't get responses on a dead socket
+      for (const [, req] of pending) {
+        clearTimeout(req.timer);
+        req.reject(new Error('WebSocket closed'));
+      }
+      pending.clear();
+
+      // Drop queued messages — their corresponding promises were just rejected.
+      // Without this, timed-out requests would replay on the next connection
+      // with no pending entry to receive the response.
+      sendQueue.length = 0;
+
+      if (!disposed) {
+        scheduleReconnect();
+      }
+    });
+  }
+
+  function scheduleReconnect(): void {
+    if (reconnectTimer) return; // already scheduled
+    setConnectionState('reconnecting');
+    const delay = BACKOFF_MS[Math.min(reconnectAttempt, BACKOFF_MS.length - 1)];
+    reconnectAttempt++;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, delay);
+  }
+
+  /** Re-subscribe to sessions and channels after reconnect */
+  function resubscribe(): void {
+    for (const sessionId of activeSubscriptions) {
+      sendRaw(JSON.stringify({ kind: 'request', id: nextId(), method: 'subscribe', params: { sessionId } }));
     }
-    pending.clear();
-  });
+    if (sessionListSubscribed) {
+      sendRaw(JSON.stringify({ kind: 'request', id: nextId(), method: 'subscribeSessionList' }));
+    }
+    if (logSubscribed) {
+      sendRaw(JSON.stringify({ kind: 'request', id: nextId(), method: 'subscribeLog' }));
+    }
+    if (trackerNotifySubscribed) {
+      sendRaw(JSON.stringify({ kind: 'request', id: nextId(), method: 'subscribeTrackerNotify' }));
+    }
+    if (recallCatchupSubscribed) {
+      sendRaw(JSON.stringify({ kind: 'request', id: nextId(), method: 'subscribeRecallCatchup' }));
+    }
+  }
 
   function sendRaw(data: string): void {
-    if (isOpen) {
+    if (isOpen && ws) {
       ws.send(data);
     } else {
       sendQueue.push(data);
@@ -111,6 +209,11 @@ export function createWebSocketTransport(url: string): SessionService {
 
   function request<T>(method: string, params?: Record<string, unknown>, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
     return new Promise<T>((resolve, reject) => {
+      if (disposed) {
+        reject(new Error('Transport disposed'));
+        return;
+      }
+
       const id = nextId();
       const timer = setTimeout(() => {
         pending.delete(id);
@@ -126,6 +229,9 @@ export function createWebSocketTransport(url: string): SessionService {
       sendRaw(JSON.stringify({ kind: 'request', id, method, params }));
     });
   }
+
+  // Start initial connection
+  connect();
 
   return {
     listSessions: () => request<WireSessionInfo[]>('listSessions'),
@@ -155,33 +261,20 @@ export function createWebSocketTransport(url: string): SessionService {
       return { ok: true };
     },
 
-    forkToNewPanel: async (params) => {
-      const qp = new URLSearchParams();
-      qp.set('forkFrom', params.fromSessionId);
-      if (params.atMessageId) qp.set('forkAt', params.atMessageId);
-      if (params.initialPrompt) qp.set('prompt', params.initialPrompt);
-      if (params.model) qp.set('model', params.model);
-      if (params.agencyMode) qp.set('agency', params.agencyMode);
-      if (params.bypassEnabled) qp.set('bypass', '1');
-      if (params.chromeEnabled) qp.set('chrome', '1');
+    // forkToNewPanel intentionally omitted — flex-layout handles fork via tabController
 
-      if ((window as any).__CRISPY_CREATE_WINDOW__) {
-        // Tauri: direct IPC via init script bridge
-        await (window as any).__CRISPY_CREATE_WINDOW__(qp.toString());
-        return { ok: true };
-      }
-      // Dev server / browser fallback
-      const url = new URL(window.location.pathname, window.location.origin);
-      url.search = qp.toString();
-      window.open(url.toString(), '_blank');
-      return { ok: true };
+    subscribe: (sessionId) => {
+      activeSubscriptions.add(sessionId);
+      return request<void>('subscribe', { sessionId }).catch((err) => {
+        activeSubscriptions.delete(sessionId);
+        throw err;
+      });
     },
 
-    subscribe: (sessionId) =>
-      request<void>('subscribe', { sessionId }),
-
-    unsubscribe: (sessionId) =>
-      request<void>('unsubscribe', { sessionId }),
+    unsubscribe: (sessionId) => {
+      activeSubscriptions.delete(sessionId);
+      return request<void>('unsubscribe', { sessionId });
+    },
 
     resolveApproval: (sessionId, toolUseId, optionId, extra) =>
       request<void>('resolveApproval', { sessionId, toolUseId, optionId, extra }),
@@ -192,18 +285,42 @@ export function createWebSocketTransport(url: string): SessionService {
     close: (sessionId) =>
       request<void>('close', { sessionId }),
 
-    subscribeSessionList: () => request<void>('subscribeSessionList'),
-    unsubscribeSessionList: () => request<void>('unsubscribeSessionList'),
-    subscribeLog: () => request<void>('subscribeLog'),
-    unsubscribeLog: () => request<void>('unsubscribeLog'),
-    subscribeRecallCatchup: () => request<{ subscribed: boolean }>('subscribeRecallCatchup'),
-    unsubscribeRecallCatchup: () => request<{ unsubscribed: boolean }>('unsubscribeRecallCatchup'),
+    subscribeSessionList: () => {
+      sessionListSubscribed = true;
+      return request<void>('subscribeSessionList');
+    },
+    unsubscribeSessionList: () => {
+      sessionListSubscribed = false;
+      return request<void>('unsubscribeSessionList');
+    },
+    subscribeLog: () => {
+      logSubscribed = true;
+      return request<void>('subscribeLog');
+    },
+    unsubscribeLog: () => {
+      logSubscribed = false;
+      return request<void>('unsubscribeLog');
+    },
+    subscribeRecallCatchup: () => {
+      recallCatchupSubscribed = true;
+      return request<{ subscribed: boolean }>('subscribeRecallCatchup');
+    },
+    unsubscribeRecallCatchup: () => {
+      recallCatchupSubscribed = false;
+      return request<{ unsubscribed: boolean }>('unsubscribeRecallCatchup');
+    },
     startEmbeddingBackfill: () => request<{ ok: boolean }>('startEmbeddingBackfill'),
     stopEmbeddingBackfill: () => request<{ ok: boolean }>('stopEmbeddingBackfill'),
     getCatchupStatus: () => request<CatchupStatus>('getCatchupStatus'),
 
-    subscribeTrackerNotify: () => request<void>('subscribeTrackerNotify'),
-    unsubscribeTrackerNotify: () => request<void>('unsubscribeTrackerNotify'),
+    subscribeTrackerNotify: () => {
+      trackerNotifySubscribed = true;
+      return request<void>('subscribeTrackerNotify');
+    },
+    unsubscribeTrackerNotify: () => {
+      trackerNotifySubscribed = false;
+      return request<void>('unsubscribeTrackerNotify');
+    },
 
     getStages: () => request<WireStage[]>('getStages'),
     getProjects: () => request<WireProject[]>('getProjects'),
@@ -265,14 +382,59 @@ export function createWebSocketTransport(url: string): SessionService {
     getDiscordAppInfo: (token) =>
       request<{ appId: string; name: string } | null>('getDiscordAppInfo', { token }),
 
+    // --- Terminal ---
+    createTerminal: (opts) =>
+      request<{ terminalId: string }>('createTerminal', opts as Record<string, unknown>),
+    writeTerminal: (terminalId, data) =>
+      request<void>('writeTerminal', { terminalId, data }),
+    resizeTerminal: (terminalId, cols, rows) =>
+      request<void>('resizeTerminal', { terminalId, cols, rows }),
+    closeTerminal: (terminalId) =>
+      request<void>('closeTerminal', { terminalId }),
+    listTerminals: () =>
+      request<string[]>('listTerminals'),
+    attachTerminal: (terminalId) =>
+      request<boolean>('attachTerminal', { terminalId }),
+    onTerminalData(terminalId: string, cb: (data: string) => void): () => void {
+      return this.onEvent((sessionId, event) => {
+        if (sessionId === `terminal:${terminalId}` && (event as any).type === 'terminal_data') {
+          cb((event as any).data);
+        }
+      });
+    },
+
     dispose() {
-      ws.close();
+      disposed = true;
+      wsGeneration++; // invalidate any in-flight connection events
+      setConnectionState('disconnected');
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
       for (const [, req] of pending) {
         clearTimeout(req.timer);
         req.reject(new Error('Transport disposed'));
       }
       pending.clear();
       eventHandlers.length = 0;
+      connectionStateHandlers.length = 0;
+    },
+
+    // --- Connection state ---
+    onConnectionStateChange(handler: (state: ConnectionState) => void): () => void {
+      connectionStateHandlers.push(handler);
+      return () => {
+        const i = connectionStateHandlers.indexOf(handler);
+        if (i >= 0) connectionStateHandlers.splice(i, 1);
+      };
+    },
+
+    getConnectionState(): ConnectionState {
+      return connectionState;
     },
   };
 }

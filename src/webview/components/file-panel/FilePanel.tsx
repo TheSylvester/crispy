@@ -12,7 +12,7 @@ import { useState, useCallback } from 'react';
 import { useFileTree } from '../../hooks/useFileTree.js';
 import { useFilePanel } from '../../context/FilePanelContext.js';
 import { useRefreshGitFiles } from '../../context/FileIndexContext.js';
-import { usePreferences } from '../../context/PreferencesContext.js';
+import { useTabPanelOptional } from '../../context/TabPanelContext.js';
 import { FileTree } from './FileTree.js';
 import { FileContextMenu } from './FileContextMenu.js';
 import type { FileNode } from '../../hooks/useFileTree.js';
@@ -28,19 +28,21 @@ function RefreshIcon(): React.JSX.Element {
   );
 }
 
-export function FilePanel(): React.JSX.Element {
+export function FilePanel({ mode }: { mode?: 'sidebar' | 'tab' }): React.JSX.Element {
   const { cwd } = useFilePanel();
   const refreshGitFiles = useRefreshGitFiles();
-  const { setToolPanelWidthPx } = usePreferences();
+  const tabPanel = useTabPanelOptional();
+  const setToolPanelWidthPx = tabPanel?.setToolPanelWidthPx ?? null;
   const { tree, expanded, toggleExpand, filter, setFilter, fileCount, loading } = useFileTree();
   const [contextMenu, setContextMenu] = useState<{ node: FileNode; x: number; y: number } | null>(null);
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    if (!setToolPanelWidthPx) return;
     e.preventDefault();
     const startX = e.clientX;
     const panel = (e.target as HTMLElement).closest('.crispy-file-panel');
     const startWidth = panel?.clientWidth ?? 350;
-    const layout = document.querySelector('.crispy-layout');
+    const layout = panel?.closest('.crispy-tab-layout') ?? document.querySelector('.crispy-layout');
 
     layout?.setAttribute('data-resizing', '');
 
@@ -72,13 +74,18 @@ export function FilePanel(): React.JSX.Element {
     setContextMenu(null);
   }, []);
 
+  const isTab = mode === 'tab';
+  const panelClass = `crispy-file-panel${isTab ? ' crispy-file-panel--tab' : ''}`;
+
   if (!cwd) {
     return (
-      <div className="crispy-file-panel">
-        <div
-          className="crispy-tool-panel__resize-handle"
-          onMouseDown={handleResizeStart}
-        />
+      <div className={panelClass}>
+        {!isTab && (
+          <div
+            className="crispy-tool-panel__resize-handle"
+            onMouseDown={handleResizeStart}
+          />
+        )}
         <div className="crispy-file-panel__header">
           <span className="crispy-file-panel__title">FILES</span>
         </div>
@@ -93,11 +100,13 @@ export function FilePanel(): React.JSX.Element {
   const cwdLabel = cwd.split('/').filter(Boolean).pop() ?? cwd;
 
   return (
-    <div className="crispy-file-panel">
-      <div
-        className="crispy-tool-panel__resize-handle"
-        onMouseDown={handleResizeStart}
-      />
+    <div className={panelClass}>
+      {!isTab && (
+        <div
+          className="crispy-tool-panel__resize-handle"
+          onMouseDown={handleResizeStart}
+        />
+      )}
       <div className="crispy-file-panel__header">
         <span className="crispy-file-panel__title" title={cwd}>{cwdLabel}</span>
         <span className="crispy-file-panel__count">{fileCount}</span>

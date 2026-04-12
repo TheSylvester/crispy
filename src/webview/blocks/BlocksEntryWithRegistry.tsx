@@ -49,7 +49,7 @@ export const BlocksEntryWithRegistry = memo(function BlocksEntryWithRegistry({
   isLastEntry = false,
 }: BlocksEntryWithRegistryProps): React.JSX.Element | null {
   const registry = useBlocksToolRegistry();
-  const { renderMode } = usePreferences();
+  const { renderMode, displayStyle } = usePreferences();
 
   // Normalize entry to rich blocks
   const blocks = useMemo(
@@ -74,6 +74,7 @@ export const BlocksEntryWithRegistry = memo(function BlocksEntryWithRegistry({
 
   // Get role for message class
   const role = blocks[0]?.context.role ?? 'unknown';
+  const skinClass = displayStyle !== 'crispy' ? ` skin-${displayStyle}` : '';
 
   // Fork/rewind only on root-level user messages (no parentToolUseId, actual user type)
   const showActions = !parentToolUseId && role === 'user' && entry.type === 'user' && forkTargetId !== undefined;
@@ -108,7 +109,7 @@ export const BlocksEntryWithRegistry = memo(function BlocksEntryWithRegistry({
   if (isInlineOnly) {
     return (
       <span
-        className={`message ${role} message--inline-only`}
+        className={`message ${role}${skinClass} message--inline-only`}
         data-uuid={entry.uuid}
       >
         <span className="crispy-inline-icons">
@@ -132,7 +133,7 @@ export const BlocksEntryWithRegistry = memo(function BlocksEntryWithRegistry({
 
   return (
     <div
-      className={`message ${role}`}
+      className={`message ${role}${skinClass}`}
       data-uuid={entry.uuid}
     >
       {useInline

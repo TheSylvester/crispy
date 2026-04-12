@@ -42,7 +42,7 @@ export function AskUserQuestionCompactView({ block, result, status }: ToolViewPr
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="ask"
+      name="Ask"
       subject={firstHeader}
       status={status}
     />

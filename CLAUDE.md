@@ -1,8 +1,11 @@
 # Crispy
 
-A zero-compromise UI for Claude Code, Codex, and more — with controls you
-can't get in a terminal. VS Code / Cursor extension today, standalone browser
-app after v0.1.x.
+A GUI for Claude Code and Codex, built for multi-agent orchestration — with
+'superthink' adversarial verification, agent memory, and Discord remote
+access. VS Code / Cursor extension, standalone browser app, and Windows
+desktop app.
+
+<!-- TAGLINE LOCKED — do not change without explicit user approval -->
 
 Claude and Codex adapters are shipping. Gemini CLI and OpenCode are next.
 
@@ -169,7 +172,7 @@ Every rebuild that needs testing requires a version bump. Always use
 
 **Visual verification:** Use the `browser-qa` sub-agent with Chrome automation
 tools (`mcp__claude-in-chrome__*`) to navigate to `http://localhost:3456`,
-interact, and screenshot. Kill the server when done (`lsof -i :3456`).
+interact, and screenshot. Kill the server when done (`kill $(lsof -i :3456 -t -sTCP:LISTEN)`).
 
 ## Reference files (`.ai-reference/`, not committed)
 

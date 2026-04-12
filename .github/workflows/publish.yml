@@ -111,13 +111,43 @@ jobs:
         working-directory: tauri
         run: npx tauri build 2>&1
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ""
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
       - uses: actions/upload-artifact@v4
         with:
           name: tauri-windows-installer
-          path: tauri/src-tauri/target/release/bundle/nsis/*.exe
+          path: |
+            tauri/src-tauri/target/release/bundle/nsis/*.exe
+            tauri/src-tauri/target/release/bundle/nsis/*.nsis.zip
+            tauri/src-tauri/target/release/bundle/nsis/*.nsis.zip.sig
           if-no-files-found: error
+
+      - name: Generate updater manifest (latest.json)
+        shell: pwsh
+        run: |
+          $version = (Get-Content tauri/src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $tag = "v$version"
+          $base = "https://github.com/TheSylvester/crispy/releases/download/$tag"
+          $sig = Get-Content (Get-ChildItem tauri/src-tauri/target/release/bundle/nsis/*.nsis.zip.sig).FullName
+          $json = @{
+            version = $version
+            notes = "See https://github.com/TheSylvester/crispy/releases/tag/$tag"
+            pub_date = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = $sig
+                url = "$base/Crispy_${version}_x64-setup.nsis.zip"
+              }
+            }
+          } | ConvertTo-Json -Depth 4
+          $json | Out-File -FilePath latest.json -Encoding utf8
+          Write-Host "Generated latest.json:"
+          Get-Content latest.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tauri-updater-manifest
+          path: latest.json
 
   # ── Publish: collect all VSIXs + Tauri installer and release ─────────────
   publish:
@@ -143,7 +173,15 @@ jobs:
         continue-on-error: true
         with:
           path: tauri
-          pattern: tauri-*
+          pattern: tauri-windows-installer
+          merge-multiple: true
+
+      - name: Download updater manifest (if available)
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          path: updater
+          pattern: tauri-updater-manifest
           merge-multiple: true
 
       - name: List collected artifacts
@@ -176,6 +214,14 @@ jobs:
           mkdir -p release-files
           cp vsix/*.vsix release-files/ 2>/dev/null || true
           cp tauri/*.exe release-files/ 2>/dev/null || true
+          # Fixed-name copy for stable download link:
+          # https://github.com/TheSylvester/crispy/releases/latest/download/Crispy-windows-x64-setup.exe
+          for f in release-files/*-setup.exe; do
+            [ -f "$f" ] && cp "$f" release-files/Crispy-windows-x64-setup.exe
+          done
+          cp tauri/*.nsis.zip release-files/ 2>/dev/null || true
+          cp tauri/*.nsis.zip.sig release-files/ 2>/dev/null || true
+          cp updater/latest.json release-files/ 2>/dev/null || true
           ls -lh release-files/
 
       - uses: softprops/action-gh-release@v2

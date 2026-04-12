@@ -1,6 +1,6 @@
 {
   "productName": "Crispy",
-  "version": "0.2.9",
+  "version": "0.3.0",
   "identifier": "io.github.thesylvester.crispy",
   "build": {
     "frontendDist": "../src-frontend/"
@@ -24,7 +24,7 @@
     "resources": [
       "runtime/**/*"
     ],
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": true,
     "targets": ["nsis"],
     "windows": {
       "webviewInstallMode": {
@@ -43,7 +43,7 @@
       "endpoints": [
         "https://github.com/TheSylvester/crispy/releases/latest/download/latest.json"
       ],
-      "pubkey": "GENERATE_WITH_cargo_tauri_signer_generate"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE0MjAxQzc3NjYxN0U3MkMKUldRczV4ZG1keHdnRlBlOHV2ckt6RHhmQUZ4Wk9BN2tNdTdYWTdxb2pMOU5oVnhMV29XbHAveHkK"
     }
   }
 }

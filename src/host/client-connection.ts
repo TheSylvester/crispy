@@ -31,7 +31,7 @@ import {
 import { SETTINGS_CHANNEL_ID } from '../core/settings/events.js';
 import type { SettingsChangedGlobalEvent } from '../core/settings/events.js';
 import type { SettingsPatch, ProviderConfig } from '../core/settings/types.js';
-import { resolveApproval, subscribe, unsubscribe } from "../core/session-channel.js";
+import { resolveApproval, subscribe, unsubscribe, getChannel } from "../core/session-channel.js";
 import {
   listAllSessions,
   findSession,
@@ -44,8 +44,7 @@ import {
   getRegisteredVendors,
   dispatchChildSession,
   resumeChildSession,
-  registerChildSession,
-  rekeyChildSession,
+  listChildSessions,
   resolveSessionId,
   resolveSessionPrefix,
   switchSession,
@@ -98,7 +97,12 @@ import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-rea
 // at extension activation time (crashes VS Code's Electron host).
 // import { transcribeAudio } from '../core/voice/index.js'; // <-- lazy below
 import { startCapture, stopCapture, cancelCapture, cleanupOrphanedVoiceFiles } from './audio-capture.js';
-import { openPanel as openPanelFn } from './panel-opener.js';
+import { openPanel as openPanelFn, closePanel as closePanelFn } from './panel-opener.js';
+import {
+  createTerminal, writeTerminal, resizeTerminal,
+  closeTerminal, listTerminals, attachTerminal, detachTerminal,
+  type SendEventFn,
+} from './terminal-manager.js';
 
 // Clean up any orphaned voice temp files from previous sessions on module load.
 cleanupOrphanedVoiceFiles();
@@ -267,8 +271,8 @@ export function createClientConnection(
   /** Extra allowed roots (e.g. VS Code workspace CWD before any session exists). */
   const extraAllowedRoots = new Set<string>();
 
-  /** Child sessions registered via provenance — cleaned up on dispose (fix #7). */
-  const registeredChildren = new Set<string>();
+  /** Terminal IDs owned by this client — detached on disconnect. */
+  const ownedTerminals = new Set<string>();
 
   /**
    * Validate that `filePath` is inside an allowed directory before performing
@@ -385,6 +389,21 @@ export function createClientConnection(
         return allTurns.filter(t => t.turn >= from && t.turn <= to);
       }
 
+      case "listChildSessions": {
+        const parentId = params.sessionId as string;
+        if (!parentId) throw new Error('Missing sessionId (parent)');
+        const children = listChildSessions(parentId);
+        const enriched = children.map(child => {
+          const ch = getChannel(child.sessionId);
+          return {
+            ...child,
+            vendor: ch?.adapter?.vendor ?? 'unknown',
+            status: ch?.state ?? (child.closed ? 'closed' : 'unknown'),
+          };
+        });
+        return { sessions: enriched };
+      }
+
       case "subscribe": {
         const sessionId = params.sessionId as string;
 
@@ -422,13 +441,8 @@ export function createClientConnection(
       case "sendTurn": {
         const intent = params.intent as TurnIntent;
 
-        // Optional provenance: marks this session as an IPC-dispatched child.
-        // Prevents Rosie from processing it while optionally allowing UI visibility.
-        const provenance = params.provenance as {
-          parentSessionId: string;
-          autoClose: boolean;
-          visible: boolean;
-        } | undefined;
+        // Child registration is now handled by core's sendTurn when
+        // intent.parentSessionId is set. No provenance mapping needed.
 
         // For existing sessions — may trigger vendor switch internally
         if (intent.target.kind === 'existing') {
@@ -443,20 +457,17 @@ export function createClientConnection(
           // Swap to mutable subscriber BEFORE sendTurn to avoid event-loss window.
           // The mutable subscriber is already installed on the channel when
           // sendTurn() potentially triggers a vendor switch.
+          // skipCatchup: the client is already subscribed and has current state —
+          // a catchup here would send stale 'idle' and overwrite the client's
+          // optimistic 'streaming' state before the adapter emits 'active'.
           unsubscribe(sub.channel, sub.subscriber);
           const mutable = createMutableSubscriber(targetSessionId);
-          subscribe(sub.channel, mutable.subscriber);
+          subscribe(sub.channel, mutable.subscriber, { skipCatchup: true });
           subscriptions.set(targetSessionId, {
             channel: sub.channel, subscriber: mutable.subscriber,
           });
 
           const result = await sendTurn(intent, mutable.subscriber);
-
-          // Register provenance if this is an IPC-dispatched child
-          if (provenance) {
-            registerChildSession(result.sessionId, provenance);
-            registeredChildren.add(result.sessionId);
-          }
 
           // If vendor switch happened, update subscription tracking
           if (result.sessionId !== targetSessionId) {
@@ -471,12 +482,6 @@ export function createClientConnection(
           if (result.rekeyPromise) {
             result.rekeyPromise
               .then(realId => {
-                // Core provenance must always update, even after client disconnect (fix #2)
-                if (provenance) {
-                  rekeyChildSession(result.sessionId, realId);
-                  registeredChildren.delete(result.sessionId);
-                  registeredChildren.add(realId);
-                }
                 if (disposed) return; // transport-only ops below
                 mutable.rekey(realId);
                 const entry = subscriptions.get(result.sessionId);
@@ -497,34 +502,15 @@ export function createClientConnection(
         const pendingId = (params.pendingId as string) || `pending:${crypto.randomUUID()}`;
         const mutable = createMutableSubscriber(pendingId);
 
-        // Register provenance before sendTurn so the child is tracked immediately
-        if (provenance) {
-          registerChildSession(pendingId, provenance);
-          registeredChildren.add(pendingId);
-        }
-
         const result = await sendTurn(intent, mutable.subscriber, pendingId);
         subscriptions.set(result.sessionId, {
           channel: result.channel, subscriber: mutable.subscriber,
         });
 
-        // Migrate provenance from pending to resolved ID
-        if (provenance && result.sessionId !== pendingId) {
-          rekeyChildSession(pendingId, result.sessionId);
-          registeredChildren.delete(pendingId);
-          registeredChildren.add(result.sessionId);
-        }
-
         // Handle rekey from rekeyPromise (pending → real ID)
         if (result.rekeyPromise) {
           result.rekeyPromise
             .then(realId => {
-              // Core provenance must always update, even after client disconnect (fix #2)
-              if (provenance) {
-                rekeyChildSession(result.sessionId, realId);
-                registeredChildren.delete(result.sessionId);
-                registeredChildren.add(realId);
-              }
               if (disposed) return; // transport-only ops below
               mutable.rekey(realId);
               const entry = subscriptions.get(result.sessionId);
@@ -635,7 +621,7 @@ export function createClientConnection(
         const vendor = (params.vendor as Vendor) ?? sessionInfo?.vendor;
         if (!vendor) throw new Error(`Cannot determine vendor for session "${sessionId}"`);
 
-        const cwd = (params.cwd as string) ?? sessionInfo?.projectPath ?? process.cwd();
+        const cwd = (params.cwd as string) ?? sessionInfo?.projectPath ?? homedir();
 
         const spec: SessionOpenSpec = {
           mode: 'fresh',
@@ -766,6 +752,20 @@ export function createClientConnection(
         sessionListSub = {
           id: clientId,
           send(event) {
+            // In VS Code mode, open/close native panels instead of forwarding
+            // to the webview (which would only affect FlexLayout tabs)
+            if (event.type === 'session_open_channel') {
+              try {
+                openPanelFn(event.sessionId, { autoClose: event.autoClose });
+                return; // native panel opened — don't forward to webview
+              } catch {
+                // No panel opener (dev-server) — fall through to webview FlexLayout
+              }
+            }
+            if (event.type === 'session_close_channel') {
+              if (closePanelFn(event.sessionId)) return;
+              // No panel closer registered — forward event to webview for FlexLayout
+            }
             sendFn({ kind: "event", sessionId: SESSION_LIST_CHANNEL_ID, event });
           },
         };
@@ -1276,6 +1276,43 @@ export function createClientConnection(
         return listAvailableCommands(vendor, sessionId, cwd);
       }
 
+      // --- Terminal RPCs (standalone/Tauri only) ---
+      case "createTerminal": {
+        const termSendEvent: SendEventFn = (event) => sendFn(event as any);
+        const result = await createTerminal(
+          { cwd: params.cwd as string | undefined, cols: params.cols as number | undefined, rows: params.rows as number | undefined },
+          termSendEvent,
+        );
+        ownedTerminals.add(result.terminalId);
+        return result;
+      }
+
+      case "writeTerminal": {
+        writeTerminal(params.terminalId as string, params.data as string);
+        return { ok: true };
+      }
+
+      case "resizeTerminal": {
+        resizeTerminal(params.terminalId as string, params.cols as number, params.rows as number);
+        return { ok: true };
+      }
+
+      case "closeTerminal": {
+        closeTerminal(params.terminalId as string);
+        return { ok: true };
+      }
+
+      case "listTerminals": {
+        return listTerminals();
+      }
+
+      case "attachTerminal": {
+        const termSendEvent: SendEventFn = (event) => sendFn(event as any);
+        const attached = attachTerminal(params.terminalId as string, termSendEvent);
+        if (attached) ownedTerminals.add(params.terminalId as string);
+        return attached;
+      }
+
       default:
         throw new Error(`Unknown method: ${method}`);
     }
@@ -1310,15 +1347,12 @@ export function createClientConnection(
     }
     subscriptions.clear();
 
-    // Close child sessions registered via provenance (fix #7: prevent memory leak)
-    for (const childId of registeredChildren) {
-      try {
-        closeSession(childId);
-      } catch {
-        // Best-effort — session may already be closed
-      }
+    // Detach terminals owned by this client (PTY stays alive for reconnect)
+    for (const termId of ownedTerminals) {
+      try { detachTerminal(termId); } catch { /* best-effort */ }
     }
-    registeredChildren.clear();
+    ownedTerminals.clear();
+
   }
 
   return {

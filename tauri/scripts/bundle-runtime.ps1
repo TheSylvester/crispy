@@ -42,10 +42,16 @@ foreach ($ConfigFile in @("$TauriDir\package.json", "$TauriDir\src-tauri\tauri.c
     }
 }
 
-# Skip if runtime/ already exists and looks valid
+# Skip if runtime/ already exists, looks valid, AND version matches
 if ((Test-Path "$RuntimeDir\node.exe") -and (Test-Path "$RuntimeDir\crispy\dist")) {
-    Write-Host "runtime/ already exists - skipping. Delete src-tauri\runtime\ to rebuild."
-    exit 0
+    $CachedVersion = try { (Get-Content "$RuntimeDir\crispy\package.json" | ConvertFrom-Json).version } catch { "" }
+    if ($CachedVersion -eq $RootVersion) {
+        Write-Host "runtime/ already exists at v$RootVersion - skipping. Delete src-tauri\runtime\ to rebuild."
+        exit 0
+    } else {
+        Write-Host "runtime/ version mismatch ($CachedVersion -> $RootVersion), rebuilding..."
+        Remove-Item -Recurse -Force $RuntimeDir
+    }
 }
 
 # Clean previous partial builds
@@ -92,6 +98,25 @@ Copy-Item -Recurse "$RepoRoot\dist" "$RuntimeDir\crispy\dist"
 Copy-Item "$RepoRoot\package.json" "$RuntimeDir\crispy\"
 if (Test-Path "$RepoRoot\package-lock.json") {
     Copy-Item "$RepoRoot\package-lock.json" "$RuntimeDir\crispy\"
+}
+
+# Fix line endings on scripts with shebangs.
+# npm pack on Windows produces tarballs that inherit CRLF line endings,
+# which breaks #!/usr/bin/env shebangs when extracted in WSL.
+Write-Host ">>> Normalizing script line endings for WSL compatibility..."
+$ShebangScripts = @(
+    "$RuntimeDir\crispy\dist\crispy-dispatch.js",
+    "$RuntimeDir\crispy\dist\crispy-cli.js",
+    "$RuntimeDir\crispy\dist\recall.js",
+    "$RuntimeDir\crispy\dist\crispy-plugin\scripts\crispy-agent",
+    "$RuntimeDir\crispy\dist\crispy-plugin\scripts\crispy-session"
+)
+foreach ($f in $ShebangScripts) {
+    if (Test-Path $f) {
+        $content = [System.IO.File]::ReadAllText($f)
+        $content = $content -replace "`r`n", "`n"
+        [System.IO.File]::WriteAllText($f, $content)
+    }
 }
 
 # ---- Step 3: Install production dependencies ----

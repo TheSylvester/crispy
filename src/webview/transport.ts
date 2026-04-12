@@ -199,6 +199,15 @@ export interface SessionService {
   /** Discord bot setup — fetch application info for invite URL generation */
   getDiscordAppInfo(token: string): Promise<{ appId: string; name: string } | null>;
 
+  /** Terminal management (standalone/Tauri only — throws in VS Code) */
+  createTerminal(opts: { cwd?: string; cols?: number; rows?: number }): Promise<{ terminalId: string }>;
+  writeTerminal(terminalId: string, data: string): Promise<void>;
+  resizeTerminal(terminalId: string, cols: number, rows: number): Promise<void>;
+  closeTerminal(terminalId: string): Promise<void>;
+  listTerminals(): Promise<string[]>;
+  attachTerminal(terminalId: string): Promise<boolean>;
+  onTerminalData(terminalId: string, cb: (data: string) => void): () => void;
+
   dispose(): void;
 
   /** Fire-and-forget message to the host. VS Code only; no-op elsewhere. */

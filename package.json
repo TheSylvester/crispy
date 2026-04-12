@@ -2,10 +2,19 @@
   "name": "crispy-code",
   "displayName": "Crispy",
   "icon": "media/crispy-icon.png",
-  "description": "An agent workbench for Claude Code and Codex — with local agent memory, multi-agent collaboration, and controls you can't get in a terminal",
-  "version": "0.2.9",
+  "description": "A GUI for Claude Code and Codex, built for multi-agent orchestration — with 'superthink' adversarial verification, agent memory, and Discord remote access.",
+  "version": "0.3.0",
   "publisher": "the-sylvester",
   "license": "MIT",
+  "files": [
+    "dist/crispy-cli.js",
+    "dist/crispy-dispatch.js",
+    "dist/crispy-plugin/",
+    "dist/crispy-tracker.mjs",
+    "dist/node-sqlite3-wasm.wasm",
+    "dist/recall.js",
+    "dist/webview/"
+  ],
   "bin": {
     "crispy": "./dist/crispy-cli.js"
   },
@@ -35,14 +44,6 @@
     "coding-assistant",
     "vscode"
   ],
-  "files": [
-    "dist/",
-    "media/crispy-icon.png",
-    "media/crispy-icon.svg",
-    "LICENSE",
-    "THIRD-PARTY-LICENSES",
-    "README.md"
-  ],
   "engines": {
     "node": ">=18",
     "vscode": "^1.94.0"
@@ -53,7 +54,11 @@
     "@anthropic-ai/sdk": "^0.74.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@opencode-ai/sdk": "^1.2.20",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0",
     "extract-zip": "^2.0.1",
+    "flexlayout-react": "^0.8.19",
     "node-sqlite3-wasm": "^0.8.53",
     "open": "^10.2.0",
     "prism-react-renderer": "^2.4.1",
@@ -68,6 +73,7 @@
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
+    "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
     "@huggingface/transformers": "^3.8.1",
     "onnxruntime-node": "1.21.0",
     "sharp": "^0.34.2"
@@ -86,9 +92,9 @@
   },
   "scripts": {
     "postinstall": "node -e \"try{require('fs').accessSync('scripts/ensure-sharp-stub.mjs');require('child_process').execSync('node scripts/ensure-sharp-stub.mjs',{stdio:'ignore'})}catch{}\"",
-    "build:extension": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --external:onnxruntime-node --external:@huggingface/transformers --format=cjs --platform=node --sourcemap --loader:.md=text && cp node_modules/node-sqlite3-wasm/dist/node-sqlite3-wasm.wasm dist/ && cp src/core/rosie/tracker/crispy-tracker.mjs dist/",
+    "build:extension": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --external:onnxruntime-node --external:@huggingface/transformers --external:@homebridge/node-pty-prebuilt-multiarch --format=cjs --platform=node --sourcemap --loader:.md=text && cp node_modules/node-sqlite3-wasm/dist/node-sqlite3-wasm.wasm dist/ && cp src/core/rosie/tracker/crispy-tracker.mjs dist/",
     "build:webview": "esbuild src/webview/main.tsx --bundle --outfile=dist/webview/main.js --format=esm --platform=browser --sourcemap --jsx=automatic --loader:.svg=text && cp src/webview/index.html dist/webview/ && cp src/webview/theme-defaults.css dist/webview/ && cp src/webview/styles.css dist/webview/ && cp media/favicon.png dist/webview/ && cp src/webview/manifest.json dist/webview/ && cp media/icons/icon-192.png dist/webview/ && cp media/icons/icon-512.png dist/webview/",
-    "build:dev-server": "esbuild src/host/dev-server.ts --bundle --outfile=dist/dev-server.js --external:@anthropic-ai/* --external:ws --external:onnxruntime-node --external:@huggingface/transformers --format=esm --platform=node --sourcemap --loader:.md=text && cp node_modules/node-sqlite3-wasm/dist/node-sqlite3-wasm.wasm dist/ && cp src/core/rosie/tracker/crispy-tracker.mjs dist/",
+    "build:dev-server": "esbuild src/host/dev-server.ts --bundle --outfile=dist/dev-server.js --external:@anthropic-ai/* --external:ws --external:onnxruntime-node --external:@huggingface/transformers --external:@homebridge/node-pty-prebuilt-multiarch --format=esm --platform=node --sourcemap --loader:.md=text && cp node_modules/node-sqlite3-wasm/dist/node-sqlite3-wasm.wasm dist/ && cp src/core/rosie/tracker/crispy-tracker.mjs dist/",
     "build:crispy-plugin": "rm -rf dist/crispy-plugin && cp -r src/plugin dist/crispy-plugin",
     "build": "npm run build:extension && npm run build:webview && npm run build:dev-server && npm run build:recall && npm run build:cli && npm run build:cli-entry && npm run build:crispy-plugin",
     "watch": "npm run build:extension -- --watch",
@@ -106,7 +112,7 @@
     "smoke:quick": "npx tsx scripts/smoke.ts --skip-embed",
     "dev": "npm run build:webview && node --import tsx src/host/dev-server.ts",
     "build:cli": "esbuild src/cli/crispy-dispatch.ts --bundle --outfile=dist/crispy-dispatch.js --format=esm --platform=node --sourcemap --banner:js=\"#!/usr/bin/env node\" && chmod +x dist/crispy-dispatch.js",
-    "build:cli-entry": "esbuild src/cli/crispy-cli.ts --bundle --outfile=dist/crispy-cli.js --external:@anthropic-ai/* --external:ws --external:open --external:onnxruntime-node --external:@huggingface/transformers --format=cjs --platform=node --sourcemap --loader:.md=text --banner:js=\"#!/usr/bin/env node\"",
+    "build:cli-entry": "esbuild src/cli/crispy-cli.ts --bundle --outfile=dist/crispy-cli.js --external:@anthropic-ai/* --external:ws --external:open --external:onnxruntime-node --external:@huggingface/transformers --external:@homebridge/node-pty-prebuilt-multiarch --format=cjs --platform=node --sourcemap --loader:.md=text --banner:js=\"#!/usr/bin/env node\"",
     "build:recall": "esbuild scripts/recall.ts --bundle --outfile=dist/recall.js --external:onnxruntime-node --external:@huggingface/transformers --format=cjs --platform=node --sourcemap --banner:js=\"#!/usr/bin/env node\" && chmod +x dist/recall.js",
     "dispatch": "node --import tsx src/cli/crispy-dispatch.ts",
     "prepublishOnly": "npm run build"

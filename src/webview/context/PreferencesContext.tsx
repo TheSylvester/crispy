@@ -24,12 +24,21 @@ export type ToolPanelMode = 'inspector' | 'viewport';
 /** Badge style for tool name pills. */
 export type BadgeStyle = 'solid' | 'tinted' | 'frosted';
 
-/** Which view is shown in the unified right sidebar. */
-export type SidebarView = 'files' | 'tools' | 'git';
+/** Display style for assistant markdown rendering. */
+export type DisplayStyle =
+  | 'crispy'
+  | 't3'
+  | 'chatgpt'
+  | 'claude'
+  | 'gemini'
+  | 'cursor'
+  | 'copilot'
+  | 'deepseek'
+  | 'perplexity'
+  | 'terminal';
 
 interface Preferences {
   renderMode: RenderMode;
-  settingsPinned: boolean;
   sidebarCollapsed: boolean;
   toolPanelOpen: boolean;
   /** User-dragged panel width override (px). null = use auto-computed width. */
@@ -46,25 +55,25 @@ interface Preferences {
   condensedToolMode: boolean;
   /** Badge style for tool name pills. */
   badgeStyle: BadgeStyle;
+  /** Display style for assistant markdown rendering. */
+  displayStyle: DisplayStyle;
   /** In Icons mode, render Bash as a full block instead of condensed single-line. */
   bashBlockInIcons: boolean;
-  /** Which view is shown in the unified right sidebar. */
-  sidebarView: SidebarView;
-  /** User-dragged file viewer panel width override (px). null = use auto-computed width. */
-  fileViewerWidthPx: number | null;
   /** Auto-invoke /reflect after creating implementation plans. */
   autoReflect: boolean;
+  /** Which side the Git border panel docks to. */
+  gitPanelSide: 'left' | 'right';
+  /** Use the display style accent color instead of permission-mode colors. */
+  useDisplayStyleAccent: boolean;
   /** Whether the Rosie bot tracker is enabled. Read-only from settings. */
   rosieBotEnabled: boolean;
 }
 
 interface PreferencesContextValue extends Preferences {
   setRenderMode: (mode: RenderMode) => void;
-  setSettingsPinned: (pinned: boolean) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setToolPanelOpen: (open: boolean) => void;
   setToolPanelWidthPx: (px: number | null) => void;
-  setFileViewerWidthPx: (px: number | null) => void;
   setToolPanelMode: (mode: ToolPanelMode) => void;
   setToolViewOverride: (override: ToolViewOverride) => void;
   setDebugMode: (enabled: boolean) => void;
@@ -72,8 +81,10 @@ interface PreferencesContextValue extends Preferences {
   setAutoReflect: (enabled: boolean) => void;
   setCondensedToolMode: (enabled: boolean) => void;
   setBadgeStyle: (style: BadgeStyle) => void;
+  setDisplayStyle: (skin: DisplayStyle) => void;
   setBashBlockInIcons: (enabled: boolean) => void;
-  setSidebarView: (view: SidebarView) => void;
+  setGitPanelSide: (side: 'left' | 'right') => void;
+  setUseDisplayStyleAccent: (enabled: boolean) => void;
 }
 
 const PreferencesContext = createContext<PreferencesContextValue | null>(null);
@@ -101,15 +112,12 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   // ============================================================================
 
   const [debugMode, setDebugMode] = useState(false);
-  const [settingsPinned, setSettingsPinned] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [toolPanelOpen, setToolPanelOpen] = useState(false);
   const [toolPanelWidthPx, setToolPanelWidthPx] = useState<number | null>(null);
-  const [fileViewerWidthPx, setFileViewerWidthPx] = useState<number | null>(null);
   const [toolPanelMode, setToolPanelMode] = useState<ToolPanelMode>('inspector');
   const [toolViewOverride, setToolViewOverride] = useState<ToolViewOverride>(null);
   const [condensedToolMode, setCondensedToolMode] = useState(false);
-  const [sidebarView, setSidebarView] = useState<SidebarView>('tools');
   const [rosieBotEnabled, setRosieBotEnabled] = useState(false);
 
   // ============================================================================
@@ -118,9 +126,12 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 
   const [renderMode, setRenderModeLocal] = useState<RenderMode>(getInitialRenderMode);
   const [badgeStyle, setBadgeStyleLocal] = useState<BadgeStyle>('frosted');
+  const [displayStyle, setDisplayStyleLocal] = useState<DisplayStyle>('crispy');
   const [toolPanelAutoOpen, setToolPanelAutoOpenLocal] = useState(false);
   const [autoReflect, setAutoReflectLocal] = useState(true);
   const [bashBlockInIcons, setBashBlockInIconsLocal] = useState(true);
+  const [gitPanelSide, setGitPanelSideLocal] = useState<'left' | 'right'>('left');
+  const [useDisplayStyleAccent, setUseDisplayStyleAccentLocal] = useState(true);
 
   /** Latest known revision from settings RPC or incoming events. */
   const revisionRef = useRef(0);
@@ -138,9 +149,12 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
       const urlMode = new URLSearchParams(window.location.search).get('mode');
       if (!urlMode && prefs.renderMode) setRenderModeLocal(prefs.renderMode as RenderMode);
       if (prefs.badgeStyle) setBadgeStyleLocal(prefs.badgeStyle as BadgeStyle);
+      if (prefs.displayStyle) setDisplayStyleLocal(prefs.displayStyle as DisplayStyle);
       setToolPanelAutoOpenLocal(prefs.toolPanelAutoOpen);
       setAutoReflectLocal(prefs.autoReflect ?? true);
       setBashBlockInIconsLocal(prefs.bashBlockInIcons);
+      if (prefs.gitPanelSide) setGitPanelSideLocal(prefs.gitPanelSide);
+      setUseDisplayStyleAccentLocal(prefs.useDisplayStyleAccent ?? false);
       setRosieBotEnabled(snapshot.settings.rosie?.bot?.enabled ?? false);
     }).catch((err) => {
       console.error('[PreferencesContext] Failed to load settings:', err);
@@ -166,9 +180,12 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
         const urlMode = new URLSearchParams(window.location.search).get('mode');
         if (!urlMode && prefs.renderMode) setRenderModeLocal(prefs.renderMode as RenderMode);
         if (prefs.badgeStyle) setBadgeStyleLocal(prefs.badgeStyle as BadgeStyle);
+        if (prefs.displayStyle) setDisplayStyleLocal(prefs.displayStyle as DisplayStyle);
         setToolPanelAutoOpenLocal(prefs.toolPanelAutoOpen);
         setAutoReflectLocal(prefs.autoReflect ?? true);
         setBashBlockInIconsLocal(prefs.bashBlockInIcons);
+        if (prefs.gitPanelSide) setGitPanelSideLocal(prefs.gitPanelSide);
+        setUseDisplayStyleAccentLocal(prefs.useDisplayStyleAccent ?? false);
       }
       if (changedSections.includes('rosie')) {
         setRosieBotEnabled(snapshot.settings.rosie?.bot?.enabled ?? false);
@@ -223,6 +240,11 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     persistPreference({ badgeStyle: style });
   }, [persistPreference]);
 
+  const setDisplayStyle = useCallback((skin: DisplayStyle) => {
+    setDisplayStyleLocal(skin);
+    persistPreference({ displayStyle: skin });
+  }, [persistPreference]);
+
   const setToolPanelAutoOpen = useCallback((enabled: boolean) => {
     setToolPanelAutoOpenLocal(enabled);
     persistPreference({ toolPanelAutoOpen: enabled });
@@ -238,17 +260,26 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     persistPreference({ bashBlockInIcons: enabled });
   }, [persistPreference]);
 
+  const setGitPanelSide = useCallback((side: 'left' | 'right') => {
+    setGitPanelSideLocal(side);
+    persistPreference({ gitPanelSide: side });
+  }, [persistPreference]);
+
+  const setUseDisplayStyleAccent = useCallback((enabled: boolean) => {
+    setUseDisplayStyleAccentLocal(enabled);
+    persistPreference({ useDisplayStyleAccent: enabled });
+  }, [persistPreference]);
+
   // ============================================================================
   // Context value
   // ============================================================================
 
   const value: PreferencesContextValue = useMemo(() => ({
     renderMode,
-    settingsPinned,
+
     sidebarCollapsed,
     toolPanelOpen,
     toolPanelWidthPx,
-    fileViewerWidthPx,
     toolPanelMode,
     toolViewOverride,
     debugMode,
@@ -256,15 +287,14 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     autoReflect,
     condensedToolMode,
     badgeStyle,
+    displayStyle,
     bashBlockInIcons,
-    sidebarView,
     rosieBotEnabled,
     setRenderMode,
-    setSettingsPinned,
+
     setSidebarCollapsed,
     setToolPanelOpen,
     setToolPanelWidthPx,
-    setFileViewerWidthPx,
     setToolPanelMode,
     setToolViewOverride,
     setDebugMode,
@@ -272,15 +302,18 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setAutoReflect,
     setCondensedToolMode,
     setBadgeStyle,
+    setDisplayStyle,
     setBashBlockInIcons,
-    setSidebarView,
+    gitPanelSide,
+    setGitPanelSide,
+    useDisplayStyleAccent,
+    setUseDisplayStyleAccent,
   }), [
     renderMode,
-    settingsPinned,
+
     sidebarCollapsed,
     toolPanelOpen,
     toolPanelWidthPx,
-    fileViewerWidthPx,
     toolPanelMode,
     toolViewOverride,
     debugMode,
@@ -288,15 +321,15 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     autoReflect,
     condensedToolMode,
     badgeStyle,
+    displayStyle,
     bashBlockInIcons,
-    sidebarView,
+    gitPanelSide,
     rosieBotEnabled,
     setRenderMode,
-    setSettingsPinned,
+
     setSidebarCollapsed,
     setToolPanelOpen,
     setToolPanelWidthPx,
-    setFileViewerWidthPx,
     setToolPanelMode,
     setToolViewOverride,
     setDebugMode,
@@ -304,8 +337,11 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setAutoReflect,
     setCondensedToolMode,
     setBadgeStyle,
+    setDisplayStyle,
     setBashBlockInIcons,
-    setSidebarView,
+    setGitPanelSide,
+    useDisplayStyleAccent,
+    setUseDisplayStyleAccent,
   ]);
 
   return (

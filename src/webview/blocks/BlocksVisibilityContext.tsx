@@ -21,6 +21,7 @@ import {
   useSyncExternalStore,
   useCallback,
 } from 'react';
+import { useIsDomVisible } from '../context/TabContainerContext.js';
 
 // ============================================================================
 // Store — pure TypeScript, no React dependency
@@ -216,10 +217,12 @@ export function BlocksVisibilityProvider({
     storeRef.current = new BlocksVisibilityStore();
   }
   const store = storeRef.current;
+  const isDomVisible = useIsDomVisible();
 
   useEffect(() => {
     const scrollEl = scrollRef.current;
     if (!scrollEl) return;
+    if (!isDomVisible) return;
 
     store.setScrollRoot(scrollEl);
 
@@ -263,7 +266,7 @@ export function BlocksVisibilityProvider({
       mo.disconnect();
       store.reset();
     };
-  }, [scrollRef, store]);
+  }, [scrollRef, store, isDomVisible]);
 
   return (
     <BlocksVisibilityCtx.Provider value={store}>

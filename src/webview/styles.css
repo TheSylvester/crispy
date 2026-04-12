@@ -184,11 +184,11 @@ h2 {
 }
 
 .crispy-session-dropdown {
-  position: fixed;
+  position: absolute;
   top: var(--titlebar-height);
   left: 1rem;
   min-width: 320px;
-  width: calc(100vw - 2rem);
+  width: calc(100% - 2rem);
   max-width: 60rem;
   max-height: 70vh;
   background: var(--vscode-editor-background, #1e1e1e);
@@ -210,47 +210,47 @@ h2 {
   height: calc(100% - var(--titlebar-height));
   margin-top: var(--titlebar-height);
   margin-left: 0;
-  margin-right: var(--right-panels-width, 0px);
   position: relative;
   transition: margin-right var(--sidebar-transition);
 }
 
 /* Streaming glow — agency-colored inset glow on both the main content area
-   and the tool panel.  --frame-highlight is set on .crispy-main itself (not
-   just ::after) so descendants — including the tool panel's ::after — inherit
-   the current agency color.  Reads data-streaming and data-agency directly
-   from .crispy-main (set by React via ControlPanelContext). */
+   and the tool panel.  --frame-highlight is set on .crispy-tab-layout itself
+   (not just ::after) so descendants — including the tool panel's ::after —
+   inherit the current agency color.  Reads data-streaming and data-agency
+   directly from .crispy-tab-layout (set by React via TabLayout). */
 
-/* 1. Set --frame-highlight on .crispy-main per agency mode */
-.crispy-main[data-streaming][data-agency="ask-before-edits"] {
+/* 1. Set --frame-highlight on .crispy-tab-layout per agency mode */
+.crispy-tab-layout[data-streaming][data-agency="ask-before-edits"] {
   --frame-highlight: var(--agency-white);
 }
-.crispy-main[data-streaming][data-agency="edit-automatically"] {
+.crispy-tab-layout[data-streaming][data-agency="edit-automatically"] {
   --frame-highlight: var(--agency-blue);
 }
-.crispy-main[data-streaming][data-agency="plan-mode"] {
+.crispy-tab-layout[data-streaming][data-agency="plan-mode"] {
   --frame-highlight: var(--agency-teal);
 }
-.crispy-main[data-streaming][data-agency="bypass-permissions"] {
+.crispy-tab-layout[data-streaming][data-agency="bypass-permissions"] {
   --frame-highlight: var(--agency-red);
 }
 
-/* 2. Primary glow overlay — main content area */
-.crispy-main::after {
+/* 2. Primary glow overlay — per-tab content area.
+   Only create the pseudo-element when streaming. Previously content: ""
+   was always set, leaving an invisible position:absolute z-index:50
+   overlay covering the entire tab — WebView2 can let this interfere
+   with scroll event handling on the underlying .crispy-transcript. */
+.crispy-tab-layout[data-streaming]::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 50;
   border-radius: inherit;
-}
-
-.crispy-main[data-streaming]::after {
   animation: crispy-cp-glow 2s ease-in-out infinite;
 }
 
 /* 3. Secondary glow overlay — tool panel (subtler, same rhythm) */
-.crispy-main[data-streaming] .crispy-tool-panel::after {
+.crispy-tab-layout[data-streaming] .crispy-tool-panel::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -266,7 +266,9 @@ h2 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overflow-anchor: none; /* Disable browser scroll anchoring — useAutoScroll manages position explicitly */
   padding: 16px;
+  box-sizing: border-box;
 }
 
 .crispy-transcript::-webkit-scrollbar {
@@ -343,37 +345,117 @@ h2 {
 }
 
 /* plan-mode → "planning" */
-.crispy-main[data-agency="plan-mode"] .crispy-thinking__label--thinking {
+.crispy-tab-layout[data-agency="plan-mode"] .crispy-thinking__label--thinking {
   display: none;
 }
-.crispy-main[data-agency="plan-mode"] .crispy-thinking__label--planning {
+.crispy-tab-layout[data-agency="plan-mode"] .crispy-thinking__label--planning {
   display: inline;
 }
 
 /* bypass-permissions → "working" */
-.crispy-main[data-agency="bypass-permissions"]
+.crispy-tab-layout[data-agency="bypass-permissions"]
   .crispy-thinking__label--thinking {
   display: none;
 }
-.crispy-main[data-agency="bypass-permissions"]
+.crispy-tab-layout[data-agency="bypass-permissions"]
   .crispy-thinking__label--working {
   display: inline;
 }
 
 /* edit-automatically → "working" */
-.crispy-main[data-agency="edit-automatically"]
+.crispy-tab-layout[data-agency="edit-automatically"]
   .crispy-thinking__label--thinking {
   display: none;
 }
-.crispy-main[data-agency="edit-automatically"]
+.crispy-tab-layout[data-agency="edit-automatically"]
   .crispy-thinking__label--working {
   display: inline;
+}
+
+/* === Skin accent colors — per display style, used when accent mode is on === */
+/* Duplicated on body so elements outside .crispy-tab-layout (FlexLayout tabs, session selector) inherit */
+.crispy-tab-layout[data-display-style="crispy"], body[data-display-style="crispy"] { --skin-accent: #e8a020; }
+.crispy-tab-layout[data-display-style="t3"], body[data-display-style="t3"] { --skin-accent: #1d4ed8; }
+.crispy-tab-layout[data-display-style="chatgpt"], body[data-display-style="chatgpt"] { --skin-accent: #10a37f; }
+.crispy-tab-layout[data-display-style="claude"], body[data-display-style="claude"] { --skin-accent: #d97757; }
+.crispy-tab-layout[data-display-style="gemini"], body[data-display-style="gemini"] { --skin-accent: #8ab4f8; }
+.crispy-tab-layout[data-display-style="cursor"], body[data-display-style="cursor"] { --skin-accent: #4daafc; }
+.crispy-tab-layout[data-display-style="copilot"], body[data-display-style="copilot"] { --skin-accent: #8957e5; }
+.crispy-tab-layout[data-display-style="deepseek"], body[data-display-style="deepseek"] { --skin-accent: #4d6bfe; }
+.crispy-tab-layout[data-display-style="perplexity"], body[data-display-style="perplexity"] { --skin-accent: #1fb8cd; }
+.crispy-tab-layout[data-display-style="terminal"], body[data-display-style="terminal"] { --skin-accent: #33ff33; }
+
+/* Light-mode skin accent overrides (on both .crispy-tab-layout and body for full cascade) */
+body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="crispy"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="crispy"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="crispy"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="crispy"]
+  { --skin-accent: #b87318; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="t3"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="t3"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="t3"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="t3"]
+  { --skin-accent: #1e40af; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="claude"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="claude"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="claude"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="claude"]
+  { --skin-accent: #ae5630; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="chatgpt"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="chatgpt"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="chatgpt"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="chatgpt"]
+  { --skin-accent: #0d8a6a; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="gemini"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="gemini"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="gemini"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="gemini"]
+  { --skin-accent: #1a73e8; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="cursor"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="cursor"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="cursor"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="cursor"]
+  { --skin-accent: #2563eb; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="copilot"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="copilot"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="copilot"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="copilot"]
+  { --skin-accent: #7c3aed; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="deepseek"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="deepseek"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="deepseek"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="deepseek"]
+  { --skin-accent: #3b52cc; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="perplexity"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="perplexity"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="perplexity"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="perplexity"]
+  { --skin-accent: #0d9488; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-display-style="terminal"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-display-style="terminal"],
+body[data-vscode-theme-kind="vscode-light"][data-display-style="terminal"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"][data-display-style="terminal"]
+  { --skin-accent: #007f00; }
+
+/* === Accent mode: replace agency color tokens with display style accent === */
+body[data-accent-mode="skin"] {
+  --color-accent: var(--skin-accent);
+  --color-accent-hover: color-mix(in srgb, var(--skin-accent) 80%, black);
+}
+.crispy-tab-layout[data-accent-mode="skin"] {
+  --agency-white: var(--skin-accent);
+  --agency-blue: var(--skin-accent);
+  --agency-teal: var(--skin-accent);
+  --agency-red: var(--skin-accent);
+  --color-accent: var(--skin-accent);
+  --color-link: var(--skin-accent);
+  --color-link-text: var(--skin-accent);
 }
 
 /* --- Scroll navigation FABs (shared base) --- */
 
 .crispy-scroll-nav {
-  position: fixed;
+  position: absolute;
   right: 1.5rem;
   width: 36px;
   height: 36px;
@@ -438,7 +520,7 @@ h2 {
 /* --- Scroll-to-top (position + entrance) --- */
 
 .crispy-scroll-to-top {
-  top: calc(var(--titlebar-height) + 1rem);
+  top: 1rem;
   animation: crispy-scroll-fab-in-top 0.15s ease-out both;
 }
 
@@ -611,11 +693,9 @@ h2 {
 /* --- Playback Controls (pill + popover) --- */
 
 .crispy-playback {
-  position: fixed;
+  position: absolute;
   bottom: calc(var(--cp-height, 80) * 1px + 1.5rem);
-  left: calc(
-    (var(--container-width, 100vw) - var(--right-panels-width, 0px)) / 2
-  );
+  left: calc(50% - var(--right-panels-width, 0px) / 2);
   transform: translateX(-50%);
   z-index: 199;
   display: flex;
@@ -897,9 +977,11 @@ h2 {
   line-height: 1.5;
 }
 
-.md-code-block code {
+.md-code-block code,
+.prose .md-code-block code {
   padding: 0;
   background: transparent;
+  border: none;
   border-radius: 0;
   font-size: inherit;
 }
@@ -1059,6 +1141,432 @@ h2 {
 .prose tr:hover td {
   background: var(--tint-soft);
 }
+
+/* ============================================================================
+ * Display Styles — visual style overrides for .prose
+ *
+ * Each skin overrides fonts, colors, spacing, and code styling.
+ * The default (crispy) skin uses the base .prose rules above.
+ * ============================================================================ */
+
+/* ── Common skin resets — structural overrides for all skinned views ── */
+.prose[class*="skin-"] h2 { font-size: 1.3em; }
+.prose[class*="skin-"] h3 { font-size: 1.1em; }
+.prose[class*="skin-"] li { margin: 0; }
+.prose[class*="skin-"] li + li { margin-top: 0.25rem; }
+.prose[class*="skin-"] blockquote { padding: 0 0 0 1em; }
+.prose[class*="skin-"] .md-code-block code { padding: 0; background: none; border: none; border-radius: 0; }
+.prose[class*="skin-"] .md-code-block { padding: 0.8rem 0.9rem; }
+.prose[class*="skin-"] table { display: table; }
+.prose[class*="skin-"] th,
+.prose[class*="skin-"] td { padding: 0.35rem 0.6rem; font-size: 0.9em; }
+.prose[class*="skin-"] tr:nth-child(even) td { background: transparent; }
+.prose[class*="skin-"] tr:hover td { background: transparent; }
+
+/* Per-skin background — applied to the transcript scroll container and welcome page */
+.crispy-transcript.skin-t3, .crispy-welcome.skin-t3 { background: #161616; }
+.crispy-transcript.skin-chatgpt, .crispy-welcome.skin-chatgpt { background: #212121; }
+.crispy-transcript.skin-claude, .crispy-welcome.skin-claude { background: #2b2a27; }
+.crispy-transcript.skin-gemini, .crispy-welcome.skin-gemini { background: #131314; }
+.crispy-transcript.skin-cursor, .crispy-welcome.skin-cursor { background: #1F1F1F; }
+.crispy-transcript.skin-copilot, .crispy-welcome.skin-copilot { background: #191A1B; }
+.crispy-transcript.skin-deepseek, .crispy-welcome.skin-deepseek { background: #1a1c24; }
+.crispy-transcript.skin-perplexity, .crispy-welcome.skin-perplexity { background: #191A1A; }
+.crispy-transcript.skin-terminal, .crispy-welcome.skin-terminal { background: #000000; }
+
+/* Per-skin user text — inherits skin font/size */
+[class*="skin-"] .user-text { font-size: 14px; }
+.skin-t3 .user-text { font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+.skin-chatgpt .user-text { font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+.skin-claude .user-text { font-family: 'Source Serif 4', 'Literata', ui-serif, Georgia, Cambria, 'Times New Roman', serif; }
+.skin-gemini .user-text { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+.skin-cursor .user-text { font-family: 'Segoe WPC', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
+.skin-copilot .user-text { font-family: 'Segoe WPC', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
+.skin-deepseek .user-text { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif; }
+.skin-perplexity .user-text { font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif; }
+.skin-terminal .user-text { font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', Consolas, monospace; }
+
+/* ── Skin: T3 Code — 15px / 1.5 / 0.65rem margin ── */
+.prose.skin-t3 {
+  font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 15px; line-height: 1.5;
+}
+.prose.skin-t3 p, .prose.skin-t3 ul, .prose.skin-t3 ol,
+.prose.skin-t3 blockquote, .prose.skin-t3 .md-code-block,
+.prose.skin-t3 table { margin: 0.65rem 0; }
+.prose.skin-t3 h2 { margin: 1rem 0 0.65rem; }
+.prose.skin-t3 h3 { margin: 0.8rem 0 0.65rem; }
+.prose.skin-t3 ul, .prose.skin-t3 ol { padding-left: 1.25rem; }
+.prose.skin-t3 li { line-height: 1.5; }
+.prose.skin-t3 code { font-size: 13px; }
+.prose.skin-t3 a { color: #1d4ed8; text-decoration: underline; text-decoration-color: rgba(29,78,216,0.4); }
+.prose.skin-t3 blockquote { border-left: 2px solid rgba(255,255,255,0.15); color: rgba(245,245,245,0.55); font-style: normal; }
+.prose.skin-t3 code {
+  font-family: "SF Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.04);
+}
+.prose.skin-t3 .md-code-block { border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; background: rgba(255,255,255,0.04); }
+.prose.skin-t3 .md-code-block code { font-size: 14px; }
+.prose.skin-t3 th, .prose.skin-t3 td { border-color: rgba(255,255,255,0.06); }
+.prose.skin-t3 th { background: rgba(255,255,255,0.03); }
+
+/* ── Skin: ChatGPT — 16px / 1.7 / 1rem margin ── */
+.prose.skin-chatgpt {
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 16px; line-height: 1.7;
+  font-feature-settings: "palt";
+  color: #ececec;
+}
+.prose.skin-chatgpt p, .prose.skin-chatgpt ul, .prose.skin-chatgpt ol,
+.prose.skin-chatgpt blockquote, .prose.skin-chatgpt .md-code-block,
+.prose.skin-chatgpt table { margin: 1rem 0; }
+.prose.skin-chatgpt h2 { margin: 1rem 0 1rem; border-bottom-color: #374151; }
+.prose.skin-chatgpt h3 { margin: 0.8rem 0 1rem; }
+.prose.skin-chatgpt ul, .prose.skin-chatgpt ol { padding-left: 1.5rem; }
+.prose.skin-chatgpt li { line-height: 1.7; }
+.prose.skin-chatgpt a { color: #10a37f; text-decoration: underline; text-decoration-color: rgba(16,163,127,0.4); }
+.prose.skin-chatgpt blockquote { border-left: 3px solid #4b5563; color: #9ca3af; font-style: normal; }
+.prose.skin-chatgpt code {
+  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, Consolas, monospace;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #2f2f2f;
+  color: #10a37f;
+}
+.prose.skin-chatgpt .md-code-block { border-radius: 8px; background: #171717; border: none; }
+.prose.skin-chatgpt .md-code-block code { font-size: 14px; color: inherit; background: none; }
+.prose.skin-chatgpt th, .prose.skin-chatgpt td { border-color: #374151; }
+.prose.skin-chatgpt th { background: #2f2f2f; }
+
+/* ── Skin: Claude.ai — 16px / 1.65 / 1.25rem margin ── */
+.prose.skin-claude {
+  font-family: 'Source Serif 4', 'Literata', ui-serif, Georgia, Cambria, 'Times New Roman', serif;
+  font-size: 16px; line-height: 1.65;
+  color: #eeeeee;
+}
+.prose.skin-claude p, .prose.skin-claude ul, .prose.skin-claude ol,
+.prose.skin-claude blockquote, .prose.skin-claude .md-code-block,
+.prose.skin-claude table { margin: 1.25rem 0; }
+.prose.skin-claude h2 { margin: 1rem 0 1.25rem; }
+.prose.skin-claude h3 { margin: 0.8rem 0 1.25rem; }
+.prose.skin-claude ul, .prose.skin-claude ol { padding-left: 1.5rem; }
+.prose.skin-claude li { line-height: 1.65; }
+.prose.skin-claude code { font-size: 13.5px; }
+.prose.skin-claude h2, .prose.skin-claude h3 { font-family: 'Literata', 'Source Serif 4', Georgia, serif; }
+.prose.skin-claude h2 { border-bottom-color: rgba(255,255,255,0.08); }
+.prose.skin-claude a { color: #d97757; text-decoration: underline; text-decoration-color: rgba(217,119,87,0.4); }
+.prose.skin-claude blockquote { border-left: 3px solid #ae5630; color: #9a9893; font-style: normal; }
+.prose.skin-claude code {
+  font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.08);
+}
+.prose.skin-claude .md-code-block { border-radius: 6px; background: #1f1e1b; border: 1px solid rgba(255,255,255,0.06); }
+.prose.skin-claude .md-code-block code { font-size: 13.5px; background: none; }
+.prose.skin-claude th, .prose.skin-claude td { border-color: rgba(255,255,255,0.08); }
+.prose.skin-claude th { background: rgba(255,255,255,0.04); }
+
+/* ── Skin: Gemini — 16px / 1.5 / 1rem margin ── */
+.prose.skin-gemini {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 16px; line-height: 1.5;
+}
+.prose.skin-gemini p, .prose.skin-gemini ul, .prose.skin-gemini ol,
+.prose.skin-gemini blockquote, .prose.skin-gemini .md-code-block,
+.prose.skin-gemini table { margin: 1rem 0; }
+.prose.skin-gemini h2 { margin: 1rem 0 1rem; }
+.prose.skin-gemini h3 { margin: 0.8rem 0 1rem; }
+.prose.skin-gemini ul, .prose.skin-gemini ol { padding-left: 1.25rem; }
+.prose.skin-gemini li { line-height: 1.5; }
+.prose.skin-gemini code { font-size: 14px; }
+.prose.skin-gemini a { color: #8ab4f8; text-decoration: none; }
+.prose.skin-gemini a:hover { text-decoration: underline; }
+.prose.skin-gemini blockquote { border-left: 3px solid #5f6368; color: #9aa0a6; font-style: normal; }
+.prose.skin-gemini code {
+  font-family: 'Roboto Mono', 'Fira Code', ui-monospace, monospace;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #2c2c2c;
+}
+.prose.skin-gemini .md-code-block { border-radius: 8px; background: #1e1f20; border: none; }
+.prose.skin-gemini .md-code-block code { font-size: 14px; background: none; }
+.prose.skin-gemini th, .prose.skin-gemini td { border: none; border-bottom: 1px solid #5f6368; }
+.prose.skin-gemini th { font-weight: 600; border-bottom-width: 2px; background: transparent; }
+
+/* ── Skin: Cursor — 13px / 1.5 / 0.5rem margin (compact) ── */
+.prose.skin-cursor {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px; line-height: 1.5;
+}
+.prose.skin-cursor p, .prose.skin-cursor ul, .prose.skin-cursor ol,
+.prose.skin-cursor blockquote, .prose.skin-cursor .md-code-block,
+.prose.skin-cursor table { margin: 0.5rem 0; }
+.prose.skin-cursor h2 { margin: 1rem 0 0.5rem; }
+.prose.skin-cursor h3 { margin: 0.8rem 0 0.5rem; }
+.prose.skin-cursor ul, .prose.skin-cursor ol { padding-left: 1.25rem; }
+.prose.skin-cursor li { line-height: 1.5; }
+.prose.skin-cursor code { font-size: 12px; }
+.prose.skin-cursor a { color: #4daafc; text-decoration: none; }
+.prose.skin-cursor a:hover { text-decoration: underline; }
+.prose.skin-cursor blockquote { border-left: 3px solid #3e3e3e; color: #858585; font-style: normal; }
+.prose.skin-cursor code {
+  font-family: 'Fira Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #3C3C3C;
+}
+.prose.skin-cursor .md-code-block { border-radius: 6px; background: #2B2B2B; border: 1px solid #313131; }
+.prose.skin-cursor .md-code-block code { font-size: 12px; background: none; }
+.prose.skin-cursor th, .prose.skin-cursor td { border-color: #313131; }
+.prose.skin-cursor th { background: #252526; }
+
+/* ── Skin: Copilot — 13px / 1.5 / 0.5rem margin (compact) ── */
+.prose.skin-copilot {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px; line-height: 1.5;
+}
+.prose.skin-copilot p, .prose.skin-copilot ul, .prose.skin-copilot ol,
+.prose.skin-copilot blockquote, .prose.skin-copilot .md-code-block,
+.prose.skin-copilot table { margin: 0.5rem 0; }
+.prose.skin-copilot h2 { margin: 1rem 0 0.5rem; }
+.prose.skin-copilot h3 { margin: 0.8rem 0 0.5rem; }
+.prose.skin-copilot ul, .prose.skin-copilot ol { padding-left: 1.25rem; }
+.prose.skin-copilot li { line-height: 1.5; }
+.prose.skin-copilot code { font-size: 12px; }
+.prose.skin-copilot a { color: #8957e5; text-decoration: none; }
+.prose.skin-copilot a:hover { text-decoration: underline; }
+.prose.skin-copilot blockquote { border-left: 3px solid #2A2B2C; color: #969696; font-style: normal; }
+.prose.skin-copilot code {
+  font-family: 'Cascadia Code', Consolas, 'Courier New', monospace;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: #262626;
+  color: #8C8C8C;
+}
+.prose.skin-copilot .md-code-block { border-radius: 6px; background: #242526; border: 1px solid #2A2B2C; }
+.prose.skin-copilot .md-code-block code { font-size: 12px; background: none; }
+.prose.skin-copilot th, .prose.skin-copilot td { border-color: #2A2B2C; }
+.prose.skin-copilot th { background: #242526; }
+
+/* ── Skin: DeepSeek — 16px / 1.75 / 0.75rem margin ── */
+.prose.skin-deepseek {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+  font-size: 16px; line-height: 1.75;
+}
+.prose.skin-deepseek p, .prose.skin-deepseek ul, .prose.skin-deepseek ol,
+.prose.skin-deepseek blockquote, .prose.skin-deepseek .md-code-block,
+.prose.skin-deepseek table { margin: 0.75rem 0; }
+.prose.skin-deepseek h2 { margin: 1rem 0 0.75rem; }
+.prose.skin-deepseek h3 { margin: 0.8rem 0 0.75rem; }
+.prose.skin-deepseek ul, .prose.skin-deepseek ol { padding-left: 1.5rem; }
+.prose.skin-deepseek li { line-height: 1.75; }
+.prose.skin-deepseek code { font-size: 14px; }
+.prose.skin-deepseek a { color: #4d6bfe; text-decoration: underline; text-decoration-color: rgba(77,107,254,0.4); }
+.prose.skin-deepseek blockquote { border-left: 3px solid #4d6bfe; color: #8e8e8e; font-style: normal; }
+.prose.skin-deepseek code {
+  font-family: 'Fira Code', 'Source Code Pro', 'JetBrains Mono', Consolas, monospace;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #2c2d33;
+}
+.prose.skin-deepseek .md-code-block { border-radius: 10px; background: #191a1e; border: 1px solid #2c2d33; }
+.prose.skin-deepseek .md-code-block code { font-size: 14px; background: none; }
+.prose.skin-deepseek th, .prose.skin-deepseek td { border-color: #2c2d33; }
+.prose.skin-deepseek th { background: #282930; }
+
+/* ── Skin: Perplexity — 14px / 1.36 / 0.75rem margin ── */
+.prose.skin-perplexity {
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 14px; line-height: 1.36;
+}
+.prose.skin-perplexity p, .prose.skin-perplexity ul, .prose.skin-perplexity ol,
+.prose.skin-perplexity blockquote, .prose.skin-perplexity .md-code-block,
+.prose.skin-perplexity table { margin: 0.75rem 0; }
+.prose.skin-perplexity h2 { margin: 1rem 0 0.75rem; }
+.prose.skin-perplexity h3 { margin: 0.8rem 0 0.75rem; }
+.prose.skin-perplexity ul, .prose.skin-perplexity ol { padding-left: 1.25rem; }
+.prose.skin-perplexity li { line-height: 1.36; }
+.prose.skin-perplexity code { font-size: 13px; }
+.prose.skin-perplexity a { color: #1fb8cd; text-decoration: none; }
+.prose.skin-perplexity a:hover { text-decoration: underline; }
+.prose.skin-perplexity blockquote { border-left: 3px solid #20b8cd; color: #8a8a8a; font-style: normal; }
+.prose.skin-perplexity code {
+  font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #2A2A2A;
+}
+.prose.skin-perplexity .md-code-block { border-radius: 8px; background: #282c34; border: 1px solid #454545; }
+.prose.skin-perplexity .md-code-block code { font-size: 14px; background: none; }
+.prose.skin-perplexity th, .prose.skin-perplexity td { border-color: #454545; }
+.prose.skin-perplexity th { background: #242424; }
+
+/* ── Skin: Terminal — 14px / 1.3 / 0.6rem margin ── */
+.prose.skin-terminal {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Hack', Consolas, monospace;
+  font-size: 14px; line-height: 1.3;
+  color: rgba(51,255,51,0.9);
+  text-shadow: 0 0 4px rgba(51,255,51,0.3);
+  position: relative;
+}
+.prose.skin-terminal p, .prose.skin-terminal ul, .prose.skin-terminal ol,
+.prose.skin-terminal blockquote, .prose.skin-terminal .md-code-block,
+.prose.skin-terminal table { margin: 0.6rem 0; }
+.prose.skin-terminal h2 { margin: 1rem 0 0.6rem; }
+.prose.skin-terminal h3 { margin: 0.8rem 0 0.6rem; }
+.prose.skin-terminal ul, .prose.skin-terminal ol { padding-left: 1.5rem; }
+.prose.skin-terminal li { line-height: 1.3; }
+.prose.skin-terminal code { font-size: 13px; }
+.prose.skin-terminal h2, .prose.skin-terminal h3 {
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-bottom-color: rgba(51,255,51,0.3);
+}
+.prose.skin-terminal a { color: #33ff33; text-decoration: underline; }
+.prose.skin-terminal blockquote { border-left: 2px solid #33ff33; color: #676767; font-style: normal; }
+.prose.skin-terminal code {
+  font-family: inherit;
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: #373737;
+  color: #33ff33;
+}
+.prose.skin-terminal .md-code-block {
+  border-radius: 2px;
+  background: #0a0a0a;
+  border: 1px solid rgba(51,255,51,0.15);
+}
+.prose.skin-terminal .md-code-block code { font-size: 13px; color: inherit; background: none; text-shadow: inherit; }
+.prose.skin-terminal th, .prose.skin-terminal td { border-color: rgba(51,255,51,0.2); }
+.prose.skin-terminal th { background: rgba(51,255,51,0.05); }
+.prose.skin-terminal strong { color: #ffff33; }
+.prose.skin-terminal em { color: #00d787; }
+/* CRT scanline overlay */
+.prose.skin-terminal::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,0.08) 0px, transparent 1px, transparent 3px);
+  z-index: 1;
+}
+
+/* ============================================================================
+ * Per-Skin Tool Styling — tool element overrides per skin (dark mode)
+ * ============================================================================ */
+
+/* T3 tool styling */
+.skin-t3 .crispy-tool-badge { border-radius: 6px; }
+.skin-t3 .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.1); }
+.skin-t3 .crispy-blocks-dot-line__subject { color: rgba(245,245,245,0.5); }
+
+/* ChatGPT tool styling */
+.skin-chatgpt .crispy-tool-badge { border-radius: 6px; }
+.skin-chatgpt .crispy-blocks-bash-output { background: #171717; border: none; border-radius: 8px; }
+.skin-chatgpt .crispy-diff { border-color: #374151; }
+.skin-chatgpt .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.15); }
+.skin-chatgpt .crispy-blocks-dot-line__subject { color: #9b9b9b; }
+.skin-chatgpt .crispy-blocks-dot-line:hover { background: rgba(255,255,255,0.04); }
+.skin-chatgpt .crispy-status-success { color: #73d676; }
+.skin-chatgpt .crispy-status-error { color: #ef6b6b; }
+.skin-chatgpt .crispy-diff-added { background: rgba(76,175,80,0.15); }
+.skin-chatgpt .crispy-diff-removed { background: rgba(244,67,54,0.15); }
+
+/* Claude.ai tool styling */
+.skin-claude .crispy-tool-badge { border-radius: 4px; }
+.skin-claude .crispy-tool-filepath { color: #d97757; }
+.skin-claude .crispy-blocks-dot-line__subject { color: #9a9893; }
+.skin-claude .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.15); }
+.skin-claude .crispy-blocks-dot-line:hover { background: rgba(255,255,255,0.04); }
+.skin-claude .crispy-blocks-bash-output { background: #1f1e1b; color: #c8c4be; border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; }
+.skin-claude .crispy-diff { border-color: rgba(255,255,255,0.08); }
+.skin-claude .crispy-status-success { color: #8aba7f; }
+.skin-claude .crispy-status-error { color: #d4644e; }
+.skin-claude .crispy-status-pending { color: #c8b878; }
+.skin-claude .crispy-diff-added { background: rgba(138,186,127,0.18); }
+.skin-claude .crispy-diff-removed { background: rgba(212,100,78,0.18); }
+.skin-claude .crispy-diff-gutter { color: #5a5852; }
+
+/* Gemini tool styling */
+.skin-gemini .crispy-tool-badge { border-radius: 16px; }
+.skin-gemini .crispy-tool-filepath { color: #8ab4f8; }
+.skin-gemini .crispy-blocks-dot-line__subject { color: #9aa0a6; }
+.skin-gemini .crispy-blocks-bash-output { background: #1e1f20; border: none; border-radius: 8px; }
+.skin-gemini .crispy-diff { border-color: #3c4043; }
+.skin-gemini .crispy-status-success { color: #81c995; }
+.skin-gemini .crispy-status-error { color: #f28b82; }
+.skin-gemini .crispy-status-pending { color: #fdd663; }
+.skin-gemini .crispy-diff-added { background: rgba(129,201,149,0.15); }
+.skin-gemini .crispy-diff-removed { background: rgba(242,139,130,0.15); }
+.skin-gemini .crispy-diff-gutter { color: #5f6368; }
+
+/* Cursor tool styling */
+.skin-cursor .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.18); }
+.skin-cursor .crispy-blocks-dot-line__subject { color: #9D9D9D; }
+.skin-cursor .crispy-blocks-bash-output { background: #2B2B2B; border: 1px solid #313131; border-radius: 6px; }
+.skin-cursor .crispy-diff { border-color: #313131; }
+.skin-cursor .crispy-diff-added { background: rgba(35,134,54,0.25); }
+.skin-cursor .crispy-diff-removed { background: rgba(218,54,51,0.25); }
+
+/* Copilot tool styling */
+.skin-copilot .crispy-tool-badge { border-radius: 4px; }
+.skin-copilot .crispy-tool-filepath { color: #8957e5; }
+.skin-copilot .crispy-blocks-dot-line__subject { color: #8C8C8C; }
+.skin-copilot .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.12); }
+.skin-copilot .crispy-blocks-dot-line:hover { background: rgba(72,160,199,0.06); }
+.skin-copilot .crispy-blocks-bash-output { background: #242526; border: 1px solid #2A2B2C; border-radius: 6px; }
+.skin-copilot .crispy-diff { border-color: #2A2B2C; }
+.skin-copilot .crispy-status-success { color: #54B054; }
+.skin-copilot .crispy-status-error { color: #FC6A6A; }
+.skin-copilot .crispy-status-pending { color: #C8C862; }
+.skin-copilot .crispy-diff-added { background: rgba(84,176,84,0.18); }
+.skin-copilot .crispy-diff-removed { background: rgba(252,106,106,0.18); }
+
+/* DeepSeek tool styling */
+.skin-deepseek .crispy-tool-badge { border-radius: 10px; }
+.skin-deepseek .crispy-tool-filepath { color: #4d6bfe; }
+.skin-deepseek .crispy-blocks-dot-line__dots { border-bottom-color: rgba(77,107,254,0.2); }
+.skin-deepseek .crispy-blocks-dot-line:hover { background: rgba(77,107,254,0.06); }
+.skin-deepseek .crispy-blocks-bash-output { background: #191a1e; border: 1px solid #2c2d33; border-radius: 10px; }
+.skin-deepseek .crispy-diff { border-color: #2c2d33; border-radius: 10px; }
+.skin-deepseek .crispy-status-success { color: #73d676; }
+.skin-deepseek .crispy-status-error { color: #f06060; }
+.skin-deepseek .crispy-status-pending { color: #4d6bfe; }
+.skin-deepseek .crispy-diff-added { background: rgba(115,214,118,0.15); }
+.skin-deepseek .crispy-diff-removed { background: rgba(240,96,96,0.15); }
+
+/* Perplexity tool styling */
+.skin-perplexity .crispy-tool-badge { border-radius: 10px; }
+.skin-perplexity .crispy-tool-filepath { color: #1fb8cd; }
+.skin-perplexity .crispy-blocks-dot-line__dots { border-bottom-color: rgba(32,184,205,0.2); }
+.skin-perplexity .crispy-blocks-dot-line:hover { background: rgba(32,184,205,0.06); }
+.skin-perplexity .crispy-blocks-bash-output { background: #282c34; border: 1px solid #454545; border-radius: 8px; }
+.skin-perplexity .crispy-diff { border-color: #454545; }
+.skin-perplexity .crispy-status-success { color: #5dc983; }
+.skin-perplexity .crispy-status-error { color: #f06060; }
+.skin-perplexity .crispy-status-pending { color: #20b8cd; }
+.skin-perplexity .crispy-diff-added { background: rgba(93,201,131,0.15); }
+.skin-perplexity .crispy-diff-removed { background: rgba(240,96,96,0.15); }
+
+/* Terminal tool styling */
+.skin-terminal .crispy-tool-filepath { color: #33ff33; }
+.skin-terminal .crispy-blocks-dot-line__subject { color: rgba(51,255,51,0.6); }
+.skin-terminal .crispy-blocks-dot-line__dots { border-bottom-color: rgba(51,255,51,0.2); }
+.skin-terminal .crispy-blocks-dot-line:hover { background: rgba(51,255,51,0.06); }
+.skin-terminal .crispy-blocks-bash-output { background: #0a0a0a; color: #33ff33; border: 1px solid rgba(51,255,51,0.15); text-shadow: 0 0 4px rgba(51,255,51,0.2); }
+.skin-terminal .crispy-diff { border-color: rgba(51,255,51,0.15); }
+.skin-terminal .crispy-status-success { color: #33ff33; }
+.skin-terminal .crispy-status-error { color: #ff3333; }
+.skin-terminal .crispy-status-pending { color: #ffff33; }
+.skin-terminal .crispy-diff-added { background: rgba(51,255,51,0.12); }
+.skin-terminal .crispy-diff-removed { background: rgba(255,51,51,0.12); }
+.skin-terminal .crispy-diff-gutter { color: rgba(51,255,51,0.4); }
+.skin-terminal .crispy-tool-badge { text-shadow: none; }
 
 /* --- User Text — right-aligned bubble --- */
 .user-text {
@@ -1813,19 +2321,15 @@ h2 {
   backdrop-filter: blur(40px) saturate(170%);
   border: 1px solid var(--glass-border-frost);
   max-width: 800px;
-  width: calc(
-    var(--container-width, 100vw) - var(--right-panels-width, 0px) - 3rem
-  );
+  width: calc(100% - var(--right-panels-width, 0px) - 3rem);
   border-radius: 10px;
   box-shadow:
     0 4px 24px rgba(0, 0, 0, 0.4),
     0 1px 4px rgba(0, 0, 0, 0.2),
     var(--glass-inner-glow);
-  position: fixed;
+  position: absolute;
   bottom: 1rem;
-  left: calc(
-    (var(--container-width, 100vw) - var(--right-panels-width, 0px)) / 2
-  );
+  left: calc(50% - var(--right-panels-width, 0px) / 2);
   transform: translateX(-50%);
   z-index: 200;
   transition:
@@ -1916,11 +2420,9 @@ h2 {
 }
 
 .crispy-stop {
-  position: fixed;
+  position: absolute;
   bottom: calc(var(--cp-height, 80) * 1px + 2rem);
-  left: calc(
-    (var(--container-width, 100vw) - var(--right-panels-width, 0px)) / 2
-  );
+  left: calc(50% - var(--right-panels-width, 0px) / 2);
   transform: translateX(-50%) translateY(8px);
   z-index: 199;
   opacity: 0;
@@ -1930,9 +2432,9 @@ h2 {
     transform 0.15s ease-out;
 
   /* Agency color — default white, overridden per mode */
-  --stop-color-dim: rgba(255, 255, 255, 0.45);
-  --stop-color: rgba(255, 255, 255, 0.65);
-  --stop-color-bright: rgba(255, 255, 255, 0.85);
+  --stop-color-dim: color-mix(in srgb, var(--agency-white) 45%, transparent);
+  --stop-color: color-mix(in srgb, var(--agency-white) 65%, transparent);
+  --stop-color-bright: color-mix(in srgb, var(--agency-white) 85%, transparent);
 }
 
 .crispy-stop--visible {
@@ -1972,21 +2474,21 @@ h2 {
   transition: background 0.15s;
 }
 
-/* Agency-mode colors — data-agency set directly on .crispy-main via React */
-.crispy-main[data-agency="edit-automatically"] .crispy-stop {
-  --stop-color-dim: rgba(64, 168, 232, 0.5);
-  --stop-color: rgba(64, 168, 232, 0.7);
-  --stop-color-bright: rgba(64, 168, 232, 0.9);
+/* Agency-mode colors — data-agency set directly on .crispy-tab-layout via React */
+.crispy-tab-layout[data-agency="edit-automatically"] .crispy-stop {
+  --stop-color-dim: color-mix(in srgb, var(--agency-blue) 50%, transparent);
+  --stop-color: color-mix(in srgb, var(--agency-blue) 70%, transparent);
+  --stop-color-bright: color-mix(in srgb, var(--agency-blue) 90%, transparent);
 }
-.crispy-main[data-agency="plan-mode"] .crispy-stop {
-  --stop-color-dim: rgba(71, 152, 140, 0.5);
-  --stop-color: rgba(71, 152, 140, 0.7);
-  --stop-color-bright: rgba(71, 152, 140, 0.9);
+.crispy-tab-layout[data-agency="plan-mode"] .crispy-stop {
+  --stop-color-dim: color-mix(in srgb, var(--agency-teal) 50%, transparent);
+  --stop-color: color-mix(in srgb, var(--agency-teal) 70%, transparent);
+  --stop-color-bright: color-mix(in srgb, var(--agency-teal) 90%, transparent);
 }
-.crispy-main[data-agency="bypass-permissions"] .crispy-stop {
-  --stop-color-dim: rgba(232, 64, 64, 0.5);
-  --stop-color: rgba(232, 64, 64, 0.7);
-  --stop-color-bright: rgba(232, 64, 64, 0.9);
+.crispy-tab-layout[data-agency="bypass-permissions"] .crispy-stop {
+  --stop-color-dim: color-mix(in srgb, var(--agency-red) 50%, transparent);
+  --stop-color: color-mix(in srgb, var(--agency-red) 70%, transparent);
+  --stop-color-bright: color-mix(in srgb, var(--agency-red) 90%, transparent);
 }
 
 .crispy-stop__btn:hover {
@@ -2198,12 +2700,13 @@ h2 {
   padding: 3px 10px;
   font-size: var(--font-sm);
   font-weight: 600;
-  background: var(--color-accent);
-  color: var(--color-send-text);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: calc(var(--radius-xl) - 2px);
+  background: transparent;
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  border-radius: 4px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, color 0.15s;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 30%, transparent);
   appearance: none;
   -webkit-appearance: none;
   box-shadow: none;
@@ -2211,7 +2714,9 @@ h2 {
 }
 
 .crispy-cp-send:hover:not(:disabled) {
-  background: var(--color-accent-hover);
+  background: var(--color-accent);
+  color: var(--color-send-text);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--color-accent) 50%, transparent);
 }
 
 .crispy-cp-send:disabled {
@@ -2220,8 +2725,9 @@ h2 {
 }
 
 .crispy-cp-send__icon {
-  display: inline-block;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Hover jiggle — pure CSS, no React state needed */
@@ -2231,40 +2737,45 @@ h2 {
 
 @keyframes crispy-cp-send-jiggle {
   0% {
-    transform: translateX(0);
+    transform: translateY(0);
   }
   25% {
-    transform: translateX(-1px);
+    transform: translateY(-2px);
   }
   50% {
-    transform: translateX(1px);
+    transform: translateY(1px);
   }
   75% {
-    transform: translateX(-0.5px);
+    transform: translateY(-0.5px);
   }
   100% {
-    transform: translateX(0);
+    transform: translateY(0);
   }
 }
 
 /* Bypass mode — match send button to the agency-red frame color */
 .crispy-cp[data-agency="bypass-permissions"] .crispy-cp-send {
-  background: var(--agency-red);
+  background: transparent;
+  color: var(--agency-red);
+  border-color: var(--agency-red);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--agency-red) 30%, transparent);
 }
 .crispy-cp[data-agency="bypass-permissions"]
   .crispy-cp-send:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--agency-red) 80%, black);
+  background: var(--agency-red);
+  color: var(--color-send-text);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--agency-red) 50%, transparent);
 }
 
 /* Fork mode variant — different background for fork action */
 .crispy-cp-send--fork {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
+  background: transparent;
+  color: var(--color-accent);
 }
 
 .crispy-cp-send--fork:hover:not(:disabled) {
-  background: var(--color-accent-hover);
-  border-color: var(--color-accent-hover);
+  background: var(--color-accent);
+  color: var(--color-send-text);
 }
 
 /* --------------------------------------------------------------------------
@@ -2402,25 +2913,13 @@ h2 {
   border-color: var(--frame-highlight);
 }
 
-/* --- Agency Mode dropdown — colored border/text for current mode --- */
+/* --- Agency Mode dropdown — plain style, no colored border/glow --- */
 
 .crispy-cp-agency {
-  color: var(--frame-highlight) !important;
-  border-color: var(--frame-highlight) !important;
   font-weight: 500;
-  box-shadow: 0 0 6px
-    color-mix(in srgb, var(--frame-highlight) 50%, transparent);
-}
-
-@supports not (color: color-mix(in srgb, red 50%, blue)) {
-  .crispy-cp-agency {
-    box-shadow: 0 0 6px rgba(255, 255, 255, 0.15);
-  }
 }
 
 .crispy-cp-agency:hover {
-  color: var(--frame-highlight) !important;
-  border-color: var(--frame-highlight) !important;
   background: var(--vscode-list-hoverBackground, #2a2d2e);
 }
 
@@ -2550,16 +3049,16 @@ h2 {
 /* Danger pulse — 3 iterations then settles to static glow */
 .crispy-cp-bypass--checked .crispy-cp-bypass__icon:not(.animate-in) {
   animation: crispy-cp-bypass-pulse 2s ease-in-out 3;
-  filter: drop-shadow(0 0 4px rgba(232, 64, 64, 0.4));
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--agency-red) 40%, transparent));
 }
 
 @keyframes crispy-cp-bypass-pulse {
   0%,
   100% {
-    filter: drop-shadow(0 0 4px rgba(232, 64, 64, 0.4));
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--agency-red) 40%, transparent));
   }
   50% {
-    filter: drop-shadow(0 0 10px rgba(232, 64, 64, 0.8));
+    filter: drop-shadow(0 0 10px color-mix(in srgb, var(--agency-red) 80%, transparent));
   }
 }
 
@@ -3718,7 +4217,7 @@ h2 {
 
 /* --- Streaming neon glow on container (uses --agency-glow-shadow) --- */
 
-.crispy-main[data-streaming] .crispy-cp {
+.crispy-tab-layout[data-streaming] .crispy-cp {
   box-shadow:
     0 4px 24px rgba(0, 0, 0, 0.4),
     0 1px 4px rgba(0, 0, 0, 0.2),
@@ -3965,6 +4464,50 @@ h2 {
   }
 }
 
+/* --- Connection status indicator (WebSocket transport only) --- */
+
+.crispy-titlebar__conn-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 11px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.crispy-titlebar__conn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.crispy-titlebar__conn-dot--reconnecting {
+  background: var(--context-moderate, #dcdc9a);
+  box-shadow: 0 0 4px rgba(220, 220, 170, 0.5);
+  animation: crispy-dot-pulse-amber 1.5s ease-in-out infinite;
+}
+
+.crispy-titlebar__conn-dot--disconnected {
+  background: var(--vscode-testing-iconFailed, #f14c4c);
+  box-shadow: 0 0 4px rgba(241, 76, 76, 0.5);
+}
+
+.crispy-titlebar__conn-label {
+  color: var(--vscode-descriptionForeground, #888);
+  white-space: nowrap;
+}
+
+.crispy-titlebar__conn-status--reconnecting .crispy-titlebar__conn-label {
+  color: var(--context-moderate, #dcdc9a);
+}
+
+.crispy-titlebar__conn-status--disconnected .crispy-titlebar__conn-label {
+  color: var(--vscode-testing-iconFailed, #f14c4c);
+}
+
 /* --- New session split button (right) --- */
 
 .crispy-titlebar__new-split {
@@ -4099,7 +4642,72 @@ h2 {
   margin-left: 3px;
 }
 
+.crispy-titlebar__group-sep {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+
 /* --- Git branch indicator (right section, passive context) --- */
+
+/* ============================================================================
+ * TabHeader — per-tab header bar (session selector, panel toggles)
+ * ========================================================================== */
+
+.crispy-tab-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--tab-header-height, 32px);
+  padding: 0 8px;
+  background: var(--glass-bg);
+  border-bottom: 1px solid var(--glass-border-frost);
+  user-select: none;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 200;
+}
+
+.crispy-tab-header__left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+  position: relative;
+}
+
+.crispy-tab-header__right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* Session dropdown in tab header needs relative positioning for the overlay */
+.crispy-tab-header__left .crispy-session-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 400;
+}
+
+/* ============================================================================
+ * TabLayout — per-tab panel layout container
+ * ========================================================================== */
+
+.crispy-tab-layout {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  padding-right: var(--right-panels-width, 0px);
+  transition: padding-right var(--sidebar-transition);
+  box-sizing: border-box;
+}
 
 /* ============================================================================
  * Approval Content — rendered inside .crispy-cp via children slot
@@ -4596,11 +5204,11 @@ h2 {
  * ============================================================================ */
 
 .crispy-tool-panel {
-  position: fixed;
-  top: var(--titlebar-height);
+  position: absolute;
+  top: 0;
   right: 0;
   width: var(--tool-panel-actual-width, var(--tool-panel-width, 0px));
-  height: calc(100vh - var(--titlebar-height));
+  bottom: 0;
   background: var(--glass-bg);
   -webkit-backdrop-filter: blur(40px) saturate(170%);
   backdrop-filter: blur(40px) saturate(170%);
@@ -4609,19 +5217,10 @@ h2 {
   display: flex;
   flex-direction: column;
   z-index: 100;
-  opacity: 1;
-  transform: translateX(0);
-  transition:
-    opacity var(--sidebar-transition),
-    transform var(--sidebar-transition),
-    width var(--sidebar-transition);
-}
-
-/* Hidden state — driven by data attribute on .crispy-layout */
-[data-tool-panel="collapsed"] .crispy-tool-panel {
-  opacity: 0;
-  transform: translateX(8px);
-  pointer-events: none;
+  /* No transition — panel is conditionally rendered (mounts/unmounts),
+     so CSS transitions can't drive open/close. The layout shift is
+     animated by sibling elements (transcript margin-right, etc.).
+     Intermittent mount-time transition firing caused janky slide-in. */
 }
 
 /* Overlay mode — panel floats over content with shadow, above control panel */
@@ -4808,7 +5407,7 @@ h2 {
 
 .crispy-titlebar__tool-panel-btn--active,
 .crispy-titlebar__sidebar-btn--active {
-  background: var(--vscode-list-activeSelectionBackground, #094771);
+  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
 }
 
 /* --- Disable transitions during drag resize --- */
@@ -4820,7 +5419,14 @@ h2 {
 [data-resizing] .crispy-scroll-nav,
 [data-resizing] .crispy-cp,
 [data-resizing] .crispy-stop,
-[data-resizing] .crispy-playback {
+[data-resizing] .crispy-playback,
+.crispy-tab-layout[data-resizing] .crispy-tool-panel,
+.crispy-tab-layout[data-resizing] .crispy-file-panel,
+.crispy-tab-layout[data-resizing] .crispy-git-panel,
+.crispy-tab-layout[data-resizing] .crispy-scroll-nav,
+.crispy-tab-layout[data-resizing] .crispy-cp,
+.crispy-tab-layout[data-resizing] .crispy-stop,
+.crispy-tab-layout[data-resizing] .crispy-playback {
   transition: none !important;
 }
 
@@ -4878,7 +5484,8 @@ h2 {
 }
 
 /* Hide connector lines during panel resize drag (avoids jitter) */
-[data-resizing] .crispy-connector-lines {
+[data-resizing] .crispy-connector-lines,
+.crispy-tab-layout[data-resizing] .crispy-connector-lines {
   display: none;
 }
 
@@ -5566,6 +6173,12 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   --color-diff-removed: #cf222e;
   --color-send-text: #ffffff;
 
+  /* Text hierarchy — dark text on light bg (WCAG AA on #ececec) */
+  --text-primary: #1a1a1a;
+  --text-secondary: #4a4a4a;
+  --text-tertiary: #555;
+  --text-muted: #6b6b6b;
+
   /* Agency */
   --agency-white: #333333;
   --agency-blue: #0066cc;
@@ -5580,16 +6193,19 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
   --context-high: #cf222e;
   --context-critical: #a40e26;
 
-  /* Glassmorphism — flip tint direction */
-  --glass-bg: rgba(255, 255, 255, 0.65);
-  --glass-bg-hover: rgba(255, 255, 255, 0.8);
-  --glass-bg-opaque: rgba(255, 255, 255, 0.9);
-  --glass-bg-drag: rgba(240, 240, 240, 0.95);
-  --glass-bg-solid: rgba(255, 255, 255, 0.97);
-  --glass-bg-muted: rgba(230, 230, 230, 0.7);
+  /* Glassmorphism — cool gray, matching tab bar tone */
+  --glass-bg: rgba(228, 228, 228, 0.85);
+  --glass-bg-hover: rgba(220, 220, 220, 0.9);
+  --glass-bg-opaque: rgba(228, 228, 228, 0.95);
+  --glass-bg-drag: rgba(218, 218, 218, 0.95);
+  --glass-bg-solid: rgba(228, 228, 228, 0.98);
+  --glass-bg-muted: rgba(210, 210, 210, 0.7);
   --glass-border: rgba(0, 0, 0, 0.08);
   --glass-border-md: rgba(0, 0, 0, 0.12);
   --glass-border-strong: rgba(0, 0, 0, 0.2);
+  --glass-border-frost: rgba(0, 0, 0, 0.1);
+  --glass-inner-glow: none;
+  --glass-shadow-subtle: 0 2px 12px rgba(0, 0, 0, 0.08);
 
   /* Tints */
   --tint-subtle: rgba(0, 0, 0, 0.02);
@@ -5612,10 +6228,1026 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
      ensures these pick up the light-mode VS Code values. */
   --bg-editor: var(--vscode-editor-background, #ffffff);
   --bg-code: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.05));
-  --border-panel: var(--vscode-panel-border, #e0e0e0);
+  --border-panel: var(--vscode-panel-border, #d5d5d5);
 
   /* Titlebar */
-  --titlebar-bg: rgba(255, 255, 255, 0.65);
+  --titlebar-bg: rgba(228, 228, 228, 0.8);
+}
+
+/* Light mode: override VS Code CSS variables that have dark fallbacks.
+   In the dev server and Tauri, --vscode-* vars don't exist, so fallbacks
+   are used. We must set them explicitly for light mode. */
+body[data-vscode-theme-kind="vscode-light"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] {
+  --vscode-foreground: #333;
+  --vscode-editor-foreground: #1a1a1a;
+  --vscode-sideBar-background: #ececec;
+  --vscode-sideBar-foreground: #333;
+  --vscode-editor-background: #f5f5f5;
+  --vscode-input-foreground: #333;
+  --vscode-input-background: #fff;
+  --vscode-input-border: #d0d0d0;
+  --vscode-input-placeholderForeground: #888;
+  --vscode-button-secondaryBackground: #f0f0f0;
+  --vscode-button-secondaryForeground: #222;
+  --vscode-button-secondaryHoverBackground: #e6e6e6;
+  --vscode-button-background: #0969da;
+  --vscode-button-foreground: #fff;
+  --vscode-button-hoverBackground: #0860ca;
+  --vscode-list-hoverBackground: rgba(0, 0, 0, 0.04);
+  --vscode-list-activeSelectionBackground: #0969da;
+  --vscode-list-activeSelectionForeground: #fff;
+  --vscode-dropdown-background: #fff;
+  --vscode-dropdown-foreground: #333;
+  --vscode-dropdown-border: #d0d0d0;
+  --vscode-tab-inactiveBackground: #e4e4e4;
+  --vscode-tab-inactiveForeground: rgba(0, 0, 0, 0.55);
+  --vscode-tab-activeBackground: #efefef;
+  --vscode-tab-activeForeground: #000;
+  --vscode-tab-border: rgba(0, 0, 0, 0.08);
+  --vscode-tab-hoverBackground: rgba(0, 0, 0, 0.04);
+  --vscode-focusBorder: #0969da;
+  --vscode-panel-border: #d5d5d5;
+  --vscode-toolbar-hoverBackground: rgba(0, 0, 0, 0.06);
+  --vscode-editorWidget-background: #f5f5f5;
+  --vscode-editorWidget-border: #d0d0d0;
+  --vscode-scrollbarSlider-background: rgba(0, 0, 0, 0.15);
+  --vscode-scrollbarSlider-hoverBackground: rgba(0, 0, 0, 0.25);
+  --vscode-textCodeBlock-background: rgba(0, 0, 0, 0.05);
+  --vscode-textPreformat-foreground: #0550ae;
+  --vscode-textLink-foreground: #0969da;
+  --vscode-descriptionForeground: #666;
+  --vscode-errorForeground: #cf222e;
+  --vscode-notificationsWarningIcon-foreground: #9a6700;
+  --vscode-badge-background: #e0e0e0;
+  --vscode-badge-foreground: #333;
+  --vscode-menu-background: #fff;
+  --vscode-menu-foreground: #333;
+  --vscode-menu-selectionBackground: #0969da;
+  --vscode-menu-selectionForeground: #fff;
+  --vscode-menu-separatorBackground: #d0d0d0;
+  color: #1a1a1a;
+  background: #ececec;
+}
+
+/* Light mode: override FlexLayout dark-theme CSS variables.
+   FlexLayout's own stylesheet sets --color-text: #eeeeee on .flexlayout__layout,
+   which cascades into .flexlayout__tab and makes transcript content appear near-white. */
+body[data-vscode-theme-kind="vscode-light"] .flexlayout__layout,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .flexlayout__layout {
+  --color-text: #1a1a1a;
+  --color-background: #ececec;
+  --color-tab-content: #f5f5f5;
+}
+
+/* Light mode: control panel — white card with clear elevation */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp {
+  background: rgba(210, 210, 210, 0.72);
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.10),
+    0 1px 4px rgba(0, 0, 0, 0.06);
+}
+
+/* Light mode: text input — recessed into gray shell */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-input,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-input {
+  background: rgba(255, 255, 255, 0.35);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* Light mode: select dropdowns — semi-transparent on gray shell */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-controls select,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-controls select {
+  background: rgba(255, 255, 255, 0.45);
+  border-color: rgba(0, 0, 0, 0.15);
+  color: #333;
+}
+
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-controls select:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-controls select:hover {
+  background: rgba(255, 255, 255, 0.6);
+  color: #111;
+}
+
+/* Light mode: agency select — no special styling */
+
+/* Light mode: icon toggles — readable on gray shell */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-bypass svg,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-bypass svg,
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-chrome svg,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-chrome svg {
+  color: #444;
+}
+
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-bypass:hover svg,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-bypass:hover svg {
+  color: #111;
+}
+
+/* Light mode: settings/rosie/fork icons — readable on gray shell */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-settings__btn,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-settings__btn,
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-rosie__btn,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-rosie__btn {
+  color: #444;
+}
+
+body[data-vscode-theme-kind="vscode-light"] .crispy-scroll-nav,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-scroll-nav {
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12);
+}
+
+body[data-vscode-theme-kind="vscode-light"] .crispy-scroll-nav:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-scroll-nav:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+body[data-vscode-theme-kind="vscode-light"] .crispy-scroll-nav:active,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-scroll-nav:active {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Light mode: connector line dots */
+body[data-vscode-theme-kind="vscode-light"] .crispy-blocks-dot-line__dots,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-blocks-dot-line__dots {
+  border-bottom-color: rgba(0, 0, 0, 0.15);
+}
+
+/* Light mode: thinking box glow */
+body[data-vscode-theme-kind="vscode-light"] .crispy-blocks-thinking,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-blocks-thinking {
+  box-shadow:
+    0 0 8px rgba(0, 0, 0, 0.04),
+    0 0 2px rgba(0, 0, 0, 0.03);
+}
+
+/* Light mode: panel-active tool highlight */
+body[data-vscode-theme-kind="vscode-light"] .crispy-blocks-tool[data-panel-active],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-blocks-tool[data-panel-active] {
+  box-shadow: 0 0 6px 1px rgba(0, 0, 0, 0.08);
+}
+
+/* Light mode: fork button border */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-fork,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-fork {
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* Light mode: brand separator */
+body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__brand-sep,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__brand-sep,
+body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__group-sep,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__group-sep {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+/* Light mode: brand link hover */
+body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__brand-link:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__brand-link:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* Light mode: session dropdown shadow */
+body[data-vscode-theme-kind="vscode-light"] .crispy-session-dropdown,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-session-dropdown {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Light mode: link underline color */
+body[data-vscode-theme-kind="vscode-light"] a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] a {
+  text-decoration-color: rgba(0, 85, 170, 0.4);
+}
+
+body[data-vscode-theme-kind="vscode-light"] .prose a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose a {
+  text-decoration-color: rgba(0, 85, 170, 0.4);
+}
+
+/* Light mode: streaming glow uses elevated panel shadow */
+body[data-vscode-theme-kind="vscode-light"] .crispy-tab-layout[data-streaming] .crispy-cp,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[data-streaming] .crispy-cp {
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.10),
+    0 1px 4px rgba(0, 0, 0, 0.08),
+    var(--agency-glow-shadow, 0 0 12px rgba(0, 0, 0, 0.1));
+}
+
+/* Light mode: send button border */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-send,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-send {
+  border-color: transparent;
+}
+
+/* Light mode: dot-line subject */
+body[data-vscode-theme-kind="vscode-light"] .crispy-blocks-dot-line__subject,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-blocks-dot-line__subject {
+  color: #555;
+}
+
+/* Light mode: stop button conic gradient — reduced percentages to match visual weight */
+body[data-vscode-theme-kind="vscode-light"] .crispy-stop,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-stop {
+  --stop-color-dim: color-mix(in srgb, var(--agency-white) 20%, transparent);
+  --stop-color: color-mix(in srgb, var(--agency-white) 35%, transparent);
+  --stop-color-bright: color-mix(in srgb, var(--agency-white) 50%, transparent);
+}
+
+/* Light mode: approval dimming overlay */
+body[data-vscode-theme-kind="vscode-light"] .crispy-main:has(.crispy-approval-header) .crispy-transcript::after,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-main:has(.crispy-approval-header) .crispy-transcript::after {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Light mode: titlebar button shadows */
+body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__btn,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__btn {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* Light mode: new-chevron border */
+body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__new-chevron,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__new-chevron {
+  border-left-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* Light mode: new dropdown shadow */
+body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__new-dropdown,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__new-dropdown {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+/* Light mode: welcome title — use darker gold gradient */
+body[data-vscode-theme-kind="vscode-light"] .crispy-welcome__title,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-welcome__title,
+body[data-vscode-theme-kind="vscode-light"] .crispy-workspace-picker__title,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-workspace-picker__title {
+  background: linear-gradient(90deg, #9a5c10, #b87318, #c98a30, #b87318, #9a5c10);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+
+/* Light mode: diff backgrounds — more visible */
+body[data-vscode-theme-kind="vscode-light"] .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-diff-added {
+  background: rgba(26, 127, 55, 0.12);
+}
+
+body[data-vscode-theme-kind="vscode-light"] .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-diff-removed {
+  background: rgba(207, 34, 46, 0.12);
+}
+
+/* Light mode: tool panel overlay shadow */
+body[data-vscode-theme-kind="vscode-light"] [data-tool-panel="overlay"] .crispy-tool-panel,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] [data-tool-panel="overlay"] .crispy-tool-panel {
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.1);
+}
+
+/* Light mode: autocomplete dropdown shadow */
+body[data-vscode-theme-kind="vscode-light"] .crispy-cp-autocomplete,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-autocomplete {
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Light mode: workspace picker logo shadow — lighter */
+body[data-vscode-theme-kind="vscode-light"] .crispy-workspace-picker__logo svg,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-workspace-picker__logo svg {
+  filter:
+    drop-shadow(2px 3px 6px rgba(0, 0, 0, 0.2))
+    drop-shadow(-1px -1px 0 rgba(180, 140, 60, 0.2))
+    drop-shadow(1px 2px 0 rgba(0, 0, 0, 0.15));
+}
+
+/* Light mode: inline icon error dot */
+body[data-vscode-theme-kind="vscode-light"] .crispy-inline-icon--error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-inline-icon--error {
+  background: rgba(207, 34, 46, 0.1);
+}
+
+/* Light mode: todo completed icon — darken pastel green */
+body[data-vscode-theme-kind="vscode-light"] .crispy-todo--completed .crispy-todo-icon,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-todo--completed .crispy-todo-icon {
+  color: #15803d;
+}
+
+/* Light mode: titlebar wordmark — darken amber */
+body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__wordmark,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__wordmark {
+  color: #9a5c10;
+}
+
+/* Light mode: workspace picker pin icon */
+body[data-vscode-theme-kind="vscode-light"] .crispy-workspace-picker__pin-icon,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-workspace-picker__pin-icon {
+  color: #9a5c10;
+}
+
+/* Light mode: workspace picker flash accent */
+body[data-vscode-theme-kind="vscode-light"] .crispy-workspace-picker__flash,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-workspace-picker__flash {
+  color: #9a5c10;
+  border-left-color: #9a5c10;
+}
+
+/* Light mode: git status badges — darker for contrast */
+body[data-vscode-theme-kind="vscode-light"] .crispy-git-panel__status-badge--modified,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-git-panel__status-badge--modified {
+  color: #92400e;
+}
+body[data-vscode-theme-kind="vscode-light"] .crispy-git-panel__status-badge--added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-git-panel__status-badge--added {
+  color: #15803d;
+}
+body[data-vscode-theme-kind="vscode-light"] .crispy-git-panel__status-badge--deleted,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-git-panel__status-badge--deleted {
+  color: #b91c1c;
+}
+body[data-vscode-theme-kind="vscode-light"] .crispy-git-panel__status-badge--renamed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-git-panel__status-badge--renamed {
+  color: #1d4ed8;
+}
+
+/* Light mode: git dirty indicators */
+body[data-vscode-theme-kind="vscode-light"] .crispy-git-panel__dirty--yes,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-git-panel__dirty--yes {
+  color: #92400e;
+  background: rgba(146, 64, 14, 0.1);
+}
+body[data-vscode-theme-kind="vscode-light"] .crispy-git-panel__dirty--clean,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-git-panel__dirty--clean {
+  color: #15803d;
+  background: rgba(21, 128, 61, 0.1);
+}
+
+/* Light mode: WSL install card success/error */
+body[data-vscode-theme-kind="vscode-light"] .crispy-wsl-install-card__desc--success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-wsl-install-card__desc--success {
+  color: #15803d;
+}
+body[data-vscode-theme-kind="vscode-light"] .crispy-wsl-install-card__desc--error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-wsl-install-card__desc--error {
+  color: #b91c1c;
+}
+
+/* Light mode: welcome page background */
+body[data-vscode-theme-kind="vscode-light"] .crispy-welcome,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-welcome {
+  background: var(--vscode-sideBar-background, #ececec);
+}
+
+/* Light mode: user text bubble — needs visible contrast */
+body[data-vscode-theme-kind="vscode-light"] .user-text,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .user-text {
+  background: var(--vscode-button-secondaryBackground, #e0e0e0);
+}
+
+/* Light mode: copied dot flash */
+body[data-vscode-theme-kind="vscode-light"] .crispy-titlebar__dot--copied,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-titlebar__dot--copied {
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* ============================================================================
+ * Light-Mode Skin Overrides — per-skin markdown + tool styling for light themes
+ * ============================================================================ */
+
+/* Light-mode code-inside-codeblock reset — prevents inline code styling from leaking into fenced blocks */
+body[data-vscode-theme-kind="vscode-light"] .prose[class*="skin-"] .md-code-block code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose[class*="skin-"] .md-code-block code {
+  padding: 0; background: none; border: none; border-radius: 0;
+}
+
+/* Per-skin light-mode backgrounds */
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-t3,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-t3 { background: #ffffff; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-chatgpt,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-chatgpt { background: #ffffff; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-claude,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-claude { background: #F5F5F0; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-gemini,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-gemini { background: #ffffff; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-cursor,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-cursor { background: #FFFFFF; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-copilot,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-copilot { background: #FAFAFD; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-deepseek,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-deepseek { background: #ffffff; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-perplexity,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-perplexity { background: #FCFCF9; }
+body[data-vscode-theme-kind="vscode-light"] .crispy-transcript.skin-terminal,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-transcript.skin-terminal { background: #f0f5f0; }
+
+/* ── Skin: T3 Code (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-t3 {
+  color: #1a1a1a;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3 a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-t3 a {
+  color: #1d4ed8; text-decoration-color: rgba(29,78,216,0.4);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3 code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-t3 code {
+  background: rgba(0,0,0,0.04); border: 1px solid rgba(0,0,0,0.08);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3 .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-t3 .md-code-block {
+  background: rgba(0,0,0,0.04); border: 1px solid rgba(0,0,0,0.08);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3 blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-t3 blockquote {
+  border-left: 2px solid rgba(0,0,0,0.08); color: rgba(26,26,26,0.55);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3 th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-t3 th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3 td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-t3 td {
+  border-color: rgba(0,0,0,0.08);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-t3 th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-t3 th {
+  background: rgba(0,0,0,0.03);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-t3 .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-t3 .crispy-tool-filepath {
+  color: #1d4ed8;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-t3 .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-t3 .crispy-status-pending {
+  color: #b45309;
+}
+
+/* ── Skin: ChatGPT (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt {
+  color: #0d0d0d;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt a {
+  color: #0d8a6a; text-decoration-color: rgba(13,138,106,0.4);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt code {
+  background: #f7f7f8; color: #0d8a6a;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt .md-code-block {
+  background: #f7f7f8; border: none;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt blockquote {
+  border-left: 3px solid #d1d5db; color: #6b7280;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt td {
+  border-color: #e5e7eb;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt th {
+  background: #f3f4f6;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-tool-filepath {
+  color: #0d8a6a;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-status-success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-status-success {
+  color: #16a34a;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-status-error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-status-error {
+  color: #dc2626;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-blocks-bash-output,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-blocks-bash-output {
+  background: #f7f7f8; border: none; color: #1a1a1a;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-diff-added {
+  background: rgba(76,175,80,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-diff-removed {
+  background: rgba(244,67,54,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-status-pending {
+  color: #b45309;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-chatgpt h2,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt h2 {
+  border-bottom-color: #e5e7eb;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-blocks-dot-line__subject,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-blocks-dot-line__subject {
+  color: #666;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-blocks-dot-line:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-blocks-dot-line:hover {
+  background: rgba(0,0,0,0.04);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-diff-gutter,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-diff-gutter {
+  color: #aaa;
+}
+
+/* ── Skin: Claude.ai (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude {
+  color: #1a1a18;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude a {
+  color: #ae5630; text-decoration-color: rgba(174,86,48,0.4);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude code {
+  background: rgba(0,0,0,0.05);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude .md-code-block {
+  background: #f5f3ef; border: 1px solid rgba(0,0,0,0.06);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude blockquote {
+  color: #6b6a68;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude td {
+  border-color: rgba(0,0,0,0.08);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude th {
+  background: rgba(0,0,0,0.04);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-tool-filepath {
+  color: #ae5630;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-status-success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-status-success {
+  color: #3d7a32;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-status-error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-status-error {
+  color: #b5432e;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-status-pending {
+  color: #8a7a30;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-blocks-bash-output,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-blocks-bash-output {
+  background: #f5f3ef; border: 1px solid rgba(0,0,0,0.06); color: #333;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-diff-added {
+  background: rgba(61,122,50,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-diff-removed {
+  background: rgba(181,67,46,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-claude h2,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-claude h2 {
+  border-bottom-color: rgba(0,0,0,0.08);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-blocks-dot-line__subject,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-blocks-dot-line__subject {
+  color: #6b6a68;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-blocks-dot-line:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-blocks-dot-line:hover {
+  background: rgba(0,0,0,0.04);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-claude .crispy-diff-gutter,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-claude .crispy-diff-gutter {
+  color: #aaa;
+}
+
+/* ── Skin: Gemini (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-gemini,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-gemini {
+  color: #1f1f1f;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-gemini a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-gemini a {
+  color: #1a73e8;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-gemini code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-gemini code {
+  background: #f1f3f4;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-gemini .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-gemini .md-code-block {
+  background: #f8f9fa; border: none;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-gemini blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-gemini blockquote {
+  border-left: 3px solid #dadce0; color: #5f6368;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-gemini th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-gemini th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-gemini td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-gemini td {
+  border-bottom-color: #dadce0;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-tool-filepath {
+  color: #1a73e8;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-tool-badge,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-tool-badge {
+  border-radius: 16px;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-status-success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-status-success {
+  color: #137333;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-status-error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-status-error {
+  color: #c5221f;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-status-pending {
+  color: #b06000;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-blocks-bash-output,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-blocks-bash-output {
+  background: #f8f9fa; border: none;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-diff-added {
+  background: rgba(19,115,51,0.1);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-diff-removed {
+  background: rgba(197,34,31,0.1);
+}
+
+/* ── Skin: Cursor (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-cursor,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-cursor {
+  color: #3B3B3B;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-cursor a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-cursor a {
+  color: #005FB8;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-cursor code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-cursor code {
+  background: rgba(0,0,0,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-cursor .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-cursor .md-code-block {
+  background: #F8F8F8; border: 1px solid #E5E5E5;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-cursor blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-cursor blockquote {
+  border-left: 3px solid #E5E5E5; color: #616161;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-cursor th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-cursor th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-cursor td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-cursor td {
+  border-color: #E5E5E5;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-cursor th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-cursor th {
+  background: #F0F0F0;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-cursor .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-cursor .crispy-tool-filepath {
+  color: #005FB8;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-cursor .crispy-status-success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-cursor .crispy-status-success {
+  color: #388a34;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-cursor .crispy-status-error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-cursor .crispy-status-error {
+  color: #cd3131;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-cursor .crispy-blocks-bash-output,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-cursor .crispy-blocks-bash-output {
+  background: #F8F8F8; border: 1px solid #E5E5E5;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-cursor .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-cursor .crispy-diff-added {
+  background: rgba(35,134,54,0.15);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-cursor .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-cursor .crispy-diff-removed {
+  background: rgba(218,54,51,0.15);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-cursor .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-cursor .crispy-status-pending {
+  color: #b45309;
+}
+
+/* ── Skin: Copilot (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-copilot,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot {
+  color: #202020;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-copilot a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot a {
+  color: #7c3aed;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-copilot code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot code {
+  background: #ECECEC; color: #606060;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-copilot .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot .md-code-block {
+  background: #EAEAEA; border: 1px solid #F0F1F2;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-copilot blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot blockquote {
+  border-left: 3px solid #F0F1F2; color: #606060;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-copilot th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-copilot td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot td {
+  border-color: #E4E5E6;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-copilot th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot th {
+  background: #EAEAEA;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-tool-filepath {
+  color: #7c3aed;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-status-success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-status-success {
+  color: #107C10;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-status-error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-status-error {
+  color: #BC2F32;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-blocks-bash-output,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-blocks-bash-output {
+  background: #EAEAEA; border: 1px solid #F0F1F2;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-diff-added {
+  background: rgba(16,124,16,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-diff-removed {
+  background: rgba(188,47,50,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-blocks-dot-line:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-blocks-dot-line:hover {
+  background: rgba(0,105,204,0.06);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-status-pending {
+  color: #b45309;
+}
+
+/* ── Skin: DeepSeek (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-deepseek,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-deepseek {
+  color: #1a1a1a;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-deepseek a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-deepseek a {
+  color: #3b54d4; text-decoration-color: rgba(59,84,212,0.4);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-deepseek code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-deepseek code {
+  background: #eef0f4;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-deepseek .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-deepseek .md-code-block {
+  background: #f6f8fa; border: 1px solid #e2e4e9;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-deepseek blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-deepseek blockquote {
+  border-left: 3px solid #4d6bfe; color: #6b6b6b;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-deepseek th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-deepseek th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-deepseek td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-deepseek td {
+  border-color: #e2e4e9;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-deepseek th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-deepseek th {
+  background: #f0f2f6;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-tool-filepath {
+  color: #3b54d4;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-tool-badge,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-tool-badge {
+  border-radius: 10px;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-status-success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-status-success {
+  color: #16a34a;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-status-error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-status-error {
+  color: #dc2626;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-status-pending {
+  color: #3b54d4;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-blocks-bash-output,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-blocks-bash-output {
+  background: #f6f8fa; border: 1px solid #e2e4e9;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-diff-added {
+  background: rgba(22,163,74,0.1);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-diff-removed {
+  background: rgba(220,38,38,0.1);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-deepseek .crispy-blocks-dot-line:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-deepseek .crispy-blocks-dot-line:hover {
+  background: rgba(59,84,212,0.06);
+}
+
+/* ── Skin: Perplexity (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-perplexity,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-perplexity {
+  color: #1C1C19;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-perplexity a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-perplexity a {
+  color: #0e8c9e;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-perplexity code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-perplexity code {
+  background: #F4F4F1;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-perplexity .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-perplexity .md-code-block {
+  background: #F4F4F1; border: 1px solid #CECECA;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-perplexity blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-perplexity blockquote {
+  border-left: 3px solid #20808D; color: #6B6B67;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-perplexity th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-perplexity th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-perplexity td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-perplexity td {
+  border-color: #CECECA;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-perplexity th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-perplexity th {
+  background: #F4F4F1;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-tool-filepath {
+  color: #0e8c9e;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-tool-badge,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-tool-badge {
+  border-radius: 10px;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-status-success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-status-success {
+  color: #0e7a3a;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-status-error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-status-error {
+  color: #c5221f;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-status-pending {
+  color: #0e8c9e;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-blocks-bash-output,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-blocks-bash-output {
+  background: #F4F4F1; border: 1px solid #CECECA;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-diff-added {
+  background: rgba(14,122,58,0.1);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-diff-removed {
+  background: rgba(197,34,31,0.1);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-perplexity .crispy-blocks-dot-line:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-perplexity .crispy-blocks-dot-line:hover {
+  background: rgba(14,140,158,0.06);
+}
+
+/* ── Skin: Terminal (light) ── */
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal {
+  color: #005f00; text-shadow: none;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal::after,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal::after {
+  display: none;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal a,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal a {
+  color: #007f00;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal code,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal code {
+  background: rgba(0,60,0,0.08); color: #007f00;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal .md-code-block,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal .md-code-block {
+  background: #e8f0e8; border: 1px solid rgba(0,80,0,0.15);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal blockquote,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal blockquote {
+  color: #6b6b6b;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal th,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal td,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal td {
+  border-color: rgba(0,80,0,0.2);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal th,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal th {
+  background: rgba(0,80,0,0.05);
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal strong,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal strong {
+  color: #5f5f00;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal em,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal em {
+  color: #00875f;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-tool-filepath,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-tool-filepath {
+  color: #007f00;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-status-success,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-status-success {
+  color: #005f00;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-status-error,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-status-error {
+  color: #af0000;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-status-pending,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-status-pending {
+  color: #5f5f00;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-blocks-bash-output,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-blocks-bash-output {
+  background: #e8f0e8; color: #005f00; border: 1px solid rgba(0,80,0,0.15); text-shadow: none;
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-diff-added,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-diff-added {
+  background: rgba(0,80,0,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-diff-removed,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-diff-removed {
+  background: rgba(175,0,0,0.12);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-blocks-dot-line__dots,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-blocks-dot-line__dots {
+  border-bottom-color: rgba(0,80,0,0.2);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-blocks-dot-line__subject,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-blocks-dot-line__subject {
+  color: rgba(0,80,0,0.6);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-diff-gutter,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-diff-gutter {
+  color: rgba(0,80,0,0.4);
+}
+body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-tool-badge,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-tool-badge {
+  text-shadow: none;
+}
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal h2,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal h2,
+body[data-vscode-theme-kind="vscode-light"] .prose.skin-terminal h3,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal h3 {
+  border-bottom-color: rgba(0,80,0,0.2);
 }
 
 /* ============================================================================
@@ -5660,11 +7292,11 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
  * ============================================================================ */
 
 .crispy-file-panel {
-  position: fixed;
-  top: var(--titlebar-height);
+  position: absolute;
+  top: 0;
   right: 0;
   width: var(--tool-panel-actual-width, var(--tool-panel-width, 0px));
-  height: calc(100vh - var(--titlebar-height));
+  bottom: 0;
   background: var(--vscode-sideBar-background, #252526);
   border-left: 1px solid var(--border-panel);
   display: flex;
@@ -5963,11 +7595,11 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
    -------------------------------------------------------------------------- */
 
 .crispy-file-viewer-panel {
-  position: fixed;
-  top: var(--titlebar-height);
+  position: absolute;
+  top: 0;
   right: var(--tool-panel-actual-width, 0px);
   width: var(--file-viewer-width, 0px);
-  height: calc(100vh - var(--titlebar-height));
+  bottom: 0;
   background: var(--vscode-editor-background, #1e1e1e);
   border-left: 1px solid var(--border-panel);
   display: flex;
@@ -6129,7 +7761,8 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
 }
 
 /* Disable transitions on file viewer panel during drag resize */
-[data-resizing] .crispy-file-viewer-panel {
+[data-resizing] .crispy-file-viewer-panel,
+.crispy-tab-layout[data-resizing] .crispy-file-viewer-panel {
   transition: none !important;
 }
 
@@ -6612,11 +8245,11 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
  * ============================================================================ */
 
 .crispy-git-panel {
-  position: fixed;
-  top: var(--titlebar-height);
+  position: absolute;
+  top: 0;
   right: 0;
   width: var(--tool-panel-actual-width, var(--tool-panel-width, 0px));
-  height: calc(100vh - var(--titlebar-height));
+  bottom: 0;
   background: var(--vscode-sideBar-background, #252526);
   border-left: 1px solid var(--border-panel);
   display: flex;
@@ -6639,6 +8272,130 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] {
 [data-tool-panel="overlay"] .crispy-git-panel {
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
   z-index: 250;
+}
+
+/* --- Git panel as border panel --- */
+.crispy-git-panel--tab {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  z-index: auto;
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+
+/* --- File panel as border panel --- */
+.crispy-file-panel--tab {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  z-index: auto;
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+
+/* --- File viewer tab (FlexLayout editor tab) --- */
+.crispy-file-viewer-tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+.crispy-file-viewer-tab__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--color-separator);
+  background: var(--color-bg-secondary);
+  flex-shrink: 0;
+}
+
+.crispy-file-viewer-tab__path {
+  font-size: 11px;
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.crispy-file-viewer-tab__actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.crispy-file-viewer-tab__btn {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: transparent;
+  border: 1px solid var(--color-separator);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.crispy-file-viewer-tab__btn:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+.crispy-file-viewer-tab__btn--active {
+  background: var(--color-accent-bg, rgba(99, 102, 241, 0.15));
+  color: var(--color-accent, #818cf8);
+  border-color: var(--color-accent, #818cf8);
+}
+
+.crispy-file-viewer-tab__btn--execute {
+  color: var(--color-accent, #818cf8);
+}
+
+.crispy-file-viewer-tab__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* CodePreview inside file viewer tab — no max-height, scroll handled by code-preview */
+.crispy-file-viewer-tab__body .crispy-code-preview {
+  max-height: none;
+  min-width: 0;
+}
+
+/* Wrap OFF: code-preview scrolls both axes */
+.crispy-file-viewer-tab__body:not([data-word-wrap]) .crispy-code-preview {
+  overflow: auto;
+}
+
+/* Wrap ON: pre-wrap handles line breaking, no scroll needed */
+.crispy-file-viewer-tab__body[data-word-wrap] .crispy-code-preview {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* --- TitleBar git button with branch label --- */
+.crispy-titlebar__git-btn {
+  gap: 5px;
+}
+
+.crispy-titlebar__git-label {
+  font-size: 11px;
+  opacity: 0.7;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* --- Git panel header --- */

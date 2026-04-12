@@ -18,6 +18,7 @@ import { BlocksBlockRenderer } from './BlocksBlockRenderer.js';
 import { MessageActions } from '../components/MessageActions.js';
 import { CopyButton } from '../components/CopyButton.js';
 import { serializeAssistantMessage, serializeUserMessage } from '../utils/copy-markdown.js';
+import { usePreferences } from '../context/PreferencesContext.js';
 
 /** True when any block in the list contains displayable text. */
 function hasTextBlock(blocks: RichBlock[]): boolean {
@@ -79,6 +80,8 @@ export function BlocksEntry({
 
   // Get role for message class
   const role = blocks[0]?.context.role ?? 'unknown';
+  const { displayStyle } = usePreferences();
+  const skinClass = displayStyle !== 'crispy' ? ` skin-${displayStyle}` : '';
 
   // Show fork/rewind on user messages only (not tool_results with role='user')
   const showActions = role === 'user' && entry.type === 'user' && forkTargetId !== undefined;
@@ -99,7 +102,7 @@ export function BlocksEntry({
     : undefined;
 
   return (
-    <div className={`message ${role}`} data-uuid={entry.uuid}>
+    <div className={`message ${role}${skinClass}`} data-uuid={entry.uuid}>
       {blocks.map((block, i) => {
         // Auto-collapse thinking blocks when newer substantive content follows
         const autoCollapse = block.type === 'thinking'

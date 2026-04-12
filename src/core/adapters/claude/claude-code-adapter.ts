@@ -528,6 +528,11 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       if (settings.permissionMode !== undefined) {
         this.activeQuery.setPermissionMode(settings.permissionMode as PermissionMode);
       }
+      // Transition to active immediately so subscribers see 'streaming' status.
+      // Without this, the channel stays 'idle' until handleAssistantMessage fires
+      // at the END of the response, causing the status indicator to remain idle
+      // during the entire streaming period.
+      this.emitStatus('active');
       this.pendingSendCount++;
       this.inputQueue.enqueue(sdkMessage);
     } else {
@@ -1337,6 +1342,15 @@ export class ClaudeAgentAdapter implements AgentAdapter {
           log({ level: 'info', source: 'claude-adapter', summary: `[PERMISSION MODE] Backfill from SDK init: ${this._metadata.permissionMode} (options had no explicit mode)` });
           this.options.permissionMode = this._metadata.permissionMode as Options['permissionMode'];
           settingsChanged = true;
+        }
+        // Derive bypass flag from permission mode — resumed sessions only have
+        // permissionMode from the SDK init, not the explicit bypass flag.
+        // Only set when permissionMode was just backfilled (settingsChanged)
+        // to avoid emitting a spurious settings_changed for explicit modes.
+        if (settingsChanged
+            && this.options.permissionMode === 'bypassPermissions'
+            && !this.options.allowDangerouslySkipPermissions) {
+          this.options.allowDangerouslySkipPermissions = true;
         }
 
         // Emit settings_changed so ControlPanel picks up the corrected

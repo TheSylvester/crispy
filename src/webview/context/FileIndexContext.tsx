@@ -11,9 +11,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useTransport } from './TransportContext.js';
-import { useCwd } from '../hooks/useSessionCwd.js';
+import { useTabSession } from './TabSessionContext.js';
 import { buildMatchIndex, type FileIndex } from '../utils/file-index.js';
-import { useSession } from './SessionContext.js';
 
 const FileIndexContext = createContext<FileIndex | null>(null);
 
@@ -27,8 +26,8 @@ const RefreshGitFilesContext = createContext<(() => void) | null>(null);
 
 export function FileIndexProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
   const transport = useTransport();
-  const { fullPath } = useCwd();
-  const { selectedSessionId } = useSession();
+  const { effectiveSessionId: selectedSessionId, effectiveCwd } = useTabSession();
+  const fullPath = effectiveCwd.fullPath;
   const [gitFiles, setGitFiles] = useState<string[] | null>(null);
   const [refreshCounter, setRefreshCounter] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);

@@ -17,6 +17,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { usePanelDisplayIds, usePanelState } from './PanelStateContext.js';
+import { useTabContainer, useIsDomVisible } from '../context/TabContainerContext.js';
 
 // ============================================================================
 // Types
@@ -34,13 +35,15 @@ interface ConnectorPath {
 function useConnectorPaths(): ConnectorPath[] {
   const panelDisplayIds = usePanelDisplayIds();
   const panelState = usePanelState();
+  const { containerRef } = useTabContainer();
+  const isDomVisible = useIsDomVisible();
   const [paths, setPaths] = useState<ConnectorPath[]>([]);
   const rafRef = useRef<number>(0);
   const settleRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const computePaths = useCallback(() => {
-    const transcriptScroll = document.querySelector('.crispy-transcript');
-    const panelScroll = document.querySelector('.crispy-tool-panel__scroll');
+    const transcriptScroll = containerRef.current?.querySelector('.crispy-transcript');
+    const panelScroll = containerRef.current?.querySelector('.crispy-tool-panel__scroll');
     if (!transcriptScroll || !panelScroll) {
       setPaths([]);
       return;
@@ -49,10 +52,12 @@ function useConnectorPaths(): ConnectorPath[] {
     const transcriptRect = transcriptScroll.getBoundingClientRect();
     const panelRect = panelScroll.getBoundingClientRect();
 
-    // Get titlebar offset — the SVG top is at var(--titlebar-height)
-    const titlebarHeight = parseFloat(
-      getComputedStyle(document.documentElement).getPropertyValue('--titlebar-height')
-    ) || 36;
+    // Get the tab container's viewport offset — SVG is absolutely positioned
+    // within .crispy-tab-layout, so all coordinates must be container-relative.
+    const container = containerRef.current?.querySelector('.crispy-tab-layout');
+    const containerRect = container?.getBoundingClientRect();
+    const offsetX = containerRect?.left ?? 0;
+    const offsetY = containerRect?.top ?? 0;
 
     // First pass: collect visible line endpoints, tagging inline tools
     const Y_GROUP_THRESHOLD = 4; // px — inline icons on the same row
@@ -88,10 +93,10 @@ function useConnectorPaths(): ConnectorPath[] {
       items.push({
         toolId,
         inline: transcriptEl.classList.contains('crispy-blocks-tool--inline'),
-        leftX: tRect.right,
-        leftY: (tVisibleTop + tVisibleBottom) / 2 - titlebarHeight,
-        rightX: pRect.left,
-        rightY: (pVisibleTop + pVisibleBottom) / 2 - titlebarHeight,
+        leftX: tRect.right - offsetX,
+        leftY: (tVisibleTop + tVisibleBottom) / 2 - offsetY,
+        rightX: pRect.left - offsetX,
+        rightY: (pVisibleTop + pVisibleBottom) / 2 - offsetY,
       });
     }
 
@@ -191,7 +196,7 @@ function useConnectorPaths(): ConnectorPath[] {
     }
 
     setPaths(result);
-  }, [panelDisplayIds]);
+  }, [panelDisplayIds, containerRef]);
 
   // Schedule a rAF-guarded recompute — cancel-and-reschedule so the last
   // layout event always wins (avoids freezing on intermediate coordinates).
@@ -212,9 +217,11 @@ function useConnectorPaths(): ConnectorPath[] {
   }, [computePaths]);
 
   useEffect(() => {
-    const transcriptScroll = document.querySelector('.crispy-transcript');
-    const panelScroll = document.querySelector('.crispy-tool-panel__scroll');
-    const layout = document.querySelector('.crispy-layout');
+    if (!isDomVisible) return;
+
+    const transcriptScroll = containerRef.current?.querySelector('.crispy-transcript');
+    const panelScroll = containerRef.current?.querySelector('.crispy-tool-panel__scroll');
+    const layout = containerRef.current?.querySelector('.crispy-tab-layout') ?? containerRef.current?.querySelector('.crispy-layout');
 
     // Initial compute — double-rAF to ensure layout has settled after mount
     let cancelled = false;
@@ -250,7 +257,7 @@ function useConnectorPaths(): ConnectorPath[] {
         rafRef.current = 0;
       }
     };
-  }, [computePaths, scheduleUpdate]);
+  }, [computePaths, scheduleUpdate, containerRef, isDomVisible]);
 
   // Re-compute when panelDisplayIds changes
   useEffect(() => {
@@ -279,11 +286,11 @@ export function ConnectorLines(): React.JSX.Element | null {
     <svg
       className="crispy-connector-lines"
       style={{
-        position: 'fixed',
-        top: 'var(--titlebar-height, 36px)',
+        position: 'absolute',
+        top: 0,
         left: 0,
-        width: '100vw',
-        height: 'calc(100vh - var(--titlebar-height, 36px))',
+        width: '100%',
+        height: '100%',
         pointerEvents: 'none',
         zIndex: 150,
       }}

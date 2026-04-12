@@ -31,8 +31,8 @@ MODEL=""
 RESUME=""
 APPROVAL="bypass"
 TIMEOUT=""
-AUTO_CLOSE="--no-auto-close"
-VISIBLE=""
+AUTO_CLOSE=""
+VISIBLE="--open"
 FORK=""
 RESUME_AT=""
 PERSIST=""
@@ -66,8 +66,12 @@ while [[ $# -gt 0 ]]; do
       AUTO_CLOSE=""
       shift
       ;;
-    --visible)
-      VISIBLE="--visible"
+    --visible|--open)
+      VISIBLE="--open"
+      shift
+      ;;
+    --no-open)
+      VISIBLE=""
       shift
       ;;
     --fork|-f)
@@ -80,6 +84,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --persist)
       PERSIST="--persist"
+      shift
+      ;;
+    --no-persist)
+      PERSIST="--no-persist"
       shift
       ;;
     --approval)
@@ -148,6 +156,10 @@ CMD+=(--approval "$APPROVAL")
 [[ -n "$PERSIST" ]] && CMD+=("$PERSIST")
 [[ -n "$DEBUG" ]] && CMD+=("$DEBUG")
 
+# Create sidecar path for early session ID access
+SESSION_ID_SIDECAR="${OUTPUT_DIR}/crispy-agent-$(date +%s)-$$.session-id"
+CMD+=(--session-id-file "$SESSION_ID_SIDECAR")
+
 # Set up persistent output file
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_FILE="${OUTPUT_DIR}/crispy-agent-$(date +%s)-$$.log"
@@ -156,7 +168,7 @@ echo "[output_file: $OUTPUT_FILE]" >&2
 # Write prompt to a temp file for PROMPT_FILE passthrough
 PROMPT_TMPFILE=$(mktemp /tmp/crispy-agent-prompt-XXXXXX.md)
 echo "$PROMPT" > "$PROMPT_TMPFILE"
-trap 'rm -f "$PROMPT_TMPFILE" "$STDERR_FILE" 2>/dev/null' EXIT
+trap 'rm -f "$PROMPT_TMPFILE" "$STDERR_FILE" "$SESSION_ID_SIDECAR" 2>/dev/null' EXIT
 
 # Run crispy-dispatch, capture stdout and stderr separately
 STDERR_FILE=$(mktemp /tmp/crispy-agent-stderr-XXXXXX)
@@ -165,19 +177,25 @@ OUTPUT=$(PROMPT_FILE="$PROMPT_TMPFILE" "${CMD[@]}" 2>"$STDERR_FILE") || {
   STDERR_CONTENT=$(cat "$STDERR_FILE")
   rm -f "$STDERR_FILE"
 
-  # Still try to extract session ID from stderr metadata
+  # Try sidecar first, fall back to stderr metadata
   SESSION_ID=""
-  if [[ -n "$STDERR_CONTENT" ]]; then
+  if [[ -f "$SESSION_ID_SIDECAR" ]]; then
+    SESSION_ID=$(cat "$SESSION_ID_SIDECAR")
+  elif [[ -n "$STDERR_CONTENT" ]]; then
     SESSION_ID=$(echo "$STDERR_CONTENT" | grep -oP '"sessionId"\s*:\s*"\K[^"]+' | tail -1 || true)
-    echo "$STDERR_CONTENT" >&2
   fi
+  [[ -n "$STDERR_CONTENT" ]] && echo "$STDERR_CONTENT" >&2
 
   # Write whatever output we got
   if [[ -n "$OUTPUT" ]]; then
     echo "$OUTPUT"
     echo "$OUTPUT" > "$OUTPUT_FILE"
   fi
-  [[ -n "$SESSION_ID" ]] && echo "" && echo "[session_id: $SESSION_ID]"
+  if [[ -n "$SESSION_ID" ]]; then
+    echo ""
+    echo "[session_id: $SESSION_ID]"
+    echo "To resume: \$CRISPY_AGENT --resume $SESSION_ID \"Your follow-up message\""
+  fi
 
   exit $EXIT_CODE
 }
@@ -185,11 +203,15 @@ OUTPUT=$(PROMPT_FILE="$PROMPT_TMPFILE" "${CMD[@]}" 2>"$STDERR_FILE") || {
 STDERR_CONTENT=$(cat "$STDERR_FILE")
 rm -f "$STDERR_FILE"
 
-# Extract session ID from stderr JSON metadata
+# Extract session ID — prefer sidecar, fall back to stderr JSON metadata
 SESSION_ID=""
-if [[ -n "$STDERR_CONTENT" ]]; then
+if [[ -f "$SESSION_ID_SIDECAR" ]]; then
+  SESSION_ID=$(cat "$SESSION_ID_SIDECAR")
+elif [[ -n "$STDERR_CONTENT" ]]; then
   SESSION_ID=$(echo "$STDERR_CONTENT" | grep -oP '"sessionId"\s*:\s*"\K[^"]+' | tail -1 || true)
-  # Forward non-metadata stderr lines
+fi
+# Forward non-metadata stderr lines
+if [[ -n "$STDERR_CONTENT" ]]; then
   echo "$STDERR_CONTENT" | grep -v '^{' >&2 || true
 fi
 
@@ -198,14 +220,19 @@ if [[ -n "$OUTPUT" ]]; then
   echo "$OUTPUT"
 fi
 
-# Output session ID (matching super-agent/codex-agent convention)
+# Output session ID and resume hint (helps LLMs continue the conversation)
 if [[ -n "$SESSION_ID" ]]; then
   echo ""
   echo "[session_id: $SESSION_ID]"
+  echo "To resume: \$CRISPY_AGENT --resume $SESSION_ID \"Your follow-up message\""
 fi
 
 # Write to persistent output file
 {
   [[ -n "$OUTPUT" ]] && echo "$OUTPUT"
-  [[ -n "$SESSION_ID" ]] && echo "" && echo "[session_id: $SESSION_ID]"
+  if [[ -n "$SESSION_ID" ]]; then
+    echo ""
+    echo "[session_id: $SESSION_ID]"
+    echo "To resume: \$CRISPY_AGENT --resume $SESSION_ID \"Your follow-up message\""
+  fi
 } > "$OUTPUT_FILE"

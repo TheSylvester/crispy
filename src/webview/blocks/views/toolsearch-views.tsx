@@ -66,7 +66,7 @@ export function ToolSearchCompactView({ block, result, status }: ToolViewProps):
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="toolsearch"
+      name="ToolSearch"
       subject={subject}
       status={status}
     />

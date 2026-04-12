@@ -40,7 +40,7 @@ export function ExitPlanModeCompactView({ block, result, status }: ToolViewProps
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="exitplanmode"
+      name="ExitPlanMode"
       subject={description}
       status={status}
     />

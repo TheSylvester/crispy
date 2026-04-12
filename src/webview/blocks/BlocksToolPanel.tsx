@@ -15,8 +15,10 @@ import { useRef, useEffect, useCallback, useMemo, useState } from 'react';
 import { useBlocksToolRegistry } from './BlocksToolRegistryContext.js';
 import { useBlocksVisibleToolIds, useBlocksLastArrivedToolId } from './BlocksVisibilityContext.js';
 import { usePreferences } from '../context/PreferencesContext.js';
+import { useTabPanel } from '../context/TabPanelContext.js';
 import { RenderLocationProvider } from '../context/RenderLocationContext.js';
 import { usePanelState, usePanelDispatch, useSetPanelDisplayIds } from './PanelStateContext.js';
+import { useTabContainer, useIsDomVisible } from '../context/TabContainerContext.js';
 import { ToolBlockRenderer } from './ToolBlockRenderer.js';
 import { getToolRenderCategory } from './tool-definitions.js';
 import type { RichBlock } from './types.js';
@@ -25,7 +27,7 @@ import type { RenderMode } from '../types.js';
 import type { BlocksToolRegistry } from './blocks-tool-registry.js';
 
 /** Threshold in px — auto-scroll when within this distance of the bottom */
-const AUTO_SCROLL_THRESHOLD = 80;
+const TOOL_PANEL_SCROLL_THRESHOLD = 80;
 
 /**
  * Format the inspector count label. In Icons mode, splits active (streaming)
@@ -59,8 +61,11 @@ export function BlocksToolPanel(): React.JSX.Element {
   const panelState = usePanelState();
   const visibleToolIds = useBlocksVisibleToolIds();
   const registry = useBlocksToolRegistry();
-  const { toolPanelMode, setToolPanelMode, setToolPanelWidthPx, setToolPanelOpen, renderMode } = usePreferences();
+  const { toolPanelMode, setToolPanelMode, renderMode } = usePreferences();
+  const { setToolPanelWidthPx, setToolPanelOpen } = useTabPanel();
   const lastArrivedId = useBlocksLastArrivedToolId();
+  const { containerRef } = useTabContainer();
+  const isDomVisible = useIsDomVisible();
   const _pendingGen = registry.usePendingCount(); // triggers re-render on pending changes
   const scrollRef = useRef<HTMLDivElement>(null);
   const wasNearBottomRef = useRef(true);
@@ -122,7 +127,7 @@ export function BlocksToolPanel(): React.JSX.Element {
 
     // Schedule DOM measurement in rAF to avoid layout thrashing during render
     rafIdRef.current = requestAnimationFrame(() => {
-      const scrollRoot = document.querySelector('.crispy-transcript') as HTMLElement | null;
+      const scrollRoot = containerRef.current?.querySelector('.crispy-transcript') as HTMLElement | null;
       if (!scrollRoot) return;
 
       // Update cached Y positions for all visible tools
@@ -186,7 +191,7 @@ export function BlocksToolPanel(): React.JSX.Element {
     });
 
     return () => cancelAnimationFrame(rafIdRef.current);
-  }, [needsIconsGrouping, visibleToolIds, baseDisplayToolIds, lastArrivedId, registry]);
+  }, [needsIconsGrouping, visibleToolIds, baseDisplayToolIds, lastArrivedId, registry, containerRef]);
 
   // Merge base IDs with icons group IDs
   const displayToolIds = useMemo(() => {
@@ -258,32 +263,25 @@ export function BlocksToolPanel(): React.JSX.Element {
   }, [visibleToolIds, dispatch, registry, toolPanelMode, panelState.userOverrides]);
 
   // ---------------------------------------------------------------------------
-  // Auto-scroll
+  // Auto-scroll — simple near-bottom follow, gated on isDomVisible
   // ---------------------------------------------------------------------------
   const lastScrollHeightRef = useRef(0);
 
-  const isNearBottom = useCallback(() => {
+  const handleScroll = useCallback(() => {
     const el = scrollRef.current;
-    if (!el) return true;
-    return el.scrollHeight - el.scrollTop - el.clientHeight < AUTO_SCROLL_THRESHOLD;
+    if (!el) return;
+    wasNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < TOOL_PANEL_SCROLL_THRESHOLD;
   }, []);
 
-  const handleScroll = useCallback(() => {
-    wasNearBottomRef.current = isNearBottom();
-  }, [isNearBottom]);
-
-  // ResizeObserver on the panel scroll content — catches all height changes:
-  // card expansion, streaming content growth, new task children, etc.
-  // Mirrors the proven pattern from useAutoScroll.ts (transcript scroll).
   useEffect(() => {
     const scrollEl = scrollRef.current;
-    if (!scrollEl) return;
+    if (!scrollEl || !isDomVisible) return;
 
     lastScrollHeightRef.current = scrollEl.scrollHeight;
 
     const observer = new ResizeObserver(() => {
       const el = scrollRef.current;
-      if (!el) return;
+      if (!el || el.clientHeight === 0) return;
       const newScrollHeight = el.scrollHeight;
       const grew = newScrollHeight > lastScrollHeightRef.current;
       lastScrollHeightRef.current = newScrollHeight;
@@ -293,11 +291,9 @@ export function BlocksToolPanel(): React.JSX.Element {
       }
     });
 
-    // Observe the scroll container itself — its scrollHeight changes when
-    // any child (tool card, task children, streaming output) grows.
     observer.observe(scrollEl);
     return () => observer.disconnect();
-  }, [visibleToolIds.length]);
+  }, [visibleToolIds.length, isDomVisible]);
 
   // ---------------------------------------------------------------------------
   // Drag-to-resize
@@ -307,7 +303,7 @@ export function BlocksToolPanel(): React.JSX.Element {
     const startX = e.clientX;
     const panel = (e.target as HTMLElement).closest('.crispy-tool-panel');
     const startWidth = panel?.clientWidth ?? 350;
-    const layout = document.querySelector('.crispy-layout');
+    const layout = panel?.closest('.crispy-tab-layout') ?? document.querySelector('.crispy-layout');
 
     layout?.setAttribute('data-resizing', '');
 

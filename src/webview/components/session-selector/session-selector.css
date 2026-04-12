@@ -292,7 +292,7 @@
 }
 
 .crispy-session-item--selected {
-  background: var(--vscode-list-activeSelectionBackground, #094771);
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
   color: var(--vscode-list-activeSelectionForeground, #fff);
 }
 

@@ -204,22 +204,19 @@ function sanitizeSettings(data: unknown): CrispySettings {
   }
 
   const settings = data as Record<string, unknown>;
-  const result: CrispySettings = { ...DEFAULT_SETTINGS };
+  const result: CrispySettings = {
+    ...DEFAULT_SETTINGS,
+    preferences: { ...DEFAULT_SETTINGS.preferences },
+  };
 
-  // Preferences
+  // Preferences — accept any field whose type matches the default
   if (settings.preferences && typeof settings.preferences === 'object') {
     const prefs = settings.preferences as Record<string, unknown>;
-    if (typeof prefs.toolPanelAutoOpen === 'boolean') {
-      result.preferences.toolPanelAutoOpen = prefs.toolPanelAutoOpen;
-    }
-    if (typeof prefs.bashBlockInIcons === 'boolean') {
-      result.preferences.bashBlockInIcons = prefs.bashBlockInIcons;
-    }
-    if (typeof prefs.renderMode === 'string') {
-      result.preferences.renderMode = prefs.renderMode;
-    }
-    if (typeof prefs.badgeStyle === 'string') {
-      result.preferences.badgeStyle = prefs.badgeStyle;
+    const defaults = DEFAULT_SETTINGS.preferences as unknown as Record<string, unknown>;
+    for (const key of Object.keys(defaults)) {
+      if (key in prefs && typeof prefs[key] === typeof defaults[key]) {
+        (result.preferences as unknown as Record<string, unknown>)[key] = prefs[key];
+      }
     }
   }
 

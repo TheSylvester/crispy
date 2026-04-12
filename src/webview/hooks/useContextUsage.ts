@@ -2,7 +2,7 @@
  * useContextUsage — track a session's context window utilization
  *
  * Two data sources, in priority order:
- * 1. Live `state_changed` events from the transport (adapter → channel → snapshot)
+ * 1. Live `contextUsage` from the channel store (adapter → channel → catchup snapshot)
  * 2. Historical fallback: walk `entries` backwards for the last assistant turn's
  *    compaction-aware `message.usage` and compute ContextUsage using the model's
  *    actual context window from result entries (falls back to 200k default).
@@ -12,26 +12,12 @@
  * @module useContextUsage
  */
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import type { ContextUsage, TranscriptEntry, Vendor } from '../../core/transcript.js';
 import { getContextWindowTokens, parseModelOption } from '../../core/model-utils.js';
-import { useTransport } from '../context/TransportContext.js';
+import { useChannelStore } from './useChannelStore.js';
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
-
-/**
- * useState variant that resets to initialValue synchronously when key changes,
- * preventing a stale-render frame between the key change and the useEffect cleanup.
- */
-function useKeyedState<T>(key: string | null, initialValue: T): [T, React.Dispatch<React.SetStateAction<T>>] {
-  const [state, setState] = useState<T>(initialValue);
-  const prevKeyRef = useRef(key);
-  if (key !== prevKeyRef.current) {
-    prevKeyRef.current = key;
-    setState(initialValue);
-  }
-  return [state, setState];
-}
 
 /**
  * Extract the model's context window size from transcript entries.
@@ -112,7 +98,7 @@ export function computeContextFromEntries(entries: TranscriptEntry[]): ContextUs
 /**
  * Hook that returns the latest ContextUsage for a session.
  *
- * - For live sessions: listens to `state_changed` events and extracts `snapshot.contextUsage`.
+ * - For live sessions: reads `contextUsage` from the channel store (set by catchup).
  * - For historical sessions: falls back to `computeContextFromEntries()`.
  *
  * Only updates state when contextUsage is non-null to avoid clearing on initial
@@ -123,24 +109,7 @@ export function useContextUsage(
   entries?: TranscriptEntry[],
   modelOption?: string,
 ): ContextUsage | null {
-  const transport = useTransport();
-  // Keyed by sessionId — resets synchronously on session switch to prevent
-  // a stale render frame showing the previous session's context data.
-  const [liveUsage, setLiveUsage] = useKeyedState<ContextUsage | null>(sessionId, null);
-
-  // Subscribe to live catchup events
-  useEffect(() => {
-    if (!sessionId) return;
-
-    const off = transport.onEvent((sid, event) => {
-      if (sid !== sessionId) return;
-      if (event.type === 'catchup' && event.contextUsage) {
-        setLiveUsage(event.contextUsage);
-      }
-    });
-
-    return off;
-  }, [sessionId, transport]);
+  const { contextUsage: liveUsage } = useChannelStore(sessionId);
 
   // Always compute from entries when available — not gated by liveUsage.
   // Entries usage updates every time a new assistant message with message.usage

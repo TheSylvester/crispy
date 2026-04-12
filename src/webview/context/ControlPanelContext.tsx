@@ -15,9 +15,10 @@
  * @module context/ControlPanelContext
  */
 
-import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import type { AgencyMode } from '../components/control-panel/types.js';
 import type { TranscriptEntry } from '../../core/transcript.js';
+import { useTransport } from './TransportContext.js';
 
 interface ControlPanelContextValue {
   /** Whether bypass permissions is enabled (for approval flow). */
@@ -56,6 +57,9 @@ interface ControlPanelContextValue {
   /** Current agency mode from ControlPanel (for CSS data-agency on .crispy-main). */
   agencyMode: AgencyMode;
   setAgencyMode: (mode: AgencyMode) => void;
+
+  /** Initial fork config passed via fork-to-new-tab (consumed once by ControlPanel). */
+  initialForkConfig?: { fromSessionId: string; atMessageId?: string; initialPrompt?: string; model?: string; agencyMode?: string; bypassEnabled?: boolean; chromeEnabled?: boolean } | null;
 }
 
 const ControlPanelCtx = createContext<ControlPanelContextValue | null>(null);
@@ -70,16 +74,24 @@ interface ControlPanelProviderProps {
   children: React.ReactNode;
   /** When a real session is selected, clear fork history flag. */
   selectedSessionId: string | null;
+  /** Initial fork config — auto-enters fork mode on mount (from fork-to-new-tab). */
+  initialForkConfig?: { fromSessionId: string; atMessageId?: string; initialPrompt?: string; model?: string; agencyMode?: string; bypassEnabled?: boolean; chromeEnabled?: boolean } | null;
+  /** Initial prefill content — pre-fills the chat input on mount (from file Execute). */
+  initialPrefill?: string | null;
 }
 
 export function ControlPanelProvider({
   children,
   selectedSessionId,
+  initialForkConfig,
+  initialPrefill,
 }: ControlPanelProviderProps): React.JSX.Element {
   const [bypassEnabled, setBypassEnabled] = useState(false);
-  const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean; append?: boolean } | null>(null);
+  const [prefillInput, setPrefillInput] = useState<{ text: string; autoSend?: boolean; append?: boolean } | null>(
+    initialPrefill ? { text: initialPrefill } : null,
+  );
   const [pendingAgencyMode, setPendingAgencyMode] = useState<{ agencyMode: AgencyMode; bypassEnabled: boolean } | null>(null);
-  const [hasForkHistory, setHasForkHistory] = useState(false);
+  const [hasForkHistory, setHasForkHistory] = useState(!!initialForkConfig);
   const [previewEntries, setPreviewEntries] = useState<TranscriptEntry[] | null>(null);
   const [agencyMode, setAgencyMode] = useState<AgencyMode>('ask-before-edits');
 
@@ -101,6 +113,32 @@ export function ControlPanelProvider({
     }
   }, [selectedSessionId]);
 
+  // Apply initialForkConfig on mount (fork-to-new-tab flow).
+  // Loads truncated source history and sets prefill — same as the postMessage
+  // forkConfig handler in ControlPanel, but synchronous from props.
+  const transport = useTransport();
+  const forkApplied = useRef(false);
+  useEffect(() => {
+    if (!initialForkConfig || forkApplied.current) return;
+    forkApplied.current = true;
+
+    const { fromSessionId, atMessageId, initialPrompt, agencyMode: forkAgency, bypassEnabled: forkBypass } = initialForkConfig;
+
+    // Load truncated source history for preview
+    if (fromSessionId) {
+      transport.loadSession(fromSessionId, atMessageId ? { until: atMessageId } : undefined)
+        .then((history: TranscriptEntry[]) => {
+          if (history.length > 0) handleForkHistoryLoaded(history);
+        })
+        .catch((err: unknown) => console.error('[ControlPanelProvider] fork history load failed:', err));
+    }
+
+    // Apply inherited settings (model is handled by ControlPanel dispatch)
+    if (forkAgency) setAgencyMode(forkAgency as AgencyMode);
+    if (forkBypass !== undefined) setBypassEnabled(forkBypass);
+    if (initialPrompt) setPrefillInput({ text: initialPrompt });
+  }, [initialForkConfig, transport, handleForkHistoryLoaded, setAgencyMode]);
+
   const value: ControlPanelContextValue = {
     bypassEnabled,
     setBypassEnabled,
@@ -116,6 +154,7 @@ export function ControlPanelProvider({
     handleForkHistoryLoaded,
     agencyMode,
     setAgencyMode,
+    initialForkConfig: initialForkConfig ?? null,
   };
 
   return (

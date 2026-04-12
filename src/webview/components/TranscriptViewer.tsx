@@ -22,8 +22,9 @@
  */
 
 import { useRef, useEffect, useCallback, useMemo } from "react";
-import { useSession } from "../context/SessionContext.js";
+import { useTabSession } from "../context/TabSessionContext.js";
 import { usePreferences } from "../context/PreferencesContext.js";
+import { useTabPanel } from "../context/TabPanelContext.js";
 import { useTranscript } from "../hooks/useTranscript.js";
 import { usePlayback } from "../hooks/usePlayback.js";
 import { useAutoScroll } from "../hooks/useAutoScroll.js";
@@ -43,6 +44,7 @@ import { useApprovalRequest } from "../hooks/useApprovalRequest.js";
 import { constructExitPlanHandoffPrompt } from "./approval/approval-utils.js";
 import { useTransport } from "../context/TransportContext.js";
 import { useSessionStatus } from "../hooks/useSessionStatus.js";
+import { useSession } from "../context/SessionContext.js";
 import type { ApprovalExtra } from "./approval/types.js";
 import { WelcomePage } from "./WelcomePage.js";
 import { useStreamingContent } from "../hooks/useStreamingContent.js";
@@ -54,12 +56,10 @@ import { BlocksVisibilityProvider } from "../blocks/BlocksVisibilityContext.js";
 import { ConnectorLines } from "../blocks/ConnectorLines.js";
 import { PanelStateProvider } from "../blocks/PanelStateContext.js";
 import { BlocksToolPanel } from "../blocks/BlocksToolPanel.js";
-import { FilePanel } from "./file-panel/FilePanel.js";
-import { GitPanel } from "./git-panel/GitPanel.js";
-import { FileViewerPanel } from "./file-panel/FileViewerPanel.js";
 import { useFilePanel } from "../context/FilePanelContext.js";
 import { useControlPanel } from "../context/ControlPanelContext.js";
 import { useTranscriptAnnotation } from "../hooks/useTranscriptAnnotation.js";
+import { useIsActiveTab, useIsDomVisible, useRegisterOnBeforeHide, useTabContainer } from "../context/TabContainerContext.js";
 import { TranscriptAnnotationPopover } from "./TranscriptAnnotationPopover.js";
 
 // Debug mode now lives in PreferencesContext (default: on during development).
@@ -92,14 +92,14 @@ function ApprovalBridge({
  * reserved margin-right space isn't a blank gap.
  */
 function ToolPanelShell(): React.JSX.Element {
-  const { setToolPanelOpen, setToolPanelWidthPx } = usePreferences();
+  const { setToolPanelOpen, setToolPanelWidthPx } = useTabPanel();
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     const startX = e.clientX;
     const panel = (e.target as HTMLElement).closest('.crispy-tool-panel');
     const startWidth = panel?.clientWidth ?? 350;
-    const layout = document.querySelector('.crispy-layout');
+    const layout = panel?.closest('.crispy-tab-layout') ?? document.querySelector('.crispy-layout');
 
     layout?.setAttribute('data-resizing', '');
 
@@ -146,12 +146,19 @@ function ToolPanelShell(): React.JSX.Element {
   );
 }
 
-export function TranscriptViewer(): React.JSX.Element {
-  const { selectedSessionId, setSelectedSessionId } = useSession();
+export function TranscriptViewer({ observerMode }: { observerMode?: boolean }): React.JSX.Element {
+  const { effectiveSessionId: selectedSessionId, setSelectedSessionId } = useTabSession();
+  const { isAutoClosePanel } = useSession();
+  const effectiveObserverMode = observerMode || isAutoClosePanel;
   const transport = useTransport();
   const { entries: liveEntries, isLoading, error } = useTranscript(selectedSessionId);
-  const { renderMode, toolPanelOpen, debugMode, sidebarView } = usePreferences();
+  const { renderMode, debugMode, displayStyle } = usePreferences();
+  const { toolPanelOpen } = useTabPanel();
   const { registerInsertHandler } = useFilePanel();
+  const isActiveTab = useIsActiveTab();
+  const isDomVisible = useIsDomVisible();
+  const registerOnBeforeHide = useRegisterOnBeforeHide();
+  const { containerRef } = useTabContainer();
 
   // Read hasForkHistory and previewEntries from context.
   // previewEntries takes priority over liveEntries (fork/rewind preview).
@@ -254,10 +261,12 @@ export function TranscriptViewer(): React.JSX.Element {
     return () => clearTimeout(approvalWatchdogRef.current);
   }, [channelState, approvalRequest, selectedSessionId, transport]);
 
-  const { parked, isAtTop, scrollToBottom, scrollToTop, pinToBottom } = useAutoScroll({
+  const { stickToBottom, isAtTop, scrollToBottom, scrollToTop, pinToBottom } = useAutoScroll({
     sessionId: selectedSessionId,
     scrollRef: transcriptRef,
     remount: hasForkHistory,
+    isDomVisible,
+    registerOnBeforeHide,
   });
 
   // Track control panel height for CSS custom property --cp-height.
@@ -270,37 +279,41 @@ export function TranscriptViewer(): React.JSX.Element {
 
     const observer = new ResizeObserver(() => {
       const cpHeight = Math.round(cpEl.getBoundingClientRect().height);
-      document.documentElement.style.setProperty('--cp-height', String(cpHeight));
+      const target = containerRef.current;
+      if (!target) return;
+      target.style.setProperty('--cp-height', String(cpHeight));
     });
 
     observer.observe(cpEl);
     return () => observer.disconnect();
   }, []);
 
-  // Fork preview glow: add/remove class on last assistant message
-  const handleForkHoverChange = useCallback((hovering: boolean) => {
+  // Fork preview glow: add/remove class on the fork target message
+  const handleForkHoverChange = useCallback((hovering: boolean, targetUuid?: string) => {
     if (hovering) {
-      const msgs = document.querySelectorAll('.message.assistant');
-      const last = msgs[msgs.length - 1];
-      if (last) last.classList.add('crispy-fork-preview');
+      const msgs = transcriptRef.current?.querySelectorAll(
+        targetUuid ? `.message[data-uuid="${targetUuid}"]` : '.message.assistant',
+      );
+      const el = msgs?.[msgs.length - 1];
+      if (el) el.classList.add('crispy-fork-preview');
     } else {
-      document.querySelectorAll('.message.crispy-fork-preview').forEach((el) => {
+      transcriptRef.current?.querySelectorAll('.message.crispy-fork-preview').forEach((el) => {
         el.classList.remove('crispy-fork-preview');
       });
     }
-  }, []);
+  }, [transcriptRef]);
 
   // Per-message fork preview: glow a specific assistant message by UUID
   const handleForkPreviewHover = useCallback((targetMessageId: string, hovering: boolean) => {
     if (hovering) {
-      const el = document.querySelector(`.message[data-uuid="${targetMessageId}"]`);
+      const el = transcriptRef.current?.querySelector(`.message[data-uuid="${targetMessageId}"]`);
       if (el) el.classList.add('crispy-fork-preview');
     } else {
-      document.querySelectorAll('.message.crispy-fork-preview').forEach(el =>
+      transcriptRef.current?.querySelectorAll('.message.crispy-fork-preview').forEach(el =>
         el.classList.remove('crispy-fork-preview')
       );
     }
-  }, []);
+  }, [transcriptRef]);
 
   // Per-message fork handler — delegates to ControlPanel's executeFork via ref
   const forkHandlerRef = useRef<((atMessageId: string) => void) | null>(null);
@@ -413,6 +426,7 @@ export function TranscriptViewer(): React.JSX.Element {
   // then prefills the input without auto-sending, giving the user a chance
   // to configure settings (bypass, agency, model) before pressing Enter.
   useEffect(() => {
+    if (!isActiveTab) return;
     const handler = (ev: MessageEvent) => {
       if (ev.data?.kind === 'executeInCrispy' && ev.data.content) {
         setSelectedSessionId(null);
@@ -421,14 +435,27 @@ export function TranscriptViewer(): React.JSX.Element {
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [setSelectedSessionId]);
+  }, [isActiveTab, setSelectedSessionId]);
 
   // Register insert handler for FilePanelContext (used by context menu "Insert in Chat")
   useEffect(() => {
+    if (!isActiveTab) return;
     registerInsertHandler((text: string) => {
       cpCtxRef.current.setPrefillInput({ text });
     });
-  }, [registerInsertHandler]);
+  }, [isActiveTab, registerInsertHandler]);
+
+  // Listen for insertIntoChat postMessage from border panel's FilePanelContext
+  useEffect(() => {
+    if (!isActiveTab) return;
+    const handler = (ev: MessageEvent) => {
+      if (ev.data?.kind === 'insertIntoChat' && ev.data.text) {
+        cpCtxRef.current.setPrefillInput({ text: ev.data.text });
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [isActiveTab]);
 
   // --- Main content area (conditional) ---
   // ControlPanel is rendered once, outside the conditional branches, so it is
@@ -439,7 +466,7 @@ export function TranscriptViewer(): React.JSX.Element {
   let mainContent: React.JSX.Element;
 
   if (!selectedSessionId && !hasForkHistory) {
-    mainContent = <WelcomePage loading={isLoading} />;
+    mainContent = <WelcomePage loading={isLoading} skinClass={displayStyle !== 'crispy' ? `skin-${displayStyle}` : undefined} />;
   } else if (error) {
     mainContent = <div className="crispy-error">{error}</div>;
   } else {
@@ -450,9 +477,10 @@ export function TranscriptViewer(): React.JSX.Element {
         onRewind={handlePerMessageRewind}
         onForkPreviewHover={handleForkPreviewHover}
         isStreaming={channelState === 'streaming'}
+        isPending={!!selectedSessionId?.startsWith('pending:')}
         forkTargets={forkTargets}
       >
-        <div className="crispy-transcript" ref={transcriptRef} data-render-mode={renderMode}>
+        <div className={`crispy-transcript${displayStyle !== 'crispy' ? ` skin-${displayStyle}` : ''}`} ref={transcriptRef} data-render-mode={renderMode}>
           <div className="crispy-transcript-content">
             {lastError && (
               <div className="crispy-channel-error" role="alert">
@@ -499,7 +527,7 @@ export function TranscriptViewer(): React.JSX.Element {
         </svg>
       </button>
       <button
-        className={`crispy-scroll-nav crispy-scroll-to-bottom ${parked ? 'crispy-scroll-to-bottom--hidden' : ''}`}
+        className={`crispy-scroll-nav crispy-scroll-to-bottom ${stickToBottom ? 'crispy-scroll-to-bottom--hidden' : ''}`}
         onClick={scrollToBottom}
         aria-label="Scroll to bottom"
       >
@@ -516,8 +544,8 @@ export function TranscriptViewer(): React.JSX.Element {
         <PanelStateProvider>
           <BlocksVisibilityProvider scrollRef={transcriptRef}>
             {transcriptArea}
-            {toolPanelOpen && sidebarView === 'tools' && <BlocksToolPanel />}
-            {toolPanelOpen && sidebarView === 'tools' && <ConnectorLines />}
+            {toolPanelOpen && <BlocksToolPanel />}
+            {toolPanelOpen && <ConnectorLines />}
           </BlocksVisibilityProvider>
         </PanelStateProvider>
       </BlocksToolRegistryProvider>
@@ -527,10 +555,7 @@ export function TranscriptViewer(): React.JSX.Element {
   return (
     <>
       {mainContent}
-      {toolPanelOpen && sidebarView === 'tools' && !selectedSessionId && !hasForkHistory && <ToolPanelShell />}
-      {toolPanelOpen && sidebarView === 'files' && <FilePanel />}
-      {toolPanelOpen && sidebarView === 'git' && <GitPanel />}
-      <FileViewerPanel />
+      {toolPanelOpen && !selectedSessionId && !hasForkHistory && <ToolPanelShell />}
       <TranscriptAnnotationPopover {...annotation} />
       {selectedSessionId && !error && <StopButton ref={stopButtonRef} />}
       {debugMode && (
@@ -556,6 +581,7 @@ export function TranscriptViewer(): React.JSX.Element {
         onRegisterRewindHandler={handleRegisterRewindHandler}
         onScrollToBottom={pinToBottom}
         entries={entries}
+        observerMode={effectiveObserverMode}
       >
         {approvalRequest && (
           <ApprovalBridge

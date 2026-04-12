@@ -33,7 +33,7 @@ export function WebSearchCompactView({ block, result, status }: ToolViewProps): 
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="websearch"
+      name="WebSearch"
       subject={subject}
       status={status}
     />

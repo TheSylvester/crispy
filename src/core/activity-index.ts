@@ -135,7 +135,8 @@ export function getSessionTitleFromDb(sessionId: string): string | null {
 export function setSessionTitle(sessionId: string, title: string): void {
   const db = getDb(dbPath());
   db.run(
-    `INSERT OR REPLACE INTO session_titles (session_id, title, updated_at) VALUES (?, ?, ?)`,
+    `INSERT INTO session_titles (session_id, title, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(session_id) DO UPDATE SET title=excluded.title, updated_at=excluded.updated_at`,
     [sessionId, title, new Date().toISOString()],
   );
   invalidateSessionTitleCache();

@@ -10,10 +10,11 @@
  * - Named functions per phase (no generic phase map)
  * - Error-isolated: one handler failing never blocks others
  * - Handlers run concurrently via Promise.allSettled
- * - Child session guard: sessions spawned via dispatchChildSession() are
- *   automatically excluded — prevents recursive hook chains (e.g. Rosie
- *   analyzing its own child sessions). This guard lives here, not in
- *   individual handlers, so every current and future handler gets it for free.
+ * - System session guard: sessions with `sessionKind: 'system'` (tracker,
+ *   recall, internal agents) are automatically excluded — prevents recursive
+ *   hook chains. This is one of two guards; wireLifecycleHooks() in
+ *   session-manager.ts also prevents fireResponseComplete from being called
+ *   on child sessions (visible or hidden). Both guards are load-bearing.
  *
  * Only phase for now: responseComplete (end of turn, after JSONL flush).
  * Add promptSubmit etc. when needed — copy the pattern.
@@ -21,6 +22,7 @@
  * @module lifecycle-hooks
  */
 
+import { isSystemSession } from './activity-index.js';
 import { isChildSession } from './session-manager.js';
 import { log } from './log.js';
 
@@ -72,15 +74,17 @@ export function onResponseCompleteAfter(handler: ResponseCompleteHandler): () =>
  * Errors are logged but never propagate — one handler failing cannot
  * block others or crash the session lifecycle.
  *
- * Child sessions (spawned via dispatchChildSession) are silently skipped —
- * this prevents recursive hook chains where a handler's own child session
- * would re-trigger the same handler.
+ * System sessions (sessionKind: 'system') are silently skipped — this
+ * prevents recursive hook chains where an internal session (e.g. tracker,
+ * recall) would re-trigger the same handler.
  */
 export async function fireResponseComplete(sessionId: string): Promise<void> {
-  // Guard: never fire hooks for sessions spawned by dispatchChildSession.
+  // Guard: never fire hooks for system sessions (tracker, recall, etc.).
   // This prevents recursive chains (e.g. Rosie → child idle → Rosie → ∞).
-  // Covers all handlers — individual features don't need their own guard.
-  if (isChildSession(sessionId)) return;
+  // Second guard: wireLifecycleHooks() in session-manager.ts also prevents
+  // fireResponseComplete from being called on any child session. Both guards
+  // are load-bearing — do not remove either.
+  if (isSystemSession(sessionId) || isChildSession(sessionId)) return;
 
   if (responseCompleteHandlers.size === 0 && responseCompleteAfterHandlers.size === 0) return;
 

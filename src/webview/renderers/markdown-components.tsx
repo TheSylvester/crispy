@@ -63,8 +63,9 @@ export function CodeBlock(props: ComponentPropsWithoutRef<'code'>): React.JSX.El
       {({ tokens, getLineProps, getTokenProps, style }) => (
         <code
           className="md-code-highlight"
-          // Use theme colors but let CSS handle background
-          style={{ ...style, background: 'transparent' }}
+          // Use theme colors but let CSS handle background — must override
+          // both backgroundColor (set by Prism theme) and background (shorthand)
+          style={{ ...style, backgroundColor: 'transparent', background: 'transparent' }}
         >
           {tokens.map((line, i) => {
             const lineProps = getLineProps({ line, key: i });

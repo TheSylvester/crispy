@@ -10,14 +10,19 @@
 
 import { useRef, useEffect } from 'react';
 import { usePreferences } from '../context/PreferencesContext.js';
+import { useTabPanel } from '../context/TabPanelContext.js';
+import { useTabContainer, useIsActiveTab } from '../context/TabContainerContext.js';
 import type { TranscriptEntry } from '../../core/transcript.js';
 
 export function useToolPanelAutoOpen(entries: TranscriptEntry[]): void {
-  const { toolPanelOpen, toolPanelAutoOpen, setToolPanelOpen, setSidebarView } = usePreferences();
+  const { toolPanelAutoOpen } = usePreferences();
+  const { toolPanelOpen, setToolPanelOpen } = useTabPanel();
+  const { containerRef } = useTabContainer();
+  const isActiveTab = useIsActiveTab();
   const firedRef = useRef(false);
 
   useEffect(() => {
-    if (firedRef.current || !toolPanelAutoOpen || toolPanelOpen) return;
+    if (firedRef.current || !toolPanelAutoOpen || toolPanelOpen || !isActiveTab) return;
 
     const hasToolUse = entries.some(
       (e) =>
@@ -27,11 +32,11 @@ export function useToolPanelAutoOpen(entries: TranscriptEntry[]): void {
     );
 
     if (hasToolUse) {
-      // Skip on narrow viewports — panel would overlay content
-      if (window.innerWidth < 800) return;
-      setSidebarView('tools');
+      // Skip on narrow containers — panel would overlay content
+      const containerWidth = containerRef.current?.getBoundingClientRect().width ?? window.innerWidth;
+      if (containerWidth < 800) return;
       setToolPanelOpen(true);
       firedRef.current = true;
     }
-  }, [entries, toolPanelAutoOpen, toolPanelOpen, setToolPanelOpen, setSidebarView]);
+  }, [entries, toolPanelAutoOpen, toolPanelOpen, isActiveTab, setToolPanelOpen, containerRef]);
 }

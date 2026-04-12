@@ -31,8 +31,14 @@ export interface SettingsPreferences {
   bashBlockInIcons: boolean;
   renderMode: string;
   badgeStyle: string;
+  /** Display style for assistant markdown rendering. Default: 'crispy'. */
+  displayStyle: string;
   /** Auto-invoke /reflect after creating implementation plans. Default: true. */
   autoReflect: boolean;
+  /** Which side the Git border panel docks to. Default: 'left'. */
+  gitPanelSide: 'left' | 'right';
+  /** Use the display style accent color instead of permission-mode colors. */
+  useDisplayStyleAccent: boolean;
 }
 
 // ============================================================================
@@ -235,7 +241,10 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     bashBlockInIcons: true,
     renderMode: 'icons',
     badgeStyle: 'frosted',
+    displayStyle: 'crispy',
     autoReflect: true,
+    gitPanelSide: 'left',
+    useDisplayStyleAccent: true,
   },
   providers: {},
   hooks: {

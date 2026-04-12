@@ -9,13 +9,13 @@
 
 import { forwardRef } from 'react';
 import { useTransport } from '../../context/TransportContext.js';
-import { useSession } from '../../context/SessionContext.js';
+import { useTabSession } from '../../context/TabSessionContext.js';
 import { useSessionStatus } from '../../hooks/useSessionStatus.js';
 
 export const StopButton = forwardRef<HTMLDivElement>(
   function StopButton(_props, ref) {
     const transport = useTransport();
-    const { selectedSessionId } = useSession();
+    const { effectiveSessionId: selectedSessionId } = useTabSession();
     const { channelState, setOptimistic } = useSessionStatus(selectedSessionId);
 
     const visible =

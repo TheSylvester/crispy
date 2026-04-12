@@ -44,15 +44,15 @@ export function BashCompactView({ block, result, status }: ToolViewProps): React
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="bash"
+      name="Bash"
       description={input.description}
       codePill={command || undefined}
       badges={<>
         {input.run_in_background && (
-          <ToolBadge color="#888" textColor="#d4d4d4" label="background" />
+          <ToolBadge color="#888" label="background" />
         )}
         {input.timeout != null && (
-          <ToolBadge color="#888" textColor="#d4d4d4" label={`\u23F1 ${formatTimeout(input.timeout)}`} />
+          <ToolBadge color="#888" label={`\u23F1 ${formatTimeout(input.timeout)}`} />
         )}
       </>}
       status={status}
@@ -73,7 +73,7 @@ export function BashCondensedView({ block, result, status }: ToolViewProps): Rea
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="bash"
+      name="Bash"
       description={description}
       status={status}
     />
@@ -114,10 +114,10 @@ export function BashExpandedView({ block, result, status, anchor }: ToolViewProp
         <span className="crispy-blocks-tool-icon">{meta.icon}</span>
         <ToolBadge color={meta.color} label="Bash" />
         {input.run_in_background && (
-          <ToolBadge color="#888" textColor="#d4d4d4" label="background" />
+          <ToolBadge color="#888" label="background" />
         )}
         {input.timeout != null && (
-          <ToolBadge color="#888" textColor="#d4d4d4" label={`\u23F1 ${formatTimeout(input.timeout)}`} />
+          <ToolBadge color="#888" label={`\u23F1 ${formatTimeout(input.timeout)}`} />
         )}
         {input.description && (
           <span className="crispy-blocks-tool-description">{input.description}</span>

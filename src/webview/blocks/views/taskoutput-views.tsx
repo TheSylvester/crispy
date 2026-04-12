@@ -68,7 +68,7 @@ export function TaskOutputCompactView({ block, result, status }: ToolViewProps):
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="task-output"
+      name="TaskOutput"
       subject={subject}
       status={status}
     />
@@ -99,8 +99,8 @@ export function TaskOutputExpandedView({ block, result, status, anchor }: ToolVi
     <ToolCard anchor={anchor} open={status === 'running'} summary={<>
       <span className="crispy-blocks-tool-header">
         <span className="crispy-blocks-tool-icon">{meta.icon}</span>
-        <ToolBadge color={meta.color} label="task-output" />
-        {isBlocking && <ToolBadge color="#888" textColor="#d4d4d4" label="blocking" />}
+        <ToolBadge color={meta.color} label="TaskOutput" />
+        {isBlocking && <ToolBadge color="#888" label="blocking" />}
         {taskId && <span className="crispy-blocks-tool-description">{taskId}</span>}
       </span>
       <StatusIndicator status={status} summary={resultSummary} />

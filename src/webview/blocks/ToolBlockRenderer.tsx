@@ -22,9 +22,10 @@ import { CopyButton } from '../components/CopyButton.js';
 import { useBlocksChildEntries, useBlocksToolRegistry, useInjectChildEntries } from './BlocksToolRegistryContext.js';
 import { BlocksEntryWithRegistry } from './BlocksEntryWithRegistry.js';
 import { usePreferences } from '../context/PreferencesContext.js';
+import { useTabPanel } from '../context/TabPanelContext.js';
 import { usePanelDispatch, usePanelState, usePanelDisplayIds } from './PanelStateContext.js';
 import { isToolExpanded } from './panel-reducer.js';
-import { useSession } from '../context/SessionContext.js';
+import { useTabSession } from '../context/TabSessionContext.js';
 import { useBackgroundAgentTunnel } from '../hooks/useBackgroundAgentTunnel.js';
 
 /** Max children visible in the transcript content tail preview. */
@@ -60,7 +61,8 @@ export function ToolBlockRenderer({
   const result = registry.useResult(block.id);
 
   // Debug: global tool view override from preferences (?debug=1 settings)
-  const { toolViewOverride: globalOverride, toolPanelMode, toolPanelOpen, setToolPanelOpen, setSidebarView, renderMode, condensedToolMode, bashBlockInIcons } = usePreferences();
+  const { toolViewOverride: globalOverride, toolPanelMode, renderMode, condensedToolMode, bashBlockInIcons } = usePreferences();
+  const { toolPanelOpen, setToolPanelOpen } = useTabPanel();
 
   // Panel state: used for expansion override in tool-panel anchors
   const panelState = usePanelState();
@@ -88,10 +90,9 @@ export function ToolBlockRenderer({
     panelDispatch({ type: 'USER_CLICKED', toolId: block.id });
     // Auto-open the tools panel when clicking a compact tool in the transcript
     if (!toolPanelOpen && anchor.type === 'main-thread') {
-      setSidebarView('tools');
       setToolPanelOpen(true);
     }
-  }, [panelDispatch, block.id, anchor.type, toolPanelOpen, setToolPanelOpen, setSidebarView]);
+  }, [panelDispatch, block.id, anchor.type, toolPanelOpen, setToolPanelOpen]);
 
   // Compute status
   const status: ToolViewProps['status'] = !result
@@ -228,7 +229,7 @@ function TaskChildrenRenderer({ toolId, anchor, result }: TaskChildrenRendererPr
   // Background agent tunnel — activate polling when expanded in panel
   const registry = useBlocksToolRegistry();
   const asyncAgentId = registry.getAsyncAgentId(toolId);
-  const { selectedSessionId } = useSession();
+  const { effectiveSessionId: selectedSessionId } = useTabSession();
   const injectChildEntries = useInjectChildEntries();
   const handlePolledEntries = useCallback(
     (entries: TranscriptEntry[]) => injectChildEntries(toolId, entries),

@@ -16,6 +16,7 @@ import { CrispyMarkdown } from './CrispyMarkdown.js';
 import { LinkifiedP } from './linkify-components.js';
 import { isPerfMode } from '../perf/index.js';
 import { PerfStore } from '../perf/profiler.js';
+import { usePreferences } from '../context/PreferencesContext.js';
 import type { ContentBlock, TextBlock } from '../../core/transcript.js';
 
 interface AssistantTextRendererProps {
@@ -34,6 +35,8 @@ export function AssistantTextRenderer({
   trailingInlineContent,
 }: AssistantTextRendererProps): React.JSX.Element {
   const { text } = block as TextBlock;
+  const { displayStyle } = usePreferences();
+  const skinClass = displayStyle !== 'crispy' ? ` skin-${displayStyle}` : '';
   const inlineTail = trailingInlineContent && canAppendInlineTail(text)
     ? {
         p: (props: React.HTMLAttributes<HTMLParagraphElement>) => (
@@ -48,7 +51,7 @@ export function AssistantTextRenderer({
   if (isPerfMode) {
     const t0 = performance.now();
     const el = (
-      <div className="prose assistant-text">
+      <div className={`prose assistant-text${skinClass}`}>
         <CrispyMarkdown components={inlineTail}>{text}</CrispyMarkdown>
         {!inlineTail && trailingInlineContent}
       </div>
@@ -58,7 +61,7 @@ export function AssistantTextRenderer({
   }
 
   return (
-    <div className="prose assistant-text">
+    <div className={`prose assistant-text${skinClass}`}>
       <CrispyMarkdown components={inlineTail}>{text}</CrispyMarkdown>
       {!inlineTail && trailingInlineContent}
     </div>

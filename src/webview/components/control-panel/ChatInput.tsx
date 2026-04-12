@@ -11,12 +11,13 @@
 
 import { useRef, useLayoutEffect, useEffect, useCallback } from 'react';
 import type { AttachedImage } from './types.js';
-import { ForkIcon, MicIcon } from './icons.js';
+import { ForkIcon, MicIcon, SendIcon } from './icons.js';
 import { useMention } from '../../hooks/useMention.js';
 import { useCommandAutocomplete } from '../../hooks/useCommandAutocomplete.js';
 import { MentionDropdown } from './MentionDropdown.js';
 import { CommandDropdown } from './CommandDropdown.js';
 import type { VoiceState } from '../../hooks/useVoiceInput.js';
+import { useIsActiveTab } from '../../context/TabContainerContext.js';
 
 interface ChatInputProps {
   value: string;
@@ -42,14 +43,17 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mention = useMention(textareaRef, value, onInput);
   const command = useCommandAutocomplete(textareaRef, value, onInput, vendor ?? null, sessionId ?? null, cwd ?? null);
+  const isActiveTab = useIsActiveTab();
 
-  // Auto-focus textarea on mount
+  // Auto-focus textarea on mount (skip for autoClose panels to prevent focus steal)
   useEffect(() => {
+    if (document.querySelector('meta[name="crispy-auto-close"]')) return;
     textareaRef.current?.focus();
   }, []);
 
   // Handle host messages: focusInput (keybinding, panel activation), toggleVoiceInput (VS Code keybinding)
   useEffect(() => {
+    if (!isActiveTab) return;
     function onMessage(ev: MessageEvent): void {
       if (ev.data?.kind === 'focusInput') {
         textareaRef.current?.focus();
@@ -59,7 +63,7 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
     }
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [onVoiceToggle]);
+  }, [isActiveTab, onVoiceToggle]);
 
   // Auto-resize textarea when value changes
   useLayoutEffect(() => {
@@ -172,7 +176,7 @@ export function ChatInput({ value, attachedImages, onInput, onSend, placeholder,
         onClick={onSend}
       >
         <span className="crispy-cp-send__icon">
-          {forkMode ? <ForkIcon /> : <>&#9654;</>}
+          {forkMode ? <ForkIcon /> : <SendIcon />}
         </span>
       </button>
     </div>

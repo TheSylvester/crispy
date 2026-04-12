@@ -1,0 +1,271 @@
+/* ==========================================================================
+ * FlexLayout overrides — multi-tab mode
+ * Tab strip visible, content fills available space.
+ * ========================================================================== */
+
+/* Hide non-tab chrome */
+.flexlayout__tabset_header { display: none; }
+/* Splitter between tab groups — visible and draggable for resizing */
+.flexlayout__splitter {
+  background: var(--vscode-tab-border, rgba(255, 255, 255, 0.06));
+  transition: background 0.15s;
+}
+.flexlayout__splitter:hover {
+  background: var(--vscode-focusBorder, #007acc);
+}
+/* Border panels — used for Git sidebar */
+.flexlayout__border {
+  background: var(--vscode-sideBar-background, #1e1e1e);
+}
+
+/* Border tab content panel fills available space */
+.flexlayout__border_tab_contents {
+  display: flex;
+  flex-direction: column;
+}
+
+.flexlayout__border_button_content {
+  font-size: 11px;
+}
+
+/* Layout fills its container — override all dark-theme backgrounds and text.
+   Also reset font-family/size so flexlayout's Roboto doesn't leak into the
+   VS Code webview (which inherits --vscode-font-family from the host). */
+.flexlayout__layout {
+  --color-background: transparent;
+  --color-base: transparent;
+  --color-1: transparent;
+  --color-tabset-background: transparent;
+  --color-tabset-background-selected: transparent;
+  --color-tab-content: transparent;
+  --color-text: var(--vscode-editor-foreground, #d4d4d4);
+  /* Border panel variables — must reference VS Code vars so they respond to
+     light/dark theme changes. Without these, FlexLayout's dark.css defaults
+     (--color-4, --color-2, gray) leak through for border tab buttons. */
+  --color-border-background: var(--vscode-sideBar-background, #252526);
+  --color-border-tab-content: transparent;
+  --color-border-tab-selected: var(--vscode-editor-foreground, #d4d4d4);
+  --color-border-tab-selected-background: var(--vscode-sideBar-background, #252526);
+  --color-border-tab-unselected: var(--vscode-tab-inactiveForeground, rgba(255, 255, 255, 0.5));
+  --color-border-tab-unselected-background: transparent;
+  --color-border-divider-line: var(--vscode-panel-border, #2b2b2b);
+  --font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+  --font-size: var(--vscode-font-size, 13px);
+  background: transparent;
+}
+
+/* Tab content fills its slot; transcript scrolls within */
+.flexlayout__tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.flexlayout__tab_moveable {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: visible;
+}
+
+/* ==========================================================================
+ * Tab strip styling
+ * ========================================================================== */
+
+.flexlayout__tabset_tabbar_outer {
+  background: var(--vscode-tab-inactiveBackground, var(--vscode-sideBar-background, #1e1e1e));
+  border-bottom: 1px solid var(--vscode-tab-border, rgba(255, 255, 255, 0.06));
+  height: 30px;
+  min-height: 30px;
+}
+
+.flexlayout__tabset_tabbar_inner_tab_container {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  gap: 0;
+}
+
+/* Individual tab */
+.flexlayout__tab_button {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--vscode-tab-inactiveForeground, rgba(255, 255, 255, 0.5));
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--vscode-tab-border, rgba(255, 255, 255, 0.06));
+  cursor: pointer;
+  max-width: 280px;
+  min-width: 80px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.1s, background 0.1s;
+}
+
+.flexlayout__tab_button:hover {
+  color: var(--vscode-tab-activeForeground, rgba(255, 255, 255, 0.8));
+  background: var(--vscode-tab-hoverBackground, rgba(255, 255, 255, 0.04));
+}
+
+.flexlayout__tab_button--selected {
+  color: var(--vscode-tab-activeForeground, #fff);
+  background: var(--vscode-tab-activeBackground, transparent);
+  border-bottom: 2px solid var(--color-accent);
+}
+
+/* Tab close button */
+.flexlayout__tab_button_trailing {
+  display: flex;
+  align-items: center;
+  margin-left: 6px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.flexlayout__tab_button:hover .flexlayout__tab_button_trailing,
+.flexlayout__tab_button--selected .flexlayout__tab_button_trailing {
+  opacity: 0.6;
+}
+
+.flexlayout__tab_button_trailing:hover {
+  opacity: 1 !important;
+}
+
+/* Tab content text */
+.flexlayout__tab_button_content {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+ * Add tab button
+ * ========================================================================== */
+
+.crispy-tab-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--vscode-tab-inactiveForeground, rgba(255, 255, 255, 0.5));
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  margin: 1px 4px;
+  transition: color 0.1s, background 0.1s;
+}
+
+.crispy-tab-add-btn:hover {
+  color: var(--vscode-tab-activeForeground, #fff);
+  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.1));
+}
+
+/* ==========================================================================
+ * FlexLayout overflow/toolbar buttons
+ * ========================================================================== */
+
+.flexlayout__tab_toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.flexlayout__tab_toolbar_button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.1s;
+}
+
+.flexlayout__tab_toolbar_button:hover {
+  opacity: 1;
+}
+
+/* Drag indicator during tab reorder */
+.flexlayout__tab_button_stamp {
+  background: var(--vscode-tab-activeBackground, #1e1e1e);
+  border: 1px solid var(--vscode-focusBorder, #007acc);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--vscode-tab-activeForeground, #fff);
+}
+
+/* ==========================================================================
+ * Light mode overrides
+ * ========================================================================== */
+
+body[data-vscode-theme-kind="vscode-light"] .flexlayout__splitter,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .flexlayout__splitter {
+  background: var(--vscode-tab-border, rgba(0, 0, 0, 0.08));
+}
+
+body[data-vscode-theme-kind="vscode-light"] .flexlayout__border,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .flexlayout__border {
+  background: var(--vscode-sideBar-background, #ececec);
+}
+
+body[data-vscode-theme-kind="vscode-light"] .flexlayout__tabset_tabbar_outer,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .flexlayout__tabset_tabbar_outer {
+  background: var(--vscode-tab-inactiveBackground, var(--vscode-sideBar-background, #e8e8e8));
+  border-bottom-color: var(--vscode-tab-border, rgba(0, 0, 0, 0.1));
+}
+
+body[data-vscode-theme-kind="vscode-light"] .flexlayout__tab_button,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .flexlayout__tab_button {
+  color: var(--vscode-tab-inactiveForeground, rgba(0, 0, 0, 0.55));
+  border-right-color: var(--vscode-tab-border, rgba(0, 0, 0, 0.08));
+}
+
+body[data-vscode-theme-kind="vscode-light"] .flexlayout__tab_button:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .flexlayout__tab_button:hover {
+  color: var(--vscode-tab-activeForeground, rgba(0, 0, 0, 0.8));
+  background: var(--vscode-tab-hoverBackground, rgba(0, 0, 0, 0.04));
+}
+
+body[data-vscode-theme-kind="vscode-light"] .flexlayout__tab_button--selected,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .flexlayout__tab_button--selected {
+  color: var(--vscode-tab-activeForeground, #000);
+  background: var(--vscode-tab-activeBackground, transparent);
+}
+
+body[data-vscode-theme-kind="vscode-light"] .crispy-tab-add-btn,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-add-btn {
+  color: var(--vscode-tab-inactiveForeground, rgba(0, 0, 0, 0.65));
+}
+
+body[data-vscode-theme-kind="vscode-light"] .crispy-tab-add-btn:hover,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-add-btn:hover {
+  color: var(--vscode-tab-activeForeground, #000);
+  background: var(--vscode-toolbar-hoverBackground, rgba(0, 0, 0, 0.06));
+}
+
+/* ==========================================================================
+ * Terminal panel
+ * ========================================================================== */
+
+.crispy-terminal {
+  width: 100%;
+  height: 100%;
+  background: var(--vscode-terminal-background, #1e1e1e);
+}
+
+.crispy-terminal-loading {
+  padding: 1rem;
+  color: var(--vscode-descriptionForeground, #888);
+}
+
+body[data-vscode-theme-kind="vscode-light"] .flexlayout__tab_button_stamp,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .flexlayout__tab_button_stamp {
+  background: var(--vscode-tab-activeBackground, #f5f5f5);
+  color: var(--vscode-tab-activeForeground, #000);
+}

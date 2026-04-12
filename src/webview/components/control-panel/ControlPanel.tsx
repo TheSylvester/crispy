@@ -38,14 +38,19 @@ import { RosiePanel } from './RosiePanel.js';
 import { ForkButton } from './ForkButton.js';
 import { EmbeddingPrompt } from '../EmbeddingPrompt.js';
 import { usePreferences } from '../../context/PreferencesContext.js';
+import { useTabPanel } from '../../context/TabPanelContext.js';
 import { useTransport } from '../../context/TransportContext.js';
 import { useSession } from '../../context/SessionContext.js';
 import { slugToPath } from '../../hooks/useSessionCwd.js';
 import { useContextUsage } from '../../hooks/useContextUsage.js';
 import { useSessionStatus } from '../../hooks/useSessionStatus.js';
+import { setOptimisticForSession } from '../../hooks/useChannelStore.js';
 import { useRosieLog } from '../../hooks/useRosieLog.js';
 import { useVoiceInput } from '../../hooks/useVoiceInput.js';
 import { useControlPanel } from '../../context/ControlPanelContext.js';
+import { useTabContainer, useIsActiveTab } from '../../context/TabContainerContext.js';
+import { useTabControllerOptional } from '../../context/TabControllerContext.js';
+import { useTabSession } from '../../context/TabSessionContext.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent, TurnTarget } from '../../../core/agent-adapter.js';
@@ -57,7 +62,7 @@ import type { CatchupStatus } from '../../../core/recall/catchup-types.js';
 import type { RecallCatchupEvent } from '../../../core/channel-events.js';
 
 interface ControlPanelProps {
-  onForkHoverChange?: (hovering: boolean) => void;
+  onForkHoverChange?: (hovering: boolean, targetUuid?: string) => void;
   /** Instantly pin transcript scroll to bottom (called on send). */
   onScrollToBottom?: () => void;
   /** Transcript entries for historical context usage fallback. */
@@ -68,6 +73,8 @@ interface ControlPanelProps {
   onRegisterForkHandler?: (handler: (atMessageId: string) => void) => void;
   /** Register a handler for per-message rewind execution (fork-in-same-panel). */
   onRegisterRewindHandler?: (handler: (atMessageId: string) => void) => void;
+  /** When true, hide interactive input (chat, attachments) but keep settings-sync running. */
+  observerMode?: boolean;
 }
 
 /** Agency modes for keyboard cycling (excluding bypass-permissions). */
@@ -167,7 +174,7 @@ function controlPanelReducer(state: ControlPanelState, action: Action): ControlP
 }
 
 export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
-  function ControlPanel({ onForkHoverChange, onScrollToBottom, entries, children, onRegisterForkHandler, onRegisterRewindHandler }, ref) {
+  function ControlPanel({ onForkHoverChange, onScrollToBottom, entries, children, onRegisterForkHandler, onRegisterRewindHandler, observerMode }, ref) {
     const [state, dispatch] = useReducer(controlPanelReducer, DEFAULT_CONTROL_PANEL_STATE);
     const {
       setBypassEnabled: ctxSetBypassEnabled,
@@ -177,7 +184,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       consumePendingAgencyMode,
       handleForkHistoryLoaded: onForkHistoryLoaded,
       setAgencyMode: ctxSetAgencyMode,
+      initialForkConfig,
     } = useControlPanel();
+    const { containerRef } = useTabContainer();
+    const isActiveTab = useIsActiveTab();
     // Track the DOM element for native drag/drop listeners. A callback ref
     // ensures the useEffect re-runs when the element mounts, unlike a
     // RefObject whose identity never changes.
@@ -191,20 +201,25 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         (ref as React.RefObject<HTMLDivElement | null>).current = node;
       }
     }, [ref]);
-    const { renderMode, setRenderMode, settingsPinned, setSettingsPinned, toolViewOverride, setToolViewOverride, debugMode, setDebugMode, toolPanelAutoOpen, setToolPanelAutoOpen, autoReflect, setAutoReflect, badgeStyle, setBadgeStyle, bashBlockInIcons, setBashBlockInIcons } = usePreferences();
+    const { renderMode, setRenderMode, toolViewOverride, setToolViewOverride, debugMode, setDebugMode, toolPanelAutoOpen, setToolPanelAutoOpen, autoReflect, setAutoReflect, badgeStyle, setBadgeStyle, displayStyle, setDisplayStyle, bashBlockInIcons, setBashBlockInIcons, gitPanelSide, setGitPanelSide, useDisplayStyleAccent, setUseDisplayStyleAccent } = usePreferences();
+    const { settingsPinned, setSettingsPinned } = useTabPanel();
     const [rosiePanelPinned, setRosiePanelPinned] = useState(false);
     const rosieLogEntries = useRosieLog();
     const transport = useTransport();
 
-    const { selectedSessionId, selectedCwd, setSelectedSessionId, sessions, workspaceCwdPath, availableVendors } = useSession();
+    const { sessions, availableVendors } = useSession();
+    const { effectiveSessionId, selectedCwd, setSelectedSessionId, workspaceCwdPath } = useTabSession();
+    const selectedSessionId = effectiveSessionId;
+    const tabController = useTabControllerOptional();
     const skillHint = useRandomSkillHint(availableVendors);
-    const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(selectedSessionId);
+    const { channelState, setOptimistic: setOptimisticStatus } = useSessionStatus(effectiveSessionId);
     const togglesDisabled = channelState === 'streaming' || channelState === 'awaiting_approval';
 
     // --- sendTurn error banner ---
     const [sendError, setSendError] = useState<string | null>(null);
     const sendErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const forkTargetRef = useRef<string | undefined>(undefined);
+    const forkTargetSessionRef = useRef<string | null | undefined>(undefined);
 
     /** Show a send error with auto-dismiss after 8s. */
     const showSendError = useCallback((msg: string) => {
@@ -234,12 +249,12 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       onTranscript: useCallback((text: string) => {
         // Append transcribed text to existing input (hybrid input support).
         // Read current value from DOM since useReducer doesn't support functional updates.
-        const textarea = document.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
+        const textarea = panelEl?.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
         const current = textarea?.value ?? '';
         const separator = current && !current.endsWith(' ') ? ' ' : '';
         dispatch({ type: 'SET_INPUT', value: current + separator + text });
         textarea?.focus();
-      }, []),
+      }, [panelEl]),
       onError: useCallback((error: string) => {
         console.error('[Voice]', error);
         showSendError(`Voice: ${error}`);
@@ -253,12 +268,13 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     useEffect(() => {
       if (!panelEl) return;
+      if (!isActiveTab) return;
       const ro = new ResizeObserver(([entry]) => {
         setCompact(entry.contentRect.width <= 480);
       });
       ro.observe(panelEl);
       return () => ro.disconnect();
-    }, [panelEl]);
+    }, [panelEl, isActiveTab]);
 
     // --- Dynamic model groups from provider-config ---
     const [modelGroups, setModelGroups] = useState<VendorModelGroup[]>([]);
@@ -423,26 +439,39 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       await transport.stopEmbeddingBackfill();
     }, [transport]);
 
-    // Clear forkMode when switching sessions; reset model + agency to defaults for new conversations
+    // Clear forkMode when switching sessions (not when defaults change).
+    // Skip the initial run for fork tabs — initialForkConfig sets forkMode via its own effect,
+    // and the settings event could trigger default changes that would prematurely clear it.
+    const sessionChangeCount = useRef(0);
+    const prevSessionRef = useRef(selectedSessionId);
     useEffect(() => {
-      dispatch({ type: 'SET_FORK_MODE', forkMode: null });
-      if (!selectedSessionId) {
+      if (prevSessionRef.current !== selectedSessionId) {
+        prevSessionRef.current = selectedSessionId;
+        sessionChangeCount.current++;
+        dispatch({ type: 'SET_FORK_MODE', forkMode: null });
+      }
+    }, [selectedSessionId]);
+
+    // Reset model + agency to defaults for new conversations (no session selected).
+    // Skip for fork tabs on mount — initialForkConfig applies inherited settings.
+    useEffect(() => {
+      if (!selectedSessionId && !(initialForkConfig && sessionChangeCount.current === 0)) {
         dispatch({ type: 'SET_MODEL', model: defaultModel });
         dispatch({ type: 'SET_AGENCY_MODE', mode: defaultPermissionMode });
         dispatch({ type: 'SET_BYPASS', enabled: defaultPermissionMode === 'bypass-permissions' });
       }
-    }, [selectedSessionId, defaultModel, defaultPermissionMode]);
+    }, [selectedSessionId, defaultModel, defaultPermissionMode, initialForkConfig]);
 
     // Ref to always call the latest handleSend (avoids stale closure in forkConfig auto-send)
     const handleSendRef = useRef<() => void>(() => {});
 
     /** Read current input from the textarea DOM — avoids closing over stale state. */
     const getTextareaState = useCallback(() => {
-      const textarea = document.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
+      const textarea = panelEl?.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
       return textarea
         ? { textarea, value: textarea.value, start: textarea.selectionStart, end: textarea.selectionEnd }
         : null;
-    }, []);
+    }, [panelEl]);
 
     /** Insert text at cursor position (or append), dispatch SET_INPUT, restore cursor. */
     const insertAtCursor = useCallback((text: string) => {
@@ -530,6 +559,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     // --- Keyboard shortcuts ---
     useEffect(() => {
+      if (!isActiveTab) return;
       const handleKeyDown = (e: KeyboardEvent) => {
         // Alt+`: Toggle bypass
         if (e.key === '`' && e.altKey && !e.ctrlKey && !e.shiftKey) {
@@ -572,7 +602,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
       document.addEventListener('keydown', handleKeyDown);
       return () => document.removeEventListener('keydown', handleKeyDown);
-    }, [state.bypassEnabled, state.agencyMode, state.model, togglesDisabled, allCyclable, voice]);
+    }, [isActiveTab, state.bypassEnabled, state.agencyMode, state.model, togglesDisabled, allCyclable, voice]);
 
     // --- Server → UI: settings sync notifications ---
     // Server-initiated setting changes update the local state. Handles both
@@ -600,8 +630,8 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             if (agencyMode) {
               dispatch({ type: 'SET_AGENCY_MODE', mode: agencyMode });
             }
-            // Sync bypass from session's explicit setting
-            dispatch({ type: 'SET_BYPASS', enabled: settings.allowDangerouslySkipPermissions });
+            // Sync bypass from session's explicit setting, or derive from permission mode
+            dispatch({ type: 'SET_BYPASS', enabled: settings.allowDangerouslySkipPermissions || settings.permissionMode === 'bypassPermissions' });
           } else {
             // Session has no permission mode — reset to user's saved default.
             // Use ref (not state) so the closure always sees the latest value.
@@ -733,11 +763,15 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       // Clear input immediately (optimistic)
       dispatch({ type: 'CLEAR_INPUT' });
       onScrollToBottom?.();
-      setOptimisticStatus('streaming');
 
-      // Preselect the pending session so useTranscript sees events on it
       if (pendingId) {
+        // Pre-seed 'streaming' on the pending session's store BEFORE switching
+        // tabs, so the glow appears immediately when the store is acquired.
+        // setOptimisticStatus would target the old session (closure-captured).
+        setOptimisticForSession(transport, pendingId, 'streaming');
         setSelectedSessionId(pendingId);
+      } else {
+        setOptimisticStatus('streaming');
       }
 
       transport.sendTurn(intent, pendingId)
@@ -749,7 +783,11 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           }
         })
         .catch((err) => {
-          setOptimisticStatus('idle');
+          if (pendingId) {
+            setOptimisticForSession(transport, pendingId, 'idle');
+          } else {
+            setOptimisticStatus('idle');
+          }
           console.error('[ControlPanel] sendTurn failed:', err);
           // Surface error to user
           const msg = err instanceof Error ? err.message : String(err);
@@ -901,7 +939,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         }
 
         // Focus textarea after drop so user can immediately type
-        const textarea = document.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
+        const textarea = panelEl?.querySelector<HTMLTextAreaElement>('.crispy-cp-input');
         textarea?.focus();
       };
 
@@ -918,6 +956,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     // --- Paste handler for images ---
     useEffect(() => {
+      if (!isActiveTab) return;
       const handlePaste = (e: ClipboardEvent) => {
         const items = e.clipboardData?.items;
         if (!items) return;
@@ -965,12 +1004,14 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
       document.addEventListener('paste', handlePaste);
       return () => document.removeEventListener('paste', handlePaste);
-    }, [state.pastedImageCounter, insertAtCursor]);
+    }, [isActiveTab, state.pastedImageCounter, insertAtCursor]);
 
-    // --- forkConfig message listener (new panel created via fork) ---
+    // --- forkConfig message listener (legacy VS Code panel-to-panel fork) ---
     // Host retries delivery so the listener must be idempotent.
     // Settings dispatches are naturally idempotent; input prefill is idempotent.
+    // Skipped when initialForkConfig was already applied (multi-tab context path).
     useEffect(() => {
+      if (!isActiveTab || initialForkConfig) return;
       function onMessage(ev: MessageEvent) {
         if (ev.data?.kind === 'forkConfig') {
           const { fromSessionId, atMessageId, initialPrompt, model, agencyMode, bypassEnabled, chromeEnabled } = ev.data;
@@ -1002,19 +1043,37 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       }
       window.addEventListener('message', onMessage);
       return () => window.removeEventListener('message', onMessage);
-    }, [transport, onForkHistoryLoaded]); // transport is module-level stable, onForkHistoryLoaded is a stable useCallback
+    }, [isActiveTab, initialForkConfig, transport, onForkHistoryLoaded]); // transport is module-level stable, onForkHistoryLoaded is a stable useCallback
+
+    // --- Apply initialForkConfig from context (fork-to-new-tab flow) ---
+    const forkConfigApplied = useRef(false);
+    useEffect(() => {
+      if (!initialForkConfig || forkConfigApplied.current) return;
+      forkConfigApplied.current = true;
+
+      const { fromSessionId, atMessageId, model, agencyMode, bypassEnabled, chromeEnabled } = initialForkConfig;
+
+      // Enter fork mode
+      dispatch({ type: 'SET_FORK_MODE', forkMode: { fromSessionId, atMessageId } });
+
+      // Apply inherited settings
+      if (model) dispatch({ type: 'SET_MODEL', model });
+      if (agencyMode) dispatch({ type: 'SET_AGENCY_MODE', mode: agencyMode as AgencyMode });
+      if (bypassEnabled !== undefined) dispatch({ type: 'SET_BYPASS', enabled: bypassEnabled });
+      if (chromeEnabled !== undefined) dispatch({ type: 'SET_CHROME', enabled: chromeEnabled });
+    }, [initialForkConfig]);
 
     // --- Fork execution (shared between control panel button and per-message buttons) ---
     const executeFork = useCallback((atMessageId: string) => {
       if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
       // Clear fork preview glow — mouseLeave won't fire since we're switching panels
-      document.querySelectorAll('.message.crispy-fork-preview').forEach(el =>
+      containerRef.current?.querySelectorAll('.message.crispy-fork-preview').forEach(el =>
         el.classList.remove('crispy-fork-preview'),
       );
 
       const currentInput = state.input.trim();
 
-      transport.forkToNewPanel?.({
+      const forkParams = {
         fromSessionId: selectedSessionId,
         atMessageId,
         initialPrompt: currentInput || undefined,
@@ -1022,12 +1081,20 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         agencyMode: state.agencyMode,
         bypassEnabled: state.bypassEnabled,
         chromeEnabled: state.chromeEnabled,
-      })?.catch((err: Error) => {
-        console.error('[ControlPanel] forkToNewPanel failed:', err);
-      });
+      };
+
+      if (transport.forkToNewPanel) {
+        // VS Code: open fork in a new editor panel
+        transport.forkToNewPanel(forkParams).catch((err: Error) => {
+          console.error('[ControlPanel] forkToNewPanel failed:', err);
+        });
+      } else if (tabController) {
+        // Standalone/desktop: create fork in a new tab
+        tabController.createTab({ forkConfig: forkParams });
+      }
 
       if (currentInput) dispatch({ type: 'CLEAR_INPUT' });
-    }, [selectedSessionId, state.input, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, transport]);
+    }, [selectedSessionId, state.input, state.model, state.agencyMode, state.bypassEnabled, state.chromeEnabled, transport, tabController]);
 
     // Register executeFork with parent for per-message fork buttons
     useEffect(() => { onRegisterForkHandler?.(executeFork); }, [onRegisterForkHandler, executeFork]);
@@ -1052,9 +1119,13 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     // --- Latched fork target — freezes during streaming, updates only when idle ---
     useEffect(() => {
-      // Clear stale target when switching sessions
-      forkTargetRef.current = undefined;
+      // Clear stale target when switching sessions, but preserve across streaming
+      if (forkTargetSessionRef.current !== selectedSessionId) {
+        forkTargetRef.current = undefined;
+        forkTargetSessionRef.current = selectedSessionId;
+      }
       if (channelState !== 'idle' && channelState !== null) return;
+      forkTargetRef.current = undefined;
       if (!entries || entries.length === 0) return;
       for (let i = entries.length - 1; i >= 0; i--) {
         if (entries[i].type === 'assistant' && entries[i].uuid && !entries[i].isSidechain) {
@@ -1066,14 +1137,17 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     const handleFork = useCallback(() => {
       if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
-      if (forkTargetRef.current) executeFork(forkTargetRef.current);
+      if (forkTargetRef.current && forkTargetSessionRef.current === selectedSessionId) {
+        executeFork(forkTargetRef.current);
+      }
     }, [selectedSessionId, executeFork]);
 
     const handleForkHover = useCallback(
       (hovering: boolean) => {
-        onForkHoverChange?.(hovering);
+        if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
+        onForkHoverChange?.(hovering, forkTargetRef.current);
       },
-      [onForkHoverChange],
+      [onForkHoverChange, selectedSessionId],
     );
 
     return (
@@ -1089,7 +1163,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             <button className="crispy-control-panel__error-dismiss" onClick={clearSendError} aria-label="Dismiss error">×</button>
           </div>
         )}
-        {children ?? (
+        {children ?? (observerMode ? null : (
           <>
             <AttachmentsRow
               images={state.attachedImages}
@@ -1110,7 +1184,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               cwd={workspaceCwdPath}
             />
           </>
-        )}
+        ))}
         <div className="crispy-cp-controls">
           <BypassToggle
             checked={state.bypassEnabled}
@@ -1157,10 +1231,16 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onToolPanelAutoOpenChange={setToolPanelAutoOpen}
               badgeStyle={badgeStyle}
               onBadgeStyleChange={setBadgeStyle}
+              displayStyle={displayStyle}
+              onDisplayStyleChange={setDisplayStyle}
               bashBlockInIcons={bashBlockInIcons}
               onBashBlockInIconsChange={setBashBlockInIcons}
               autoReflect={autoReflect}
               onAutoReflectChange={setAutoReflect}
+              gitPanelSide={gitPanelSide}
+              onGitPanelSideChange={setGitPanelSide}
+              useDisplayStyleAccent={useDisplayStyleAccent}
+              onUseDisplayStyleAccentChange={setUseDisplayStyleAccent}
               rosieEnabled={rosieEnabled}
               rosieModel={rosieModel}
               onUpdateRosie={handleUpdateRosie}
@@ -1189,7 +1269,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           </span>
         </div>
       </div>
-      {catchupStatus && (
+      {isActiveTab && catchupStatus && (
         <EmbeddingPrompt
           status={catchupStatus}
           onStart={handleStartEmbedding}

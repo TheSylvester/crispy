@@ -28,21 +28,42 @@ Launch both via `crispy-agent` **in the same message** using `PROMPT_FILE`:
 - **claude**: `PROMPT_FILE=/tmp/superthink-<stub>.md $CRISPY_AGENT --vendor claude` (`run_in_background`)
 - **codex**: `PROMPT_FILE=/tmp/superthink-<stub>.md $CRISPY_AGENT --vendor codex` (`run_in_background`)
 
-Both get the **identical prompt**. Both save output to `/tmp/crispy-agents/`.
-Agents run until their turn completes naturally — no timeout.
+Both get the **identical prompt**.
 
-**Reading output:** If `TaskOutput` returns empty/metadata-only or "No task
-found", fall back to reading the output file directly from
-`/tmp/crispy-agents/`. List the directory sorted by time to find the latest
-`crispy-agent-*.log` files.
-
-Capture their session IDs from the `[session_id: ...]` output.
-
-## Wait for BOTH agents, then collect conclusions
+## Wait for BOTH agents, then collect output via RPC
 
 **Wait for both background tasks to complete before proceeding.** Do not
 start verification after only one returns — the second agent's perspective
 may change your verification strategy.
+
+**Codex routinely takes 2-3x longer than Claude.** Do not assume Codex is
+dead, timed out, or stuck just because Claude finished first.
+
+### Collect output via RPC
+
+Query your child sessions via the `listChildSessions` RPC — this returns
+all children spawned by your session, including completed ones:
+
+```bash
+crispy-dispatch rpc listChildSessions
+```
+
+This returns a JSON object with a `sessions` array. Each entry has
+`sessionId`, `vendor`, `status`, `closed`, `visible`, and `autoClose`.
+
+For each child, read the transcript via `readSessionTurns`:
+
+```bash
+crispy-dispatch rpc readSessionTurns '{"sessionId": "<child-session-id>"}'
+```
+
+Extract the final assistant response from the last turn. This is the
+agent's analysis output.
+
+**Do not read from `/tmp/crispy-agents/` log files.** Always use the RPC
+methods above — they are reliable and immune to interleaving issues.
+
+Capture each agent's session ID for use in resume operations below.
 
 Check if either agent's output is only intermediate narration (tool-use
 summaries like "Let me read...", "I'm checking...") without a final analysis.
