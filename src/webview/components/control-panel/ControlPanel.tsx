@@ -1144,9 +1144,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
 
     const handleForkHover = useCallback(
       (hovering: boolean) => {
+        if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
         onForkHoverChange?.(hovering, forkTargetRef.current);
       },
-      [onForkHoverChange],
+      [onForkHoverChange, selectedSessionId],
     );
 
     return (

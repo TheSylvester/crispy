@@ -26,7 +26,8 @@ interface MessageActionsProps {
 export function MessageActions({ targetAssistantId, copygetText }: MessageActionsProps): React.JSX.Element | null {
   const fork = useFork();
   if (!fork) return null;
-  const { onFork, onRewind, onForkPreviewHover, isStreaming } = fork;
+  const { onFork, onRewind, onForkPreviewHover, isStreaming, isPending } = fork;
+  const forkDisabled = isPending;
 
   return (
     <div className="crispy-message-actions">
@@ -41,10 +42,10 @@ export function MessageActions({ targetAssistantId, copygetText }: MessageAction
       <button
         className="crispy-message-action"
         title="Rewind to this message"
-        disabled={isStreaming}
+        disabled={isStreaming || isPending}
         onClick={() => onRewind(targetAssistantId ?? '')}
-        onMouseEnter={targetAssistantId ? () => onForkPreviewHover(targetAssistantId, true) : undefined}
-        onMouseLeave={targetAssistantId ? () => onForkPreviewHover(targetAssistantId, false) : undefined}
+        onMouseEnter={targetAssistantId && !forkDisabled ? () => onForkPreviewHover(targetAssistantId, true) : undefined}
+        onMouseLeave={targetAssistantId && !forkDisabled ? () => onForkPreviewHover(targetAssistantId, false) : undefined}
         aria-label="Rewind conversation to this point"
       >
         <RewindIcon />
@@ -53,9 +54,10 @@ export function MessageActions({ targetAssistantId, copygetText }: MessageAction
         <button
           className="crispy-message-action"
           title="Fork from here"
+          disabled={forkDisabled}
           onClick={() => onFork(targetAssistantId)}
-          onMouseEnter={() => onForkPreviewHover(targetAssistantId, true)}
-          onMouseLeave={() => onForkPreviewHover(targetAssistantId, false)}
+          onMouseEnter={!forkDisabled ? () => onForkPreviewHover(targetAssistantId, true) : undefined}
+          onMouseLeave={!forkDisabled ? () => onForkPreviewHover(targetAssistantId, false) : undefined}
           aria-label="Fork conversation from this point"
         >
           <ForkIcon />

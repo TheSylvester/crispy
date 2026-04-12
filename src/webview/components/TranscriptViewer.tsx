@@ -477,6 +477,7 @@ export function TranscriptViewer({ observerMode }: { observerMode?: boolean }): 
         onRewind={handlePerMessageRewind}
         onForkPreviewHover={handleForkPreviewHover}
         isStreaming={channelState === 'streaming'}
+        isPending={!!selectedSessionId?.startsWith('pending:')}
         forkTargets={forkTargets}
       >
         <div className={`crispy-transcript${displayStyle !== 'crispy' ? ` skin-${displayStyle}` : ''}`} ref={transcriptRef} data-render-mode={renderMode}>

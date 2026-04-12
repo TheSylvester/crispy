@@ -17,6 +17,7 @@ interface ForkContextValue {
   onRewind: (atMessageId: string) => void;
   onForkPreviewHover: (targetMessageId: string, hovering: boolean) => void;
   isStreaming: boolean;
+  isPending: boolean;
   forkTargets: Map<string, string>; // user UUID → preceding assistant UUID
 }
 
@@ -32,11 +33,12 @@ export function ForkProvider({
   onRewind,
   onForkPreviewHover,
   isStreaming,
+  isPending,
   forkTargets,
 }: ForkProviderProps): React.JSX.Element {
   const value = useMemo(
-    () => ({ onFork, onRewind, onForkPreviewHover, isStreaming, forkTargets }),
-    [onFork, onRewind, onForkPreviewHover, isStreaming, forkTargets]
+    () => ({ onFork, onRewind, onForkPreviewHover, isStreaming, isPending, forkTargets }),
+    [onFork, onRewind, onForkPreviewHover, isStreaming, isPending, forkTargets]
   );
   return (
     <ForkContext.Provider value={value}>
