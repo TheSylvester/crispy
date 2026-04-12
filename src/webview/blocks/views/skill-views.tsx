@@ -36,7 +36,7 @@ export function SkillCompactView({ block, result, status }: ToolViewProps): Reac
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="skill"
+      name="Skill"
       subject={skillName}
       status={status}
     />

@@ -44,7 +44,7 @@ export function BashCompactView({ block, result, status }: ToolViewProps): React
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="bash"
+      name="Bash"
       description={input.description}
       codePill={command || undefined}
       badges={<>
@@ -73,7 +73,7 @@ export function BashCondensedView({ block, result, status }: ToolViewProps): Rea
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="bash"
+      name="Bash"
       description={description}
       status={status}
     />

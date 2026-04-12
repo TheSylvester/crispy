@@ -85,7 +85,7 @@ interface DotLineProps {
   icon: ReactNode;
   /** Tool color for the name text */
   color: string;
-  /** Lowercase tool name displayed in mono */
+  /** Tool name displayed in mono */
   name: string;
   /** Primary subject (file path, command, pattern) — mono, blue */
   subject?: ReactNode;

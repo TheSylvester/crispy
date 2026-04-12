@@ -39,7 +39,7 @@ export function WebFetchCompactView({ block, result, status }: ToolViewProps): R
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="webfetch"
+      name="WebFetch"
       subject={subject}
       status={status}
     />

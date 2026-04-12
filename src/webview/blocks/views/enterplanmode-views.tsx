@@ -24,7 +24,7 @@ export function EnterPlanModeCompactView({ result, status }: ToolViewProps): Rea
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="enterplanmode"
+      name="EnterPlanMode"
       subject="Planning mode"
       status={status}
     />

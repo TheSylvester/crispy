@@ -52,7 +52,7 @@ export function TodoWriteCompactView({ block, result, status }: ToolViewProps): 
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="todo"
+      name="Todo"
       subject={subject}
       status={status}
     />

@@ -34,7 +34,7 @@ export function GlobCompactView({ block, result, status }: ToolViewProps): React
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="glob"
+      name="Glob"
       subject={subject}
       status={status}
     />

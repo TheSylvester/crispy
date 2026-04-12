@@ -37,7 +37,7 @@ export function WriteCompactView({ block, result, status }: ToolViewProps): Reac
     <CompactBlock
       icon={meta.icon}
       color={meta.color}
-      name="write"
+      name="Write"
       subject={<FilePath path={filePath} />}
       status={status}
     />
