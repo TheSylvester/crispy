@@ -24,7 +24,7 @@
     "resources": [
       "runtime/**/*"
     ],
-    "createUpdaterArtifacts": "v1compatible",
+    "createUpdaterArtifacts": true,
     "targets": ["nsis"],
     "windows": {
       "webviewInstallMode": {
