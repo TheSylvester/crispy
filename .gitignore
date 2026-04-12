@@ -36,8 +36,9 @@ npm-debug.log*
 .env
 .env.*
 
-# Test coverage
+# Test coverage & results
 coverage/
+test-results/
 
 # npm pack artifacts
 *.tgz
