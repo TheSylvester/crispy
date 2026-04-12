@@ -1454,7 +1454,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
 
 /* Claude.ai tool styling */
 .skin-claude .crispy-tool-badge { border-radius: 4px; }
-.skin-claude .crispy-tool-filepath { color: #da7756; }
+.skin-claude .crispy-tool-filepath { color: #d97757; }
 .skin-claude .crispy-blocks-dot-line__subject { color: #9a9893; }
 .skin-claude .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.15); }
 .skin-claude .crispy-blocks-dot-line:hover { background: rgba(255,255,255,0.04); }
@@ -1469,7 +1469,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
 
 /* Gemini tool styling */
 .skin-gemini .crispy-tool-badge { border-radius: 16px; }
-.skin-gemini .crispy-tool-filepath { color: #a8c7fa; }
+.skin-gemini .crispy-tool-filepath { color: #8ab4f8; }
 .skin-gemini .crispy-blocks-dot-line__subject { color: #9aa0a6; }
 .skin-gemini .crispy-blocks-bash-output { background: #1e1f20; border: none; border-radius: 8px; }
 .skin-gemini .crispy-diff { border-color: #3c4043; }
@@ -1490,7 +1490,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
 
 /* Copilot tool styling */
 .skin-copilot .crispy-tool-badge { border-radius: 4px; }
-.skin-copilot .crispy-tool-filepath { color: #48A0C7; }
+.skin-copilot .crispy-tool-filepath { color: #8957e5; }
 .skin-copilot .crispy-blocks-dot-line__subject { color: #8C8C8C; }
 .skin-copilot .crispy-blocks-dot-line__dots { border-bottom-color: rgba(255,255,255,0.12); }
 .skin-copilot .crispy-blocks-dot-line:hover { background: rgba(72,160,199,0.06); }
@@ -1517,7 +1517,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
 
 /* Perplexity tool styling */
 .skin-perplexity .crispy-tool-badge { border-radius: 10px; }
-.skin-perplexity .crispy-tool-filepath { color: #20b8cd; }
+.skin-perplexity .crispy-tool-filepath { color: #1fb8cd; }
 .skin-perplexity .crispy-blocks-dot-line__dots { border-bottom-color: rgba(32,184,205,0.2); }
 .skin-perplexity .crispy-blocks-dot-line:hover { background: rgba(32,184,205,0.06); }
 .skin-perplexity .crispy-blocks-bash-output { background: #282c34; border: 1px solid #454545; border-radius: 8px; }
@@ -1529,7 +1529,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
 .skin-perplexity .crispy-diff-removed { background: rgba(240,96,96,0.15); }
 
 /* Terminal tool styling */
-.skin-terminal .crispy-tool-filepath { color: #00aaff; }
+.skin-terminal .crispy-tool-filepath { color: #33ff33; }
 .skin-terminal .crispy-blocks-dot-line__subject { color: rgba(51,255,51,0.6); }
 .skin-terminal .crispy-blocks-dot-line__dots { border-bottom-color: rgba(51,255,51,0.2); }
 .skin-terminal .crispy-blocks-dot-line:hover { background: rgba(51,255,51,0.06); }
@@ -2675,12 +2675,12 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
   padding: 3px 10px;
   font-size: var(--font-sm);
   font-weight: 600;
-  background: var(--color-accent);
-  color: var(--color-send-text);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: transparent;
+  color: var(--color-accent);
+  border: 2px solid var(--color-accent);
   border-radius: calc(var(--radius-xl) - 2px);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
   appearance: none;
   -webkit-appearance: none;
   box-shadow: none;
@@ -2688,7 +2688,8 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
 }
 
 .crispy-cp-send:hover:not(:disabled) {
-  background: var(--color-accent-hover);
+  background: var(--color-accent);
+  color: var(--color-send-text);
 }
 
 .crispy-cp-send:disabled {
@@ -2697,8 +2698,9 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
 }
 
 .crispy-cp-send__icon {
-  display: inline-block;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Hover jiggle — pure CSS, no React state needed */
@@ -2708,40 +2710,45 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
 
 @keyframes crispy-cp-send-jiggle {
   0% {
-    transform: translateX(0);
+    transform: translateY(0);
   }
   25% {
-    transform: translateX(-1px);
+    transform: translateY(-2px);
   }
   50% {
-    transform: translateX(1px);
+    transform: translateY(1px);
   }
   75% {
-    transform: translateX(-0.5px);
+    transform: translateY(-0.5px);
   }
   100% {
-    transform: translateX(0);
+    transform: translateY(0);
   }
 }
 
 /* Bypass mode — match send button to the agency-red frame color */
 .crispy-cp[data-agency="bypass-permissions"] .crispy-cp-send {
-  background: var(--agency-red);
+  background: transparent;
+  color: var(--agency-red);
+  border-color: var(--agency-red);
 }
 .crispy-cp[data-agency="bypass-permissions"]
   .crispy-cp-send:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--agency-red) 80%, black);
+  background: var(--agency-red);
+  color: var(--color-send-text);
 }
 
 /* Fork mode variant — different background for fork action */
 .crispy-cp-send--fork {
-  background: var(--color-accent);
+  background: transparent;
+  color: var(--color-accent);
   border-color: var(--color-accent);
 }
 
 .crispy-cp-send--fork:hover:not(:disabled) {
-  background: var(--color-accent-hover);
-  border-color: var(--color-accent-hover);
+  background: var(--color-accent);
+  color: var(--color-send-text);
+  border-color: var(--color-accent);
 }
 
 /* --------------------------------------------------------------------------
@@ -6406,7 +6413,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-tab-layout[dat
 /* Light mode: send button border */
 body[data-vscode-theme-kind="vscode-light"] .crispy-cp-send,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-send {
-  border-color: rgba(0, 0, 0, 0.1);
+  border-color: var(--color-accent);
 }
 
 /* Light mode: dot-line subject */
@@ -6683,7 +6690,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-chatgpt th
 }
 body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-tool-filepath,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-tool-filepath {
-  color: #2563eb;
+  color: #0d8a6a;
 }
 body[data-vscode-theme-kind="vscode-light"] .skin-chatgpt .crispy-status-success,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-chatgpt .crispy-status-success {
@@ -6831,7 +6838,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-gemini td 
 }
 body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-tool-filepath,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-tool-filepath {
-  color: #0b57d0;
+  color: #1a73e8;
 }
 body[data-vscode-theme-kind="vscode-light"] .skin-gemini .crispy-tool-badge,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-gemini .crispy-tool-badge {
@@ -6955,7 +6962,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-copilot th
 }
 body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-tool-filepath,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-tool-filepath {
-  color: #0069CC;
+  color: #7c3aed;
 }
 body[data-vscode-theme-kind="vscode-light"] .skin-copilot .crispy-status-success,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-copilot .crispy-status-success {
@@ -7167,7 +7174,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal e
 }
 body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-tool-filepath,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-tool-filepath {
-  color: #005faf;
+  color: #007f00;
 }
 body[data-vscode-theme-kind="vscode-light"] .skin-terminal .crispy-status-success,
 body[data-vscode-theme-kind="vscode-high-contrast-light"] .skin-terminal .crispy-status-success {
