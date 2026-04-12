@@ -25,10 +25,13 @@
 
 The Windows native app and standalone browser now work like a full IDE — multiple agent sessions open as tabs you can split, resize, and drag into any arrangement, with a built-in terminal, file browser, and Git panel.
 
-![Superthink visible dispatch — sub-agent sessions open as live tabs you can watch and fork](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/superthink-visual-full-1.gif)
+![Multi-tab workbench — split sessions, file browser, terminal, and model selector in the Windows native app](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/multi-tab-workbench.png)
 
 - **Multi-tab sessions** — open multiple Claude/Codex conversations side-by-side in split views, each fully isolated with its own transcript, scroll position, and tool panel
 - **Visible agent orchestration** — sub-agent sessions surface as live read-only tabs you can watch in real time and fork at any point. No more black-box tool calls
+
+![Superthink visible dispatch — sub-agent sessions open as live tabs you can watch and fork](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/superthink-visual-full-1.gif)
+
 - **Built-in terminal** — integrated terminal docked at the bottom, just like VS Code
 - **Dockable side panels** — Files and Git panels dock to left or right borders independently, with persisted layout preference
 - **File viewer tabs** — open files as editor-style tabs alongside your sessions, with syntax highlighting and "Execute in Crispy"
@@ -78,9 +81,8 @@ Customize how Crispy looks with 10 display styles (Crispy, T3, ChatGPT, Claude.a
 
 ### Observability and control
 
-![Cycle through agency modes — plan, ask, accept, bypass](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/permission-modes.gif)
-
 - See everything your sub-agents are doing in the tool audit panel — timing, status badges, and nested sub-agent trees
+- Sub-agents open as live tabs you can watch and fork — visible orchestration, not black-box tool calls
 - Agency modes — plan, auto-accept, `--dangerously-skip-permissions` — one click, persisted per session
 
 ### Conversations
@@ -127,7 +129,7 @@ Customize how Crispy looks with 10 display styles (Crispy, T3, ChatGPT, Claude.a
 
 ## Coming Soon
 
-- Gemini CLI adapter
+- Gemini CLI and OpenCode support
 
 ---
 
