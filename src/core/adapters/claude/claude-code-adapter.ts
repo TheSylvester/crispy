@@ -1345,10 +1345,12 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         }
         // Derive bypass flag from permission mode — resumed sessions only have
         // permissionMode from the SDK init, not the explicit bypass flag.
-        if (this.options.permissionMode === 'bypassPermissions'
+        // Only set when permissionMode was just backfilled (settingsChanged)
+        // to avoid emitting a spurious settings_changed for explicit modes.
+        if (settingsChanged
+            && this.options.permissionMode === 'bypassPermissions'
             && !this.options.allowDangerouslySkipPermissions) {
           this.options.allowDangerouslySkipPermissions = true;
-          settingsChanged = true;
         }
 
         // Emit settings_changed so ControlPanel picks up the corrected
