@@ -19,6 +19,15 @@
 
 ---
 
+## What's New in v0.3.1
+
+Platform stability fixes — no new features, just fewer rough edges.
+
+- **Windows compatibility** — rewrote the crispy-agent launcher from bash to Node.js, fixing failures in Git Bash and native Windows environments
+- **Singleton guard** — duplicate dev servers and daemon instances are now detected and prevented, eliminating zombie processes and duplicate Discord bots
+- **Approval UI fix** — stale approval popups (plan mode, permissions) no longer linger after resolution
+- **Tauri updater fix** — corrected the artifact signature path so auto-updates work reliably
+
 ## What's New in v0.3.0
 
 ### Multi-tab agent workbench
