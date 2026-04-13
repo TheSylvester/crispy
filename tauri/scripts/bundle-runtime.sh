@@ -123,7 +123,7 @@ echo ">>> Normalizing script permissions and line endings..."
 for f in "$RUNTIME_DIR/crispy/dist/crispy-dispatch.js" \
          "$RUNTIME_DIR/crispy/dist/crispy-cli.js" \
          "$RUNTIME_DIR/crispy/dist/recall.js" \
-         "$RUNTIME_DIR/crispy/dist/crispy-plugin/scripts/crispy-agent" \
+         "$RUNTIME_DIR/crispy/dist/crispy-agent.js" \
          "$RUNTIME_DIR/crispy/dist/crispy-plugin/scripts/crispy-session"; do
   if [ -f "$f" ]; then
     sed -i 's/\r$//' "$f"

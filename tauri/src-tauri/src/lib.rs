@@ -1086,7 +1086,7 @@ async fn provision_wsl_crispy(app: &AppHandle, distro: &str) -> Result<(), Strin
 for f in "$HOME/.crispy/node_modules/crispy-code/dist/crispy-dispatch.js" \
          "$HOME/.crispy/node_modules/crispy-code/dist/crispy-cli.js" \
          "$HOME/.crispy/node_modules/crispy-code/dist/recall.js" \
-         "$HOME/.crispy/node_modules/crispy-code/dist/crispy-plugin/scripts/crispy-agent" \
+         "$HOME/.crispy/node_modules/crispy-code/dist/crispy-agent.js" \
          "$HOME/.crispy/node_modules/crispy-code/dist/crispy-plugin/scripts/crispy-session"; do \
   [ -f "$f" ] && sed -i 's/\r$//' "$f" && chmod +x "$f"; \
 done"#,

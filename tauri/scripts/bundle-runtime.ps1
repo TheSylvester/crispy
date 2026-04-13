@@ -108,7 +108,7 @@ $ShebangScripts = @(
     "$RuntimeDir\crispy\dist\crispy-dispatch.js",
     "$RuntimeDir\crispy\dist\crispy-cli.js",
     "$RuntimeDir\crispy\dist\recall.js",
-    "$RuntimeDir\crispy\dist\crispy-plugin\scripts\crispy-agent",
+    "$RuntimeDir\crispy\dist\crispy-agent.js",
     "$RuntimeDir\crispy\dist\crispy-plugin\scripts\crispy-session"
 )
 foreach ($f in $ShebangScripts) {
