@@ -33,6 +33,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? homedir();
 
+  // VS Code on Windows may return \\?\ UNC-prefixed paths from extensionPath.
+  // These break when passed through bash env vars to Node.js child processes.
+  const extPath = context.extensionPath.replace(/^\\\\\?\\/, '');
+
   // The extension build bundles the SDK into dist/extension.js, which breaks
   // the SDK's import.meta.url-based resolution of its bundled cli.js.
   // Instead of pointing at the SDK's cli.js (which causes `node cli.js`
@@ -55,7 +59,7 @@ export function activate(context: vscode.ExtensionContext): void {
     cwd,
     hostType: 'vscode',
     dispatch,
-    extensionPath: context.extensionPath,
+    extensionPath: extPath,
     ...(pathToClaudeCodeExecutable && { pathToClaudeCodeExecutable }),
   });
   done();
@@ -115,7 +119,7 @@ export function activate(context: vscode.ExtensionContext): void {
   startRecallCatchup('vscode');
   done = phase('initRosieBot');
   initRosieBot(dispatch, {
-    trackerScript: resolve(context.extensionPath, 'dist', 'crispy-tracker.mjs'),
+    trackerScript: resolve(extPath, 'dist', 'crispy-tracker.mjs'),
     ipcSocket: getSocketPath(undefined, 'server'),
   });
   done();
