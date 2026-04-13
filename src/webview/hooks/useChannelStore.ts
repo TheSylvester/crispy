@@ -196,6 +196,13 @@ class ChannelStoreManager {
       return;
     }
     store.channelState = state;
+    // Transitioning to idle clears approval + streaming, matching the real
+    // idle handler (line ~270). Without this, Stop during awaiting_approval
+    // leaves a stale approval visible until the real idle event arrives.
+    if (state === 'idle') {
+      store.approvalRequest = null;
+      store.streamingContent = null;
+    }
     emitState(store);
   }
 
@@ -265,6 +272,7 @@ class ChannelStoreManager {
         switch (inner.status) {
           case 'active':
             store.channelState = 'streaming';
+            store.approvalRequest = null;
             break;
           case 'idle':
             store.channelState = 'idle';
