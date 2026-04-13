@@ -1117,23 +1117,34 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // Register executeRewind with parent for per-message rewind buttons
     useEffect(() => { onRegisterRewindHandler?.(executeRewind); }, [onRegisterRewindHandler, executeRewind]);
 
-    // --- Latched fork target — freezes during streaming, updates only when idle ---
+    // --- Fork target — assistant message right before the last user message ---
+    // Stable during streaming: token deltas flow through streaming_content
+    // notifications, not the entries array, so the user/assistant entries here
+    // only change when a full turn boundary is reached.
     useEffect(() => {
-      // Clear stale target when switching sessions, but preserve across streaming
       if (forkTargetSessionRef.current !== selectedSessionId) {
         forkTargetRef.current = undefined;
         forkTargetSessionRef.current = selectedSessionId;
       }
-      if (channelState !== 'idle' && channelState !== null) return;
       forkTargetRef.current = undefined;
       if (!entries || entries.length === 0) return;
+      // Walk backwards to find the last user entry with a persisted UUID
+      let lastUserIdx = -1;
       for (let i = entries.length - 1; i >= 0; i--) {
+        if (entries[i].type === 'user' && entries[i].uuid && !entries[i].isSidechain) {
+          lastUserIdx = i;
+          break;
+        }
+      }
+      // Find the assistant message right before it
+      const searchFrom = lastUserIdx > 0 ? lastUserIdx - 1 : entries.length - 1;
+      for (let i = searchFrom; i >= 0; i--) {
         if (entries[i].type === 'assistant' && entries[i].uuid && !entries[i].isSidechain) {
           forkTargetRef.current = entries[i].uuid!;
           return;
         }
       }
-    }, [channelState, entries, selectedSessionId]);
+    }, [entries, selectedSessionId]);
 
     const handleFork = useCallback(() => {
       if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
