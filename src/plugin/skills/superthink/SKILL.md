@@ -1,18 +1,34 @@
 ---
 name: superthink
-description: "IPC-based multi-agent review via Crispy's internal dispatch. Dispatches parallel child sessions (claude + codex by default) through the running Crispy host — no subprocess spawning, results stream live in the UI. Use when you want fast multi-vendor adversarial analysis."
-allowed-tools: Bash, Read, Grep, Glob, Task, Skill
+description: "IPC-based multi-agent review via Crispy's internal dispatch. Dispatches parallel child sessions (claude + codex by default) through the running Crispy host — no subprocess spawning, results stream live in the UI. Use when you want fast multi-vendor adversarial analysis, or exhaustive fix-until-done convergence on an artifact."
+allowed-tools: Bash, Read, Write, Edit, Grep, Glob, Task, Skill
 ---
 
 Think about: $ARGUMENTS
 
+## Detect intent
+
+Read the user's request and determine which mode applies:
+
+- **Review** — the user wants opinions, analysis, feedback. Phrases like
+  "review this", "what do you think", "check this", "analyze", "find issues".
+  You report findings. The user decides what to act on.
+
+- **Converge** — the user wants the artifact fixed until it's done. Phrases
+  like "fix this", "make it ready", "keep going until done", "exhaustively
+  fix", "fix until both agents agree", "make edits and review until LGTM".
+  You edit the artifact, re-review, and loop until both agents say it's ready.
+
+If ambiguous, default to **review**. The user can always say "now fix it."
+
 ## Figure out the subject
 
 Read, grep, diff — whatever it takes to understand what the user wants
-reviewed. Could be a plan file, source files, uncommitted changes, a design
-question, anything. Compose a single review/analysis prompt that gives the
-agent enough context to do real work — point it at the actual files, explain
-what we're looking at and why, and tell it to read the code itself.
+reviewed or fixed. Could be a plan file, source files, uncommitted changes,
+a design question, anything. Compose a single review/analysis prompt that
+gives the agent enough context to do real work — point it at the actual
+files, explain what we're looking at and why, and tell it to read the code
+itself.
 
 **Do not enter plan mode. Do not pre-plan phases. Just start.**
 
@@ -104,9 +120,11 @@ not, and the agent defended itself — put it to the **other** agent by
 resuming that agent's session with the dispute context. The third perspective
 settles it.
 
-## Report and stop
+---
 
-Tell the user what happened:
+## Review mode: report and stop
+
+If this is a **review**, tell the user what happened:
 
 - What was **confirmed** — real issues both agents or verification agreed on
 - What was **disputed and settled** — who said what, who won, why
@@ -115,3 +133,53 @@ Tell the user what happened:
 
 Then stop. The user decides what to do next — fix things, dig deeper, ignore
 it, whatever. Do not auto-fix. Do not suggest next steps unprompted.
+
+---
+
+## Converge mode: fix and re-review until LGTM
+
+If this is a **converge**, do not report to the user yet. Instead:
+
+**The review agents never edit.** They only review. You (the main thread
+running this skill) are the one who applies fixes and re-dispatches.
+The agents are read-only reviewers across every round.
+
+### Apply fixes yourself
+
+For every confirmed issue from both agents (after verification and dispute
+settlement), apply the fix directly to the artifact. Use Edit for surgical
+changes, Write only if the file needs a complete rewrite.
+
+Be precise — only fix what the agents identified. Do not add improvements,
+refactors, or "while I'm here" changes.
+
+### Re-dispatch for next round
+
+Write a new review prompt that:
+1. Lists what you fixed in this round (so agents don't re-report solved issues)
+2. Asks agents to verify corrections are accurate and find remaining issues
+3. Requires a verdict: `VERDICT: READY` or `VERDICT: NOT READY — [reason]`
+
+Dispatch both agents again (same parallel pattern, new temp file).
+The agents get a fresh session each round — they review the updated artifact
+from scratch, not a diff.
+
+### Check for convergence
+
+After collecting round N results:
+
+- **Both say READY** → convergence achieved. Apply any final cosmetic fixes
+  they noted, then report to the user: what changed across all rounds,
+  how many rounds it took, and the final verdict.
+- **Either says NOT READY** → apply the new fixes, re-dispatch round N+1.
+- **Cap at 5 rounds.** If not converged after 5, report what remains
+  unresolved and let the user decide. Infinite loops serve no one.
+
+### Report convergence
+
+When both agents agree the artifact is ready, tell the user:
+
+- How many rounds it took
+- Summary of all fixes applied (grouped by severity)
+- Any cosmetic notes the agents flagged but that aren't blocking
+- The final state of the artifact
