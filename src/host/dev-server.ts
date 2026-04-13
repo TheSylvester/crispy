@@ -28,6 +28,7 @@ import { listAllWorkspaces } from '../core/workspace-roots.js';
 import { initSettings, startWatchingSettings } from '../core/settings/index.js';
 import { createClientConnection } from './client-connection.js';
 import { createAgentDispatch } from './agent-dispatch.js';
+import { autoConnect as autoConnectTunnel, disconnect as disconnectTunnel } from './tunnel-client.js';
 import { closeAllTerminals } from './terminal-manager.js';
 import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
@@ -561,6 +562,9 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     console.error('[server] Unhandled rejection:', reason);
   });
 
+  // Auto-connect tunnel to relay if configured
+  autoConnectTunnel();
+
   console.log(`[server] ★ ready (${(performance.now() - bootStart).toFixed(0)}ms)`);
 
   // ---- Shutdown ----
@@ -591,6 +595,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     shutdownRecallIngest();
     stopEmbeddingBackfill();
     disposeEmbedder();
+    disconnectTunnel();
     dispatch.dispose();
   }
 

@@ -110,3 +110,8 @@ export function vadCacheDir(): string {
 export function tokenPath(): string {
   return join(crispyRoot(), 'token');
 }
+
+/** Path to the relay configuration file. */
+export function relayConfigPath(): string {
+  return join(crispyRoot(), 'relay.json');
+}
