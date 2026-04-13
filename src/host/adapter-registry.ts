@@ -241,7 +241,7 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
     RECALL_CLI: resolve(bundledPaths.extensionBase, 'dist', 'recall.js'),
     CRISPY_DISPATCH: resolve(bundledPaths.extensionBase, 'dist', 'crispy-dispatch.js'),
     CRISPY_TRACKER: resolve(bundledPaths.extensionBase, 'dist', 'crispy-tracker.mjs'),
-    CRISPY_AGENT: resolve(bundledPaths.pluginRoot, 'scripts', 'crispy-agent'),
+    CRISPY_AGENT: resolve(bundledPaths.extensionBase, 'dist', 'crispy-agent.js'),
     CRISPY_SESSION: resolve(bundledPaths.pluginRoot, 'scripts', 'crispy-session'),
   });
   setSkillRoot(bundledPaths.skillRoot);

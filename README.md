@@ -19,6 +19,18 @@
 
 ---
 
+## What's New in v0.3.1
+
+Stability fixes and a superthink upgrade.
+
+- **Superthink converge mode** — agents now cross-review each other's findings and produce a unified verdict, not just parallel opinions
+- **Fork fix** — fork button now targets the right message (assistant turn before the last user message)
+- **Windows compatibility** — fixed crispy-agent failures on native Windows and Git Bash
+- **Windows extension paths** — stripped UNC prefix that broke tool paths in VS Code on Windows
+- **Singleton guard** — running `crispy` twice no longer spawns duplicate background processes
+- **Approval UI fix** — stale approval popups no longer linger after resolution
+- **Tauri updater fix** — corrected artifact signature path so auto-updates work reliably
+
 ## What's New in v0.3.0
 
 ### Multi-tab agent workbench

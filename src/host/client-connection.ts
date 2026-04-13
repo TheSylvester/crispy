@@ -1313,6 +1313,34 @@ export function createClientConnection(
         return attached;
       }
 
+      // --- Relay management (delegates to tunnel-client) ---
+
+      case 'getRelayConfig': {
+        const { readRelayConfig, getTunnelStatus } = await import('./tunnel-client.js');
+        const config = readRelayConfig();
+        return {
+          config,
+          status: getTunnelStatus(),
+        };
+      }
+
+      case 'updateRelayConfig': {
+        const { updateRelayConfig } = await import('./tunnel-client.js');
+        updateRelayConfig({
+          relayUrl: params.relayUrl as string,
+          pairingToken: params.pairingToken as string,
+          tunnelId: params.tunnelId as string,
+          tunnelName: params.tunnelName as string,
+        });
+        return { ok: true };
+      }
+
+      case 'disconnectRelay': {
+        const { clearRelayConfig } = await import('./tunnel-client.js');
+        clearRelayConfig();
+        return { ok: true };
+      }
+
       default:
         throw new Error(`Unknown method: ${method}`);
     }

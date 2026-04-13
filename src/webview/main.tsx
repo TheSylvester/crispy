@@ -12,6 +12,7 @@ import { createRoot } from 'react-dom/client';
 import type { Transport } from './transport.js';
 import { createVSCodeTransport } from './transport-vscode.js';
 import { createWebSocketTransport } from './transport-websocket.js';
+import { createCloudRelayTransport } from './transport-cloud-relay.js';
 import { App } from './App.js';
 import { AppErrorBoundary } from './components/ErrorBoundary.js';
 import { isPerfMode, PerfStore } from './perf/index.js';
@@ -22,16 +23,23 @@ declare function acquireVsCodeApi(): {
   setState(state: unknown): void;
 };
 
-export type TransportKind = 'vscode' | 'websocket';
+export type TransportKind = 'vscode' | 'websocket' | 'cloud-relay';
 
 function detectTransport(): { transport: Transport; kind: TransportKind } {
+  // 1. Try VS Code
   try {
     const api = acquireVsCodeApi();
     return { transport: createVSCodeTransport(api), kind: 'vscode' };
-  } catch {
-    // Not in VS Code — use WebSocket to dev server
-    return { transport: createWebSocketTransport(`ws://${window.location.host}/ws`), kind: 'websocket' };
+  } catch {}
+
+  // 2. Check for cloud relay mode
+  if ((window as any).__CRISPY_CLOUD__) {
+    const { wsUrl, tunnelId } = (window as any).__CRISPY_CLOUD__;
+    return { transport: createCloudRelayTransport(wsUrl, tunnelId), kind: 'cloud-relay' };
   }
+
+  // 3. Fall back to local WebSocket
+  return { transport: createWebSocketTransport(`ws://${window.location.host}/ws`), kind: 'websocket' };
 }
 
 // ============================================================================

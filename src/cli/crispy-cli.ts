@@ -270,6 +270,7 @@ Commands:
   open       Open browser to running instance
   config     Interactive settings wizard
   add <path> Add a workspace root to the running daemon
+  cloud      Cloud relay tunnel (link, unlink, status)
   help       Show this help message
 
 Options:
@@ -324,6 +325,13 @@ Options:
       process.exit(0);
     }).catch((err) => {
       console.error('Failed to add workspace root:', err);
+      process.exit(1);
+    });
+    break;
+  }
+  case 'cloud': {
+    import('./crispy-cloud.js').then(({ runCloud }) => runCloud()).catch((err) => {
+      console.error('Cloud command failed:', err);
       process.exit(1);
     });
     break;

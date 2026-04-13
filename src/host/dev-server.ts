@@ -28,6 +28,7 @@ import { listAllWorkspaces } from '../core/workspace-roots.js';
 import { initSettings, startWatchingSettings } from '../core/settings/index.js';
 import { createClientConnection } from './client-connection.js';
 import { createAgentDispatch } from './agent-dispatch.js';
+import { autoConnect as autoConnectTunnel, disconnect as disconnectTunnel } from './tunnel-client.js';
 import { closeAllTerminals } from './terminal-manager.js';
 import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
@@ -93,6 +94,49 @@ function isLocalhostOrigin(origin: string): boolean {
 
 function escapeHtmlAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Probe a port's /health endpoint to check if a Crispy instance is already
+ * running there. Returns { pid, port } on success, null if it's not Crispy
+ * or the port is occupied by something else.
+ */
+async function probeCrispy(probePort: number): Promise<{ pid: number; port: number } | null> {
+  try {
+    const res = await fetch(`http://127.0.0.1:${probePort}/health`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { status?: string; pid?: number; port?: number };
+    if (data.status === 'ok' && typeof data.pid === 'number') {
+      return { pid: data.pid, port: data.port ?? probePort };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Wait for a port to become available by polling. Returns true if the port
+ * freed up within the deadline, false otherwise.
+ */
+async function waitForPortRelease(targetPort: number, host: string, deadlineMs: number): Promise<boolean> {
+  const { createConnection } = await import('node:net');
+  const start = Date.now();
+  const POLL_MS = 400;
+  while (Date.now() - start < deadlineMs) {
+    const inUse = await new Promise<boolean>(resolve => {
+      const sock = createConnection({ port: targetPort, host }, () => {
+        sock.destroy();
+        resolve(true);
+      });
+      sock.on('error', () => resolve(false));
+    });
+    if (!inUse) return true;
+    await new Promise(r => setTimeout(r, POLL_MS));
+  }
+  return false;
 }
 
 function phase(name: string): () => void {
@@ -428,17 +472,67 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
       console.error('[server] init settings failed:', err);
     });
 
-  // ---- Listen with port retry ----
+  // ---- Listen with singleton check ----
   await new Promise<void>((resolve, reject) => {
-    let attempts = 0;
+    let killAttempts = 0;
+    const MAX_KILL_ATTEMPTS = 3;
+
     const tryListen = () => {
-      server.once('error', (err: NodeJS.ErrnoException) => {
-        if (err.code === 'EADDRINUSE' && attempts < 10) {
-          attempts++;
-          actualPort++;
+      // Clean up stale listeners from previous failed listen() calls
+      server.removeAllListeners('listening');
+
+      server.once('error', async (err: NodeJS.ErrnoException) => {
+        if (err.code !== 'EADDRINUSE') { reject(err); return; }
+
+        const existing = await probeCrispy(actualPort);
+
+        if (mode === 'daemon') {
+          // Daemon mode: refuse to start if another Crispy is running
+          if (existing) {
+            reject(new Error(
+              `Another Crispy daemon is already running on port ${actualPort} (PID ${existing.pid}). ` +
+              `Kill it first: kill ${existing.pid}`,
+            ));
+          } else {
+            reject(new Error(`Port ${actualPort} is in use by a non-Crispy process`));
+          }
+          return;
+        }
+
+        // Dev mode: if it's a Crispy instance, kill it and take the port
+        if (existing) {
+          killAttempts++;
+          if (killAttempts > MAX_KILL_ATTEMPTS) {
+            reject(new Error(
+              `Failed to take over port ${actualPort} after ${MAX_KILL_ATTEMPTS} attempts ` +
+              `(PID ${existing.pid} won't exit)`,
+            ));
+            return;
+          }
+
+          console.log(`[server] Found existing Crispy dev server on :${actualPort} (PID ${existing.pid}) — killing it (attempt ${killAttempts}/${MAX_KILL_ATTEMPTS})`);
+          try {
+            // SIGTERM first for clean shutdown; escalate to SIGKILL on retry
+            process.kill(existing.pid, killAttempts > 1 ? 'SIGKILL' : 'SIGTERM');
+          } catch {
+            console.warn(`[server] Could not kill PID ${existing.pid} — it may have already exited`);
+          }
+
+          // Poll for port release instead of fixed sleep
+          const released = await waitForPortRelease(actualPort, host, 5000);
+          if (!released) {
+            console.warn(`[server] Port ${actualPort} still occupied after 5s — retrying`);
+          }
           tryListen();
         } else {
-          reject(err);
+          // Port taken by something else — bump port (max 10 attempts)
+          if (actualPort - port < 10) {
+            console.log(`[server] Port ${actualPort} in use by non-Crispy process — trying ${actualPort + 1}`);
+            actualPort++;
+            tryListen();
+          } else {
+            reject(new Error(`Could not find a free port after 10 attempts (${port}–${actualPort})`));
+          }
         }
       });
       server.listen(actualPort, host, () => {
@@ -467,6 +561,9 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
   process.on('unhandledRejection', (reason) => {
     console.error('[server] Unhandled rejection:', reason);
   });
+
+  // Auto-connect tunnel to relay if configured
+  autoConnectTunnel();
 
   console.log(`[server] ★ ready (${(performance.now() - bootStart).toFixed(0)}ms)`);
 
@@ -498,6 +595,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     shutdownRecallIngest();
     stopEmbeddingBackfill();
     disposeEmbedder();
+    disconnectTunnel();
     dispatch.dispose();
   }
 
