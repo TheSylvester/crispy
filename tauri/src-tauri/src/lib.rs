@@ -353,6 +353,8 @@ fn spawn_daemon(
     let mut cmd = Command::new(node_bin);
     cmd.arg(cli_js)
         .arg("_daemon")
+        .arg("--host-type")
+        .arg("tauri")
         .arg("--port")
         .arg(port.to_string())
         .current_dir(&home)
@@ -1018,7 +1020,7 @@ async fn spawn_wsl_daemon(distro: &str, wsl_port: u16) -> Result<u16, String> {
     // etc. only initialize in interactive shells. Without -i, node isn't in PATH.
     // Redirect daemon output to a log file inside WSL for debugging.
     let spawn_cmd = format!(
-        "mkdir -p ~/.crispy/logs ~/.crispy/run; export PATH=$HOME/.crispy/node_modules/.bin:$PATH; crispy _daemon --host 0.0.0.0 --port {} >> ~/.crispy/logs/wsl-daemon.log 2>&1",
+        "mkdir -p ~/.crispy/logs ~/.crispy/run; export PATH=$HOME/.crispy/node_modules/.bin:$PATH; crispy _daemon --host-type tauri --host 0.0.0.0 --port {} >> ~/.crispy/logs/wsl-daemon.log 2>&1",
         wsl_port
     );
     let mut cmd = wsl_command();

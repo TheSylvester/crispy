@@ -293,6 +293,10 @@ function sanitizeSettings(data: unknown): CrispySettings {
           permissionMode: (bot.permissionMode === 'default' || bot.permissionMode === 'acceptEdits' || bot.permissionMode === 'plan' || bot.permissionMode === 'bypassPermissions') ? bot.permissionMode : null,
           archivalTimeoutHours: typeof bot.archivalTimeoutHours === 'number' && bot.archivalTimeoutHours > 0 ? bot.archivalTimeoutHours : 24,
           allowedUserIds: Array.isArray(bot.allowedUserIds) ? (bot.allowedUserIds as string[]).filter(id => typeof id === 'string') : [],
+          enableInVscode: typeof bot.enableInVscode === 'boolean' ? bot.enableInVscode : true,
+          enableInDevServer: typeof bot.enableInDevServer === 'boolean' ? bot.enableInDevServer : true,
+          enableInDaemon: typeof bot.enableInDaemon === 'boolean' ? bot.enableInDaemon : true,
+          enableInTauri: typeof bot.enableInTauri === 'boolean' ? bot.enableInTauri : true,
         },
       };
     }
@@ -312,6 +316,10 @@ function sanitizeSettings(data: unknown): CrispySettings {
           permissionMode: null,
           archivalTimeoutHours: 24,
           allowedUserIds: [],
+          enableInVscode: true,
+          enableInDevServer: true,
+          enableInDaemon: true,
+          enableInTauri: true,
         },
       };
     }

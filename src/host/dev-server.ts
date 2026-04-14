@@ -53,7 +53,7 @@ export interface ServerConfig {
   port: number;
   host: string;             // '127.0.0.1' or '0.0.0.0'
   mode: 'dev' | 'daemon';
-  hostType: 'dev-server' | 'daemon';
+  hostType: 'dev-server' | 'daemon' | 'tauri';
   logFile?: string;         // when set, redirect console to this file
 }
 
@@ -443,7 +443,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
   done = phase('init recall ingest');
   initRecallIngest();
-  startRecallCatchup('devServer');
+  startRecallCatchup(hostType);
   done();
 
   done = phase('init rosie bot');
@@ -465,7 +465,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
       settingsDone();
       // Message view reads settings on init — must come after settings are loaded
       const mvDone = phase('init message view');
-      initMessageView(dispatch, cwd);
+      initMessageView(dispatch, cwd, hostType);
       mvDone();
     })
     .catch((err) => {

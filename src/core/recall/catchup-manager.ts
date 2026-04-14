@@ -74,7 +74,7 @@ let status: CatchupStatus = {
 };
 
 /** Which host environment we're running in (set by startRecallCatchup). */
-let hostType: 'vscode' | 'devServer' = 'devServer';
+let hostType: 'vscode' | 'dev-server' | 'daemon' | 'tauri' = 'dev-server';
 
 /** Cancellation flag for embedding backfill. */
 let cancelRequested = false;
@@ -322,13 +322,13 @@ async function runEmbedding(): Promise<void> {
  * @param host  Which host environment ('vscode' | 'devServer'). Defaults to 'devServer'.
  */
 export async function startRecallCatchup(
-  host?: 'vscode' | 'devServer',
+  host?: 'vscode' | 'dev-server' | 'daemon' | 'tauri',
 ): Promise<void> {
   log({
     source: 'recall-catchup',
     level: 'info',
     summary: 'startRecallCatchup called',
-    data: { host: host ?? 'devServer' },
+    data: { host: host ?? 'dev-server' },
   });
   if (host) hostType = host;
   // Note: MCP toggle subscriber removed — recall is always enabled since the

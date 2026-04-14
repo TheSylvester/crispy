@@ -21,11 +21,14 @@ const SOURCE = 'message-view';
 // Module state
 // ---------------------------------------------------------------------------
 
+type HostType = 'vscode' | 'dev-server' | 'daemon' | 'tauri';
+
 const providers = new Map<string, MessageProvider>();
 let activeConfig: DiscordProviderConfig | null = null;
 let unsubSettings: (() => void) | null = null;
 let currentDispatch: AgentDispatch | null = null;
 let currentCwd: string | null = null;
+let currentHostType: HostType | null = null;
 
 // ---------------------------------------------------------------------------
 // Provider registration
@@ -49,9 +52,10 @@ export function unregisterProvider(id: string): void {
 // Public API
 // ---------------------------------------------------------------------------
 
-export function initMessageView(dispatch?: AgentDispatch, cwd?: string): void {
+export function initMessageView(dispatch?: AgentDispatch, cwd?: string, hostType?: HostType): void {
   currentDispatch = dispatch ?? null;
   currentCwd = cwd ?? null;
+  currentHostType = hostType ?? null;
   const config = findEnabledDiscordProvider();
   if (config) {
     startUp(config);
@@ -98,6 +102,12 @@ function findEnabledDiscordProvider(): DiscordProviderConfig | null {
     const { settings } = getSettingsSnapshotInternal();
     const { discord } = settings;
     if (!discord.bot.enabled || !discord.bot.token || !discord.bot.guildId) return null;
+    const hostFlag = currentHostType === 'vscode' ? discord.bot.enableInVscode
+      : currentHostType === 'tauri' ? discord.bot.enableInTauri
+      : currentHostType === 'daemon' ? discord.bot.enableInDaemon
+      : currentHostType === 'dev-server' ? discord.bot.enableInDevServer
+      : false; // unknown host type → deny (fail-closed)
+    if (!hostFlag) return null;
     return {
       id: 'discord-bot',
       type: 'discord',

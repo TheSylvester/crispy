@@ -103,7 +103,7 @@ export function activate(context: vscode.ExtensionContext): void {
     .then(() => {
       // Message view reads settings on init — must come after settings are loaded
       const mvDone = phase('initMessageView');
-      initMessageView(dispatch, cwd);
+      initMessageView(dispatch, cwd, 'vscode');
       mvDone();
     })
     .catch((err) => console.error('[crispy] Failed to load settings:', err));

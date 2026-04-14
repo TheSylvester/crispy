@@ -51,6 +51,10 @@ interface SettingsPopupProps {
   discordGuildId: string;
   discordToken: string;
   discordAllowedUserIds: string[];
+  discordEnableInVscode: boolean;
+  discordEnableInDevServer: boolean;
+  discordEnableInDaemon: boolean;
+  discordEnableInTauri: boolean;
   onUpdateDiscord: (patch: Partial<DiscordBotSettings>) => void;
   catchupStatus?: CatchupStatus | null;
   onStartEmbedding?: () => void;
@@ -161,7 +165,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, displayStyle, onDisplayStyleChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, gitPanelSide, onGitPanelSideChange, useDisplayStyleAccent, onUseDisplayStyleAccentChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordAllowedUserIds, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, displayStyle, onDisplayStyleChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, gitPanelSide, onGitPanelSideChange, useDisplayStyleAccent, onUseDisplayStyleAccentChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordAllowedUserIds, discordEnableInVscode, discordEnableInDevServer, discordEnableInDaemon, discordEnableInTauri, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -460,6 +464,10 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
             guildId={discordGuildId}
             token={discordToken}
             allowedUserIds={discordAllowedUserIds}
+            enableInVscode={discordEnableInVscode}
+            enableInDevServer={discordEnableInDevServer}
+            enableInDaemon={discordEnableInDaemon}
+            enableInTauri={discordEnableInTauri}
             onUpdateDiscord={onUpdateDiscord}
             onDirtyChange={setDiscordDirty}
           />

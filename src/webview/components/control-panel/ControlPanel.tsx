@@ -297,6 +297,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             setDiscordEnabled(dBot.enabled);
             setDiscordGuildId(dBot.guildId);
             setDiscordToken(dBot.token);
+            if (dBot.enableInVscode !== undefined) setDiscordEnableInVscode(dBot.enableInVscode);
+            if (dBot.enableInDevServer !== undefined) setDiscordEnableInDevServer(dBot.enableInDevServer);
+            if (dBot.enableInDaemon !== undefined) setDiscordEnableInDaemon(dBot.enableInDaemon);
+            if (dBot.enableInTauri !== undefined) setDiscordEnableInTauri(dBot.enableInTauri);
           }
           setDefaultModel(settingsEvent.snapshot.settings.turnDefaults?.model ?? '');
           const savedMode = settingsEvent.snapshot.settings.turnDefaults?.permissionMode;
@@ -349,6 +353,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const [discordGuildId, setDiscordGuildId] = useState('');
     const [discordToken, setDiscordToken] = useState('');
     const [discordAllowedUserIds, setDiscordAllowedUserIds] = useState<string[]>([]);
+    const [discordEnableInVscode, setDiscordEnableInVscode] = useState(true);
+    const [discordEnableInDevServer, setDiscordEnableInDevServer] = useState(true);
+    const [discordEnableInDaemon, setDiscordEnableInDaemon] = useState(true);
+    const [discordEnableInTauri, setDiscordEnableInTauri] = useState(true);
 
     useEffect(() => {
       transport.getSettings().then((snapshot) => {
@@ -361,6 +369,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           setDiscordGuildId(discordBot.guildId);
           setDiscordToken(discordBot.token);
           if (discordBot.allowedUserIds) setDiscordAllowedUserIds(discordBot.allowedUserIds);
+          if (discordBot.enableInVscode !== undefined) setDiscordEnableInVscode(discordBot.enableInVscode);
+          if (discordBot.enableInDevServer !== undefined) setDiscordEnableInDevServer(discordBot.enableInDevServer);
+          if (discordBot.enableInDaemon !== undefined) setDiscordEnableInDaemon(discordBot.enableInDaemon);
+          if (discordBot.enableInTauri !== undefined) setDiscordEnableInTauri(discordBot.enableInTauri);
         }
         const savedDefault = snapshot.settings.turnDefaults?.model ?? '';
         setDefaultModel(savedDefault);
@@ -410,6 +422,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       if (patch.guildId !== undefined) setDiscordGuildId(patch.guildId);
       if (patch.token !== undefined) setDiscordToken(patch.token);
       if (patch.allowedUserIds !== undefined) setDiscordAllowedUserIds(patch.allowedUserIds);
+      if (patch.enableInVscode !== undefined) setDiscordEnableInVscode(patch.enableInVscode);
+      if (patch.enableInDevServer !== undefined) setDiscordEnableInDevServer(patch.enableInDevServer);
+      if (patch.enableInDaemon !== undefined) setDiscordEnableInDaemon(patch.enableInDaemon);
+      if (patch.enableInTauri !== undefined) setDiscordEnableInTauri(patch.enableInTauri);
       await transport.updateSettings({ discord: { bot: patch } });
     }, [transport]);
 
@@ -1259,6 +1275,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               discordGuildId={discordGuildId}
               discordToken={discordToken}
               discordAllowedUserIds={discordAllowedUserIds}
+              discordEnableInVscode={discordEnableInVscode}
+              discordEnableInDevServer={discordEnableInDevServer}
+              discordEnableInDaemon={discordEnableInDaemon}
+              discordEnableInTauri={discordEnableInTauri}
               onUpdateDiscord={handleUpdateDiscord}
               catchupStatus={catchupStatus}
               onStartEmbedding={handleStartEmbedding}

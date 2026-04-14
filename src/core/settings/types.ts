@@ -113,6 +113,14 @@ export interface DiscordBotSettings {
   archivalTimeoutHours: number;
   /** Numeric Discord user IDs allowed to interact. Empty = owner-only (resolved via OAuth). */
   allowedUserIds: string[];
+  /** Connect the Discord bot when running as a VS Code extension. Default: true. */
+  enableInVscode: boolean;
+  /** Connect the Discord bot when running as a dev server. Default: true. */
+  enableInDevServer: boolean;
+  /** Connect the Discord bot when running as a standalone daemon (`crispy start`). Default: true. */
+  enableInDaemon: boolean;
+  /** Connect the Discord bot when running as the Tauri desktop app. Default: true. */
+  enableInTauri: boolean;
 }
 
 export interface DiscordSettings {
@@ -269,7 +277,7 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     bot: { enabled: false },
   },
   discord: {
-    bot: { enabled: false, token: '', guildId: '', permissionMode: null, archivalTimeoutHours: 24, allowedUserIds: [] },
+    bot: { enabled: false, token: '', guildId: '', permissionMode: null, archivalTimeoutHours: 24, allowedUserIds: [], enableInVscode: true, enableInDevServer: true, enableInDaemon: true, enableInTauri: true },
   },
   mcp: {
     memory: { vscode: true, devServer: true },
