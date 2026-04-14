@@ -137,6 +137,9 @@ export function createCrispyPanel(
   const mainCssUri = panel.webview.asWebviewUri(
     vscode.Uri.joinPath(webviewDir, 'main.css'),
   );
+  const logoUri = panel.webview.asWebviewUri(
+    vscode.Uri.joinPath(webviewDir, 'crispy-logo.png'),
+  );
 
   // Nonce for CSP
   const nonce = getNonce();
@@ -265,7 +268,7 @@ export function createCrispyPanel(
   );
 
   // Set HTML AFTER listener is wired — this triggers webview JS to load
-  panel.webview.html = getWebviewHtml(panel.webview, scriptUri, cssUri, stylesUri, mainCssUri, nonce, options?.autoClose);
+  panel.webview.html = getWebviewHtml(panel.webview, scriptUri, cssUri, stylesUri, mainCssUri, logoUri, nonce, options?.autoClose);
 
   panels.set(panelId, panel);
 
@@ -310,6 +313,7 @@ function getWebviewHtml(
   cssUri: vscode.Uri,
   stylesUri: vscode.Uri,
   mainCssUri: vscode.Uri,
+  logoUri: vscode.Uri,
   nonce: string,
   autoClose?: boolean,
 ): string {
@@ -319,6 +323,7 @@ function getWebviewHtml(
 <head>
   <meta charset="UTF-8">${autoCloseMeta}
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="crispy-logo" content="${logoUri}">
   <meta
     http-equiv="Content-Security-Policy"
     content="default-src 'none'; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data: blob: https:; font-src ${webview.cspSource}; media-src 'self';"
