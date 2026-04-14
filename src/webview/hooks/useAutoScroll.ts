@@ -122,8 +122,13 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
     };
 
     const onScrollEnd = () => {
+      const wasProgrammatic = scrollSource.current === "programmatic";
       scrollSource.current = null;
-      evaluate(true); // final honest position
+      // Only allow unpark if the scroll that just ended was user-initiated.
+      // Programmatic scrolls (ResizeObserver pins) can end while new content
+      // is still arriving — the momentary distance-from-bottom is transient,
+      // not a signal that the user scrolled away.
+      evaluate(!wasProgrammatic);
     };
 
     el.addEventListener("scroll", onScroll, { passive: true });
