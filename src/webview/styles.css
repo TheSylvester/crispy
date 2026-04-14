@@ -8373,6 +8373,13 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal h
   min-width: 0;
 }
 
+/* Markdown preview inside file viewer tab — needs its own scroll */
+.crispy-file-viewer-tab__body .crispy-file-viewer__markdown {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
 /* Wrap OFF: code-preview scrolls both axes */
 .crispy-file-viewer-tab__body:not([data-word-wrap]) .crispy-code-preview {
   overflow: auto;
