@@ -12,7 +12,6 @@ import { useTransport } from '../context/TransportContext.js';
 import { fsPathToUrlPath } from '../../core/url-path-resolver.js';
 import { formatCwd } from '../hooks/useSessionCwd.js';
 import type { WorkspaceInfo } from '../../core/workspace-roots.js';
-import { animatedLogoSvg } from '../utils/animated-logo.js';
 
 /** Format a timestamp as a human-readable relative time for workspace recency. */
 function formatWorkspaceTime(epochMs: number): string {
@@ -375,12 +374,12 @@ export function WorkspacePicker(): React.JSX.Element {
   useEffect(() => {
     const MAX_TILT = 14;
     const onMove = (e: MouseEvent) => {
-      const svg = logoRef.current?.querySelector('svg');
-      if (!svg) return;
+      const img = logoRef.current?.querySelector('img');
+      if (!img) return;
       const nx = (e.clientX / window.innerWidth - 0.5) * 2;
       const ny = (e.clientY / window.innerHeight - 0.5) * 2;
-      svg.style.setProperty('--logo-ry', (nx * MAX_TILT) + 'deg');
-      svg.style.setProperty('--logo-rx', (-ny * MAX_TILT) + 'deg');
+      img.style.setProperty('--logo-ry', (nx * MAX_TILT) + 'deg');
+      img.style.setProperty('--logo-rx', (-ny * MAX_TILT) + 'deg');
     };
     document.addEventListener('mousemove', onMove);
     return () => document.removeEventListener('mousemove', onMove);
@@ -550,8 +549,9 @@ export function WorkspacePicker(): React.JSX.Element {
             ref={logoRef}
             className="crispy-workspace-picker__logo"
             aria-hidden="true"
-            dangerouslySetInnerHTML={{ __html: animatedLogoSvg }}
-          />
+          >
+            <img src="crispy-logo.png" alt="Crispy" draggable={false} />
+          </div>
           <h1 className="crispy-workspace-picker__title">Crispy</h1>
           <p className="crispy-workspace-picker__subtitle">Select a workspace to get started</p>
         </div>
