@@ -172,7 +172,7 @@ export function searchMessagesFts(
     const rows = db().all(
       `SELECT m.message_id, m.session_id, m.message_seq,
               m.project_id, m.created_at, m.message_role, f.rank,
-              snippet(messages_fts, 0, '>>>', '<<<', '...', 32) as match_snippet,
+              snippet(messages_fts, 0, '>>>', '<<<', '...', 64) as match_snippet,
               SUBSTR(m.message_text, 1, ${MAX_PREVIEW + 1}) as message_preview_raw
        FROM messages_fts f
        CROSS JOIN messages m ON m.rowid = f.rowid
@@ -430,6 +430,7 @@ export function readSessionMessages(
   sessionId: string,
   offset: number = 0,
   limit: number = 10,
+  reverse: boolean = false,
 ): SessionPage | null {
   try {
     const totalRow = db().get(
@@ -443,7 +444,7 @@ export function readSessionMessages(
       `SELECT message_id, message_seq, message_text, message_role, created_at
        FROM messages
        WHERE session_id = ?
-       ORDER BY message_seq ASC
+       ORDER BY message_seq ${reverse ? 'DESC' : 'ASC'}
        LIMIT ? OFFSET ?`,
       [sessionId, limit, offset],
     );
@@ -592,7 +593,7 @@ export function searchMessagesSemantic(
     const rows = db().all(
       `SELECT mv.message_id, mv.embedding_q8, mv.norm, mv.quant_scale,
               m.session_id, m.message_seq, m.project_id, m.created_at, m.message_role,
-              SUBSTR(m.message_text, 1, 201) as message_preview_raw
+              SUBSTR(m.message_text, 1, 401) as message_preview_raw
        FROM message_vectors mv
        JOIN messages m ON m.message_id = mv.message_id
        WHERE 1=1${filterClauses}`,

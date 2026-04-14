@@ -11,7 +11,7 @@
  * Flags:
  *   --limit N     Max results (default varies by mode)
  *   --offset N    Pagination offset for session reads
- *   --context N   Extra turns around a message (turn mode, 0-5)
+ *   (message-id auto-centers the read window on the matched turn)
  *   --since DATE  Filter by date (list/search modes; ISO-8601)
  *   --raw         JSON output instead of formatted tables
  *   --help        Print usage
@@ -23,8 +23,8 @@
 
 import { dualPathSearch } from '../src/core/recall/vector-search.js';
 import { getDb } from '../src/core/crispy-db.js';
-import { getDbPath, listSessions, readMessageTurn } from '../src/core/recall/memory-queries.js';
-import { readSessionMessages } from '../src/core/recall/message-store.js';
+import { getDbPath, listSessions } from '../src/core/recall/memory-queries.js';
+import { readSessionMessages, getMessageByUuid } from '../src/core/recall/message-store.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -60,18 +60,19 @@ const showHelp = hasFlag('--help') || hasFlag('-h');
 const listMode = hasFlag('--list');
 const limit = flagInt('--limit', -1);   // -1 = use mode default
 const offset = flagInt('--offset', 0);
-const context = flagInt('--context', 0);
+// --context is accepted but ignored (centering is automatic when message-id is given)
 const since = flagValue('--since');
 const projectFlag = flagValue('--project');
 const allProjects = hasFlag('--all');
+const reverse = hasFlag('--reverse');
 
 // Project scoping: default to CWD (inherited from parent session's projectPath),
 // --project overrides, --all disables scoping entirely.
 const effectiveProject = allProjects ? undefined : projectFlag ?? process.cwd();
 
 // Collect positional args (skip flags and their values)
-const FLAG_WITH_VALUE = new Set(['--limit', '--offset', '--context', '--since', '--project']);
-const FLAG_BOOLEAN = new Set(['--raw', '--help', '-h', '--list', '--all']);
+const FLAG_WITH_VALUE = new Set(['--limit', '--offset', '--since', '--project']);
+const FLAG_BOOLEAN = new Set(['--raw', '--help', '-h', '--list', '--all', '--reverse']);
 
 const positional: string[] = [];
 for (let i = 0; i < argv.length; i++) {
@@ -92,7 +93,7 @@ recall — Unified CLI for Crispy's recall system
 USAGE
   recall "query"                     Search sessions by text
   recall <session-id>                Read messages from a session
-  recall <session-id> <message-id>   Read a specific turn with context
+  recall <session-id> <message-id>   Read centered on matched message
   recall --list                      List recent sessions
 
 ARGUMENTS
@@ -101,27 +102,30 @@ ARGUMENTS
   message-id    Full or prefix UUID of a message within the session
 
 FLAGS
-  --limit N       Max results (search: 200, list: 50, read: 20)
-  --offset N      Pagination offset (search: sessions, read: messages; default 0)
-  --context N     Extra turns around target message, 0-5 (default 0)
-  --since DATE    Only sessions after this date (list mode only, ISO-8601)
+  --limit N       Max results for search/list modes (search: 200, list: 50)
+  --offset N      Continue reading from this message sequence number
+  --since DATE    Only sessions after this date (list and search modes, ISO-8601)
   --project PATH  Scope to a specific project path (default: CWD)
   --all           Search across all projects (disables project scoping)
+  --reverse       Read session messages newest-first (default: oldest-first)
   --raw           Output raw JSON instead of formatted tables
   --list          List sessions mode
   --help, -h      Show this help
 
 WORKFLOW
-  Search returns session IDs with snippet previews. Read into sessions
-  for full content — snippets alone are not enough for real answers.
+  1. Search:  recall "your query"
+  2. Read the matched message:  recall <session-id> <message-id>
+     This auto-centers on the match and shows surrounding turns.
+     Use --offset from the footer to continue reading forward.
+  3. Only use recall <session-id> (no message-id) when you need
+     to start from the beginning of a session.
 
 EXAMPLES
   recall "MCP server rename"
   recall "refactored provider config" --limit 30 --since 2025-06-01
+  recall a1b2c3d4 e5f6a7b8
+  recall a1b2c3d4 --reverse
   recall --list --since 2025-06-01
-  recall a1b2c3d4
-  recall a1b2c3d4 --offset 20 --limit 10
-  recall a1b2c3d4 e5f6a7b8 --context 2
 `.trim());
 }
 
@@ -224,9 +228,50 @@ function runList() {
 // Mode: Read session messages
 // ---------------------------------------------------------------------------
 
+const CHAR_BUDGET = parseInt(process.env.RECALL_CHAR_BUDGET || '20000', 10);
+const FETCH_BATCH = 100; // fetch generously, budget-cap on output
+
+function printMessages(
+  page: NonNullable<ReturnType<typeof readSessionMessages>>,
+  opts: { targetMessageId?: string; startOffset: number },
+) {
+  let totalChars = 0;
+  let printed = 0;
+
+  for (const m of page.messages) {
+    const isTarget = opts.targetMessageId && m.message_id === opts.targetMessageId;
+    const marker = opts.targetMessageId ? (isTarget ? '>>>' : '   ') : '';
+    const role = m.role ?? (m.message_seq % 2 === 0 ? 'user' : 'assistant');
+    const dateStr = m.created_at
+      ? new Date(m.created_at).toISOString().slice(0, 19).replace('T', ' ')
+      : '';
+
+    // Format this message
+    const header = `\n${marker}${marker ? ' ' : ''}[${m.message_seq}] ${role.toUpperCase()}  ${dateStr}`;
+    const body = m.text;
+    const msgChars = header.length + body.length;
+
+    // Stop if adding this message would exceed budget (but always include at least 1)
+    if (totalChars + msgChars > CHAR_BUDGET && printed > 0) break;
+
+    console.log(header);
+    console.log(body);
+    totalChars += msgChars;
+    printed++;
+  }
+
+  const nextOffset = opts.startOffset + printed;
+  const hasMore = nextOffset < page.total_messages;
+  if (hasMore) {
+    const reverseFlag = reverse ? ' --reverse' : '';
+    console.log(`\n--- ${printed} messages, ${totalChars} chars. Use${reverseFlag} --offset ${nextOffset} to see more (${page.total_messages - nextOffset} remaining) ---`);
+  } else {
+    console.log(`\n--- ${printed} messages, ${totalChars} chars. End of session. ---`);
+  }
+}
+
 function runReadSession(sessionId: string) {
-  const effectiveLimit = limit > 0 ? limit : 20;
-  const page = readSessionMessages(sessionId, offset, effectiveLimit);
+  const page = readSessionMessages(sessionId, offset, FETCH_BATCH, reverse);
 
   if (!page) {
     console.error(`No messages found for session ${sessionId}`);
@@ -239,63 +284,121 @@ function runReadSession(sessionId: string) {
   }
 
   console.log(`Session: ${page.session_id}`);
-  console.log(`Messages: ${page.showing_count} of ${page.total_messages} (offset ${page.showing_offset})${page.has_more ? ' — more available' : ''}`);
+  console.log(`Messages: ${page.total_messages} total (reading from offset ${page.showing_offset})`);
   console.log('---');
 
-  for (const m of page.messages) {
-    const role = m.role ?? (m.message_seq % 2 === 0 ? 'user' : 'assistant');
-    const dateStr = m.created_at
-      ? new Date(m.created_at).toISOString().slice(0, 19).replace('T', ' ')
-      : '';
-    console.log(`\n[${m.message_seq}] ${role.toUpperCase()}  ${dateStr}`);
-    console.log(m.text.slice(0, 2000));
-    if (m.text.length > 2000) console.log(`... (${m.text.length} chars total)`);
-  }
-
-  if (page.has_more) {
-    console.log(`\n--- Use --offset ${page.showing_offset + page.showing_count} to see more ---`);
-  }
+  printMessages(page, { startOffset: offset });
 }
 
 // ---------------------------------------------------------------------------
-// Mode: Read turn
+// Mode: Read turn (centered on matched message)
 // ---------------------------------------------------------------------------
 
 function runReadTurn(sessionId: string, messageId: string) {
-  const result = readMessageTurn(sessionId, messageId, context);
-
-  if (!result) {
+  const record = getMessageByUuid(sessionId, messageId);
+  if (!record) {
     console.error(`Message ${messageId} not found in session ${sessionId}`);
     process.exit(1);
   }
 
+  // Fetch a generous batch centered on the match
+  const centeredOffset = Math.max(0, record.message_seq - Math.floor(FETCH_BATCH / 2));
+  const page = readSessionMessages(sessionId, centeredOffset, FETCH_BATCH, reverse);
+
+  if (!page) {
+    console.error(`No messages found for session ${sessionId}`);
+    process.exit(1);
+  }
+
   if (raw) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify({ ...page, target_message_id: messageId, target_message_seq: record.message_seq }, null, 2));
     return;
   }
 
-  console.log(`Turn at seq ${result.messageSeq}`);
-  if (result.showing_seq_range) {
-    console.log(`Context: seq ${result.showing_seq_range[0]}–${result.showing_seq_range[1]}` +
-      (result.session_total_messages ? ` of ${result.session_total_messages}` : ''));
+  // Find the match index in the fetched array
+  const matchIdx = page.messages.findIndex(m => m.message_id === messageId);
+  if (matchIdx === -1) {
+    // Fallback: match not in fetched window, just print from offset
+    console.log(`Session: ${page.session_id}`);
+    console.log(`Match at seq ${record.message_seq} — ${page.total_messages} total`);
+    console.log('---');
+    printMessages(page, { targetMessageId: messageId, startOffset: centeredOffset });
+    return;
   }
+
+  // Expand outward from match: 30% budget backward, 70% forward
+  const backBudget = Math.floor(CHAR_BUDGET * 0.3);
+  const fwdBudget = CHAR_BUDGET - backBudget;
+
+  // Expand backward from match (not including match itself)
+  let backChars = 0;
+  let firstIdx = matchIdx;
+  for (let i = matchIdx - 1; i >= 0; i--) {
+    const msgChars = page.messages[i]!.text.length + 80; // ~80 for header/metadata
+    if (backChars + msgChars > backBudget) break;
+    backChars += msgChars;
+    firstIdx = i;
+  }
+
+  // Expand forward from match (including match itself)
+  let fwdChars = 0;
+  let lastIdx = matchIdx - 1; // will be incremented to at least matchIdx
+  for (let i = matchIdx; i < page.messages.length; i++) {
+    const msgChars = page.messages[i]!.text.length + 80;
+    if (fwdChars + msgChars > fwdBudget && i > matchIdx) break; // always include match
+    fwdChars += msgChars;
+    lastIdx = i;
+  }
+
+  // If backward budget wasn't fully used, give remainder to forward
+  const backRemaining = backBudget - backChars;
+  if (backRemaining > 0) {
+    for (let i = lastIdx + 1; i < page.messages.length; i++) {
+      const msgChars = page.messages[i]!.text.length + 80;
+      if (fwdChars + msgChars > fwdBudget + backRemaining) break;
+      fwdChars += msgChars;
+      lastIdx = i;
+    }
+  }
+
+  // If forward budget wasn't fully used, give remainder to backward
+  const fwdRemaining = fwdBudget - fwdChars;
+  if (fwdRemaining > 0) {
+    for (let i = firstIdx - 1; i >= 0; i--) {
+      const msgChars = page.messages[i]!.text.length + 80;
+      if (backChars + msgChars > backBudget + fwdRemaining) break;
+      backChars += msgChars;
+      firstIdx = i;
+    }
+  }
+
+  const selected = page.messages.slice(firstIdx, lastIdx + 1);
+  const firstSeq = selected[0]!.message_seq;
+  const lastSeq = selected[selected.length - 1]!.message_seq;
+  const nextOffset = lastSeq + 1;
+
+  console.log(`Session: ${page.session_id}`);
+  console.log(`Match at seq ${record.message_seq} — showing seq ${firstSeq}–${lastSeq} of ${page.total_messages}`);
   console.log('---');
 
-  if (result.context_messages) {
-    for (const cm of result.context_messages) {
-      const tag = cm.is_target ? '>>>' : '   ';
-      const role = cm.role ?? (cm.message_seq % 2 === 0 ? 'user' : 'assistant');
-      console.log(`\n${tag} [${cm.message_seq}] ${role.toUpperCase()}`);
-      console.log(cm.text.slice(0, 2000));
-      if (cm.text.length > 2000) console.log(`... (${cm.text.length} chars total)`);
-    }
+  let totalChars = 0;
+  for (const m of selected) {
+    const isTarget = m.message_id === messageId;
+    const marker = isTarget ? '>>>' : '   ';
+    const role = m.role ?? (m.message_seq % 2 === 0 ? 'user' : 'assistant');
+    const dateStr = m.created_at
+      ? new Date(m.created_at).toISOString().slice(0, 19).replace('T', ' ')
+      : '';
+    console.log(`\n${marker} [${m.message_seq}] ${role.toUpperCase()}  ${dateStr}`);
+    console.log(m.text);
+    totalChars += m.text.length;
+  }
+
+  const hasMore = nextOffset < page.total_messages;
+  if (hasMore) {
+    console.log(`\n--- ${selected.length} messages, ${totalChars} chars. First: seq ${firstSeq}. Continue: --offset ${nextOffset} (${page.total_messages - nextOffset} remaining) ---`);
   } else {
-    console.log('\nUSER:');
-    console.log(result.userText.slice(0, 2000));
-    if (result.userText.length > 2000) console.log(`... (${result.userText.length} chars total)`);
-    console.log('\nASSISTANT:');
-    console.log(result.assistantText.slice(0, 2000));
-    if (result.assistantText.length > 2000) console.log(`... (${result.assistantText.length} chars total)`);
+    console.log(`\n--- ${selected.length} messages, ${totalChars} chars. First: seq ${firstSeq}. End of session. ---`);
   }
 }
 
@@ -357,14 +460,26 @@ async function runSearch(query: string) {
     snippet: string;
     hits: number;
     score: number;
+    best_message_id: string;
+    best_message_seq: number;
+    tag: string;
   }
 
   const sessions: SessionRow[] = [];
   const seen = new Map<string, number>();
+  const sessionPaths = new Map<string, Set<string>>();
 
   for (let i = 0; i < trimmed.length; i++) {
     const x = trimmed[i]!;
     const sid = x.result.session_id;
+
+    let pathSet = sessionPaths.get(sid);
+    if (!pathSet) {
+      pathSet = new Set<string>();
+      sessionPaths.set(sid, pathSet);
+    }
+    for (const p of x.paths) pathSet.add(p);
+
     const idx = seen.get(sid);
     if (idx !== undefined) {
       sessions[idx]!.hits++;
@@ -382,7 +497,21 @@ async function runSearch(query: string) {
           .replace(/\n/g, ' '),
         hits: 1,
         score: x.score,
+        best_message_id: x.result.message_id,
+        best_message_seq: x.result.message_seq,
+        tag: '',
       });
+    }
+  }
+
+  for (const s of sessions) {
+    const paths = sessionPaths.get(s.session_id);
+    if (paths?.has('fts5') && paths?.has('semantic')) {
+      s.tag = '[FTS5+SEMANTIC]';
+    } else if (paths?.has('semantic')) {
+      s.tag = '[SEMANTIC-ONLY]';
+    } else {
+      s.tag = '[FTS5-ONLY]';
     }
   }
 
@@ -421,13 +550,17 @@ async function runSearch(query: string) {
 
     const rankW = 4;
     const idW = 10;
+    const msgW = 10;
     const dateW = 12;
+    const tagW = 17;
     const hitsW = 6;
 
     console.log(
       '#'.padStart(rankW) + '  ' +
       'Session'.padEnd(idW) +
+      'Msg'.padEnd(msgW) +
       'Date'.padEnd(dateW) +
+      'Tag'.padEnd(tagW) +
       'Hits'.padStart(hitsW) + '  ' +
       'Snippet'
     );
@@ -436,7 +569,9 @@ async function runSearch(query: string) {
       console.log(
         String(s.rank).padStart(rankW) + '  ' +
         s.short_id.padEnd(idW) +
+        s.best_message_id.slice(0, 8).padEnd(msgW) +
         s.date.padEnd(dateW) +
+        s.tag.padEnd(tagW) +
         String(s.hits).padStart(hitsW) + '  ' +
         s.snippet
       );

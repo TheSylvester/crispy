@@ -37,7 +37,7 @@ export interface DualPathSearchOptions {
   /** Session ID to exclude from results (caller's own session). */
   excludeSessionId?: string;
   /** Recency decay rate. Higher = stronger preference for recent results.
-   *  0 = no decay. Default 0.005 (~50% penalty at 200 days). */
+   *  0 = no decay. Default 0.02 (~50% penalty at 50 days). */
   recencyDecay?: number;
 }
 
@@ -45,6 +45,8 @@ export interface ScoredResult {
   result: MessageSearchResult;
   /** RRF score (higher = more relevant). Used by groupBySession for score-gap detection. */
   score: number;
+  /** Which search paths found this result. */
+  paths: ('fts5' | 'semantic')[];
 }
 
 export interface DualPathSearchResult {
@@ -66,7 +68,8 @@ export interface DualPathSearchResult {
 const DEFAULT_LIMIT = 200; // generous ceiling — score gap cuts naturally within this
 const FETCH_MULTIPLIER = 3; // fetch more from each path to improve union quality
 const RRF_K = 60; // Reciprocal Rank Fusion constant — dampens top-rank dominance
-const DEFAULT_RECENCY_DECAY = 0.005; // ~50% penalty at 200 days old
+const DEFAULT_RECENCY_DECAY = 0.02; // ~50% penalty at 50 days old
+const SEMANTIC_DISCOVERY_BOOST = 1.05; // gentle lift for sessions found only by semantic path
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -133,14 +136,16 @@ export async function dualPathSearch(
   // RRF merge with recency decay — scale-invariant fusion of ranked lists
   const decay = opts?.recencyDecay ?? DEFAULT_RECENCY_DECAY;
   const now = Date.now();
-  const rrfScores = new Map<string, { result: MessageSearchResult; score: number }>();
+  const rrfScores = new Map<string, ScoredResult>();
 
   for (let i = 0; i < ftsResults.length; i++) {
     const r = ftsResults[i]!;
     const ageDays = (now - r.created_at) / 86_400_000;
     const recency = 1 / (1 + ageDays * decay);
-    rrfScores.set(r.message_id, { result: r, score: (1 / (RRF_K + i)) * recency });
+    rrfScores.set(r.message_id, { result: r, score: (1 / (RRF_K + i)) * recency, paths: ['fts5'] });
   }
+
+  const ftsSessionIdSet = new Set(ftsResults.map(r => r.session_id));
 
   for (let i = 0; i < semanticResults.length; i++) {
     const r = semanticResults[i]!;
@@ -150,8 +155,16 @@ export async function dualPathSearch(
     const existing = rrfScores.get(r.message_id);
     if (existing) {
       existing.score += rrfScore;
+      existing.paths.push('semantic');
     } else {
-      rrfScores.set(r.message_id, { result: r, score: rrfScore });
+      rrfScores.set(r.message_id, { result: r, score: rrfScore, paths: ['semantic'] });
+    }
+  }
+
+  // Boost semantic-only discoveries: sessions FTS didn't find at all
+  for (const entry of rrfScores.values()) {
+    if (!ftsSessionIdSet.has(entry.result.session_id)) {
+      entry.score *= SEMANTIC_DISCOVERY_BOOST;
     }
   }
 

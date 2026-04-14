@@ -84,14 +84,26 @@ async function main() {
     snippet: string;
     hits: number;
     score: number;
+    best_message_id: string;
+    best_message_seq: number;
+    tag: string;
   }
 
   const sessions: SessionRow[] = [];
   const seen = new Map<string, number>(); // session_id -> index in sessions
+  const sessionPaths = new Map<string, Set<string>>();
 
   for (let i = 0; i < trimmed.length; i++) {
     const x = trimmed[i]!;
     const sid = x.result.session_id;
+
+    let pathSet = sessionPaths.get(sid);
+    if (!pathSet) {
+      pathSet = new Set<string>();
+      sessionPaths.set(sid, pathSet);
+    }
+    for (const p of x.paths) pathSet.add(p);
+
     const idx = seen.get(sid);
     if (idx !== undefined) {
       sessions[idx]!.hits++;
@@ -105,11 +117,25 @@ async function main() {
           ? new Date(x.result.created_at).toISOString().slice(0, 10)
           : 'unknown',
         snippet: (x.result.match_snippet || x.result.message_preview || '')
-          .slice(0, 120)
+          .slice(0, 200)
           .replace(/\n/g, ' '),
         hits: 1,
         score: x.score,
+        best_message_id: x.result.message_id,
+        best_message_seq: x.result.message_seq,
+        tag: '',
       });
+    }
+  }
+
+  for (const s of sessions) {
+    const paths = sessionPaths.get(s.session_id);
+    if (paths?.has('fts5') && paths?.has('semantic')) {
+      s.tag = '[FTS5+SEMANTIC]';
+    } else if (paths?.has('semantic')) {
+      s.tag = '[SEMANTIC-ONLY]';
+    } else {
+      s.tag = '[FTS5-ONLY]';
     }
   }
 
@@ -138,13 +164,17 @@ async function main() {
     // Column widths
     const rankW = 4;
     const idW = 10;
+    const msgW = 10;
     const dateW = 12;
+    const tagW = 17;
     const hitsW = 6;
 
     console.log(
       '#'.padStart(rankW) + '  ' +
       'Session'.padEnd(idW) +
+      'Msg'.padEnd(msgW) +
       'Date'.padEnd(dateW) +
+      'Tag'.padEnd(tagW) +
       'Hits'.padStart(hitsW) + '  ' +
       'Snippet'
     );
@@ -153,7 +183,9 @@ async function main() {
       console.log(
         String(s.rank).padStart(rankW) + '  ' +
         s.short_id.padEnd(idW) +
+        s.best_message_id.slice(0, 8).padEnd(msgW) +
         s.date.padEnd(dateW) +
+        s.tag.padEnd(tagW) +
         String(s.hits).padStart(hitsW) + '  ' +
         s.snippet
       );
