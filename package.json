@@ -3,7 +3,7 @@
   "displayName": "Crispy",
   "icon": "media/crispy-icon.png",
   "description": "A GUI for Claude Code and Codex, built for multi-agent orchestration — with 'superthink' adversarial verification, agent memory, and Discord remote access.",
-  "version": "0.3.2-rc.1",
+  "version": "0.3.2-rc.2",
   "publisher": "the-sylvester",
   "license": "MIT",
   "files": [
