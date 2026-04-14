@@ -1133,10 +1133,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // Register executeRewind with parent for per-message rewind buttons
     useEffect(() => { onRegisterRewindHandler?.(executeRewind); }, [onRegisterRewindHandler, executeRewind]);
 
-    // --- Fork target — assistant message right before the last user message ---
-    // Stable during streaming: token deltas flow through streaming_content
-    // notifications, not the entries array, so the user/assistant entries here
-    // only change when a full turn boundary is reached.
+    // --- Fork target — depends on session state ---
+    // Idle:      last assistant message (branch from current state)
+    // Streaming: assistant before the last real user input (redo current turn)
     useEffect(() => {
       if (forkTargetSessionRef.current !== selectedSessionId) {
         forkTargetRef.current = undefined;
@@ -1144,23 +1143,43 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       }
       forkTargetRef.current = undefined;
       if (!entries || entries.length === 0) return;
-      // Walk backwards to find the last user entry with a persisted UUID
-      let lastUserIdx = -1;
-      for (let i = entries.length - 1; i >= 0; i--) {
-        if (entries[i].type === 'user' && entries[i].uuid && !entries[i].isSidechain) {
+
+      const isActive = channelState === 'streaming' || channelState === 'awaiting_approval';
+
+      if (!isActive) {
+        // Idle — fork from the last assistant message (branch from current state)
+        for (let i = entries.length - 1; i >= 0; i--) {
+          if (entries[i].type === 'assistant' && entries[i].uuid && !entries[i].isSidechain) {
+            forkTargetRef.current = entries[i].uuid!;
+            return;
+          }
+        }
+      } else {
+        // Streaming — fork before the last real user input (redo current turn).
+        // Skip tool_result and isMeta user entries (system-generated).
+        let lastUserIdx = -1;
+        for (let i = entries.length - 1; i >= 0; i--) {
+          const e = entries[i];
+          if (e.type !== 'user' || !e.uuid || e.isSidechain) continue;
+          if (e.isMeta) continue;
+          const content = e.message?.content;
+          if (Array.isArray(content) && content.length > 0) {
+            const first = content[0];
+            if (typeof first === 'object' && first !== null && 'type' in first
+              && (first as { type: string }).type === 'tool_result') continue;
+          }
           lastUserIdx = i;
           break;
         }
-      }
-      // Find the assistant message right before it
-      const searchFrom = lastUserIdx > 0 ? lastUserIdx - 1 : entries.length - 1;
-      for (let i = searchFrom; i >= 0; i--) {
-        if (entries[i].type === 'assistant' && entries[i].uuid && !entries[i].isSidechain) {
-          forkTargetRef.current = entries[i].uuid!;
-          return;
+        const searchFrom = lastUserIdx > 0 ? lastUserIdx - 1 : entries.length - 1;
+        for (let i = searchFrom; i >= 0; i--) {
+          if (entries[i].type === 'assistant' && entries[i].uuid && !entries[i].isSidechain) {
+            forkTargetRef.current = entries[i].uuid!;
+            return;
+          }
         }
       }
-    }, [entries, selectedSessionId]);
+    }, [entries, selectedSessionId, channelState]);
 
     const handleFork = useCallback(() => {
       if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
