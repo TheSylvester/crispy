@@ -62,17 +62,19 @@ const limit = flagInt('--limit', -1);   // -1 = use mode default
 const offset = flagInt('--offset', 0);
 // --context is accepted but ignored (centering is automatic when message-id is given)
 const since = flagValue('--since');
+const until = flagValue('--until');
 const projectFlag = flagValue('--project');
 const allProjects = hasFlag('--all');
 const reverse = hasFlag('--reverse');
+const recent = hasFlag('--recent');
 
 // Project scoping: default to CWD (inherited from parent session's projectPath),
 // --project overrides, --all disables scoping entirely.
 const effectiveProject = allProjects ? undefined : projectFlag ?? process.cwd();
 
 // Collect positional args (skip flags and their values)
-const FLAG_WITH_VALUE = new Set(['--limit', '--offset', '--since', '--project']);
-const FLAG_BOOLEAN = new Set(['--raw', '--help', '-h', '--list', '--all', '--reverse']);
+const FLAG_WITH_VALUE = new Set(['--limit', '--offset', '--since', '--until', '--project']);
+const FLAG_BOOLEAN = new Set(['--raw', '--help', '-h', '--list', '--all', '--reverse', '--recent']);
 
 const positional: string[] = [];
 for (let i = 0; i < argv.length; i++) {
@@ -105,8 +107,10 @@ FLAGS
   --limit N       Max results for search/list modes (search: 200, list: 50)
   --offset N      Continue reading from this message sequence number
   --since DATE    Only sessions after this date (list and search modes, ISO-8601)
+  --until DATE    Only sessions before this date (inclusive of the day, ISO-8601)
   --project PATH  Scope to a specific project path (default: CWD)
   --all           Search across all projects (disables project scoping)
+  --recent        Strongly boost recent sessions in search ranking
   --reverse       Read session messages newest-first (default: oldest-first)
   --raw           Output raw JSON instead of formatted tables
   --list          List sessions mode
@@ -123,9 +127,10 @@ WORKFLOW
 EXAMPLES
   recall "MCP server rename"
   recall "refactored provider config" --limit 30 --since 2025-06-01
+  recall "scroll bug" --since 2026-04-10 --until 2026-04-10
   recall a1b2c3d4 e5f6a7b8
   recall a1b2c3d4 --reverse
-  recall --list --since 2025-06-01
+  recall --list --since 2026-04-10 --until 2026-04-10
 `.trim());
 }
 
@@ -184,7 +189,7 @@ function resolveMessageId(sessionId: string, prefix: string): string {
 function runList() {
   initDb();
   const effectiveLimit = limit > 0 ? limit : 50;
-  const sessions = listSessions(getDbPath(), effectiveLimit, since, undefined, effectiveProject);
+  const sessions = listSessions(getDbPath(), effectiveLimit, since, undefined, effectiveProject, until);
 
   if (raw) {
     console.log(JSON.stringify(sessions, null, 2));
@@ -409,7 +414,11 @@ function runReadTurn(sessionId: string, messageId: string) {
 async function runSearch(query: string) {
   initDb();
   const ceiling = limit > 0 ? limit : 200;
-  const r = await dualPathSearch(query, { limit: ceiling, projectId: effectiveProject });
+  const r = await dualPathSearch(query, {
+    limit: ceiling,
+    projectId: effectiveProject,
+    ...(recent ? { recencyDecay: 0.10 } : {}),
+  });
   let { scored } = r;
 
   // Filter by --since date if provided
@@ -422,6 +431,19 @@ async function runSearch(query: string) {
       });
     } else {
       console.error(`Invalid --since date: "${since}" (expected ISO-8601)`);
+      process.exit(1);
+    }
+  }
+
+  if (until) {
+    const untilMs = new Date(until + 'T23:59:59.999').getTime();
+    if (!isNaN(untilMs)) {
+      scored = scored.filter(x => {
+        const created = x.result.created_at ?? 0;
+        return created <= untilMs;
+      });
+    } else {
+      console.error(`Invalid --until date: "${until}" (expected ISO-8601)`);
       process.exit(1);
     }
   }

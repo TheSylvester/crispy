@@ -56,6 +56,12 @@ CLI usage:
   $RECALL_CLI --list --since YYYY-MM-DD   List recent sessions
   $RECALL_CLI --help                      Full flag reference
 
+DATE HANDLING: Any date the user mentions MUST become a flag — never search text:
+  --since YYYY-MM-DD   Only sessions on or after this date
+  --until YYYY-MM-DD   Only sessions on or before this date (inclusive)
+  --recent             Boost recent sessions (use when user says 'recently', 'latest')
+  Example: \"what happened April 10\" → $RECALL_CLI --list --since 2026-04-10 --until 2026-04-10
+
 CRITICAL READING RULE: After searching, ALWAYS read the matched message:
   $RECALL_CLI <session-id> <message-id>
 This auto-centers on the match and shows surrounding turns. The output
@@ -78,9 +84,45 @@ mode: "auto")
 | Continue | `$RECALL_CLI <id> --offset N` | Continue from where the last read left off |
 | Newest first | `$RECALL_CLI <id> --reverse` | Looking for recent content in a long session |
 
+## Date handling
+
+**Any date or time indication from the user MUST be translated into date flags.**
+Do NOT put dates into the search query text — dates in FTS5 produce false matches.
+
+```bash
+# Single day — use --since and --until together
+$RECALL_CLI --list --since 2026-04-10 --until 2026-04-10
+$RECALL_CLI "scroll bug" --since 2026-04-10 --until 2026-04-10
+
+# Open range — just one flag
+$RECALL_CLI "recall improvements" --since 2026-04-01
+$RECALL_CLI "old bug" --until 2026-03-15
+```
+
+- `--since DATE` — only sessions on or after this date
+- `--until DATE` — only sessions on or before this date (inclusive of the day)
+- Both accept ISO-8601 dates (YYYY-MM-DD)
+- Both work in search and list modes
+
+**Example:** "What did we work on April 10?" →
+`$RECALL_CLI --list --since 2026-04-10 --until 2026-04-10` to find all sessions,
+then search with topic keywords + date flags if needed.
+
+## Recency boost
+
+When the user says "recently", "latest", "last few days", or otherwise indicates
+they want recent results, add `--recent` to strongly boost newer sessions:
+
+```bash
+$RECALL_CLI "scroll bug fix" --recent
+```
+
+This increases the recency decay from ~50% penalty at 50 days to ~50% at 10 days,
+pushing recent sessions to the top of results. Combine with `--since` for best results.
+
 ## Tips
 
 - **Search is cheap, reading is expensive.** Run 3-5 varied queries before committing to reading sessions.
 - **Message IDs are stable.** You can reference them across searches.
-- **Use `--since` to scope.** Both search and list modes accept `--since YYYY-MM-DD`.
+- **Use `--since` / `--until` to scope.** Both search and list modes accept date flags.
 - **Raw JSON output** (`--raw`) is available for programmatic processing.
