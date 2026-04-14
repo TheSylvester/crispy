@@ -59,9 +59,9 @@ function TabControllerBridge({ children }: { children: React.ReactNode }): React
 function AppLayout(): React.JSX.Element {
   const transportKind = useEnvironment();
 
-  // Picker mode: websocket transport + no crispy-cwd meta tag = root page.
+  // Picker mode: browser-based transport + no crispy-cwd meta tag = root page.
   // Skip picker if ?sessionId= is present (openPanel bootstrap).
-  const isPickerMode = transportKind === 'websocket' &&
+  const isPickerMode = (transportKind === 'websocket' || transportKind === 'tauri') &&
     !document.querySelector('meta[name="crispy-cwd"]')?.getAttribute('content') &&
     !new URLSearchParams(window.location.search).get('sessionId');
 
