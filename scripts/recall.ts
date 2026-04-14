@@ -25,6 +25,7 @@ import { dualPathSearch } from '../src/core/recall/vector-search.js';
 import { getDb } from '../src/core/crispy-db.js';
 import { getDbPath, listSessions } from '../src/core/recall/memory-queries.js';
 import { readSessionMessages, getMessageByUuid } from '../src/core/recall/message-store.js';
+import { normalizePath } from '../src/core/url-path-resolver.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -70,7 +71,7 @@ const recent = hasFlag('--recent');
 
 // Project scoping: default to CWD (inherited from parent session's projectPath),
 // --project overrides, --all disables scoping entirely.
-const effectiveProject = allProjects ? undefined : projectFlag ?? process.cwd();
+const effectiveProject = allProjects ? undefined : normalizePath(projectFlag ?? process.cwd());
 
 // Collect positional args (skip flags and their values)
 const FLAG_WITH_VALUE = new Set(['--limit', '--offset', '--since', '--until', '--project']);

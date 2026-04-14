@@ -423,7 +423,8 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
   // For daemon mode, resolve extensionPath from __dirname (which is dist/ when bundled).
   // join(__dirname, '..') gives the package root.
-  const extensionPath = mode === 'dev' ? undefined : join(__dirname, '..');
+  const extensionPath = mode === 'dev' ? undefined
+    : join(__dirname, '..').replace(/^\\\\\?\\/, '');
 
   // Dev server can't open browser tabs from the host side.
   // The browser transport handles openPanel client-side.
