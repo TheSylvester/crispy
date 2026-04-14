@@ -375,6 +375,11 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     const handler = createClientConnection(clientId, (msg) => {
       if (ws.readyState === ws.OPEN) {
         ws.send(JSON.stringify(msg));
+      } else {
+        const eventType = (msg as Record<string, unknown>).kind === 'event'
+          ? ((msg as any).event?.type ?? 'unknown')
+          : (msg as Record<string, unknown>).kind;
+        console.warn(`[server] Dropped ${eventType} for ${clientId}: ws.readyState=${ws.readyState}`);
       }
     });
 

@@ -287,6 +287,24 @@ export function listChildSessions(parentSessionId: string): Array<{
 }
 
 /**
+ * List all currently-open visible child sessions (visible=true, not closed).
+ * Used by session-list-manager to replay open-channel events on subscribe,
+ * so reconnecting clients (e.g. Tauri via WSL WebSocket) recover missed events.
+ */
+export function getOpenVisibleChildren(): Array<{
+  sessionId: string;
+  autoClose: boolean;
+}> {
+  const results: Array<{ sessionId: string; autoClose: boolean }> = [];
+  for (const [id, meta] of childSessions) {
+    if (meta.visible && !meta.closed && !id.startsWith('pending:')) {
+      results.push({ sessionId: id, autoClose: meta.autoClose });
+    }
+  }
+  return results;
+}
+
+/**
  * Resolve a pending session ID to its real ID, or return as-is if not pending.
  * Used by the CLI rpc pipe so LLMs holding a $CRISPY_SESSION_ID can resolve it.
  */
@@ -1343,7 +1361,9 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
       rekeyPromise.then((realId) => {
         refreshAndNotify(realId);
         broadcastOpenChannel(realId, displayName, intent.autoClose);
-      }).catch(() => {});
+      }).catch((err) => {
+        log({ source: 'session', level: 'error', summary: `openChannel broadcast skipped: rekey failed for ${sessionId.slice(0, 20)}…`, data: { error: String(err) } });
+      });
     } else {
       refreshAndNotify(sessionId);
       broadcastOpenChannel(sessionId, displayName, intent.autoClose);
@@ -1363,7 +1383,9 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
     if (rekeyPromise) {
       rekeyPromise.then((realId) => {
         rekeyChildSession(sessionId, realId);
-      }).catch(() => {});
+      }).catch((err) => {
+        log({ source: 'session', level: 'error', summary: `child rekey failed for ${sessionId.slice(0, 20)}…`, data: { error: String(err) } });
+      });
     }
   }
 

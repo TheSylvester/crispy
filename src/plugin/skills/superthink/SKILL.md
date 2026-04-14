@@ -160,9 +160,12 @@ Write a new review prompt that:
 2. Asks agents to verify corrections are accurate and find remaining issues
 3. Requires a verdict: `VERDICT: READY` or `VERDICT: NOT READY — [reason]`
 
-Dispatch both agents again (same parallel pattern, new temp file).
-The agents get a fresh session each round — they review the updated artifact
-from scratch, not a diff.
+**Resume the same agent sessions from round 1** — don't create fresh sessions.
+Agents retain their prior review context, so they can verify their own findings
+were addressed correctly. Use the session IDs captured from `listChildSessions`:
+
+- **claude**: `PROMPT_FILE=/tmp/superthink-r<N>-<stub>.md $CRISPY_AGENT --vendor claude --resume <claude-session-id>` (`run_in_background`)
+- **codex**: `PROMPT_FILE=/tmp/superthink-r<N>-<stub>.md $CRISPY_AGENT --vendor codex --resume <codex-session-id>` (`run_in_background`)
 
 ### Check for convergence
 

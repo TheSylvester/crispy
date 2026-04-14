@@ -16,7 +16,7 @@
 import type { SessionInfo } from './agent-adapter.js';
 import type { SessionChannelState } from './session-channel.js';
 import type { SessionListEvent } from './session-list-events.js';
-import { findSession, listAllSessions } from './session-manager.js';
+import { findSession, listAllSessions, getOpenVisibleChildren } from './session-manager.js';
 
 // ============================================================================
 // Subscriber Interface
@@ -47,9 +47,21 @@ const RESCAN_INTERVAL_MS = 30_000;
 // Subscribe / Unsubscribe
 // ============================================================================
 
-/** Subscribe to session list changes. Idempotent by ID. */
+/** Subscribe to session list changes. Idempotent by ID.
+ * Replays open-channel events for any currently-visible child sessions,
+ * so reconnecting clients (e.g. Tauri via WSL WebSocket) recover missed events. */
 export function subscribeSessionList(sub: SessionListSubscriber): void {
   subscribers.set(sub.id, sub);
+
+  // Replay open-channel state for visible children that are still alive.
+  // This is a targeted replay to the new subscriber only — not a broadcast.
+  for (const child of getOpenVisibleChildren()) {
+    try {
+      sub.send({ type: 'session_open_channel', sessionId: child.sessionId, autoClose: child.autoClose });
+    } catch {
+      // Subscriber not ready yet — best-effort
+    }
+  }
 }
 
 /** Unsubscribe from session list changes. Accepts subscriber or ID. */
