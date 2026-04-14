@@ -105,7 +105,7 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
     };
 
     const onScroll = () => {
-      evaluate(scrollSource.current !== "programmatic");
+      evaluate(scrollSource.current === "user");
     };
 
     const markUserScroll = () => {
@@ -121,14 +121,14 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
       if (navKeys.has(e.key)) scrollSource.current = "user";
     };
 
-    const onScrollEnd = () => {
-      const wasProgrammatic = scrollSource.current === "programmatic";
+    const onScrollEnd = (e: Event) => {
+      if (e.target !== el) return; // ignore bubbled scrollend from child scrollables
       scrollSource.current = null;
-      // Only allow unpark if the scroll that just ended was user-initiated.
-      // Programmatic scrolls (ResizeObserver pins) can end while new content
-      // is still arriving — the momentary distance-from-bottom is transient,
-      // not a signal that the user scrolled away.
-      evaluate(!wasProgrammatic);
+      // Re-park only — onScroll already handles unpark during active user scrolling.
+      // scrollend must never unpark: the null window between scrollend clearing
+      // scrollSource and the next ResizeObserver fire lasts the entire thinking
+      // duration (10-60s), making any stale scroll event a false-unpark trigger.
+      evaluate(false);
     };
 
     el.addEventListener("scroll", onScroll, { passive: true });
