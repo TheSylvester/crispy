@@ -1,10 +1,10 @@
 /**
  * Find Claude Binary — locate the globally-installed Claude Code native binary
  *
- * Resolves the path to the native `claude` binary so the Agent SDK spawns
- * it directly (not via `node cli.js`). The SDK's spawn logic checks if the
- * path ends in `.js` — if it does, it runs `node <path>`; if it doesn't,
- * it runs the binary directly. We MUST return the native binary path.
+ * Resolves the path to Claude Code so the Agent SDK can spawn it. The SDK's
+ * spawn logic checks if the path ends in `.js` — if it does, it runs
+ * `node <path>`; if it doesn't, it runs the binary directly. We return
+ * either the native binary or the cli.js from an npm/bun global install.
  *
  * Search order:
  * 1. `CLAUDE_CODE_PATH` environment variable (explicit override)
@@ -18,7 +18,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { homedir, platform } from 'node:os';
 
 /**
@@ -64,6 +64,21 @@ function resolveViaWhich(): string | undefined {
     // `where` on Windows may return multiple lines — take the first
     const firstLine = result.split('\n')[0]?.trim();
     if (firstLine && existsSync(firstLine)) {
+      // On Windows, npm global installs produce `claude.cmd` — a batch wrapper
+      // the SDK can't execute via execFile without shell: true. Resolve to the
+      // underlying cli.js which the SDK knows how to run via `node`.
+      if (firstLine.endsWith('.cmd')) {
+        const cliJs = join(
+          dirname(firstLine),
+          'node_modules',
+          '@anthropic-ai',
+          'claude-code',
+          'cli.js',
+        );
+        if (existsSync(cliJs)) return cliJs;
+        // .cmd exists but cli.js doesn't — skip, fall through to well-known paths
+        return undefined;
+      }
       return firstLine;
     }
   } catch {
@@ -89,6 +104,26 @@ function resolveViaWellKnownPaths(): string | undefined {
     if (localAppData) {
       candidates.push(join(localAppData, 'Programs', 'claude', 'claude.exe'));
     }
+    // npm global install: %APPDATA%\npm\node_modules\@anthropic-ai\claude-code\cli.js
+    const appData = process.env.APPDATA;
+    if (appData) {
+      candidates.push(
+        join(appData, 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js'),
+      );
+    }
+    // bun global install: %USERPROFILE%\.bun\install\global\node_modules\...
+    candidates.push(
+      join(
+        homedir(),
+        '.bun',
+        'install',
+        'global',
+        'node_modules',
+        '@anthropic-ai',
+        'claude-code',
+        'cli.js',
+      ),
+    );
   }
 
   for (const candidate of candidates) {
