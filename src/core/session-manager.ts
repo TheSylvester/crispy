@@ -1287,11 +1287,21 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
       }
       if (!cwd) cwd = normalizePath(defaultCwd);
 
+      // Inherit model from parent session when same vendor and no explicit model
+      let inheritedModel: string | undefined;
+      if (!intent.settings.model && intent.target.parentSessionId) {
+        const parentChannel = sessions.get(intent.target.parentSessionId);
+        if (parentChannel?.adapter?.vendor === intent.target.vendor) {
+          inheritedModel = parentChannel.adapter.settings?.model;
+        }
+      }
+
       const created = createSession(
         intent.target.vendor as Vendor,
         cwd,
         subscriber,
         {
+          ...(inheritedModel && { model: inheritedModel }),
           ...intent.settings,
           ...(intent.target.skipPersistSession && { skipPersistSession: true }),
           ...(intent.target.mcpServers && { mcpServers: intent.target.mcpServers }),
