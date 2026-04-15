@@ -64,7 +64,7 @@ export function SessionSelector({ onSelect, onClose }: SessionSelectorProps = {}
   const cwdMeta = document.querySelector('meta[name="crispy-cwd"]')?.getAttribute('content');
   const homeMeta = document.querySelector('meta[name="crispy-home"]')?.getAttribute('content');
   const handleCwdChange = useCallback((slug: string | null) => {
-    if (!tabCtx && transportKind === 'websocket' && cwdMeta && slug) {
+    if (!tabCtx && (transportKind === 'websocket' || transportKind === 'tauri') && cwdMeta && slug) {
       const cwd = allCwds.find(c => c.slug === slug);
       if (cwd && homeMeta) {
         window.location.replace(fsPathToUrlPath(cwd.fullPath, homeMeta));

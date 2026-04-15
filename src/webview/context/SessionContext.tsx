@@ -228,7 +228,7 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
     if (cwdInitialized.current) return;
 
     const cwdMeta = document.querySelector('meta[name="crispy-cwd"]')?.getAttribute('content');
-    if (cwdMeta && transportKind === 'websocket') {
+    if (cwdMeta && (transportKind === 'websocket' || transportKind === 'tauri')) {
       // Server injected a workspace CWD — use it directly
       cwdInitialized.current = true;
       const slug = pathToSlug(cwdMeta);

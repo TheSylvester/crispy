@@ -152,7 +152,7 @@ export function TitleBar(): React.JSX.Element {
   const cwdMeta = document.querySelector('meta[name="crispy-cwd"]')?.getAttribute('content');
   const homeMeta = document.querySelector('meta[name="crispy-home"]')?.getAttribute('content');
   const handleCwdChange = useCallback((slug: string | null) => {
-    if (envKind === 'websocket' && cwdMeta && slug) {
+    if ((envKind === 'websocket' || envKind === 'tauri') && cwdMeta && slug) {
       const cwd = allCwds.find(c => c.slug === slug);
       if (cwd && homeMeta) {
         window.location.replace(fsPathToUrlPath(cwd.fullPath, homeMeta));
