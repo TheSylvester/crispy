@@ -374,12 +374,25 @@ export function useChannelStore(sessionId: string | null): UseChannelStoreResult
   const transport = useTransport();
   const manager = useMemo(() => ChannelStoreManager.for(transport), [transport]);
 
-  // Acquire/release store on mount/unmount or sessionId change
+  // Acquire/release store synchronously so the store exists before
+  // useSyncExternalStore's getSnapshot reads it. useEffect would defer
+  // acquisition to after paint, producing a flash frame of empty entries
+  // on every session switch.
+  const acquiredRef = useRef<string | null>(null);
+  if (acquiredRef.current !== sessionId) {
+    if (acquiredRef.current) manager.release(acquiredRef.current);
+    if (sessionId) manager.acquire(sessionId);
+    acquiredRef.current = sessionId;
+  }
+  // Release on unmount
   useEffect(() => {
-    if (!sessionId) return;
-    manager.acquire(sessionId);
-    return () => manager.release(sessionId);
-  }, [sessionId, manager]);
+    return () => {
+      if (acquiredRef.current) {
+        manager.release(acquiredRef.current);
+        acquiredRef.current = null;
+      }
+    };
+  }, [manager]);
 
   // --- Shared entries/contextUsage via useSyncExternalStore ---
 
@@ -477,8 +490,15 @@ export function useChannelStore(sessionId: string | null): UseChannelStoreResult
     setLocalState(prev => (prev.approvalRequest === req ? prev : { ...prev, approvalRequest: req }));
   }, []);
 
+  // Stale-while-revalidate: keep previous entries visible while the new
+  // session's catchup is in flight (e.g., vendor switch, session browse).
+  // Prevents a flash of empty content between session transitions.
+  const staleEntriesRef = useRef<TranscriptEntry[]>([]);
+  const entries = shared.entries.length > 0 ? shared.entries : staleEntriesRef.current;
+  if (shared.entries.length > 0) staleEntriesRef.current = shared.entries;
+
   return {
-    entries: shared.entries,
+    entries,
     channelState: localState.channelState,
     lastError: localState.lastError,
     contextUsage: shared.contextUsage,
