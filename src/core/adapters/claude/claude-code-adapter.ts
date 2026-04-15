@@ -942,8 +942,12 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       // shell: true, preventing the SDK's control protocol from initializing.
       ...(platform() === 'win32' && {
         spawnClaudeCodeProcess: (spawnOpts: SDKSpawnOptions) => {
-          log({ source: 'claude-adapter', level: 'info', summary: `[WIN SPAWN] command=${spawnOpts.command} args=${JSON.stringify(spawnOpts.args?.slice(0, 3))} cwd=${spawnOpts.cwd}` });
-          const child = spawn(spawnOpts.command, spawnOpts.args, {
+          // cmd.exe splits unquoted paths at spaces — quote if needed
+          const command = spawnOpts.command.includes(' ')
+            ? `"${spawnOpts.command}"`
+            : spawnOpts.command;
+          log({ source: 'claude-adapter', level: 'info', summary: `[WIN SPAWN] command=${command} args=${JSON.stringify(spawnOpts.args?.slice(0, 3))} cwd=${spawnOpts.cwd}` });
+          const child = spawn(command, spawnOpts.args, {
             cwd: spawnOpts.cwd,
             env: spawnOpts.env,
             signal: spawnOpts.signal,
