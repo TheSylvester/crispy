@@ -942,6 +942,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       // shell: true, preventing the SDK's control protocol from initializing.
       ...(platform() === 'win32' && {
         spawnClaudeCodeProcess: (spawnOpts: SDKSpawnOptions) => {
+          log({ source: 'claude-adapter', level: 'info', summary: `[WIN SPAWN] command=${spawnOpts.command} args=${JSON.stringify(spawnOpts.args?.slice(0, 3))} cwd=${spawnOpts.cwd}` });
           const child = spawn(spawnOpts.command, spawnOpts.args, {
             cwd: spawnOpts.cwd,
             env: spawnOpts.env,
@@ -949,6 +950,13 @@ export class ClaudeAgentAdapter implements AgentAdapter {
             stdio: ['pipe', 'pipe', 'pipe'],
             shell: true,
             windowsHide: true,
+          });
+          child.stderr?.on('data', (chunk: Buffer) => {
+            const text = chunk.toString().trim();
+            if (text) log({ source: 'claude-adapter', level: 'warn', summary: `[WIN SPAWN stderr] ${text.slice(0, 500)}` });
+          });
+          child.on('exit', (code) => {
+            if (code !== 0) log({ source: 'claude-adapter', level: 'error', summary: `[WIN SPAWN] process exited with code ${code}` });
           });
           return child;
         },

@@ -20,6 +20,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir, platform } from 'node:os';
+import { log } from './log.js';
 
 /**
  * Locate the globally-installed Claude Code native binary.
@@ -36,15 +37,18 @@ export function findClaudeBinary(): string | undefined {
   // 2. which/where lookup
   const whichResult = resolveViaWhich();
   if (whichResult) {
+    log({ source: 'claude-adapter', level: 'info', summary: `findClaudeBinary: resolved via which/where → ${whichResult}` });
     return whichResult;
   }
 
   // 3. Well-known install locations
   const wellKnown = resolveViaWellKnownPaths();
   if (wellKnown) {
+    log({ source: 'claude-adapter', level: 'info', summary: `findClaudeBinary: resolved via well-known path → ${wellKnown}` });
     return wellKnown;
   }
 
+  log({ source: 'claude-adapter', level: 'warn', summary: `findClaudeBinary: no binary found (platform=${platform()})` });
   return undefined;
 }
 
