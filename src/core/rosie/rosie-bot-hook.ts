@@ -13,6 +13,7 @@
 import { onResponseCompleteAfter } from '../lifecycle-hooks.js';
 import type { AgentDispatch } from '../agent-dispatch-types.js';
 import { getSettingsSnapshotInternal } from '../settings/index.js';
+import type { ArbiterPolicy } from '../arbiter/types.js';
 import { parseModelOption } from '../model-utils.js';
 import { closeSession } from '../session-manager.js';
 import { log } from '../log.js';
@@ -32,6 +33,7 @@ const unsubscribers: Array<() => void> = [];
 /** Resolved paths for the tracker child session. */
 let trackerScriptPath = '';
 let ipcSocketPath = '';
+let cachedTrackerPolicy: ArbiterPolicy | null = null;
 
 // Tracker state — persistent session per parent, turn counter
 const trackerSessions = new Map<string, string>();  // parentSessionId → trackerChildSessionId
@@ -53,6 +55,7 @@ export function initRosieBot(d: AgentDispatch, config: RosieBotConfig): void {
   dispatch = d;
   trackerScriptPath = config.trackerScript;
   ipcSocketPath = config.ipcSocket;
+  cachedTrackerPolicy = buildTrackerPolicy();
   initRosieTracker(d);
 }
 
@@ -60,10 +63,35 @@ export function shutdownRosieBot(): void {
   for (const unsub of unsubscribers) unsub();
   unsubscribers.length = 0;
   dispatch = null;
+  cachedTrackerPolicy = null;
   // Close all live tracker child sessions before clearing state
   for (const [parentId] of trackerSessions) {
     evictTrackerSession(parentId);
   }
+}
+
+// ============================================================================
+// Tracker Arbiter Policy
+// ============================================================================
+
+function buildTrackerPolicy(): ArbiterPolicy {
+  return {
+    deny: [
+      'Write', 'Edit', 'Agent', 'WebFetch',
+      'Bash(rm *)', 'Bash(git push*)', 'Bash(git commit*)',
+      'Bash(git checkout*)', 'Bash(git reset*)',
+      'Bash(curl *)', 'Bash(wget *)',
+    ],
+    allow: [
+      `Bash(${trackerScriptPath} *)`,
+      `Bash(node ${trackerScriptPath} *)`,
+      'Bash(crispy-dispatch rpc *)',
+      'Bash(git status)', 'Bash(git log *)',
+      'Read(*)', 'Glob(*)', 'Grep(*)',
+    ],
+    fallback: 'deny',
+    bashMode: 'strict',
+  };
 }
 
 // ============================================================================
@@ -161,8 +189,7 @@ async function runTracker(
         prompt: injection,
         settings: {
           ...(model && { model }),
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
+          permissionMode: 'default',
         },
         autoClose: false,
         timeoutMs: 0,
@@ -187,8 +214,7 @@ async function runTracker(
         systemPrompt: buildTrackerSystemPrompt(),
         settings: {
           ...(model && { model }),
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
+          // arbiterPolicy requires approval events — dispatchChildSession forces permissionMode: 'default'
         },
         forceNew: true,
         skipPersistSession: false,
@@ -203,6 +229,7 @@ async function runTracker(
           CRISPY_PROJECT_PATH: projectPath ?? '',
         },
         timeoutMs: 0,
+        arbiterPolicy: cachedTrackerPolicy!,
       });
 
       if (!trackerResult) {

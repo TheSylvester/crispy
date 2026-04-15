@@ -37,6 +37,8 @@ import type {
   ChannelEvent,
   PendingApprovalInfo,
 } from './channel-events.js';
+import type { ArbiterPolicy } from './arbiter/types.js';
+import { evaluate } from './arbiter/evaluate.js';
 
 // Re-export for backwards compatibility
 export type { PendingApprovalInfo } from './channel-events.js';
@@ -138,6 +140,9 @@ export interface SessionChannel {
 
   /** Optional callback invoked on any status state change (active/idle/approval/background). */
   onStatusChange?: (state: SessionChannelState) => void;
+
+  /** Optional arbiter policy — when set, tool calls are auto-resolved before broadcast. */
+  arbiterPolicy?: ArbiterPolicy;
 }
 
 // ============================================================================
@@ -343,6 +348,28 @@ function broadcastAndTrack(channel: SessionChannel, msg: ChannelMessage): void {
         case 'awaiting_approval': {
           const { toolUseId, toolName, input, reason, options } = event;
           channel.pendingApprovals.set(toolUseId, { toolUseId, toolName, input, reason, options });
+
+          // ── Arbiter auto-resolution ──
+          if (channel.arbiterPolicy) {
+            try {
+              const result = evaluate(toolName, input, channel.arbiterPolicy);
+              if (result.decision === 'allow') {
+                resolveApproval(channel, toolUseId, 'allow');
+                return; // Don't broadcast — tool proceeds silently
+              }
+              if (result.decision === 'deny') {
+                resolveApproval(channel, toolUseId, 'deny', {
+                  message: `Denied by arbiter: ${result.source}`,
+                });
+                return; // Don't broadcast — tool blocked silently
+              }
+              // 'escalate' falls through to normal broadcast (human decides)
+            } catch (err) {
+              log({ source: 'arbiter', level: 'error', summary: `Arbiter error for ${toolName} — escalating to human`, data: { error: String(err) } });
+              // Fall through to normal approval broadcast
+            }
+          }
+
           channel.state = 'awaiting_approval';
           break;
         }
@@ -505,6 +532,9 @@ export async function rotateAdapter(channel: SessionChannel): Promise<void> {
   }
 
   // 5. Reset channel state atomically
+  // NOTE: arbiterPolicy is intentionally preserved across rotation.
+  // Persistent child sessions (autoClose: false) rely on the policy
+  // surviving between turns on the same channel.
   channel.adapter = null;
   channel.entries = [];
   channel.entryIndex = 0;

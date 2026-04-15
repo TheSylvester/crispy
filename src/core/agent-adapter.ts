@@ -14,6 +14,7 @@
 
 import type { TranscriptEntry, MessageContent, Vendor, ContextUsage } from './transcript.js';
 import type { ChannelEvent, ChannelStatus } from './channel-events.js';
+import type { ArbiterPolicy } from './arbiter/types.js';
 
 // ============================================================================
 // Channel Message — the combined output stream type
@@ -224,6 +225,16 @@ export interface TurnIntent {
    * child registration — only the IPC path (crispy-dispatch → sendTurn) sets this.
    */
   parentSessionId?: string;
+  /**
+   * Arbiter policy for automatic tool call gating. When set, the channel
+   * intercepts awaiting_approval events and auto-resolves them based on
+   * the policy rules before they reach subscribers or the UI.
+   *
+   * Only reliable when dispatched via `dispatchChildSession()`, which forces
+   * `permissionMode: 'default'` so approval events actually fire. Direct
+   * `sendTurn()` callers must ensure permission settings are compatible.
+   */
+  arbiterPolicy?: ArbiterPolicy;
 }
 
 /**

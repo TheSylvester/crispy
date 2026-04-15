@@ -45,6 +45,7 @@ let defaultCwd = '';
 export function setDefaultCwd(cwd: string): void { defaultCwd = cwd; }
 
 import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, ChannelMessage, TurnIntent, TurnTarget, TurnSettings, SubagentEntriesResult, EphemeralTargetOptions, LocalPlugin } from './agent-adapter.js';
+import type { ArbiterPolicy } from './arbiter/types.js';
 import type { TranscriptEntry, MessageContent, Vendor, Usage } from './transcript.js';
 import type { SessionChannel, Subscriber, SubscriberMessage } from './session-channel.js';
 import { parseModelOption } from './model-utils.js';
@@ -145,6 +146,8 @@ export interface ChildSessionOptions {
   openChannel?: boolean;
   /** Called for each channel message — use for streaming log output. */
   onEntry?: (msg: ChannelMessage) => void;
+  /** Arbiter policy for automatic tool call gating on the child channel. */
+  arbiterPolicy?: ArbiterPolicy;
 }
 
 export interface ChildSessionResult {
@@ -1406,6 +1409,11 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
     },
   });
 
+  // Attach before adapter sees the first awaiting_approval event
+  if (intent.arbiterPolicy) {
+    channel.arbiterPolicy = intent.arbiterPolicy;
+  }
+
   // Broadcast user entry to all subscribers before adapter sees it
   const userEntry = buildUserEntry(intent);
   channelBroadcastUserEntry(channel, userEntry);
@@ -1561,13 +1569,21 @@ export async function dispatchChildSession(
     target = { kind: 'new', vendor: vendor as Vendor, cwd, ...ephemeral };
   }
 
+  // When an arbiter policy is attached, force permission mode so approval
+  // events fire. bypassPermissions / allowDangerouslySkipPermissions would
+  // cause the SDK to skip canUseTool() entirely, defeating the arbiter.
+  const effectiveSettings = options.arbiterPolicy
+    ? { ...settings, permissionMode: 'default' as const, allowDangerouslySkipPermissions: false }
+    : settings;
+
   const intent: TurnIntent = {
     target,
     content: prompt,
     clientMessageId: crypto.randomUUID(),
-    settings,
+    settings: effectiveSettings,
     ...(options.openChannel && { openChannel: true }),
     ...(autoClose !== undefined && { autoClose }),
+    ...(options.arbiterPolicy && { arbiterPolicy: options.arbiterPolicy }),
   };
 
   // Allocate a deterministic pending ID up front so cleanup always has a
