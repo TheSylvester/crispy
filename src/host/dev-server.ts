@@ -33,6 +33,7 @@ import { getEnabledTunnelConfig } from '../core/tunnel-config.js';
 import { closeAllTerminals } from './terminal-manager.js';
 import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
+import { findClaudeBinary } from '../core/find-claude-binary.js';
 import { initRosieBot, shutdownRosieBot } from '../core/rosie/index.js';
 import { initMessageView, shutdownMessageView } from '../core/message-view/index.js';
 import { initRecallIngest, shutdownRecallIngest } from '../core/recall/ingest-hook.js';
@@ -440,7 +441,8 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
   done = phase('register adapters');
   setDefaultCwd(cwd);
-  registerAllAdapters({ cwd, hostType, dispatch, extensionPath });
+  const pathToClaudeCodeExecutable = findClaudeBinary();
+  registerAllAdapters({ cwd, hostType, dispatch, extensionPath, ...(pathToClaudeCodeExecutable && { pathToClaudeCodeExecutable }) });
   done();
 
   // IPC socket: use stable paths for daemon, PID-based for dev
@@ -467,7 +469,9 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
   let unsubTunnel: (() => void) | null = null;
 
   const settingsDone = phase('init settings');
-  const providerBase = { cwd };
+  const providerBase = pathToClaudeCodeExecutable
+    ? { cwd, pathToClaudeCodeExecutable }
+    : { cwd };
   initSettings(providerBase)
     .then(() => {
       startWatchingSettings();
