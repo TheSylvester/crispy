@@ -14,6 +14,7 @@ import { useTransport } from '../../context/TransportContext.js';
 import { inferLanguage } from '../../renderers/tools/shared/tool-utils.js';
 import { useTabControllerOptional } from '../../context/TabControllerContext.js';
 import { useEnvironment } from '../../context/EnvironmentContext.js';
+import { isImageExtension } from '../../utils/drag-drop.js';
 import { FileViewer } from './FileViewer.js';
 import { TranscriptAnnotationPopover } from '../TranscriptAnnotationPopover.js';
 import type { TranscriptAnnotationState } from '../../hooks/useTranscriptAnnotation.js';
@@ -165,6 +166,7 @@ export function FileViewerTab({ path, relativePath: relPath, line }: FileViewerT
   const tabController = useTabControllerOptional();
   const envKind = useEnvironment();
   const [file, setFile] = useState<ActiveFileView | null>(null);
+  const [imageDataUri, setImageDataUri] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [wordWrap, setWordWrap] = useState(true);
@@ -172,34 +174,50 @@ export function FileViewerTab({ path, relativePath: relPath, line }: FileViewerT
   const bodyRef = useRef<HTMLDivElement>(null);
   const annotation = useFileViewerSelection(bodyRef, file);
 
+  const ext = (path.match(/\.[^.]+$/)?.[0] ?? '').toLowerCase();
+  const isImage = isImageExtension(ext);
+
   // Load file on mount or when path changes
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setImageDataUri(null);
 
-    transport.readFile(path).then(({ content, size }) => {
-      if (cancelled) return;
-      const relativePath = relPath ?? path.split('/').pop() ?? path;
-      const fileView: ActiveFileView = {
-        path,
-        relativePath,
-        content,
-        language: inferLanguage(relativePath),
-        size,
-        line,
-      };
-      setFile(fileView);
-      setMarkdownPreview(/\.(md|markdown)$/i.test(relativePath));
-      setLoading(false);
-    }).catch((err) => {
-      if (cancelled) return;
-      setError(err instanceof Error ? err.message : String(err));
-      setLoading(false);
-    });
+    if (isImage) {
+      transport.readImage(path).then(({ data, mimeType }) => {
+        if (cancelled) return;
+        setImageDataUri(`data:${mimeType};base64,${data}`);
+        setLoading(false);
+      }).catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+        setLoading(false);
+      });
+    } else {
+      transport.readFile(path).then(({ content, size }) => {
+        if (cancelled) return;
+        const relativePath = relPath ?? path.split('/').pop() ?? path;
+        const fileView: ActiveFileView = {
+          path,
+          relativePath,
+          content,
+          language: inferLanguage(relativePath),
+          size,
+          line,
+        };
+        setFile(fileView);
+        setMarkdownPreview(/\.(md|markdown)$/i.test(relativePath));
+        setLoading(false);
+      }).catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+        setLoading(false);
+      });
+    }
 
     return () => { cancelled = true; };
-  }, [path, transport]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [path, transport, isImage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update line when config changes (e.g. clicking same file at different line)
   useEffect(() => {
@@ -225,8 +243,8 @@ export function FileViewerTab({ path, relativePath: relPath, line }: FileViewerT
     window.postMessage({ kind: 'insertIntoChat', text: annotation }, '*');
   }, [file]);
 
-  const isMarkdownFile = file ? /\.(md|markdown)$/i.test(file.relativePath) : false;
-  const showExecute = file && isExecutable(file.relativePath);
+  const isMarkdownFile = !isImage && file ? /\.(md|markdown)$/i.test(file.relativePath) : false;
+  const showExecute = !isImage && file && isExecutable(file.relativePath);
 
   return (
     <div className="crispy-file-viewer-tab">
@@ -235,7 +253,7 @@ export function FileViewerTab({ path, relativePath: relPath, line }: FileViewerT
           {file?.relativePath ?? (loading ? 'Loading...' : 'Error')}
         </span>
         <div className="crispy-file-viewer-tab__actions">
-          {file && (
+          {file && !isImage && (
             <>
               {!markdownPreview && (
                 <button
@@ -276,9 +294,7 @@ export function FileViewerTab({ path, relativePath: relPath, line }: FileViewerT
         </div>
       </div>
       <div className="crispy-file-viewer-tab__body" ref={bodyRef} data-word-wrap={wordWrap ? '' : undefined}>
-        {file ? (
-          <FileViewer file={file} error={error} loading={loading} wordWrap={wordWrap} markdownPreview={markdownPreview} />
-        ) : loading ? (
+        {loading ? (
           <div className="crispy-file-viewer">
             <div className="crispy-file-viewer__loading">Loading...</div>
           </div>
@@ -286,6 +302,12 @@ export function FileViewerTab({ path, relativePath: relPath, line }: FileViewerT
           <div className="crispy-file-viewer">
             <div className="crispy-file-viewer__error">{error}</div>
           </div>
+        ) : imageDataUri ? (
+          <div className="crispy-file-viewer crispy-file-viewer--image">
+            <img src={imageDataUri} alt={relPath ?? path} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+          </div>
+        ) : file ? (
+          <FileViewer file={file} error={error} loading={loading} wordWrap={wordWrap} markdownPreview={markdownPreview} />
         ) : null}
       </div>
       <TranscriptAnnotationPopover {...annotation} />
