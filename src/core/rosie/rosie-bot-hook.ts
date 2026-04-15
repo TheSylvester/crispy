@@ -110,9 +110,10 @@ function initRosieTracker(d: AgentDispatch): void {
     if (!info) return;
 
     const rosieModel = snap.settings.rosie.bot.model;
+    const debugTracker = snap.settings.rosie.bot.debugTracker ?? false;
     trackerInflight.add(sessionId);
     try {
-      await runTracker(d, sessionId, info.path, info.vendor, rosieModel, info.projectPath);
+      await runTracker(d, sessionId, info.path, info.vendor, rosieModel, info.projectPath, debugTracker);
     } catch (err) {
       log({ source: 'rosie-bot:tracker', level: 'error',
         summary: `Tracker error: ${err instanceof Error ? err.message : String(err)}` });
@@ -136,6 +137,7 @@ async function runTracker(
   parentVendor: string,
   modelOverride?: string,
   projectPath?: string,
+  debugTracker = false,
 ): Promise<void> {
   const parsed = modelOverride ? parseModelOption(modelOverride) : undefined;
   const vendor = parsed?.vendor ?? parentVendor;
@@ -219,7 +221,8 @@ async function runTracker(
         forceNew: true,
         skipPersistSession: false,
         autoClose: false,
-        sessionKind: 'system',
+        sessionKind: debugTracker ? 'user' : 'system',
+        ...(debugTracker && { openChannel: true }),
         env: {
           CLAUDECODE: '',
           CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '30000',

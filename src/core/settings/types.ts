@@ -94,6 +94,8 @@ export interface RosieBotSettings {
   enabled: boolean;
   /** Model override. Format: "vendor:model" (e.g. "claude:haiku"). */
   model?: string;
+  /** When true, tracker sessions appear in the session browser for debugging. */
+  debugTracker?: boolean;
 }
 
 export interface RosieSettings {

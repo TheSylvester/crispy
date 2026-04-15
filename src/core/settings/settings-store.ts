@@ -267,37 +267,20 @@ function sanitizeSettings(data: unknown): CrispySettings {
     result.turnDefaults = settings.turnDefaults as typeof result.turnDefaults;
   }
 
-  // Rosie Bot — handle current { bot: { enabled, model? } } and legacy shapes
+  // Rosie Bot
   if (settings.rosie && typeof settings.rosie === 'object') {
     const rosie = settings.rosie as Record<string, unknown>;
 
     if (rosie.bot && typeof rosie.bot === 'object') {
-      // Current shape — pass through
       const bot = rosie.bot as Record<string, unknown>;
       if (typeof bot.enabled === 'boolean') {
         result.rosie = { bot: { enabled: bot.enabled } };
         if (typeof bot.model === 'string' && bot.model.trim()) {
           result.rosie.bot.model = bot.model.trim();
         }
-      }
-    } else if ((rosie.summarize && typeof rosie.summarize === 'object')
-      || (rosie.tracker && typeof rosie.tracker === 'object')) {
-      // Old nested shape: { summarize?: {...}, tracker?: {...} }
-      const summarize = (rosie.summarize && typeof rosie.summarize === 'object'
-        ? rosie.summarize : {}) as Record<string, unknown>;
-      const tracker = (rosie.tracker && typeof rosie.tracker === 'object'
-        ? rosie.tracker : {}) as Record<string, unknown>;
-      const enabled = (typeof summarize.enabled === 'boolean' && summarize.enabled)
-        || (typeof tracker.enabled === 'boolean' && tracker.enabled);
-      const model = (typeof summarize.model === 'string' && summarize.model.trim())
-        || (typeof tracker.model === 'string' && (tracker.model as string).trim())
-        || undefined;
-      result.rosie = { bot: { enabled, ...(model && { model }) } };
-    } else if (typeof rosie.enabled === 'boolean') {
-      // Old flat shape: { enabled, model? }
-      result.rosie = { bot: { enabled: rosie.enabled } };
-      if (typeof rosie.model === 'string' && (rosie.model as string).trim()) {
-        result.rosie.bot.model = (rosie.model as string).trim();
+        if (typeof bot.debugTracker === 'boolean') {
+          result.rosie.bot.debugTracker = bot.debugTracker;
+        }
       }
     }
   }

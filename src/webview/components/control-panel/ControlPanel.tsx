@@ -54,7 +54,7 @@ import { useTabSession } from '../../context/TabSessionContext.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent, TurnTarget } from '../../../core/agent-adapter.js';
-import type { WireProviderConfig, DiscordBotSettings, TunnelSettings } from '../../../core/settings/types.js';
+import type { WireProviderConfig, DiscordBotSettings, TunnelSettings, RosieBotSettings } from '../../../core/settings/types.js';
 import type { TunnelStatusInfo } from '../../../host/tunnel-client.js';
 import type { SettingsChangedGlobalEvent } from '../../../core/settings/events.js';
 import { SETTINGS_CHANNEL_ID } from '../../../core/settings/events.js';
@@ -290,8 +290,12 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         if (sessionId === SETTINGS_CHANNEL_ID && event.type === 'settings_snapshot') {
           const settingsEvent = event as SettingsChangedGlobalEvent;
           setProviders(settingsEvent.snapshot.settings.providers);
-          setRosieEnabled(settingsEvent.snapshot.settings.rosie?.bot?.enabled ?? false);
-          setRosieModel(settingsEvent.snapshot.settings.rosie?.bot?.model);
+          const rBot = settingsEvent.snapshot.settings.rosie?.bot;
+          if (rBot) {
+            setRosieEnabled(rBot.enabled);
+            setRosieModel(rBot.model);
+            setRosieDebugTracker(rBot.debugTracker ?? false);
+          }
           // Discord push sync
           const dBot = settingsEvent.snapshot.settings.discord?.bot;
           if (dBot) {
@@ -360,6 +364,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // --- Rosie Bot settings state ---
     const [rosieEnabled, setRosieEnabled] = useState(false);
     const [rosieModel, setRosieModel] = useState<string | undefined>(undefined);
+    const [rosieDebugTracker, setRosieDebugTracker] = useState(false);
 
     // --- Discord Bot settings state ---
     const [discordEnabled, setDiscordEnabled] = useState(false);
@@ -386,6 +391,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       transport.getSettings().then((snapshot) => {
         setRosieEnabled(snapshot.settings.rosie?.bot?.enabled ?? false);
         setRosieModel(snapshot.settings.rosie?.bot?.model);
+        setRosieDebugTracker(snapshot.settings.rosie?.bot?.debugTracker ?? false);
         // Discord
         const discordBot = snapshot.settings.discord?.bot;
         if (discordBot) {
@@ -447,9 +453,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       });
     }, [transport]);
 
-    const handleUpdateRosie = useCallback(async (patch: { enabled?: boolean; model?: string }) => {
+    const handleUpdateRosie = useCallback(async (patch: Partial<RosieBotSettings>) => {
       if (patch.enabled !== undefined) setRosieEnabled(patch.enabled);
       if (patch.model !== undefined) setRosieModel(patch.model);
+      if (patch.debugTracker !== undefined) setRosieDebugTracker(patch.debugTracker);
       await transport.updateSettings({ rosie: { bot: patch } });
     }, [transport]);
 
@@ -1368,6 +1375,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onUseDisplayStyleAccentChange={setUseDisplayStyleAccent}
               rosieEnabled={rosieEnabled}
               rosieModel={rosieModel}
+              rosieDebugTracker={rosieDebugTracker}
               onUpdateRosie={handleUpdateRosie}
               discordEnabled={discordEnabled}
               discordGuildId={discordGuildId}
