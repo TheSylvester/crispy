@@ -54,7 +54,8 @@ import { useTabSession } from '../../context/TabSessionContext.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent, TurnTarget } from '../../../core/agent-adapter.js';
-import type { WireProviderConfig, DiscordBotSettings } from '../../../core/settings/types.js';
+import type { WireProviderConfig, DiscordBotSettings, TunnelSettings } from '../../../core/settings/types.js';
+import type { TunnelStatusInfo } from '../../../host/tunnel-client.js';
 import type { SettingsChangedGlobalEvent } from '../../../core/settings/events.js';
 import { SETTINGS_CHANNEL_ID } from '../../../core/settings/events.js';
 import { RECALL_CATCHUP_CHANNEL_ID } from '../../../core/recall/catchup-types.js';
@@ -302,6 +303,18 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
             if (dBot.enableInDaemon !== undefined) setDiscordEnableInDaemon(dBot.enableInDaemon);
             if (dBot.enableInTauri !== undefined) setDiscordEnableInTauri(dBot.enableInTauri);
           }
+          // Tunnel push sync
+          const tun = settingsEvent.snapshot.settings.tunnel;
+          if (tun) {
+            setTunnelEnabled(tun.enabled);
+            setTunnelRelayUrl(tun.relayUrl);
+            setTunnelId(tun.tunnelId);
+            setTunnelName(tun.tunnelName);
+            if (tun.enableInDevServer !== undefined) setTunnelEnableInDevServer(tun.enableInDevServer);
+            if (tun.enableInDaemon !== undefined) setTunnelEnableInDaemon(tun.enableInDaemon);
+            if (tun.enableInTauri !== undefined) setTunnelEnableInTauri(tun.enableInTauri);
+            if (tun.enableInVscode !== undefined) setTunnelEnableInVscode(tun.enableInVscode);
+          }
           setDefaultModel(settingsEvent.snapshot.settings.turnDefaults?.model ?? '');
           const savedMode = settingsEvent.snapshot.settings.turnDefaults?.permissionMode;
           if (savedMode) {
@@ -358,6 +371,17 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const [discordEnableInDaemon, setDiscordEnableInDaemon] = useState(true);
     const [discordEnableInTauri, setDiscordEnableInTauri] = useState(true);
 
+    // --- Tunnel settings state ---
+    const [tunnelEnabled, setTunnelEnabled] = useState(false);
+    const [tunnelRelayUrl, setTunnelRelayUrl] = useState('');
+    const [tunnelId, setTunnelId] = useState('');
+    const [tunnelName, setTunnelName] = useState('');
+    const [tunnelStatus, setTunnelStatus] = useState<TunnelStatusInfo>({ status: 'disconnected' });
+    const [tunnelEnableInDevServer, setTunnelEnableInDevServer] = useState(true);
+    const [tunnelEnableInDaemon, setTunnelEnableInDaemon] = useState(true);
+    const [tunnelEnableInTauri, setTunnelEnableInTauri] = useState(true);
+    const [tunnelEnableInVscode, setTunnelEnableInVscode] = useState(false);
+
     useEffect(() => {
       transport.getSettings().then((snapshot) => {
         setRosieEnabled(snapshot.settings.rosie?.bot?.enabled ?? false);
@@ -373,6 +397,18 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           if (discordBot.enableInDevServer !== undefined) setDiscordEnableInDevServer(discordBot.enableInDevServer);
           if (discordBot.enableInDaemon !== undefined) setDiscordEnableInDaemon(discordBot.enableInDaemon);
           if (discordBot.enableInTauri !== undefined) setDiscordEnableInTauri(discordBot.enableInTauri);
+        }
+        // Tunnel
+        const tun = snapshot.settings.tunnel;
+        if (tun) {
+          setTunnelEnabled(tun.enabled);
+          setTunnelRelayUrl(tun.relayUrl);
+          setTunnelId(tun.tunnelId);
+          setTunnelName(tun.tunnelName);
+          if (tun.enableInDevServer !== undefined) setTunnelEnableInDevServer(tun.enableInDevServer);
+          if (tun.enableInDaemon !== undefined) setTunnelEnableInDaemon(tun.enableInDaemon);
+          if (tun.enableInTauri !== undefined) setTunnelEnableInTauri(tun.enableInTauri);
+          if (tun.enableInVscode !== undefined) setTunnelEnableInVscode(tun.enableInVscode);
         }
         const savedDefault = snapshot.settings.turnDefaults?.model ?? '';
         setDefaultModel(savedDefault);
@@ -427,6 +463,49 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       if (patch.enableInDaemon !== undefined) setDiscordEnableInDaemon(patch.enableInDaemon);
       if (patch.enableInTauri !== undefined) setDiscordEnableInTauri(patch.enableInTauri);
       await transport.updateSettings({ discord: { bot: patch } });
+    }, [transport]);
+
+    const handleUpdateTunnel = useCallback(async (patch: Partial<TunnelSettings>) => {
+      if (patch.enabled !== undefined) setTunnelEnabled(patch.enabled);
+      if (patch.enableInDevServer !== undefined) setTunnelEnableInDevServer(patch.enableInDevServer);
+      if (patch.enableInDaemon !== undefined) setTunnelEnableInDaemon(patch.enableInDaemon);
+      if (patch.enableInTauri !== undefined) setTunnelEnableInTauri(patch.enableInTauri);
+      if (patch.enableInVscode !== undefined) setTunnelEnableInVscode(patch.enableInVscode);
+      await transport.updateSettings({ tunnel: patch });
+    }, [transport]);
+
+    const handlePairTunnel = useCallback(async (relayUrl: string, pairingToken: string, name: string) => {
+      const tunnelIdVal = crypto.randomUUID();
+      const tunnelNameVal = name || '';
+      setTunnelEnabled(true);
+      setTunnelRelayUrl(relayUrl);
+      setTunnelId(tunnelIdVal);
+      setTunnelName(tunnelNameVal);
+      await transport.updateSettings({
+        tunnel: {
+          enabled: true,
+          relayUrl,
+          pairingToken,
+          tunnelId: tunnelIdVal,
+          tunnelName: tunnelNameVal,
+        },
+      });
+    }, [transport]);
+
+    const handleUnpairTunnel = useCallback(async () => {
+      setTunnelEnabled(false);
+      setTunnelId('');
+      setTunnelName('');
+      await transport.updateSettings({
+        tunnel: { enabled: false, pairingToken: '', tunnelId: '', tunnelName: '' },
+      });
+    }, [transport]);
+
+    // Fetch initial tunnel status + subscribe to live updates
+    useEffect(() => {
+      transport.getTunnelStatus?.().then(setTunnelStatus).catch(() => {});
+      const unsub = transport.onTunnelStatusChange?.(setTunnelStatus);
+      return () => { unsub?.(); };
     }, [transport]);
 
     // --- Recall catch-up state ---
@@ -1299,6 +1378,18 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               discordEnableInDaemon={discordEnableInDaemon}
               discordEnableInTauri={discordEnableInTauri}
               onUpdateDiscord={handleUpdateDiscord}
+              tunnelEnabled={tunnelEnabled}
+              tunnelRelayUrl={tunnelRelayUrl}
+              tunnelId={tunnelId}
+              tunnelName={tunnelName}
+              tunnelStatus={tunnelStatus}
+              tunnelEnableInDevServer={tunnelEnableInDevServer}
+              tunnelEnableInDaemon={tunnelEnableInDaemon}
+              tunnelEnableInTauri={tunnelEnableInTauri}
+              tunnelEnableInVscode={tunnelEnableInVscode}
+              onUpdateTunnel={handleUpdateTunnel}
+              onPairTunnel={handlePairTunnel}
+              onUnpairTunnel={handleUnpairTunnel}
               catchupStatus={catchupStatus}
               onStartEmbedding={handleStartEmbedding}
               onStopEmbedding={handleStopEmbedding}

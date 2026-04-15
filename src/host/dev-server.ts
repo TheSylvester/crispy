@@ -25,10 +25,11 @@ import { isPathAllowed } from '../core/workspace-roots.js';
 import { listAllSessions } from '../core/session-manager.js';
 import { listAllWorkspaces } from '../core/workspace-roots.js';
 
-import { initSettings, startWatchingSettings } from '../core/settings/index.js';
+import { initSettings, startWatchingSettings, onSettingsChanged } from '../core/settings/index.js';
 import { createClientConnection } from './client-connection.js';
 import { createAgentDispatch } from './agent-dispatch.js';
-import { autoConnect as autoConnectTunnel, disconnect as disconnectTunnel } from './tunnel-client.js';
+import { autoConnect as autoConnectTunnel, disconnect as disconnectTunnel, connect as connectTunnel, setBroadcastStatus, getRelayConfig } from './tunnel-client.js';
+import { getEnabledTunnelConfig } from '../core/tunnel-config.js';
 import { closeAllTerminals } from './terminal-manager.js';
 import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
@@ -463,6 +464,8 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
   });
   done();
 
+  let unsubTunnel: (() => void) | null = null;
+
   const settingsDone = phase('init settings');
   const providerBase = { cwd };
   initSettings(providerBase)
@@ -473,6 +476,37 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
       const mvDone = phase('init message view');
       initMessageView(dispatch, cwd, hostType);
       mvDone();
+
+      // Tunnel auto-connect — MUST come after settings loaded
+      autoConnectTunnel(hostType);
+
+      // Runtime reconciliation — reconnect/disconnect on settings change.
+      // Compare connection-relevant fields to avoid unnecessary reconnects
+      // when only host-flag toggles changed.
+      unsubTunnel = onSettingsChanged(({ changedSections }) => {
+        if (!changedSections.includes('tunnel')) return;
+        const tunnel = getEnabledTunnelConfig(hostType);
+        const current = getRelayConfig();
+        if (tunnel) {
+          // Skip reconnect if connection-relevant fields haven't changed
+          if (current
+            && current.relayUrl === tunnel.relayUrl
+            && current.pairingToken === tunnel.pairingToken
+            && current.tunnelId === tunnel.tunnelId
+            && current.tunnelName === tunnel.tunnelName) {
+            return;
+          }
+          disconnectTunnel();
+          connectTunnel({
+            relayUrl: tunnel.relayUrl,
+            pairingToken: tunnel.pairingToken,
+            tunnelId: tunnel.tunnelId,
+            tunnelName: tunnel.tunnelName,
+          });
+        } else {
+          disconnectTunnel();
+        }
+      });
     })
     .catch((err) => {
       console.error('[server] init settings failed:', err);
@@ -568,8 +602,20 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     console.error('[server] Unhandled rejection:', reason);
   });
 
-  // Auto-connect tunnel to relay if configured
-  autoConnectTunnel();
+  // Wire tunnel status broadcast to push to all connected WebSocket clients
+  setBroadcastStatus((info) => {
+    const msg = JSON.stringify({
+      kind: 'tunnel-status',
+      connected: info.status === 'connected',
+      status: info.status,
+      reason: info.reason,
+    });
+    for (const client of wss.clients) {
+      if (client.readyState === 1 /* OPEN */) {
+        client.send(msg);
+      }
+    }
+  });
 
   console.log(`[server] ★ ready (${(performance.now() - bootStart).toFixed(0)}ms)`);
 
@@ -601,6 +647,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     shutdownRecallIngest();
     stopEmbeddingBackfill();
     disposeEmbedder();
+    unsubTunnel?.();
     disconnectTunnel();
     dispatch.dispose();
   }

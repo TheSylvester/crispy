@@ -13,10 +13,10 @@
  */
 
 import { readFile, writeFile, mkdir, rename, copyFile } from 'node:fs/promises';
-import { watch, existsSync, type FSWatcher } from 'node:fs';
+import { watch, existsSync, readFileSync, unlinkSync, type FSWatcher } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { log } from '../log.js';
-import { settingsPath as getSettingsPath, crispyRoot, legacyConfigDir, _setTestRoot, _isTestOverride } from '../paths.js';
+import { settingsPath as getSettingsPath, crispyRoot, legacyConfigDir, relayConfigPath, _setTestRoot, _isTestOverride } from '../paths.js';
 
 import type {
   CrispySettings,
@@ -28,6 +28,7 @@ import type {
   ProviderConfig,
   WireProviderConfig,
   DiscordBotSettings,
+  TunnelSettings,
 } from './types.js';
 import { DEFAULT_SETTINGS } from './types.js';
 import { migrateFromProvidersJson } from './migration.js';
@@ -99,6 +100,12 @@ function toWireSnapshot(settings: CrispySettingsFile): WireSettingsSnapshot {
           token: settings.discord.bot.token ? maskApiKey(settings.discord.bot.token) : '',
         },
       },
+      tunnel: {
+        ...settings.tunnel,
+        pairingToken: settings.tunnel.pairingToken
+          ? maskApiKey(settings.tunnel.pairingToken)
+          : '',
+      },
     },
     revision: settings.revision,
     updatedAt: settings.updatedAt,
@@ -119,6 +126,8 @@ function computeChangedSections(
     'turnDefaults',
     'rosie',
     'discord',
+    'mcp',
+    'tunnel',
   ];
 
   return sections.filter(
@@ -192,6 +201,19 @@ function applyPatch(current: CrispySettings, patch: SettingsPatch): CrispySettin
     if (patch.mcp.memory) {
       result.mcp.memory = { ...current.mcp.memory, ...patch.mcp.memory };
     }
+  }
+
+  if (patch.tunnel) {
+    const tunnelPatch = patch.tunnel;
+    // Preserve existing token when the patch has a masked value
+    const pairingToken = (tunnelPatch.pairingToken && (tunnelPatch.pairingToken.includes('…') || tunnelPatch.pairingToken.includes('...')))
+      ? current.tunnel.pairingToken
+      : tunnelPatch.pairingToken;
+    result.tunnel = {
+      ...current.tunnel,
+      ...tunnelPatch,
+      ...(pairingToken !== undefined && { pairingToken }),
+    };
   }
 
   return result;
@@ -336,6 +358,22 @@ function sanitizeSettings(data: unknown): CrispySettings {
     }
   }
 
+  // Tunnel
+  if (settings.tunnel && typeof settings.tunnel === 'object') {
+    const t = settings.tunnel as Record<string, unknown>;
+    result.tunnel = {
+      enabled: typeof t.enabled === 'boolean' ? t.enabled : false,
+      relayUrl: typeof t.relayUrl === 'string' ? t.relayUrl : '',
+      pairingToken: typeof t.pairingToken === 'string' ? t.pairingToken : '',
+      tunnelId: typeof t.tunnelId === 'string' ? t.tunnelId : '',
+      tunnelName: typeof t.tunnelName === 'string' ? t.tunnelName : '',
+      enableInDevServer: typeof t.enableInDevServer === 'boolean' ? t.enableInDevServer : true,
+      enableInDaemon: typeof t.enableInDaemon === 'boolean' ? t.enableInDaemon : true,
+      enableInTauri: typeof t.enableInTauri === 'boolean' ? t.enableInTauri : true,
+      enableInVscode: typeof t.enableInVscode === 'boolean' ? t.enableInVscode : false,
+    };
+  }
+
   return result;
 }
 
@@ -467,6 +505,44 @@ export async function initSettings(
     }
   }
 
+  // Migrate relay.json -> settings.tunnel
+  if (!settings.tunnel.tunnelId) {
+    const relayJsonPath = relayConfigPath();
+    if (existsSync(relayJsonPath)) {
+      try {
+        const raw = readFileSync(relayJsonPath, 'utf-8');
+        const relay = JSON.parse(raw);
+        if (relay.relayUrl && relay.pairingToken && relay.tunnelId) {
+          settings = {
+            ...settings,
+            tunnel: {
+              enabled: true,
+              relayUrl: relay.relayUrl,
+              pairingToken: relay.pairingToken,
+              tunnelId: relay.tunnelId,
+              tunnelName: relay.tunnelName || '',
+              enableInDevServer: true,
+              enableInDaemon: true,
+              enableInTauri: true,
+              enableInVscode: false,
+            },
+            revision: settings.revision + 1,
+            updatedAt: new Date().toISOString(),
+          };
+          await saveSettingsFile(settings);
+          // Only delete after confirmed save
+          try { unlinkSync(relayJsonPath); } catch { /* best effort */ }
+          log({ level: 'info', source: 'settings-store',
+            summary: 'Migrated relay.json to settings.tunnel' });
+        }
+      } catch (err) {
+        // Malformed relay.json — leave it in place, log warning
+        log({ level: 'warn', source: 'settings-store',
+          summary: `Failed to migrate relay.json: ${err instanceof Error ? err.message : String(err)}` });
+      }
+    }
+  }
+
   currentSettings = settings;
 
   // Sync provider adapters
@@ -491,6 +567,7 @@ export function getSettingsSnapshotInternal(): SettingsSnapshot {
       rosie: currentSettings.rosie,
       discord: currentSettings.discord,
       mcp: currentSettings.mcp,
+      tunnel: currentSettings.tunnel,
     },
     revision: currentSettings.revision,
     updatedAt: currentSettings.updatedAt,

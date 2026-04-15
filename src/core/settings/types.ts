@@ -20,7 +20,8 @@ export type SettingsSection =
   | 'turnDefaults'
   | 'rosie'
   | 'discord'
-  | 'mcp';
+  | 'mcp'
+  | 'tunnel';
 
 // ============================================================================
 // Preferences (globally persisted UI settings)
@@ -145,6 +146,31 @@ export interface McpSettings {
 }
 
 // ============================================================================
+// Cloud Relay Tunnel
+// ============================================================================
+
+export interface TunnelSettings {
+  /** Master toggle — when false, tunnel never connects regardless of host flags. */
+  enabled: boolean;
+  /** Relay server URL (e.g. "https://crispy-code.com"). */
+  relayUrl: string;
+  /** Pairing token issued by the relay. Treated as a secret — masked on wire. */
+  pairingToken: string;
+  /** Unique tunnel ID assigned during pairing (generated locally via randomUUID). */
+  tunnelId: string;
+  /** Human-readable machine name shown on the dashboard. */
+  tunnelName: string;
+  /** Connect tunnel when running as dev server (`npm run dev`). Default: true. */
+  enableInDevServer: boolean;
+  /** Connect tunnel when running as standalone daemon (`crispy start`). Default: true. */
+  enableInDaemon: boolean;
+  /** Connect tunnel when running as the Tauri desktop app. Default: true. */
+  enableInTauri: boolean;
+  /** Connect tunnel when running as a VS Code/Cursor extension. Default: false (opt-in). */
+  enableInVscode: boolean;
+}
+
+// ============================================================================
 // Env Presets
 // ============================================================================
 
@@ -203,6 +229,7 @@ export interface CrispySettings {
   rosie: RosieSettings;
   discord: DiscordSettings;
   mcp: McpSettings;
+  tunnel: TunnelSettings;
 }
 
 export interface CrispySettingsFile extends CrispySettings {
@@ -217,11 +244,12 @@ export interface SettingsSnapshot {
   updatedAt: string;
 }
 
-/** Wire-safe snapshot — provider apiKeys and discord bot token masked. */
+/** Wire-safe snapshot — provider apiKeys, discord bot token, and tunnel pairing token masked. */
 export interface WireSettingsSnapshot {
-  settings: Omit<CrispySettings, 'providers' | 'discord'> & {
+  settings: Omit<CrispySettings, 'providers' | 'discord' | 'tunnel'> & {
     providers: Record<string, WireProviderConfig>;
     discord: { bot: Omit<DiscordBotSettings, 'token'> & { token: string } };
+    tunnel: Omit<TunnelSettings, 'pairingToken'> & { pairingToken: string };
   };
   revision: number;
   updatedAt: string;
@@ -237,6 +265,7 @@ export type SettingsPatch = Partial<{
   rosie: { bot?: Partial<RosieBotSettings> };
   discord: { bot?: Partial<DiscordBotSettings> };
   mcp: { memory?: Partial<McpMemorySettings> };
+  tunnel: Partial<TunnelSettings>;
 }>;
 
 // ============================================================================
@@ -281,5 +310,16 @@ export const DEFAULT_SETTINGS: CrispySettings = {
   },
   mcp: {
     memory: { vscode: true, devServer: true },
+  },
+  tunnel: {
+    enabled: false,
+    relayUrl: '',
+    pairingToken: '',
+    tunnelId: '',
+    tunnelName: '',
+    enableInDevServer: true,
+    enableInDaemon: true,
+    enableInTauri: true,
+    enableInVscode: false,
   },
 };

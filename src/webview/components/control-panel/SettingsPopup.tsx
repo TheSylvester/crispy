@@ -16,10 +16,12 @@ import type { VendorModelGroup, AgencyMode } from './types.js';
 import { AgencyModeSelect } from './AgencyModeSelect.js';
 import type { RenderMode } from '../../types.js';
 import type { ToolViewOverride, BadgeStyle, DisplayStyle } from '../../context/PreferencesContext.js';
-import type { WireProviderConfig, ProviderConfig, DiscordBotSettings } from '../../../core/settings/types.js';
+import type { WireProviderConfig, ProviderConfig, DiscordBotSettings, TunnelSettings } from '../../../core/settings/types.js';
+import type { TunnelStatusInfo } from '../../../host/tunnel-client.js';
 import type { CatchupStatus } from '../../../core/recall/catchup-types.js';
 import { formatDuration } from '../../utils/format.js';
 import { DiscordSetupWizard } from './DiscordSetupWizard.js';
+import { TunnelSetupWizard } from './TunnelSetupWizard.js';
 
 interface SettingsPopupProps {
   pinned: boolean;
@@ -56,6 +58,18 @@ interface SettingsPopupProps {
   discordEnableInDaemon: boolean;
   discordEnableInTauri: boolean;
   onUpdateDiscord: (patch: Partial<DiscordBotSettings>) => void;
+  tunnelEnabled: boolean;
+  tunnelRelayUrl: string;
+  tunnelId: string;
+  tunnelName: string;
+  tunnelStatus: TunnelStatusInfo;
+  tunnelEnableInDevServer: boolean;
+  tunnelEnableInDaemon: boolean;
+  tunnelEnableInTauri: boolean;
+  tunnelEnableInVscode: boolean;
+  onUpdateTunnel: (patch: Partial<TunnelSettings>) => void;
+  onPairTunnel: (relayUrl: string, pairingToken: string, tunnelName: string) => void;
+  onUnpairTunnel: () => void;
   catchupStatus?: CatchupStatus | null;
   onStartEmbedding?: () => void;
   onStopEmbedding?: () => void;
@@ -165,7 +179,7 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, displayStyle, onDisplayStyleChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, gitPanelSide, onGitPanelSideChange, useDisplayStyleAccent, onUseDisplayStyleAccentChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordAllowedUserIds, discordEnableInVscode, discordEnableInDevServer, discordEnableInDaemon, discordEnableInTauri, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, displayStyle, onDisplayStyleChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, gitPanelSide, onGitPanelSideChange, useDisplayStyleAccent, onUseDisplayStyleAccentChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordAllowedUserIds, discordEnableInVscode, discordEnableInDevServer, discordEnableInDaemon, discordEnableInTauri, onUpdateDiscord, tunnelEnabled, tunnelRelayUrl, tunnelId, tunnelName, tunnelStatus, tunnelEnableInDevServer, tunnelEnableInDaemon, tunnelEnableInTauri, tunnelEnableInVscode, onUpdateTunnel, onPairTunnel, onUnpairTunnel, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
@@ -470,6 +484,23 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
             enableInTauri={discordEnableInTauri}
             onUpdateDiscord={onUpdateDiscord}
             onDirtyChange={setDiscordDirty}
+          />
+
+          {/* --- Cloud Relay Section --- */}
+          <div className="crispy-cp-settings__section-header">Cloud Relay</div>
+          <TunnelSetupWizard
+            enabled={tunnelEnabled}
+            relayUrl={tunnelRelayUrl}
+            tunnelId={tunnelId}
+            tunnelName={tunnelName}
+            tunnelStatus={tunnelStatus}
+            enableInDevServer={tunnelEnableInDevServer}
+            enableInDaemon={tunnelEnableInDaemon}
+            enableInTauri={tunnelEnableInTauri}
+            enableInVscode={tunnelEnableInVscode}
+            onUpdateTunnel={onUpdateTunnel}
+            onPair={onPairTunnel}
+            onUnpair={onUnpairTunnel}
           />
 
           {/* --- Providers Section --- */}

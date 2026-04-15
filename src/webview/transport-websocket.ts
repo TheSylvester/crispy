@@ -9,6 +9,7 @@
  */
 
 import type { HostEvent } from '../host/client-connection.js';
+import type { TunnelStatusInfo } from '../host/tunnel-client.js';
 import type { SessionService, WireSessionInfo, WireProject, WireProjectActivity, WireStage } from './transport.js';
 import type { WorkspaceListResponse } from '../core/workspace-roots.js';
 import type { TranscriptEntry } from '../core/transcript.js';
@@ -47,6 +48,7 @@ export function createWebSocketTransport(url: string): SessionService & {
   const pending = new Map<string, PendingRequest>();
   const eventHandlers: Array<(sessionId: string, event: HostEvent) => void> = [];
   const connectionStateHandlers: Array<(state: ConnectionState) => void> = [];
+  const tunnelStatusHandlers: Array<(info: TunnelStatusInfo) => void> = [];
 
   let ws: WebSocket | null = null;
   let connectionState: ConnectionState = 'connecting';
@@ -114,6 +116,16 @@ export function createWebSocketTransport(url: string): SessionService & {
       try {
         msg = JSON.parse(String(ev.data)) as Record<string, unknown>;
       } catch {
+        return;
+      }
+
+      // Intercept tunnel-status before reaching event handlers
+      if (msg.kind === 'tunnel-status') {
+        const info: TunnelStatusInfo = { status: msg.status as TunnelStatusInfo['status'] };
+        if (msg.reason) info.reason = msg.reason as TunnelStatusInfo['reason'];
+        for (const handler of tunnelStatusHandlers) {
+          handler(info);
+        }
         return;
       }
 
@@ -403,6 +415,16 @@ export function createWebSocketTransport(url: string): SessionService & {
       });
     },
 
+    getTunnelStatus: () => request<TunnelStatusInfo>('getTunnelStatus'),
+
+    onTunnelStatusChange(handler: (info: TunnelStatusInfo) => void): () => void {
+      tunnelStatusHandlers.push(handler);
+      return () => {
+        const i = tunnelStatusHandlers.indexOf(handler);
+        if (i >= 0) tunnelStatusHandlers.splice(i, 1);
+      };
+    },
+
     dispose() {
       disposed = true;
       wsGeneration++; // invalidate any in-flight connection events
@@ -422,6 +444,7 @@ export function createWebSocketTransport(url: string): SessionService & {
       pending.clear();
       eventHandlers.length = 0;
       connectionStateHandlers.length = 0;
+      tunnelStatusHandlers.length = 0;
     },
 
     // --- Connection state ---

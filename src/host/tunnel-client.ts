@@ -1,9 +1,9 @@
 /**
  * Tunnel Client — Outbound WebSocket from local Crispy to relay server
  *
- * Reads relay config from ~/.crispy/relay.json, connects to the relay,
- * and creates a ClientConnection to handle RPC traffic. The relay
- * forwards messages between this tunnel and remote browser clients.
+ * Receives resolved config from the core tunnel-config helper (settings-backed).
+ * Connects to the relay and creates a ClientConnection to handle RPC traffic.
+ * The relay forwards messages between this tunnel and remote browser clients.
  *
  * Runs alongside the local dev-server — both active simultaneously.
  * Local access is unaffected by tunnel state.
@@ -12,9 +12,8 @@
  */
 
 import WebSocket from 'ws';
-import { readFileSync, writeFileSync, unlinkSync, existsSync } from 'node:fs';
 import { createClientConnection } from './client-connection.js';
-import { relayConfigPath } from '../core/paths.js';
+import { getEnabledTunnelConfig, type HostType } from '../core/tunnel-config.js';
 
 // --- Types ---
 
@@ -27,10 +26,18 @@ export interface RelayConfig {
 
 export type TunnelStatus = 'connected' | 'reconnecting' | 'disconnected';
 
+/** Detailed status with error reason for UI display. */
+export interface TunnelStatusInfo {
+  status: TunnelStatus;
+  /** Set when disconnected — explains why. Drives wizard error states. */
+  reason?: 'idle' | 'invalid-token' | 'relay-unreachable' | 'tunnel-in-use' | 'unlinked';
+}
+
 // --- State ---
 
 let ws: WebSocket | null = null;
 let status: TunnelStatus = 'disconnected';
+let currentReason: TunnelStatusInfo['reason'] | undefined;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempt = 0;
 let pingInterval: ReturnType<typeof setInterval> | null = null;
@@ -41,6 +48,7 @@ const BACKOFF_MS = [1000, 2000, 4000, 8000, 10000];
 const PING_INTERVAL_MS = 30_000;
 
 const statusListeners = new Set<(status: TunnelStatus) => void>();
+let broadcastStatus: ((info: TunnelStatusInfo) => void) | null = null;
 
 // --- Public API ---
 
@@ -48,45 +56,21 @@ export function getTunnelStatus(): TunnelStatus {
   return status;
 }
 
+export function getTunnelStatusInfo(): TunnelStatusInfo {
+  return { status, ...(currentReason && { reason: currentReason }) };
+}
+
 export function onTunnelStatusChange(handler: (status: TunnelStatus) => void): () => void {
   statusListeners.add(handler);
   return () => statusListeners.delete(handler);
 }
 
+export function setBroadcastStatus(fn: (info: TunnelStatusInfo) => void): void {
+  broadcastStatus = fn;
+}
+
 export function getRelayConfig(): RelayConfig | null {
   return currentConfig;
-}
-
-/** Read relay config from disk. Returns null if file doesn't exist. */
-export function readRelayConfig(): RelayConfig | null {
-  const configPath = relayConfigPath();
-  try {
-    if (!existsSync(configPath)) return null;
-    const raw = readFileSync(configPath, 'utf-8');
-    const parsed = JSON.parse(raw);
-    if (!parsed.relayUrl || !parsed.pairingToken || !parsed.tunnelId) return null;
-    return parsed as RelayConfig;
-  } catch {
-    return null;
-  }
-}
-
-/** Write relay config to disk and trigger tunnel connect. */
-export function updateRelayConfig(config: RelayConfig): void {
-  const configPath = relayConfigPath();
-  writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
-  currentConfig = config;
-  // Reconnect with new config
-  disconnect();
-  connect(config);
-}
-
-/** Clear relay config and disconnect tunnel. */
-export function clearRelayConfig(): void {
-  const configPath = relayConfigPath();
-  try { unlinkSync(configPath); } catch { /* already gone */ }
-  currentConfig = null;
-  disconnect();
 }
 
 /** Connect to relay. Called on daemon startup if config exists. */
@@ -115,23 +99,33 @@ export function disconnect(): void {
     }
     ws = null;
   }
-  setStatus('disconnected');
+  setStatus('disconnected', 'idle');
 }
 
-/** Auto-connect on startup if relay.json exists. */
-export function autoConnect(): void {
-  const config = readRelayConfig();
-  if (config) {
-    console.log(`[tunnel] Auto-connecting to relay: ${config.relayUrl}`);
-    connect(config);
-  }
+/** Auto-connect on startup using settings-backed config. */
+export function autoConnect(hostType: HostType): void {
+  const tunnel = getEnabledTunnelConfig(hostType);
+  if (!tunnel) return;
+
+  console.log(`[tunnel] Auto-connecting to relay: ${tunnel.relayUrl}`);
+  connect({
+    relayUrl: tunnel.relayUrl,
+    pairingToken: tunnel.pairingToken,
+    tunnelId: tunnel.tunnelId,
+    tunnelName: tunnel.tunnelName,
+  });
 }
 
 // --- Internal ---
 
-function setStatus(newStatus: TunnelStatus): void {
-  if (status === newStatus) return;
+function setStatus(newStatus: TunnelStatus, reason?: TunnelStatusInfo['reason']): void {
+  // Compare both status AND reason — a reason change on the same status
+  // (e.g. disconnected+idle -> disconnected+invalid-token) must still emit.
+  if (status === newStatus && currentReason === reason) return;
   status = newStatus;
+  currentReason = reason;
+  const info: TunnelStatusInfo = { status: newStatus, ...(reason && { reason }) };
+  broadcastStatus?.(info);
   for (const handler of statusListeners) {
     try { handler(newStatus); } catch { /* ignore listener errors */ }
   }
@@ -147,6 +141,7 @@ function doConnect(config: RelayConfig): void {
     ws = new WebSocket(wsUrl);
   } catch (err) {
     console.error('[tunnel] Failed to create WebSocket:', err);
+    setStatus('disconnected', 'relay-unreachable');
     scheduleReconnect(config);
     return;
   }
@@ -184,7 +179,7 @@ function doConnect(config: RelayConfig): void {
       // Relay says another tunnel is already active for this tunnelId.
       // Back off with long polling — the active tunnel may eventually die.
       console.log('[tunnel] Tunnel already connected from another process — will retry in 30s');
-      setStatus('disconnected');
+      setStatus('disconnected', 'tunnel-in-use');
       if (!disposed) {
         reconnectTimer = setTimeout(() => {
           reconnectTimer = null;
@@ -193,7 +188,14 @@ function doConnect(config: RelayConfig): void {
       }
       return;
     }
+    if (code === 4001 || code === 4003) {
+      // Auth rejection from relay
+      setStatus('disconnected', 'invalid-token');
+      // Don't auto-reconnect on auth failure — user must fix the token
+      return;
+    }
     if (!disposed) {
+      setStatus('reconnecting', 'relay-unreachable');
       scheduleReconnect(config);
     }
   });

@@ -11,6 +11,7 @@
  */
 
 import type { HostEvent } from '../host/client-connection.js';
+import type { TunnelStatusInfo } from '../host/tunnel-client.js';
 import type { SessionService, WireSessionInfo, WireProject, WireProjectActivity, WireStage } from './transport.js';
 import type { WorkspaceListResponse } from '../core/workspace-roots.js';
 import type { TranscriptEntry } from '../core/transcript.js';
@@ -41,7 +42,6 @@ function nextId(): string {
 export function createCloudRelayTransport(wsUrl: string, tunnelId: string): SessionService & {
   onConnectionStateChange(handler: (state: ConnectionState) => void): () => void;
   getConnectionState(): ConnectionState;
-  onTunnelStatusChange(handler: (connected: boolean) => void): () => void;
   isTunnelConnected(): boolean;
 } {
   const pending = new Map<string, PendingRequest>();
@@ -381,10 +381,14 @@ export function createCloudRelayTransport(wsUrl: string, tunnelId: string): Sess
       return connectionState;
     },
 
-    onTunnelStatusChange(handler: (connected: boolean) => void): () => void {
-      tunnelStatusHandlers.push(handler);
+    // SessionService-compatible wrapper: maps relay's boolean to TunnelStatusInfo
+    onTunnelStatusChange(handler: (info: TunnelStatusInfo) => void): () => void {
+      const wrapped = (connected: boolean) => {
+        handler({ status: connected ? 'connected' : 'disconnected' });
+      };
+      tunnelStatusHandlers.push(wrapped);
       return () => {
-        const i = tunnelStatusHandlers.indexOf(handler);
+        const i = tunnelStatusHandlers.indexOf(wrapped);
         if (i >= 0) tunnelStatusHandlers.splice(i, 1);
       };
     },
