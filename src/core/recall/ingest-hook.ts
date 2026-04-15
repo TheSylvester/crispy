@@ -14,6 +14,7 @@
 
 import { onResponseComplete } from '../lifecycle-hooks.js';
 import { ingestSessionMessages, embedSessionMessages } from './message-ingest.js';
+import { isSystemSession } from '../activity-index.js';
 import { log } from '../log.js';
 
 // ============================================================================
@@ -30,6 +31,10 @@ export function initRecallIngest(): void {
   unsubscribe = onResponseComplete(async (sessionId: string) => {
     // Skip pending sessions — they don't have persisted transcripts yet
     if (sessionId.startsWith('pending:')) return;
+
+    // Skip system sessions (tracker, etc.) — they persist to disk for
+    // debugging but should not pollute recall search results.
+    if (isSystemSession(sessionId)) return;
 
     try {
       const result = await ingestSessionMessages(sessionId);

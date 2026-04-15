@@ -34,6 +34,7 @@ import type { MessageRecord, MessageVectorRecord } from './message-store.js';
 import { getDb } from '../crispy-db.js';
 import { dbPath } from '../activity-index.js';
 import { findSession, loadSession } from '../session-manager.js';
+import { isSystemSession } from '../activity-index.js';
 import { normalizePath } from '../url-path-resolver.js';
 import type { TranscriptEntry } from '../transcript.js';
 
@@ -98,6 +99,11 @@ export async function ingestSessionMessages(
   sessionId: string,
   options?: IngestOptions,
 ): Promise<IngestResult> {
+  // 0. Skip system sessions — they persist for debugging but should not be indexed.
+  if (isSystemSession(sessionId)) {
+    return { sessionId, chunksCreated: 0, skipped: true };
+  }
+
   // 1. Check if already processed (batch/backfill only — real-time always appends)
   //    When force is not set, we still proceed to INSERT OR IGNORE new messages.
 
