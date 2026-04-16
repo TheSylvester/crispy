@@ -50,7 +50,6 @@ interface SettingsPopupProps {
   rosieModel?: string;
   rosieDebugTracker: boolean;
   onUpdateRosie: (patch: Partial<RosieBotSettings>) => void;
-  discordEnabled: boolean;
   discordGuildId: string;
   discordToken: string;
   discordAllowedUserIds: string[];
@@ -59,7 +58,6 @@ interface SettingsPopupProps {
   discordEnableInDaemon: boolean;
   discordEnableInTauri: boolean;
   onUpdateDiscord: (patch: Partial<DiscordBotSettings>) => void;
-  tunnelEnabled: boolean;
   tunnelRelayUrl: string;
   tunnelId: string;
   tunnelName: string;
@@ -180,13 +178,14 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, displayStyle, onDisplayStyleChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, gitPanelSide, onGitPanelSideChange, useDisplayStyleAccent, onUseDisplayStyleAccentChange, rosieEnabled, rosieModel, rosieDebugTracker, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordAllowedUserIds, discordEnableInVscode, discordEnableInDevServer, discordEnableInDaemon, discordEnableInTauri, onUpdateDiscord, tunnelEnabled, tunnelRelayUrl, tunnelId, tunnelName, tunnelStatus, tunnelEnableInDevServer, tunnelEnableInDaemon, tunnelEnableInTauri, tunnelEnableInVscode, onUpdateTunnel, onPairTunnel, onUnpairTunnel, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, displayStyle, onDisplayStyleChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, gitPanelSide, onGitPanelSideChange, useDisplayStyleAccent, onUseDisplayStyleAccentChange, rosieEnabled, rosieModel, rosieDebugTracker, onUpdateRosie, discordGuildId, discordToken, discordAllowedUserIds, discordEnableInVscode, discordEnableInDevServer, discordEnableInDaemon, discordEnableInTauri, onUpdateDiscord, tunnelRelayUrl, tunnelId, tunnelName, tunnelStatus, tunnelEnableInDevServer, tunnelEnableInDaemon, tunnelEnableInTauri, tunnelEnableInVscode, onUpdateTunnel, onPairTunnel, onUnpairTunnel, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [discordDirty, setDiscordDirty] = useState(false);
+  const [tunnelExpanded, setTunnelExpanded] = useState(false);
 
   const handleClickOutside = useCallback(
     (e: MouseEvent) => {
@@ -485,7 +484,6 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
           {/* --- Discord Bot Section --- */}
           <div className="crispy-cp-settings__section-header">Discord Bot</div>
           <DiscordSetupWizard
-            enabled={discordEnabled}
             guildId={discordGuildId}
             token={discordToken}
             allowedUserIds={discordAllowedUserIds}
@@ -498,9 +496,14 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
           />
 
           {/* --- Cloud Relay Section --- */}
-          <div className="crispy-cp-settings__section-header">Cloud Relay</div>
-          <TunnelSetupWizard
-            enabled={tunnelEnabled}
+          <div
+            className="crispy-cp-settings__section-header crispy-cp-settings__section-header--toggle"
+            onClick={() => setTunnelExpanded((v) => !v)}
+          >
+            <span className={`crispy-cp-settings__section-chevron${tunnelExpanded ? ' crispy-cp-settings__section-chevron--open' : ''}`}>&#x25B8;</span>
+            Cloud Relay
+          </div>
+          {tunnelExpanded && <TunnelSetupWizard
             relayUrl={tunnelRelayUrl}
             tunnelId={tunnelId}
             tunnelName={tunnelName}
@@ -512,7 +515,7 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
             onUpdateTunnel={onUpdateTunnel}
             onPair={onPairTunnel}
             onUnpair={onUnpairTunnel}
-          />
+          />}
 
           {/* --- Providers Section --- */}
           {providers && onSaveProvider && onDeleteProvider && (

@@ -299,7 +299,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           // Discord push sync
           const dBot = settingsEvent.snapshot.settings.discord?.bot;
           if (dBot) {
-            setDiscordEnabled(dBot.enabled);
             setDiscordGuildId(dBot.guildId);
             setDiscordToken(dBot.token);
             if (dBot.enableInVscode !== undefined) setDiscordEnableInVscode(dBot.enableInVscode);
@@ -310,7 +309,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           // Tunnel push sync
           const tun = settingsEvent.snapshot.settings.tunnel;
           if (tun) {
-            setTunnelEnabled(tun.enabled);
             setTunnelRelayUrl(tun.relayUrl);
             setTunnelId(tun.tunnelId);
             setTunnelName(tun.tunnelName);
@@ -367,7 +365,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const [rosieDebugTracker, setRosieDebugTracker] = useState(false);
 
     // --- Discord Bot settings state ---
-    const [discordEnabled, setDiscordEnabled] = useState(false);
     const [discordGuildId, setDiscordGuildId] = useState('');
     const [discordToken, setDiscordToken] = useState('');
     const [discordAllowedUserIds, setDiscordAllowedUserIds] = useState<string[]>([]);
@@ -377,7 +374,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const [discordEnableInTauri, setDiscordEnableInTauri] = useState(true);
 
     // --- Tunnel settings state ---
-    const [tunnelEnabled, setTunnelEnabled] = useState(false);
     const [tunnelRelayUrl, setTunnelRelayUrl] = useState('');
     const [tunnelId, setTunnelId] = useState('');
     const [tunnelName, setTunnelName] = useState('');
@@ -395,7 +391,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         // Discord
         const discordBot = snapshot.settings.discord?.bot;
         if (discordBot) {
-          setDiscordEnabled(discordBot.enabled);
           setDiscordGuildId(discordBot.guildId);
           setDiscordToken(discordBot.token);
           if (discordBot.allowedUserIds) setDiscordAllowedUserIds(discordBot.allowedUserIds);
@@ -407,7 +402,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         // Tunnel
         const tun = snapshot.settings.tunnel;
         if (tun) {
-          setTunnelEnabled(tun.enabled);
           setTunnelRelayUrl(tun.relayUrl);
           setTunnelId(tun.tunnelId);
           setTunnelName(tun.tunnelName);
@@ -461,7 +455,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     }, [transport]);
 
     const handleUpdateDiscord = useCallback(async (patch: Partial<DiscordBotSettings>) => {
-      if (patch.enabled !== undefined) setDiscordEnabled(patch.enabled);
       if (patch.guildId !== undefined) setDiscordGuildId(patch.guildId);
       if (patch.token !== undefined) setDiscordToken(patch.token);
       if (patch.allowedUserIds !== undefined) setDiscordAllowedUserIds(patch.allowedUserIds);
@@ -473,7 +466,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     }, [transport]);
 
     const handleUpdateTunnel = useCallback(async (patch: Partial<TunnelSettings>) => {
-      if (patch.enabled !== undefined) setTunnelEnabled(patch.enabled);
       if (patch.enableInDevServer !== undefined) setTunnelEnableInDevServer(patch.enableInDevServer);
       if (patch.enableInDaemon !== undefined) setTunnelEnableInDaemon(patch.enableInDaemon);
       if (patch.enableInTauri !== undefined) setTunnelEnableInTauri(patch.enableInTauri);
@@ -484,13 +476,11 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     const handlePairTunnel = useCallback(async (relayUrl: string, pairingToken: string, name: string) => {
       const tunnelIdVal = crypto.randomUUID();
       const tunnelNameVal = name || '';
-      setTunnelEnabled(true);
       setTunnelRelayUrl(relayUrl);
       setTunnelId(tunnelIdVal);
       setTunnelName(tunnelNameVal);
       await transport.updateSettings({
         tunnel: {
-          enabled: true,
           relayUrl,
           pairingToken,
           tunnelId: tunnelIdVal,
@@ -500,11 +490,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     }, [transport]);
 
     const handleUnpairTunnel = useCallback(async () => {
-      setTunnelEnabled(false);
       setTunnelId('');
       setTunnelName('');
       await transport.updateSettings({
-        tunnel: { enabled: false, pairingToken: '', tunnelId: '', tunnelName: '' },
+        tunnel: { pairingToken: '', tunnelId: '', tunnelName: '' },
       });
     }, [transport]);
 
@@ -1377,7 +1366,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               rosieModel={rosieModel}
               rosieDebugTracker={rosieDebugTracker}
               onUpdateRosie={handleUpdateRosie}
-              discordEnabled={discordEnabled}
               discordGuildId={discordGuildId}
               discordToken={discordToken}
               discordAllowedUserIds={discordAllowedUserIds}
@@ -1386,7 +1374,6 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               discordEnableInDaemon={discordEnableInDaemon}
               discordEnableInTauri={discordEnableInTauri}
               onUpdateDiscord={handleUpdateDiscord}
-              tunnelEnabled={tunnelEnabled}
               tunnelRelayUrl={tunnelRelayUrl}
               tunnelId={tunnelId}
               tunnelName={tunnelName}

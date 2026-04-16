@@ -16,7 +16,6 @@ import type { TunnelStatusInfo } from '../../../host/tunnel-client.js';
 // Props
 // ---------------------------------------------------------------------------
 interface TunnelSetupWizardProps {
-  enabled: boolean;
   relayUrl: string;
   tunnelId: string;
   tunnelName: string;
@@ -30,7 +29,7 @@ interface TunnelSetupWizardProps {
   onUnpair: () => void;
 }
 
-const DEFAULT_RELAY_URL = 'https://crispy-code.com';
+const DEFAULT_RELAY_URL = '';
 
 function statusLabel(info: TunnelStatusInfo): { text: string; className: string } {
   if (info.status === 'connected') {
@@ -53,7 +52,6 @@ function statusLabel(info: TunnelStatusInfo): { text: string; className: string 
 }
 
 export function TunnelSetupWizard({
-  enabled,
   relayUrl,
   tunnelId,
   tunnelName,
@@ -76,30 +74,19 @@ export function TunnelSetupWizard({
   // Editing state for paired mode
   const [editing, setEditing] = useState(false);
 
-  const isPaired = enabled && !!tunnelId;
+  const isPaired = !!tunnelId;
 
-  // Per-host toggle: show only the flag(s) relevant to this host type
-  const hostToggles = environment === 'vscode'
-    ? [{ label: 'Enable in VS Code', field: 'enableInVscode' as const, value: enableInVscode }]
+  // Per-host enable field for the current environment
+  const hostField = environment === 'vscode'
+    ? 'enableInVscode' as const
     : environment === 'tauri'
-    ? [{ label: 'Enable in Desktop', field: 'enableInTauri' as const, value: enableInTauri }]
-    : [
-      { label: 'Enable in Dev Server', field: 'enableInDevServer' as const, value: enableInDevServer },
-      { label: 'Enable in Desktop (Tauri)', field: 'enableInTauri' as const, value: enableInTauri },
-      { label: 'Enable in Daemon', field: 'enableInDaemon' as const, value: enableInDaemon },
-      { label: 'Enable in VS Code', field: 'enableInVscode' as const, value: enableInVscode },
-    ];
-
-  const hostToggleElements = hostToggles.map((t) => (
-    <label key={t.field} className="crispy-cp-settings__row">
-      <span>{t.label}</span>
-      <input
-        type="checkbox"
-        checked={t.value}
-        onChange={(e) => onUpdateTunnel({ [t.field]: e.target.checked })}
-      />
-    </label>
-  ));
+    ? 'enableInTauri' as const
+    : 'enableInDevServer' as const;
+  const hostEnabled = environment === 'vscode'
+    ? enableInVscode
+    : environment === 'tauri'
+    ? enableInTauri
+    : enableInDevServer;
 
   const handlePair = useCallback(() => {
     if (!draftToken.trim() || !draftRelayUrl.trim()) return;
@@ -124,7 +111,7 @@ export function TunnelSetupWizard({
               type="text"
               value={draftRelayUrl}
               onChange={(e) => setDraftRelayUrl(e.target.value)}
-              placeholder="https://crispy-code.com"
+              placeholder="https://relay.example.com"
             />
           </label>
           <label className="crispy-discord-wizard__field">
@@ -168,7 +155,14 @@ export function TunnelSetupWizard({
   if (!editing) {
     return (
       <div className="crispy-tunnel-wizard">
-        {hostToggleElements}
+        <label className="crispy-cp-settings__row">
+          <span>Enabled</span>
+          <input
+            type="checkbox"
+            checked={hostEnabled}
+            onChange={(e) => onUpdateTunnel({ [hostField]: e.target.checked })}
+          />
+        </label>
         <div className="crispy-discord-wizard__summary">
           <div className="crispy-discord-wizard__summary-row">
             <span className="crispy-discord-wizard__summary-label">Relay</span>
@@ -203,7 +197,14 @@ export function TunnelSetupWizard({
   // --- Paired state: expanded edit ---
   return (
     <div className="crispy-tunnel-wizard">
-      {hostToggleElements}
+      <label className="crispy-cp-settings__row">
+        <span>Enabled</span>
+        <input
+          type="checkbox"
+          checked={hostEnabled}
+          onChange={(e) => onUpdateTunnel({ [hostField]: e.target.checked })}
+        />
+      </label>
       <div className="crispy-discord-wizard__summary">
         <div className="crispy-discord-wizard__summary-row">
           <span className="crispy-discord-wizard__summary-label">Relay</span>

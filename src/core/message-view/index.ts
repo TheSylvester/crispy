@@ -101,7 +101,7 @@ function findEnabledDiscordProvider(): DiscordProviderConfig | null {
   try {
     const { settings } = getSettingsSnapshotInternal();
     const { discord } = settings;
-    if (!discord.bot.enabled || !discord.bot.token || !discord.bot.guildId) return null;
+    if (!discord.bot.token || !discord.bot.guildId) return null;
     const hostFlag = currentHostType === 'vscode' ? discord.bot.enableInVscode
       : currentHostType === 'tauri' ? discord.bot.enableInTauri
       : currentHostType === 'daemon' ? discord.bot.enableInDaemon
@@ -111,7 +111,6 @@ function findEnabledDiscordProvider(): DiscordProviderConfig | null {
     return {
       id: 'discord-bot',
       type: 'discord',
-      enabled: discord.bot.enabled,
       token: discord.bot.token.trim(),
       guildId: discord.bot.guildId.trim(),
       permissionMode: discord.bot.permissionMode ?? settings.turnDefaults.permissionMode,

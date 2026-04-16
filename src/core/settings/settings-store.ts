@@ -292,16 +292,15 @@ function sanitizeSettings(data: unknown): CrispySettings {
       const bot = discord.bot as Record<string, unknown>;
       result.discord = {
         bot: {
-          enabled: typeof bot.enabled === 'boolean' ? bot.enabled : false,
           token: typeof bot.token === 'string' ? bot.token : '',
           guildId: typeof bot.guildId === 'string' ? bot.guildId : '',
           permissionMode: (bot.permissionMode === 'default' || bot.permissionMode === 'acceptEdits' || bot.permissionMode === 'plan' || bot.permissionMode === 'bypassPermissions') ? bot.permissionMode : null,
           archivalTimeoutHours: typeof bot.archivalTimeoutHours === 'number' && bot.archivalTimeoutHours > 0 ? bot.archivalTimeoutHours : 24,
           allowedUserIds: Array.isArray(bot.allowedUserIds) ? (bot.allowedUserIds as string[]).filter(id => typeof id === 'string') : [],
-          enableInVscode: typeof bot.enableInVscode === 'boolean' ? bot.enableInVscode : true,
-          enableInDevServer: typeof bot.enableInDevServer === 'boolean' ? bot.enableInDevServer : true,
-          enableInDaemon: typeof bot.enableInDaemon === 'boolean' ? bot.enableInDaemon : true,
-          enableInTauri: typeof bot.enableInTauri === 'boolean' ? bot.enableInTauri : true,
+          enableInVscode: typeof bot.enableInVscode === 'boolean' ? bot.enableInVscode : false,
+          enableInDevServer: typeof bot.enableInDevServer === 'boolean' ? bot.enableInDevServer : false,
+          enableInDaemon: typeof bot.enableInDaemon === 'boolean' ? bot.enableInDaemon : false,
+          enableInTauri: typeof bot.enableInTauri === 'boolean' ? bot.enableInTauri : false,
         },
       };
     }
@@ -315,16 +314,15 @@ function sanitizeSettings(data: unknown): CrispySettings {
     if (discordProvider) {
       result.discord = {
         bot: {
-          enabled: !!discordProvider.enabled,
           token: typeof discordProvider.token === 'string' ? discordProvider.token : '',
           guildId: typeof discordProvider.guildId === 'string' ? discordProvider.guildId : '',
           permissionMode: null,
           archivalTimeoutHours: 24,
           allowedUserIds: [],
-          enableInVscode: true,
-          enableInDevServer: true,
-          enableInDaemon: true,
-          enableInTauri: true,
+          enableInVscode: false,
+          enableInDevServer: false,
+          enableInDaemon: false,
+          enableInTauri: false,
         },
       };
     }
@@ -345,14 +343,13 @@ function sanitizeSettings(data: unknown): CrispySettings {
   if (settings.tunnel && typeof settings.tunnel === 'object') {
     const t = settings.tunnel as Record<string, unknown>;
     result.tunnel = {
-      enabled: typeof t.enabled === 'boolean' ? t.enabled : false,
       relayUrl: typeof t.relayUrl === 'string' ? t.relayUrl : '',
       pairingToken: typeof t.pairingToken === 'string' ? t.pairingToken : '',
       tunnelId: typeof t.tunnelId === 'string' ? t.tunnelId : '',
       tunnelName: typeof t.tunnelName === 'string' ? t.tunnelName : '',
-      enableInDevServer: typeof t.enableInDevServer === 'boolean' ? t.enableInDevServer : true,
-      enableInDaemon: typeof t.enableInDaemon === 'boolean' ? t.enableInDaemon : true,
-      enableInTauri: typeof t.enableInTauri === 'boolean' ? t.enableInTauri : true,
+      enableInDevServer: typeof t.enableInDevServer === 'boolean' ? t.enableInDevServer : false,
+      enableInDaemon: typeof t.enableInDaemon === 'boolean' ? t.enableInDaemon : false,
+      enableInTauri: typeof t.enableInTauri === 'boolean' ? t.enableInTauri : false,
       enableInVscode: typeof t.enableInVscode === 'boolean' ? t.enableInVscode : false,
     };
   }
@@ -499,14 +496,13 @@ export async function initSettings(
           settings = {
             ...settings,
             tunnel: {
-              enabled: true,
               relayUrl: relay.relayUrl,
               pairingToken: relay.pairingToken,
               tunnelId: relay.tunnelId,
               tunnelName: relay.tunnelName || '',
-              enableInDevServer: true,
-              enableInDaemon: true,
-              enableInTauri: true,
+              enableInDevServer: false,
+              enableInDaemon: false,
+              enableInTauri: false,
               enableInVscode: false,
             },
             revision: settings.revision + 1,

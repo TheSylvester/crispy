@@ -15,7 +15,7 @@ import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { settingsPath, relayConfigPath } from '../core/paths.js';
 
-const DEFAULT_RELAY_URL = 'https://crispy-code.com';
+const DEFAULT_RELAY_URL = '';
 
 interface RelayConfig {
   relayUrl: string;
@@ -103,14 +103,13 @@ export async function cloudLink(): Promise<void> {
   const tunnelName = parseFlag('--name') || hostname();
 
   const config = {
-    enabled: true,
     relayUrl,
     pairingToken: token,
     tunnelId: randomUUID(),
     tunnelName,
-    enableInDevServer: true,
-    enableInDaemon: true,
-    enableInTauri: true,
+    enableInDevServer: false,
+    enableInDaemon: false,
+    enableInTauri: false,
     enableInVscode: false,
   };
 
@@ -134,9 +133,9 @@ export async function cloudUnlink(): Promise<void> {
     // Daemon not running — patch settings.json directly
     patchSettingsFile({
       tunnel: {
-        enabled: false, relayUrl: '', pairingToken: '',
+        relayUrl: '', pairingToken: '',
         tunnelId: '', tunnelName: '',
-        enableInDevServer: true, enableInDaemon: true, enableInTauri: true,
+        enableInDevServer: false, enableInDaemon: false, enableInTauri: false,
         enableInVscode: false,
       },
     });

@@ -107,7 +107,6 @@ export interface RosieSettings {
 // ============================================================================
 
 export interface DiscordBotSettings {
-  enabled: boolean;
   token: string;
   guildId: string;
   /** Override permission mode for Discord sessions. null = use turnDefaults. */
@@ -152,8 +151,6 @@ export interface McpSettings {
 // ============================================================================
 
 export interface TunnelSettings {
-  /** Master toggle — when false, tunnel never connects regardless of host flags. */
-  enabled: boolean;
   /** Relay server URL (e.g. "https://crispy-code.com"). */
   relayUrl: string;
   /** Pairing token issued by the relay. Treated as a secret — masked on wire. */
@@ -308,20 +305,19 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     bot: { enabled: false },
   },
   discord: {
-    bot: { enabled: false, token: '', guildId: '', permissionMode: null, archivalTimeoutHours: 24, allowedUserIds: [], enableInVscode: true, enableInDevServer: true, enableInDaemon: true, enableInTauri: true },
+    bot: { token: '', guildId: '', permissionMode: null, archivalTimeoutHours: 24, allowedUserIds: [], enableInVscode: false, enableInDevServer: false, enableInDaemon: false, enableInTauri: false },
   },
   mcp: {
     memory: { vscode: true, devServer: true },
   },
   tunnel: {
-    enabled: false,
     relayUrl: '',
     pairingToken: '',
     tunnelId: '',
     tunnelName: '',
-    enableInDevServer: true,
-    enableInDaemon: true,
-    enableInTauri: true,
+    enableInDevServer: false,
+    enableInDaemon: false,
+    enableInTauri: false,
     enableInVscode: false,
   },
 };

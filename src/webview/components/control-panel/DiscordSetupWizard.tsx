@@ -35,7 +35,6 @@ const COMPUTED_PERMISSIONS = Object.values(PERMISSION_BITS).reduce((a, b) => a |
 // Props
 // ---------------------------------------------------------------------------
 interface DiscordSetupWizardProps {
-  enabled: boolean;
   guildId: string;
   token: string;
   allowedUserIds: string[];
@@ -64,7 +63,6 @@ interface AppInfo {
 }
 
 export function DiscordSetupWizard({
-  enabled,
   guildId,
   token,
   allowedUserIds,
@@ -78,8 +76,23 @@ export function DiscordSetupWizard({
   const transport = useTransport();
   const environment = useEnvironment();
 
+  // Per-host enable field for the current environment (must be before early returns)
+  const hostField = environment === 'vscode'
+    ? 'enableInVscode' as const
+    : environment === 'tauri'
+    ? 'enableInTauri' as const
+    : 'enableInDevServer' as const;
+  const hostEnabled = environment === 'vscode'
+    ? enableInVscode
+    : environment === 'tauri'
+    ? enableInTauri
+    : enableInDevServer;
+
+  // "Configured" is derived from data presence, not a master flag
+  const hasExistingConfig = !!token;
+  const isFirstTime = !token;
+
   // Local draft state for first-time setup (batch save)
-  const isFirstTime = enabled && !token;
   const [draftToken, setDraftToken] = useState('');
   const [draftGuildId, setDraftGuildId] = useState('');
   const [draftAllowedUserIds, setDraftAllowedUserIds] = useState('');
@@ -88,7 +101,6 @@ export function DiscordSetupWizard({
 
   // Wizard vs compact view
   const [editing, setEditing] = useState(false);
-  const hasExistingConfig = enabled && !!token;
 
   // Notify parent when wizard has unsaved state (first-time or editing)
   useEffect(() => {
@@ -164,7 +176,6 @@ export function DiscordSetupWizard({
 
   const handleSave = useCallback(() => {
     const patch: Partial<DiscordBotSettings> = {
-      enabled: true,
       guildId: draftGuildId,
       allowedUserIds: draftAllowedUserIds.split(',').map(s => s.trim()).filter(Boolean),
     };
@@ -191,42 +202,6 @@ export function DiscordSetupWizard({
     setAppInfo(null);
   }, []);
 
-  // --- Enable toggle ---
-  if (!enabled) {
-    return (
-      <label className="crispy-cp-settings__row">
-        <span>Enabled</span>
-        <input
-          type="checkbox"
-          checked={false}
-          onChange={() => onUpdateDiscord({ enabled: true })}
-        />
-      </label>
-    );
-  }
-
-  // Per-host toggle: show only the flag(s) relevant to this host type
-  const hostToggles = environment === 'vscode'
-    ? [{ label: 'Enable in VS Code', field: 'enableInVscode' as const, value: enableInVscode }]
-    : environment === 'tauri'
-    ? [{ label: 'Enable in Desktop', field: 'enableInTauri' as const, value: enableInTauri }]
-    : [
-      { label: 'Enable in Dev Server', field: 'enableInDevServer' as const, value: enableInDevServer },
-      { label: 'Enable in Desktop (Tauri)', field: 'enableInTauri' as const, value: enableInTauri },
-      { label: 'Enable in Daemon', field: 'enableInDaemon' as const, value: enableInDaemon },
-    ];
-
-  const hostToggleElements = hostToggles.map((t) => (
-    <label key={t.field} className="crispy-cp-settings__row">
-      <span>{t.label}</span>
-      <input
-        type="checkbox"
-        checked={t.value}
-        onChange={(e) => onUpdateDiscord({ [t.field]: e.target.checked })}
-      />
-    </label>
-  ));
-
   // --- Compact summary for returning users ---
   if (hasExistingConfig && !editing) {
     return (
@@ -235,11 +210,10 @@ export function DiscordSetupWizard({
           <span>Enabled</span>
           <input
             type="checkbox"
-            checked={true}
-            onChange={() => onUpdateDiscord({ enabled: false })}
+            checked={hostEnabled}
+            onChange={(e) => onUpdateDiscord({ [hostField]: e.target.checked })}
           />
         </label>
-        {hostToggleElements}
         <div className="crispy-discord-wizard__summary">
           <div className="crispy-discord-wizard__summary-row">
             <span className="crispy-discord-wizard__summary-label">Bot</span>
@@ -257,7 +231,7 @@ export function DiscordSetupWizard({
             </button>
             <button
               className="crispy-cp-settings__provider-btn crispy-cp-settings__provider-btn--danger"
-              onClick={() => onUpdateDiscord({ enabled: false, token: '', guildId: '', allowedUserIds: [] })}
+              onClick={() => onUpdateDiscord({ token: '', guildId: '', allowedUserIds: [] })}
               title="Delete Discord bot configuration"
             >
               ×
@@ -283,11 +257,10 @@ export function DiscordSetupWizard({
         <span>Enabled</span>
         <input
           type="checkbox"
-          checked={true}
-          onChange={() => onUpdateDiscord({ enabled: false })}
+          checked={hostEnabled}
+          onChange={(e) => onUpdateDiscord({ [hostField]: e.target.checked })}
         />
       </label>
-      {hostToggleElements}
 
       <div className="crispy-discord-wizard__form">
         {/* Step 1: Create Application & Token */}

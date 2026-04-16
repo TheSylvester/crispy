@@ -19,7 +19,7 @@ export type HostType = 'vscode' | 'dev-server' | 'daemon' | 'tauri';
 export function getEnabledTunnelConfig(hostType: HostType): TunnelSettings | null {
   const { settings } = getSettingsSnapshotInternal();
   const { tunnel } = settings;
-  if (!tunnel.enabled || !tunnel.tunnelId) return null;
+  if (!tunnel.tunnelId) return null;
 
   const hostFlag = hostType === 'dev-server' ? tunnel.enableInDevServer
     : hostType === 'daemon' ? tunnel.enableInDaemon

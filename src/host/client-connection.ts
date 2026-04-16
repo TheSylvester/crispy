@@ -1333,7 +1333,6 @@ export function createClientConnection(
         const { updateSettings } = await import('../core/settings/index.js');
         await updateSettings({
           tunnel: {
-            enabled: true,
             relayUrl: params.relayUrl as string,
             pairingToken: params.pairingToken as string,
             tunnelId: params.tunnelId as string,
@@ -1348,7 +1347,7 @@ export function createClientConnection(
         const { disconnect } = await import('./tunnel-client.js');
         disconnect();
         await updateSettings({
-          tunnel: { enabled: false, pairingToken: '', tunnelId: '', tunnelName: '' },
+          tunnel: { pairingToken: '', tunnelId: '', tunnelName: '' },
         });
         return { ok: true };
       }
