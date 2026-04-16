@@ -35,14 +35,14 @@ itself.
 ## Dispatch both agents in parallel
 
 Write the prompt to a temp file with a **unique stub** to avoid collisions
-across concurrent runs: `/tmp/superthink-<stub>.md` where `<stub>` is a
+across concurrent runs: `${TMPDIR:-/tmp}/superthink-<stub>.md` where `<stub>` is a
 short random or timestamp-based suffix (e.g. `$(date +%s)-$$` or similar).
 Use the same file for both agents.
 
 Launch both via `crispy-agent` **in the same message** using `PROMPT_FILE`:
 
-- **claude**: `PROMPT_FILE=/tmp/superthink-<stub>.md $CRISPY_AGENT --vendor claude` (`run_in_background`)
-- **codex**: `PROMPT_FILE=/tmp/superthink-<stub>.md $CRISPY_AGENT --vendor codex` (`run_in_background`)
+- **claude**: `PROMPT_FILE=${TMPDIR:-/tmp}/superthink-<stub>.md $CRISPY_AGENT --vendor claude` (`run_in_background`)
+- **codex**: `PROMPT_FILE=${TMPDIR:-/tmp}/superthink-<stub>.md $CRISPY_AGENT --vendor codex` (`run_in_background`)
 
 Both get the **identical prompt**.
 
@@ -76,7 +76,7 @@ crispy-dispatch rpc readSessionTurns '{"sessionId": "<child-session-id>"}'
 Extract the final assistant response from the last turn. This is the
 agent's analysis output.
 
-**Do not read from `/tmp/crispy-agents/` log files.** Always use the RPC
+**Do not read from `crispy-agents/` log files in the temp directory.** Always use the RPC
 methods above — they are reliable and immune to interleaving issues.
 
 Capture each agent's session ID for use in resume operations below.
@@ -164,8 +164,8 @@ Write a new review prompt that:
 Agents retain their prior review context, so they can verify their own findings
 were addressed correctly. Use the session IDs captured from `listChildSessions`:
 
-- **claude**: `PROMPT_FILE=/tmp/superthink-r<N>-<stub>.md $CRISPY_AGENT --vendor claude --resume <claude-session-id>` (`run_in_background`)
-- **codex**: `PROMPT_FILE=/tmp/superthink-r<N>-<stub>.md $CRISPY_AGENT --vendor codex --resume <codex-session-id>` (`run_in_background`)
+- **claude**: `PROMPT_FILE=${TMPDIR:-/tmp}/superthink-r<N>-<stub>.md $CRISPY_AGENT --vendor claude --resume <claude-session-id>` (`run_in_background`)
+- **codex**: `PROMPT_FILE=${TMPDIR:-/tmp}/superthink-r<N>-<stub>.md $CRISPY_AGENT --vendor codex --resume <codex-session-id>` (`run_in_background`)
 
 ### Check for convergence
 

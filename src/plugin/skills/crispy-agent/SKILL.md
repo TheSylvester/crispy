@@ -96,7 +96,7 @@ Returns plain text response followed by the session ID:
 
 Capture the session ID to continue the conversation with `--resume <uuid>`.
 
-Every run also saves output to `/tmp/crispy-agents/crispy-agent-<timestamp>-<pid>.log`.
+Every run also saves output to `<tmpdir>/crispy-agents/crispy-agent-<timestamp>-<pid>.log`.
 
 ## Exit Codes
 

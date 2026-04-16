@@ -32,6 +32,8 @@ const unsubscribers: Array<() => void> = [];
 
 /** Resolved paths for the tracker child session. */
 let trackerScriptPath = '';
+/** The command string for CRISPY_TRACKER env var (includes `node` prefix on Windows). */
+let trackerCommand = '';
 let ipcSocketPath = '';
 let cachedTrackerPolicy: ArbiterPolicy | null = null;
 
@@ -54,6 +56,13 @@ export interface RosieBotConfig {
 export function initRosieBot(d: AgentDispatch, config: RosieBotConfig): void {
   dispatch = d;
   trackerScriptPath = config.trackerScript;
+  // On Windows, shebangs don't work — prefix with `node` and normalize slashes
+  if (process.platform === 'win32') {
+    const fwd = config.trackerScript.replace(/\\/g, '/');
+    trackerCommand = fwd.includes(' ') ? `node "${fwd}"` : `node ${fwd}`;
+  } else {
+    trackerCommand = config.trackerScript;
+  }
   ipcSocketPath = config.ipcSocket;
   cachedTrackerPolicy = buildTrackerPolicy();
   initRosieTracker(d);
@@ -83,8 +92,10 @@ function buildTrackerPolicy(): ArbiterPolicy {
       'Bash(curl *)', 'Bash(wget *)',
     ],
     allow: [
-      `Bash(${trackerScriptPath} *)`,
-      `Bash(node ${trackerScriptPath} *)`,
+      `Bash(${trackerCommand} *)`,
+      ...(trackerCommand !== trackerScriptPath
+        ? [`Bash(${trackerScriptPath} *)`]  // also allow raw path (fallback)
+        : [`Bash(node ${trackerScriptPath} *)`]),  // also allow node-prefixed (fallback)
       'Bash(crispy-dispatch rpc *)',
       'Bash(git status)', 'Bash(git log *)',
       'Read(*)', 'Glob(*)', 'Grep(*)',
@@ -226,7 +237,7 @@ async function runTracker(
         env: {
           CLAUDECODE: '',
           CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '30000',
-          CRISPY_TRACKER: trackerScriptPath,
+          CRISPY_TRACKER: trackerCommand,
           CRISPY_SOCK: ipcSocketPath,
           CRISPY_PARENT_SESSION_ID: sessionId,
           CRISPY_PROJECT_PATH: projectPath ?? '',

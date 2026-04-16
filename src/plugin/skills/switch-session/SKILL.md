@@ -35,7 +35,7 @@ preserved — it doesn't get deleted, just detached from this channel.
 
 1. List recent sessions using crispy-dispatch:
    ```bash
-   node "$CRISPY_DISPATCH" rpc listSessions '{}'
+   $CRISPY_DISPATCH rpc listSessions '{}'
    ```
 2. Show the user the 10 most recent sessions with their IDs and summaries
 3. Ask which one to switch to
