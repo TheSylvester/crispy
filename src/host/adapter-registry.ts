@@ -143,7 +143,7 @@ export interface HostAdapterConfig {
   /** Explicit path to the Claude Code binary (extension passes this). */
   pathToClaudeCodeExecutable?: string;
   /** Host type — controls per-host settings like MCP server enablement. */
-  hostType: 'vscode' | 'dev-server' | 'daemon';
+  hostType: 'vscode' | 'dev-server' | 'daemon' | 'tauri';
   /** Agent dispatch for internal consumers (recall agent, Rosie). */
   dispatch?: AgentDispatch;
   /** Factory that returns the session-level system prompt (or undefined when disabled). */
@@ -236,12 +236,20 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
   const bundledPaths = resolveBundledCrispyPaths(config);
   const plugins: LocalPlugin[] = [{ type: 'local', path: bundledPaths.pluginRoot }];
 
-  // Flow tool paths through spec.env instead of polluting process.env
+  // Flow tool paths through spec.env instead of polluting process.env.
+  // On Windows, .js shebangs don't work — prefix with `node` and normalize
+  // to forward slashes so $CRISPY_AGENT expands to a working bash command.
+  const jsToolPath = (base: string, ...segments: string[]): string => {
+    const p = resolve(base, ...segments);
+    if (process.platform !== 'win32') return p;
+    const fwd = p.replace(/\\/g, '/');
+    return fwd.includes(' ') ? `node "${fwd}"` : `node ${fwd}`;
+  };
   setToolEnv({
-    RECALL_CLI: resolve(bundledPaths.extensionBase, 'dist', 'recall.js'),
-    CRISPY_DISPATCH: resolve(bundledPaths.extensionBase, 'dist', 'crispy-dispatch.js'),
-    CRISPY_TRACKER: resolve(bundledPaths.extensionBase, 'dist', 'crispy-tracker.mjs'),
-    CRISPY_AGENT: resolve(bundledPaths.extensionBase, 'dist', 'crispy-agent.js'),
+    RECALL_CLI: jsToolPath(bundledPaths.extensionBase, 'dist', 'recall.js'),
+    CRISPY_DISPATCH: jsToolPath(bundledPaths.extensionBase, 'dist', 'crispy-dispatch.js'),
+    CRISPY_TRACKER: jsToolPath(bundledPaths.extensionBase, 'dist', 'crispy-tracker.mjs'),
+    CRISPY_AGENT: jsToolPath(bundledPaths.extensionBase, 'dist', 'crispy-agent.js'),
     CRISPY_SESSION: resolve(bundledPaths.pluginRoot, 'scripts', 'crispy-session'),
   });
   setSkillRoot(bundledPaths.skillRoot);

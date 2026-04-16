@@ -177,13 +177,12 @@ async function configureAutoReflect(settings: CrispySettings): Promise<void> {
 async function configureDiscord(settings: CrispySettings): Promise<void> {
   console.log('\n── Discord Bot ──');
   const bot = settings.discord.bot;
-  const wantDiscord = await confirm('Configure Discord bot?', bot.enabled);
+  const wantDiscord = await confirm('Configure Discord bot?', !!bot.token);
   if (!wantDiscord) {
-    settings.discord.bot.enabled = false;
+    settings.discord.bot.token = '';
+    settings.discord.bot.guildId = '';
     return;
   }
-
-  settings.discord.bot.enabled = true;
 
   const tokenResult = await readPassword('Bot token', bot.token ? maskToken(bot.token) : undefined);
   if (aborted) return;

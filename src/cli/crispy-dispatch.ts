@@ -20,6 +20,7 @@
 
 import { connect, type Socket } from 'node:net';
 import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
 
 import {
@@ -274,7 +275,7 @@ Environment:
 // Main
 // ============================================================================
 
-const OUTPUT_DIR = join('/tmp', 'crispy-agents');
+const OUTPUT_DIR = join(tmpdir(), 'crispy-agents');
 
 async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) return '';

@@ -23,7 +23,7 @@ declare function acquireVsCodeApi(): {
   setState(state: unknown): void;
 };
 
-export type TransportKind = 'vscode' | 'websocket' | 'cloud-relay';
+export type TransportKind = 'vscode' | 'websocket' | 'tauri' | 'cloud-relay';
 
 function detectTransport(): { transport: Transport; kind: TransportKind } {
   // 1. Try VS Code
@@ -38,7 +38,12 @@ function detectTransport(): { transport: Transport; kind: TransportKind } {
     return { transport: createCloudRelayTransport(wsUrl, tunnelId), kind: 'cloud-relay' };
   }
 
-  // 3. Fall back to local WebSocket
+  // 3. Check for Tauri desktop app
+  if ((window as any).__TAURI_INTERNALS__) {
+    return { transport: createWebSocketTransport(`ws://${window.location.host}/ws`), kind: 'tauri' };
+  }
+
+  // 4. Fall back to local WebSocket
   return { transport: createWebSocketTransport(`ws://${window.location.host}/ws`), kind: 'websocket' };
 }
 

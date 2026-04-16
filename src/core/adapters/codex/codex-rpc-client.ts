@@ -215,7 +215,10 @@ export class CodexRpcClient {
     const mergedEnv = env ? { ...process.env, ...env } : process.env;
 
     const isWindows = process.platform === 'win32';
-    this.process = spawn(command, args, {
+    // cmd.exe splits unquoted paths at spaces — quote if needed
+    const safeCommand = isWindows && command.includes(' ') ? `"${command}"` : command;
+    log({ source: 'codex-rpc-client', level: 'info', summary: `[SPAWN] command=${safeCommand} args=${JSON.stringify(args)} cwd=${cwd}` });
+    this.process = spawn(safeCommand, args, {
       cwd,
       env: mergedEnv,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -228,6 +231,7 @@ export class CodexRpcClient {
     // Handle process errors
     this.process.on('error', (err) => {
       this._alive = false;
+      log({ source: 'codex-rpc-client', level: 'error', summary: `[SPAWN] error: ${err.message}` });
       this.rejectAllPending(new Error(`Process error: ${err.message}`));
       this.options.onError(err);
     });
@@ -237,15 +241,17 @@ export class CodexRpcClient {
       this._alive = false;
       const exitInfo =
         code !== null ? `exit code ${code}` : `signal ${signal}`;
+      if (code !== 0) log({ source: 'codex-rpc-client', level: 'error', summary: `[SPAWN] process exited: ${exitInfo}` });
       this.rejectAllPending(new Error(`Process exited: ${exitInfo}`));
       this.cleanup();
       this.options.onExit(code, signal);
     });
 
-    // Handle stderr - log to console but don't crash
+    // Handle stderr
     if (this.process.stderr) {
       this.process.stderr.on('data', (data: Buffer) => {
-        log({ level: 'debug', source: 'codex-rpc-client', summary: `stderr: ${data.toString().trim()}` });
+        const text = data.toString().trim();
+        if (text) log({ level: 'warn', source: 'codex-rpc-client', summary: `[SPAWN stderr] ${text.slice(0, 500)}` });
       });
     }
 

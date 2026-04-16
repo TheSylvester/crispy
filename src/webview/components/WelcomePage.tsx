@@ -7,8 +7,8 @@
  * @module WelcomePage
  */
 
-import { animatedLogoSvg } from '../utils/animated-logo.js';
 import { CRISPY_VERSION } from "../../core/version.js";
+import { useCrispyLogo } from "../hooks/useCrispyLogo.js";
 
 interface WelcomePageProps {
   loading?: boolean;
@@ -16,13 +16,13 @@ interface WelcomePageProps {
 }
 
 export function WelcomePage({ loading, skinClass }: WelcomePageProps): React.JSX.Element {
+  const logoSrc = useCrispyLogo();
   return (
     <div className={`crispy-welcome${skinClass ? ` ${skinClass}` : ''}`}>
       <div className="crispy-welcome__content">
-        <div
-          className="crispy-welcome__icon"
-          dangerouslySetInnerHTML={{ __html: animatedLogoSvg }}
-        />
+        <div className="crispy-welcome__icon">
+          <img src={logoSrc} alt="Crispy" draggable={false} />
+        </div>
         <h1 className="crispy-welcome__title">Crispy</h1>
         {loading ? (
           <p className="crispy-welcome__subtitle crispy-welcome__loading">

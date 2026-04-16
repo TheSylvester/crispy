@@ -105,7 +105,7 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
     };
 
     const onScroll = () => {
-      evaluate(scrollSource.current !== "programmatic");
+      evaluate(scrollSource.current === "user");
     };
 
     const markUserScroll = () => {
@@ -121,9 +121,14 @@ export function useAutoScroll(opts: UseAutoScrollOptions): UseAutoScrollReturn {
       if (navKeys.has(e.key)) scrollSource.current = "user";
     };
 
-    const onScrollEnd = () => {
+    const onScrollEnd = (e: Event) => {
+      if (e.target !== el) return; // ignore bubbled scrollend from child scrollables
       scrollSource.current = null;
-      evaluate(true); // final honest position
+      // Re-park only — onScroll already handles unpark during active user scrolling.
+      // scrollend must never unpark: the null window between scrollend clearing
+      // scrollSource and the next ResizeObserver fire lasts the entire thinking
+      // duration (10-60s), making any stale scroll event a false-unpark trigger.
+      evaluate(false);
     };
 
     el.addEventListener("scroll", onScroll, { passive: true });

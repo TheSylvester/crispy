@@ -10,7 +10,6 @@
 export interface DiscordProviderConfig {
   id: string;
   type: 'discord';
-  enabled: boolean;
   token: string;
   guildId: string;
   /** Resolved: discord override ?? turnDefaults fallback. */

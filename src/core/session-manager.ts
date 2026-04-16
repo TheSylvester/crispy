@@ -45,6 +45,7 @@ let defaultCwd = '';
 export function setDefaultCwd(cwd: string): void { defaultCwd = cwd; }
 
 import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, ChannelMessage, TurnIntent, TurnTarget, TurnSettings, SubagentEntriesResult, EphemeralTargetOptions, LocalPlugin } from './agent-adapter.js';
+import type { ArbiterPolicy } from './arbiter/types.js';
 import type { TranscriptEntry, MessageContent, Vendor, Usage } from './transcript.js';
 import type { SessionChannel, Subscriber, SubscriberMessage } from './session-channel.js';
 import { parseModelOption } from './model-utils.js';
@@ -145,6 +146,8 @@ export interface ChildSessionOptions {
   openChannel?: boolean;
   /** Called for each channel message — use for streaming log output. */
   onEntry?: (msg: ChannelMessage) => void;
+  /** Arbiter policy for automatic tool call gating on the child channel. */
+  arbiterPolicy?: ArbiterPolicy;
 }
 
 export interface ChildSessionResult {
@@ -281,6 +284,24 @@ export function listChildSessions(parentSessionId: string): Array<{
         autoClose: meta.autoClose,
         closed: !!meta.closed,
       });
+    }
+  }
+  return results;
+}
+
+/**
+ * List all currently-open visible child sessions (visible=true, not closed).
+ * Used by session-list-manager to replay open-channel events on subscribe,
+ * so reconnecting clients (e.g. Tauri via WSL WebSocket) recover missed events.
+ */
+export function getOpenVisibleChildren(): Array<{
+  sessionId: string;
+  autoClose: boolean;
+}> {
+  const results: Array<{ sessionId: string; autoClose: boolean }> = [];
+  for (const [id, meta] of childSessions) {
+    if (meta.visible && !meta.closed && !id.startsWith('pending:')) {
+      results.push({ sessionId: id, autoClose: meta.autoClose });
     }
   }
   return results;
@@ -1266,11 +1287,21 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
       }
       if (!cwd) cwd = normalizePath(defaultCwd);
 
+      // Inherit model from parent session when same vendor and no explicit model
+      let inheritedModel: string | undefined;
+      if (!intent.settings.model && intent.target.parentSessionId) {
+        const parentChannel = sessions.get(intent.target.parentSessionId);
+        if (parentChannel?.adapter?.vendor === intent.target.vendor) {
+          inheritedModel = parentChannel.adapter.settings?.model;
+        }
+      }
+
       const created = createSession(
         intent.target.vendor as Vendor,
         cwd,
         subscriber,
         {
+          ...(inheritedModel && { model: inheritedModel }),
           ...intent.settings,
           ...(intent.target.skipPersistSession && { skipPersistSession: true }),
           ...(intent.target.mcpServers && { mcpServers: intent.target.mcpServers }),
@@ -1343,7 +1374,9 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
       rekeyPromise.then((realId) => {
         refreshAndNotify(realId);
         broadcastOpenChannel(realId, displayName, intent.autoClose);
-      }).catch(() => {});
+      }).catch((err) => {
+        log({ source: 'session', level: 'error', summary: `openChannel broadcast skipped: rekey failed for ${sessionId.slice(0, 20)}…`, data: { error: String(err) } });
+      });
     } else {
       refreshAndNotify(sessionId);
       broadcastOpenChannel(sessionId, displayName, intent.autoClose);
@@ -1363,7 +1396,9 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
     if (rekeyPromise) {
       rekeyPromise.then((realId) => {
         rekeyChildSession(sessionId, realId);
-      }).catch(() => {});
+      }).catch((err) => {
+        log({ source: 'session', level: 'error', summary: `child rekey failed for ${sessionId.slice(0, 20)}…`, data: { error: String(err) } });
+      });
     }
   }
 
@@ -1383,6 +1418,11 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
       pendingId: sessionId.startsWith('pending:') ? sessionId : undefined,
     },
   });
+
+  // Attach before adapter sees the first awaiting_approval event
+  if (intent.arbiterPolicy) {
+    channel.arbiterPolicy = intent.arbiterPolicy;
+  }
 
   // Broadcast user entry to all subscribers before adapter sees it
   const userEntry = buildUserEntry(intent);
@@ -1539,13 +1579,21 @@ export async function dispatchChildSession(
     target = { kind: 'new', vendor: vendor as Vendor, cwd, ...ephemeral };
   }
 
+  // When an arbiter policy is attached, force permission mode so approval
+  // events fire. bypassPermissions / allowDangerouslySkipPermissions would
+  // cause the SDK to skip canUseTool() entirely, defeating the arbiter.
+  const effectiveSettings = options.arbiterPolicy
+    ? { ...settings, permissionMode: 'default' as const, allowDangerouslySkipPermissions: false }
+    : settings;
+
   const intent: TurnIntent = {
     target,
     content: prompt,
     clientMessageId: crypto.randomUUID(),
-    settings,
+    settings: effectiveSettings,
     ...(options.openChannel && { openChannel: true }),
     ...(autoClose !== undefined && { autoClose }),
+    ...(options.arbiterPolicy && { arbiterPolicy: options.arbiterPolicy }),
   };
 
   // Allocate a deterministic pending ID up front so cleanup always has a

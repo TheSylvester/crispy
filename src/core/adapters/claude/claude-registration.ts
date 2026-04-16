@@ -58,10 +58,9 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
   // instances each query — avoids the SDK's "already connected" error.
   const getBase = () => {
     const prompt = config.systemPromptFactory?.();
+    const binaryPath = config.pathToClaudeCodeExecutable ?? cachedBinaryPath;
     return {
-      ...(config.pathToClaudeCodeExecutable && {
-        pathToClaudeCodeExecutable: config.pathToClaudeCodeExecutable,
-      }),
+      ...(binaryPath && { pathToClaudeCodeExecutable: binaryPath }),
       ...(config.plugins && { plugins: config.plugins }),
       ...(prompt && {
         systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: prompt },

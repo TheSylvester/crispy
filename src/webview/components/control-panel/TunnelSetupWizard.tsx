@@ -1,0 +1,248 @@
+/**
+ * Tunnel Setup Wizard — Cloud Relay pairing and management UI
+ *
+ * Models on DiscordSetupWizard.tsx. Shows a compact summary when paired,
+ * or a pairing form when unconfigured. Host-flag toggles filter by environment.
+ *
+ * @module control-panel/TunnelSetupWizard
+ */
+
+import { useState, useCallback } from 'react';
+import { useEnvironment } from '../../context/EnvironmentContext.js';
+import type { TunnelSettings } from '../../../core/settings/types.js';
+import type { TunnelStatusInfo } from '../../../host/tunnel-client.js';
+
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
+interface TunnelSetupWizardProps {
+  relayUrl: string;
+  tunnelId: string;
+  tunnelName: string;
+  tunnelStatus: TunnelStatusInfo;
+  enableInDevServer: boolean;
+  enableInDaemon: boolean;
+  enableInTauri: boolean;
+  enableInVscode: boolean;
+  onUpdateTunnel: (patch: Partial<TunnelSettings>) => void;
+  onPair: (relayUrl: string, pairingToken: string, tunnelName: string) => void;
+  onUnpair: () => void;
+}
+
+const DEFAULT_RELAY_URL = '';
+
+function statusLabel(info: TunnelStatusInfo): { text: string; className: string } {
+  if (info.status === 'connected') {
+    return { text: 'Connected', className: 'crispy-tunnel-wizard__status--ok' };
+  }
+  if (info.status === 'reconnecting') {
+    return { text: 'Reconnecting...', className: 'crispy-tunnel-wizard__status--pending' };
+  }
+  // disconnected — check reason
+  switch (info.reason) {
+    case 'relay-unreachable':
+      return { text: 'Cannot reach relay', className: 'crispy-tunnel-wizard__status--err' };
+    case 'invalid-token':
+      return { text: 'Token rejected', className: 'crispy-tunnel-wizard__status--err' };
+    case 'tunnel-in-use':
+      return { text: 'Active elsewhere', className: 'crispy-tunnel-wizard__status--err' };
+    default:
+      return { text: 'Disconnected', className: 'crispy-tunnel-wizard__status--off' };
+  }
+}
+
+export function TunnelSetupWizard({
+  relayUrl,
+  tunnelId,
+  tunnelName,
+  tunnelStatus,
+  enableInDevServer,
+  enableInDaemon,
+  enableInTauri,
+  enableInVscode,
+  onUpdateTunnel,
+  onPair,
+  onUnpair,
+}: TunnelSetupWizardProps) {
+  const environment = useEnvironment();
+
+  // Draft state for pairing form
+  const [draftRelayUrl, setDraftRelayUrl] = useState(DEFAULT_RELAY_URL);
+  const [draftToken, setDraftToken] = useState('');
+  const [draftName, setDraftName] = useState('');
+
+  // Editing state for paired mode
+  const [editing, setEditing] = useState(false);
+
+  const isPaired = !!tunnelId;
+
+  // Per-host enable field for the current environment
+  const hostField = environment === 'vscode'
+    ? 'enableInVscode' as const
+    : environment === 'tauri'
+    ? 'enableInTauri' as const
+    : 'enableInDevServer' as const;
+  const hostEnabled = environment === 'vscode'
+    ? enableInVscode
+    : environment === 'tauri'
+    ? enableInTauri
+    : enableInDevServer;
+  const hostLabel = environment === 'vscode'
+    ? 'Enable in VS Code'
+    : environment === 'tauri'
+    ? 'Enable in Desktop'
+    : 'Enable in Dev Server';
+
+  const handlePair = useCallback(() => {
+    if (!draftToken.trim() || !draftRelayUrl.trim()) return;
+    onPair(draftRelayUrl.trim(), draftToken.trim(), draftName.trim() || '');
+    setDraftToken('');
+    setDraftName('');
+  }, [draftRelayUrl, draftToken, draftName, onPair]);
+
+  const handleUnpair = useCallback(() => {
+    onUnpair();
+    setEditing(false);
+  }, [onUnpair]);
+
+  // --- Unpaired state: show pairing form ---
+  if (!isPaired) {
+    return (
+      <div className="crispy-tunnel-wizard">
+        <div className="crispy-tunnel-wizard__form">
+          <label className="crispy-discord-wizard__field">
+            <span>Relay URL</span>
+            <input
+              type="text"
+              value={draftRelayUrl}
+              onChange={(e) => setDraftRelayUrl(e.target.value)}
+              placeholder="https://relay.example.com"
+            />
+          </label>
+          <label className="crispy-discord-wizard__field">
+            <span>Pairing Token</span>
+            <input
+              type="password"
+              value={draftToken}
+              onChange={(e) => setDraftToken(e.target.value)}
+              placeholder="crsp_..."
+            />
+          </label>
+          <label className="crispy-discord-wizard__field">
+            <span>Machine Name (optional)</span>
+            <input
+              type="text"
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              placeholder="Defaults to hostname"
+            />
+          </label>
+          <div className="crispy-discord-wizard__actions">
+            <button
+              className="crispy-cp-settings__provider-btn"
+              disabled={!draftToken.trim() || !draftRelayUrl.trim()}
+              onClick={handlePair}
+            >
+              Link Machine
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Paired state: compact summary ---
+  const { text: statusText, className: statusClass } = statusLabel(tunnelStatus);
+  const relayHost = (() => {
+    try { return new URL(relayUrl).hostname; } catch { return relayUrl; }
+  })();
+
+  if (!editing) {
+    return (
+      <div className="crispy-tunnel-wizard">
+        <label className="crispy-cp-settings__row">
+          <span>{hostLabel}</span>
+          <input
+            type="checkbox"
+            checked={hostEnabled}
+            onChange={(e) => onUpdateTunnel({ [hostField]: e.target.checked })}
+          />
+        </label>
+        <div className="crispy-discord-wizard__summary">
+          <div className="crispy-discord-wizard__summary-row">
+            <span className="crispy-discord-wizard__summary-label">Relay</span>
+            <span className="crispy-discord-wizard__summary-value">
+              {relayHost} &rarr; &quot;{tunnelName || '(unnamed)'}&quot;
+            </span>
+          </div>
+          <div className="crispy-discord-wizard__summary-row">
+            <span className="crispy-discord-wizard__summary-label">Status</span>
+            <span className={`crispy-discord-wizard__summary-value ${statusClass}`}>
+              {tunnelStatus.status === 'connected' && <span style={{ marginRight: 4 }}>&#x2022;</span>}
+              {statusText}
+            </span>
+          </div>
+          <span style={{ display: 'flex', gap: '4px' }}>
+            <button className="crispy-cp-settings__provider-btn" onClick={() => setEditing(true)}>
+              Edit
+            </button>
+            <button
+              className="crispy-cp-settings__provider-btn crispy-cp-settings__provider-btn--danger"
+              onClick={handleUnpair}
+              title="Unlink from relay"
+            >
+              &times;
+            </button>
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Paired state: expanded edit ---
+  return (
+    <div className="crispy-tunnel-wizard">
+      <label className="crispy-cp-settings__row">
+        <span>{hostLabel}</span>
+        <input
+          type="checkbox"
+          checked={hostEnabled}
+          onChange={(e) => onUpdateTunnel({ [hostField]: e.target.checked })}
+        />
+      </label>
+      <div className="crispy-discord-wizard__summary">
+        <div className="crispy-discord-wizard__summary-row">
+          <span className="crispy-discord-wizard__summary-label">Relay</span>
+          <span className="crispy-discord-wizard__summary-value">{relayUrl}</span>
+        </div>
+        <div className="crispy-discord-wizard__summary-row">
+          <span className="crispy-discord-wizard__summary-label">Machine</span>
+          <span className="crispy-discord-wizard__summary-value">{tunnelName || '(unnamed)'}</span>
+        </div>
+        <div className="crispy-discord-wizard__summary-row">
+          <span className="crispy-discord-wizard__summary-label">Tunnel ID</span>
+          <span className="crispy-discord-wizard__summary-value" style={{ fontSize: '0.85em', opacity: 0.7 }}>
+            {tunnelId}
+          </span>
+        </div>
+        <div className="crispy-discord-wizard__summary-row">
+          <span className="crispy-discord-wizard__summary-label">Status</span>
+          <span className={`crispy-discord-wizard__summary-value ${statusClass}`}>
+            {statusText}
+          </span>
+        </div>
+      </div>
+      <div className="crispy-discord-wizard__actions">
+        <button
+          className="crispy-cp-settings__provider-btn crispy-cp-settings__provider-btn--danger"
+          onClick={handleUnpair}
+        >
+          Unlink Machine
+        </button>
+        <button className="crispy-cp-settings__provider-btn" onClick={() => setEditing(false)}>
+          Done
+        </button>
+      </div>
+    </div>
+  );
+}

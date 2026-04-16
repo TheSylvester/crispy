@@ -54,7 +54,8 @@ import { useTabSession } from '../../context/TabSessionContext.js';
 import { extractFilePathsFromDragEvent, isImageExtension } from '../../utils/drag-drop.js';
 import type { MessageContent, MessageContentBlock, TranscriptEntry } from '../../../core/transcript.js';
 import type { TurnIntent, TurnTarget } from '../../../core/agent-adapter.js';
-import type { WireProviderConfig, DiscordBotSettings } from '../../../core/settings/types.js';
+import type { WireProviderConfig, DiscordBotSettings, TunnelSettings, RosieBotSettings } from '../../../core/settings/types.js';
+import type { TunnelStatusInfo } from '../../../host/tunnel-client.js';
 import type { SettingsChangedGlobalEvent } from '../../../core/settings/events.js';
 import { SETTINGS_CHANNEL_ID } from '../../../core/settings/events.js';
 import { RECALL_CATCHUP_CHANNEL_ID } from '../../../core/recall/catchup-types.js';
@@ -289,14 +290,32 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         if (sessionId === SETTINGS_CHANNEL_ID && event.type === 'settings_snapshot') {
           const settingsEvent = event as SettingsChangedGlobalEvent;
           setProviders(settingsEvent.snapshot.settings.providers);
-          setRosieEnabled(settingsEvent.snapshot.settings.rosie?.bot?.enabled ?? false);
-          setRosieModel(settingsEvent.snapshot.settings.rosie?.bot?.model);
+          const rBot = settingsEvent.snapshot.settings.rosie?.bot;
+          if (rBot) {
+            setRosieEnabled(rBot.enabled);
+            setRosieModel(rBot.model);
+            setRosieDebugTracker(rBot.debugTracker ?? false);
+          }
           // Discord push sync
           const dBot = settingsEvent.snapshot.settings.discord?.bot;
           if (dBot) {
-            setDiscordEnabled(dBot.enabled);
             setDiscordGuildId(dBot.guildId);
             setDiscordToken(dBot.token);
+            if (dBot.enableInVscode !== undefined) setDiscordEnableInVscode(dBot.enableInVscode);
+            if (dBot.enableInDevServer !== undefined) setDiscordEnableInDevServer(dBot.enableInDevServer);
+            if (dBot.enableInDaemon !== undefined) setDiscordEnableInDaemon(dBot.enableInDaemon);
+            if (dBot.enableInTauri !== undefined) setDiscordEnableInTauri(dBot.enableInTauri);
+          }
+          // Tunnel push sync
+          const tun = settingsEvent.snapshot.settings.tunnel;
+          if (tun) {
+            setTunnelRelayUrl(tun.relayUrl);
+            setTunnelId(tun.tunnelId);
+            setTunnelName(tun.tunnelName);
+            if (tun.enableInDevServer !== undefined) setTunnelEnableInDevServer(tun.enableInDevServer);
+            if (tun.enableInDaemon !== undefined) setTunnelEnableInDaemon(tun.enableInDaemon);
+            if (tun.enableInTauri !== undefined) setTunnelEnableInTauri(tun.enableInTauri);
+            if (tun.enableInVscode !== undefined) setTunnelEnableInVscode(tun.enableInVscode);
           }
           setDefaultModel(settingsEvent.snapshot.settings.turnDefaults?.model ?? '');
           const savedMode = settingsEvent.snapshot.settings.turnDefaults?.permissionMode;
@@ -343,24 +362,53 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // --- Rosie Bot settings state ---
     const [rosieEnabled, setRosieEnabled] = useState(false);
     const [rosieModel, setRosieModel] = useState<string | undefined>(undefined);
+    const [rosieDebugTracker, setRosieDebugTracker] = useState(false);
 
     // --- Discord Bot settings state ---
-    const [discordEnabled, setDiscordEnabled] = useState(false);
     const [discordGuildId, setDiscordGuildId] = useState('');
     const [discordToken, setDiscordToken] = useState('');
     const [discordAllowedUserIds, setDiscordAllowedUserIds] = useState<string[]>([]);
+    const [discordEnableInVscode, setDiscordEnableInVscode] = useState(true);
+    const [discordEnableInDevServer, setDiscordEnableInDevServer] = useState(true);
+    const [discordEnableInDaemon, setDiscordEnableInDaemon] = useState(true);
+    const [discordEnableInTauri, setDiscordEnableInTauri] = useState(true);
+
+    // --- Tunnel settings state ---
+    const [tunnelRelayUrl, setTunnelRelayUrl] = useState('');
+    const [tunnelId, setTunnelId] = useState('');
+    const [tunnelName, setTunnelName] = useState('');
+    const [tunnelStatus, setTunnelStatus] = useState<TunnelStatusInfo>({ status: 'disconnected' });
+    const [tunnelEnableInDevServer, setTunnelEnableInDevServer] = useState(true);
+    const [tunnelEnableInDaemon, setTunnelEnableInDaemon] = useState(true);
+    const [tunnelEnableInTauri, setTunnelEnableInTauri] = useState(true);
+    const [tunnelEnableInVscode, setTunnelEnableInVscode] = useState(false);
 
     useEffect(() => {
       transport.getSettings().then((snapshot) => {
         setRosieEnabled(snapshot.settings.rosie?.bot?.enabled ?? false);
         setRosieModel(snapshot.settings.rosie?.bot?.model);
+        setRosieDebugTracker(snapshot.settings.rosie?.bot?.debugTracker ?? false);
         // Discord
         const discordBot = snapshot.settings.discord?.bot;
         if (discordBot) {
-          setDiscordEnabled(discordBot.enabled);
           setDiscordGuildId(discordBot.guildId);
           setDiscordToken(discordBot.token);
           if (discordBot.allowedUserIds) setDiscordAllowedUserIds(discordBot.allowedUserIds);
+          if (discordBot.enableInVscode !== undefined) setDiscordEnableInVscode(discordBot.enableInVscode);
+          if (discordBot.enableInDevServer !== undefined) setDiscordEnableInDevServer(discordBot.enableInDevServer);
+          if (discordBot.enableInDaemon !== undefined) setDiscordEnableInDaemon(discordBot.enableInDaemon);
+          if (discordBot.enableInTauri !== undefined) setDiscordEnableInTauri(discordBot.enableInTauri);
+        }
+        // Tunnel
+        const tun = snapshot.settings.tunnel;
+        if (tun) {
+          setTunnelRelayUrl(tun.relayUrl);
+          setTunnelId(tun.tunnelId);
+          setTunnelName(tun.tunnelName);
+          if (tun.enableInDevServer !== undefined) setTunnelEnableInDevServer(tun.enableInDevServer);
+          if (tun.enableInDaemon !== undefined) setTunnelEnableInDaemon(tun.enableInDaemon);
+          if (tun.enableInTauri !== undefined) setTunnelEnableInTauri(tun.enableInTauri);
+          if (tun.enableInVscode !== undefined) setTunnelEnableInVscode(tun.enableInVscode);
         }
         const savedDefault = snapshot.settings.turnDefaults?.model ?? '';
         setDefaultModel(savedDefault);
@@ -399,18 +447,61 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       });
     }, [transport]);
 
-    const handleUpdateRosie = useCallback(async (patch: { enabled?: boolean; model?: string }) => {
+    const handleUpdateRosie = useCallback(async (patch: Partial<RosieBotSettings>) => {
       if (patch.enabled !== undefined) setRosieEnabled(patch.enabled);
       if (patch.model !== undefined) setRosieModel(patch.model);
+      if (patch.debugTracker !== undefined) setRosieDebugTracker(patch.debugTracker);
       await transport.updateSettings({ rosie: { bot: patch } });
     }, [transport]);
 
     const handleUpdateDiscord = useCallback(async (patch: Partial<DiscordBotSettings>) => {
-      if (patch.enabled !== undefined) setDiscordEnabled(patch.enabled);
       if (patch.guildId !== undefined) setDiscordGuildId(patch.guildId);
       if (patch.token !== undefined) setDiscordToken(patch.token);
       if (patch.allowedUserIds !== undefined) setDiscordAllowedUserIds(patch.allowedUserIds);
+      if (patch.enableInVscode !== undefined) setDiscordEnableInVscode(patch.enableInVscode);
+      if (patch.enableInDevServer !== undefined) setDiscordEnableInDevServer(patch.enableInDevServer);
+      if (patch.enableInDaemon !== undefined) setDiscordEnableInDaemon(patch.enableInDaemon);
+      if (patch.enableInTauri !== undefined) setDiscordEnableInTauri(patch.enableInTauri);
       await transport.updateSettings({ discord: { bot: patch } });
+    }, [transport]);
+
+    const handleUpdateTunnel = useCallback(async (patch: Partial<TunnelSettings>) => {
+      if (patch.enableInDevServer !== undefined) setTunnelEnableInDevServer(patch.enableInDevServer);
+      if (patch.enableInDaemon !== undefined) setTunnelEnableInDaemon(patch.enableInDaemon);
+      if (patch.enableInTauri !== undefined) setTunnelEnableInTauri(patch.enableInTauri);
+      if (patch.enableInVscode !== undefined) setTunnelEnableInVscode(patch.enableInVscode);
+      await transport.updateSettings({ tunnel: patch });
+    }, [transport]);
+
+    const handlePairTunnel = useCallback(async (relayUrl: string, pairingToken: string, name: string) => {
+      const tunnelIdVal = crypto.randomUUID();
+      const tunnelNameVal = name || '';
+      setTunnelRelayUrl(relayUrl);
+      setTunnelId(tunnelIdVal);
+      setTunnelName(tunnelNameVal);
+      await transport.updateSettings({
+        tunnel: {
+          relayUrl,
+          pairingToken,
+          tunnelId: tunnelIdVal,
+          tunnelName: tunnelNameVal,
+        },
+      });
+    }, [transport]);
+
+    const handleUnpairTunnel = useCallback(async () => {
+      setTunnelId('');
+      setTunnelName('');
+      await transport.updateSettings({
+        tunnel: { pairingToken: '', tunnelId: '', tunnelName: '' },
+      });
+    }, [transport]);
+
+    // Fetch initial tunnel status + subscribe to live updates
+    useEffect(() => {
+      transport.getTunnelStatus?.().then(setTunnelStatus).catch(() => {});
+      const unsub = transport.onTunnelStatusChange?.(setTunnelStatus);
+      return () => { unsub?.(); };
     }, [transport]);
 
     // --- Recall catch-up state ---
@@ -1117,10 +1208,9 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
     // Register executeRewind with parent for per-message rewind buttons
     useEffect(() => { onRegisterRewindHandler?.(executeRewind); }, [onRegisterRewindHandler, executeRewind]);
 
-    // --- Fork target — assistant message right before the last user message ---
-    // Stable during streaming: token deltas flow through streaming_content
-    // notifications, not the entries array, so the user/assistant entries here
-    // only change when a full turn boundary is reached.
+    // --- Fork target — depends on session state ---
+    // Idle:      last assistant message (branch from current state)
+    // Streaming: assistant before the last real user input (redo current turn)
     useEffect(() => {
       if (forkTargetSessionRef.current !== selectedSessionId) {
         forkTargetRef.current = undefined;
@@ -1128,23 +1218,43 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
       }
       forkTargetRef.current = undefined;
       if (!entries || entries.length === 0) return;
-      // Walk backwards to find the last user entry with a persisted UUID
-      let lastUserIdx = -1;
-      for (let i = entries.length - 1; i >= 0; i--) {
-        if (entries[i].type === 'user' && entries[i].uuid && !entries[i].isSidechain) {
+
+      const isActive = channelState === 'streaming' || channelState === 'awaiting_approval';
+
+      if (!isActive) {
+        // Idle — fork from the last assistant message (branch from current state)
+        for (let i = entries.length - 1; i >= 0; i--) {
+          if (entries[i].type === 'assistant' && entries[i].uuid && !entries[i].isSidechain) {
+            forkTargetRef.current = entries[i].uuid!;
+            return;
+          }
+        }
+      } else {
+        // Streaming — fork before the last real user input (redo current turn).
+        // Skip tool_result and isMeta user entries (system-generated).
+        let lastUserIdx = -1;
+        for (let i = entries.length - 1; i >= 0; i--) {
+          const e = entries[i];
+          if (e.type !== 'user' || !e.uuid || e.isSidechain) continue;
+          if (e.isMeta) continue;
+          const content = e.message?.content;
+          if (Array.isArray(content) && content.length > 0) {
+            const first = content[0];
+            if (typeof first === 'object' && first !== null && 'type' in first
+              && (first as { type: string }).type === 'tool_result') continue;
+          }
           lastUserIdx = i;
           break;
         }
-      }
-      // Find the assistant message right before it
-      const searchFrom = lastUserIdx > 0 ? lastUserIdx - 1 : entries.length - 1;
-      for (let i = searchFrom; i >= 0; i--) {
-        if (entries[i].type === 'assistant' && entries[i].uuid && !entries[i].isSidechain) {
-          forkTargetRef.current = entries[i].uuid!;
-          return;
+        const searchFrom = lastUserIdx > 0 ? lastUserIdx - 1 : entries.length - 1;
+        for (let i = searchFrom; i >= 0; i--) {
+          if (entries[i].type === 'assistant' && entries[i].uuid && !entries[i].isSidechain) {
+            forkTargetRef.current = entries[i].uuid!;
+            return;
+          }
         }
       }
-    }, [entries, selectedSessionId]);
+    }, [entries, selectedSessionId, channelState]);
 
     const handleFork = useCallback(() => {
       if (!selectedSessionId || selectedSessionId.startsWith('pending:')) return;
@@ -1254,12 +1364,27 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
               onUseDisplayStyleAccentChange={setUseDisplayStyleAccent}
               rosieEnabled={rosieEnabled}
               rosieModel={rosieModel}
+              rosieDebugTracker={rosieDebugTracker}
               onUpdateRosie={handleUpdateRosie}
-              discordEnabled={discordEnabled}
               discordGuildId={discordGuildId}
               discordToken={discordToken}
               discordAllowedUserIds={discordAllowedUserIds}
+              discordEnableInVscode={discordEnableInVscode}
+              discordEnableInDevServer={discordEnableInDevServer}
+              discordEnableInDaemon={discordEnableInDaemon}
+              discordEnableInTauri={discordEnableInTauri}
               onUpdateDiscord={handleUpdateDiscord}
+              tunnelRelayUrl={tunnelRelayUrl}
+              tunnelId={tunnelId}
+              tunnelName={tunnelName}
+              tunnelStatus={tunnelStatus}
+              tunnelEnableInDevServer={tunnelEnableInDevServer}
+              tunnelEnableInDaemon={tunnelEnableInDaemon}
+              tunnelEnableInTauri={tunnelEnableInTauri}
+              tunnelEnableInVscode={tunnelEnableInVscode}
+              onUpdateTunnel={handleUpdateTunnel}
+              onPairTunnel={handlePairTunnel}
+              onUnpairTunnel={handleUnpairTunnel}
               catchupStatus={catchupStatus}
               onStartEmbedding={handleStartEmbedding}
               onStopEmbedding={handleStopEmbedding}

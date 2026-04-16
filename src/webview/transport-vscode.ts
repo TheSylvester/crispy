@@ -8,6 +8,7 @@
  */
 
 import type { HostEvent } from '../host/client-connection.js';
+import type { TunnelStatusInfo } from '../host/tunnel-client.js';
 import type { SessionService, WireSessionInfo, WireProject, WireProjectActivity, WireStage } from './transport.js';
 import type { WorkspaceListResponse } from '../core/workspace-roots.js';
 import type { TranscriptEntry } from '../core/transcript.js';
@@ -192,6 +193,8 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
 
     getDiscordAppInfo: (token) =>
       request<{ appId: string; name: string } | null>('getDiscordAppInfo', { token }),
+
+    getTunnelStatus: () => request<TunnelStatusInfo>('getTunnelStatus'),
 
     // --- Terminal (not available in VS Code — it has its own terminal) ---
     createTerminal: () => { throw new Error('Terminal not available in VS Code mode'); },

@@ -138,6 +138,7 @@ export interface TailMetadata {
   lastMessage?: string; // last user/assistant text
   lastUserPrompt?: string; // last user-only text (distinct from lastMessage which includes assistant)
   summary?: string; // from type:"summary" entry (AI-generated title)
+  customTitle?: string; // from type:"custom-title" entry (user-set via /rename)
   slug?: string; // three-word session name from any entry
   lastTimestamp?: string; // ISO timestamp from most recent entry
   cwd?: string; // project path from any entry with a cwd field
@@ -1408,9 +1409,9 @@ export function extractMetadataFast(
     const isSidechain = isSidechainSession(entries);
     const isTrivial = isTrivialSession(entries, stat.size);
 
-    // Determine label — fall back through tail metadata when head-chunk
-    // had no usable text (e.g. image exceeded buffer, or no text blocks)
-    let label = extractLabel(entries);
+    // Determine label — custom title from /rename wins (may be in tail),
+    // then head-chunk extractLabel, then tail fallbacks.
+    let label = tail.customTitle || extractLabel(entries);
     if (label === "No prompt") {
       label = tail.summary || tail.slug || tail.lastMessage || "No prompt";
     }
@@ -1498,6 +1499,11 @@ export function extractTailMetadata(
           result.summary = entry.summary;
         }
 
+        // Extract custom title from type:"custom-title" entries (user-set via /rename)
+        if (entry.type === "custom-title" && entry.customTitle && !result.customTitle) {
+          result.customTitle = entry.customTitle;
+        }
+
         // Extract slug (three-word session name, present on various entry types)
         if ((entry as Record<string, unknown>).slug && !result.slug) {
           result.slug = String((entry as Record<string, unknown>).slug);
@@ -1549,7 +1555,7 @@ export function extractTailMetadata(
         }
 
         // Stop early if we've found all fields
-        if (result.lastMessage && result.lastUserPrompt && result.summary && result.slug && result.lastTimestamp && result.cwd) {
+        if (result.lastMessage && result.lastUserPrompt && result.summary && result.customTitle && result.slug && result.lastTimestamp && result.cwd) {
           break;
         }
       } catch {

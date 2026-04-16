@@ -233,7 +233,7 @@ describe('claudeRegistration', () => {
       });
     });
 
-    it('omits pathToClaudeCodeExecutable when not in config', async () => {
+    it('falls back to cachedBinaryPath when not in config', async () => {
       mockFindClaudeBinary.mockReturnValue('/found/claude');
       const { claudeRegistration } = await freshImport();
       const config: HostAdapterConfig = { cwd: '/workspace' };
@@ -245,7 +245,7 @@ describe('claudeRegistration', () => {
       factory({ mode: 'resume', sessionId: 'sess-789' });
 
       const constructorArgs = MockClaudeAgentAdapter.mock.calls[0][0];
-      expect(constructorArgs).not.toHaveProperty('pathToClaudeCodeExecutable');
+      expect(constructorArgs.pathToClaudeCodeExecutable).toBe('/found/claude');
       expect(constructorArgs.cwd).toBe('/workspace');
     });
 

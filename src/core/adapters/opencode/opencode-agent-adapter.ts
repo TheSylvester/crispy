@@ -219,20 +219,25 @@ export class OpenCodeAgentAdapter implements AgentAdapter {
     this.baseUrl = `http://127.0.0.1:${port}`;
 
     const command = this.config.command ?? 'opencode';
-    this.serverProcess = spawn(command, ['serve', '--port', String(port)], {
+    const isWindows = process.platform === 'win32';
+    const safeCommand = isWindows && command.includes(' ') ? `"${command}"` : command;
+    const args = ['serve', '--port', String(port)];
+    log({ source: 'opencode-adapter', level: 'info', summary: `[SPAWN] command=${safeCommand} args=${JSON.stringify(args)} cwd=${this.config.cwd}` });
+    this.serverProcess = spawn(safeCommand, args, {
       cwd: this.config.cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
+      ...(isWindows && { shell: true }),
     });
 
     this.serverProcess.stderr?.on('data', (data: Buffer) => {
       const msg = data.toString().trim();
-      if (msg) log({ level: 'debug', source: 'opencode-server', summary: msg });
+      if (msg) log({ level: 'warn', source: 'opencode-adapter', summary: `[SPAWN stderr] ${msg.slice(0, 500)}` });
     });
 
     this.serverProcess.on('exit', (code, signal) => {
       if (!this._closed) {
-        log({ level: 'debug', source: 'opencode-adapter', summary: `Server exited: code=${code}, signal=${signal}` });
+        if (code !== 0) log({ level: 'error', source: 'opencode-adapter', summary: `[SPAWN] exited: code=${code}, signal=${signal}` });
         if (code !== 0 && code !== null) {
           this.emitError(`Server exited unexpectedly: code=${code}, signal=${signal}`);
         }

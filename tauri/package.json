@@ -1,6 +1,6 @@
 {
   "name": "crispy-desktop",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "description": "Crispy desktop app — native window shell for the Crispy daemon",
   "scripts": {

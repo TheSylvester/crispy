@@ -46,6 +46,14 @@ function parseHostFlag(): string {
   return '127.0.0.1';
 }
 
+function parseHostTypeFlag(): 'daemon' | 'tauri' {
+  const idx = process.argv.indexOf('--host-type');
+  if (idx !== -1 && process.argv[idx + 1] === 'tauri') {
+    return 'tauri';
+  }
+  return 'daemon';
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -81,7 +89,7 @@ async function startForeground(): Promise<void> {
     port,
     host,
     mode: 'daemon',
-    hostType: 'daemon',
+    hostType: parseHostTypeFlag(),
   });
 
   writePidFile('prod');
@@ -116,11 +124,15 @@ async function startBackground(): Promise<void> {
   const logPath = join(logsDir(), 'crispy.log');
   const logFd = openSync(logPath, 'a');
 
-  // Build args: pass through --port if provided
+  // Build args: pass through --port and --host-type if provided
   const args = [process.argv[1], '_daemon'];
   const portIdx = process.argv.indexOf('--port');
   if (portIdx !== -1 && process.argv[portIdx + 1]) {
     args.push('--port', process.argv[portIdx + 1]);
+  }
+  const hostTypeIdx = process.argv.indexOf('--host-type');
+  if (hostTypeIdx !== -1 && process.argv[hostTypeIdx + 1]) {
+    args.push('--host-type', process.argv[hostTypeIdx + 1]);
   }
 
   const child = spawn(process.execPath, args, {
@@ -164,7 +176,7 @@ async function runDaemon(): Promise<void> {
     port,
     host,
     mode: 'daemon',
-    hostType: 'daemon',
+    hostType: parseHostTypeFlag(),
   });
 
   writePidFile('prod');

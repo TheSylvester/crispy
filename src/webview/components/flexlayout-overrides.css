@@ -66,7 +66,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  overflow: visible;
+  overflow: hidden; /* neutralize dark.css's overflow:auto — only .crispy-transcript scrolls */
 }
 
 /* ==========================================================================

@@ -859,7 +859,7 @@ body[data-accent-mode="skin"] {
   justify-content: center;
 }
 
-.crispy-welcome__icon svg {
+.crispy-welcome__icon img {
   width: auto;
   height: auto;
   max-width: min(160px, 40vw);
@@ -3427,6 +3427,23 @@ body[data-accent-mode="skin"] {
   padding-top: 8px;
   border-top: 1px solid var(--tint-light);
 }
+.crispy-cp-settings__section-header--toggle {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.crispy-cp-settings__section-header--toggle:hover {
+  color: var(--text-secondary);
+}
+.crispy-cp-settings__section-chevron {
+  font-size: 0.75em;
+  transition: transform 0.15s ease;
+}
+.crispy-cp-settings__section-chevron--open {
+  transform: rotate(90deg);
+}
 
 .crispy-cp-settings__provider-list {
   display: flex;
@@ -3609,6 +3626,7 @@ body[data-accent-mode="skin"] {
   border-radius: var(--radius-sm);
   font-size: var(--font-sm);
   width: 100%;
+  box-sizing: border-box;
 }
 
 .crispy-discord-wizard__input-row {
@@ -6517,8 +6535,8 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-cp-autocomplet
 }
 
 /* Light mode: workspace picker logo shadow — lighter */
-body[data-vscode-theme-kind="vscode-light"] .crispy-workspace-picker__logo svg,
-body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-workspace-picker__logo svg {
+body[data-vscode-theme-kind="vscode-light"] .crispy-workspace-picker__logo img,
+body[data-vscode-theme-kind="vscode-high-contrast-light"] .crispy-workspace-picker__logo img {
   filter:
     drop-shadow(2px 3px 6px rgba(0, 0, 0, 0.2))
     drop-shadow(-1px -1px 0 rgba(180, 140, 60, 0.2))
@@ -7816,7 +7834,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal h
   perspective: 400px;
 }
 
-.crispy-workspace-picker__logo svg {
+.crispy-workspace-picker__logo img {
   width: 100px;
   height: 100px;
   transform: rotateX(var(--logo-rx, 0deg)) rotateY(var(--logo-ry, 0deg));
@@ -7828,7 +7846,7 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal h
     drop-shadow(1px 2px 0 rgba(0, 0, 0, 0.5));
 }
 
-.crispy-workspace-picker__logo:hover svg {
+.crispy-workspace-picker__logo:hover img {
   filter:
     drop-shadow(5px 10px 20px rgba(0, 0, 0, 0.5))
     drop-shadow(0 0 16px rgba(232, 160, 32, 0.3))
@@ -8371,6 +8389,13 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal h
 .crispy-file-viewer-tab__body .crispy-code-preview {
   max-height: none;
   min-width: 0;
+}
+
+/* Markdown preview inside file viewer tab — needs its own scroll */
+.crispy-file-viewer-tab__body .crispy-file-viewer__markdown {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 /* Wrap OFF: code-preview scrolls both axes */

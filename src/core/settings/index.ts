@@ -27,6 +27,7 @@ export type {
   RosieSettings,
   DiscordBotSettings,
   DiscordSettings,
+  TunnelSettings,
   CrispySettings,
   CrispySettingsFile,
   SettingsSnapshot,

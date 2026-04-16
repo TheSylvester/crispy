@@ -1,19 +1,21 @@
 /**
  * Cloud subcommands — link, unlink, status
  *
- * Manages relay.json config for the cloud tunnel. The daemon reads this
- * file on startup to auto-connect; these commands also notify a running
- * daemon via IPC so changes take effect immediately.
+ * Manages tunnel config via settings.json (source of truth). When the daemon
+ * is running, notifies it via IPC so changes take effect immediately.
+ * When offline, patches settings.json directly.
+ *
+ * Legacy relay.json is read only for status fallback (pre-migration installs).
  *
  * @module crispy-cloud
  */
 
-import { readFileSync, writeFileSync, unlinkSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, unlinkSync, existsSync } from 'node:fs';
 import { hostname } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { relayConfigPath } from '../core/paths.js';
+import { settingsPath, relayConfigPath } from '../core/paths.js';
 
-const DEFAULT_RELAY_URL = 'https://crispy-code.com';
+const DEFAULT_RELAY_URL = '';
 
 interface RelayConfig {
   relayUrl: string;
@@ -22,7 +24,8 @@ interface RelayConfig {
   tunnelName: string;
 }
 
-function readConfig(): RelayConfig | null {
+/** Read legacy relay.json for status fallback. */
+function readLegacyConfig(): RelayConfig | null {
   const configPath = relayConfigPath();
   try {
     if (!existsSync(configPath)) return null;
@@ -54,6 +57,34 @@ async function notifyDaemon(method: string, params: Record<string, unknown> = {}
   }
 }
 
+/** Read-modify-write settings.json when daemon is offline. */
+function patchSettingsFile(patch: Record<string, unknown>): void {
+  const path = settingsPath();
+  let settings: Record<string, unknown> = {};
+  try {
+    settings = JSON.parse(readFileSync(path, 'utf-8'));
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      // Corrupt JSON — rename to .corrupt backup, then start with empty settings
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      try { renameSync(path, `${path}.corrupt.${timestamp}`); } catch { /* best effort */ }
+    }
+    settings = { version: 1 };
+  }
+  // Deep-merge patch keys (top-level, matching settings-store behavior)
+  for (const [key, value] of Object.entries(patch)) {
+    if (typeof value === 'object' && value && typeof settings[key] === 'object' && settings[key]) {
+      settings[key] = { ...(settings[key] as Record<string, unknown>), ...(value as Record<string, unknown>) };
+    } else {
+      settings[key] = value;
+    }
+  }
+  settings.revision = ((settings.revision as number) || 0) + 1;
+  settings.updatedAt = new Date().toISOString();
+  if (!settings.version) settings.version = 1;
+  writeFileSync(path, JSON.stringify(settings, null, 2) + '\n', { mode: 0o600 });
+}
+
 // ---- Subcommands ----
 
 export async function cloudLink(): Promise<void> {
@@ -71,73 +102,86 @@ export async function cloudLink(): Promise<void> {
   const relayUrl = parseFlag('--relay') || DEFAULT_RELAY_URL;
   const tunnelName = parseFlag('--name') || hostname();
 
-  const existing = readConfig();
-  if (existing) {
-    console.log('Replacing existing relay link.');
-  }
-
-  const config: RelayConfig = {
+  const config = {
     relayUrl,
     pairingToken: token,
     tunnelId: randomUUID(),
     tunnelName,
+    enableInDevServer: false,
+    enableInDaemon: false,
+    enableInTauri: false,
+    enableInVscode: false,
   };
 
-  writeFileSync(relayConfigPath(), JSON.stringify(config, null, 2), { mode: 0o600 });
-
-  // Notify running daemon
-  const result = await notifyDaemon('updateRelayConfig', { ...config });
+  // Try daemon first (it owns settings persistence and live reconnect)
+  const result = await notifyDaemon('updateRelayConfig', config);
   if (result) {
     console.log(`Linked to relay at ${relayUrl} as '${tunnelName}' (daemon notified)`);
   } else {
+    // Daemon not running — patch settings.json directly
+    patchSettingsFile({ tunnel: config });
     console.log(`Linked to relay at ${relayUrl} as '${tunnelName}'`);
-    console.log('Daemon not running — tunnel will connect on next start.');
+    console.log('Daemon not running — settings saved, tunnel will connect on next start.');
   }
 }
 
 export async function cloudUnlink(): Promise<void> {
-  const configPath = relayConfigPath();
-  if (!existsSync(configPath)) {
-    console.log('Not linked to a relay.');
-    return;
-  }
-
-  try { unlinkSync(configPath); } catch { /* already gone */ }
-
   const result = await notifyDaemon('disconnectRelay');
   if (result) {
     console.log('Unlinked from relay (daemon notified).');
   } else {
+    // Daemon not running — patch settings.json directly
+    patchSettingsFile({
+      tunnel: {
+        relayUrl: '', pairingToken: '',
+        tunnelId: '', tunnelName: '',
+        enableInDevServer: false, enableInDaemon: false, enableInTauri: false,
+        enableInVscode: false,
+      },
+    });
+    // Also clean up legacy relay.json if it exists
+    try { unlinkSync(relayConfigPath()); } catch { /* already gone */ }
     console.log('Unlinked from relay.');
   }
 }
 
 export async function cloudStatus(): Promise<void> {
-  const config = readConfig();
-  if (!config) {
-    console.log('Not linked to a relay.');
+  // Try daemon first
+  const result = await notifyDaemon('getRelayConfig', {}) as {
+    config?: { relayUrl: string; tunnelId: string; tunnelName: string };
+    status?: string;
+  } | null;
+  if (result?.config) {
+    console.log(`Relay:     ${result.config.relayUrl}`);
+    console.log(`Name:      ${result.config.tunnelName}`);
+    console.log(`Tunnel ID: ${result.config.tunnelId}`);
+    console.log(`Tunnel:    ${result.status || 'unknown'}`);
     return;
   }
 
-  console.log(`Relay:     ${config.relayUrl}`);
-  console.log(`Name:      ${config.tunnelName}`);
-  console.log(`Tunnel ID: ${config.tunnelId}`);
-
-  // Query daemon for live tunnel status
+  // Daemon offline — read settings.json directly
   try {
-    const { discoverSocket, MessageRouter } = await import('./ipc-client.js');
-    const { connect } = await import('node:net');
-    const socketPath = discoverSocket();
-    const conn = connect(socketPath);
-    const router = new MessageRouter(conn);
-    const result = await router.sendRpc('getRelayConfig', {}) as { status?: string } | null;
-    router.end();
-    if (result && result.status) {
-      console.log(`Tunnel:    ${result.status}`);
+    const settings = JSON.parse(readFileSync(settingsPath(), 'utf-8'));
+    if (settings.tunnel?.tunnelId) {
+      console.log(`Relay:     ${settings.tunnel.relayUrl}`);
+      console.log(`Name:      ${settings.tunnel.tunnelName}`);
+      console.log(`Tunnel ID: ${settings.tunnel.tunnelId}`);
+      console.log('Tunnel:    daemon not running — inactive');
+      return;
     }
-  } catch {
-    console.log('Tunnel:    daemon not running — inactive');
+  } catch { /* settings missing or corrupt */ }
+
+  // Fallback: check legacy relay.json (pre-migration)
+  const config = readLegacyConfig();
+  if (config) {
+    console.log(`Relay:     ${config.relayUrl}`);
+    console.log(`Name:      ${config.tunnelName}`);
+    console.log(`Tunnel ID: ${config.tunnelId}`);
+    console.log('Tunnel:    daemon not running — inactive (legacy config, will migrate on next start)');
+    return;
   }
+
+  console.log('Not linked to a relay.');
 }
 
 export async function runCloud(): Promise<void> {

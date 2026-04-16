@@ -13,6 +13,7 @@
 import { onResponseCompleteAfter } from '../lifecycle-hooks.js';
 import type { AgentDispatch } from '../agent-dispatch-types.js';
 import { getSettingsSnapshotInternal } from '../settings/index.js';
+import type { ArbiterPolicy } from '../arbiter/types.js';
 import { parseModelOption } from '../model-utils.js';
 import { closeSession } from '../session-manager.js';
 import { log } from '../log.js';
@@ -31,7 +32,10 @@ const unsubscribers: Array<() => void> = [];
 
 /** Resolved paths for the tracker child session. */
 let trackerScriptPath = '';
+/** The command string for CRISPY_TRACKER env var (includes `node` prefix on Windows). */
+let trackerCommand = '';
 let ipcSocketPath = '';
+let cachedTrackerPolicy: ArbiterPolicy | null = null;
 
 // Tracker state — persistent session per parent, turn counter
 const trackerSessions = new Map<string, string>();  // parentSessionId → trackerChildSessionId
@@ -52,7 +56,15 @@ export interface RosieBotConfig {
 export function initRosieBot(d: AgentDispatch, config: RosieBotConfig): void {
   dispatch = d;
   trackerScriptPath = config.trackerScript;
+  // On Windows, shebangs don't work — prefix with `node` and normalize slashes
+  if (process.platform === 'win32') {
+    const fwd = config.trackerScript.replace(/\\/g, '/');
+    trackerCommand = fwd.includes(' ') ? `node "${fwd}"` : `node ${fwd}`;
+  } else {
+    trackerCommand = config.trackerScript;
+  }
   ipcSocketPath = config.ipcSocket;
+  cachedTrackerPolicy = buildTrackerPolicy();
   initRosieTracker(d);
 }
 
@@ -60,10 +72,37 @@ export function shutdownRosieBot(): void {
   for (const unsub of unsubscribers) unsub();
   unsubscribers.length = 0;
   dispatch = null;
+  cachedTrackerPolicy = null;
   // Close all live tracker child sessions before clearing state
   for (const [parentId] of trackerSessions) {
     evictTrackerSession(parentId);
   }
+}
+
+// ============================================================================
+// Tracker Arbiter Policy
+// ============================================================================
+
+function buildTrackerPolicy(): ArbiterPolicy {
+  return {
+    deny: [
+      'Write', 'Edit', 'Agent', 'WebFetch',
+      'Bash(rm *)', 'Bash(git push*)', 'Bash(git commit*)',
+      'Bash(git checkout*)', 'Bash(git reset*)',
+      'Bash(curl *)', 'Bash(wget *)',
+    ],
+    allow: [
+      `Bash(${trackerCommand} *)`,
+      ...(trackerCommand !== trackerScriptPath
+        ? [`Bash(${trackerScriptPath} *)`]  // also allow raw path (fallback)
+        : [`Bash(node ${trackerScriptPath} *)`]),  // also allow node-prefixed (fallback)
+      'Bash(crispy-dispatch rpc *)',
+      'Bash(git status)', 'Bash(git log *)',
+      'Read(*)', 'Glob(*)', 'Grep(*)',
+    ],
+    fallback: 'deny',
+    bashMode: 'strict',
+  };
 }
 
 // ============================================================================
@@ -82,9 +121,10 @@ function initRosieTracker(d: AgentDispatch): void {
     if (!info) return;
 
     const rosieModel = snap.settings.rosie.bot.model;
+    const debugTracker = snap.settings.rosie.bot.debugTracker ?? false;
     trackerInflight.add(sessionId);
     try {
-      await runTracker(d, sessionId, info.path, info.vendor, rosieModel, info.projectPath);
+      await runTracker(d, sessionId, info.path, info.vendor, rosieModel, info.projectPath, debugTracker);
     } catch (err) {
       log({ source: 'rosie-bot:tracker', level: 'error',
         summary: `Tracker error: ${err instanceof Error ? err.message : String(err)}` });
@@ -108,6 +148,7 @@ async function runTracker(
   parentVendor: string,
   modelOverride?: string,
   projectPath?: string,
+  debugTracker = false,
 ): Promise<void> {
   const parsed = modelOverride ? parseModelOption(modelOverride) : undefined;
   const vendor = parsed?.vendor ?? parentVendor;
@@ -161,8 +202,7 @@ async function runTracker(
         prompt: injection,
         settings: {
           ...(model && { model }),
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
+          permissionMode: 'default',
         },
         autoClose: false,
         timeoutMs: 0,
@@ -187,22 +227,23 @@ async function runTracker(
         systemPrompt: buildTrackerSystemPrompt(),
         settings: {
           ...(model && { model }),
-          permissionMode: 'bypassPermissions',
-          allowDangerouslySkipPermissions: true,
+          // arbiterPolicy requires approval events — dispatchChildSession forces permissionMode: 'default'
         },
         forceNew: true,
         skipPersistSession: false,
         autoClose: false,
         sessionKind: 'system',
+        ...(debugTracker && { openChannel: true }),
         env: {
           CLAUDECODE: '',
           CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: '30000',
-          CRISPY_TRACKER: trackerScriptPath,
+          CRISPY_TRACKER: trackerCommand,
           CRISPY_SOCK: ipcSocketPath,
           CRISPY_PARENT_SESSION_ID: sessionId,
           CRISPY_PROJECT_PATH: projectPath ?? '',
         },
         timeoutMs: 0,
+        arbiterPolicy: cachedTrackerPolicy!,
       });
 
       if (!trackerResult) {

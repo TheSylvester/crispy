@@ -61,6 +61,7 @@ export function listSessions(
   since?: string,
   excludeSessionId?: string,
   projectId?: string,
+  until?: string,
 ): ListResult[] {
   const db = getDb(dbPath);
   const params: (string | number)[] = [];
@@ -71,6 +72,11 @@ export function listSessions(
     const sinceMs = new Date(since).getTime();
     conditions.push('m.created_at >= ?');
     params.push(sinceMs);
+  }
+  if (until) {
+    const untilMs = new Date(until + 'T23:59:59.999').getTime();
+    conditions.push('m.created_at <= ?');
+    params.push(untilMs);
   }
   if (excludeSessionId) {
     conditions.push('m.session_id != ?');

@@ -937,22 +937,32 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       ...(opts.debug !== undefined && { debug: opts.debug }),
       ...(opts.debugFile && { debugFile: opts.debugFile }),
 
-      // Windows: use shell spawn to avoid stdin/stdout pipe deadlocks.
-      // Node.js on Windows can buffer stdin writes indefinitely without
-      // shell: true, preventing the SDK's control protocol from initializing.
-      ...(platform() === 'win32' && {
-        spawnClaudeCodeProcess: (spawnOpts: SDKSpawnOptions) => {
-          const child = spawn(spawnOpts.command, spawnOpts.args, {
-            cwd: spawnOpts.cwd,
-            env: spawnOpts.env,
-            signal: spawnOpts.signal,
-            stdio: ['pipe', 'pipe', 'pipe'],
-            shell: true,
-            windowsHide: true,
-          });
-          return child;
-        },
-      }),
+      // Custom spawner for diagnostics + Windows pipe deadlock workaround.
+      // On Windows, shell: true avoids stdin/stdout pipe deadlocks, and we
+      // must quote paths with spaces for cmd.exe. On all platforms, we capture
+      // stderr and exit codes for the Rosie Log.
+      spawnClaudeCodeProcess: (spawnOpts: SDKSpawnOptions) => {
+        const isWindows = platform() === 'win32';
+        const command = isWindows && spawnOpts.command.includes(' ')
+          ? `"${spawnOpts.command}"`
+          : spawnOpts.command;
+        log({ source: 'claude-adapter', level: 'info', summary: `[SPAWN] command=${command} args=${JSON.stringify(spawnOpts.args?.slice(0, 3))} cwd=${spawnOpts.cwd}` });
+        const child = spawn(command, spawnOpts.args, {
+          cwd: spawnOpts.cwd,
+          env: spawnOpts.env,
+          signal: spawnOpts.signal,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          ...(isWindows && { shell: true, windowsHide: true }),
+        });
+        child.stderr?.on('data', (chunk: Buffer) => {
+          const text = chunk.toString().trim();
+          if (text) log({ source: 'claude-adapter', level: 'warn', summary: `[SPAWN stderr] ${text.slice(0, 500)}` });
+        });
+        child.on('exit', (code) => {
+          if (code !== 0) log({ source: 'claude-adapter', level: 'error', summary: `[SPAWN] process exited with code ${code}` });
+        });
+        return child;
+      },
 
       // Adapter invariants — always applied last, cannot be overridden.
       // The adapter depends on partial messages for streaming and provides

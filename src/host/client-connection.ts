@@ -1313,32 +1313,48 @@ export function createClientConnection(
         return attached;
       }
 
-      // --- Relay management (delegates to tunnel-client) ---
+      // --- Relay management (settings-backed, delegates to tunnel-client for status) ---
 
       case 'getRelayConfig': {
-        const { readRelayConfig, getTunnelStatus } = await import('./tunnel-client.js');
-        const config = readRelayConfig();
+        const { getSettingsSnapshotInternal } = await import('../core/settings/index.js');
+        const { getTunnelStatus } = await import('./tunnel-client.js');
+        const { settings } = getSettingsSnapshotInternal();
         return {
-          config,
+          config: settings.tunnel.tunnelId ? {
+            relayUrl: settings.tunnel.relayUrl,
+            tunnelId: settings.tunnel.tunnelId,
+            tunnelName: settings.tunnel.tunnelName,
+          } : null,
           status: getTunnelStatus(),
         };
       }
 
       case 'updateRelayConfig': {
-        const { updateRelayConfig } = await import('./tunnel-client.js');
-        updateRelayConfig({
-          relayUrl: params.relayUrl as string,
-          pairingToken: params.pairingToken as string,
-          tunnelId: params.tunnelId as string,
-          tunnelName: params.tunnelName as string,
+        const { updateSettings } = await import('../core/settings/index.js');
+        await updateSettings({
+          tunnel: {
+            relayUrl: params.relayUrl as string,
+            pairingToken: params.pairingToken as string,
+            tunnelId: params.tunnelId as string,
+            tunnelName: (params.tunnelName as string) || '',
+          },
         });
         return { ok: true };
       }
 
       case 'disconnectRelay': {
-        const { clearRelayConfig } = await import('./tunnel-client.js');
-        clearRelayConfig();
+        const { updateSettings } = await import('../core/settings/index.js');
+        const { disconnect } = await import('./tunnel-client.js');
+        disconnect();
+        await updateSettings({
+          tunnel: { pairingToken: '', tunnelId: '', tunnelName: '' },
+        });
         return { ok: true };
+      }
+
+      case 'getTunnelStatus': {
+        const { getTunnelStatusInfo } = await import('./tunnel-client.js');
+        return getTunnelStatusInfo();
       }
 
       default:

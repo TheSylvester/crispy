@@ -25,13 +25,15 @@ import { isPathAllowed } from '../core/workspace-roots.js';
 import { listAllSessions } from '../core/session-manager.js';
 import { listAllWorkspaces } from '../core/workspace-roots.js';
 
-import { initSettings, startWatchingSettings } from '../core/settings/index.js';
+import { initSettings, startWatchingSettings, onSettingsChanged } from '../core/settings/index.js';
 import { createClientConnection } from './client-connection.js';
 import { createAgentDispatch } from './agent-dispatch.js';
-import { autoConnect as autoConnectTunnel, disconnect as disconnectTunnel } from './tunnel-client.js';
+import { autoConnect as autoConnectTunnel, disconnect as disconnectTunnel, connect as connectTunnel, setBroadcastStatus, getRelayConfig } from './tunnel-client.js';
+import { getEnabledTunnelConfig } from '../core/tunnel-config.js';
 import { closeAllTerminals } from './terminal-manager.js';
 import { startRescan } from '../core/session-list-manager.js';
 import { registerAllAdapters } from './adapter-registry.js';
+import { findClaudeBinary } from '../core/find-claude-binary.js';
 import { initRosieBot, shutdownRosieBot } from '../core/rosie/index.js';
 import { initMessageView, shutdownMessageView } from '../core/message-view/index.js';
 import { initRecallIngest, shutdownRecallIngest } from '../core/recall/ingest-hook.js';
@@ -53,7 +55,7 @@ export interface ServerConfig {
   port: number;
   host: string;             // '127.0.0.1' or '0.0.0.0'
   mode: 'dev' | 'daemon';
-  hostType: 'dev-server' | 'daemon';
+  hostType: 'dev-server' | 'daemon' | 'tauri';
   logFile?: string;         // when set, redirect console to this file
 }
 
@@ -375,6 +377,11 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     const handler = createClientConnection(clientId, (msg) => {
       if (ws.readyState === ws.OPEN) {
         ws.send(JSON.stringify(msg));
+      } else {
+        const eventType = (msg as Record<string, unknown>).kind === 'event'
+          ? ((msg as any).event?.type ?? 'unknown')
+          : (msg as Record<string, unknown>).kind;
+        console.warn(`[server] Dropped ${eventType} for ${clientId}: ws.readyState=${ws.readyState}`);
       }
     });
 
@@ -423,7 +430,8 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
   // For daemon mode, resolve extensionPath from __dirname (which is dist/ when bundled).
   // join(__dirname, '..') gives the package root.
-  const extensionPath = mode === 'dev' ? undefined : join(__dirname, '..');
+  const extensionPath = mode === 'dev' ? undefined
+    : join(__dirname, '..').replace(/^\\\\\?\\/, '');
 
   // Dev server can't open browser tabs from the host side.
   // The browser transport handles openPanel client-side.
@@ -433,7 +441,8 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
   done = phase('register adapters');
   setDefaultCwd(cwd);
-  registerAllAdapters({ cwd, hostType, dispatch, extensionPath });
+  const pathToClaudeCodeExecutable = findClaudeBinary();
+  registerAllAdapters({ cwd, hostType, dispatch, extensionPath, ...(pathToClaudeCodeExecutable && { pathToClaudeCodeExecutable }) });
   done();
 
   // IPC socket: use stable paths for daemon, PID-based for dev
@@ -443,7 +452,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
 
   done = phase('init recall ingest');
   initRecallIngest();
-  startRecallCatchup('devServer');
+  startRecallCatchup(hostType);
   done();
 
   done = phase('init rosie bot');
@@ -457,16 +466,51 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
   });
   done();
 
+  let unsubTunnel: (() => void) | null = null;
+
   const settingsDone = phase('init settings');
-  const providerBase = { cwd };
+  const providerBase = pathToClaudeCodeExecutable
+    ? { cwd, pathToClaudeCodeExecutable }
+    : { cwd };
   initSettings(providerBase)
     .then(() => {
       startWatchingSettings();
       settingsDone();
       // Message view reads settings on init — must come after settings are loaded
       const mvDone = phase('init message view');
-      initMessageView(dispatch, cwd);
+      initMessageView(dispatch, cwd, hostType);
       mvDone();
+
+      // Tunnel auto-connect — MUST come after settings loaded
+      autoConnectTunnel(hostType);
+
+      // Runtime reconciliation — reconnect/disconnect on settings change.
+      // Compare connection-relevant fields to avoid unnecessary reconnects
+      // when only host-flag toggles changed.
+      unsubTunnel = onSettingsChanged(({ changedSections }) => {
+        if (!changedSections.includes('tunnel')) return;
+        const tunnel = getEnabledTunnelConfig(hostType);
+        const current = getRelayConfig();
+        if (tunnel) {
+          // Skip reconnect if connection-relevant fields haven't changed
+          if (current
+            && current.relayUrl === tunnel.relayUrl
+            && current.pairingToken === tunnel.pairingToken
+            && current.tunnelId === tunnel.tunnelId
+            && current.tunnelName === tunnel.tunnelName) {
+            return;
+          }
+          disconnectTunnel();
+          connectTunnel({
+            relayUrl: tunnel.relayUrl,
+            pairingToken: tunnel.pairingToken,
+            tunnelId: tunnel.tunnelId,
+            tunnelName: tunnel.tunnelName,
+          });
+        } else {
+          disconnectTunnel();
+        }
+      });
     })
     .catch((err) => {
       console.error('[server] init settings failed:', err);
@@ -562,8 +606,20 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     console.error('[server] Unhandled rejection:', reason);
   });
 
-  // Auto-connect tunnel to relay if configured
-  autoConnectTunnel();
+  // Wire tunnel status broadcast to push to all connected WebSocket clients
+  setBroadcastStatus((info) => {
+    const msg = JSON.stringify({
+      kind: 'tunnel-status',
+      connected: info.status === 'connected',
+      status: info.status,
+      reason: info.reason,
+    });
+    for (const client of wss.clients) {
+      if (client.readyState === 1 /* OPEN */) {
+        client.send(msg);
+      }
+    }
+  });
 
   console.log(`[server] ★ ready (${(performance.now() - bootStart).toFixed(0)}ms)`);
 
@@ -595,6 +651,7 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     shutdownRecallIngest();
     stopEmbeddingBackfill();
     disposeEmbedder();
+    unsubTunnel?.();
     disconnectTunnel();
     dispatch.dispose();
   }

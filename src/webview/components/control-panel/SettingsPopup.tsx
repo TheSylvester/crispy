@@ -16,10 +16,12 @@ import type { VendorModelGroup, AgencyMode } from './types.js';
 import { AgencyModeSelect } from './AgencyModeSelect.js';
 import type { RenderMode } from '../../types.js';
 import type { ToolViewOverride, BadgeStyle, DisplayStyle } from '../../context/PreferencesContext.js';
-import type { WireProviderConfig, ProviderConfig, DiscordBotSettings } from '../../../core/settings/types.js';
+import type { WireProviderConfig, ProviderConfig, DiscordBotSettings, TunnelSettings, RosieBotSettings } from '../../../core/settings/types.js';
+import type { TunnelStatusInfo } from '../../../host/tunnel-client.js';
 import type { CatchupStatus } from '../../../core/recall/catchup-types.js';
 import { formatDuration } from '../../utils/format.js';
 import { DiscordSetupWizard } from './DiscordSetupWizard.js';
+import { TunnelSetupWizard } from './TunnelSetupWizard.js';
 
 interface SettingsPopupProps {
   pinned: boolean;
@@ -46,12 +48,27 @@ interface SettingsPopupProps {
   onUseDisplayStyleAccentChange: (enabled: boolean) => void;
   rosieEnabled: boolean;
   rosieModel?: string;
-  onUpdateRosie: (patch: { enabled?: boolean; model?: string }) => void;
-  discordEnabled: boolean;
+  rosieDebugTracker: boolean;
+  onUpdateRosie: (patch: Partial<RosieBotSettings>) => void;
   discordGuildId: string;
   discordToken: string;
   discordAllowedUserIds: string[];
+  discordEnableInVscode: boolean;
+  discordEnableInDevServer: boolean;
+  discordEnableInDaemon: boolean;
+  discordEnableInTauri: boolean;
   onUpdateDiscord: (patch: Partial<DiscordBotSettings>) => void;
+  tunnelRelayUrl: string;
+  tunnelId: string;
+  tunnelName: string;
+  tunnelStatus: TunnelStatusInfo;
+  tunnelEnableInDevServer: boolean;
+  tunnelEnableInDaemon: boolean;
+  tunnelEnableInTauri: boolean;
+  tunnelEnableInVscode: boolean;
+  onUpdateTunnel: (patch: Partial<TunnelSettings>) => void;
+  onPairTunnel: (relayUrl: string, pairingToken: string, tunnelName: string) => void;
+  onUnpairTunnel: () => void;
   catchupStatus?: CatchupStatus | null;
   onStartEmbedding?: () => void;
   onStopEmbedding?: () => void;
@@ -161,13 +178,14 @@ function formToConfig(form: ProviderFormState): ProviderConfig {
   };
 }
 
-export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, displayStyle, onDisplayStyleChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, gitPanelSide, onGitPanelSideChange, useDisplayStyleAccent, onUseDisplayStyleAccentChange, rosieEnabled, rosieModel, onUpdateRosie, discordEnabled, discordGuildId, discordToken, discordAllowedUserIds, onUpdateDiscord, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
+export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange, toolViewOverride, onToolViewOverrideChange, debugMode, onDebugModeChange, toolPanelAutoOpen, onToolPanelAutoOpenChange, badgeStyle, onBadgeStyleChange, displayStyle, onDisplayStyleChange, bashBlockInIcons, onBashBlockInIconsChange, autoReflect, onAutoReflectChange, gitPanelSide, onGitPanelSideChange, useDisplayStyleAccent, onUseDisplayStyleAccentChange, rosieEnabled, rosieModel, rosieDebugTracker, onUpdateRosie, discordGuildId, discordToken, discordAllowedUserIds, discordEnableInVscode, discordEnableInDevServer, discordEnableInDaemon, discordEnableInTauri, onUpdateDiscord, tunnelRelayUrl, tunnelId, tunnelName, tunnelStatus, tunnelEnableInDevServer, tunnelEnableInDaemon, tunnelEnableInTauri, tunnelEnableInVscode, onUpdateTunnel, onPairTunnel, onUnpairTunnel, catchupStatus, onStartEmbedding, onStopEmbedding, defaultModel, onUpdateDefaultModel, defaultPermissionMode, onUpdateDefaultPermissionMode, modelGroups, providers, onSaveProvider, onDeleteProvider }: SettingsPopupProps): React.JSX.Element {
   const containerRef = useRef<HTMLSpanElement>(null);
   const [justPinned, setJustPinned] = useState(false);
   const [editForm, setEditForm] = useState<ProviderFormState | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [discordDirty, setDiscordDirty] = useState(false);
+  const [tunnelExpanded, setTunnelExpanded] = useState(false);
 
   const handleClickOutside = useCallback(
     (e: MouseEvent) => {
@@ -366,8 +384,8 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
           {/* --- Rosie Section --- */}
           <div className="crispy-cp-settings__section-header">Rosie (Experimental)</div>
           <div className="crispy-cp-settings__warn">
-            Very experimental — the tracker agent has broad tool access and may
-            occasionally go off-script. Enable at your own risk.
+            Experimental — the tracker agent is governed by an arbiter policy
+            that restricts its tool access.
           </div>
           <label className="crispy-cp-settings__row">
             <span>Model</span>
@@ -385,6 +403,16 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
               onChange={(e) => onUpdateRosie({ enabled: e.target.checked })}
             />
           </label>
+          {rosieEnabled && (
+            <label className="crispy-cp-settings__row">
+              <span>Debug tracker</span>
+              <input
+                type="checkbox"
+                checked={rosieDebugTracker}
+                onChange={(e) => onUpdateRosie({ debugTracker: e.target.checked })}
+              />
+            </label>
+          )}
           {catchupStatus && (
             <div className="crispy-cp-settings__recall-status">
               {catchupStatus.phase === 'done' && catchupStatus.gapCount === 0 && (
@@ -456,13 +484,38 @@ export function SettingsPopup({ pinned, onToggle, renderMode, onRenderModeChange
           {/* --- Discord Bot Section --- */}
           <div className="crispy-cp-settings__section-header">Discord Bot</div>
           <DiscordSetupWizard
-            enabled={discordEnabled}
             guildId={discordGuildId}
             token={discordToken}
             allowedUserIds={discordAllowedUserIds}
+            enableInVscode={discordEnableInVscode}
+            enableInDevServer={discordEnableInDevServer}
+            enableInDaemon={discordEnableInDaemon}
+            enableInTauri={discordEnableInTauri}
             onUpdateDiscord={onUpdateDiscord}
             onDirtyChange={setDiscordDirty}
           />
+
+          {/* --- Cloud Relay Section --- */}
+          <div
+            className="crispy-cp-settings__section-header crispy-cp-settings__section-header--toggle"
+            onClick={() => setTunnelExpanded((v) => !v)}
+          >
+            <span className={`crispy-cp-settings__section-chevron${tunnelExpanded ? ' crispy-cp-settings__section-chevron--open' : ''}`}>&#x25B8;</span>
+            Cloud Relay
+          </div>
+          {tunnelExpanded && <TunnelSetupWizard
+            relayUrl={tunnelRelayUrl}
+            tunnelId={tunnelId}
+            tunnelName={tunnelName}
+            tunnelStatus={tunnelStatus}
+            enableInDevServer={tunnelEnableInDevServer}
+            enableInDaemon={tunnelEnableInDaemon}
+            enableInTauri={tunnelEnableInTauri}
+            enableInVscode={tunnelEnableInVscode}
+            onUpdateTunnel={onUpdateTunnel}
+            onPair={onPairTunnel}
+            onUnpair={onUnpairTunnel}
+          />}
 
           {/* --- Providers Section --- */}
           {providers && onSaveProvider && onDeleteProvider && (

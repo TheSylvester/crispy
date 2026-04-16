@@ -20,7 +20,8 @@ export type SettingsSection =
   | 'turnDefaults'
   | 'rosie'
   | 'discord'
-  | 'mcp';
+  | 'mcp'
+  | 'tunnel';
 
 // ============================================================================
 // Preferences (globally persisted UI settings)
@@ -93,6 +94,8 @@ export interface RosieBotSettings {
   enabled: boolean;
   /** Model override. Format: "vendor:model" (e.g. "claude:haiku"). */
   model?: string;
+  /** When true, tracker sessions appear in the session browser for debugging. */
+  debugTracker?: boolean;
 }
 
 export interface RosieSettings {
@@ -104,7 +107,6 @@ export interface RosieSettings {
 // ============================================================================
 
 export interface DiscordBotSettings {
-  enabled: boolean;
   token: string;
   guildId: string;
   /** Override permission mode for Discord sessions. null = use turnDefaults. */
@@ -113,6 +115,14 @@ export interface DiscordBotSettings {
   archivalTimeoutHours: number;
   /** Numeric Discord user IDs allowed to interact. Empty = owner-only (resolved via OAuth). */
   allowedUserIds: string[];
+  /** Connect the Discord bot when running as a VS Code extension. Default: true. */
+  enableInVscode: boolean;
+  /** Connect the Discord bot when running as a dev server. Default: true. */
+  enableInDevServer: boolean;
+  /** Connect the Discord bot when running as a standalone daemon (`crispy start`). Default: true. */
+  enableInDaemon: boolean;
+  /** Connect the Discord bot when running as the Tauri desktop app. Default: true. */
+  enableInTauri: boolean;
 }
 
 export interface DiscordSettings {
@@ -134,6 +144,29 @@ export interface McpMemorySettings {
 /** @deprecated MCP servers replaced by plugin bundle. Kept for settings file compat. */
 export interface McpSettings {
   memory: McpMemorySettings;
+}
+
+// ============================================================================
+// Cloud Relay Tunnel
+// ============================================================================
+
+export interface TunnelSettings {
+  /** Relay server URL (e.g. "https://crispy-code.com"). */
+  relayUrl: string;
+  /** Pairing token issued by the relay. Treated as a secret — masked on wire. */
+  pairingToken: string;
+  /** Unique tunnel ID assigned during pairing (generated locally via randomUUID). */
+  tunnelId: string;
+  /** Human-readable machine name shown on the dashboard. */
+  tunnelName: string;
+  /** Connect tunnel when running as dev server (`npm run dev`). Default: true. */
+  enableInDevServer: boolean;
+  /** Connect tunnel when running as standalone daemon (`crispy start`). Default: true. */
+  enableInDaemon: boolean;
+  /** Connect tunnel when running as the Tauri desktop app. Default: true. */
+  enableInTauri: boolean;
+  /** Connect tunnel when running as a VS Code/Cursor extension. Default: false (opt-in). */
+  enableInVscode: boolean;
 }
 
 // ============================================================================
@@ -195,6 +228,7 @@ export interface CrispySettings {
   rosie: RosieSettings;
   discord: DiscordSettings;
   mcp: McpSettings;
+  tunnel: TunnelSettings;
 }
 
 export interface CrispySettingsFile extends CrispySettings {
@@ -209,11 +243,12 @@ export interface SettingsSnapshot {
   updatedAt: string;
 }
 
-/** Wire-safe snapshot — provider apiKeys and discord bot token masked. */
+/** Wire-safe snapshot — provider apiKeys, discord bot token, and tunnel pairing token masked. */
 export interface WireSettingsSnapshot {
-  settings: Omit<CrispySettings, 'providers' | 'discord'> & {
+  settings: Omit<CrispySettings, 'providers' | 'discord' | 'tunnel'> & {
     providers: Record<string, WireProviderConfig>;
     discord: { bot: Omit<DiscordBotSettings, 'token'> & { token: string } };
+    tunnel: Omit<TunnelSettings, 'pairingToken'> & { pairingToken: string };
   };
   revision: number;
   updatedAt: string;
@@ -229,6 +264,7 @@ export type SettingsPatch = Partial<{
   rosie: { bot?: Partial<RosieBotSettings> };
   discord: { bot?: Partial<DiscordBotSettings> };
   mcp: { memory?: Partial<McpMemorySettings> };
+  tunnel: Partial<TunnelSettings>;
 }>;
 
 // ============================================================================
@@ -269,9 +305,19 @@ export const DEFAULT_SETTINGS: CrispySettings = {
     bot: { enabled: false },
   },
   discord: {
-    bot: { enabled: false, token: '', guildId: '', permissionMode: null, archivalTimeoutHours: 24, allowedUserIds: [] },
+    bot: { token: '', guildId: '', permissionMode: null, archivalTimeoutHours: 24, allowedUserIds: [], enableInVscode: false, enableInDevServer: false, enableInDaemon: false, enableInTauri: false },
   },
   mcp: {
     memory: { vscode: true, devServer: true },
+  },
+  tunnel: {
+    relayUrl: '',
+    pairingToken: '',
+    tunnelId: '',
+    tunnelName: '',
+    enableInDevServer: false,
+    enableInDaemon: false,
+    enableInTauri: false,
+    enableInVscode: false,
   },
 };

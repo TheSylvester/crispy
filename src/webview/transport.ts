@@ -13,6 +13,7 @@ import type { TranscriptEntry } from '../core/transcript.js';
 import type { HostEvent } from '../host/client-connection.js';
 import type { ApprovalExtra } from './components/approval/types.js';
 import type { WireProviderConfig, ProviderConfig, WireSettingsSnapshot, SettingsPatch } from '../core/settings/types.js';
+import type { TunnelStatusInfo } from '../host/tunnel-client.js';
 import type { VendorModelGroup } from './components/control-panel/types.js';
 import type { CatchupStatus } from '../core/recall/catchup-types.js';
 import type { WorkspaceInfo, WorkspaceListResponse } from '../core/workspace-roots.js';
@@ -207,6 +208,11 @@ export interface SessionService {
   listTerminals(): Promise<string[]>;
   attachTerminal(terminalId: string): Promise<boolean>;
   onTerminalData(terminalId: string, cb: (data: string) => void): () => void;
+
+  /** Tunnel status — initial value. Optional: absent in cloud-relay transport. */
+  getTunnelStatus?(): Promise<TunnelStatusInfo>;
+  /** Tunnel status — live updates. Optional: absent in cloud-relay transport. */
+  onTunnelStatusChange?(handler: (info: TunnelStatusInfo) => void): () => void;
 
   dispose(): void;
 
