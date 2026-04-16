@@ -283,7 +283,7 @@ export function TitleBar(): React.JSX.Element {
             </svg>
           </button>
         )}
-        {envKind === 'websocket' && <ThemeToggle />}
+        {(envKind === 'websocket' || envKind === 'tauri') && <ThemeToggle />}
         {envKind !== 'vscode' && (
           <>
             <span className="crispy-titlebar__group-sep" />
