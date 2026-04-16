@@ -250,7 +250,7 @@ export function FileViewerTab({ path, relativePath: relPath, line }: FileViewerT
     <div className="crispy-file-viewer-tab">
       <div className="crispy-file-viewer-tab__toolbar">
         <span className="crispy-file-viewer-tab__path" title={path}>
-          {file?.relativePath ?? (loading ? 'Loading...' : 'Error')}
+          {file?.relativePath ?? relPath ?? (loading ? 'Loading...' : isImage ? (path.split('/').pop() ?? path) : 'Error')}
         </span>
         <div className="crispy-file-viewer-tab__actions">
           {file && !isImage && (

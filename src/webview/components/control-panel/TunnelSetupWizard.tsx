@@ -87,6 +87,11 @@ export function TunnelSetupWizard({
     : environment === 'tauri'
     ? enableInTauri
     : enableInDevServer;
+  const hostLabel = environment === 'vscode'
+    ? 'Enable in VS Code'
+    : environment === 'tauri'
+    ? 'Enable in Desktop'
+    : 'Enable in Dev Server';
 
   const handlePair = useCallback(() => {
     if (!draftToken.trim() || !draftRelayUrl.trim()) return;
@@ -156,7 +161,7 @@ export function TunnelSetupWizard({
     return (
       <div className="crispy-tunnel-wizard">
         <label className="crispy-cp-settings__row">
-          <span>Enabled</span>
+          <span>{hostLabel}</span>
           <input
             type="checkbox"
             checked={hostEnabled}
@@ -198,7 +203,7 @@ export function TunnelSetupWizard({
   return (
     <div className="crispy-tunnel-wizard">
       <label className="crispy-cp-settings__row">
-        <span>Enabled</span>
+        <span>{hostLabel}</span>
         <input
           type="checkbox"
           checked={hostEnabled}

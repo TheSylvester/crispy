@@ -87,6 +87,11 @@ export function DiscordSetupWizard({
     : environment === 'tauri'
     ? enableInTauri
     : enableInDevServer;
+  const hostLabel = environment === 'vscode'
+    ? 'Enable in VS Code'
+    : environment === 'tauri'
+    ? 'Enable in Desktop'
+    : 'Enable in Dev Server';
 
   // "Configured" is derived from data presence, not a master flag
   const hasExistingConfig = !!token;
@@ -207,7 +212,7 @@ export function DiscordSetupWizard({
     return (
       <div className="crispy-discord-wizard">
         <label className="crispy-cp-settings__row">
-          <span>Enabled</span>
+          <span>{hostLabel}</span>
           <input
             type="checkbox"
             checked={hostEnabled}
@@ -254,7 +259,7 @@ export function DiscordSetupWizard({
   return (
     <div className="crispy-discord-wizard">
       <label className="crispy-cp-settings__row">
-        <span>Enabled</span>
+        <span>{hostLabel}</span>
         <input
           type="checkbox"
           checked={hostEnabled}
