@@ -217,7 +217,14 @@ export function adaptClaudeEntry(raw: Record<string, unknown>): TranscriptEntry 
     ...overflow,
   };
 
-  const sanitizedMessage = sanitizeMessage(message as TranscriptMessage | undefined);
+  // SDK system messages (local_command_output, etc.) carry display text in a
+  // top-level `content` field — not inside a `message` wrapper. Synthesize a
+  // message so the UI can render the text (e.g. "Session renamed to: foo").
+  let sanitizedMessage = sanitizeMessage(message as TranscriptMessage | undefined);
+  if (!sanitizedMessage && typeof mergedMetadata.content === 'string') {
+    sanitizedMessage = { role: 'assistant', content: mergedMetadata.content };
+    delete mergedMetadata.content;
+  }
 
   // Detect isMeta — prefer explicit JSONL field, fall back to content-pattern
   // heuristic for older SDK versions that don't write the field (≤ 2.1.58).
