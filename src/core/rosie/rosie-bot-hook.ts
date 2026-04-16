@@ -221,7 +221,7 @@ async function runTracker(
         forceNew: true,
         skipPersistSession: false,
         autoClose: false,
-        sessionKind: debugTracker ? 'user' : 'system',
+        sessionKind: 'system',
         ...(debugTracker && { openChannel: true }),
         env: {
           CLAUDECODE: '',
