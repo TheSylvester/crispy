@@ -1,6 +1,6 @@
 {
   "productName": "Crispy",
-  "version": "0.3.2-rc.15",
+  "version": "0.3.2-rc.16",
   "identifier": "io.github.thesylvester.crispy",
   "build": {
     "frontendDist": "../src-frontend/"
