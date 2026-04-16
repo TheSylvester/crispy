@@ -1,6 +1,6 @@
 [package]
 name = "crispy-desktop"
-version = "0.3.2-rc.15"
+version = "0.3.2-rc.17"
 description = "Crispy desktop app"
 authors = ["Sylvester Wong"]
 edition = "2021"
