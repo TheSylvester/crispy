@@ -19,6 +19,20 @@
 
 ---
 
+## What's New in v0.3.2
+
+Stability, polish, and a big pass on Windows compatibility.
+
+- **Lower idle GPU usage** — replaced the animated SVG logo with a static PNG.
+- **Windows compatibility** — better detection of existing Claude installs across Windows, plus spawn/path-quoting fixes for npm and bun global installs, paths with spaces, and UNC prefixes.
+- **Recall upgrades** — search results now show why they matched (provenance), a budget-based reader pulls the right amount of context, and the matched-message workflow jumps straight to the relevant turn. New `--until <date>` filter and `--recent` recency boost on the CLI.
+- **SuperThink continuity** — child agents launched by SuperThink now inherit the parent's model, and converge rounds resume cleanly after a reconnect.
+- **Fork button** — now targets the correct message based on session state.
+- **Smoother transcripts** — reduced flash when switching sessions or vendors, and fixed a scrolling bug that inadvertently cut off conversations during thinking blocks and parallel tool calls.
+- **File viewer fixes** — images render instead of crashing on binary extensions, markdown preview scrolls correctly.
+- **Per-host Discord controls** — separate Discord bot toggles per host, so you can run multiple Crispies and only have one posting.
+- **Rosie tool gating (arbiter)** — new arbiter module governs Rosie Tracker's tool access. Rosie is still experimental, but can no longer go rogue.
+
 ## What's New in v0.3.1
 
 Stability fixes and a superthink upgrade.
