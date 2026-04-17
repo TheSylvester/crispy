@@ -61,7 +61,7 @@ Query your child sessions via the `listChildSessions` RPC — this returns
 all children spawned by your session, including completed ones:
 
 ```bash
-crispy-dispatch rpc listChildSessions
+$CRISPY_DISPATCH rpc listChildSessions
 ```
 
 This returns a JSON object with a `sessions` array. Each entry has
@@ -70,7 +70,7 @@ This returns a JSON object with a `sessions` array. Each entry has
 For each child, read the transcript via `readSessionTurns`:
 
 ```bash
-crispy-dispatch rpc readSessionTurns '{"sessionId": "<child-session-id>"}'
+$CRISPY_DISPATCH rpc readSessionTurns '{"sessionId": "<child-session-id>"}'
 ```
 
 Extract the final assistant response from the last turn. This is the
