@@ -192,18 +192,29 @@ export function useOsDropDispatch(): OsDropState {
     }
 
     async function handleDrop(physX: number, physY: number, paths: string[]): Promise<void> {
+      console.log('[os-drop] drop event', { physX, physY, paths });
       clearTarget();
 
       // Tauri 2.x can fire duplicate drop events — dedupe by sorted-path signature.
       const sig = paths.slice().sort().join('|');
       const now = Date.now();
       const last = lastDropRef.current;
-      if (last && last.sig === sig && now - last.ts < DEDUP_WINDOW_MS) return;
+      if (last && last.sig === sig && now - last.ts < DEDUP_WINDOW_MS) {
+        console.log('[os-drop] deduped (repeat within 500ms)');
+        return;
+      }
       lastDropRef.current = { sig, ts: now };
 
       const zoneEl = hitTest(physX, physY);
-      if (!zoneEl) return;
+      if (!zoneEl) {
+        console.log('[os-drop] no drop zone at point', {
+          physX, physY, dpr: window.devicePixelRatio,
+          elAtPoint: document.elementFromPoint(physX / (window.devicePixelRatio || 1), physY / (window.devicePixelRatio || 1))?.tagName,
+        });
+        return;
+      }
       const zone = zoneEl.getAttribute('data-drop-zone');
+      console.log('[os-drop] hit zone', zone);
 
       // ---- Chat input branch ----
       if (zone === 'chat-input') {
@@ -216,6 +227,7 @@ export function useOsDropDispatch(): OsDropState {
       // ---- Files-panel branches ----
       if (zone === 'files-panel-root' || zone === 'files-panel-folder' || zone === 'files-panel-file') {
         if (inFlightRef.current) {
+          console.warn('[os-drop] dropped while busy (inFlightRef stuck?)');
           // Surface a transient hint via the same custom event mechanism.
           zoneEl.dispatchEvent(
             new CustomEvent('crispy:import-busy', { bubbles: true }),
@@ -234,7 +246,11 @@ export function useOsDropDispatch(): OsDropState {
         const rootEl = zoneEl.closest<HTMLElement>('[data-drop-zone="files-panel-root"]') ?? targetEl;
         const cwd = rootEl?.getAttribute('data-cwd') ?? '';
         const sessionId = rootEl?.getAttribute('data-session-id') ?? undefined;
-        if (!cwd) return;
+        if (!cwd) {
+          console.warn('[os-drop] drop aborted: no data-cwd on files-panel-root');
+          return;
+        }
+        console.log('[os-drop] routing to import', { cwd, destRelDir, paths });
 
         inFlightRef.current = true;
         try {
@@ -243,6 +259,12 @@ export function useOsDropDispatch(): OsDropState {
             projectCwdHint: cwd,
             destRelDir,
             srcs: paths,
+          });
+          console.log('[os-drop] preview plan', {
+            planId: plan.planId,
+            fileCount: plan.summary.fileCount,
+            conflicts: plan.conflicts.length,
+            errors: plan.errors.length,
           });
 
           if (plan.conflicts.length === 0 && plan.errors.length === 0) {
@@ -316,11 +338,16 @@ export function useOsDropDispatch(): OsDropState {
       try {
         const webviewMod = await import('@tauri-apps/api/webview');
         const wv = webviewMod.getCurrentWebview();
+        console.log('[os-drop] subscribed to Tauri drag-drop events');
         const stop = await wv.onDragDropEvent((evt: { payload: TauriDragDropPayload }) => {
           const payload = evt.payload;
-          if (payload.type === 'enter' || payload.type === 'over') {
+          if (payload.type === 'enter') {
+            console.log('[os-drop] enter', payload.paths);
+            handleOver(payload.position.x, payload.position.y);
+          } else if (payload.type === 'over') {
             handleOver(payload.position.x, payload.position.y);
           } else if (payload.type === 'leave') {
+            console.log('[os-drop] leave');
             clearTarget();
           } else if (payload.type === 'drop') {
             void handleDrop(payload.position.x, payload.position.y, payload.paths);
