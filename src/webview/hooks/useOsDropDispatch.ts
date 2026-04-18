@@ -304,7 +304,14 @@ export function useOsDropDispatch(): OsDropState {
 
     function openConflictModal(plan: ImportPlan, cwd: string, destRelDir: string): Promise<Resolutions | null> {
       return new Promise<Resolutions | null>((resolve) => {
-        setPending({ plan, cwd, destRelDir, resolve });
+        // Wrap resolve so Apply/Cancel clear the modal state before the caller
+        // continues — without this, `pending` stays non-null and the backdrop
+        // never unmounts even though the promise resolved.
+        const wrapped = (r: Resolutions | null): void => {
+          setPending(null);
+          resolve(r);
+        };
+        setPending({ plan, cwd, destRelDir, resolve: wrapped });
       });
     }
 
