@@ -10,7 +10,7 @@
 
 import type { HostEvent } from '../host/client-connection.js';
 import type { TunnelStatusInfo } from '../host/tunnel-client.js';
-import type { SessionService, WireSessionInfo, WireProject, WireProjectActivity, WireStage } from './transport.js';
+import type { SessionService, WireSessionInfo, WireProject, WireProjectActivity, WireStage, OpenSessionInfo } from './transport.js';
 import type { WorkspaceListResponse } from '../core/workspace-roots.js';
 import type { TranscriptEntry } from '../core/transcript.js';
 import type { TurnReceipt } from '../core/agent-adapter.js';
@@ -252,6 +252,9 @@ export function createWebSocketTransport(url: string): SessionService & {
 
   return {
     listSessions: () => request<WireSessionInfo[]>('listSessions'),
+
+    listOpenSessions: (params) =>
+      request<OpenSessionInfo[]>('listOpenSessions', (params ?? {}) as Record<string, unknown>),
 
     findSession: (sessionId) =>
       request<WireSessionInfo | null>('findSession', { sessionId }),

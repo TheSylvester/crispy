@@ -9,6 +9,7 @@
  */
 
 import type { SessionInfo, TurnIntent, TurnReceipt } from '../core/agent-adapter.js';
+import type { ListOpenChannelsOptions, OpenSessionInfo } from '../core/session-manager.js';
 import type { TranscriptEntry } from '../core/transcript.js';
 import type { HostEvent } from '../host/client-connection.js';
 import type { ApprovalExtra } from './components/approval/types.js';
@@ -24,6 +25,7 @@ import type {
   ConflictItem, ImportError, ImportExecError, ImportProgressEvent, ImportSummary, Resolution,
 } from '../core/import-types.js';
 export type { InputCommand };
+export type { ListOpenChannelsOptions, OpenSessionInfo };
 export type {
   ImportPlan, ImportReport, Resolutions,
   ConflictItem, ImportError, ImportExecError, ImportProgressEvent, ImportSummary, Resolution,
@@ -85,6 +87,7 @@ export interface WireProjectActivity {
 
 export interface SessionService {
   listSessions(): Promise<WireSessionInfo[]>;
+  listOpenSessions(params?: ListOpenChannelsOptions): Promise<OpenSessionInfo[]>;
   findSession(sessionId: string): Promise<WireSessionInfo | null>;
   loadSession(sessionId: string, options?: { until?: string }): Promise<TranscriptEntry[]>;
 
