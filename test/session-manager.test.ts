@@ -1137,7 +1137,7 @@ describe('listOpenChannels', () => {
     expect(result[0].isSidechain).toBeUndefined();
   });
 
-  it('does not throw when a concurrent closeSession mutates sessions mid-iteration', async () => {
+  it('reflects post-close state consistently after a prior closeSession', async () => {
     const sA = makeSessionInfo({ sessionId: 'sess-a', vendor: 'claude' });
     const sB = makeSessionInfo({ sessionId: 'sess-b', vendor: 'claude' });
     const discovery = createMockDiscovery({ vendor: 'claude', sessions: [sA, sB] });
@@ -1146,14 +1146,57 @@ describe('listOpenChannels', () => {
     await subscribeSession('sess-a', createTestSubscriber('sub-a'));
     await subscribeSession('sess-b', createTestSubscriber('sub-b'));
 
-    // Close one between the snapshot and the final observation. Since the
-    // implementation snapshots `sessions.entries()` up front, a mid-call
-    // close would surface only as a stale tombstone — never as a throw.
     closeSession('sess-a');
 
     expect(() => listOpenChannels()).not.toThrow();
     const result = listOpenChannels();
-    // sess-a is gone from the map after close; sess-b remains.
     expect(result.map((r) => r.sessionId)).toEqual(['sess-b']);
+  });
+
+  it('does not throw when the sessions-map key is a prefix of multiple disk sessions', async () => {
+    // Regression: the pending-bypass path lets callers register a channel
+    // under a short non-'pending:' key. Calling the public findSession(id)
+    // during enrichment would route through resolveSessionPrefix, which
+    // scans listAllSessions() and throws "Ambiguous session prefix" when
+    // 2+ disk sessions share the key's prefix. listOpenChannels must
+    // enrich via direct per-adapter lookup instead.
+    const shortKey = 'abc';
+    const liveSession = makeSessionInfo({ sessionId: shortKey, vendor: 'claude' });
+    const discovery = createMockDiscovery({
+      vendor: 'claude',
+      sessions: [liveSession],
+    });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    // Initial subscribe: only `liveSession` exists, so the prefix 'abc'
+    // resolves uniquely and subscribe succeeds with sessions.set('abc').
+    await subscribeSession(shortKey, createTestSubscriber('sub-1'));
+
+    // Now the disk grows: two more sessions also start with 'abc'. Any
+    // call through the public findSession(shortKey) from this point on
+    // would throw "Ambiguous session prefix".
+    (discovery.listSessions as ReturnType<typeof vi.fn>).mockReturnValue([
+      liveSession,
+      makeSessionInfo({
+        sessionId: 'abc11111-1111-1111-1111-111111111111',
+        vendor: 'claude',
+      }),
+      makeSessionInfo({
+        sessionId: 'abc22222-2222-2222-2222-222222222222',
+        vendor: 'claude',
+      }),
+    ]);
+    // Invalidate listAllSessions()'s 5-second cache by registering a
+    // second vendor adapter (side-effect: calls invalidateSessionCache).
+    registerAdapter(
+      createMockDiscovery({ vendor: 'codex', sessions: [] }),
+      () => createMockAdapter({ vendor: 'codex' }),
+    );
+
+    // Listing must not throw despite the now-ambiguous prefix — this is
+    // the blocker the fix addresses.
+    expect(() => listOpenChannels()).not.toThrow();
+    const result = listOpenChannels();
+    expect(result.map((r) => r.sessionId)).toContain(shortKey);
   });
 });

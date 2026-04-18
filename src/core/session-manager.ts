@@ -410,8 +410,16 @@ export function listOpenChannels(
     // blowing up.
     const adapterVendor = channel.adapter?.vendor;
 
-    // projectPath from disk index (best-effort; undefined if not indexed).
-    const info = findSession(id);
+    // Enrich from disk index without going through findSession(), which
+    // calls resolveSessionPrefix() and would throw on ambiguous prefixes
+    // or leak cross-session metadata when the map key is a caller-supplied
+    // non-canonical ID (the documented pending-bypass path). Direct per-
+    // adapter lookup mirrors listChildSessions' enrichment pattern.
+    let info: SessionInfo | undefined;
+    for (const { discovery } of adapters.values()) {
+      info = discovery.findSession(id);
+      if (info) break;
+    }
 
     // Sidechain filter: Claude-specific; other vendors never set isSidechain.
     if (info?.isSidechain && !includeSidechains) continue;
