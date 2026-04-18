@@ -16,7 +16,7 @@
 import { randomUUID } from 'node:crypto';
 import type { SessionInfo, TurnReceipt } from '../core/agent-adapter.js';
 import type { TranscriptEntry } from '../core/transcript.js';
-import type { ChildSessionResult } from '../core/session-manager.js';
+import type { ChildSessionResult, OpenSessionInfo } from '../core/session-manager.js';
 import type { WorkspaceListResponse } from '../core/workspace-roots.js';
 import type { HostEvent, HostMessage } from './client-connection.js';
 import { createClientConnection } from './client-connection.js';
@@ -41,6 +41,8 @@ export function createAgentDispatch(): AgentDispatch {
 
   return {
     listSessions: () => connection.call('listSessions', {}) as Promise<SessionInfo[]>,
+    listOpenSessions: (params) =>
+      connection.call('listOpenSessions', (params ?? {}) as Record<string, unknown>) as Promise<OpenSessionInfo[]>,
     findSession: (id) => connection.call('findSession', { sessionId: id }) as Promise<SessionInfo | null>,
     loadSession: (id, opts) => connection.call('loadSession', { sessionId: id, ...opts }) as Promise<TranscriptEntry[]>,
     subscribe: (id) => connection.call('subscribe', { sessionId: id }).then(() => {}),

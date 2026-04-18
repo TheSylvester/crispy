@@ -11,12 +11,13 @@
 
 import type { SessionInfo, TurnIntent, TurnReceipt } from './agent-adapter.js';
 import type { TranscriptEntry } from './transcript.js';
-import type { ChildSessionOptions, ChildSessionResult, ResumeChildOptions } from './session-manager.js';
+import type { ChildSessionOptions, ChildSessionResult, ListOpenChannelsOptions, OpenSessionInfo, ResumeChildOptions } from './session-manager.js';
 import type { WorkspaceListResponse } from './workspace-roots.js';
 
 export interface AgentDispatch {
   // Discovery
   listSessions(): Promise<SessionInfo[]>;
+  listOpenSessions(params?: ListOpenChannelsOptions): Promise<OpenSessionInfo[]>;
   findSession(sessionId: string): Promise<SessionInfo | null>;
   loadSession(sessionId: string, options?: { until?: string }): Promise<TranscriptEntry[]>;
 
