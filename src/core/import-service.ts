@@ -84,6 +84,31 @@ function gcExpired(): void {
 }
 
 // ============================================================================
+// Cross-boundary path translation
+// ============================================================================
+
+const WINDOWS_ABS_PATH_RE = /^([A-Za-z]):[\\/](.*)$/;
+
+/**
+ * When a Tauri Windows shell is connected to a WSL (Linux) daemon, dropped
+ * files arrive as Windows paths (`C:\Users\...`). WSL exposes those drives at
+ * `/mnt/<lowercase-drive>/...`. Translate so `lstat` can find the source.
+ *
+ * No-op when: daemon is not Linux, path isn't a drive-letter absolute path.
+ * On non-WSL Linux, the `/mnt/<drive>/` path won't exist and the caller will
+ * still get a `missing-source` error — same outcome as without translation,
+ * so gating on actual WSL detection isn't worth the syscall.
+ */
+function translateWindowsPathForLinux(p: string): string {
+  if (process.platform !== 'linux') return p;
+  const m = WINDOWS_ABS_PATH_RE.exec(p);
+  if (!m) return p;
+  const drive = m[1]!.toLowerCase();
+  const rest = m[2]!.replace(/\\/g, '/');
+  return `/mnt/${drive}/${rest}`;
+}
+
+// ============================================================================
 // Containment helpers
 // ============================================================================
 
@@ -237,7 +262,7 @@ export async function previewImport(args: {
   const symlinks: WalkSymlink[] = [];
 
   for (const rawSrc of args.srcs) {
-    const srcAbs = resolve(rawSrc);
+    const srcAbs = resolve(translateWindowsPathForLinux(rawSrc));
     let srcStat;
     try {
       srcStat = await fsp.lstat(srcAbs);

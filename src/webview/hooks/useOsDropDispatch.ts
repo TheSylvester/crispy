@@ -251,7 +251,18 @@ export function useOsDropDispatch(): OsDropState {
           }
 
           if (plan.errors.length > 0 && plan.summary.fileCount === 0 && plan.conflicts.length === 0) {
-            // Hard fail (e.g. dest-escape) — just abort silently.
+            // Nothing copyable — surface the error to devs + the file index so
+            // users don't see a silent no-op (the most common real-world hit is
+            // Tauri Windows shell + WSL daemon delivering Windows paths that
+            // the Linux daemon can't `lstat`).
+            const firstError = plan.errors[0];
+            const message = firstError
+              ? `${firstError.code}: ${firstError.message}`
+              : 'Import failed with no copyable files';
+            console.warn('[useOsDropDispatch] import aborted:', message, plan.errors);
+            window.dispatchEvent(new CustomEvent('crispy:import-failed', {
+              detail: { error: message, cwd, destRelDir, errors: plan.errors },
+            }));
             return;
           }
 

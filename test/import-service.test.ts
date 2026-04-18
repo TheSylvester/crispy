@@ -83,6 +83,24 @@ describe('previewImport — containment', () => {
     });
     expect(plan.errors.some(e => e.code === 'missing-source')).toBe(true);
   });
+
+  // Tauri Windows shell + WSL daemon: Windows Explorer drops arrive as
+  // `C:\...` paths; WSL must translate to `/mnt/c/...` before lstat.
+  it.skipIf(process.platform !== 'linux')(
+    'translates Windows drive-letter paths to /mnt/<drive>/ on Linux',
+    async () => {
+      const plan = await previewImport({
+        trustRoot,
+        destRelDir: '',
+        srcs: ['C:\\definitely\\does\\not\\exist.txt'],
+      });
+      const err = plan.errors.find(e => e.code === 'missing-source');
+      expect(err).toBeDefined();
+      // The reported path should be the translated form, proving the
+      // translator ran before lstat.
+      expect(err!.path).toBe('/mnt/c/definitely/does/not/exist.txt');
+    },
+  );
 });
 
 // ============================================================================
