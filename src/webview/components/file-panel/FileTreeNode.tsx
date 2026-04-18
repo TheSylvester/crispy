@@ -31,6 +31,8 @@ export function FileTreeNode({
 }: FileTreeNodeProps): React.JSX.Element {
   const isDir = node.kind === 'directory';
   const indent = depth * 16;
+  const lastSlash = node.path.lastIndexOf('/');
+  const parentPath = lastSlash >= 0 ? node.path.slice(0, lastSlash) : '';
 
   const handleClick = () => {
     if (isDir) {
@@ -71,6 +73,9 @@ export function FileTreeNode({
       aria-expanded={isDir ? expanded : undefined}
       aria-selected={selected}
       tabIndex={0}
+      data-drop-zone={isDir ? 'files-panel-folder' : 'files-panel-file'}
+      data-path={isDir ? node.path : undefined}
+      data-parent-path={!isDir ? parentPath : undefined}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();

@@ -347,6 +347,13 @@ export function createCloudRelayTransport(wsUrl: string, tunnelId: string): Sess
       });
     },
 
+    // OS-drop import: cloud-relay clients have no OS to drop from.
+    previewImport: async () => { throw new Error('OS-drop import is not available over cloud relay'); },
+    executeImport: async () => { throw new Error('OS-drop import is not available over cloud relay'); },
+    cancelImport: async () => ({ cancelled: false }),
+    subscribeImportProgress: async () => ({ subscribed: false }),
+    unsubscribeImportProgress: async () => ({ unsubscribed: true }),
+
     dispose() {
       disposed = true;
       wsGeneration++;

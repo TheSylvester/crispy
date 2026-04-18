@@ -19,7 +19,15 @@ import type { CatchupStatus } from '../core/recall/catchup-types.js';
 import type { WorkspaceInfo, WorkspaceListResponse } from '../core/workspace-roots.js';
 import type { GitDiffResult } from '../core/git-diff-service.js';
 import type { InputCommand } from '../core/input-command-service.js';
+import type {
+  ImportPlan, ImportReport, Resolutions,
+  ConflictItem, ImportError, ImportExecError, ImportProgressEvent, ImportSummary, Resolution,
+} from '../core/import-types.js';
 export type { InputCommand };
+export type {
+  ImportPlan, ImportReport, Resolutions,
+  ConflictItem, ImportError, ImportExecError, ImportProgressEvent, ImportSummary, Resolution,
+};
 
 /** Client-side session info — modifiedAt is a string after JSON serialization. */
 export interface WireSessionInfo extends Omit<SessionInfo, 'modifiedAt'> {
@@ -208,6 +216,21 @@ export interface SessionService {
   listTerminals(): Promise<string[]>;
   attachTerminal(terminalId: string): Promise<boolean>;
   onTerminalData(terminalId: string, cb: (data: string) => void): () => void;
+
+  /**
+   * OS-drop import (Tauri shell). Other shells stub these — they fall back
+   * to the existing HTML5 drop paths or no-op.
+   */
+  previewImport(args: {
+    sessionId?: string;
+    projectCwdHint: string;
+    destRelDir: string;
+    srcs: string[];
+  }): Promise<ImportPlan>;
+  executeImport(args: { planId: string; resolutions: Resolutions }): Promise<ImportReport>;
+  cancelImport(args: { planId: string }): Promise<{ cancelled: boolean }>;
+  subscribeImportProgress(): Promise<{ subscribed: boolean }>;
+  unsubscribeImportProgress(): Promise<{ unsubscribed: boolean }>;
 
   /** Tunnel status — initial value. Optional: absent in cloud-relay transport. */
   getTunnelStatus?(): Promise<TunnelStatusInfo>;

@@ -103,6 +103,17 @@ import {
   closeTerminal, listTerminals, attachTerminal, detachTerminal,
   type SendEventFn,
 } from './terminal-manager.js';
+import {
+  previewImport as importServicePreview,
+  executeImport as importServiceExecute,
+  cancelImport as importServiceCancel,
+} from '../core/import-service.js';
+import type {
+  ImportPlan,
+  ImportReport,
+  ImportProgressEvent,
+  Resolutions,
+} from '../core/import-types.js';
 
 // Clean up any orphaned voice temp files from previous sessions on module load.
 cleanupOrphanedVoiceFiles();
@@ -188,8 +199,11 @@ export type ClientMessage = {
   params?: Record<string, unknown>;
 };
 
+/** Sentinel sessionId used to route OS-drop import progress events. */
+export const IMPORT_PROGRESS_CHANNEL_ID = '__import_progress__';
+
 /** Union of all events that can be pushed over the wire. */
-export type HostEvent = SubscriberMessage | SessionListEvent | SettingsChangedGlobalEvent | LogEvent | RecallCatchupEvent | TrackerNotifyEvent;
+export type HostEvent = SubscriberMessage | SessionListEvent | SettingsChangedGlobalEvent | LogEvent | RecallCatchupEvent | TrackerNotifyEvent | ImportProgressEvent;
 
 /** Host → Client response or push event. */
 export type HostMessage =
@@ -274,6 +288,12 @@ export function createClientConnection(
   /** Terminal IDs owned by this client — detached on disconnect. */
   const ownedTerminals = new Set<string>();
 
+  /** Import plan IDs owned by this client — cancelled on disconnect. */
+  const clientOwnedPlans = new Set<string>();
+
+  /** Per-client subscription flag for OS-drop import progress events. */
+  let importProgressSub = false;
+
   /**
    * Validate that `filePath` is inside an allowed directory before performing
    * any file-system read. Allowed roots:
@@ -303,6 +323,30 @@ export function createClientConnection(
 
     throw new Error(
       `Path "${filePath}" is outside the workspace. File access is restricted to session working directories and ~/.claude/.`,
+    );
+  }
+
+  /**
+   * Resolve the trust root for an OS-drop import.
+   *
+   * Webview supplies `{ sessionId?, projectCwdHint }`. The hint is validated
+   * against either the named subscribed session's projectPath or the
+   * `extraAllowedRoots` set (which `getGitFiles` populates when a workspace
+   * is opened). The hint itself is never trusted as truth — same containment
+   * model as `assertPathAllowed`.
+   */
+  function resolveImportTrustRoot(sessionId: string | undefined, projectCwdHint: string): string {
+    const hintAbs = resolve(projectCwdHint);
+
+    if (sessionId) {
+      const info = findSession(sessionId);
+      if (info?.projectPath && resolve(info.projectPath) === hintAbs) {
+        return hintAbs;
+      }
+    }
+    if (extraAllowedRoots.has(hintAbs)) return hintAbs;
+    throw new Error(
+      `Path "${projectCwdHint}" is outside the workspace. File access is restricted to session working directories.`,
     );
   }
 
@@ -841,6 +885,71 @@ export function createClientConnection(
           catchupSub = null;
         }
         return { unsubscribed: true };
+      }
+
+      // --- OS-drop import (Tauri shell; VS Code follow-up) ---
+      case "subscribeImportProgress": {
+        importProgressSub = true;
+        return { subscribed: true };
+      }
+
+      case "unsubscribeImportProgress": {
+        importProgressSub = false;
+        return { unsubscribed: true };
+      }
+
+      case "previewImport": {
+        const sessionId = params.sessionId as string | undefined;
+        const projectCwdHint = params.projectCwdHint as string;
+        const destRelDir = (params.destRelDir as string) ?? '';
+        const srcs = params.srcs as string[];
+        if (!projectCwdHint || !Array.isArray(srcs)) {
+          throw new Error('previewImport requires projectCwdHint and srcs[]');
+        }
+        const trustRoot = resolveImportTrustRoot(sessionId, projectCwdHint);
+        const plan: ImportPlan = await importServicePreview({ trustRoot, destRelDir, srcs });
+        clientOwnedPlans.add(plan.planId);
+        return plan;
+      }
+
+      case "executeImport": {
+        const planId = params.planId as string;
+        const resolutions = (params.resolutions as Resolutions | undefined) ?? {};
+        if (!planId) throw new Error('executeImport requires planId');
+        if (!clientOwnedPlans.has(planId)) {
+          throw new Error('Plan not owned by this client');
+        }
+        // Throttle progress emission to ~10 frames/sec; always pass the
+        // terminal frame through so the toast can resolve.
+        let lastEmitMs = 0;
+        const onProgress = (event: ImportProgressEvent): void => {
+          if (!importProgressSub) return;
+          const now = Date.now();
+          if (!event.done && now - lastEmitMs < 100) return;
+          lastEmitMs = now;
+          sendFn({ kind: 'event', sessionId: IMPORT_PROGRESS_CHANNEL_ID, event });
+        };
+        try {
+          const report: ImportReport = await importServiceExecute({ planId, resolutions, onProgress });
+          // Keep the membership during the post-finish grace window so a
+          // late `cancelImport` call still hits the ownership check; the
+          // service GCs the plan itself after ~60s.
+          setTimeout(() => clientOwnedPlans.delete(planId), 60_000).unref();
+          return report;
+        } catch (err) {
+          clientOwnedPlans.delete(planId);
+          throw err;
+        }
+      }
+
+      case "cancelImport": {
+        const planId = params.planId as string;
+        if (!planId) throw new Error('cancelImport requires planId');
+        if (!clientOwnedPlans.has(planId)) {
+          throw new Error('Plan not owned by this client');
+        }
+        importServiceCancel(planId);
+        return { cancelled: true };
       }
 
       case "startEmbeddingBackfill": {
@@ -1397,6 +1506,13 @@ export function createClientConnection(
     }
     ownedTerminals.clear();
 
+    // Cancel any in-flight import plans owned by this client. Plans expire
+    // on their own, so we just signal cancellation; the service GCs.
+    for (const planId of clientOwnedPlans) {
+      try { importServiceCancel(planId); } catch { /* best-effort */ }
+    }
+    clientOwnedPlans.clear();
+    importProgressSub = false;
   }
 
   return {

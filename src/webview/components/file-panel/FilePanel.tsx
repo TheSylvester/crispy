@@ -100,7 +100,11 @@ export function FilePanel({ mode }: { mode?: 'sidebar' | 'tab' }): React.JSX.Ele
   const cwdLabel = cwd.split('/').filter(Boolean).pop() ?? cwd;
 
   return (
-    <div className={panelClass}>
+    <div
+      className={panelClass}
+      data-drop-zone="files-panel-root"
+      data-cwd={cwd}
+    >
       {!isTab && (
         <div
           className="crispy-tool-panel__resize-handle"

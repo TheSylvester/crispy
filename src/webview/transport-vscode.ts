@@ -205,6 +205,14 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     attachTerminal: () => { throw new Error('Terminal not available in VS Code mode'); },
     onTerminalData: () => { throw new Error('Terminal not available in VS Code mode'); },
 
+    // OS-drop import: VS Code shell uses HTML5 drag-drop for now (File.path
+    // is preserved by Electron). The Tauri-only follow-up may wire these.
+    previewImport: async () => { throw new Error('OS-drop import is not available in VS Code mode'); },
+    executeImport: async () => { throw new Error('OS-drop import is not available in VS Code mode'); },
+    cancelImport: async () => ({ cancelled: false }),
+    subscribeImportProgress: async () => ({ subscribed: false }),
+    unsubscribeImportProgress: async () => ({ unsubscribed: true }),
+
     onEvent(handler) {
       eventHandlers.push(handler);
       return () => {

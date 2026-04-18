@@ -577,7 +577,9 @@ fn spawn_new_window(app: &AppHandle, query: Option<&str>, explicit_path: Option<
             .inner_size(1200.0, 800.0)
             .min_inner_size(600.0, 400.0)
             .center()
-            .disable_drag_drop_handler()
+            // Native drag-drop handler is enabled (default). The webview
+            // subscribes via `getCurrentWebview().onDragDropEvent()` to route
+            // OS-dropped files through the Files Panel import flow.
             .on_navigation(|url| {
                 if is_local_url(url.as_str()) {
                     true
@@ -1466,7 +1468,8 @@ pub fn run() {
             .inner_size(1200.0, 800.0)
             .min_inner_size(600.0, 400.0)
             .center()
-            .disable_drag_drop_handler()
+            // Native drag-drop handler is enabled (default). See companion
+            // comment in the secondary-window builder above for rationale.
             .on_navigation(|url| {
                 if is_local_url(url.as_str()) {
                     true
