@@ -45,6 +45,7 @@ import {
   dispatchChildSession,
   resumeChildSession,
   listChildSessions,
+  listOpenChannels,
   resolveSessionId,
   resolveSessionPrefix,
   switchSession,
@@ -414,6 +415,12 @@ export function createClientConnection(
     switch (method) {
       case "listSessions":
         return listAllSessions();
+
+      case "listOpenSessions":
+        return listOpenChannels({
+          includeSystem: params.includeSystem as boolean | undefined,
+          includeSidechains: params.includeSidechains as boolean | undefined,
+        });
 
       case "findSession":
         return findSession(params.sessionId as string) ?? null;
