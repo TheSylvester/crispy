@@ -33,11 +33,17 @@ import {
   resolveSessionPrefix,
   loadSession,
   listAllSessions,
+  listOpenChannels,
+  registerChildSession,
   subscribeSession,
   interruptSession,
   closeSession,
   _resetRegistry,
 } from '../src/core/session-manager.js';
+import { _setTestDir, setSessionKind } from '../src/core/activity-index.js';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import { join } from 'node:path';
 
 // ============================================================================
 // Mock Discovery
@@ -878,5 +884,277 @@ describe('Regression: concurrent subscribeSession coalescing', () => {
     expect(results[1].status).toBe('rejected');
     expect((results[0] as PromiseRejectedResult).reason.message).toBe('Boom');
     expect((results[1] as PromiseRejectedResult).reason.message).toBe('Boom');
+  });
+});
+
+// ============================================================================
+// listOpenChannels
+// ============================================================================
+
+describe('listOpenChannels', () => {
+  let testDir: string;
+  let cleanupDir: () => void;
+
+  beforeEach(() => {
+    testDir = fs.mkdtempSync(join(os.tmpdir(), 'crispy-list-open-'));
+    cleanupDir = _setTestDir(testDir);
+  });
+
+  afterEach(() => {
+    cleanupDir();
+    fs.rmSync(testDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  });
+
+  it('returns empty array when no channels are open', () => {
+    expect(listOpenChannels()).toEqual([]);
+  });
+
+  it('returns one entry per open channel with correct shape', async () => {
+    const session = makeSessionInfo({
+      sessionId: 'sess-1',
+      vendor: 'claude',
+      projectPath: '/tmp/project',
+    });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    const sub = createTestSubscriber('sub-1');
+    await subscribeSession('sess-1', sub);
+
+    const result = listOpenChannels();
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      sessionId: 'sess-1',
+      vendor: 'claude',
+      projectPath: '/tmp/project',
+      pendingApprovalCount: 0,
+      entryCount: 0,
+    });
+    expect(result[0].state).not.toBe('unattached');
+    expect(result[0].sessionKind).toBeUndefined();
+    expect(result[0].isSidechain).toBeUndefined();
+    expect(result[0].parentSessionId).toBeUndefined();
+  });
+
+  it('sorts results by sessionId ascending', async () => {
+    const sZ = makeSessionInfo({ sessionId: 'sess-zzz', vendor: 'claude' });
+    const sA = makeSessionInfo({ sessionId: 'sess-aaa', vendor: 'claude' });
+    const sM = makeSessionInfo({ sessionId: 'sess-mmm', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [sZ, sA, sM] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    // Subscribe in a non-sorted order to exercise Map insertion shuffle.
+    await subscribeSession('sess-zzz', createTestSubscriber('sub-z'));
+    await subscribeSession('sess-mmm', createTestSubscriber('sub-m'));
+    await subscribeSession('sess-aaa', createTestSubscriber('sub-a'));
+
+    const ids = listOpenChannels().map((r) => r.sessionId);
+    expect(ids).toEqual(['sess-aaa', 'sess-mmm', 'sess-zzz']);
+  });
+
+  it('reflects accumulated entryCount from the channel', async () => {
+    const entries: TranscriptEntry[] = [
+      { type: 'user', message: { role: 'user', content: 'hi' } },
+      { type: 'assistant', message: { role: 'assistant', content: 'hello' } },
+    ];
+    const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
+    const discovery = createMockDiscovery({
+      vendor: 'claude',
+      sessions: [session],
+      historyEntries: entries,
+    });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    await subscribeSession('sess-1', createTestSubscriber('sub-1'));
+
+    const [info] = listOpenChannels();
+    expect(info.entryCount).toBe(2);
+  });
+
+  it('filters out channels in unattached state (tombstone)', async () => {
+    const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    await subscribeSession('sess-1', createTestSubscriber('sub-1'));
+    const channel = getChannel('sess-1')!;
+    channel.state = 'unattached';
+
+    expect(listOpenChannels()).toEqual([]);
+  });
+
+  it('filters out channels with tearing=true (teardown in flight)', async () => {
+    const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    await subscribeSession('sess-1', createTestSubscriber('sub-1'));
+    const channel = getChannel('sess-1')!;
+    channel.tearing = true;
+
+    expect(listOpenChannels()).toEqual([]);
+  });
+
+  it('surfaces vendor: "unknown" mid-rotation when adapter is transiently null', async () => {
+    const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    await subscribeSession('sess-1', createTestSubscriber('sub-1'));
+    const channel = getChannel('sess-1')!;
+    // Simulate rotateAdapter's mid-rotation state: adapter null but state still idle.
+    channel.adapter = null;
+    channel.state = 'idle';
+
+    const result = listOpenChannels();
+    expect(result).toHaveLength(1);
+    expect(result[0].vendor).toBe('unknown');
+  });
+
+  it('populates child metadata when session is registered as a child', async () => {
+    const session = makeSessionInfo({ sessionId: 'sess-child', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    await subscribeSession('sess-child', createTestSubscriber('sub-1'));
+    registerChildSession('sess-child', {
+      parentSessionId: 'sess-parent',
+      autoClose: true,
+      visible: false,
+    });
+
+    const [info] = listOpenChannels();
+    expect(info.parentSessionId).toBe('sess-parent');
+    expect(info.childAutoClose).toBe(true);
+    expect(info.childVisible).toBe(false);
+  });
+
+  it('omits child metadata when parentSessionId is an empty string', async () => {
+    const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    await subscribeSession('sess-1', createTestSubscriber('sub-1'));
+    // Defensive empty-string insert — resumeChildSession does this at
+    // session-manager.ts:1910. Normalize to undefined in listOpenChannels.
+    registerChildSession('sess-1', {
+      parentSessionId: '',
+      autoClose: false,
+      visible: true,
+    });
+
+    const [info] = listOpenChannels();
+    expect(info.parentSessionId).toBeUndefined();
+    expect(info.childAutoClose).toBeUndefined();
+    expect(info.childVisible).toBeUndefined();
+  });
+
+  it('filters system sessions by default and includes them with includeSystem: true', async () => {
+    const sessionA = makeSessionInfo({ sessionId: 'sess-user', vendor: 'claude' });
+    const sessionB = makeSessionInfo({ sessionId: 'sess-sys', vendor: 'claude' });
+    const discovery = createMockDiscovery({
+      vendor: 'claude',
+      sessions: [sessionA, sessionB],
+    });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    await subscribeSession('sess-user', createTestSubscriber('sub-u'));
+    await subscribeSession('sess-sys', createTestSubscriber('sub-s'));
+    setSessionKind('sess-sys', 'system');
+
+    // Default: system filtered out.
+    const defaultResult = listOpenChannels();
+    expect(defaultResult.map((r) => r.sessionId)).toEqual(['sess-user']);
+
+    // Opt-in: system included with sessionKind flag.
+    const fullResult = listOpenChannels({ includeSystem: true });
+    expect(fullResult.map((r) => r.sessionId)).toEqual(['sess-sys', 'sess-user']);
+    const sys = fullResult.find((r) => r.sessionId === 'sess-sys')!;
+    expect(sys.sessionKind).toBe('system');
+    const user = fullResult.find((r) => r.sessionId === 'sess-user')!;
+    expect(user.sessionKind).toBeUndefined();
+  });
+
+  it('filters sidechains by default and includes them with includeSidechains: true', async () => {
+    const sessionA = makeSessionInfo({ sessionId: 'sess-main', vendor: 'claude' });
+    const sessionB = makeSessionInfo({
+      sessionId: 'sess-side',
+      vendor: 'claude',
+      isSidechain: true,
+    });
+    const discovery = createMockDiscovery({
+      vendor: 'claude',
+      sessions: [sessionA, sessionB],
+    });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    await subscribeSession('sess-main', createTestSubscriber('sub-m'));
+    await subscribeSession('sess-side', createTestSubscriber('sub-s'));
+
+    const defaultResult = listOpenChannels();
+    expect(defaultResult.map((r) => r.sessionId)).toEqual(['sess-main']);
+
+    const fullResult = listOpenChannels({ includeSidechains: true });
+    expect(fullResult.map((r) => r.sessionId)).toEqual(['sess-main', 'sess-side']);
+    const side = fullResult.find((r) => r.sessionId === 'sess-side')!;
+    expect(side.isSidechain).toBe(true);
+  });
+
+  it('documents the pending-ID leak: caller-supplied non-"pending:" temp IDs pass through', async () => {
+    // The invariant-leak case from the plan: createPendingChannel accepts
+    // an `explicitPendingId` and sendTurn accepts a caller-supplied
+    // `pendingId`. A malformed ID that does not startsWith('pending:')
+    // passes through the filter and appears in the result.
+    const session = makeSessionInfo({ sessionId: 'not-a-pending-id', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    await subscribeSession('not-a-pending-id', createTestSubscriber('sub-1'));
+
+    const result = listOpenChannels();
+    // Documented behavior: non-"pending:" IDs leak through the convention-based filter.
+    expect(result.map((r) => r.sessionId)).toContain('not-a-pending-id');
+  });
+
+  it('documents the sidechain-race caveat: a live sidechain passes the filter if disk index has not caught up', async () => {
+    // Scenario: channel exists in sessions Map, but discovery.findSession
+    // returns undefined (not yet indexed). Default sidechain filter sees no
+    // isSidechain signal, so the session passes through.
+    const session = makeSessionInfo({ sessionId: 'sess-unindexed', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    await subscribeSession('sess-unindexed', createTestSubscriber('sub-1'));
+
+    // Simulate the race: after subscribe, disk index "loses" the entry.
+    (discovery.findSession as ReturnType<typeof vi.fn>).mockReturnValue(undefined);
+    (discovery.listSessions as ReturnType<typeof vi.fn>).mockReturnValue([]);
+
+    const result = listOpenChannels();
+    // Documented behavior: with no isSidechain signal from disk, the
+    // session passes the default filter. Callers needing a guarantee
+    // should use includeSidechains + client-side provenance checks.
+    expect(result.map((r) => r.sessionId)).toContain('sess-unindexed');
+    expect(result[0].isSidechain).toBeUndefined();
+  });
+
+  it('does not throw when a concurrent closeSession mutates sessions mid-iteration', async () => {
+    const sA = makeSessionInfo({ sessionId: 'sess-a', vendor: 'claude' });
+    const sB = makeSessionInfo({ sessionId: 'sess-b', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [sA, sB] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    await subscribeSession('sess-a', createTestSubscriber('sub-a'));
+    await subscribeSession('sess-b', createTestSubscriber('sub-b'));
+
+    // Close one between the snapshot and the final observation. Since the
+    // implementation snapshots `sessions.entries()` up front, a mid-call
+    // close would surface only as a stale tombstone — never as a throw.
+    closeSession('sess-a');
+
+    expect(() => listOpenChannels()).not.toThrow();
+    const result = listOpenChannels();
+    // sess-a is gone from the map after close; sess-b remains.
+    expect(result.map((r) => r.sessionId)).toEqual(['sess-b']);
   });
 });
