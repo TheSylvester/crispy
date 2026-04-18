@@ -274,10 +274,21 @@ export function subscribe(
 
 /**
  * Remove a subscriber by reference or ID.
+ *
+ * Object form checks identity before deleting — guards against stale
+ * unsubscribes evicting a newer subscriber that replaced the original
+ * via Map.set with the same id (e.g. cross-session rotation where one
+ * client holds two subscriptions to the same rekeyed channel).
  */
 export function unsubscribe(channel: SessionChannel, subscriberOrId: Subscriber | string): void {
-  const id = typeof subscriberOrId === 'string' ? subscriberOrId : subscriberOrId.id;
-  channel.subscribers.delete(id);
+  if (typeof subscriberOrId === 'string') {
+    channel.subscribers.delete(subscriberOrId);
+    return;
+  }
+  const existing = channel.subscribers.get(subscriberOrId.id);
+  if (existing === subscriberOrId) {
+    channel.subscribers.delete(subscriberOrId.id);
+  }
 }
 
 // ============================================================================
