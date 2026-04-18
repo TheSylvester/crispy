@@ -1035,8 +1035,7 @@ describe('listOpenChannels', () => {
     registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     await subscribeSession('sess-1', createTestSubscriber('sub-1'));
-    // Defensive empty-string insert — resumeChildSession does this at
-    // session-manager.ts:1910. Normalize to undefined in listOpenChannels.
+    // resumeChildSession defensively inserts '' for parentSessionId; we normalize to undefined.
     registerChildSession('sess-1', {
       parentSessionId: '',
       autoClose: false,
