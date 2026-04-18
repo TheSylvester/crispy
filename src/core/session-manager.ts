@@ -47,7 +47,7 @@ export function setDefaultCwd(cwd: string): void { defaultCwd = cwd; }
 import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, ChannelMessage, TurnIntent, TurnTarget, TurnSettings, SubagentEntriesResult, EphemeralTargetOptions, LocalPlugin } from './agent-adapter.js';
 import type { ArbiterPolicy } from './arbiter/types.js';
 import type { TranscriptEntry, MessageContent, Vendor, Usage } from './transcript.js';
-import type { SessionChannel, Subscriber, SubscriberMessage } from './session-channel.js';
+import type { SessionChannel, SessionChannelState, Subscriber, SubscriberMessage } from './session-channel.js';
 import { parseModelOption } from './model-utils.js';
 import { normalizePath } from './url-path-resolver.js';
 
@@ -304,6 +304,141 @@ export function getOpenVisibleChildren(): Array<{
       results.push({ sessionId: id, autoClose: meta.autoClose });
     }
   }
+  return results;
+}
+
+/**
+ * Shape returned by `listOpenChannels()` — a snapshot of one live session.
+ *
+ * Wire-safe (all primitives) so it round-trips over JSON-RPC without a
+ * separate Wire* variant. `vendor` is sourced from the live adapter
+ * (`channel.adapter?.vendor`) and is 'unknown' only during a narrow
+ * rotation/teardown window where the adapter is transiently null.
+ */
+export interface OpenSessionInfo {
+  /**
+   * Session ID. By convention this is the real (post-rekey) ID — pending
+   * IDs are filtered via `startsWith('pending:')`. The pending-ID prefix is
+   * a convention, not an enforced invariant, so a malformed caller-supplied
+   * pendingId could theoretically leak through (same limitation as
+   * `listChildSessions` and `getOpenVisibleChildren`).
+   */
+  sessionId: string;
+
+  /** Vendor from the live adapter. 'unknown' during a narrow rotation window. */
+  vendor: Vendor | 'unknown';
+
+  /** Working directory from disk index, if the session has been indexed. */
+  projectPath?: string;
+
+  /** Live channel state. Tombstones (`unattached`) are filtered out of results. */
+  state: Exclude<SessionChannelState, 'unattached'>;
+
+  /** Number of unresolved approvals on the channel. */
+  pendingApprovalCount: number;
+
+  /**
+   * Count of entries accumulated in the channel (including any history
+   * seeded at createChannel time). Suitable for diffing across calls to
+   * detect *entry* advancement. NOT a general freshness or activity signal —
+   * status-only transitions (awaiting_approval, background) do not bump it,
+   * and a freshly-resumed session starts with a non-zero count.
+   */
+  entryCount: number;
+
+  /** 'system' for Rosie-like internal sessions; omitted for user sessions. */
+  sessionKind?: 'system';
+
+  /** True for Claude sidechain sessions (never set for other vendors). */
+  isSidechain?: boolean;
+
+  /** Parent session ID if this is a child session. Omitted when unknown. */
+  parentSessionId?: string;
+
+  /** True if the child was spawned with a visible tab/panel. Only set when `parentSessionId` is present. */
+  childVisible?: boolean;
+
+  /** True if the child auto-closes after idle. Only set when `parentSessionId` is present. */
+  childAutoClose?: boolean;
+}
+
+/** Options for `listOpenChannels()`. */
+export interface ListOpenChannelsOptions {
+  /** Include system sessions (Rosie-like). Default: false — mirrors listSessions. */
+  includeSystem?: boolean;
+  /** Include Claude sidechain sessions. Default: false — mirrors listSessions. */
+  includeSidechains?: boolean;
+}
+
+/**
+ * Snapshot the currently-open session channels in this host.
+ *
+ * Returns sessions that have a live channel in the session-manager registry,
+ * filtered to exclude tombstones (`unattached`, `tearing`) and pending IDs.
+ * By default sidechains and system sessions are filtered to approximately
+ * mirror `listSessions` exposure (best-effort — the sidechain filter depends
+ * on the disk index, which may briefly lag a just-opened channel).
+ *
+ * Sorted by `sessionId` ascending so polling callers can diff across calls
+ * without sorting themselves. Map insertion order is not stable — rekey
+ * deletes and re-inserts.
+ */
+export function listOpenChannels(
+  opts: ListOpenChannelsOptions = {},
+): OpenSessionInfo[] {
+  const { includeSystem = false, includeSidechains = false } = opts;
+
+  // Snapshot to avoid mid-iteration mutation from subscribe/close/rekey.
+  const snapshot = Array.from(sessions.entries());
+  const results: OpenSessionInfo[] = [];
+
+  for (const [id, channel] of snapshot) {
+    // Filter pending IDs — established convention with siblings
+    // (getOpenVisibleChildren, listChildSessions).
+    if (id.startsWith('pending:')) continue;
+
+    // Filter tombstones: `unattached` (stream exhausted / errored) and
+    // `tearing` (closeSession in flight) channels are not "live".
+    if (channel.state === 'unattached' || channel.tearing) continue;
+
+    // Default-filter system sessions unless opted in.
+    const isSystem = isSystemSession(id);
+    if (isSystem && !includeSystem) continue;
+
+    // Vendor from the live adapter — authoritative. During rotation the
+    // adapter is briefly null, which we surface as 'unknown' rather than
+    // blowing up.
+    const adapterVendor = channel.adapter?.vendor;
+
+    // projectPath from disk index (best-effort; undefined if not indexed).
+    const info = findSession(id);
+
+    // Sidechain filter: Claude-specific; other vendors never set isSidechain.
+    if (info?.isSidechain && !includeSidechains) continue;
+
+    const childMeta = childSessions.get(id);
+    // Normalize falsy parentSessionId to undefined (resumeChildSession
+    // defensively inserts '').
+    const parent = childMeta?.parentSessionId || undefined;
+
+    results.push({
+      sessionId: id,
+      vendor: adapterVendor ?? 'unknown',
+      projectPath: info?.projectPath,
+      state: channel.state as Exclude<SessionChannelState, 'unattached'>,
+      pendingApprovalCount: channel.pendingApprovals.size,
+      entryCount: channel.entries.length,
+      ...(isSystem ? { sessionKind: 'system' as const } : {}),
+      ...(info?.isSidechain ? { isSidechain: true } : {}),
+      ...(parent ? {
+        parentSessionId: parent,
+        childVisible: childMeta!.visible,
+        childAutoClose: childMeta!.autoClose,
+      } : {}),
+    });
+  }
+
+  results.sort((a, b) => a.sessionId.localeCompare(b.sessionId));
   return results;
 }
 
