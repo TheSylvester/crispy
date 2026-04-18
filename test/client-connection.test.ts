@@ -26,11 +26,17 @@ import {
   registerAdapter,
   _resetRegistry,
 } from '../src/core/session-manager.js';
+import type { OpenSessionInfo } from '../src/core/session-manager.js';
+import { _setTestDir, setSessionKind } from '../src/core/activity-index.js';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import { join } from 'node:path';
 
 import {
   createClientConnection,
   type HostMessage,
 } from '../src/host/client-connection.js';
+import { createAgentDispatch } from '../src/host/agent-dispatch.js';
 
 // ============================================================================
 // Mock Discovery
@@ -545,6 +551,115 @@ describe('ClientConnection', () => {
       expect(resp).toBeDefined();
 
       handler.dispose();
+    });
+  });
+
+  describe('listOpenSessions', () => {
+    // listOpenSessions consults isSystemSession which reads the DB; give
+    // each test an isolated ~/.crispy/ so setSessionKind can persist and
+    // state from one test doesn't leak into another.
+    let testDir: string;
+    let cleanupDir: () => void;
+
+    beforeEach(() => {
+      testDir = fs.mkdtempSync(join(os.tmpdir(), 'crispy-list-open-rpc-'));
+      cleanupDir = _setTestDir(testDir);
+    });
+
+    afterEach(() => {
+      cleanupDir();
+      fs.rmSync(testDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    });
+
+    it('returns an empty list when no channels are open', async () => {
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [] });
+      registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+
+      const resp = await sendRequestAndGetResponse(handler, messages, 'listOpenSessions', {});
+      expect(resp.kind).toBe('response');
+      if (resp.kind === 'response') {
+        expect(resp.result).toEqual([]);
+      }
+
+      handler.dispose();
+    });
+
+    it('includes subscribed sessions with default filters', async () => {
+      const s1 = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1] });
+      registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+
+      await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-1' });
+      const resp = await sendRequestAndGetResponse(handler, messages, 'listOpenSessions', {});
+
+      expect(resp.kind).toBe('response');
+      if (resp.kind === 'response') {
+        const result = resp.result as OpenSessionInfo[];
+        expect(result).toHaveLength(1);
+        expect(result[0].sessionId).toBe('sess-1');
+        expect(result[0].vendor).toBe('claude');
+      }
+
+      handler.dispose();
+    });
+
+    it('honors includeSystem: true to surface Rosie-like sessions', async () => {
+      const sUser = makeSessionInfo({ sessionId: 'sess-user', vendor: 'claude' });
+      const sSys = makeSessionInfo({ sessionId: 'sess-sys', vendor: 'claude' });
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [sUser, sSys] });
+      registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+
+      await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-user' });
+      await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId: 'sess-sys' });
+      setSessionKind('sess-sys', 'system');
+
+      // Default: system hidden.
+      const def = await sendRequestAndGetResponse(handler, messages, 'listOpenSessions', {});
+      if (def.kind === 'response') {
+        const ids = (def.result as OpenSessionInfo[]).map((r) => r.sessionId);
+        expect(ids).toEqual(['sess-user']);
+      }
+
+      // Opt-in.
+      const full = await sendRequestAndGetResponse(handler, messages, 'listOpenSessions', {
+        includeSystem: true,
+      });
+      if (full.kind === 'response') {
+        const result = full.result as OpenSessionInfo[];
+        expect(result.map((r) => r.sessionId)).toEqual(['sess-sys', 'sess-user']);
+        expect(result.find((r) => r.sessionId === 'sess-sys')!.sessionKind).toBe('system');
+      }
+
+      handler.dispose();
+    });
+
+    it('in-process loopback: dispatch sees sessions opened by another client', async () => {
+      const s1 = makeSessionInfo({ sessionId: 'sess-shared', vendor: 'claude' });
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1] });
+      registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+      // Client A subscribes to the session.
+      const { messages, sendFn } = createMockSend();
+      const clientA = createClientConnection('client-A', sendFn);
+      await sendRequestAndGetResponse(clientA, messages, 'subscribe', { sessionId: 'sess-shared' });
+
+      // A second in-process client (e.g. a dispatched agent) queries
+      // listOpenSessions via the typed AgentDispatch surface.
+      const dispatch = createAgentDispatch();
+      const result = await dispatch.listOpenSessions();
+      expect(result.map((r) => r.sessionId)).toContain('sess-shared');
+
+      dispatch.dispose();
+      clientA.dispose();
     });
   });
 
