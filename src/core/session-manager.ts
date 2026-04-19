@@ -425,9 +425,16 @@ export function listOpenChannels(
     if (info?.isSidechain && !includeSidechains) continue;
 
     const childMeta = childSessions.get(id);
-    // Normalize falsy parentSessionId to undefined (resumeChildSession
-    // defensively inserts '').
-    const parent = childMeta?.parentSessionId || undefined;
+    // Normalize parentSessionId: resolve pending→real via resolveSessionId
+    // (the parent may have rekeyed since the child was registered), then
+    // drop if still falsy or still pending. Unresolved pending parents
+    // (e.g. caller was itself a dispatch-only pending ID) shouldn't leak
+    // into caller-visible output.
+    const rawParent = childMeta?.parentSessionId;
+    const resolvedParent = rawParent ? resolveSessionId(rawParent) : undefined;
+    const parent = resolvedParent && !resolvedParent.startsWith('pending:')
+      ? resolvedParent
+      : undefined;
 
     results.push({
       sessionId: id,

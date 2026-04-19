@@ -1029,6 +1029,27 @@ describe('listOpenChannels', () => {
     expect(info.childVisible).toBe(false);
   });
 
+  it('omits child metadata when parentSessionId is a pending: ID that never resolved', async () => {
+    // Reproduces browser-qa finding: sessions dispatched from a pending-only
+    // caller (e.g. crispy-dispatch CLI) register with a pending parent; that
+    // string shouldn't leak into caller-visible output.
+    const session = makeSessionInfo({ sessionId: 'sess-child', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+    await subscribeSession('sess-child', createTestSubscriber('sub-1'));
+    registerChildSession('sess-child', {
+      parentSessionId: 'pending:abc-123',
+      autoClose: true,
+      visible: true,
+    });
+
+    const [info] = listOpenChannels();
+    expect(info.parentSessionId).toBeUndefined();
+    expect(info.childAutoClose).toBeUndefined();
+    expect(info.childVisible).toBeUndefined();
+  });
+
   it('omits child metadata when parentSessionId is an empty string', async () => {
     const session = makeSessionInfo({ sessionId: 'sess-1', vendor: 'claude' });
     const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
