@@ -23,9 +23,9 @@ ask: "What should the fresh session work on?"
 
 ## Flow
 
-### Step 1: Distill — `/handoff-prompt-to <next-task>`
+### Step 1: Distill — `/distill <next-task>`
 
-Invoke the `handoff-prompt-to` skill with the user's task description.
+Invoke the `distill` skill with the user's task description.
 This produces a self-contained prompt file saved to `.ai-reference/prompts/`.
 
 ### Step 2: Verify — `/reflect`

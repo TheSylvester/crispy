@@ -36,7 +36,7 @@ Make any refinements to ensure:
 - [ ] Commands are correct for this project
 - [ ] Test file paths are accurate
 
-**If this is a multi-prompt chain with separate task files (from /handoff-prompt-to):**
+**If this is a multi-prompt chain with separate task files (from /distill):**
 - [ ] Interface definitions are IDENTICAL across all task files
 - [ ] Prerequisites in each task match what prior tasks deliver
 - [ ] Index dependency graph matches task file prerequisites

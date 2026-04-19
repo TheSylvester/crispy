@@ -17,6 +17,6 @@ Each decision follows the same cycle:
 3. If they modify, you adjust and re-present.
 4. Only when they explicitly confirm does it get written to the file.
 
-As new questions surface during discussion, add them to Open. After writing to the file, briefly remind the user what's still open. The spec is done when Open is empty or deferred. When it is, let the user know and offer `/handoff-prompt-to` to generate the implementation prompt.
+As new questions surface during discussion, add them to Open. After writing to the file, briefly remind the user what's still open. The spec is done when Open is empty or deferred. When it is, let the user know and offer `/distill` to generate the implementation prompt.
 
 Read the file before every edit — the user may have changed it directly.

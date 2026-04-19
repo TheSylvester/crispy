@@ -10,8 +10,8 @@ describe('codex-settings-mapping skill injection', () => {
     switch (name) {
       case 'recall':
         return { name: 'recall', path: '/bundle/skills/recall/SKILL.md' };
-      case 'handoff-prompt-to':
-        return { name: 'handoff-prompt-to', path: '/bundle/skills/handoff-prompt-to/SKILL.md' };
+      case 'distill':
+        return { name: 'distill', path: '/bundle/skills/distill/SKILL.md' };
       default:
         return undefined;
     }
@@ -83,13 +83,13 @@ describe('codex-settings-mapping skill injection', () => {
       },
       {
         type: 'text',
-        text: '$recall then $handoff-prompt-to',
+        text: '$recall then $distill',
       },
     ], resolveSkill)).toEqual([
       { type: 'image', url: 'data:image/png;base64,abc123' },
       { type: 'skill', name: 'recall', path: '/bundle/skills/recall/SKILL.md' },
       { type: 'text', text: ' then ', text_elements: [] },
-      { type: 'skill', name: 'handoff-prompt-to', path: '/bundle/skills/handoff-prompt-to/SKILL.md' },
+      { type: 'skill', name: 'distill', path: '/bundle/skills/distill/SKILL.md' },
     ]);
   });
 });
