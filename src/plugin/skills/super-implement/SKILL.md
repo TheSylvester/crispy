@@ -24,6 +24,7 @@ or `"above"` to use the plan just discussed. If not provided, ask the user.
 ## When to use
 
 The plan is non-trivial and you want:
+
 - Multiple independent review passes (on the plan AND on the code)
 - Work done by a crispy-agent (main context stays clean)
 - A divergence gate (agent doesn't silently expand scope)
@@ -54,7 +55,7 @@ latest round).
 ## Step 2: Distill
 
 Invoke `/distill` with the refined plan to produce an execution-ready prompt
-file at `.ai-reference/prompts/<timestamp>-<task>.md`.
+file at `.ai-reference/prompts/<timestamp>-<task>.md`. Once this is complete, ensure `/reflect` is invoked to ensure the prompt is valid and complete.
 
 ## Step 3: Execute with a crispy-agent
 
@@ -80,7 +81,7 @@ The agent does this inside its own context. Your main thread only dispatches.
 
 ## Step 5: Divergence check (main thread)
 
-Diff the final code against the *original* plan. Classify every change:
+Diff the final code against the _original_ plan. Classify every change:
 
 - **Required** for the plan's goal → accept silently
 - **Beneficial** adjacent fix / obvious cleanup → surface briefly to the user, default accept
