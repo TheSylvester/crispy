@@ -46,6 +46,8 @@ import type {
   PermissionUpdate,
   McpServerConfig,
   McpSdkServerConfigWithInstance,
+  ThinkingConfig,
+  ThinkingAdaptive,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources';
 
@@ -72,6 +74,7 @@ import { tmpdir } from 'os';
 import { homedir } from 'os';
 import { getSessionTitleFromDb } from '../../activity-index.js';
 import { getContextWindowTokens } from '../../model-utils.js';
+import { checkCliVersion, warnOnceIfOld } from './cli-version-gate.js';
 
 // ============================================================================
 // Configuration — Full SDK Options Surface
@@ -178,8 +181,12 @@ export interface ClaudeSessionOptions {
   model?: string;
   /** Fallback model if primary fails */
   fallbackModel?: string;
-  /** Maximum tokens for extended thinking */
-  maxThinkingTokens?: number;
+  /**
+   * Thinking display when the model supports adaptive thinking (Opus 4.6+).
+   * `'summarized'` surfaces visible thinking content; `'omitted'` suppresses it.
+   * Default `'summarized'`. Non-Opus models ignore this (thinking omitted).
+   */
+  thinkingDisplay?: 'summarized' | 'omitted';
 
   // --- Permissions ---
 
@@ -290,6 +297,72 @@ export interface ClaudeSessionOptions {
 }
 
 // ============================================================================
+// Thinking capability (cold-start table + helpers)
+// ============================================================================
+
+/**
+ * Cold-start capability table.
+ *
+ * The authoritative `supportsAdaptiveThinking` flag lives on `ModelInfo` in
+ * `SDKControlInitializeResponse.models[]`, accessible only via
+ * `query.initializationResult()` which resolves AFTER the subprocess begins
+ * processing the first prompt. `startQuery()` builds the `Options` (including
+ * `thinking`) BEFORE the first prompt is sent, so for turn 1 of any fresh
+ * session the authoritative signal does not exist. Without this table,
+ * Opus 4.7 sessions render empty thinking on turn 1.
+ *
+ * Scope: Opus 4.6+ only (per SDK JSDoc). Opus 4.5 and Sonnet/Haiku 4.x are
+ * not promised to support adaptive — sending `{ type: 'adaptive' }` there
+ * may 400 or silently no-op.
+ *
+ * No speculative widening (no `4-\d+` regex, no `-preview` suffix). When
+ * Opus 4.8 ships, add it to the table explicitly. Evidence-based entries
+ * only.
+ */
+const ADAPTIVE_THINKING_COLD_START: ReadonlySet<string> = new Set([
+  'claude-opus-4-7',
+  'claude-opus-4-6',
+  'opus',
+]);
+
+/** Strip SDK date suffixes: `-YYYYMMDD` or `-YYYY-MM-DD`. */
+export function normalizeModelString(model: string): string {
+  return model.replace(/(?:-\d{8}|-\d{4}-\d{2}-\d{2})$/, '');
+}
+
+/** Returns true when the model is known to accept `thinking: { type: 'adaptive' }`. */
+export function modelSupportsAdaptiveThinking(model: string | undefined): boolean {
+  if (!model) return false;
+  return ADAPTIVE_THINKING_COLD_START.has(normalizeModelString(model));
+}
+
+/**
+ * Build the SDK's `thinking` config from adapter options.
+ *
+ * Returns `undefined` (omit the field) for:
+ * - structured-output forks (`outputFormat` set) — keep `maxTurns: 1` hot path simple
+ * - models not in the cold-start capability table
+ *
+ * `context.supportsDisplay` should be `false` only when the CLI version gate
+ * reports `'too_old'`, suppressing the `display` field against CLIs that may
+ * reject unknown config keys. On too-old CLIs, the turn sends `{ type: 'adaptive' }`
+ * only — the CLI either ignores it (empty thinking, matches pre-bump baseline)
+ * or passes it through (works).
+ */
+export function buildThinkingConfig(
+  opts: ClaudeSessionOptions,
+  context: { supportsDisplay: boolean },
+): ThinkingConfig | undefined {
+  if (opts.outputFormat) return undefined;
+  if (!modelSupportsAdaptiveThinking(opts.model)) return undefined;
+  const base: ThinkingAdaptive = { type: 'adaptive' };
+  if (context.supportsDisplay) {
+    base.display = opts.thinkingDisplay ?? 'summarized';
+  }
+  return base;
+}
+
+// ============================================================================
 // Session Metadata — Captured from SDK init message
 // ============================================================================
 
@@ -309,6 +382,8 @@ export interface ClaudeSessionMetadata {
   agents: string[];
   permissionMode: string;
   apiKeySource: string;
+  /** The Claude CLI version reported in the SDK init message. */
+  claudeCodeVersion: string;
 }
 
 // ============================================================================
@@ -403,6 +478,8 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   private _closed = false;
   private _metadata: ClaudeSessionMetadata | null = null;
   private _contextUsage: ContextUsage | null = null;
+  /** Populated from the first init message. Default `false` (optimistic) until the gate runs. */
+  private _cliTooOld = false;
 
   /** The input queue fed to query() as the prompt. */
   private inputQueue: AsyncIterableQueue<SDKUserMessage> | null = null;
@@ -700,11 +777,6 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     await this.requireQuery('setPermissionMode').setPermissionMode(mode);
   }
 
-  /** Change thinking token budget mid-conversation. */
-  async setMaxThinkingTokens(tokens: number | null): Promise<void> {
-    await this.requireQuery('setMaxThinkingTokens').setMaxThinkingTokens(tokens);
-  }
-
   /**
    * Tear down the current query and update options so the next send()
    * creates a fresh SDK query() with updated bypass / extraArgs.
@@ -867,7 +939,10 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       // Model & thinking
       ...(opts.model && { model: opts.model }),
       ...(opts.fallbackModel && { fallbackModel: opts.fallbackModel }),
-      ...(opts.maxThinkingTokens !== undefined && { maxThinkingTokens: opts.maxThinkingTokens }),
+      ...((() => {
+        const thinking = buildThinkingConfig(opts, { supportsDisplay: !this._cliTooOld });
+        return thinking ? { thinking } : {};
+      })()),
 
       // Permissions
       ...(opts.permissionMode && { permissionMode: opts.permissionMode }),
@@ -1327,7 +1402,13 @@ export class ClaudeAgentAdapter implements AgentAdapter {
           agents: (initMsg.agents as string[]) ?? [],
           permissionMode: ((initMsg.permissionMode ?? initMsg.permission_mode) as string) ?? '',
           apiKeySource: ((initMsg.apiKeySource ?? initMsg.api_key_source) as string) ?? '',
+          claudeCodeVersion: (initMsg.claude_code_version as string) ?? '',
         };
+
+        // --- CLI version gate: warn once per activation on a stale user CLI ---
+        const gate = checkCliVersion(this._metadata.claudeCodeVersion);
+        this._cliTooOld = gate.status === 'too_old';
+        warnOnceIfOld(gate);
 
         // --- Sync options from init so adapter.settings reflects actual state ---
         // The SDK's init message reports the authoritative model and permissionMode

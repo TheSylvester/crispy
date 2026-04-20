@@ -29,7 +29,6 @@ function makeQueryStub(
     interrupt: vi.fn().mockResolvedValue(undefined),
     setPermissionMode: vi.fn().mockResolvedValue(undefined),
     setModel: vi.fn().mockResolvedValue(undefined),
-    setMaxThinkingTokens: vi.fn().mockResolvedValue(undefined),
     initializationResult: vi.fn().mockResolvedValue({}),
     supportedCommands: vi.fn().mockResolvedValue([]),
     supportedModels: vi.fn().mockResolvedValue([]),
@@ -303,6 +302,53 @@ describe('Message routing', () => {
     expect(eventKinds).toContain('compacting');
     expect(eventKinds).toContain('permission_mode_changed');
     expect(eventKinds).toContain('session_changed');
+
+    ch.close();
+  });
+});
+
+// ========== Group 3b: New SDKMessage types fall through default branch ==========
+
+describe('New SDKMessage types (post-bump)', () => {
+  it('new SDK 0.2.114 system subtypes round-trip through handleSystemMessage default as entries', async () => {
+    // These subtypes were added in the 0.2.76 → 0.2.114 bump. Per sdk.d.ts
+    // they all arrive as { type: 'system', subtype: <name> } — handled by
+    // handleSystemMessage's default case, which calls emitEntry(msg).
+    const msg = (obj: Record<string, unknown>) => obj as unknown as SDKMessage;
+    const newSubtypes = [
+      'api_retry',                 // SDKAPIRetryMessage
+      'plugin_install',            // SDKPluginInstallMessage
+      'task_updated',              // SDKTaskUpdatedMessage
+      'session_state_changed',     // SDKSessionStateChangedMessage
+      'notification',              // SDKNotificationMessage
+      'memory_recall',             // SDKMemoryRecallMessage
+      'mirror_error',              // SDKMirrorErrorMessage
+    ];
+
+    const messages: SDKMessage[] = [
+      ...newSubtypes.map((subtype, i) => msg({ type: 'system', subtype, uuid: `u-${i}`, session_id: 's1' })),
+      // Close out with a result so collectUntil can stop.
+      msg({
+        type: 'result', subtype: 'success', duration_ms: 0, duration_api_ms: 0,
+        is_error: false, num_turns: 1, result: '', stop_reason: 'end_turn',
+        total_cost_usd: 0, usage: { input_tokens: 0, output_tokens: 0 },
+        modelUsage: {}, permission_denials: [], uuid: 'u-end', session_id: 's1',
+      }),
+    ];
+
+    const mockQ = createMockQuery(messages);
+    mockQueryFn.mockReturnValue(mockQ);
+
+    const ch = new ClaudeAgentAdapter({ cwd: '/tmp' });
+    ch.sendTurn('go', {});
+
+    const output = await collectUntil(ch, (msgs) =>
+      msgs.some((m) => m.type === 'event' && m.event.type === 'status' && m.event.status === 'idle'),
+    );
+
+    const entries = output.filter((m) => m.type === 'entry');
+    // Every new subtype emits one entry, plus the result entry.
+    expect(entries.length).toBeGreaterThanOrEqual(newSubtypes.length);
 
     ch.close();
   });
