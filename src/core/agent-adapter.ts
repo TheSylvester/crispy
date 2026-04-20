@@ -138,6 +138,14 @@ export interface VendorDiscovery {
    * @param fromOffset - Byte offset to start scanning from (default 0)
    */
   scanUserActivity?(sessionPath: string, fromOffset?: number): UserActivityScanResult;
+
+  /**
+   * Best-effort recovery of the model a session was using, by inspecting
+   * persisted session files. Returns undefined if the session file is
+   * missing, unreadable, or the cutoff UUID (when supplied) cannot be located.
+   * Callers should already have tried live in-memory state first.
+   */
+  resolveModelForSession?(sessionId: string, opts?: { upToUuid?: string }): string | undefined;
 }
 
 // ============================================================================

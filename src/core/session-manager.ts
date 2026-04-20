@@ -1305,11 +1305,20 @@ export async function createForkSession(
     log({ source: 'session', level: 'warn', summary: `Failed to pre-load fork history`, data: { fromSessionId, error: String(err) } });
   }
 
+  // Resolve fork model: explicit caller setting > live parent's adapter > disk fallback.
+  // Without this fallback, forks of Crispy-tracked sessions inherit no model and
+  // the CLI starts with its default (Opus 4.7) — but without our thinking flags.
+  const liveParent = sessions.get(fromSessionId);
+  const resolvedForkModel =
+    options?.settings?.model ||
+    liveParent?.adapter?.settings?.model ||
+    reg.discovery.resolveModelForSession?.(fromSessionId, options?.atMessageId ? { upToUuid: options.atMessageId } : undefined);
+
   const spec: SessionOpenSpec = {
     mode: 'fork',
     fromSessionId,
     ...(options?.atMessageId && { atMessageId: options.atMessageId }),
-    ...(options?.settings?.model && { model: options.settings.model }),
+    ...(resolvedForkModel && { model: resolvedForkModel }),
     ...(options?.settings?.permissionMode && { permissionMode: options.settings.permissionMode }),
     ...(options?.settings?.allowDangerouslySkipPermissions && { allowDangerouslySkipPermissions: true }),
     ...(options?.settings?.outputFormat && { outputFormat: options.settings.outputFormat }),
@@ -1437,12 +1446,18 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
       }
       if (!cwd) cwd = normalizePath(defaultCwd);
 
-      // Inherit model from parent session when same vendor and no explicit model
+      // Inherit model from parent session when same vendor and no explicit model.
+      // Falls back to disk lookup when the live adapter has no model (the resume
+      // path constructs adapters with empty options.model — adapter.settings only
+      // gets populated after the SDK init message arrives).
       let inheritedModel: string | undefined;
       if (!intent.settings.model && intent.target.parentSessionId) {
         const parentChannel = sessions.get(intent.target.parentSessionId);
         if (parentChannel?.adapter?.vendor === intent.target.vendor) {
-          inheritedModel = parentChannel.adapter.settings?.model;
+          const discovery = adapters.get(intent.target.vendor as Vendor)?.discovery;
+          inheritedModel =
+            parentChannel.adapter.settings?.model
+            ?? discovery?.resolveModelForSession?.(intent.target.parentSessionId);
         }
       }
 

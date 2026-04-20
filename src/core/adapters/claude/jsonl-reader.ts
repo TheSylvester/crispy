@@ -1030,6 +1030,81 @@ export function parseJsonlFile(filepath: string): ClaudeTranscriptEntry[] {
 // ============================================================================
 
 /**
+ * Extract the model string from the most recent assistant entry, reverse-scanning
+ * a tail window that expands 128KB → 1MB → 8MB to tolerate large thinking blocks.
+ *
+ * When `upToUuid` is set, any entry (including the cutoff itself) is eligible
+ * if it's at or before the cutoff in document order. If the cutoff is never
+ * found the function fails closed (undefined) rather than returning a later
+ * model — a missed cutoff means correctness cannot be guaranteed.
+ */
+export function extractLatestAssistantModel(
+  filepath: string,
+  opts?: { upToUuid?: string },
+): string | undefined {
+  const WINDOW_SIZES = [128 * 1024, 1024 * 1024, 8 * 1024 * 1024];
+
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(filepath, 'r');
+    const stat = fs.fstatSync(fd);
+    const fileSize = stat.size;
+    if (fileSize === 0) return undefined;
+
+    let cutoffSeen = !opts?.upToUuid;
+
+    for (const windowSize of WINDOW_SIZES) {
+      const startPos = Math.max(0, fileSize - windowSize);
+      const bytesToRead = fileSize - startPos;
+      const buffer = Buffer.alloc(bytesToRead);
+      const bytesRead = fs.readSync(fd, buffer, 0, bytesToRead, startPos);
+      if (bytesRead === 0) return undefined;
+
+      const content = buffer.toString('utf-8', 0, bytesRead);
+      const lines = content.split('\n');
+
+      if (startPos > 0) lines.shift();
+
+      // Re-scan the overlap each window: walking backward, cutoffSeen flips
+      // when we cross the cutoff line. Entries before the flip are after the
+      // cutoff in document order (ineligible); entries after are eligible.
+      cutoffSeen = !opts?.upToUuid;
+
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        let entry: ClaudeTranscriptEntry;
+        try {
+          entry = JSON.parse(line) as ClaudeTranscriptEntry;
+        } catch {
+          continue;
+        }
+
+        if (!cutoffSeen) {
+          if (entry.uuid === opts?.upToUuid) cutoffSeen = true;
+          else continue;
+        }
+
+        if (entry.type === 'assistant') {
+          const model = entry.message && (entry.message as { model?: unknown }).model;
+          if (typeof model === 'string' && model) return model;
+        }
+      }
+
+      if (startPos === 0) return undefined;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch { /* ignore */ }
+    }
+  }
+}
+
+/**
  * Extract the model string from the init entry in a Claude JSONL file.
  *
  * Reads only the first 8KB of the file to find the `type: "system"` +

@@ -58,7 +58,7 @@ import { randomUUID } from 'crypto';
 import { platform } from 'os';
 import { AsyncIterableQueue } from '../../async-iterable-queue.js';
 import { adaptClaudeEntry, adaptClaudeEntries } from './claude-entry-adapter.js';
-import { parseJsonlFile, extractMetadataFast, readLinesFromOffset, extractInitModel, scanUserMessages } from './jsonl-reader.js';
+import { parseJsonlFile, extractMetadataFast, readLinesFromOffset, extractInitModel, extractLatestAssistantModel, scanUserMessages } from './jsonl-reader.js';
 import { loadSubagentEntries } from './subagent-loader.js';
 import {
   serializeToClaudeJsonl,
@@ -654,6 +654,19 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       }
     }
 
+    // Capability-band change forces respawn: the SDK freezes `thinking` config
+    // at startQuery time and exposes no setThinking control — toggling adaptive
+    // support requires a new process. Compare effective models (so swapping to
+    // "Default" that resolves to the same band doesn't cause a spurious restart).
+    if (settings.model !== undefined && settings.model !== this.options.model) {
+      const env = this.options.env ?? {};
+      const oldEffective = this.options.model || resolveCliDefaultModel(env);
+      const newEffective = settings.model || resolveCliDefaultModel(env);
+      if (modelSupportsAdaptiveThinking(oldEffective) !== modelSupportsAdaptiveThinking(newEffective)) {
+        return true;
+      }
+    }
+
     return false;
   }
 
@@ -946,11 +959,14 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       ...(opts.persistSession !== undefined && { persistSession: opts.persistSession }),
       ...(opts.skipPersistSession && { persistSession: false }),
 
-      // Model & thinking
+      // Model & thinking — capability gate runs against the effective model
+      // (resolved CLI default when opts.model is empty) so a "Default" pick
+      // still lights up thinking when the CLI will pick an Opus.
       ...(opts.model && { model: opts.model }),
       ...(opts.fallbackModel && { fallbackModel: opts.fallbackModel }),
       ...((() => {
-        const thinking = buildThinkingConfig(opts, { supportsDisplay: this._cliSupportsDisplay });
+        const effectiveModel = opts.model || resolveCliDefaultModel(opts.env ?? {});
+        const thinking = buildThinkingConfig({ ...opts, model: effectiveModel }, { supportsDisplay: this._cliSupportsDisplay });
         return thinking ? { thinking } : {};
       })()),
 
@@ -2074,20 +2090,42 @@ export function findSession(sessionId: string): SessionInfo | undefined {
 }
 
 /**
- * Extract the model string for a resumed session by reading its JSONL init entry.
- *
- * Convenience wrapper: finds the session file on disk, then reads the first 8KB
- * to extract the model from the `{ type: "system", subtype: "init" }` entry.
- * Used by adapter factories to populate model at construction time (before any
- * SDK query), so the catchup message includes the correct model.
- *
- * @param sessionId - The session UUID to look up
- * @returns The model string (e.g. "claude-sonnet-4-20250514"), or undefined
+ * Recover the model for a session by reading its JSONL.
+ * Tries `system/init` (pre-Crispy sessions), then the latest assistant entry's
+ * `message.model` (Crispy-tracked sessions). `upToUuid` scopes the scan for forks.
  */
-export function getResumeModel(sessionId: string): string | undefined {
+export function getResumeModel(sessionId: string, opts?: { upToUuid?: string }): string | undefined {
   const info = findSession(sessionId);
   if (!info) return undefined;
-  return extractInitModel(info.path);
+  return extractInitModel(info.path) ?? extractLatestAssistantModel(info.path, opts);
+}
+
+// ============================================================================
+// CLI default model resolution (effective-model for capability gating)
+// ============================================================================
+
+/**
+ * Hardcoded fallback used when neither session env nor process env sets
+ * `ANTHROPIC_MODEL`. Mirrors the CLI's current default; if Claude Code
+ * changes its default in a future release, update here too.
+ */
+const CLI_FALLBACK_DEFAULT_MODEL = 'claude-opus-4-7';
+
+/**
+ * Compute the model the CLI will pick when no `--model` flag is passed.
+ *
+ * Used for capability-gate decisions only — the spawn args still suppress
+ * `--model` so the user's "Default" pick is honored. Mirrors the env
+ * precedence applied at spawn time: session env wins over process env.
+ *
+ * @param sessionEnv - The merged adapter env that will be forwarded to spawn
+ */
+export function resolveCliDefaultModel(sessionEnv: Record<string, string>): string {
+  const sessionVal = sessionEnv.ANTHROPIC_MODEL;
+  if (sessionVal) return sessionVal;
+  const procVal = process.env.ANTHROPIC_MODEL;
+  if (procVal) return procVal;
+  return CLI_FALLBACK_DEFAULT_MODEL;
 }
 
 /**
@@ -2163,6 +2201,10 @@ export const claudeDiscovery: VendorDiscovery = {
       dir: options?.dir,
     });
     return { sessionId: result.sessionId };
+  },
+
+  resolveModelForSession(sessionId, opts) {
+    return getResumeModel(sessionId, opts);
   },
 };
 
