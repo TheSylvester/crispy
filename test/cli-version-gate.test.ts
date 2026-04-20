@@ -7,9 +7,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   compareSemver,
   checkCliVersion,
+  cliSupportsThinkingDisplay,
   warnOnceIfOld,
   __resetWarnCacheForTest,
   EXPECTED_CLI_VERSION,
+  MIN_DISPLAY_CLI_VERSION,
 } from '../src/core/adapters/claude/cli-version-gate.js';
 
 // Capture log calls so we can assert idempotency without depending on output format.
@@ -89,6 +91,34 @@ describe('checkCliVersion', () => {
   it('reports unknown for unparseable string', () => {
     expect(checkCliVersion('garbage').status).toBe('unknown');
     expect(checkCliVersion('2.1').status).toBe('unknown');
+  });
+});
+
+describe('cliSupportsThinkingDisplay', () => {
+  it('pins the floor at 2.1.94', () => {
+    expect(MIN_DISPLAY_CLI_VERSION).toBe('2.1.94');
+  });
+
+  it('accepts the exact floor version', () => {
+    expect(cliSupportsThinkingDisplay('2.1.94')).toBe(true);
+  });
+
+  it('accepts versions above the floor', () => {
+    expect(cliSupportsThinkingDisplay('2.1.112')).toBe(true);
+    expect(cliSupportsThinkingDisplay('2.1.114')).toBe(true);
+    expect(cliSupportsThinkingDisplay('3.0.0')).toBe(true);
+  });
+
+  it('rejects versions below the floor', () => {
+    expect(cliSupportsThinkingDisplay('2.1.93')).toBe(false);
+    expect(cliSupportsThinkingDisplay('2.1.80')).toBe(false);
+    expect(cliSupportsThinkingDisplay('2.0.999')).toBe(false);
+  });
+
+  it('defaults to true for empty / unparseable observed (optimistic)', () => {
+    expect(cliSupportsThinkingDisplay('')).toBe(true);
+    expect(cliSupportsThinkingDisplay('garbage')).toBe(true);
+    expect(cliSupportsThinkingDisplay('2.1')).toBe(true);
   });
 });
 

@@ -74,7 +74,7 @@ import { tmpdir } from 'os';
 import { homedir } from 'os';
 import { getSessionTitleFromDb } from '../../activity-index.js';
 import { getContextWindowTokens } from '../../model-utils.js';
-import { checkCliVersion, warnOnceIfOld } from './cli-version-gate.js';
+import { checkCliVersion, cliSupportsThinkingDisplay, warnOnceIfOld } from './cli-version-gate.js';
 
 // ============================================================================
 // Configuration — Full SDK Options Surface
@@ -343,11 +343,11 @@ export function modelSupportsAdaptiveThinking(model: string | undefined): boolea
  * - structured-output forks (`outputFormat` set) — keep `maxTurns: 1` hot path simple
  * - models not in the cold-start capability table
  *
- * `context.supportsDisplay` should be `false` only when the CLI version gate
- * reports `'too_old'`, suppressing the `display` field against CLIs that may
- * reject unknown config keys. On too-old CLIs, the turn sends `{ type: 'adaptive' }`
- * only — the CLI either ignores it (empty thinking, matches pre-bump baseline)
- * or passes it through (works).
+ * `context.supportsDisplay` should be `false` only when the observed CLI
+ * version is below `MIN_DISPLAY_CLI_VERSION` (2.1.94) — below that the CLI
+ * doesn't know the `display` field. Above it, always send `display`. This
+ * is distinct from the SDK-drift warning, which fires on any CLI older
+ * than the bundled SDK's expected version.
  */
 export function buildThinkingConfig(
   opts: ClaudeSessionOptions,
@@ -478,8 +478,11 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   private _closed = false;
   private _metadata: ClaudeSessionMetadata | null = null;
   private _contextUsage: ContextUsage | null = null;
-  /** Populated from the first init message. Default `false` (optimistic) until the gate runs. */
-  private _cliTooOld = false;
+  /**
+   * Whether the observed CLI understands `thinking.display`. Default `true`
+   * (optimistic) until the first init message resolves the real version.
+   */
+  private _cliSupportsDisplay = true;
 
   /** The input queue fed to query() as the prompt. */
   private inputQueue: AsyncIterableQueue<SDKUserMessage> | null = null;
@@ -940,7 +943,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       ...(opts.model && { model: opts.model }),
       ...(opts.fallbackModel && { fallbackModel: opts.fallbackModel }),
       ...((() => {
-        const thinking = buildThinkingConfig(opts, { supportsDisplay: !this._cliTooOld });
+        const thinking = buildThinkingConfig(opts, { supportsDisplay: this._cliSupportsDisplay });
         return thinking ? { thinking } : {};
       })()),
 
@@ -1405,10 +1408,12 @@ export class ClaudeAgentAdapter implements AgentAdapter {
           claudeCodeVersion: (initMsg.claude_code_version as string) ?? '',
         };
 
-        // --- CLI version gate: warn once per activation on a stale user CLI ---
-        const gate = checkCliVersion(this._metadata.claudeCodeVersion);
-        this._cliTooOld = gate.status === 'too_old';
-        warnOnceIfOld(gate);
+        // --- CLI version checks ---
+        // Capability gate: does the CLI know about `thinking.display`?
+        // (Hard floor at MIN_DISPLAY_CLI_VERSION.)
+        this._cliSupportsDisplay = cliSupportsThinkingDisplay(this._metadata.claudeCodeVersion);
+        // Drift canary: warn once when the user's CLI lags the SDK bundle.
+        warnOnceIfOld(checkCliVersion(this._metadata.claudeCodeVersion));
 
         // --- Sync options from init so adapter.settings reflects actual state ---
         // The SDK's init message reports the authoritative model and permissionMode

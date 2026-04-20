@@ -19,6 +19,20 @@ import { EXPECTED_CLI_VERSION } from '../../../generated/sdk-version.js';
 
 export { EXPECTED_CLI_VERSION };
 
+/**
+ * Minimum CLI version that understands `thinking.display` on adaptive
+ * thinking configs. The field was introduced in claude-agent-sdk 0.2.94 /
+ * CLI 2.1.94. Below this, the CLI doesn't recognize the field; we send
+ * `{ type: 'adaptive' }` alone and accept the empty-thinking fallback.
+ *
+ * Distinct from `EXPECTED_CLI_VERSION`:
+ *   - `MIN_DISPLAY_CLI_VERSION`: hard capability floor (gate).
+ *   - `EXPECTED_CLI_VERSION`: SDK-bundle drift (warn-once dev canary).
+ * Collapsing them means a CLI that fully supports `display` still loses
+ * it whenever the user's CLI lags the SDK bump.
+ */
+export const MIN_DISPLAY_CLI_VERSION = '2.1.94';
+
 /** Numeric-per-component semver compare. Returns null for malformed input. */
 export function compareSemver(a: string, b: string): -1 | 0 | 1 | null {
   const parse = (v: string): number[] | null => {
@@ -70,6 +84,19 @@ export function checkCliVersion(observed: string): CliVersionCheckResult {
   }
   if (cmp < 0) return { status: 'too_old', expected, observed };
   return { status: 'supported', expected, observed };
+}
+
+/**
+ * True when the observed CLI understands `thinking.display`. Empty/garbage
+ * observed strings are treated as capable (optimistic) — older CLIs that
+ * don't emit `claude_code_version` in init are vanishingly rare and would
+ * have bigger problems than a missing thinking field.
+ */
+export function cliSupportsThinkingDisplay(observed: string): boolean {
+  if (!observed) return true;
+  const cmp = compareSemver(observed, MIN_DISPLAY_CLI_VERSION);
+  if (cmp === null) return true;
+  return cmp >= 0;
 }
 
 // Module-local warn cache. One warn per extension activation — CLI version
