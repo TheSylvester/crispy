@@ -18,8 +18,9 @@ import { createServer, type Socket } from 'node:net';
 import { StringDecoder } from 'node:string_decoder';
 import { platform, userInfo } from 'node:os';
 import { join } from 'node:path';
-import { unlinkSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { unlinkSync, mkdirSync, readFileSync } from 'node:fs';
 import { createClientConnection } from './client-connection.js';
+import { writeFileAtomicSync } from '../core/atomic-write.js';
 import { ipcDir, runDir, serversFilePath } from '../core/paths.js';
 
 // ============================================================================
@@ -72,7 +73,7 @@ function pruneAndRead(): ServerEntry[] {
   }
 
   if (alive.length !== entries.length) {
-    writeFileSync(serversFilePath(), JSON.stringify(alive, null, 2));
+    writeFileAtomicSync(serversFilePath(), JSON.stringify(alive, null, 2));
   }
   return alive;
 }
@@ -81,7 +82,7 @@ function pruneAndRead(): ServerEntry[] {
 function register(socketPath: string, cwd: string): void {
   const entries = pruneAndRead();
   entries.push({ pid: process.pid, socket: socketPath, cwd, startedAt: new Date().toISOString() });
-  writeFileSync(serversFilePath(), JSON.stringify(entries, null, 2));
+  writeFileAtomicSync(serversFilePath(), JSON.stringify(entries, null, 2));
 }
 
 /** Remove this server from servers.json. */
@@ -89,7 +90,7 @@ function unregister(): void {
   try {
     const entries: ServerEntry[] = JSON.parse(readFileSync(serversFilePath(), 'utf8'));
     const filtered = entries.filter(e => e.pid !== process.pid);
-    writeFileSync(serversFilePath(), JSON.stringify(filtered, null, 2));
+    writeFileAtomicSync(serversFilePath(), JSON.stringify(filtered, null, 2));
   } catch { /* best effort */ }
 }
 
