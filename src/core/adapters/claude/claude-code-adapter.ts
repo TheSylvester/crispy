@@ -1031,7 +1031,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         const command = isWindows && spawnOpts.command.includes(' ')
           ? `"${spawnOpts.command}"`
           : spawnOpts.command;
-        log({ source: 'claude-adapter', level: 'info', summary: `[SPAWN] command=${command} args=${JSON.stringify(spawnOpts.args?.slice(0, 3))} cwd=${spawnOpts.cwd}` });
+        log({ source: 'claude-adapter', level: 'info', summary: `[SPAWN] command=${command} args=${JSON.stringify(spawnOpts.args)} cwd=${spawnOpts.cwd}` });
         const child = spawn(command, spawnOpts.args, {
           cwd: spawnOpts.cwd,
           env: spawnOpts.env,
