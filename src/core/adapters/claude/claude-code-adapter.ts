@@ -325,9 +325,16 @@ const ADAPTIVE_THINKING_COLD_START: ReadonlySet<string> = new Set([
   'opus',
 ]);
 
-/** Strip SDK date suffixes: `-YYYYMMDD` or `-YYYY-MM-DD`. */
+/**
+ * Strip variant markers so the capability table matches on the base model:
+ * - `[1m]` context-window suffix (1M-context beta)
+ * - `-YYYYMMDD` or `-YYYY-MM-DD` SDK date suffix
+ * Order matters — strip the bracket variant first so a bracket+date combo normalizes cleanly.
+ */
 export function normalizeModelString(model: string): string {
-  return model.replace(/(?:-\d{8}|-\d{4}-\d{2}-\d{2})$/, '');
+  return model
+    .replace(/\[[^\]]*\]$/, '')
+    .replace(/(?:-\d{8}|-\d{4}-\d{2}-\d{2})$/, '');
 }
 
 /** Returns true when the model is known to accept `thinking: { type: 'adaptive' }`. */

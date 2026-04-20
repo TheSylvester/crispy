@@ -33,6 +33,15 @@ describe('normalizeModelString', () => {
   it('does not strip speculative suffixes', () => {
     expect(normalizeModelString('claude-opus-4-7-preview')).toBe('claude-opus-4-7-preview');
   });
+
+  it('strips [1m] context-window suffix', () => {
+    expect(normalizeModelString('claude-opus-4-7[1m]')).toBe('claude-opus-4-7');
+    expect(normalizeModelString('opus[1m]')).toBe('opus');
+  });
+
+  it('strips bracket variant followed by date suffix', () => {
+    expect(normalizeModelString('claude-opus-4-7[1m]')).toBe('claude-opus-4-7');
+  });
 });
 
 describe('modelSupportsAdaptiveThinking', () => {
@@ -42,6 +51,8 @@ describe('modelSupportsAdaptiveThinking', () => {
     ['opus'],
     ['claude-opus-4-7-20260416'],   // date suffix -YYYYMMDD
     ['claude-opus-4-7-2026-04-16'], // date suffix -YYYY-MM-DD
+    ['claude-opus-4-7[1m]'],        // 1M-context variant
+    ['opus[1m]'],
   ])('accepts %s', (m) => {
     expect(modelSupportsAdaptiveThinking(m)).toBe(true);
   });
