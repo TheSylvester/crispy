@@ -135,23 +135,28 @@ type TabSessionMap = Map<string, string | null>;
 
 function TabContent({ tabId, tabNode, forkConfig, prefillContent, observerMode }: { tabId: string; tabNode?: TabNode; forkConfig?: ForkConfig | null; prefillContent?: string | null; observerMode?: boolean }): React.JSX.Element {
   const { effectiveSessionId } = useTabSession();
+  // Outer boundary wraps the provider cascade so a provider mount throw
+  // (e.g. from a racy RPC response during concurrent-window startup) is
+  // contained to this tab instead of reloading the whole app.
   return (
-    <TabContainerProvider tabId={tabId} tabNode={tabNode}>
-      <TabPanelProvider>
-        <FileIndexProvider>
-          <FilePanelProvider>
-            <ControlPanelProvider selectedSessionId={effectiveSessionId} initialForkConfig={forkConfig} initialPrefill={prefillContent}>
-              <ContentErrorBoundary>
-                <TabHeader />
-                <TabLayout>
-                  <TranscriptViewer observerMode={observerMode} />
-                </TabLayout>
-              </ContentErrorBoundary>
-            </ControlPanelProvider>
-          </FilePanelProvider>
-        </FileIndexProvider>
-      </TabPanelProvider>
-    </TabContainerProvider>
+    <ContentErrorBoundary>
+      <TabContainerProvider tabId={tabId} tabNode={tabNode}>
+        <TabPanelProvider>
+          <FileIndexProvider>
+            <FilePanelProvider>
+              <ControlPanelProvider selectedSessionId={effectiveSessionId} initialForkConfig={forkConfig} initialPrefill={prefillContent}>
+                <ContentErrorBoundary>
+                  <TabHeader />
+                  <TabLayout>
+                    <TranscriptViewer observerMode={observerMode} />
+                  </TabLayout>
+                </ContentErrorBoundary>
+              </ControlPanelProvider>
+            </FilePanelProvider>
+          </FileIndexProvider>
+        </TabPanelProvider>
+      </TabContainerProvider>
+    </ContentErrorBoundary>
   );
 }
 
