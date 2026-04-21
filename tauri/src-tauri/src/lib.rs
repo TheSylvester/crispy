@@ -1109,10 +1109,15 @@ done"#,
     let mut cmd = tokio::process::Command::new("wsl.exe");
     cmd.args(["-d", distro, "-e", "bash", "-lic", &install_cmd]);
     cmd.creation_flags(CREATE_NO_WINDOW);
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run WSL provision: {}", e))?;
+    cmd.kill_on_drop(true);
+    let output = match tokio::time::timeout(
+        std::time::Duration::from_secs(180),
+        cmd.output(),
+    ).await {
+        Ok(Ok(o)) => o,
+        Ok(Err(e)) => return Err(format!("Failed to run WSL provision: {}", e)),
+        Err(_) => return Err("WSL provision timed out after 180s".to_string()),
+    };
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
 
@@ -1128,9 +1133,6 @@ done"#,
 #[cfg(windows)]
 fn start_wsl_daemon_manager(app_handle: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        // Short delay to let the primary daemon stabilize
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
         // Read WSL settings
         // TODO: read from %APPDATA%\Crispy\settings.json for wslEnabled/wslDistro
 
@@ -1385,7 +1387,7 @@ pub fn run() {
             primary_daemon: None,
             wsl_daemon: None,
             is_quitting: false,
-            wsl_status: WslStatus::Detecting,
+            wsl_status: if cfg!(windows) { WslStatus::Detecting } else { WslStatus::NotFound },
         }))
         .setup(|app| {
             let app_handle = app.handle().clone();
