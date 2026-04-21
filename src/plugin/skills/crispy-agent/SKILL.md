@@ -28,7 +28,8 @@ Unified wrapper around `crispy-dispatch` (Crispy IPC) for multi-vendor dispatch:
 - Vendor selection via `--vendor` (default: `claude`)
 - Model selection via `--model` / `-m`
 - Session resume via `--resume` / `-r`
-- Default: no timeout, bypass approvals, sessions persisted, session kept alive for resume
+- Default: no timeout, bypass approvals, sessions persisted
+- **Sessions auto-close by default.** Pass `--no-auto-close` to keep the session alive for resume or iteration.
 - All output goes through Crispy host — sessions stream live in the UI
 
 ## Prerequisites
@@ -69,7 +70,8 @@ $CRISPY_AGENT --vendor codex --resume <UUID> "Continue"
 | `-m, --model <model>` | Model override |
 | `-r, --resume <UUID>` | Resume session by ID |
 | `--timeout <ms>` | Override timeout (default: no timeout) |
-| `--auto-close` | Close session on completion (default: kept alive) |
+| `--no-auto-close` | **Keep session alive after completion** (default: auto-close). Required when the user needs to resume, iterate, or continue the session. |
+| `--auto-close` | Close session on completion (this is the default — flag exists to make intent explicit) |
 | `-f, --fork` | Fork from session (requires `--resume`) |
 | `--resume-at <msg-id>` | Fork at specific message (requires `--fork`) |
 | `--no-persist` | Don't save session to disk (default: persist) |
