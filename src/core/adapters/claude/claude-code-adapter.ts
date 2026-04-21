@@ -466,6 +466,12 @@ export interface SessionInfo {
   lastUserPrompt?: string;
   vendor: 'claude';
   isSidechain?: boolean;
+  /** Short session title from the session_titles table (Rosie-generated). */
+  title?: string;
+  /** Title from JSONL `custom-title` entry (user-set via /rename). */
+  customTitle?: string;
+  /** Title from JSONL `ai-title` entry (SDK auto-generated). */
+  aiTitle?: string;
 }
 
 // ============================================================================
@@ -2042,6 +2048,8 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
         lastUserPrompt: meta?.lastUserPrompt,
         vendor: 'claude',
         isSidechain: meta?.isSidechain,
+        ...(meta?.customTitle && { customTitle: meta.customTitle }),
+        ...(meta?.aiTitle && { aiTitle: meta.aiTitle }),
         ...(gen3Title && { title: gen3Title }),
       });
     }
@@ -2095,6 +2103,8 @@ export function findSession(sessionId: string): SessionInfo | undefined {
       lastUserPrompt: meta?.lastUserPrompt,
       vendor: 'claude',
       isSidechain: meta?.isSidechain,
+      ...(meta?.customTitle && { customTitle: meta.customTitle }),
+      ...(meta?.aiTitle && { aiTitle: meta.aiTitle }),
       ...(gen3Title && { title: gen3Title }),
     };
   }

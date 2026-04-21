@@ -38,8 +38,20 @@ const PAGE_SIZE = MSG1_SLOTS + MSG2_SLOTS; // 9
 const SCREEN_IDLE_REFRESH_MS = 60_000;
 
 // Session display — mirrors webview/utils/session-display.ts (can't import from webview layer)
-function getSessionDisplayName(s: { title?: string; label?: string; lastUserPrompt?: string; sessionId: string }): string {
-  return s.title?.trim() || s.lastUserPrompt?.trim() || s.label?.trim() || s.sessionId.slice(0, 8) + '\u{2026}';
+export function getSessionDisplayName(s: {
+  customTitle?: string;
+  aiTitle?: string;
+  title?: string;
+  label?: string;
+  lastUserPrompt?: string;
+  sessionId: string;
+}): string {
+  return s.customTitle?.trim()
+    || s.title?.trim()
+    || s.aiTitle?.trim()
+    || s.lastUserPrompt?.trim()
+    || s.label?.trim()
+    || s.sessionId.slice(0, 8) + '\u{2026}';
 }
 
 // ---------------------------------------------------------------------------
@@ -391,7 +403,7 @@ async function handleOpen(channelId: string, args: string, ctx: CommandContext):
   }
 
   const lines = available.map((s, i) =>
-    `${i + 1}\u{FE0F}\u{20E3} ${(s.title ?? s.label ?? '(untitled)').slice(0, 60)} (\`${s.sessionId.slice(0, 8)}\`)`
+    `${i + 1}\u{FE0F}\u{20E3} ${getSessionDisplayName(s).slice(0, 60)} (\`${s.sessionId.slice(0, 8)}\`)`
   );
   await sendMessage(channelId, `\u{1F4C2} Sessions on disk:\n${lines.join('\n')}\n\nUse \`!open <id-prefix>\` to open one.`).catch(() => {});
 }

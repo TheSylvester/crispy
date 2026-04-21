@@ -1,13 +1,14 @@
 /**
  * Session Display — name and subtitle for session list items
  *
- * Title chain: title (Rosie-generated) > lastUserPrompt > label (first user prompt)
- * > truncated session ID. Matches Claude Code's behavior where lastPrompt ranks
- * above firstPrompt.
+ * Title chain: customTitle (user /rename) > title (Rosie-generated) > aiTitle
+ * (SDK auto-generated) > lastUserPrompt > label (first user prompt) > truncated
+ * session ID. User intent (explicit rename) wins; generic SDK fallback loses
+ * to last prompt because it's less specific.
  *
- * Subtitle: shows the *other* useful text that the title isn't already
- * displaying, falling back to lastMessage when no distinct prompt is available.
- * The two lines never show redundant content.
+ * Subtitle: picks the first candidate from [title, aiTitle, lastUser, label,
+ * lastMsg] that is distinct from whatever won line 1, so the two lines never
+ * show redundant content.
  *
  * @module session-display
  */
@@ -15,37 +16,39 @@
 import type { WireSessionInfo } from '../transport.js';
 
 export function getSessionDisplayName(
-  session: Pick<WireSessionInfo, 'title' | 'label' | 'lastUserPrompt' | 'sessionId'>,
+  session: Pick<
+    WireSessionInfo,
+    'customTitle' | 'aiTitle' | 'title' | 'label' | 'lastUserPrompt' | 'sessionId'
+  >,
 ): string {
-  return session.title?.trim()
+  return session.customTitle?.trim()
+    || session.title?.trim()
+    || session.aiTitle?.trim()
     || session.lastUserPrompt?.trim()
     || session.label?.trim()
     || session.sessionId.slice(0, 8) + '\u2026';
 }
 
 export function getSessionSubtitle(
-  session: Pick<WireSessionInfo, 'title' | 'label' | 'lastUserPrompt' | 'lastMessage'>,
+  session: Pick<
+    WireSessionInfo,
+    'customTitle' | 'aiTitle' | 'title' | 'label' | 'lastUserPrompt' | 'lastMessage'
+  >,
 ): string | null {
+  const customTitle = session.customTitle?.trim();
   const title = session.title?.trim();
-  const label = session.label?.trim();
+  const aiTitle = session.aiTitle?.trim();
   const lastUser = session.lastUserPrompt?.trim();
+  const label = session.label?.trim();
   const lastMsg = session.lastMessage?.trim();
 
-  // Line 2 shows whichever prompt Line 1 isn't showing
-  if (title) {
-    // Rosie title on line 1 — show first prompt as context
-    if (label && label !== title) return label;
-    if (lastMsg && lastMsg !== title) return lastMsg;
-    return null;
+  const displayed =
+    customTitle || title || aiTitle || lastUser || label;
+
+  const candidates = [title, aiTitle, lastUser, label, lastMsg];
+
+  for (const c of candidates) {
+    if (c && c !== displayed) return c;
   }
-  if (lastUser) {
-    // Last prompt on line 1 — show first prompt if different
-    if (label && label !== lastUser) return label;
-    // Fall back to lastMessage (may be assistant text) for context
-    if (lastMsg && lastMsg !== lastUser) return lastMsg;
-    return null;
-  }
-  // First prompt (label) is on line 1 — fall back to lastMessage
-  if (lastMsg && lastMsg !== label) return lastMsg;
   return null;
 }

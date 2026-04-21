@@ -125,13 +125,15 @@ export function SessionSelector({ onSelect, onClose }: SessionSelectorProps = {}
     if (!deferredQuery) return vendorFiltered;
     const q = deferredQuery.toLowerCase();
     return vendorFiltered.filter(s => {
+      const customTitleMatch = s.customTitle?.toLowerCase().includes(q) ?? false;
+      const aiTitleMatch = s.aiTitle?.toLowerCase().includes(q) ?? false;
       const titleMatch = s.title?.toLowerCase().includes(q) ?? false;
       const labelMatch = s.label?.toLowerCase().includes(q) ?? false;
       const previewMatch = s.lastMessage?.toLowerCase().includes(q) ?? false;
       const lastUserMatch = s.lastUserPrompt?.toLowerCase().includes(q) ?? false;
       const envMatch = s.remoteEnvironment?.toLowerCase().includes(q) ?? false;
       const pathMatch = s.projectPath?.toLowerCase().includes(q) ?? false;
-      return titleMatch || labelMatch || previewMatch || lastUserMatch || envMatch || pathMatch;
+      return customTitleMatch || aiTitleMatch || titleMatch || labelMatch || previewMatch || lastUserMatch || envMatch || pathMatch;
     });
   }, [vendorFiltered, deferredQuery]);
 

@@ -504,8 +504,19 @@ async function handleUserCreatedPost(threadId: string, forumChannelId: string, t
   let displayName = promptText.slice(0, 100).replace(/\n/g, ' ').trim();
   try {
     const sessionInfo = await currentDispatch.findSession(sessionId);
-    if (sessionInfo?.title || sessionInfo?.label) {
-      displayName = (sessionInfo.title ?? sessionInfo.label ?? displayName).slice(0, 100);
+    if (sessionInfo) {
+      // Mirrors getSessionDisplayName() but intentionally omits the session-ID
+      // fallback — Discord thread names should never be cryptic IDs; if no
+      // title is available we keep the promptText default from above.
+      const name =
+        sessionInfo.customTitle?.trim()
+        || sessionInfo.title?.trim()
+        || sessionInfo.aiTitle?.trim()
+        || sessionInfo.lastUserPrompt?.trim()
+        || sessionInfo.label?.trim();
+      if (name) {
+        displayName = name.slice(0, 100);
+      }
     }
   } catch {
     // Best effort — use prompt text as fallback

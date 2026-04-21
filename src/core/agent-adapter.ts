@@ -60,6 +60,10 @@ export interface SessionInfo {
   isSidechain?: boolean;
   /** Short session title from the session_titles table. */
   title?: string;
+  /** Title from JSONL `custom-title` entry (user-set via /rename). */
+  customTitle?: string;
+  /** Title from JSONL `ai-title` entry (SDK auto-generated). */
+  aiTitle?: string;
   /** 'user' = user-initiated session, 'system' = internal (Rosie, etc). */
   sessionKind?: 'user' | 'system';
   /** Remote environment label, e.g. "WSL · Ubuntu". Set by remote-proxy for proxied sessions. */
