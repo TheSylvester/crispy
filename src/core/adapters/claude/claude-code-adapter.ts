@@ -177,8 +177,17 @@ export interface ClaudeSessionOptions {
 
   // --- Model & thinking ---
 
-  /** Claude model to use */
+  /** Claude model to use — forwarded as `--model` to the CLI. Leave unset to
+   *  let the CLI pick its own default (which includes the `[1m]` 1M-context
+   *  append on accounts with 1M access). Only set this when the user has
+   *  explicitly picked a model — never from a disk-inferred value. */
   model?: string;
+  /** Inferred model-family marker for in-process capability gating only
+   *  (thinking config, diffNeedsRestart band compare). NEVER forwarded to
+   *  the CLI spawn args — that lets the CLI's default resolution stay
+   *  authoritative. Populated on resume/fork from disk or the live parent
+   *  adapter when the caller didn't pass an explicit `model`. */
+  capabilityHint?: string;
   /** Fallback model if primary fails */
   fallbackModel?: string;
   /**
@@ -660,8 +669,9 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     // "Default" that resolves to the same band doesn't cause a spurious restart).
     if (settings.model !== undefined && settings.model !== this.options.model) {
       const env = this.options.env ?? {};
-      const oldEffective = this.options.model || resolveCliDefaultModel(env);
-      const newEffective = settings.model || resolveCliDefaultModel(env);
+      const hint = this.options.capabilityHint;
+      const oldEffective = this.options.model || hint || resolveCliDefaultModel(env);
+      const newEffective = settings.model || hint || resolveCliDefaultModel(env);
       if (modelSupportsAdaptiveThinking(oldEffective) !== modelSupportsAdaptiveThinking(newEffective)) {
         return true;
       }
@@ -959,13 +969,16 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       ...(opts.persistSession !== undefined && { persistSession: opts.persistSession }),
       ...(opts.skipPersistSession && { persistSession: false }),
 
-      // Model & thinking — capability gate runs against the effective model
-      // (resolved CLI default when opts.model is empty) so a "Default" pick
-      // still lights up thinking when the CLI will pick an Opus.
+      // Model & thinking — the capability gate uses the effective-model
+      // resolution chain (explicit opts.model > capabilityHint > CLI default).
+      // `capabilityHint` never reaches the SDK — it's a local family-marker
+      // used only by the gate — so when the user didn't pick explicitly,
+      // we pass no `--model` and the CLI applies its own default (including
+      // the `[1m]` 1M-context append on accounts with 1M access).
       ...(opts.model && { model: opts.model }),
       ...(opts.fallbackModel && { fallbackModel: opts.fallbackModel }),
       ...((() => {
-        const effectiveModel = opts.model || resolveCliDefaultModel(opts.env ?? {});
+        const effectiveModel = opts.model || opts.capabilityHint || resolveCliDefaultModel(opts.env ?? {});
         const thinking = buildThinkingConfig({ ...opts, model: effectiveModel }, { supportsDisplay: this._cliSupportsDisplay });
         return thinking ? { thinking } : {};
       })()),

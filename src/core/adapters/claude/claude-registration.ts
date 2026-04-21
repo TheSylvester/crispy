@@ -71,11 +71,15 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
   return (spec) => {
     switch (spec.mode) {
       case 'resume': {
-        const model = getResumeModel(spec.sessionId);
+        // Recover a disk-inferred model family for the capability gate only.
+        // Explicit caller model (spec.model) still wins and is forwarded as
+        // --model; the inferred value only powers thinking-config decisions.
+        const inferredHint = spec.capabilityHint ?? getResumeModel(spec.sessionId);
         const sessionCwd = claudeDiscovery.findSession(spec.sessionId)?.projectPath ?? config.cwd;
         return new ClaudeAgentAdapter({
           ...getBase(), cwd: sessionCwd, resume: spec.sessionId,
-          ...(model && { model }),
+          ...(spec.model && { model: spec.model }),
+          ...(inferredHint && { capabilityHint: inferredHint }),
           ...(spec.env && { env: spec.env }),
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
         });
@@ -84,6 +88,7 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
         return new ClaudeAgentAdapter({
           ...getBase(), cwd: spec.cwd,
           ...(spec.model && { model: spec.model }),
+          ...(spec.capabilityHint && { capabilityHint: spec.capabilityHint }),
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
           ...(spec.allowDangerouslySkipPermissions && { allowDangerouslySkipPermissions: true }),
           ...(spec.extraArgs && { extraArgs: spec.extraArgs }),
@@ -96,12 +101,15 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
         });
       case 'fork': {
         const forkCwd = claudeDiscovery.findSession(spec.fromSessionId)?.projectPath ?? config.cwd;
+        const inferredHint = spec.capabilityHint
+          ?? getResumeModel(spec.fromSessionId, spec.atMessageId ? { upToUuid: spec.atMessageId } : undefined);
         return new ClaudeAgentAdapter({
           ...getBase(), cwd: forkCwd, resume: spec.fromSessionId, forkSession: true,
           ...(spec.atMessageId && { resumeSessionAt: spec.atMessageId }),
           ...(spec.skipPersistSession && { skipPersistSession: true }),
           ...(spec.outputFormat && { outputFormat: spec.outputFormat }),
           ...(spec.model && { model: spec.model }),
+          ...(inferredHint && { capabilityHint: inferredHint }),
           ...(spec.env && { env: spec.env }),
           ...(spec.systemPrompt && {
             systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append: spec.systemPrompt },
@@ -118,6 +126,7 @@ function createFactory(config: HostAdapterConfig): (spec: SessionOpenSpec) => Ag
           ...getBase(), cwd: spec.cwd,
           hydratedHistory: spec.history,
           ...(spec.model && { model: spec.model }),
+          ...(spec.capabilityHint && { capabilityHint: spec.capabilityHint }),
           ...(spec.permissionMode && { permissionMode: spec.permissionMode }),
           ...(spec.skipPersistSession && { skipPersistSession: true }),
           ...(spec.env && { env: spec.env }),

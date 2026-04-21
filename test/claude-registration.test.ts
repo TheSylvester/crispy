@@ -100,7 +100,10 @@ describe('claudeRegistration', () => {
   // --------------------------------------------------------------------------
 
   describe('createFactory()', () => {
-    it('resume mode passes correct args to ClaudeAgentAdapter', async () => {
+    it('resume mode routes getResumeModel value to capabilityHint, not model', async () => {
+      // Regression guard: the disk-inferred model drives the thinking-config
+      // capability gate but must never be forwarded as `--model`, otherwise
+      // the CLI's own default (including the `[1m]` 1M append) gets clobbered.
       const { claudeRegistration } = await freshImport();
       const config: HostAdapterConfig = {
         cwd: '/workspace',
@@ -115,8 +118,26 @@ describe('claudeRegistration', () => {
         pathToClaudeCodeExecutable: '/usr/bin/claude',
         cwd: '/workspace',
         resume: 'sess-123',
-        model: 'claude-sonnet',
+        capabilityHint: 'claude-sonnet',
       });
+      const args = MockClaudeAgentAdapter.mock.calls[0][0];
+      expect(args).not.toHaveProperty('model');
+    });
+
+    it('resume mode forwards explicit spec.model as --model, keeps capabilityHint for gate', async () => {
+      const { claudeRegistration } = await freshImport();
+      const config: HostAdapterConfig = {
+        cwd: '/workspace',
+        pathToClaudeCodeExecutable: '/usr/bin/claude',
+      };
+      mockGetResumeModel.mockReturnValue('claude-opus-4-7');
+
+      const factory = claudeRegistration.createFactory(config);
+      factory({ mode: 'resume', sessionId: 'sess-123', model: 'claude-sonnet-4-6' });
+
+      const args = MockClaudeAgentAdapter.mock.calls[0][0];
+      expect(args.model).toBe('claude-sonnet-4-6');
+      expect(args.capabilityHint).toBe('claude-opus-4-7');
     });
 
     it('fresh mode uses spec.cwd, not config.cwd', async () => {
@@ -249,7 +270,7 @@ describe('claudeRegistration', () => {
       expect(constructorArgs.cwd).toBe('/workspace');
     });
 
-    it('resume mode omits model when getResumeModel returns undefined', async () => {
+    it('resume mode omits both model and capabilityHint when getResumeModel returns undefined', async () => {
       const { claudeRegistration } = await freshImport();
       const config: HostAdapterConfig = {
         cwd: '/workspace',
@@ -262,6 +283,7 @@ describe('claudeRegistration', () => {
 
       const constructorArgs = MockClaudeAgentAdapter.mock.calls[0][0];
       expect(constructorArgs).not.toHaveProperty('model');
+      expect(constructorArgs).not.toHaveProperty('capabilityHint');
     });
   });
 });

@@ -85,4 +85,17 @@ describe('diffNeedsRestart — capability band change', () => {
     const a = track(make({ model: 'claude-opus-4-7' }));
     expect(needsRestart(a, {})).toBe(false);
   });
+
+  it('capabilityHint fills in when options.model is empty (band compare uses hint)', () => {
+    // Resume with no explicit model but an Opus capabilityHint: swapping to an
+    // explicit Opus should stay in-band, not trigger a spurious restart.
+    const a = track(make({ capabilityHint: 'claude-opus-4-7' }));
+    expect(needsRestart(a, { model: 'claude-opus-4-7' })).toBe(false);
+  });
+
+  it('capabilityHint vs explicit cross-band still triggers restart', () => {
+    // Opus hint + swap to Sonnet = capable → non-capable, must restart.
+    const a = track(make({ capabilityHint: 'claude-opus-4-7' }));
+    expect(needsRestart(a, { model: 'claude-sonnet-4-6' })).toBe(true);
+  });
 });

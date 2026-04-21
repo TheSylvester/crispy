@@ -1187,7 +1187,7 @@ export function createSession(
   vendor: Vendor,
   cwd: string,
   subscriber: Subscriber,
-  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; allowDangerouslySkipPermissions?: boolean; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' },
+  options?: { model?: string; capabilityHint?: string; permissionMode?: TurnSettings['permissionMode']; allowDangerouslySkipPermissions?: boolean; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' },
   explicitPendingId?: string,
 ): PendingChannelResult {
   if (!adapters.has(vendor)) {
@@ -1198,6 +1198,7 @@ export function createSession(
     mode: 'fresh',
     cwd,
     ...(options?.model && { model: options.model }),
+    ...(options?.capabilityHint && { capabilityHint: options.capabilityHint }),
     ...(options?.permissionMode && { permissionMode: options.permissionMode }),
     ...(options?.allowDangerouslySkipPermissions && { allowDangerouslySkipPermissions: true }),
     ...(options?.extraArgs && { extraArgs: options.extraArgs }),
@@ -1305,12 +1306,14 @@ export async function createForkSession(
     log({ source: 'session', level: 'warn', summary: `Failed to pre-load fork history`, data: { fromSessionId, error: String(err) } });
   }
 
-  // Resolve fork model: explicit caller setting > live parent's adapter > disk fallback.
-  // Without this fallback, forks of Crispy-tracked sessions inherit no model and
-  // the CLI starts with its default (Opus 4.7) — but without our thinking flags.
+  // Fork model resolution splits explicit vs inferred:
+  //  - `spec.model` carries the user's explicit choice only (becomes --model).
+  //  - `spec.capabilityHint` carries the inherited family marker (live parent
+  //    adapter > disk fallback) and powers the thinking-config gate without
+  //    being forwarded to the CLI. Leaving --model unset on forks that share
+  //    the parent's family lets the CLI default kick in (including `[1m]`).
   const liveParent = sessions.get(fromSessionId);
-  const resolvedForkModel =
-    options?.settings?.model ||
+  const inferredHint =
     liveParent?.adapter?.settings?.model ||
     reg.discovery.resolveModelForSession?.(fromSessionId, options?.atMessageId ? { upToUuid: options.atMessageId } : undefined);
 
@@ -1318,7 +1321,8 @@ export async function createForkSession(
     mode: 'fork',
     fromSessionId,
     ...(options?.atMessageId && { atMessageId: options.atMessageId }),
-    ...(resolvedForkModel && { model: resolvedForkModel }),
+    ...(options?.settings?.model && { model: options.settings.model }),
+    ...(inferredHint && { capabilityHint: inferredHint }),
     ...(options?.settings?.permissionMode && { permissionMode: options.settings.permissionMode }),
     ...(options?.settings?.allowDangerouslySkipPermissions && { allowDangerouslySkipPermissions: true }),
     ...(options?.settings?.outputFormat && { outputFormat: options.settings.outputFormat }),
@@ -1446,16 +1450,17 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
       }
       if (!cwd) cwd = normalizePath(defaultCwd);
 
-      // Inherit model from parent session when same vendor and no explicit model.
-      // Falls back to disk lookup when the live adapter has no model (the resume
-      // path constructs adapters with empty options.model — adapter.settings only
-      // gets populated after the SDK init message arrives).
-      let inheritedModel: string | undefined;
+      // Inherit parent's model family as a capability hint (not a spawn arg)
+      // when the caller didn't pick one explicitly. The hint powers thinking
+      // config and band compares without overriding the CLI's own default
+      // resolution — so dispatched children of a `[1m]` parent still get the
+      // CLI's 1M-context append instead of being forced into 200K.
+      let capabilityHint: string | undefined;
       if (!intent.settings.model && intent.target.parentSessionId) {
         const parentChannel = sessions.get(intent.target.parentSessionId);
         if (parentChannel?.adapter?.vendor === intent.target.vendor) {
           const discovery = adapters.get(intent.target.vendor as Vendor)?.discovery;
-          inheritedModel =
+          capabilityHint =
             parentChannel.adapter.settings?.model
             ?? discovery?.resolveModelForSession?.(intent.target.parentSessionId);
         }
@@ -1466,8 +1471,8 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
         cwd,
         subscriber,
         {
-          ...(inheritedModel && { model: inheritedModel }),
           ...intent.settings,
+          ...(capabilityHint && { capabilityHint }),
           ...(intent.target.skipPersistSession && { skipPersistSession: true }),
           ...(intent.target.mcpServers && { mcpServers: intent.target.mcpServers }),
           ...(intent.target.env && { env: intent.target.env }),
