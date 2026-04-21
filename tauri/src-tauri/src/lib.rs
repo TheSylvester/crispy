@@ -282,9 +282,12 @@ fn is_process_alive(pid: u32) -> bool {
     }
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
         use std::process::Command;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         Command::new("tasklist")
             .args(["/FI", &format!("PID eq {}", pid), "/NH"])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .map(|o| {
                 let out = String::from_utf8_lossy(&o.stdout);
@@ -306,9 +309,12 @@ fn kill_daemon_signal(pid: u32, _force: bool) {
     }
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         // taskkill /F is always forceful on Windows
         let _ = Command::new("taskkill")
             .args(["/F", "/T", "/PID", &pid.to_string()])
+            .creation_flags(CREATE_NO_WINDOW)
             .status();
     }
 }

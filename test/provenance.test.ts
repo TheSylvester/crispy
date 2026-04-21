@@ -177,28 +177,28 @@ describe('scanProvenanceEntries', () => {
 });
 
 // ============================================================================
-// matchCommits — mocked execSync
+// matchCommits — mocked execFileSync
 // ============================================================================
 
 vi.mock('node:child_process', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:child_process')>();
-  return { ...original, execSync: vi.fn(original.execSync) };
+  return { ...original, execFileSync: vi.fn(original.execFileSync) };
 });
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { matchCommits } from '../src/core/provenance/matcher.js';
 import type { GitCommitCommand } from '../src/core/provenance/types.js';
 
-const mockExecSync = vi.mocked(execSync);
+const mockExecFileSync = vi.mocked(execFileSync);
 
 describe('matchCommits', () => {
   afterEach(() => {
-    mockExecSync.mockReset();
-    mockExecSync.mockRestore();
+    mockExecFileSync.mockReset();
+    mockExecFileSync.mockRestore();
   });
   beforeEach(() => {
     // Re-attach the mock after restore
-    vi.mocked(execSync).mockReset();
+    vi.mocked(execFileSync).mockReset();
   });
 
   const cmd: GitCommitCommand = {
@@ -211,7 +211,7 @@ describe('matchCommits', () => {
   };
 
   it('matches exact message at confidence 1.0', () => {
-    mockExecSync.mockReturnValue('abc123\nfeat: add feature\nAuthor\n2025-01-15T10:00:05Z\n');
+    mockExecFileSync.mockReturnValue('abc123\nfeat: add feature\nAuthor\n2025-01-15T10:00:05Z\n');
     const result = matchCommits('/repo', [cmd], '/session.jsonl', 'sess-1');
     expect(result).toHaveLength(1);
     expect(result[0].sha).toBe('abc123');
@@ -219,32 +219,32 @@ describe('matchCommits', () => {
   });
 
   it('matches prefix at 0.95', () => {
-    mockExecSync.mockReturnValue('sha1\nfeat: add feature with extras\nA\n2025-01-15T10:00:05Z\n');
+    mockExecFileSync.mockReturnValue('sha1\nfeat: add feature with extras\nA\n2025-01-15T10:00:05Z\n');
     expect(matchCommits('/repo', [cmd], '/s', null)[0].matchConfidence).toBe(0.95);
   });
 
   it('matches contains at 0.85', () => {
-    mockExecSync.mockReturnValue('sha2\nchore: feat: add feature in module\nA\n2025-01-15T10:00:05Z\n');
+    mockExecFileSync.mockReturnValue('sha2\nchore: feat: add feature in module\nA\n2025-01-15T10:00:05Z\n');
     expect(matchCommits('/repo', [cmd], '/s', null)[0].matchConfidence).toBe(0.85);
   });
 
   it('matches timestamp-only at 0.6', () => {
-    mockExecSync.mockReturnValue('sha3\ncompletely different\nA\n2025-01-15T10:00:05Z\n');
+    mockExecFileSync.mockReturnValue('sha3\ncompletely different\nA\n2025-01-15T10:00:05Z\n');
     expect(matchCommits('/repo', [cmd], '/s', null)[0].matchConfidence).toBe(0.6);
   });
 
   it('returns nothing on empty output', () => {
-    mockExecSync.mockReturnValue('');
+    mockExecFileSync.mockReturnValue('');
     expect(matchCommits('/repo', [cmd], '/s', null)).toHaveLength(0);
   });
 
   it('skips commands without timestamp', () => {
     expect(matchCommits('/repo', [{ ...cmd, timestamp: null }], '/s', null)).toHaveLength(0);
-    expect(mockExecSync).not.toHaveBeenCalled();
+    expect(mockExecFileSync).not.toHaveBeenCalled();
   });
 
-  it('handles execSync errors gracefully', () => {
-    mockExecSync.mockImplementation(() => { throw new Error('fail'); });
+  it('handles execFileSync errors gracefully', () => {
+    mockExecFileSync.mockImplementation(() => { throw new Error('fail'); });
     expect(matchCommits('/repo', [cmd], '/s', null)).toHaveLength(0);
   });
 });

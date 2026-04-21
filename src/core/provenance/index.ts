@@ -8,7 +8,7 @@
  */
 
 import * as fs from 'node:fs';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { scanProvenanceEntries } from './scanner.js';
 import { matchCommits, getCommitFileChanges } from './matcher.js';
 import {
@@ -149,8 +149,8 @@ export function runProvenanceScan(sessions: SessionInfo[]): void {
 
     // Save repo HEAD state — once per repo, not per session group
     try {
-      const head = execSync('git rev-parse HEAD', {
-        cwd: repoPath, timeout: 5000, encoding: 'utf-8',
+      const head = execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: repoPath, timeout: 5000, encoding: 'utf-8', windowsHide: true,
       }).trim();
       saveRepoState(repoPath, head);
     } catch { /* skip */ }

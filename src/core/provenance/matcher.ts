@@ -3,12 +3,12 @@
  *
  * For each `git commit` Bash command found in a transcript, queries the
  * repo's git log in a narrow time window and matches by commit message.
- * Uses execSync with timeout for safety.
+ * Uses execFileSync (no shell) with timeout for safety.
  *
  * @module provenance/matcher
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import type { GitCommitCommand, MatchedCommit, CommitFileChange } from './types.js';
 
 /**
@@ -33,9 +33,10 @@ export function matchCommits(
       const before = new Date(ts.getTime() + 60_000).toISOString();
       const after = new Date(ts.getTime() - 30_000).toISOString();
 
-      const output = execSync(
-        `git log --format="%H%n%s%n%aN%n%aI%n" --after="${after}" --before="${before}"`,
-        { cwd: repoPath, timeout: 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+      const output = execFileSync(
+        'git',
+        ['log', '--format=%H%n%s%n%aN%n%aI%n', `--after=${after}`, `--before=${before}`],
+        { cwd: repoPath, timeout: 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true },
       ).trim();
 
       if (!output) continue;
@@ -136,9 +137,10 @@ function findBestMatch(candidates: Candidate[], extractedMessage: string | null)
  */
 export function getCommitFileChanges(repoPath: string, sha: string): CommitFileChange[] {
   try {
-    const output = execSync(
-      `git diff --numstat ${sha}~1 ${sha}`,
-      { cwd: repoPath, timeout: 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] },
+    const output = execFileSync(
+      'git',
+      ['diff', '--numstat', `${sha}~1`, sha],
+      { cwd: repoPath, timeout: 5000, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true },
     ).trim();
 
     if (!output) return [];

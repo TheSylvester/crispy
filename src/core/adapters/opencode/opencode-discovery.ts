@@ -55,6 +55,7 @@ async function queryDb<T>(dbPath: string, sql: string): Promise<T[]> {
     const { stdout } = await execFileAsync('sqlite3', ['-json', dbPath, sql], {
       encoding: 'utf-8',
       timeout: 10_000,
+      windowsHide: true,
     });
 
     const trimmed = stdout.trim();
@@ -175,7 +176,7 @@ class OpenCodeDiscovery implements VendorDiscovery {
       const partsJson = execFileSync('sqlite3', [
         '-json', dbPath,
         `SELECT p.id, p.message_id, p.session_id, p.data FROM part p INNER JOIN message m ON p.message_id = m.id WHERE m.session_id = '${escapeSql(agentId)}' ORDER BY m.time_created ASC, p.id ASC LIMIT 100 OFFSET ${offset}`,
-      ], { encoding: 'utf-8', timeout: 10_000 }).trim();
+      ], { encoding: 'utf-8', timeout: 10_000, windowsHide: true }).trim();
 
       if (!partsJson || partsJson === '[]') {
         return { entries: [], cursor: String(offset), done: true };
