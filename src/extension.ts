@@ -21,7 +21,7 @@ import { initRecallIngest, shutdownRecallIngest } from './core/recall/ingest-hoo
 import { startRecallCatchup, stopEmbeddingBackfill } from './core/recall/catchup-manager.js';
 import { disposeEmbedder } from './core/recall/embedder.js';
 import { startIpcServer, getSocketPath } from './host/ipc-server.js';
-import { setHostSocketPath, setDefaultCwd } from './core/session-manager.js';
+import { setHostSocketPath, setDefaultCwd, closeSession } from './core/session-manager.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const bootStart = performance.now();
@@ -145,7 +145,12 @@ export function activate(context: vscode.ExtensionContext): void {
     const panel = createCrispyPanel(context, column, { autoClose: options?.autoClose });
     sessionPanels.set(sessionId, panel);
     panel.onDidDispose(() => {
-      if (sessionPanels.get(sessionId) === panel) sessionPanels.delete(sessionId);
+      if (sessionPanels.get(sessionId) === panel) {
+        sessionPanels.delete(sessionId);
+        // Mark the child session closed so it won't replay into new editor
+        // windows via subscribeSessionList → getOpenVisibleChildren.
+        closeSession(sessionId);
+      }
     });
     const msg = { kind: 'openSession', sessionId };
     const delays = [100, 500, 1500];
