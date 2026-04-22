@@ -73,6 +73,9 @@ For each child, read the transcript via `readSessionTurns`:
 $CRISPY_DISPATCH rpc readSessionTurns '{"sessionId": "<child-session-id>"}'
 ```
 
+Returns `{ turns: [...] }` where each turn has `turn`, `user`, and
+`assistant` fields. `turn` is a 1-indexed number stable for the session ID.
+
 Extract the final assistant response from the last turn. This is the
 agent's analysis output.
 

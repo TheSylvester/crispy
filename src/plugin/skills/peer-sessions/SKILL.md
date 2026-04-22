@@ -76,8 +76,8 @@ $CRISPY_DISPATCH rpc readSessionTurns '{"sessionId":"<uuid>","from":N}'
 $CRISPY_DISPATCH rpc readSessionTurns '{"sessionId":"<uuid>","from":3,"to":5}'
 ```
 
-Returns `{ turn, user, assistant }[]` — `turn` is a 1-indexed number
-that's stable for a given session ID.
+Returns `{ turns: { turn, user, assistant }[] }` — `turn` is a 1-indexed
+number that's stable for a given session ID.
 
 **Incremental read pattern:**
 
@@ -86,8 +86,8 @@ that's stable for a given session ID.
 LAST=0
 while :; do
   NEW=$($CRISPY_DISPATCH rpc readSessionTurns "{\"sessionId\":\"$SID\",\"from\":$((LAST+1))}")
-  # ... process NEW ...
-  LAST=$(echo "$NEW" | jq 'map(.turn) | max // '$LAST)
+  # ... process NEW.turns ...
+  LAST=$(echo "$NEW" | jq '.turns | map(.turn) | max // '$LAST)
   sleep 5
 done
 ```

@@ -59,6 +59,7 @@ import {
 } from './session-channel.js';
 import { refreshAndNotify, notifyStatusChange, broadcastCloseChannel, broadcastOpenChannel } from './session-list-manager.js';
 import { fireResponseComplete } from './lifecycle-hooks.js';
+import { ingestAndEmbedSession } from './recall/ingest-hook.js';
 import { log } from './log.js';
 import { isSystemSession, setSessionKind } from './activity-index.js';
 import { getRemoteSessions } from './remote-proxy.js';
@@ -108,6 +109,15 @@ const pendingToReal = new Map<string, string>();
  *  resolving. If 'active' fires within the window, the timer resets.
  *  Prevents spurious early resolution in multi-step agent work. */
 const IDLE_SETTLE_MS = 2000;
+
+/** Ceiling for how long to wait in `background` status before force-resolving
+ *  a dispatch. If an adapter emits `status=background` (e.g. Claude SDK with
+ *  a run_in_background bash still running at end of turn), the dispatcher
+ *  would otherwise wait forever. Env-overridable for tuning. */
+const BACKGROUND_CEILING_MS = (() => {
+  const raw = Number(process.env.CRISPY_BACKGROUND_CEILING_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 60_000;
+})();
 
 export interface ChildSessionOptions {
   /** Session that's spawning this child. */
@@ -231,6 +241,7 @@ const childSessions = new Map<string, {
   autoClose: boolean;
   visible: boolean;
   closed?: boolean;
+  sessionKind?: 'user' | 'system';
 }>();
 
 /** Check if a session was spawned by dispatchChildSession or registered as a child
@@ -247,7 +258,7 @@ export function isChildSession(sessionId: string): boolean {
  */
 export function registerChildSession(
   sessionId: string,
-  meta: { parentSessionId: string; autoClose: boolean; visible: boolean; closed?: boolean },
+  meta: { parentSessionId: string; autoClose: boolean; visible: boolean; closed?: boolean; sessionKind?: 'user' | 'system' },
 ): void {
   childSessions.set(sessionId, meta);
 }
@@ -746,11 +757,25 @@ function wireLifecycleHooks(channel: SessionChannel): void {
     const sessionId = channel.adapter?.sessionId;
     if (!sessionId) return;
     const childMeta = childSessions.get(sessionId);
-    if (childMeta && !childMeta.visible) return;
+    if (childMeta && !childMeta.visible) {
+      // 150ms matches root branch: JSONL flush is async, ingest reads from disk.
+      // Route ingest around fireResponseComplete — its child-session guard
+      // (lifecycle-hooks.ts) is load-bearing to prevent Rosie recursion.
+      // Skip system children (Rosie tracker etc.) — their sessionKind persists
+      // async, so isSystemSession() inside ingestAndEmbedSession races the
+      // rekey handler. childMeta.sessionKind is synchronous and reliable.
+      if (childMeta.sessionKind !== 'system') {
+        setTimeout(() => { ingestAndEmbedSession(sessionId); }, 150);
+      }
+      return;
+    }
     if (childMeta?.visible) {
       setTimeout(() => {
         const currentId = channel.adapter?.sessionId ?? sessionId;
         refreshAndNotify(currentId);
+        if (childMeta.sessionKind !== 'system') {
+          ingestAndEmbedSession(currentId);
+        }
         if (childMeta.autoClose) {
           broadcastCloseChannel(currentId);
           closeSession(currentId);
@@ -1557,10 +1582,12 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
   // dispatchChildSession manages its own childSessions map — only the IPC path sets
   // intent.parentSessionId, so this block won't fire for internal callers.
   if (intent.parentSessionId) {
+    const targetSessionKindForRegister = 'sessionKind' in intent.target ? (intent.target as { sessionKind?: 'user' | 'system' }).sessionKind : undefined;
     registerChildSession(sessionId, {
       parentSessionId: intent.parentSessionId,
       autoClose: !!intent.autoClose,
       visible: !!intent.visible,
+      sessionKind: targetSessionKindForRegister,
     });
 
     if (rekeyPromise) {
@@ -1783,6 +1810,7 @@ export async function dispatchChildSession(
     let rekeyPromise: Promise<string> | undefined;
     // Idle debounce timer — prevents spurious early resolution (fix #8)
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    let backgroundTimer: ReturnType<typeof setTimeout> | null = null;
     // Token accumulators — sum per-entry usage for accurate totals (Claude)
     const tokenAcc: ChildTokenAccumulator = { input: 0, output: 0, cacheRead: 0 };
 
@@ -1792,6 +1820,7 @@ export async function dispatchChildSession(
     const timer = timeoutMs > 0 ? setTimeout(() => {
       if (!settled) {
         if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+        if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
         const parts: string[] = [];
         if (lastError) parts.push(`error: ${lastError}`);
         parts.push(`entries: [${entryTypes.join(', ')}]`);
@@ -1821,6 +1850,7 @@ export async function dispatchChildSession(
     const cleanup = (force = false) => {
       if (timer) clearTimeout(timer);
       if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+      if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
       const shouldClose = autoClose || force;
       // Clean up both pendingId and currentId to handle the rekey race —
       // if timeout fires mid-rekey, currentId may differ from pendingId.
@@ -1921,6 +1951,14 @@ export async function dispatchChildSession(
         // Stream entries to caller via onEntry callback
         options.onEntry?.(msg);
 
+        // Any non-background status means the child is no longer stalled in
+        // background — clear the ceiling. Handles active/idle/awaiting_approval
+        // uniformly (awaiting_approval can block for human input far longer
+        // than the ceiling, so we must not force-resolve).
+        if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status !== 'background') {
+          if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
+        }
+
         // Idle debounce: wait IDLE_SETTLE_MS after idle before resolving.
         // Cancels if 'active' fires (agent starting another tool round).
         // Prevents spurious early resolution in multi-step agent work (fix #8).
@@ -1952,7 +1990,7 @@ export async function dispatchChildSession(
           if (!autoClose && rekeyPromise) {
             rekeyPromise.then((realId) => {
               childSessions.delete(pendingId);
-              childSessions.set(realId, { parentSessionId, autoClose, visible: !!options.openChannel });
+              childSessions.set(realId, { parentSessionId, autoClose, visible: !!options.openChannel, sessionKind: options.sessionKind });
               finalize(realId);
             }).catch(() => finalize(currentId));
           } else {
@@ -1982,12 +2020,31 @@ export async function dispatchChildSession(
             awaitRekeyThenFinalize();
           }, IDLE_SETTLE_MS);
         }
+
+        // Ceiling respects `timeoutMs: 0` (indefinite-wait callers like
+        // Rosie tracker): if the outer safety-net timer is disabled, the
+        // background ceiling is disabled too.
+        if (timeoutMs > 0 && msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'background') {
+          if (backgroundTimer) clearTimeout(backgroundTimer);
+          backgroundTimer = setTimeout(() => {
+            if (settled) return;
+            log({
+              source: 'session-manager:dispatch',
+              level: 'warn',
+              summary: `background ceiling reached — forcing resolve (parent: ${parentSessionId}, child: ${currentId})`,
+            });
+            settled = true;
+            if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+            if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
+            awaitRekeyThenFinalize();
+          }, BACKGROUND_CEILING_MS);
+        }
       },
     };
 
     // Register the pending ID as a child session before sendTurn so cleanup
     // always has something to work with.
-    childSessions.set(pendingId, { parentSessionId, autoClose, visible: !!options.openChannel });
+    childSessions.set(pendingId, { parentSessionId, autoClose, visible: !!options.openChannel, sessionKind: options.sessionKind });
 
     // Fire the turn with the explicit pending ID
     const promptLen = typeof prompt === 'string' ? prompt.length : Array.isArray(prompt) ? prompt.reduce((n, b) => n + ((b as { text?: string }).text?.length ?? 0), 0) : 0;
@@ -1999,7 +2056,7 @@ export async function dispatchChildSession(
         currentId = result.sessionId;
         // Migrate child tracking from pending to real ID
         childSessions.delete(pendingId);
-        childSessions.set(currentId, { parentSessionId, autoClose, visible: !!options.openChannel });
+        childSessions.set(currentId, { parentSessionId, autoClose, visible: !!options.openChannel, sessionKind: options.sessionKind });
 
         // Handle pending->real ID re-keying
         if (result.rekeyPromise) {
@@ -2007,7 +2064,7 @@ export async function dispatchChildSession(
           result.rekeyPromise.then((realId) => {
             if (settled) return;
             childSessions.delete(currentId);
-            childSessions.set(realId, { parentSessionId, autoClose, visible: !!options.openChannel });
+            childSessions.set(realId, { parentSessionId, autoClose, visible: !!options.openChannel, sessionKind: options.sessionKind });
             currentId = realId;
             // Persist session kind so system sessions stay hidden across restarts
             if (options.sessionKind) {
@@ -2098,6 +2155,7 @@ export async function resumeChildSession(
     let structured: unknown;
     let settled = false;
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    let backgroundTimer: ReturnType<typeof setTimeout> | null = null;
     // Token accumulators — sum per-entry usage for accurate totals (Claude)
     const tokenAcc: ChildTokenAccumulator = { input: 0, output: 0, cacheRead: 0 };
 
@@ -2107,6 +2165,7 @@ export async function resumeChildSession(
     const timer = timeoutMs > 0 ? setTimeout(() => {
       if (!settled) {
         if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+        if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
         const parts: string[] = [];
         if (lastError) parts.push(`error: ${lastError}`);
         parts.push(`entries: [${entryTypes.join(', ')}]`);
@@ -2129,6 +2188,7 @@ export async function resumeChildSession(
     const cleanup = () => {
       if (timer) clearTimeout(timer);
       if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+      if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
       const ch = getChannel(sessionId);
       if (ch) {
         unsubscribe(ch, internalSubscriber);
@@ -2192,6 +2252,11 @@ export async function resumeChildSession(
         // Stream entries to caller via onEntry callback
         onEntry?.(msg);
 
+        // Any non-background status clears the ceiling — see dispatchChildSession.
+        if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status !== 'background') {
+          if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
+        }
+
         // Idle debounce (fix #8)
         if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'active') {
           if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
@@ -2229,6 +2294,22 @@ export async function resumeChildSession(
             settled = true;
             finalizeResume();
           }, IDLE_SETTLE_MS);
+        }
+
+        if (timeoutMs > 0 && msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'background') {
+          if (backgroundTimer) clearTimeout(backgroundTimer);
+          backgroundTimer = setTimeout(() => {
+            if (settled) return;
+            log({
+              source: 'session-manager:resume',
+              level: 'warn',
+              summary: `background ceiling reached — forcing resolve (session: ${sessionId})`,
+            });
+            settled = true;
+            if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+            if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
+            finalizeResume();
+          }, BACKGROUND_CEILING_MS);
         }
       },
     };

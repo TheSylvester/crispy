@@ -79,7 +79,7 @@ import { getGitFiles, getGitBranchInfo, fileExists, readImage, readTextFile } fr
 import { getGitDiff } from "../core/git-diff-service.js";
 import { getLineage, getChildSessions, getLineageGraph, dbPath, setSessionTitle } from '../core/activity-index.js';
 import { refreshAndNotify } from '../core/session-list-manager.js';
-import { getProjectsWithDetails, getProjectActivity, updateProjectStage, updateProjectSortOrder, reorderProjectsInStage, getStages, getValidStageNames, writeTrackerResults, mergeProjects, extractTurnsFromMessages, getProjectTitle } from '../core/rosie/tracker/index.js';
+import { getProjectsWithDetails, getProjectActivity, updateProjectStage, updateProjectSortOrder, reorderProjectsInStage, getStages, getValidStageNames, writeTrackerResults, mergeProjects, extractTurns, extractTurnsFromMessages, getProjectTitle } from '../core/rosie/tracker/index.js';
 import type { TrackerBlock } from '../core/rosie/tracker/index.js';
 import { getDb } from '../core/crispy-db.js';
 import {
@@ -433,11 +433,20 @@ export function createClientConnection(
       case "readSessionTurns": {
         const sid = params.sessionId as string;
         const page = readSessionMessages(sid, 0, 10000);
-        if (!page) return [];
-        const allTurns = extractTurnsFromMessages(page.messages);
+
+        // Fallback when ingest hasn't caught up yet (JSONL flush lag or
+        // recall-ingest still running): read transcript directly from disk.
+        let allTurns;
+        if (page) {
+          allTurns = extractTurnsFromMessages(page.messages);
+        } else {
+          const entries = await loadSession(sid);
+          allTurns = extractTurns(entries);
+        }
+
         const from = (params.from as number | undefined) ?? 1;
         const to = (params.to as number | undefined) ?? allTurns.length;
-        return allTurns.filter(t => t.turn >= from && t.turn <= to);
+        return { turns: allTurns.filter(t => t.turn >= from && t.turn <= to) };
       }
 
       case "listChildSessions": {
