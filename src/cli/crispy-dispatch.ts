@@ -19,9 +19,8 @@
  */
 
 import { connect, type Socket } from 'node:net';
-import { join, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 import {
   EXIT_OK, EXIT_APPROVAL, EXIT_TIMEOUT, EXIT_TRANSPORT, EXIT_USAGE,
@@ -275,8 +274,6 @@ Environment:
 // Main
 // ============================================================================
 
-const OUTPUT_DIR = join(tmpdir(), 'crispy-agents');
-
 async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) return '';
   const chunks: Buffer[] = [];
@@ -332,14 +329,6 @@ async function main(): Promise<void> {
     }
   }
 
-  // Set up output file
-  let outputFile: string | null = null;
-  try {
-    mkdirSync(OUTPUT_DIR, { recursive: true });
-    outputFile = join(OUTPUT_DIR, `crispy-dispatch-${Date.now()}-${process.pid}.log`);
-    if (args.debug) console.error(`[output_file: ${outputFile}]`);
-  } catch { /* best-effort */ }
-
   // Build settings
   const settings: Record<string, unknown> = {};
   if (args.model) settings.model = args.model;
@@ -393,7 +382,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    await runMode(router, args, prompt!, settings, outputFile);
+    await runMode(router, args, prompt!, settings);
   } catch (err) {
     emitResult({
       status: 'error',
@@ -411,48 +400,11 @@ async function main(): Promise<void> {
 // Unified Mode — all dispatches via sendTurn RPC with client-side event streaming
 // ============================================================================
 
-/** Format a channel message for log file streaming (matches server-side formatLogEntry). */
-function formatLogEntry(event: Record<string, unknown>): string | null {
-  const d = new Date();
-  const ts = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-
-  if (event.type === 'entry' && event.entry) {
-    const entry = event.entry as { type?: string; message?: { content?: unknown } };
-    if (entry.type === 'assistant' && entry.message) {
-      const content = entry.message.content;
-      if (Array.isArray(content)) {
-        const texts: string[] = [];
-        for (const block of content) {
-          if (block.type === 'text' && block.text) texts.push(block.text);
-          else if (block.type === 'tool_use') texts.push(`[tool: ${(block as { name?: string }).name ?? '?'}]`);
-        }
-        return texts.length > 0 ? `[${ts}] ${texts.join(' ')}` : null;
-      }
-      if (typeof content === 'string') return `[${ts}] ${content}`;
-    }
-    if (entry.type === 'result' && entry.message) {
-      const content = entry.message.content;
-      let text = '';
-      if (Array.isArray(content)) {
-        for (const block of content) {
-          if (block.type === 'text' && block.text) text += block.text;
-        }
-      } else if (typeof content === 'string') {
-        text = content;
-      }
-      if (text) return `[${ts}] result: ${text.length > 200 ? text.slice(0, 200) + '…' : text}`;
-    }
-    return null;
-  }
-  return null;
-}
-
 async function runMode(
   router: MessageRouter,
   args: CliArgs,
   prompt: string,
   settings: Record<string, unknown>,
-  outputFile: string | null,
 ): Promise<void> {
   const skipPersistSession = !args.persist;
 
@@ -498,13 +450,6 @@ async function runMode(
     ...(args.autoClose !== undefined && { autoClose: args.autoClose }),
     ...(parentSessionId && { parentSessionId }),
   };
-
-  // Write log header
-  if (outputFile) {
-    writeFileSync(outputFile,
-      `# crispy-dispatch vendor=${args.vendor} started=${new Date().toISOString()}\n---\n`,
-      'utf8');
-  }
 
   // State for event collection
   let sessionId = '';
@@ -562,14 +507,6 @@ async function runMode(
             process.stdout.write(content);
             text += content;
           }
-        }
-
-        // Stream formatted entries to log file
-        if (outputFile) {
-          try {
-            const line = formatLogEntry(event);
-            if (line) appendFileSync(outputFile, line + '\n', 'utf8');
-          } catch { /* best-effort */ }
         }
       }
 
@@ -653,11 +590,6 @@ async function runMode(
 
   // Wait for completion
   const status = await done;
-
-  // Write output file (bulk fallback — streaming writes happen above)
-  if (outputFile && text) {
-    try { writeFileSync(outputFile, text, 'utf8'); } catch { /* best-effort */ }
-  }
 
   // Auto-close
   if (args.autoClose && status === 'completed') {

@@ -55,6 +55,20 @@ may change your verification strategy.
 **Codex routinely takes 2-3x longer than Claude.** Do not assume Codex is
 dead, timed out, or stuck just because Claude finished first.
 
+### During the wait
+
+Trust `run_in_background` — the Bash tool notifies you when each agent
+finishes. Do not poll. If you genuinely need a progress check before both
+finish (e.g. one is hours-long), use:
+
+- `$CRISPY_DISPATCH rpc listOpenSessions` — see `state`, `entryCount`,
+  `lastMessage` for every live session
+- `$CRISPY_DISPATCH rpc readSessionTurns '{"sessionId":"<id>"}'` — read
+  turns produced so far
+
+`entryCount` climbing across two polls = agent is working. `state: streaming`
+with stale `lastActivityAt` (>2min) = wedged.
+
 ### Collect output via RPC
 
 Query your child sessions via the `listChildSessions` RPC — this returns
@@ -78,9 +92,6 @@ Returns `{ turns: [...] }` where each turn has `turn`, `user`, and
 
 Extract the final assistant response from the last turn. This is the
 agent's analysis output.
-
-**Do not read from `crispy-agents/` log files in the temp directory.** Always use the RPC
-methods above — they are reliable and immune to interleaving issues.
 
 Capture each agent's session ID for use in resume operations below.
 

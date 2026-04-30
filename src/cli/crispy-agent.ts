@@ -18,9 +18,8 @@
  */
 
 import { connect, type Socket } from 'node:net';
-import { join, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 import {
   EXIT_OK, EXIT_APPROVAL, EXIT_TIMEOUT, EXIT_TRANSPORT, EXIT_USAGE,
@@ -229,8 +228,6 @@ function resolvePrompt(positionalParts: string[]): string | undefined {
 // Main
 // ============================================================================
 
-const OUTPUT_DIR = join(tmpdir(), 'crispy-agents');
-
 async function main(): Promise<void> {
   const { args, positionalParts } = parseArgs(process.argv);
 
@@ -263,14 +260,6 @@ async function main(): Promise<void> {
     console.error('Error: prompt is empty');
     process.exit(EXIT_USAGE);
   }
-
-  // Set up output file
-  let outputFile: string | null = null;
-  try {
-    mkdirSync(OUTPUT_DIR, { recursive: true });
-    outputFile = join(OUTPUT_DIR, `crispy-agent-${Date.now()}-${process.pid}.log`);
-    console.error(`[output_file: ${outputFile}]`);
-  } catch { /* best-effort */ }
 
   // Build settings
   const settings: Record<string, unknown> = {};
@@ -316,7 +305,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    await runTurn(router, args, prompt, settings, outputFile);
+    await runTurn(router, args, prompt, settings);
   } catch (err) {
     emitResult({ status: 'error', sessionId: '', textLength: 0, error: (err as Error).message });
     process.exit(EXIT_TRANSPORT);
@@ -334,7 +323,6 @@ async function runTurn(
   args: AgentArgs,
   prompt: string,
   settings: Record<string, unknown>,
-  outputFile: string | null,
 ): Promise<void> {
   const skipPersistSession = !args.persist;
   const parentSessionId = process.env.CRISPY_SESSION_ID || `cli-${Date.now()}`;
@@ -508,18 +496,6 @@ async function runTurn(
   if (sessionId) {
     process.stdout.write(`\n[session_id: ${sessionId}]\n`);
     process.stdout.write(`To resume: $CRISPY_AGENT --resume ${sessionId} "Your follow-up message"\n`);
-  }
-
-  // Write to persistent output file
-  if (outputFile) {
-    try {
-      let content = text || '';
-      if (sessionId) {
-        content += `\n[session_id: ${sessionId}]\n`;
-        content += `To resume: $CRISPY_AGENT --resume ${sessionId} "Your follow-up message"\n`;
-      }
-      writeFileSync(outputFile, content, 'utf8');
-    } catch { /* best-effort */ }
   }
 
   // Auto-close
