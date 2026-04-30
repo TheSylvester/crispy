@@ -114,10 +114,16 @@ export function useContextUsage(
   // Always compute from entries when available — not gated by liveUsage.
   // Entries usage updates every time a new assistant message with message.usage
   // arrives. Catchup (liveUsage) only fires once on subscribe.
+  //
+  // Skip when there's no session: useChannelStore's stale-while-revalidate
+  // ref retains the prior session's entries when sessionId flips to null
+  // (e.g. pressing "+ New"), so without this guard the gauge would keep
+  // displaying the previous session's percentage.
   const entriesUsage = useMemo(() => {
+    if (!sessionId) return null;
     if (!entries || entries.length === 0) return null;
     return computeContextFromEntries(entries);
-  }, [entries]);
+  }, [sessionId, entries]);
 
   // Prefer live usage (adapter has authoritative contextWindow from SDK) over
   // entries-based (which can't extract contextWindow from entry metadata).
