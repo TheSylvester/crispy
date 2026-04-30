@@ -77,14 +77,19 @@ function SessionIdBadge({ sessionId }: { sessionId: string | null }): React.JSX.
 
   return (
     <button
-      className={`crispy-titlebar__btn crispy-titlebar__session-id-btn${copied ? ' crispy-titlebar__session-id-btn--copied' : ''}`}
+      className={`crispy-titlebar__session-id-btn${copied ? ' crispy-titlebar__session-id-btn--copied' : ''}`}
       onClick={handleCopy}
       title={copied ? 'Copied!' : `Click to copy session ID: ${sessionId}`}
       aria-label="Copy session ID"
     >
-      <span className="crispy-titlebar__session-id-label">
-        {copied ? 'Copied!' : shortId}
-      </span>
+      {copied ? (
+        <span className="crispy-titlebar__session-id-label">Copied!</span>
+      ) : (
+        <>
+          <span className="crispy-titlebar__session-id-prefix">#</span>
+          <span className="crispy-titlebar__session-id-label">{shortId}</span>
+        </>
+      )}
     </button>
   );
 }

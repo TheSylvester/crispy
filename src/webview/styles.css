@@ -4297,27 +4297,46 @@ body[data-accent-mode="skin"] {
   transform: translateY(0.5px);
 }
 
-/* --- Session ID badge (right) — monospace short id, click to copy --- */
+/* --- Session ID badge (right) — monospace short id, click to copy.
+   Tinted with the active displayStyle's --skin-accent so it reads as an
+   identifier chip, not a secondary button. --- */
 
 .crispy-titlebar__session-id-btn {
-  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 3px 7px;
   background: transparent;
-  color: var(--vscode-descriptionForeground, #999);
-  box-shadow: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 0.65rem;
+  line-height: 1;
   letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--skin-accent, var(--vscode-descriptionForeground, #999)) 55%, var(--vscode-descriptionForeground, #999));
+  opacity: 0.75;
+  transition: background 0.15s, color 0.15s, opacity 0.15s, border-color 0.15s;
 }
 
 .crispy-titlebar__session-id-btn:hover {
-  background: var(--vscode-button-secondaryBackground, #3a3d41);
-  color: var(--vscode-button-secondaryForeground, #d4d4d4);
+  opacity: 1;
+  color: var(--skin-accent, var(--vscode-foreground, #d4d4d4));
+  background: color-mix(in srgb, var(--skin-accent, transparent) 10%, transparent);
+  border-color: color-mix(in srgb, var(--skin-accent, transparent) 25%, transparent);
 }
 
 .crispy-titlebar__session-id-btn--copied,
 .crispy-titlebar__session-id-btn--copied:hover {
-  background: var(--vscode-button-secondaryBackground, #3a3d41);
-  color: var(--vscode-foreground, #d4d4d4);
+  opacity: 1;
+  color: var(--skin-accent, var(--vscode-foreground, #d4d4d4));
+  background: color-mix(in srgb, var(--skin-accent, transparent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--skin-accent, transparent) 40%, transparent);
+}
+
+.crispy-titlebar__session-id-prefix {
+  opacity: 0.55;
+  margin-right: 1px;
 }
 
 .crispy-titlebar__session-id-label {
