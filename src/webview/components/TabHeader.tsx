@@ -57,6 +57,38 @@ function ToolPanelIcon(): React.JSX.Element {
   );
 }
 
+/** Short session ID badge — click to copy full session ID */
+function SessionIdBadge({ sessionId }: { sessionId: string | null }): React.JSX.Element | null {
+  const [copied, setCopied] = useState(false);
+
+  if (!sessionId) return null;
+
+  const shortId = sessionId.slice(0, 8);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      console.error('[TabHeader] Failed to copy session ID');
+    }
+  };
+
+  return (
+    <button
+      className={`crispy-titlebar__btn crispy-titlebar__session-id-btn${copied ? ' crispy-titlebar__session-id-btn--copied' : ''}`}
+      onClick={handleCopy}
+      title={copied ? 'Copied!' : `Click to copy session ID: ${sessionId}`}
+      aria-label="Copy session ID"
+    >
+      <span className="crispy-titlebar__session-id-label">
+        {copied ? 'Copied!' : shortId}
+      </span>
+    </button>
+  );
+}
+
 /** Connection indicator dot — same as TitleBar's ConnectionDot */
 function ConnectionDot({
   channelState,
@@ -227,8 +259,9 @@ export function TabHeader(): React.JSX.Element {
         <ConnectionDot channelState={channelState} sessionId={effectiveSessionId} />
       </div>
 
-      {/* Right — Tools + New */}
+      {/* Right — Session ID + Tools + New */}
       <div className="crispy-tab-header__right">
+        <SessionIdBadge sessionId={effectiveSessionId} />
         <button
           className={`crispy-titlebar__btn crispy-titlebar__sidebar-btn${toolPanelOpen ? ' crispy-titlebar__sidebar-btn--active' : ''}`}
           onClick={() => setToolPanelOpen(!toolPanelOpen)}

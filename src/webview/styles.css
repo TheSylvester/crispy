@@ -4297,6 +4297,33 @@ body[data-accent-mode="skin"] {
   transform: translateY(0.5px);
 }
 
+/* --- Session ID badge (right) — monospace short id, click to copy --- */
+
+.crispy-titlebar__session-id-btn {
+  padding: 4px 8px;
+  background: transparent;
+  color: var(--vscode-descriptionForeground, #999);
+  box-shadow: none;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+}
+
+.crispy-titlebar__session-id-btn:hover {
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #d4d4d4);
+}
+
+.crispy-titlebar__session-id-btn--copied,
+.crispy-titlebar__session-id-btn--copied:hover {
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-foreground, #d4d4d4);
+}
+
+.crispy-titlebar__session-id-label {
+  white-space: nowrap;
+}
+
 /* --- Session dropdown button (left) — extends base btn --- */
 
 .crispy-titlebar__session-btn {
