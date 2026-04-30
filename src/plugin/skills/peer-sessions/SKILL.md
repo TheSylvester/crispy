@@ -43,22 +43,49 @@ Returns `OpenSessionInfo[]` sorted by `sessionId` ascending:
     "sessionId": "uuid",
     "vendor": "claude",
     "projectPath": "/path/to/project",
-    "state": "idle",            // idle | streaming | awaiting_approval | background
+    "state": "streaming",       // idle | streaming | awaiting_approval | background
     "pendingApprovalCount": 0,
     "entryCount": 17,
     "sessionKind": "system",    // only for system sessions (Rosie, tracker)
     "isSidechain": true,        // only for Claude sidechains
     "parentSessionId": "uuid",  // only if this is a registered child
     "childVisible": true,       // only with parentSessionId
-    "childAutoClose": false     // only with parentSessionId
+    "childAutoClose": false,    // only with parentSessionId
+    "title": "MR slot-sync phantom-link bug",  // collapsed: customTitle | title | aiTitle
+    "lastUserPrompt": "ok keep going on the spike",
+    "lastMessage": "Ran the migration on staging — 0 errors. Moving on to the booking-flow rewrite next.",
+    "lastActivityAt": "2026-04-30T14:22:11.413Z"  // ISO, max(channel entry, disk mtime)
   }
 ]
 ```
 
 Tombstones (`unattached` / `tearing` channels) and pending IDs are
-filtered out. `entryCount` is a monotonic counter — diff across calls
-to detect new entries. It is NOT a general freshness signal; status-
-only transitions don't bump it.
+filtered out.
+
+**Liveness inference** — combine `state` + `lastActivityAt` + `lastMessage`:
+
+| Pattern | Means |
+|---------|-------|
+| `state: streaming` + recent `lastActivityAt` (seconds ago) | actively producing output |
+| `state: streaming` + stale `lastActivityAt` (minutes+ ago) | wedged / stuck mid-tool |
+| `state: background` + empty/missing `lastMessage` | tool (e.g. `run_in_background` bash) still running, agent has no text yet |
+| `state: background` + recent `lastActivityAt` | background tool is producing output |
+| `state: idle` + stale `lastActivityAt` (hours) | zombie subscriber — channel still attached but session done |
+| `state: awaiting_approval` + `pendingApprovalCount > 0` | blocked on user decision |
+
+`title` collapses the customTitle / title / aiTitle chain — undefined
+means no named title is set, in which case `lastUserPrompt` is the
+best topic signal. `lastUserPrompt` and `lastMessage` are truncated to
+~300 chars with an ellipsis. Whitespace is collapsed to single-line.
+
+`lastMessage` is **assistant text only** — tool_use / thinking blocks
+are not surfaced. An assistant turn that's purely tool-calls produces
+no preview, which combined with `state: streaming` is the "agent is
+running tools, not speaking" signal.
+
+`entryCount` is a monotonic counter — diff across calls to detect new
+entries. It is NOT a general freshness signal; status-only transitions
+don't bump it. Use `lastActivityAt` instead.
 
 ### `readSessionTurns` — read
 
@@ -126,6 +153,8 @@ to confirm the target is still live, then call `readSessionTurns` with
 | Only Claude sessions | Filter client-side by `vendor === "claude"` |
 | Only active sessions | Filter client-side by `state !== "idle"` |
 | Only your own children | Filter by `parentSessionId === $CRISPY_SESSION_ID` |
+| Sessions stuck mid-stream | `state === "streaming"` AND `lastActivityAt` older than ~2min |
+| Sessions on the same topic | Group by `title` or substring-match `lastUserPrompt` |
 
 ## Coming soon (not yet shipped)
 

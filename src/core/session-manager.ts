@@ -325,6 +325,10 @@ export function getOpenVisibleChildren(): Array<{
  * separate Wire* variant. `vendor` is sourced from the live adapter
  * (`channel.adapter?.vendor`) and is 'unknown' only during a narrow
  * rotation/teardown window where the adapter is transiently null.
+ *
+ * Designed for AI consumption: title chain and timestamps are pre-collapsed
+ * to minimize token cost. Previews are truncated at PREVIEW_MAX_CHARS so the
+ * payload stays compact even with 20+ open sessions.
  */
 export interface OpenSessionInfo {
   /**
@@ -342,7 +346,15 @@ export interface OpenSessionInfo {
   /** Working directory from disk index, if the session has been indexed. */
   projectPath?: string;
 
-  /** Live channel state. Tombstones (`unattached`) are filtered out of results. */
+  /**
+   * Live channel state. Tombstones (`unattached`) are filtered out of results.
+   *
+   * Liveness signal: combine with `lastActivityAt` to disambiguate.
+   * - `streaming` + recent `lastActivityAt` → actively producing output
+   * - `streaming` + stale `lastActivityAt` → wedged or mid-tool-call
+   * - `background` + empty `lastMessage` → tool (e.g. run_in_background bash) still running
+   * - `awaiting_approval` → blocked on `pendingApprovalCount` user decisions
+   */
   state: Exclude<SessionChannelState, 'unattached'>;
 
   /** Number of unresolved approvals on the channel. */
@@ -371,6 +383,42 @@ export interface OpenSessionInfo {
 
   /** True if the child auto-closes after idle. Only set when `parentSessionId` is present. */
   childAutoClose?: boolean;
+
+  /**
+   * Resolved display title — `customTitle` (user `/rename`) > `title` (Rosie /
+   * session_titles DB) > `aiTitle` (SDK auto-generated). Undefined when no
+   * named title is set, in which case callers should fall back to
+   * `lastUserPrompt` (or `sessionId.slice(0, 8)` for a hard fallback). The
+   * three sources are intentionally not surfaced separately — agents triaging
+   * "what is this session about?" don't need provenance, they need a string.
+   */
+  title?: string;
+
+  /**
+   * Most recent user prompt text, truncated to ~PREVIEW_MAX_CHARS with an
+   * ellipsis. Sourced from the live channel entries first (freshest), with
+   * the disk index `lastUserPrompt` as fallback when the channel is empty.
+   * Whitespace is collapsed so the preview is single-line.
+   */
+  lastUserPrompt?: string;
+
+  /**
+   * Most recent assistant text, truncated to ~PREVIEW_MAX_CHARS with an
+   * ellipsis. Text blocks only — tool_use / thinking blocks are not surfaced
+   * (matches the dropdown's display rule). An assistant turn that is purely
+   * tool-calls produces an empty preview, which combined with `state` is the
+   * "agent is running tools, not speaking" signal.
+   */
+  lastMessage?: string;
+
+  /**
+   * ISO timestamp of the most recent activity — the maximum of the latest
+   * channel entry timestamp and the disk file mtime. Use to detect:
+   * - "streaming but stuck" (state=streaming, lastActivityAt is old)
+   * - "background but quietly working" (state=background, lastActivityAt advancing)
+   * - "zombie subscriber" (state=idle but lastActivityAt is hours old)
+   */
+  lastActivityAt?: string;
 }
 
 /** Options for `listOpenChannels()`. */
@@ -379,6 +427,78 @@ export interface ListOpenChannelsOptions {
   includeSystem?: boolean;
   /** Include Claude sidechain sessions. Default: false — mirrors listSessions. */
   includeSidechains?: boolean;
+}
+
+/**
+ * Preview truncation cap (chars). ~300 fits 1-2 sentences — enough to
+ * disambiguate "agent mid-thought" from "agent wrapped up" without flooding
+ * the caller's context. At 20 sessions × 2 preview fields × 300 chars, the
+ * payload stays under ~12KB raw / ~3K tokens.
+ */
+const PREVIEW_MAX_CHARS = 300;
+
+/** Truncate to PREVIEW_MAX_CHARS, normalize whitespace, append ellipsis when cut. */
+function truncatePreview(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return undefined;
+  if (normalized.length <= PREVIEW_MAX_CHARS) return normalized;
+  return normalized.slice(0, PREVIEW_MAX_CHARS - 1) + '…';
+}
+
+/** Extract plain text from a TranscriptEntry's message content. Text blocks only. */
+function extractEntryText(entry: TranscriptEntry): string | undefined {
+  const content = entry.message?.content;
+  if (!content) return undefined;
+  if (typeof content === 'string') return content || undefined;
+  const text = content
+    .filter((b): b is { type: 'text'; text: string } =>
+      b.type === 'text' && 'text' in b && typeof (b as { text: unknown }).text === 'string',
+    )
+    .map((b) => b.text)
+    .join('\n');
+  return text || undefined;
+}
+
+/**
+ * Scan channel entries newest-first for the most recent main-thread entry of
+ * a given role and extract its text. Skips meta entries (custom-title, etc.)
+ * and sub-agent entries (parentToolUseID set) so the preview reflects the
+ * primary conversation, not background fan-out.
+ */
+function findLastEntryText(
+  entries: readonly TranscriptEntry[],
+  role: 'user' | 'assistant',
+): string | undefined {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry.type !== role) continue;
+    if (entry.isMeta) continue;
+    if (entry.parentToolUseID) continue;
+    const text = extractEntryText(entry);
+    if (text) return text;
+  }
+  return undefined;
+}
+
+/** Most recent timestamp from any entry, or undefined if none carry one. */
+function findLastEntryTimestamp(entries: readonly TranscriptEntry[]): string | undefined {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const ts = entries[i].timestamp;
+    if (ts) return ts;
+  }
+  return undefined;
+}
+
+/**
+ * Pick the freshest of two ISO timestamps. Either can be undefined; if both
+ * are undefined the result is undefined. Avoids `new Date()` for the typical
+ * path — string compare on ISO-8601 is monotonic when both are well-formed.
+ */
+function pickFreshest(a: string | undefined, b: string | undefined): string | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return a >= b ? a : b;
 }
 
 /**
@@ -447,6 +567,26 @@ export function listOpenChannels(
       ? resolvedParent
       : undefined;
 
+    // Title: collapsed chain. Prefer most-explicit user intent.
+    const title =
+      info?.customTitle?.trim() ||
+      info?.title?.trim() ||
+      info?.aiTitle?.trim() ||
+      undefined;
+
+    // Previews: prefer fresh live channel entries; disk index is fallback for
+    // lastUserPrompt only (disk's `lastMessage` mixes user/assistant text and
+    // would be misleading in the assistant slot).
+    const liveLastUser = findLastEntryText(channel.entries, 'user');
+    const liveLastAssistant = findLastEntryText(channel.entries, 'assistant');
+    const lastUserPrompt = truncatePreview(liveLastUser ?? info?.lastUserPrompt);
+    const lastMessage = truncatePreview(liveLastAssistant);
+
+    // Activity: max of newest channel entry timestamp and disk file mtime.
+    const lastEntryTs = findLastEntryTimestamp(channel.entries);
+    const diskMtime = info?.modifiedAt?.toISOString();
+    const lastActivityAt = pickFreshest(lastEntryTs, diskMtime);
+
     results.push({
       sessionId: id,
       vendor: adapterVendor ?? 'unknown',
@@ -461,6 +601,10 @@ export function listOpenChannels(
         childVisible: childMeta!.visible,
         childAutoClose: childMeta!.autoClose,
       } : {}),
+      ...(title ? { title } : {}),
+      ...(lastUserPrompt ? { lastUserPrompt } : {}),
+      ...(lastMessage ? { lastMessage } : {}),
+      ...(lastActivityAt ? { lastActivityAt } : {}),
     });
   }
 
