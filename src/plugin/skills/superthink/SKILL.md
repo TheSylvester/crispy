@@ -69,6 +69,12 @@ finish (e.g. one is hours-long), use:
 `entryCount` climbing across two polls = agent is working. `state: streaming`
 with stale `lastActivityAt` (>2min) = wedged.
 
+See `crispy:live-sessions` for the broader verb set (`postMessage`,
+`waitForIdle`) covering live peer sessions in general. Superthink relies on
+`--resume` for round-to-round dispatch because its child sessions auto-close
+between rounds — `live-sessions` verbs apply when you have a session that's
+intentionally kept alive.
+
 ### Collect output via RPC
 
 Query your child sessions via the `listChildSessions` RPC — this returns

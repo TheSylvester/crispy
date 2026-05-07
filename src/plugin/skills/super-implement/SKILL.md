@@ -66,8 +66,9 @@ PROMPT_FILE=.ai-reference/prompts/<distilled>.md $CRISPY_AGENT
 ```
 
 **Capture the session_id from the output** (`[session_id: <uuid>]` on the
-last line). You will resume this same agent in Step 4. Sessions stay alive
-by default — do not pass `--auto-close`.
+last line). You will resume this same agent in Step 4. Step 4 uses
+`--resume`, which rehydrates closed sessions, so the default auto-close
+behavior is fine — no special flags needed.
 
 ## Step 4: Agent self-review (loop)
 
@@ -113,3 +114,6 @@ what failed and how far it got.
 - `/simplify` — code reduction pass (Step 4)
 - `/crispy-agent` — the IPC dispatch wrapper (Steps 3 & 4)
 - `/handoff` — when you want to rotate sessions, not execute end-to-end
+- `/live-sessions` — `postMessage` / `waitForIdle` / `readDialogue` for
+  sessions that are intentionally kept alive. This skill uses `--resume`
+  instead because its dispatched agent auto-closes between steps.

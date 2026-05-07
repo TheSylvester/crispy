@@ -105,6 +105,16 @@ For full transcript access (turn-by-turn user/assistant content), use the
 $CRISPY_DISPATCH rpc readDialogue '{"sessionId": "<uuid>"}'
 ```
 
+## See also
+
+`crispy:live-sessions` — for sessions kept alive with `--no-auto-close`,
+you can `postMessage` (deliver a turn), `waitForIdle` (block until the
+target settles), and `readDialogue` (read user↔assistant pairs) without
+spawning a new `crispy-agent` subprocess. Use the live-sessions verbs
+when you already have the session ID and the session is intentionally
+alive; use `--resume` when the session may have closed and needs
+rehydration.
+
 ## Exit Codes
 
 | Code | Meaning |

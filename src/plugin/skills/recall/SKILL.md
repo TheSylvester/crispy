@@ -84,6 +84,13 @@ mode: "auto")
 | Continue | `$RECALL_CLI <id> --offset N` | Continue from where the last read left off |
 | Newest first | `$RECALL_CLI <id> --reverse` | Looking for recent content in a long session |
 
+**For live or just-finished sessions**, prefer
+`$CRISPY_DISPATCH rpc readDialogue '{"sessionId":"<id>","from":-N}'` (from
+`crispy:live-sessions`) over `$RECALL_CLI`. The FTS5 index behind recall lags
+JSONL flushes by 30s+; `readDialogue` reads from the in-memory message store
+and is current. Use recall for historical sessions and search; use
+`readDialogue` for "what did the agent just say."
+
 ## Date handling
 
 **Any date or time indication from the user MUST be translated into date flags.**
