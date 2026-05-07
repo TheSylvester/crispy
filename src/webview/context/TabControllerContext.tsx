@@ -58,6 +58,8 @@ interface TabOperations {
   toggleGitBorder: () => void;
   /** Toggle the Files border panel open/closed. */
   toggleFilesBorder: () => void;
+  /** Toggle the Sessions border panel open/closed. */
+  toggleSessionsBorder: () => void;
   /** Find a file-viewer tab by path, or null. */
   findFileViewerTab: (path: string) => string | null;
   /** Update a tab's config. */
@@ -87,6 +89,8 @@ export interface TabControllerValue {
   toggleGitBorder: () => void;
   /** Toggle the Files border panel open/closed. */
   toggleFilesBorder: () => void;
+  /** Toggle the Sessions border panel open/closed. */
+  toggleSessionsBorder: () => void;
   /** Find a file-viewer tab by path, or null. */
   findFileViewerTab: (path: string) => string | null;
   /** Update a tab's config (e.g. to change line number for file-viewer). */
@@ -200,6 +204,11 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     opsRef.current.toggleFilesBorder();
   }, []);
 
+  const toggleSessionsBorder = useCallback(() => {
+    if (!opsRef.current) return;
+    opsRef.current.toggleSessionsBorder();
+  }, []);
+
   const findFileViewerTab = useCallback((path: string): string | null => {
     if (!opsRef.current) return null;
     return opsRef.current.findFileViewerTab(path);
@@ -257,6 +266,7 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     findTabByComponent,
     toggleGitBorder,
     toggleFilesBorder,
+    toggleSessionsBorder,
     findFileViewerTab,
     updateTabConfig,
     equalizeLayout,
@@ -270,7 +280,7 @@ export function TabControllerProvider({ onSessionChange, children }: TabControll
     setActiveTab,
   }), [
     createTab, closeTab, activateTab, findTabByComponent, toggleGitBorder,
-    toggleFilesBorder, findFileViewerTab, updateTabConfig, equalizeLayout,
+    toggleFilesBorder, toggleSessionsBorder, findFileViewerTab, updateTabConfig, equalizeLayout,
     toggleTerminalBorder, navigateToSession, setActiveTabSession,
     activeTabId, activeTabSessionId, lastActiveTranscriptTabId,
     registerOperations, setActiveTab,

@@ -22,6 +22,7 @@ import { ContentErrorBoundary } from './ErrorBoundary.js';
 import { TranscriptViewer } from './TranscriptViewer.js';
 import { GitPanel } from './git-panel/GitPanel.js';
 import { FilePanel } from './file-panel/FilePanel.js';
+import { SessionsPanel } from './sessions-panel/SessionsPanel.js';
 import { FileViewerTab } from './file-panel/FileViewerTab.js';
 import { XTermPanel } from './XTermPanel.js';
 import { TabHeader } from './TabHeader.js';
@@ -43,6 +44,7 @@ const MAIN_TABSET_ID = 'main-tabset';
 const TERMINAL_BORDER_TAB_ID = 'terminal-border-tab';
 const GIT_BORDER_TAB_ID = 'git-border-tab';
 const FILES_BORDER_TAB_ID = 'files-border-tab';
+const SESSIONS_BORDER_TAB_ID = 'sessions-border-tab';
 
 function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' = 'left', showBorders = false): IJsonModel {
   return {
@@ -76,6 +78,14 @@ function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' 
             id: FILES_BORDER_TAB_ID,
             name: 'Files',
             component: 'files',
+            enableClose: false,
+            enableDrag: false,
+          },
+          {
+            type: 'tab' as const,
+            id: SESSIONS_BORDER_TAB_ID,
+            name: 'Sessions',
+            component: 'sessions',
             enableClose: false,
             enableDrag: false,
           },
@@ -330,6 +340,11 @@ export function FlexAppLayout(): React.JSX.Element {
     modelRef.current.doAction(Actions.selectTab(FILES_BORDER_TAB_ID));
   }, []);
 
+  /** Toggle the Sessions border panel open/closed */
+  const toggleSessionsBorder = useCallback(() => {
+    modelRef.current.doAction(Actions.selectTab(SESSIONS_BORDER_TAB_ID));
+  }, []);
+
   /** Toggle the Terminal border panel open/closed */
   const toggleTerminalBorder = useCallback(() => {
     modelRef.current.doAction(Actions.selectTab(TERMINAL_BORDER_TAB_ID));
@@ -388,12 +403,13 @@ export function FlexAppLayout(): React.JSX.Element {
       findTabByComponent,
       toggleGitBorder,
       toggleFilesBorder,
+      toggleSessionsBorder,
       toggleTerminalBorder,
       findFileViewerTab,
       updateTabConfig,
       equalizeLayout,
     });
-  }, [controller, createTab, closeTab, activateTab, findTabBySession, getTabSession, findTabByComponent, toggleGitBorder, toggleFilesBorder, toggleTerminalBorder, findFileViewerTab, updateTabConfig, equalizeLayout]);
+  }, [controller, createTab, closeTab, activateTab, findTabBySession, getTabSession, findTabByComponent, toggleGitBorder, toggleFilesBorder, toggleSessionsBorder, toggleTerminalBorder, findFileViewerTab, updateTabConfig, equalizeLayout]);
 
   // Seed initial active tab so lastActiveTranscriptTabId is set even before
   // any model change fires (needed for file-viewer → transcript tab inserts)
@@ -586,6 +602,12 @@ export function FlexAppLayout(): React.JSX.Element {
             </ContentErrorBoundary>
           </FilePanelProvider>
         </FileIndexProvider>
+      );
+    } else if (node.getComponent() === 'sessions') {
+      return (
+        <ContentErrorBoundary>
+          <SessionsPanel mode="tab" />
+        </ContentErrorBoundary>
       );
     } else if (node.getComponent() === 'terminal') {
       return (
