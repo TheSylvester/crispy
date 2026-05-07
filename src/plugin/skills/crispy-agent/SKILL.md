@@ -99,10 +99,10 @@ Returns plain text response followed by the session ID:
 Capture the session ID to continue the conversation with `--resume <uuid>`.
 
 For full transcript access (turn-by-turn user/assistant content), use the
-`readSessionTurns` RPC:
+`readDialogue` RPC:
 
 ```bash
-$CRISPY_DISPATCH rpc readSessionTurns '{"sessionId": "<uuid>"}'
+$CRISPY_DISPATCH rpc readDialogue '{"sessionId": "<uuid>"}'
 ```
 
 ## Exit Codes

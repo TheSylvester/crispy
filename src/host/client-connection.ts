@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import type { TurnIntent, ChannelMessage, SessionOpenSpec } from "../core/agent-adapter.js";
-import type { Vendor } from "../core/transcript.js";
+import type { Vendor, MessageContent } from "../core/transcript.js";
 import type {
   Subscriber,
   SessionChannel,
@@ -49,7 +49,9 @@ import {
   resolveSessionId,
   resolveSessionPrefix,
   switchSession,
+  awaitChannelIdle,
 } from "../core/session-manager.js";
+import type { IdleReason } from "../core/channel-idle.js";
 import type { ChildSessionOptions, ResumeChildOptions } from "../core/session-manager.js";
 import {
   subscribeSessionList,
@@ -408,6 +410,24 @@ export function createClientConnection(
     };
   }
 
+  /** Resolve a session ID and assert the channel is live (rekeyed,
+   *  attached, not tearing). Throws `"Session not active: <id>"` on
+   *  any failure mode. Shared by `postMessage` and `waitForIdle`. */
+  function requireLiveChannel(rawId: string): { sessionId: string; channel: SessionChannel } {
+    const sessionId = resolveSessionPrefix(resolveSessionId(rawId));
+    // Pending channels register in both live registries, so the
+    // tombstone gate alone wouldn't catch them. Explicit prefix check
+    // keeps these RPCs scoped to existing rekeyed sessions.
+    if (sessionId.startsWith('pending:')) {
+      throw new Error(`Session not active: ${sessionId}`);
+    }
+    const channel = getChannel(sessionId);
+    if (!channel || channel.state === 'unattached' || channel.tearing) {
+      throw new Error(`Session not active: ${sessionId}`);
+    }
+    return { sessionId, channel };
+  }
+
   async function routeMethod(
     method: string,
     params: Record<string, unknown>,
@@ -422,6 +442,59 @@ export function createClientConnection(
           includeSidechains: params.includeSidechains as boolean | undefined,
         });
 
+      case "postMessage": {
+        const rawId = params.sessionId as string;
+        const content = params.content as MessageContent;
+        const callerClientMessageId = params.clientMessageId as string | undefined;
+
+        const isString = typeof content === 'string';
+        const isArray = Array.isArray(content);
+        if (!(isString || isArray) || content.length === 0) {
+          const err = 'postMessage: content must be non-empty string or MessageContent';
+          log({ level: 'warn', source: 'session', summary: err });
+          throw new Error(err);
+        }
+
+        const { sessionId: resolvedId } = requireLiveChannel(rawId);
+
+        // Construct the intent ourselves — never forward caller-supplied
+        // target (e.g., target.model would trigger the vendor-switch
+        // path, which has no caller subscription to re-key).
+        const intent: TurnIntent = {
+          target: { kind: 'existing', sessionId: resolvedId },
+          content,
+          clientMessageId: callerClientMessageId ?? randomUUID(),
+          settings: {},
+        };
+
+        // Cross-session post: the caller doesn't subscribe — delivery
+        // reaches the target's existing subscribers via the channel's
+        // own broadcast. The no-op satisfies sendTurn's signature.
+        const noopSubscriber: Subscriber = {
+          id: `postMessage:${randomUUID()}`,
+          send: () => {},
+        };
+
+        const result = await sendTurn(intent, noopSubscriber);
+        log({ level: 'info', source: 'session', summary: `postMessage: ${resolvedId.slice(0, 12)}…`, data: { sessionId: resolvedId, contentType: isString ? 'string' : 'blocks' } });
+        return { sessionId: result.sessionId };
+      }
+
+      case "waitForIdle": {
+        const rawId = params.sessionId as string;
+        const timeoutMs = params.timeoutMs as number | undefined;
+        const startedAt = Date.now();
+        log({ level: 'debug', source: 'session', summary: `waitForIdle: enter (sessionId: ${rawId.slice(0, 12)}…, timeoutMs: ${timeoutMs ?? 0})` });
+        const { sessionId: resolvedId, channel } = requireLiveChannel(rawId);
+        const reason = await awaitChannelIdle(channel, {
+          ...(timeoutMs !== undefined && { timeoutMs }),
+        });
+        // Helper returns ChannelIdleResult, but this RPC never passes
+        // `onMessage`, so 'interrupted' is unreachable here.
+        log({ level: 'info', source: 'session', summary: `waitForIdle: ${reason} (sessionId: ${resolvedId.slice(0, 12)}…)`, data: { sessionId: resolvedId, reason, timeoutMs, elapsedMs: Date.now() - startedAt } });
+        return { reason: reason as IdleReason };
+      }
+
       case "findSession":
         return findSession(params.sessionId as string) ?? null;
 
@@ -430,7 +503,7 @@ export function createClientConnection(
           until: params.until as string | undefined,
         });
 
-      case "readSessionTurns": {
+      case "readDialogue": {
         const sid = params.sessionId as string;
         const page = readSessionMessages(sid, 0, 10000);
 
@@ -444,9 +517,16 @@ export function createClientConnection(
           allTurns = extractTurns(entries);
         }
 
-        const from = (params.from as number | undefined) ?? 1;
-        const to = (params.to as number | undefined) ?? allTurns.length;
-        return { turns: allTurns.filter(t => t.turn >= from && t.turn <= to) };
+        const total = allTurns.length;
+        const rawFrom = (params.from as number | undefined) ?? 1;
+        const rawTo   = (params.to   as number | undefined) ?? total;
+        // Negative values count back from the end. `from: -5` on a
+        // 10-turn transcript means "start at turn 6"; `to: -1` means
+        // "up to and including the last turn." Math.max clamps very
+        // negative `from` values to 1.
+        const normFrom = rawFrom < 0 ? Math.max(1, total + rawFrom + 1) : rawFrom;
+        const normTo   = rawTo   < 0 ? total + rawTo + 1               : rawTo;
+        return { turns: allTurns.filter(t => t.turn >= normFrom && t.turn <= normTo) };
       }
 
       case "listChildSessions": {

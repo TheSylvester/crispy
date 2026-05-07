@@ -63,7 +63,7 @@ finish (e.g. one is hours-long), use:
 
 - `$CRISPY_DISPATCH rpc listOpenSessions` — see `state`, `entryCount`,
   `lastMessage` for every live session
-- `$CRISPY_DISPATCH rpc readSessionTurns '{"sessionId":"<id>"}'` — read
+- `$CRISPY_DISPATCH rpc readDialogue '{"sessionId":"<id>"}'` — read
   turns produced so far
 
 `entryCount` climbing across two polls = agent is working. `state: streaming`
@@ -81,10 +81,10 @@ $CRISPY_DISPATCH rpc listChildSessions
 This returns a JSON object with a `sessions` array. Each entry has
 `sessionId`, `vendor`, `status`, `closed`, `visible`, and `autoClose`.
 
-For each child, read the transcript via `readSessionTurns`:
+For each child, read the transcript via `readDialogue`:
 
 ```bash
-$CRISPY_DISPATCH rpc readSessionTurns '{"sessionId": "<child-session-id>"}'
+$CRISPY_DISPATCH rpc readDialogue '{"sessionId": "<child-session-id>"}'
 ```
 
 Returns `{ turns: [...] }` where each turn has `turn`, `user`, and

@@ -15,8 +15,10 @@
 
 import { randomUUID } from 'node:crypto';
 import type { SessionInfo, TurnReceipt } from '../core/agent-adapter.js';
-import type { TranscriptEntry } from '../core/transcript.js';
+import type { TranscriptEntry, MessageContent } from '../core/transcript.js';
 import type { ChildSessionResult, OpenSessionInfo } from '../core/session-manager.js';
+import type { IdleReason } from '../core/channel-idle.js';
+import type { SessionTurn } from '../core/rosie/tracker/turn-extractor.js';
 import type { WorkspaceListResponse } from '../core/workspace-roots.js';
 import type { HostEvent, HostMessage } from './client-connection.js';
 import { createClientConnection } from './client-connection.js';
@@ -56,6 +58,12 @@ export function createAgentDispatch(): AgentDispatch {
     resolveSessionPrefix: (prefix) => connection.call('resolveSessionPrefix', { sessionId: prefix }).then((r) => (r as { sessionId: string }).sessionId),
     dispatchChild: (options) => connection.call('dispatchChild', options as unknown as Record<string, unknown>) as Promise<ChildSessionResult | null>,
     resumeChild: (options) => connection.call('resumeChild', options as unknown as Record<string, unknown>) as Promise<ChildSessionResult | null>,
+    waitForIdle: (params: { sessionId: string; timeoutMs?: number }) =>
+      connection.call('waitForIdle', params as unknown as Record<string, unknown>) as Promise<{ reason: IdleReason }>,
+    postMessage: (params: { sessionId: string; content: MessageContent; clientMessageId?: string }) =>
+      connection.call('postMessage', params as unknown as Record<string, unknown>) as Promise<{ sessionId: string }>,
+    readDialogue: (params: { sessionId: string; from?: number; to?: number }) =>
+      connection.call('readDialogue', params as unknown as Record<string, unknown>) as Promise<{ turns: SessionTurn[] }>,
 
     onEvent(handler) {
       eventHandlers.add(handler);

@@ -27,6 +27,9 @@ import {
   discoverSocket, MessageRouter,
   type RpcEvent,
 } from './ipc-client.js';
+import { startIdleWatch } from '../core/channel-idle.js';
+import type { ChannelMessage } from '../core/agent-adapter.js';
+import type { SubscriberMessage } from '../core/session-channel.js';
 
 // ============================================================================
 // Structured Output
@@ -454,117 +457,90 @@ async function runMode(
   // State for event collection
   let sessionId = '';
   let text = '';
-  let settled = false;
   let approvalInfo: { toolName: string; toolUseId: string } | null = null;
-  let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
-  // Install event handler BEFORE any RPCs — no event gap
-  const done = new Promise<ResultStatus>((resolve) => {
-    // timeoutMs === 0 means "no timeout" (wait indefinitely for turn completion)
-    const timer = args.timeoutMs > 0
-      ? setTimeout(() => {
-          if (!settled) {
-            settled = true;
-            if (idleTimer) clearTimeout(idleTimer);
-            resolve('timeout');
-          }
-        }, args.timeoutMs)
-      : undefined;
+  // Idle/debounce/timeout/approval-fail are all centralized in `startIdleWatch`.
+  // The CLI feeds RPC events into the watcher; everything else (text streaming,
+  // session-id rekey tracking, error logging) stays in the event handler.
+  const watcher = startIdleWatch({
+    ...(args.timeoutMs > 0 && { timeoutMs: args.timeoutMs }),
+    onMessage: (msg) => {
+      if (
+        msg.type === 'event' &&
+        msg.event.type === 'status' &&
+        msg.event.status === 'awaiting_approval' &&
+        args.approval === 'fail'
+      ) {
+        approvalInfo = {
+          toolName: msg.event.toolName ?? 'unknown',
+          toolUseId: msg.event.toolUseId ?? '',
+        };
+        return 'interrupt';
+      }
+    },
+  });
 
-    router.setEventHandler((evt) => {
-      if (settled) return;
-      const event = evt.event;
+  router.setEventHandler((evt) => {
+    const event = evt.event as unknown as SubscriberMessage;
 
-      // Unwrap ChannelMessage envelope: EventMessage wraps the real event
-      // as { type: 'event', event: ChannelEvent }, while EntryMessage has
-      // { type: 'entry', entry: TranscriptEntry } — no extra nesting.
-      const inner = event.type === 'event' && event.event ? event.event as Record<string, unknown> : event;
-
-      // Track session ID rekey (pending → real)
-      if (inner.type === 'notification' && inner.kind === 'session_changed' && inner.sessionId) {
-        const newId = inner.sessionId as string;
+    // Track session ID rekey (pending → real). Done up front so the
+    // sidecar file always carries the real ID even if the watcher has
+    // already resolved.
+    if (event.type === 'event' && event.event.type === 'notification') {
+      const notif = event.event;
+      if (notif.kind === 'session_changed' && 'sessionId' in notif && typeof notif.sessionId === 'string') {
+        const newId = notif.sessionId;
         if (args.debug) console.error(`[crispy-dispatch] Session rekey: ${sessionId} → ${newId}`);
         sessionId = newId;
-        // Update sidecar so callers see the real ID, not the pending one
         if (args.sessionIdFile) {
           try { writeFileSync(args.sessionIdFile, newId, 'utf8'); } catch { /* best-effort */ }
         }
       }
+      if (notif.kind === 'error') {
+        console.error(`[crispy-dispatch] Error: ${(notif as { error?: string }).error ?? 'unknown'}`);
+      }
+    }
 
-      // Collect assistant text from entry messages
-      if (event.type === 'entry' && event.entry) {
-        const entry = event.entry as { type?: string; message?: { content?: unknown } };
-        if ((entry.type === 'assistant' || entry.type === 'result') && entry.message) {
-          const content = entry.message.content;
-          if (Array.isArray(content)) {
-            for (const block of content) {
-              if (block.type === 'text' && block.text) {
-                process.stdout.write(block.text);
-                text += block.text;
-              }
+    // Collect assistant text from entry messages.
+    if (event.type === 'entry' && event.entry) {
+      const entry = event.entry as { type?: string; message?: { content?: unknown } };
+      if ((entry.type === 'assistant' || entry.type === 'result') && entry.message) {
+        const content = entry.message.content;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === 'text' && block.text) {
+              process.stdout.write(block.text);
+              text += block.text;
             }
-          } else if (typeof content === 'string') {
-            process.stdout.write(content);
-            text += content;
           }
+        } else if (typeof content === 'string') {
+          process.stdout.write(content);
+          text += content;
         }
       }
+    }
 
-      // Turn complete — two-tier detection:
-      // 1. turnComplete flag on idle → resolve immediately (authoritative)
-      // 2. Debounced idle fallback → resolve after 2s stable idle
-      if (inner.type === 'status' && inner.status === 'idle') {
-        if (args.debug) console.error(`[crispy-dispatch] Session idle (turnComplete: ${'turnComplete' in inner && inner.turnComplete})`);
-
-        if ('turnComplete' in inner && inner.turnComplete) {
-          // Authoritative completion — resolve immediately
-          settled = true;
-          if (idleTimer) clearTimeout(idleTimer);
-          clearTimeout(timer);
-          resolve('completed');
-        } else {
-          // Debounced fallback — wait 2s for stable idle
-          if (idleTimer) clearTimeout(idleTimer);
-          idleTimer = setTimeout(() => {
-            if (!settled) {
-              settled = true;
-              clearTimeout(timer);
-              resolve('completed');
-            }
-          }, 2000);
-        }
+    if (args.debug && event.type === 'event' && event.event.type === 'status') {
+      const status = event.event.status;
+      const turnComplete = status === 'idle' && 'turnComplete' in event.event && event.event.turnComplete;
+      console.error(`[crispy-dispatch] Status: ${status}${turnComplete ? ' (turnComplete)' : ''}`);
+      if (status === 'awaiting_approval' && args.approval === 'manual') {
+        console.error(`[crispy-dispatch] Awaiting approval for "${event.event.toolName}". Approve in Crispy UI.`);
       }
+    }
 
-      // Non-idle status cancels the idle debounce timer
-      if (inner.type === 'status' && inner.status !== 'idle') {
-        if (idleTimer) { clearTimeout(idleTimer); idleTimer = undefined; }
-      }
+    if (event.type === 'event' || event.type === 'entry') {
+      watcher.feed(event as ChannelMessage);
+    }
+  });
 
-      // Approval required
-      if (inner.type === 'status' && inner.status === 'awaiting_approval') {
-        if (args.approval === 'fail') {
-          approvalInfo = {
-            toolName: (inner.toolName as string) ?? 'unknown',
-            toolUseId: (inner.toolUseId as string) ?? '',
-          };
-          settled = true;
-          if (idleTimer) clearTimeout(idleTimer);
-          clearTimeout(timer);
-          resolve('approval_required');
-        } else if (args.approval === 'manual') {
-          if (args.debug) console.error(
-            `[crispy-dispatch] Awaiting approval for "${inner.toolName}". Approve in Crispy UI.`,
-          );
-          // Don't resolve — wait for idle or timeout
-        }
-        // bypass: never reaches here (permissionMode=bypassPermissions)
-      }
-
-      // Error notification
-      if (inner.type === 'notification' && inner.kind === 'error') {
-        console.error(`[crispy-dispatch] Error: ${(inner as { error?: string }).error ?? 'unknown'}`);
-      }
-    });
+  const done: Promise<ResultStatus> = watcher.promise.then((reason) => {
+    switch (reason) {
+      case 'turnComplete':
+      case 'settled': return 'completed';
+      case 'timeout': return 'timeout';
+      case 'interrupted': return 'approval_required';
+    }
   });
 
   // For existing sessions, subscribe first

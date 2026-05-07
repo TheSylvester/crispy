@@ -95,7 +95,7 @@ function createMockAdapter(options?: { vendor?: Vendor }): MockAdapter {
       return queue;
     },
 
-    send: vi.fn((_content: MessageContent) => {}),
+    sendTurn: vi.fn((_content: MessageContent) => {}),
     respondToApproval: vi.fn((_toolUseId: string, _optionId: string) => {}),
 
     close: vi.fn(() => {
@@ -660,6 +660,431 @@ describe('ClientConnection', () => {
 
       dispatch.dispose();
       clientA.dispose();
+    });
+  });
+
+  describe('postMessage', () => {
+    async function setupSubscribed(sessionId: string) {
+      const s1 = makeSessionInfo({ sessionId, vendor: 'claude' });
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1] });
+      const { factory, lastCreated } = createCapturingFactory({ vendor: 'claude' });
+      registerAdapter(discovery, factory);
+
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+      await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId });
+      return { messages, sendFn, handler, adapter: lastCreated() };
+    }
+
+    it('delivers to an idle target — adapter receives sendTurn', async () => {
+      const { messages, handler, adapter } = await setupSubscribed('sess-post-1');
+      const sendSpy = adapter.sendTurn as unknown as ReturnType<typeof vi.fn>;
+      const callsBefore = sendSpy.mock.calls.length;
+
+      const resp = await sendRequestAndGetResponse(handler, messages, 'postMessage', {
+        sessionId: 'sess-post-1',
+        content: 'hello from peer',
+      });
+      expect(resp.kind).toBe('response');
+      if (resp.kind === 'response') {
+        expect(resp.result).toEqual({ sessionId: 'sess-post-1' });
+      }
+      expect(sendSpy.mock.calls.length).toBe(callsBefore + 1);
+
+      handler.dispose();
+    });
+
+    it('delivers to a streaming target (permissive policy)', async () => {
+      const { messages, handler, adapter } = await setupSubscribed('sess-post-2');
+      // Drive channel into streaming.
+      adapter.pushMessage({ type: 'event', event: { type: 'status', status: 'active' } });
+      await tick();
+      const sendSpy = adapter.sendTurn as unknown as ReturnType<typeof vi.fn>;
+      const callsBefore = sendSpy.mock.calls.length;
+
+      const resp = await sendRequestAndGetResponse(handler, messages, 'postMessage', {
+        sessionId: 'sess-post-2',
+        content: 'mid-turn poke',
+      });
+      expect(resp.kind).toBe('response');
+      if (resp.kind === 'response') {
+        expect(resp.result).toEqual({ sessionId: 'sess-post-2' });
+      }
+      expect(sendSpy.mock.calls.length).toBe(callsBefore + 1);
+
+      handler.dispose();
+    });
+
+    it('rejects unknown sessionId with "Session not active"', async () => {
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [] });
+      registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+      const resp = await sendRequestAndGetResponse(handler, messages, 'postMessage', {
+        sessionId: 'nonexistent-id',
+        content: 'hi',
+      });
+      expect(resp.kind).toBe('error');
+      if (resp.kind === 'error') {
+        expect(resp.error).toBe('Session not active: nonexistent-id');
+      }
+      handler.dispose();
+    });
+
+    it('rejects pending IDs explicitly when channel is otherwise live', async () => {
+      const { createChannel, setAdapter } = await import('../src/core/session-channel.js');
+      const pendingCh = createChannel('pending:post-test-1');
+      const adapter = createMockAdapter({ vendor: 'claude' });
+      setAdapter(pendingCh, adapter);
+      await tick();
+      expect(pendingCh.state).not.toBe('unattached');
+      expect(pendingCh.tearing).toBe(false);
+
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+      const resp = await sendRequestAndGetResponse(handler, messages, 'postMessage', {
+        sessionId: 'pending:post-test-1',
+        content: 'hi',
+      });
+      expect(resp.kind).toBe('error');
+      if (resp.kind === 'error') {
+        expect(resp.error).toBe('Session not active: pending:post-test-1');
+      }
+      handler.dispose();
+    });
+
+    it('no caller subscription required to call postMessage', async () => {
+      const s1 = makeSessionInfo({ sessionId: 'sess-post-nocaller', vendor: 'claude' });
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1] });
+      const { factory, lastCreated } = createCapturingFactory({ vendor: 'claude' });
+      registerAdapter(discovery, factory);
+
+      // Other client subscribes — installs the channel.
+      const otherMessages: HostMessage[] = [];
+      const otherHandler = createClientConnection('client-other', (m) => otherMessages.push(m));
+      await sendRequestAndGetResponse(otherHandler, otherMessages, 'subscribe', { sessionId: 'sess-post-nocaller' });
+      const adapter = lastCreated();
+
+      // Fresh client — never subscribed — calls postMessage successfully.
+      const { messages: callerMessages, sendFn } = createMockSend();
+      const callerHandler = createClientConnection('client-caller', sendFn);
+      const sendSpy = adapter.sendTurn as unknown as ReturnType<typeof vi.fn>;
+      const callsBefore = sendSpy.mock.calls.length;
+
+      const resp = await sendRequestAndGetResponse(callerHandler, callerMessages, 'postMessage', {
+        sessionId: 'sess-post-nocaller',
+        content: 'hi from non-subscriber',
+      });
+      expect(resp.kind).toBe('response');
+      expect(sendSpy.mock.calls.length).toBe(callsBefore + 1);
+
+      callerHandler.dispose();
+      otherHandler.dispose();
+    });
+
+    it('rejects empty content with the expected message', async () => {
+      const { messages, handler } = await setupSubscribed('sess-post-empty');
+      const resp = await sendRequestAndGetResponse(handler, messages, 'postMessage', {
+        sessionId: 'sess-post-empty',
+        content: '',
+      });
+      expect(resp.kind).toBe('error');
+      if (resp.kind === 'error') {
+        expect(resp.error).toBe('postMessage: content must be non-empty string or MessageContent');
+      }
+      handler.dispose();
+    });
+
+    it('strips caller-supplied target.model — never triggers vendor switch path', async () => {
+      const { messages, handler, adapter } = await setupSubscribed('sess-post-strip');
+      const sendSpy = adapter.sendTurn as unknown as ReturnType<typeof vi.fn>;
+      const callsBefore = sendSpy.mock.calls.length;
+
+      // Caller passes a `target` shape — the handler should ignore it
+      // and build its own intent. Caller's `model: codex:o3` would, if
+      // forwarded, trigger the vendor-switch branch in sendTurn. We
+      // don't even pass `target` from the RPC payload — the handler
+      // constructs `target: { kind: 'existing', sessionId: resolvedId }`
+      // unconditionally. Test that.
+      const resp = await sendRequestAndGetResponse(handler, messages, 'postMessage', {
+        sessionId: 'sess-post-strip',
+        content: 'hi',
+        // Even if we tried to inject target/model fields, they wouldn't
+        // be forwarded — but pass them defensively to verify.
+        target: { kind: 'existing', sessionId: 'wrong-id', model: 'codex:o3' },
+        clientMessageId: 'cmid-1',
+      });
+      expect(resp.kind).toBe('response');
+      // The adapter for the actual session received the message — not
+      // a switched-vendor adapter, not a different session.
+      expect(sendSpy.mock.calls.length).toBe(callsBefore + 1);
+
+      handler.dispose();
+    });
+  });
+
+  describe('waitForIdle', () => {
+    async function setupSubscribed(sessionId: string) {
+      const s1 = makeSessionInfo({ sessionId, vendor: 'claude' });
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1] });
+      const { factory, lastCreated } = createCapturingFactory({ vendor: 'claude' });
+      registerAdapter(discovery, factory);
+
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+      await sendRequestAndGetResponse(handler, messages, 'subscribe', { sessionId });
+      return { messages, sendFn, handler, adapter: lastCreated() };
+    }
+
+    it('resolves with turnComplete when target emits authoritative idle', async () => {
+      const { messages, handler, adapter } = await setupSubscribed('sess-wait-1');
+      const id = `req-waitForIdle-1`;
+      // Fire the request without awaiting — it blocks on the helper.
+      const msgPromise = handler.handleMessage({
+        kind: 'request', id, method: 'waitForIdle', params: { sessionId: 'sess-wait-1' },
+      });
+      await tick();
+      // Move channel out of idle so the grace window doesn't fast-path.
+      adapter.pushMessage({ type: 'event', event: { type: 'status', status: 'active' } });
+      await tick();
+      adapter.pushMessage({ type: 'event', event: { type: 'status', status: 'idle', turnComplete: true } });
+      await msgPromise;
+      const resp = messages.find((m) => (m.kind === 'response' || m.kind === 'error') && m.id === id);
+      expect(resp?.kind).toBe('response');
+      if (resp?.kind === 'response') {
+        expect(resp.result).toEqual({ reason: 'turnComplete' });
+      }
+      handler.dispose();
+    });
+
+    it('resolves with timeout when timeoutMs elapses', async () => {
+      const { messages, handler, adapter } = await setupSubscribed('sess-wait-2');
+      // Move channel out of idle so the grace window doesn't fire.
+      adapter.pushMessage({ type: 'event', event: { type: 'status', status: 'active' } });
+      await tick();
+      const id = `req-waitForIdle-2`;
+      const msgPromise = handler.handleMessage({
+        kind: 'request', id, method: 'waitForIdle',
+        params: { sessionId: 'sess-wait-2', timeoutMs: 50 },
+      });
+      await msgPromise;
+      const resp = messages.find((m) => (m.kind === 'response' || m.kind === 'error') && m.id === id);
+      expect(resp?.kind).toBe('response');
+      if (resp?.kind === 'response') {
+        expect(resp.result).toEqual({ reason: 'timeout' });
+      }
+      handler.dispose();
+    });
+
+    it('throws "Session not active" for unknown sessionId', async () => {
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [] });
+      registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+      const resp = await sendRequestAndGetResponse(handler, messages, 'waitForIdle', {
+        sessionId: 'nonexistent-id',
+      });
+      expect(resp.kind).toBe('error');
+      if (resp.kind === 'error') {
+        expect(resp.error).toBe('Session not active: nonexistent-id');
+      }
+      handler.dispose();
+    });
+
+    it('rejects pending IDs explicitly even though the channel is "live"', async () => {
+      // Pending channels get registered in the live registries by
+      // createPendingChannel. To exercise the explicit pending-prefix
+      // gate (Phase 3 step 2), we directly create a channel under a
+      // pending: ID, install an adapter so state !== 'unattached', and
+      // assert the RPC rejects on the prefix check rather than the
+      // tombstone check.
+      const { createChannel, setAdapter } = await import('../src/core/session-channel.js');
+      const pendingCh = createChannel('pending:test-1');
+      const adapter = createMockAdapter({ vendor: 'claude' });
+      setAdapter(pendingCh, adapter);
+      await tick();
+      // Channel state is now 'idle' (setAdapter sets it) and !tearing —
+      // so the tombstone gate would NOT reject. The pending-prefix check
+      // is the only thing that catches this.
+      expect(pendingCh.state).not.toBe('unattached');
+      expect(pendingCh.tearing).toBe(false);
+
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+      const resp = await sendRequestAndGetResponse(handler, messages, 'waitForIdle', {
+        sessionId: 'pending:test-1',
+      });
+      expect(resp.kind).toBe('error');
+      if (resp.kind === 'error') {
+        expect(resp.error).toBe('Session not active: pending:test-1');
+      }
+      handler.dispose();
+    });
+
+    it('no caller subscription required to call waitForIdle', async () => {
+      // Set up a session that someone ELSE is subscribed to.
+      const s1 = makeSessionInfo({ sessionId: 'sess-wait-3', vendor: 'claude' });
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1] });
+      const { factory, lastCreated } = createCapturingFactory({ vendor: 'claude' });
+      registerAdapter(discovery, factory);
+
+      const otherMessages: HostMessage[] = [];
+      const otherHandler = createClientConnection('client-other', (m) => otherMessages.push(m));
+      await sendRequestAndGetResponse(otherHandler, otherMessages, 'subscribe', { sessionId: 'sess-wait-3' });
+      const adapter = lastCreated();
+
+      // Fresh client, never called subscribe — calls waitForIdle.
+      const { messages: callerMessages, sendFn } = createMockSend();
+      const callerHandler = createClientConnection('client-caller', sendFn);
+
+      const id = `req-waitForIdle-3`;
+      const msgPromise = callerHandler.handleMessage({
+        kind: 'request', id, method: 'waitForIdle', params: { sessionId: 'sess-wait-3' },
+      });
+      await tick();
+      adapter.pushMessage({ type: 'event', event: { type: 'status', status: 'active' } });
+      await tick();
+      adapter.pushMessage({ type: 'event', event: { type: 'status', status: 'idle', turnComplete: true } });
+      await msgPromise;
+
+      const resp = callerMessages.find((m) => (m.kind === 'response' || m.kind === 'error') && m.id === id);
+      expect(resp?.kind).toBe('response');
+      if (resp?.kind === 'response') {
+        expect(resp.result).toEqual({ reason: 'turnComplete' });
+      }
+
+      callerHandler.dispose();
+      otherHandler.dispose();
+    });
+  });
+
+  describe('readDialogue', () => {
+    function buildHistory(turns: number): TranscriptEntry[] {
+      const entries: TranscriptEntry[] = [];
+      for (let i = 1; i <= turns; i++) {
+        entries.push({ type: 'user', message: { role: 'user', content: `user-${i}` } });
+        entries.push({ type: 'assistant', message: { role: 'assistant', content: `assistant-${i}` } });
+      }
+      return entries;
+    }
+
+    it('default range returns all turns', async () => {
+      const entries = buildHistory(5);
+      const s1 = makeSessionInfo({ sessionId: 'sess-dlg-1', vendor: 'claude' });
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1], historyEntries: entries });
+      registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+      const resp = await sendRequestAndGetResponse(handler, messages, 'readDialogue', { sessionId: 'sess-dlg-1' });
+      expect(resp.kind).toBe('response');
+      if (resp.kind === 'response') {
+        const result = resp.result as { turns: { turn: number }[] };
+        expect(result.turns.map(t => t.turn)).toEqual([1, 2, 3, 4, 5]);
+      }
+      handler.dispose();
+    });
+
+    it('from: -5 on a 10-turn transcript returns turns 6-10', async () => {
+      const entries = buildHistory(10);
+      const s1 = makeSessionInfo({ sessionId: 'sess-dlg-2', vendor: 'claude' });
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1], historyEntries: entries });
+      registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+      const resp = await sendRequestAndGetResponse(handler, messages, 'readDialogue', { sessionId: 'sess-dlg-2', from: -5 });
+      if (resp.kind === 'response') {
+        const result = resp.result as { turns: { turn: number }[] };
+        expect(result.turns.map(t => t.turn)).toEqual([6, 7, 8, 9, 10]);
+      } else { throw new Error(`unexpected error: ${resp.error}`); }
+      handler.dispose();
+    });
+
+    it('from: -100 on a 10-turn transcript clamps to 1-10', async () => {
+      const entries = buildHistory(10);
+      const s1 = makeSessionInfo({ sessionId: 'sess-dlg-3', vendor: 'claude' });
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1], historyEntries: entries });
+      registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+      const resp = await sendRequestAndGetResponse(handler, messages, 'readDialogue', { sessionId: 'sess-dlg-3', from: -100 });
+      if (resp.kind === 'response') {
+        const result = resp.result as { turns: { turn: number }[] };
+        expect(result.turns.map(t => t.turn)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+      } else { throw new Error(`unexpected error: ${resp.error}`); }
+      handler.dispose();
+    });
+
+    it('from: -1, to: -1 returns the last turn only', async () => {
+      const entries = buildHistory(10);
+      const s1 = makeSessionInfo({ sessionId: 'sess-dlg-4', vendor: 'claude' });
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1], historyEntries: entries });
+      registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+      const resp = await sendRequestAndGetResponse(handler, messages, 'readDialogue', { sessionId: 'sess-dlg-4', from: -1, to: -1 });
+      if (resp.kind === 'response') {
+        const result = resp.result as { turns: { turn: number }[] };
+        expect(result.turns.map(t => t.turn)).toEqual([10]);
+      } else { throw new Error(`unexpected error: ${resp.error}`); }
+      handler.dispose();
+    });
+
+    it('from: 3, to: 5 returns turns 3, 4, 5', async () => {
+      const entries = buildHistory(10);
+      const s1 = makeSessionInfo({ sessionId: 'sess-dlg-5', vendor: 'claude' });
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1], historyEntries: entries });
+      registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+      const resp = await sendRequestAndGetResponse(handler, messages, 'readDialogue', { sessionId: 'sess-dlg-5', from: 3, to: 5 });
+      if (resp.kind === 'response') {
+        const result = resp.result as { turns: { turn: number }[] };
+        expect(result.turns.map(t => t.turn)).toEqual([3, 4, 5]);
+      } else { throw new Error(`unexpected error: ${resp.error}`); }
+      handler.dispose();
+    });
+
+    it('from: -3, to: -1 returns the last 3 turns', async () => {
+      const entries = buildHistory(10);
+      const s1 = makeSessionInfo({ sessionId: 'sess-dlg-6', vendor: 'claude' });
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1], historyEntries: entries });
+      registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+      const resp = await sendRequestAndGetResponse(handler, messages, 'readDialogue', { sessionId: 'sess-dlg-6', from: -3, to: -1 });
+      if (resp.kind === 'response') {
+        const result = resp.result as { turns: { turn: number }[] };
+        expect(result.turns.map(t => t.turn)).toEqual([8, 9, 10]);
+      } else { throw new Error(`unexpected error: ${resp.error}`); }
+      handler.dispose();
+    });
+
+    it('positive range smoke test — wrapper shape and content', async () => {
+      const entries = buildHistory(3);
+      const s1 = makeSessionInfo({ sessionId: 'sess-dlg-7', vendor: 'claude' });
+      const discovery = createMockDiscovery({ vendor: 'claude', sessions: [s1], historyEntries: entries });
+      registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
+
+      const { messages, sendFn } = createMockSend();
+      const handler = createClientConnection('client-1', sendFn);
+      const resp = await sendRequestAndGetResponse(handler, messages, 'readDialogue', { sessionId: 'sess-dlg-7', from: 1, to: 3 });
+      if (resp.kind === 'response') {
+        const result = resp.result as { turns: { turn: number; user: string; assistant: string }[] };
+        // Wrapper preserved: result has a `turns` array (the rename
+        // didn't accidentally drop the wrapper).
+        expect(Array.isArray(result.turns)).toBe(true);
+        expect(result.turns).toHaveLength(3);
+        expect(result.turns[0]).toMatchObject({ turn: 1, user: 'user-1', assistant: 'assistant-1' });
+        expect(result.turns[2]).toMatchObject({ turn: 3, user: 'user-3', assistant: 'assistant-3' });
+      } else { throw new Error(`unexpected error: ${resp.error}`); }
+      handler.dispose();
     });
   });
 

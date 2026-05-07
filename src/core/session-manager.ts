@@ -105,10 +105,65 @@ const pendingToReal = new Map<string, string>();
 // Child Session Dispatch
 // ============================================================================
 
-/** Idle debounce window (ms). After an idle event, wait this long before
- *  resolving. If 'active' fires within the window, the timer resets.
- *  Prevents spurious early resolution in multi-step agent work. */
-const IDLE_SETTLE_MS = 2000;
+import { startIdleWatch } from './channel-idle.js';
+import type {
+  ChannelIdleResult,
+  AwaitChannelIdleOptions,
+} from './channel-idle.js';
+
+/**
+ * Wait for a session channel to settle into idle. Thin wrapper around
+ * `startIdleWatch` that installs its own subscriber on `channel.subscribers`
+ * to feed events into the watcher.
+ *
+ * Resolution rules:
+ * - Authoritative: an `IdleEvent` with `turnComplete: true` resolves
+ *   immediately with reason `'turnComplete'`.
+ * - Debounced: a non-authoritative idle arms an `IDLE_SETTLE_MS` timer.
+ *   `status:active` during the window cancels the timer; on fire the
+ *   helper resolves `'settled'`.
+ * - Already-idle entry: if `channel.state === 'idle'` AND
+ *   `channel.pendingApprovals.size === 0` AND no `deferUntil` is
+ *   pending, the helper enters a 500ms grace window. `status:active`
+ *   or `awaiting_approval` during the window cancels the grace timer
+ *   and falls through to the normal idle watch. Otherwise the helper
+ *   resolves `'settled'` after the grace window.
+ * - Timeout: if `timeoutMs > 0` and no resolution within that window,
+ *   resolves `'timeout'`.
+ * - Interrupt: if `onMessage` returns `'interrupt'`, resolves
+ *   `'interrupted'`.
+ *
+ * Subscriber lifecycle: the helper installs its OWN internal subscriber
+ * on `channel.subscribers` purely to observe status events. It is
+ * unsubscribed synchronously inside the resolve path BEFORE the
+ * promise resolves to the caller. Callers that need to observe entries
+ * (text streaming, token accumulation) must keep their own separate
+ * subscriber installed.
+ */
+export function awaitChannelIdle(
+  channel: SessionChannel,
+  options: AwaitChannelIdleOptions = {},
+): Promise<ChannelIdleResult> {
+  const sidSlice = (channel.adapter?.sessionId ?? channel.channelId).slice(0, 12);
+  log({ level: 'debug', source: 'session', summary: `awaitChannelIdle: enter (session: ${sidSlice}, state: ${channel.state}, deferUntil: ${!!options.deferUntil}, timeoutMs: ${options.timeoutMs ?? 0})` });
+
+  const alreadyIdle =
+    channel.state === 'idle' && channel.pendingApprovals.size === 0;
+  const watcher = startIdleWatch(options, alreadyIdle);
+
+  const subId = `awaitChannelIdle-${crypto.randomUUID()}`;
+  const internalSubscriber: Subscriber = {
+    id: subId,
+    send: (msg) => watcher.feed(msg),
+  };
+  // Skip catchup so we don't synthesize an idle resolution from the
+  // channel's current state — entry semantics are handled by `alreadyIdle`.
+  subscribe(channel, internalSubscriber, { skipCatchup: true });
+
+  return watcher.promise.finally(() => {
+    channel.subscribers.delete(subId);
+  });
+}
 
 /** Ceiling for how long to wait in `background` status before force-resolving
  *  a dispatch. If an adapter emits `status=background` (e.g. Claude SDK with
@@ -1950,58 +2005,24 @@ export async function dispatchChildSession(
     let settled = false;
     // Track the current session ID — starts as the pending ID, may be rekeyed.
     let currentId: string = pendingId;
-    // Captured from sendTurn result — used by idle handler for autoClose:false
+    // Captured from sendTurn result — used as deferUntil for awaitChannelIdle
+    // so finalization waits for the pending→real rekey to land.
     let rekeyPromise: Promise<string> | undefined;
-    // Idle debounce timer — prevents spurious early resolution (fix #8)
-    let idleTimer: ReturnType<typeof setTimeout> | null = null;
     let backgroundTimer: ReturnType<typeof setTimeout> | null = null;
     // Token accumulators — sum per-entry usage for accurate totals (Claude)
     const tokenAcc: ChildTokenAccumulator = { input: 0, output: 0, cacheRead: 0 };
 
-    // Timeout: safety net for hung adapters / infinite loops.
-    // timeoutMs=0 disables the timeout — used for long-running agent sessions
-    // that should wait indefinitely for the turn to complete naturally.
-    const timer = timeoutMs > 0 ? setTimeout(() => {
-      if (!settled) {
-        if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-        if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
-        const parts: string[] = [];
-        if (lastError) parts.push(`error: ${lastError}`);
-        parts.push(`entries: [${entryTypes.join(', ')}]`);
-        if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
-        parts.push(`text: ${text.length} chars`);
-        log({ level: 'debug', source: 'dispatch', summary: `Timeout fired: ${timeoutMs}ms elapsed, entries: ${entryTypes.length}, textLen: ${text.length} (parent: ${parentSessionId})` });
-        log({ level: 'warn', source: 'child-session', summary: `Timeout after ${timeoutMs}ms — no idle event received (parent: ${parentSessionId}, vendor: ${vendor}) — ${parts.join(' | ')}` });
-        settled = true;
-        if (text) {
-          const contextUsage = buildChildUsage(currentId, tokenAcc);
-          cleanup();
-          log({ level: 'debug', source: 'dispatch', summary: `Timeout with partial text — returning partial result (${text.length} chars)` });
-          log({ level: 'warn', source: 'child-session', summary: `Timeout with partial text (${text.length} chars) -- returning partial result (parent: ${parentSessionId}, vendor: ${vendor})` });
-          resolve({ sessionId: currentId, text, structured, contextUsage });
-        } else {
-          // No text → caller gets null and has no session ID to clean up.
-          // Force-close to prevent leaking channel+adapter+MCP subprocesses.
-          log({ level: 'debug', source: 'dispatch', summary: `Timeout null result: no text collected, force-closing channel (parent: ${parentSessionId})` });
-          cleanup(/* force */ true);
-          resolve(null);
-        }
-      }
-    }, timeoutMs) : null;
-
     // force=true tears down even when autoClose:false — used when the dispatch
     // resolves null (no session ID returned to caller → unreachable channel).
     const cleanup = (force = false) => {
-      if (timer) clearTimeout(timer);
-      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
       if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
       const shouldClose = autoClose || force;
       // Clean up both pendingId and currentId to handle the rekey race —
-      // if timeout fires mid-rekey, currentId may differ from pendingId.
+      // if cleanup fires mid-rekey, currentId may differ from pendingId.
       for (const id of new Set([pendingId, currentId])) {
         const ch = getChannel(id);
         if (ch) {
-          unsubscribe(ch, internalSubscriber);
+          unsubscribe(ch, dataSubscriber);
           if (shouldClose) {
             closeSession(id);
           }
@@ -2024,7 +2045,24 @@ export async function dispatchChildSession(
     const contentSummaries: string[] = [];
     let streamingDots = false;
 
-    const internalSubscriber: Subscriber = {
+    const finalize = (resolvedId: string) => {
+      if (text || structured !== undefined || entryTypes.length > 1) {
+        const contextUsage = buildChildUsage(resolvedId, tokenAcc);
+        cleanup();
+        resolve({ sessionId: resolvedId, text, structured, contextUsage });
+      } else {
+        const parts: string[] = [];
+        if (lastError) parts.push(`error: ${lastError}`);
+        parts.push(`entries: [${entryTypes.join(', ')}]`);
+        if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
+        log({ source: 'session-manager:dispatch', level: 'warn',
+          summary: `Turn completed with empty response (parent: ${parentSessionId}) — ${parts.join(' | ')}` });
+        cleanup(/* force */ true);
+        resolve(null);
+      }
+    };
+
+    const dataSubscriber: Subscriber = {
       id: `child-${crypto.randomUUID()}`,
       send(msg) {
         if (settled) return;
@@ -2103,70 +2141,8 @@ export async function dispatchChildSession(
           if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
         }
 
-        // Idle debounce: wait IDLE_SETTLE_MS after idle before resolving.
-        // Cancels if 'active' fires (agent starting another tool round).
-        // Prevents spurious early resolution in multi-step agent work (fix #8).
-        if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'active') {
-          if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-        }
-
-        // For autoClose:false children, ensure we return the real (rekeyed) ID
-        // so resumeChildSession can find the channel. Idle can fire before the
-        // rekey promise resolves, leaving currentId as the stale pending ID.
-        const finalize = (resolvedId: string) => {
-          if (text || structured !== undefined || entryTypes.length > 1) {
-            const contextUsage = buildChildUsage(resolvedId, tokenAcc);
-            cleanup();
-            resolve({ sessionId: resolvedId, text, structured, contextUsage });
-          } else {
-            const parts: string[] = [];
-            if (lastError) parts.push(`error: ${lastError}`);
-            parts.push(`entries: [${entryTypes.join(', ')}]`);
-            if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
-            log({ source: 'session-manager:dispatch', level: 'warn',
-              summary: `Turn completed with empty response (parent: ${parentSessionId}) — ${parts.join(' | ')}` });
-            cleanup(/* force */ true);
-            resolve(null);
-          }
-        };
-
-        const awaitRekeyThenFinalize = () => {
-          if (!autoClose && rekeyPromise) {
-            rekeyPromise.then((realId) => {
-              childSessions.delete(pendingId);
-              childSessions.set(realId, { parentSessionId, autoClose, visible: !!options.openChannel, sessionKind: options.sessionKind });
-              finalize(realId);
-            }).catch(() => finalize(currentId));
-          } else {
-            finalize(currentId);
-          }
-        };
-
-        // Turn complete — check for authoritative turnComplete signal
-        if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'idle') {
-          log({ level: 'debug', source: 'dispatch', summary: `Idle event received (parent: ${parentSessionId}, textSoFar: ${text.length} chars, entries: ${entryTypes.length})` });
-
-          // Authoritative turn completion — resolve immediately, no debounce
-          if ('turnComplete' in msg.event && msg.event.turnComplete) {
-            if (settled) return;
-            settled = true;
-            if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-            awaitRekeyThenFinalize();
-            return;
-          }
-
-          // Fallback: debounced idle for adapters without turnComplete
-          if (idleTimer) clearTimeout(idleTimer);
-          idleTimer = setTimeout(() => {
-            if (settled) return;
-            settled = true;
-            if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-            awaitRekeyThenFinalize();
-          }, IDLE_SETTLE_MS);
-        }
-
-        // Ceiling respects `timeoutMs: 0` (indefinite-wait callers like
-        // Rosie tracker): if the outer safety-net timer is disabled, the
+        // Background ceiling respects `timeoutMs: 0` (indefinite-wait callers
+        // like Rosie tracker): if the outer safety-net timer is disabled, the
         // background ceiling is disabled too.
         if (timeoutMs > 0 && msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'background') {
           if (backgroundTimer) clearTimeout(backgroundTimer);
@@ -2178,9 +2154,13 @@ export async function dispatchChildSession(
               summary: `background ceiling reached — forcing resolve (parent: ${parentSessionId}, child: ${currentId})`,
             });
             settled = true;
-            if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
             if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
-            awaitRekeyThenFinalize();
+            // Defer to rekey before finalizing so the caller gets the real ID.
+            if (!autoClose && rekeyPromise) {
+              rekeyPromise.then((realId) => finalize(realId)).catch(() => finalize(currentId));
+            } else {
+              finalize(currentId);
+            }
           }, BACKGROUND_CEILING_MS);
         }
       },
@@ -2193,7 +2173,7 @@ export async function dispatchChildSession(
     // Fire the turn with the explicit pending ID
     const promptLen = typeof prompt === 'string' ? prompt.length : Array.isArray(prompt) ? prompt.reduce((n, b) => n + ((b as { text?: string }).text?.length ?? 0), 0) : 0;
     log({ level: 'debug', source: 'dispatch', summary: `sendTurn entry (parent: ${parentSessionId}, vendor: ${vendor}, pending: ${pendingId.slice(0, 30)}…, promptLen: ${promptLen})` });
-    sendTurn(intent, internalSubscriber, pendingId)
+    sendTurn(intent, dataSubscriber, pendingId)
       .then((result) => {
         if (settled) return;
         log({ level: 'debug', source: 'dispatch', summary: `sendTurn resolved — sessionId: ${result.sessionId} (parent: ${parentSessionId})` });
@@ -2216,6 +2196,40 @@ export async function dispatchChildSession(
             }
           }).catch(() => {});
         }
+
+        // Wait for the channel to settle. deferUntil rekey so currentId
+        // has been updated to the real ID by the time finalize runs.
+        awaitChannelIdle(result.channel, {
+          deferUntil: rekeyPromise,
+          ...(timeoutMs > 0 && { timeoutMs }),
+        }).then((reason) => {
+          if (settled) return;
+          settled = true;
+          if (reason === 'timeout') {
+            const parts: string[] = [];
+            if (lastError) parts.push(`error: ${lastError}`);
+            parts.push(`entries: [${entryTypes.join(', ')}]`);
+            if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
+            parts.push(`text: ${text.length} chars`);
+            log({ level: 'debug', source: 'dispatch', summary: `Timeout fired: ${timeoutMs}ms elapsed, entries: ${entryTypes.length}, textLen: ${text.length} (parent: ${parentSessionId})` });
+            log({ level: 'warn', source: 'child-session', summary: `Timeout after ${timeoutMs}ms — no idle event received (parent: ${parentSessionId}, vendor: ${vendor}) — ${parts.join(' | ')}` });
+            if (text) {
+              const contextUsage = buildChildUsage(currentId, tokenAcc);
+              cleanup();
+              log({ level: 'debug', source: 'dispatch', summary: `Timeout with partial text — returning partial result (${text.length} chars)` });
+              log({ level: 'warn', source: 'child-session', summary: `Timeout with partial text (${text.length} chars) -- returning partial result (parent: ${parentSessionId}, vendor: ${vendor})` });
+              resolve({ sessionId: currentId, text, structured, contextUsage });
+            } else {
+              log({ level: 'debug', source: 'dispatch', summary: `Timeout null result: no text collected, force-closing channel (parent: ${parentSessionId})` });
+              cleanup(/* force */ true);
+              resolve(null);
+            }
+            return;
+          }
+          // turnComplete or settled — currentId already updated by rekey.then
+          log({ level: 'debug', source: 'dispatch', summary: `Idle resolved (reason: ${reason}, parent: ${parentSessionId}, textSoFar: ${text.length} chars, entries: ${entryTypes.length})` });
+          finalize(currentId);
+        });
       })
       .catch((err) => {
         if (!settled) {
@@ -2298,44 +2312,15 @@ export async function resumeChildSession(
     let text = '';
     let structured: unknown;
     let settled = false;
-    let idleTimer: ReturnType<typeof setTimeout> | null = null;
     let backgroundTimer: ReturnType<typeof setTimeout> | null = null;
     // Token accumulators — sum per-entry usage for accurate totals (Claude)
     const tokenAcc: ChildTokenAccumulator = { input: 0, output: 0, cacheRead: 0 };
 
-    // Timeout: safety net for hung adapters / infinite loops.
-    // timeoutMs=0 disables the timeout — used for long-running agent sessions
-    // that should wait indefinitely for the turn to complete naturally.
-    const timer = timeoutMs > 0 ? setTimeout(() => {
-      if (!settled) {
-        if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-        if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
-        const parts: string[] = [];
-        if (lastError) parts.push(`error: ${lastError}`);
-        parts.push(`entries: [${entryTypes.join(', ')}]`);
-        parts.push(`text: ${text.length} chars`);
-        log({ level: 'debug', source: 'dispatch', summary: `Resume timeout fired: ${timeoutMs}ms elapsed, entries: ${entryTypes.length}, textLen: ${text.length} (session: ${sessionId.slice(0, 12)}…)` });
-        log({ level: 'warn', source: 'resume-child', summary: `Timeout after ${timeoutMs}ms — session ${sessionId} — ${parts.join(' | ')}` });
-        settled = true;
-        const contextUsage = buildChildUsage(sessionId, tokenAcc, baselineCostUsd);
-        cleanup();
-        if (text) {
-          log({ level: 'debug', source: 'dispatch', summary: `Resume timeout with partial text — returning partial result (${text.length} chars)` });
-          resolve({ sessionId, text, structured, contextUsage });
-        } else {
-          log({ level: 'debug', source: 'dispatch', summary: `Resume timeout null result: no text collected (session: ${sessionId.slice(0, 12)}…)` });
-          resolve(null);
-        }
-      }
-    }, timeoutMs) : null;
-
     const cleanup = () => {
-      if (timer) clearTimeout(timer);
-      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
       if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
-      const ch = getChannel(sessionId);
-      if (ch) {
-        unsubscribe(ch, internalSubscriber);
+      const cur = getChannel(sessionId);
+      if (cur) {
+        unsubscribe(cur, dataSubscriber);
         if (autoClose) {
           closeSession(sessionId);
         }
@@ -2355,7 +2340,19 @@ export async function resumeChildSession(
     const entryTypes: string[] = [];
     let lastError: string | undefined;
 
-    const internalSubscriber: Subscriber = {
+    const finalizeResume = () => {
+      const contextUsage = buildChildUsage(sessionId, tokenAcc, baselineCostUsd);
+      cleanup();
+      if (text || structured !== undefined || entryTypes.length > 1) {
+        resolve({ sessionId, text, structured, contextUsage });
+      } else {
+        if (lastError) log({ source: 'session-manager:resume', level: 'warn',
+          summary: `Empty response with error: ${lastError}` });
+        resolve(null);
+      }
+    };
+
+    const dataSubscriber: Subscriber = {
       id: `resume-${crypto.randomUUID()}`,
       send(msg) {
         if (settled) return;
@@ -2401,45 +2398,6 @@ export async function resumeChildSession(
           if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
         }
 
-        // Idle debounce (fix #8)
-        if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'active') {
-          if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-        }
-
-        const finalizeResume = () => {
-          const contextUsage = buildChildUsage(sessionId, tokenAcc, baselineCostUsd);
-          cleanup();
-          if (text || structured !== undefined || entryTypes.length > 1) {
-            resolve({ sessionId, text, structured, contextUsage });
-          } else {
-            if (lastError) log({ source: 'session-manager:resume', level: 'warn',
-              summary: `Empty response with error: ${lastError}` });
-            resolve(null);
-          }
-        };
-
-        // Turn complete — check for authoritative turnComplete signal
-        if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'idle') {
-          log({ level: 'debug', source: 'dispatch', summary: `Resume idle event (session: ${sessionId.slice(0, 12)}…, textSoFar: ${text.length} chars, entries: ${entryTypes.length})` });
-
-          // Authoritative turn completion — resolve immediately, no debounce
-          if ('turnComplete' in msg.event && msg.event.turnComplete) {
-            if (settled) return;
-            settled = true;
-            if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-            finalizeResume();
-            return;
-          }
-
-          // Fallback: debounced idle for adapters without turnComplete
-          if (idleTimer) clearTimeout(idleTimer);
-          idleTimer = setTimeout(() => {
-            if (settled) return;
-            settled = true;
-            finalizeResume();
-          }, IDLE_SETTLE_MS);
-        }
-
         if (timeoutMs > 0 && msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'background') {
           if (backgroundTimer) clearTimeout(backgroundTimer);
           backgroundTimer = setTimeout(() => {
@@ -2450,7 +2408,6 @@ export async function resumeChildSession(
               summary: `background ceiling reached — forcing resolve (session: ${sessionId})`,
             });
             settled = true;
-            if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
             if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
             finalizeResume();
           }, BACKGROUND_CEILING_MS);
@@ -2459,15 +2416,43 @@ export async function resumeChildSession(
     };
 
     // Subscribe to the existing channel
-    subscribe(ch, internalSubscriber);
+    subscribe(ch, dataSubscriber);
 
     // Send the turn — no pending ID needed, session already exists
     const resumePromptLen = typeof prompt === 'string' ? prompt.length : Array.isArray(prompt) ? prompt.reduce((n, b) => n + ((b as { text?: string }).text?.length ?? 0), 0) : 0;
     log({ level: 'debug', source: 'dispatch', summary: `Resume sendTurn entry (session: ${sessionId.slice(0, 12)}…, promptLen: ${resumePromptLen})` });
-    sendTurn(intent, internalSubscriber)
+    sendTurn(intent, dataSubscriber)
       .then(() => {
         if (settled) return;
         log({ level: 'debug', source: 'dispatch', summary: `Resume sendTurn resolved for ${sessionId.slice(0, 12)}…` });
+
+        // Wait for the channel to settle.
+        awaitChannelIdle(ch, {
+          ...(timeoutMs > 0 && { timeoutMs }),
+        }).then((reason) => {
+          if (settled) return;
+          settled = true;
+          if (reason === 'timeout') {
+            const parts: string[] = [];
+            if (lastError) parts.push(`error: ${lastError}`);
+            parts.push(`entries: [${entryTypes.join(', ')}]`);
+            parts.push(`text: ${text.length} chars`);
+            log({ level: 'debug', source: 'dispatch', summary: `Resume timeout fired: ${timeoutMs}ms elapsed, entries: ${entryTypes.length}, textLen: ${text.length} (session: ${sessionId.slice(0, 12)}…)` });
+            log({ level: 'warn', source: 'resume-child', summary: `Timeout after ${timeoutMs}ms — session ${sessionId} — ${parts.join(' | ')}` });
+            const contextUsage = buildChildUsage(sessionId, tokenAcc, baselineCostUsd);
+            cleanup();
+            if (text) {
+              log({ level: 'debug', source: 'dispatch', summary: `Resume timeout with partial text — returning partial result (${text.length} chars)` });
+              resolve({ sessionId, text, structured, contextUsage });
+            } else {
+              log({ level: 'debug', source: 'dispatch', summary: `Resume timeout null result: no text collected (session: ${sessionId.slice(0, 12)}…)` });
+              resolve(null);
+            }
+            return;
+          }
+          log({ level: 'debug', source: 'dispatch', summary: `Resume idle resolved (reason: ${reason}, session: ${sessionId.slice(0, 12)}…, textSoFar: ${text.length} chars, entries: ${entryTypes.length})` });
+          finalizeResume();
+        });
       })
       .catch((err) => {
         if (!settled) {

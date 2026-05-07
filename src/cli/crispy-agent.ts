@@ -26,6 +26,9 @@ import {
   discoverSocket, MessageRouter,
   type RpcEvent,
 } from './ipc-client.js';
+import { startIdleWatch } from '../core/channel-idle.js';
+import type { ChannelMessage } from '../core/agent-adapter.js';
+import type { SubscriberMessage } from '../core/session-channel.js';
 
 // ============================================================================
 // Structured Output
@@ -363,103 +366,82 @@ async function runTurn(
   // State for event collection
   let sessionId = '';
   let text = '';
-  let settled = false;
   let approvalInfo: { toolName: string; toolUseId: string } | null = null;
-  let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
-  // Install event handler BEFORE any RPCs — no event gap
-  const done = new Promise<ResultStatus>((resolve) => {
-    const timer = args.timeoutMs > 0
-      ? setTimeout(() => {
-          if (!settled) {
-            settled = true;
-            if (idleTimer) clearTimeout(idleTimer);
-            resolve('timeout');
-          }
-        }, args.timeoutMs)
-      : undefined;
+  // Idle/debounce/timeout/approval-fail are all centralized in `startIdleWatch`.
+  const watcher = startIdleWatch({
+    ...(args.timeoutMs > 0 && { timeoutMs: args.timeoutMs }),
+    onMessage: (msg) => {
+      if (
+        msg.type === 'event' &&
+        msg.event.type === 'status' &&
+        msg.event.status === 'awaiting_approval' &&
+        args.approval === 'fail'
+      ) {
+        approvalInfo = {
+          toolName: msg.event.toolName ?? 'unknown',
+          toolUseId: msg.event.toolUseId ?? '',
+        };
+        return 'interrupt';
+      }
+    },
+  });
 
-    router.setEventHandler((evt) => {
-      if (settled) return;
-      const event = evt.event;
-      const inner = event.type === 'event' && event.event ? event.event as Record<string, unknown> : event;
+  router.setEventHandler((evt) => {
+    const event = evt.event as unknown as SubscriberMessage;
 
-      // Track session ID rekey
-      if (inner.type === 'notification' && inner.kind === 'session_changed' && inner.sessionId) {
-        const newId = inner.sessionId as string;
+    if (event.type === 'event' && event.event.type === 'notification') {
+      const notif = event.event;
+      if (notif.kind === 'session_changed' && 'sessionId' in notif && typeof notif.sessionId === 'string') {
+        const newId = notif.sessionId;
         if (args.debug) console.error(`[crispy-agent] Session rekey: ${sessionId} → ${newId}`);
         sessionId = newId;
         if (args.sessionIdFile) {
           try { writeFileSync(args.sessionIdFile, newId, 'utf8'); } catch { /* best-effort */ }
         }
       }
+      if (notif.kind === 'error') {
+        console.error(`[crispy-agent] Error: ${(notif as { error?: string }).error ?? 'unknown'}`);
+      }
+    }
 
-      // Collect assistant text
-      if (event.type === 'entry' && event.entry) {
-        const entry = event.entry as { type?: string; message?: { content?: unknown } };
-        if ((entry.type === 'assistant' || entry.type === 'result') && entry.message) {
-          const content = entry.message.content;
-          if (Array.isArray(content)) {
-            for (const block of content) {
-              if (block.type === 'text' && block.text) {
-                text += block.text;
-              }
+    if (event.type === 'entry' && event.entry) {
+      const entry = event.entry as { type?: string; message?: { content?: unknown } };
+      if ((entry.type === 'assistant' || entry.type === 'result') && entry.message) {
+        const content = entry.message.content;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === 'text' && block.text) {
+              text += block.text;
             }
-          } else if (typeof content === 'string') {
-            text += content;
           }
+        } else if (typeof content === 'string') {
+          text += content;
         }
       }
+    }
 
-      // Turn complete — two-tier detection
-      if (inner.type === 'status' && inner.status === 'idle') {
-        if (args.debug) console.error(`[crispy-agent] Session idle (turnComplete: ${'turnComplete' in inner && inner.turnComplete})`);
-
-        if ('turnComplete' in inner && inner.turnComplete) {
-          settled = true;
-          if (idleTimer) clearTimeout(idleTimer);
-          clearTimeout(timer);
-          resolve('completed');
-        } else {
-          if (idleTimer) clearTimeout(idleTimer);
-          idleTimer = setTimeout(() => {
-            if (!settled) {
-              settled = true;
-              clearTimeout(timer);
-              resolve('completed');
-            }
-          }, 2000);
-        }
+    if (args.debug && event.type === 'event' && event.event.type === 'status') {
+      const status = event.event.status;
+      const turnComplete = status === 'idle' && 'turnComplete' in event.event && event.event.turnComplete;
+      console.error(`[crispy-agent] Status: ${status}${turnComplete ? ' (turnComplete)' : ''}`);
+      if (status === 'awaiting_approval' && args.approval === 'manual') {
+        console.error(`[crispy-agent] Awaiting approval for "${event.event.toolName}". Approve in Crispy UI.`);
       }
+    }
 
-      // Non-idle cancels debounce
-      if (inner.type === 'status' && inner.status !== 'idle') {
-        if (idleTimer) { clearTimeout(idleTimer); idleTimer = undefined; }
-      }
+    if (event.type === 'event' || event.type === 'entry') {
+      watcher.feed(event as ChannelMessage);
+    }
+  });
 
-      // Approval required
-      if (inner.type === 'status' && inner.status === 'awaiting_approval') {
-        if (args.approval === 'fail') {
-          approvalInfo = {
-            toolName: (inner.toolName as string) ?? 'unknown',
-            toolUseId: (inner.toolUseId as string) ?? '',
-          };
-          settled = true;
-          if (idleTimer) clearTimeout(idleTimer);
-          clearTimeout(timer);
-          resolve('approval_required');
-        } else if (args.approval === 'manual') {
-          if (args.debug) console.error(
-            `[crispy-agent] Awaiting approval for "${inner.toolName}". Approve in Crispy UI.`,
-          );
-        }
-      }
-
-      // Error notification
-      if (inner.type === 'notification' && inner.kind === 'error') {
-        console.error(`[crispy-agent] Error: ${(inner as { error?: string }).error ?? 'unknown'}`);
-      }
-    });
+  const done: Promise<ResultStatus> = watcher.promise.then((reason) => {
+    switch (reason) {
+      case 'turnComplete':
+      case 'settled': return 'completed';
+      case 'timeout': return 'timeout';
+      case 'interrupted': return 'approval_required';
+    }
   });
 
   // Subscribe first for existing sessions
