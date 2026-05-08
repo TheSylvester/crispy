@@ -1410,13 +1410,14 @@ export class ClaudeAgentAdapter implements AgentAdapter {
 
     this.emitEntry(msg);
 
-    // Result marks end-of-turn — transition to idle (or background if agents
-    // are still running) so subscribers know streaming has stopped. The query
-    // stays alive (waiting for next user input via inputQueue), so
+    // Result marks end-of-turn — always carry `turnComplete: true` so consumers
+    // can resolve on the authoritative signal regardless of whether the channel
+    // stays quiescent ('idle') or has lingering background work ('background').
+    // The query stays alive (waiting for next user input via inputQueue), so
     // drainOutput's finally block won't fire until the query is fully
     // closed/aborted.
     this.emitStatus(this.backgroundTaskCount > 0 ? 'background' : 'idle',
-      this.backgroundTaskCount > 0 ? undefined : { turnComplete: true });
+      { turnComplete: true });
   }
 
   private handleSystemMessage(msg: SDKMessage): void {

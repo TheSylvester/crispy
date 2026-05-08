@@ -57,6 +57,10 @@ const idleEvent = (turnComplete?: true): ChannelMessage => ({
   type: 'event',
   event: { type: 'status', status: 'idle', ...(turnComplete && { turnComplete }) },
 });
+const backgroundEvent = (turnComplete?: true): ChannelMessage => ({
+  type: 'event',
+  event: { type: 'status', status: 'background', ...(turnComplete && { turnComplete }) },
+});
 const activeEvent: ChannelMessage = {
   type: 'event',
   event: { type: 'status', status: 'active' },
@@ -402,6 +406,90 @@ describe('awaitChannelIdle — post-then-wait race', () => {
     expect(resolved).toBe(false);
 
     // Real turn completion releases the helper.
+    adapter.pushMessage(idleEvent(true));
+    const reason = await promise;
+    expect(reason).toBe('turnComplete');
+    destroyChannel('ch-1');
+  });
+});
+
+// ============================================================================
+// 8. Background + turnComplete — authoritative turn-end with lingering bg work.
+// ============================================================================
+
+describe('awaitChannelIdle — background + turnComplete', () => {
+  it('resolves immediately with turnComplete on background:turnComplete', async () => {
+    const ch = createChannel('ch-1');
+    const adapter = createMockAdapter();
+    setAdapter(ch, adapter);
+    await tick();
+
+    // Move to streaming so grace window doesn't fast-path.
+    adapter.pushMessage(activeEvent);
+    await tick();
+    expect(ch.state).toBe('streaming');
+
+    const promise = awaitChannelIdle(ch);
+    adapter.pushMessage(backgroundEvent(true));
+    const reason = await promise;
+    expect(reason).toBe('turnComplete');
+    destroyChannel('ch-1');
+  });
+
+  it('does NOT resolve on bare background event (no turnComplete)', async () => {
+    vi.useFakeTimers();
+    const ch = createChannel('ch-1');
+    const adapter = createMockAdapter();
+    setAdapter(ch, adapter);
+    await vi.advanceTimersByTimeAsync(0);
+
+    adapter.pushMessage(activeEvent);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const promise = awaitChannelIdle(ch);
+    adapter.pushMessage(backgroundEvent());
+    await vi.advanceTimersByTimeAsync(0);
+
+    let resolved = false;
+    promise.then(() => { resolved = true; });
+    // Past the IDLE_SETTLE_MS window — bare background must not auto-resolve.
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(resolved).toBe(false);
+
+    // Release with an authoritative event so the test cleans up.
+    adapter.pushMessage(idleEvent(true));
+    const reason = await promise;
+    expect(reason).toBe('turnComplete');
+    destroyChannel('ch-1');
+  });
+
+  it('active → background:turnComplete resolves immediately', async () => {
+    const ch = createChannel('ch-1');
+    const adapter = createMockAdapter();
+    setAdapter(ch, adapter);
+    await tick();
+
+    adapter.pushMessage(activeEvent);
+    await tick();
+    expect(ch.state).toBe('streaming');
+
+    const promise = awaitChannelIdle(ch);
+    adapter.pushMessage(backgroundEvent(true));
+    const reason = await promise;
+    expect(reason).toBe('turnComplete');
+    destroyChannel('ch-1');
+  });
+
+  it('idle:turnComplete still resolves immediately (regression)', async () => {
+    const ch = createChannel('ch-1');
+    const adapter = createMockAdapter();
+    setAdapter(ch, adapter);
+    await tick();
+
+    adapter.pushMessage(activeEvent);
+    await tick();
+
+    const promise = awaitChannelIdle(ch);
     adapter.pushMessage(idleEvent(true));
     const reason = await promise;
     expect(reason).toBe('turnComplete');

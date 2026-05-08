@@ -387,7 +387,11 @@ function broadcastAndTrack(channel: SessionChannel, msg: ChannelMessage): void {
         case 'background':
           channel.pendingApprovals.clear();
           channel.state = 'background';
-          // Do NOT fire onIdle — background tasks are still running
+          // Fire onIdle when the turn-end signal is present — the turn is done
+          // even though the channel stays in 'background' until bg tasks finish.
+          if ('turnComplete' in event && event.turnComplete) {
+            channel.onIdle?.();
+          }
           break;
       }
       // Notify external observers of the status transition

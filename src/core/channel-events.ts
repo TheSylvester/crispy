@@ -33,6 +33,11 @@ export interface ActiveEvent {
 export interface BackgroundEvent {
   type: 'status';
   status: 'background';
+  /** Authoritative turn completion signal — resolve immediately, no debounce.
+   *  Set when the SDK emits `result` with backgroundTaskCount > 0: the turn is
+   *  over but the channel has lingering background work, so status stays
+   *  'background' while turnComplete signals the turn boundary. */
+  turnComplete?: true;
 }
 
 // ============================================================================

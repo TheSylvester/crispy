@@ -128,6 +128,15 @@ export function startIdleWatch(
     const event = msg.event;
     if (event.type !== 'status') return;
 
+    // Authoritative turn-end — resolve immediately regardless of status.
+    // Adapters set this on the SDK's result event; channel may still be
+    // 'background' if bg tasks remain, but the turn boundary is here.
+    if ('turnComplete' in event && event.turnComplete) {
+      if (graceTimer) { clearTimeout(graceTimer); graceTimer = null; }
+      finalizeIdle('turnComplete');
+      return;
+    }
+
     switch (event.status) {
       case 'active':
         if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
@@ -138,10 +147,6 @@ export function startIdleWatch(
         break;
       case 'idle': {
         if (graceTimer) { clearTimeout(graceTimer); graceTimer = null; }
-        if ('turnComplete' in event && event.turnComplete) {
-          finalizeIdle('turnComplete');
-          return;
-        }
         if (idleTimer) clearTimeout(idleTimer);
         idleTimer = setTimeout(() => {
           idleTimer = null;
@@ -149,6 +154,10 @@ export function startIdleWatch(
         }, IDLE_SETTLE_MS);
         break;
       }
+      // Note: no case for 'background' — the turnComplete branch above handles
+      // turn-end. A bare 'background' (no turnComplete) is non-authoritative
+      // (e.g., emitted from drainOutput().finally() at adapter:1218) and
+      // should not resolve the watcher.
     }
   };
 
