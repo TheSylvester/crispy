@@ -586,6 +586,97 @@ describe('_resetRegistry', () => {
   });
 });
 
+// Idle channel reaper — closes sessions whose channels have no UI/RPC presence.
+describe('Idle channel reaper', () => {
+  function createSessionIdFactory(sessionId: string, vendor: Vendor = 'claude') {
+    return () => createMockAdapter({ vendor, sessionId });
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('reaps an idle channel after the grace period when no external subscribers remain', async () => {
+    const session = makeSessionInfo({ sessionId: 'sess-reap', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, createSessionIdFactory('sess-reap'));
+
+    const sub = createTestSubscriber('client-1');
+    const channel = await subscribeSession('sess-reap', sub);
+    expect(channel.state).toBe('idle');
+
+    const { unsubscribe } = await import('../src/core/session-channel.js');
+    unsubscribe(channel, sub);
+
+    expect(getChannel('sess-reap')).toBeDefined();
+    await vi.advanceTimersByTimeAsync(30_001);
+    expect(getChannel('sess-reap')).toBeUndefined();
+  });
+
+  it('does not reap when an external subscriber returns before the grace period elapses', async () => {
+    const session = makeSessionInfo({ sessionId: 'sess-keep', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, createSessionIdFactory('sess-keep'));
+
+    const { subscribe, unsubscribe } = await import('../src/core/session-channel.js');
+    const sub1 = createTestSubscriber('client-1');
+    const channel = await subscribeSession('sess-keep', sub1);
+
+    unsubscribe(channel, sub1);
+    await vi.advanceTimersByTimeAsync(15_000);
+    const sub2 = createTestSubscriber('client-2');
+    subscribe(channel, sub2);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(getChannel('sess-keep')).toBeDefined();
+  });
+
+  it('does not reap a channel with pending approvals', async () => {
+    const session = makeSessionInfo({ sessionId: 'sess-approval', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, createSessionIdFactory('sess-approval'));
+
+    const { unsubscribe } = await import('../src/core/session-channel.js');
+    const sub = createTestSubscriber('client-1');
+    const channel = await subscribeSession('sess-approval', sub);
+
+    channel.pendingApprovals.set('tool-1', {
+      toolUseId: 'tool-1',
+      toolName: 'Bash',
+      input: {},
+      options: [],
+      reason: undefined,
+    });
+    unsubscribe(channel, sub);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(getChannel('sess-approval')).toBeDefined();
+  });
+
+  it('does not reap registered child sessions (their lifecycle is owned by dispatch)', async () => {
+    const session = makeSessionInfo({ sessionId: 'sess-child', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, createSessionIdFactory('sess-child'));
+
+    const { unsubscribe } = await import('../src/core/session-channel.js');
+    const sub = createTestSubscriber('client-1');
+    const channel = await subscribeSession('sess-child', sub);
+
+    registerChildSession('sess-child', {
+      parentSessionId: 'sess-parent',
+      autoClose: false,
+      visible: true,
+    });
+    unsubscribe(channel, sub);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(getChannel('sess-child')).toBeDefined();
+  });
+});
+
 // ============================================================================
 // B) Regression Tests
 // ============================================================================

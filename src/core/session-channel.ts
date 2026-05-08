@@ -141,8 +141,46 @@ export interface SessionChannel {
   /** Optional callback invoked on any status state change (active/idle/approval/background). */
   onStatusChange?: (state: SessionChannelState) => void;
 
+  /**
+   * Optional callback invoked when the last external subscriber leaves
+   * (external = subscriber id does not start with `__`). Internal helpers
+   * — list-notify, rekey watchers, awaitChannelIdle observers — use the
+   * `__` prefix so they don't drive lifecycle decisions.
+   */
+  onExternalSubscribersGone?: () => void;
+
+  /**
+   * Optional callback invoked when an external subscriber arrives at a
+   * channel that previously had zero. Used to cancel pending reap timers.
+   */
+  onExternalSubscribersReturned?: () => void;
+
   /** Optional arbiter policy — when set, tool calls are auto-resolved before broadcast. */
   arbiterPolicy?: ArbiterPolicy;
+}
+
+/**
+ * Internal subscriber id prefix. Subscribers whose id starts with this
+ * are excluded from external-subscriber accounting (lifecycle hooks
+ * `onExternalSubscribersGone` / `onExternalSubscribersReturned` ignore them).
+ *
+ * External subscribers represent UI clients / RPC connections — the things
+ * we count when deciding "is anyone still watching this session?" Internal
+ * subscribers are short-lived helpers attached by core itself.
+ */
+const INTERNAL_SUB_PREFIX = '__';
+
+function isInternalSubId(id: string): boolean {
+  return id.startsWith(INTERNAL_SUB_PREFIX);
+}
+
+/** Count subscribers whose id is not internally-prefixed. */
+function countExternalSubscribers(channel: SessionChannel): number {
+  let n = 0;
+  for (const id of channel.subscribers.keys()) {
+    if (!isInternalSubId(id)) n++;
+  }
+  return n;
 }
 
 // ============================================================================
@@ -253,6 +291,13 @@ export function subscribe(
   subscriber: Subscriber,
   opts?: { skipCatchup?: boolean },
 ): void {
+  // Snapshot external count before mutation so we can detect the 0→1 edge
+  // for the `onExternalSubscribersReturned` hook. Idempotent re-subscribes
+  // (same id, replacing existing) leave the count unchanged and don't fire.
+  const wasZeroExternal = countExternalSubscribers(channel) === 0;
+  const isExternal = !isInternalSubId(subscriber.id);
+  const wasPresent = channel.subscribers.has(subscriber.id);
+
   channel.subscribers.set(subscriber.id, subscriber);
 
   // Emit catchup with current state (skip 'unattached' — no useful state)
@@ -270,6 +315,12 @@ export function subscribe(
       subscriber.send(catchup);
     } catch { /* swallow — consistent with broadcast() */ }
   }
+
+  // Edge: 0 external → ≥1 external. Cancels any pending reap.
+  if (isExternal && !wasPresent && wasZeroExternal) {
+    try { channel.onExternalSubscribersReturned?.(); }
+    catch (e) { log({ source: 'session-channel', level: 'error', summary: 'onExternalSubscribersReturned hook threw', data: { error: String(e) } }); }
+  }
 }
 
 /**
@@ -281,13 +332,22 @@ export function subscribe(
  * client holds two subscriptions to the same rekeyed channel).
  */
 export function unsubscribe(channel: SessionChannel, subscriberOrId: Subscriber | string): void {
+  let removedId: string | null = null;
   if (typeof subscriberOrId === 'string') {
-    channel.subscribers.delete(subscriberOrId);
-    return;
+    if (channel.subscribers.delete(subscriberOrId)) removedId = subscriberOrId;
+  } else {
+    const existing = channel.subscribers.get(subscriberOrId.id);
+    if (existing === subscriberOrId) {
+      channel.subscribers.delete(subscriberOrId.id);
+      removedId = subscriberOrId.id;
+    }
   }
-  const existing = channel.subscribers.get(subscriberOrId.id);
-  if (existing === subscriberOrId) {
-    channel.subscribers.delete(subscriberOrId.id);
+
+  // Edge: external subscriber left and no external subscribers remain.
+  // Internal-prefixed subscribers don't trigger lifecycle decisions.
+  if (removedId && !isInternalSubId(removedId) && countExternalSubscribers(channel) === 0) {
+    try { channel.onExternalSubscribersGone?.(); }
+    catch (e) { log({ source: 'session-channel', level: 'error', summary: 'onExternalSubscribersGone hook threw', data: { error: String(e) } }); }
   }
 }
 

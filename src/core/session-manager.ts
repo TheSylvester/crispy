@@ -101,6 +101,39 @@ const pending = new Map<string, Promise<SessionChannel>>();
 /** Maps pending IDs to their resolved real IDs for CLI session resolution. */
 const pendingToReal = new Map<string, string>();
 
+/**
+ * Pending idle-channel reap timers, keyed by session id.
+ *
+ * A timer is armed when the last external subscriber leaves an idle channel,
+ * and cancelled when a new external subscriber arrives. On fire, conditions
+ * are re-validated and the channel is closed if still idle/unsubscribed.
+ *
+ * Disk state is unaffected — a reaped session can be reopened from the
+ * Sessions Browser, which re-creates the channel.
+ */
+const reapTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * Grace period between "last subscriber left" and `closeSession()`. Absorbs
+ * webview reload, panel reopen, and brief navigation. Set to 0 to disable
+ * the reaper entirely (preserves pre-0.3.3 behavior where channels live
+ * until host exit).
+ */
+const IDLE_REAP_GRACE_MS = (() => {
+  const raw = process.env.CRISPY_IDLE_CHANNEL_REAP_MS;
+  if (raw === undefined) return 30_000;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : 30_000;
+})();
+
+function cancelReapTimer(sessionId: string): void {
+  const t = reapTimers.get(sessionId);
+  if (t) {
+    clearTimeout(t);
+    reapTimers.delete(sessionId);
+  }
+}
+
 // ============================================================================
 // Child Session Dispatch
 // ============================================================================
@@ -151,7 +184,10 @@ export function awaitChannelIdle(
     channel.state === 'idle' && channel.pendingApprovals.size === 0;
   const watcher = startIdleWatch(options, alreadyIdle);
 
-  const subId = `awaitChannelIdle-${crypto.randomUUID()}`;
+  // Internal `__` prefix excludes this subscriber from external-subscriber
+  // accounting so it doesn't drive idle-channel reap decisions while merely
+  // observing for an idle transition.
+  const subId = `__await_idle__${crypto.randomUUID()}`;
   const internalSubscriber: Subscriber = {
     id: subId,
     send: (msg) => watcher.feed(msg),
@@ -161,7 +197,7 @@ export function awaitChannelIdle(
   subscribe(channel, internalSubscriber, { skipCatchup: true });
 
   return watcher.promise.finally(() => {
-    channel.subscribers.delete(subId);
+    unsubscribe(channel, internalSubscriber);
   });
 }
 
@@ -744,6 +780,8 @@ export function _resetRegistry(): void {
   for (const [sessionId] of sessions) {
     destroyChannel(sessionId);
   }
+  for (const t of reapTimers.values()) clearTimeout(t);
+  reapTimers.clear();
   sessions.clear();
   pending.clear();
   adapters.clear();
@@ -991,7 +1029,24 @@ function wireLifecycleHooks(channel: SessionChannel): void {
     setTimeout(() => {
       refreshAndNotify(sessionId);
       fireResponseComplete(sessionId);
+      // Idle entry: if no external subscribers remain (e.g. user closed all
+      // tabs while the turn was still streaming), arm the reap timer now.
+      // The onExternalSubscribersGone hook would have fired earlier but
+      // skipped scheduling because state wasn't yet idle.
+      maybeScheduleReap(sessionId);
     }, 150);
+  };
+
+  channel.onExternalSubscribersGone = () => {
+    const sessionId = channel.adapter?.sessionId;
+    if (!sessionId) return;
+    maybeScheduleReap(sessionId);
+  };
+
+  channel.onExternalSubscribersReturned = () => {
+    const sessionId = channel.adapter?.sessionId;
+    if (!sessionId) return;
+    cancelReapTimer(sessionId);
   };
 
   channel.onStatusChange = (state) => {
@@ -1884,12 +1939,75 @@ export async function interruptSession(sessionId: string): Promise<void> {
 export function closeSession(sessionId: string): void {
   if (!sessions.has(sessionId)) return;
   log({ source: 'session', level: 'info', summary: `Session: destroyed ${sessionId.slice(0, 12)}…` });
+  cancelReapTimer(sessionId);
   destroyChannel(sessionId);
   sessions.delete(sessionId);
   // Mark child session as closed instead of deleting — closed children must
   // remain queryable so callers (e.g. superthink) can read their transcripts.
   const closeMeta = childSessions.get(sessionId);
   if (closeMeta) childSessions.set(sessionId, { ...closeMeta, closed: true });
+}
+
+/**
+ * Decide whether to arm the idle-channel reaper for a session, and arm it
+ * if all conditions hold.
+ *
+ * The reaper closes channels with no UI/RPC presence after a grace period,
+ * so they don't accumulate forever in the host process. Disk state is
+ * preserved — `subscribeSession()` re-creates the channel on demand.
+ *
+ * Skipped when:
+ * - Reaper is disabled (`CRISPY_IDLE_CHANNEL_REAP_MS=0`).
+ * - Session has child-session metadata. Children have explicit lifecycle
+ *   (dispatchChildSession.cleanup, onIdle+autoClose). Reaping them risks
+ *   killing observer-mode sessions (`autoClose:false`) before the user sees
+ *   the result.
+ * - Channel is not idle (still streaming/awaiting_approval/background).
+ *   `onIdle` will retry once the adapter settles.
+ * - Approvals are still pending — those need a human, not a reaper.
+ * - External subscribers exist — someone's still watching.
+ * - A timer is already armed for this session.
+ */
+function maybeScheduleReap(sessionId: string): void {
+  if (IDLE_REAP_GRACE_MS === 0) return;
+  if (reapTimers.has(sessionId)) return;
+  if (childSessions.has(sessionId)) return;
+
+  const channel = sessions.get(sessionId);
+  if (!channel) return;
+  if (channel.tearing) return;
+  if (channel.state !== 'idle') return;
+  if (channel.pendingApprovals.size > 0) return;
+  for (const id of channel.subscribers.keys()) {
+    if (!id.startsWith('__')) return;
+  }
+
+  const timer = setTimeout(() => {
+    reapTimers.delete(sessionId);
+    // Re-validate at fire time — conditions may have changed during the
+    // grace window. Each check mirrors maybeScheduleReap's preconditions.
+    const ch = sessions.get(sessionId);
+    if (!ch) return;
+    if (ch.tearing) return;
+    if (childSessions.has(sessionId)) return;
+    if (ch.state !== 'idle') return;
+    if (ch.pendingApprovals.size > 0) return;
+    for (const id of ch.subscribers.keys()) {
+      if (!id.startsWith('__')) return;
+    }
+    log({
+      source: 'session',
+      level: 'info',
+      summary: `Session: reaping idle channel ${sessionId.slice(0, 12)}… (no subscribers)`,
+    });
+    broadcastCloseChannel(sessionId);
+    closeSession(sessionId);
+  }, IDLE_REAP_GRACE_MS);
+  // Don't keep the host process alive just because a reap timer is pending.
+  if (typeof timer === 'object' && timer && 'unref' in timer && typeof (timer as { unref?: () => unknown }).unref === 'function') {
+    (timer as { unref: () => void }).unref();
+  }
+  reapTimers.set(sessionId, timer);
 }
 
 // ============================================================================
