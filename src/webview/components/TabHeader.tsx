@@ -18,6 +18,7 @@ import { useIsActiveTab } from '../context/TabContainerContext.js';
 import { SessionSelector } from './session-selector/index.js';
 import { useTransport } from '../context/TransportContext.js';
 import { getSessionDisplayName } from '../utils/session-display.js';
+import './status-dot.css';
 
 // ============================================================================
 // Inline SVG icons (same as TitleBar — will be shared later)

@@ -1,0 +1,78 @@
+/*
+ * Status indicator dot — shared across TitleBar (main webview) and
+ * SessionsPanel (main + sidebar bundles).
+ *
+ * The sidebar webview bundle doesn't link the global `styles.css`, so these
+ * rules — including keyframes and CSS-variable fallbacks for tokens declared
+ * in `styles.css` — must live in a JS-imported file so esbuild bundles them
+ * into both `dist/webview/sidebar.css` and the main webview output.
+ */
+
+.crispy-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full, 50%);
+  flex-shrink: 0;
+  transition:
+    background 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+.crispy-status-dot--idle {
+  background: #999;
+}
+
+.crispy-status-dot--streaming {
+  background: var(--vscode-testing-runAction, #73c991);
+  box-shadow: 0 0 4px rgba(115, 201, 145, 0.6);
+  animation: crispy-dot-pulse-green 2s ease-in-out infinite;
+}
+
+.crispy-status-dot--approval {
+  background: var(--context-moderate, #dcdcaa);
+  box-shadow: 0 0 4px rgba(220, 220, 170, 0.5);
+  animation: crispy-dot-pulse-amber 2s ease-in-out infinite;
+}
+
+.crispy-status-dot--background {
+  background: var(--vscode-charts-blue, #6cb6ff);
+  box-shadow: 0 0 4px rgba(108, 182, 255, 0.5);
+  animation: crispy-dot-pulse-blue 4s ease-in-out infinite;
+}
+
+@keyframes crispy-dot-pulse-green {
+  0%,
+  100% {
+    box-shadow: 0 0 4px rgba(115, 201, 145, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 8px rgba(115, 201, 145, 0.8);
+  }
+}
+
+@keyframes crispy-dot-pulse-amber {
+  0%,
+  100% {
+    box-shadow: 0 0 4px rgba(220, 220, 170, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 8px rgba(220, 220, 170, 0.7);
+  }
+}
+
+@keyframes crispy-dot-pulse-blue {
+  0%,
+  100% {
+    box-shadow: 0 0 4px rgba(108, 182, 255, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 8px rgba(108, 182, 255, 0.7);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crispy-status-dot {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+}

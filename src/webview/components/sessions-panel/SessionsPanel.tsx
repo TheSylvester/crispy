@@ -17,6 +17,7 @@ import { useSession } from '../../context/SessionContext.js';
 import { formatRelativeTime } from '../../utils/format.js';
 import type { OpenSessionInfo } from '../../transport.js';
 import type { SessionChannelState } from '../../../core/session-channel.js';
+import '../status-dot.css';
 import './sessions-panel.css';
 
 interface SessionsPanelProps {
