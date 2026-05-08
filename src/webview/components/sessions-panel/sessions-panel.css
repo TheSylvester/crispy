@@ -51,6 +51,17 @@
   background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.04));
 }
 
+/* Channel is alive but no UI surface is currently attached — fade the row
+ * so the user can tell at a glance that the session is unattended (and will
+ * be reaped after the idle grace period). Hover restores full opacity. */
+.crispy-sessions-panel__row--detached {
+  opacity: 0.55;
+}
+
+.crispy-sessions-panel__row--detached:hover {
+  opacity: 1;
+}
+
 .crispy-sessions-panel__row-text {
   display: flex;
   flex-direction: column;

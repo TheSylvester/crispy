@@ -112,12 +112,16 @@ export function SessionsPanel({ mode = 'sidebar', onActivate }: SessionsPanelPro
             const message = messageFor(s);
             const dotModifier = STATE_DOT_CLASS[s.state] ?? '';
             const time = s.lastActivityAt ? formatRelativeTime(s.lastActivityAt) : '';
+            const rowClass = `crispy-sessions-panel__row${s.attached ? '' : ' crispy-sessions-panel__row--detached'}`;
+            const rowTitle = s.attached
+              ? `${label}\n${s.sessionId}`
+              : `${label}\n${s.sessionId}\n(no window open — will close in ~30s if idle)`;
             return (
               <button
                 key={s.sessionId}
-                className="crispy-sessions-panel__row"
+                className={rowClass}
                 onClick={() => handleClick(s.sessionId)}
-                title={`${label}\n${s.sessionId}`}
+                title={rowTitle}
               >
                 <span className={`crispy-status-dot ${dotModifier}`} />
                 <span className="crispy-sessions-panel__row-text">

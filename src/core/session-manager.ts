@@ -56,6 +56,7 @@ import {
   destroyChannel, rekeyChannel, getChannel, rotateAdapter,
   broadcastUserEntry as channelBroadcastUserEntry,
   broadcastEvent,
+  countExternalSubscribers,
 } from './session-channel.js';
 import { refreshAndNotify, notifyStatusChange, broadcastCloseChannel, broadcastOpenChannel } from './session-list-manager.js';
 import { fireResponseComplete } from './lifecycle-hooks.js';
@@ -510,6 +511,19 @@ export interface OpenSessionInfo {
    * - "zombie subscriber" (state=idle but lastActivityAt is hours old)
    */
   lastActivityAt?: string;
+
+  /**
+   * True iff at least one external (non-`__`-prefixed) subscriber is currently
+   * attached to the channel — i.e. some UI surface (FlexLayout tab, browser app,
+   * Tauri client) is rendering this session right now.
+   *
+   * False means the channel is alive in memory but no window is showing it.
+   * The reaper will close the channel ~30s after this transitions to false
+   * (assuming idle, no pending approvals, not a registered child).
+   *
+   * Mirrors the same external-subscriber count the reaper consults.
+   */
+  attached: boolean;
 }
 
 /** Options for `listOpenChannels()`. */
@@ -685,6 +699,7 @@ export function listOpenChannels(
       state: channel.state as Exclude<SessionChannelState, 'unattached'>,
       pendingApprovalCount: channel.pendingApprovals.size,
       entryCount: channel.entries.length,
+      attached: countExternalSubscribers(channel) > 0,
       ...(isSystem ? { sessionKind: 'system' as const } : {}),
       ...(info?.isSidechain ? { isSidechain: true } : {}),
       ...(parent ? {
@@ -1041,12 +1056,16 @@ function wireLifecycleHooks(channel: SessionChannel): void {
     const sessionId = channel.adapter?.sessionId;
     if (!sessionId) return;
     maybeScheduleReap(sessionId);
+    // Re-broadcast current state so subscribers (sidebar) refetch and pick
+    // up the flipped `attached` flag without waiting for a real status change.
+    notifyStatusChange(sessionId, channel.state);
   };
 
   channel.onExternalSubscribersReturned = () => {
     const sessionId = channel.adapter?.sessionId;
     if (!sessionId) return;
     cancelReapTimer(sessionId);
+    notifyStatusChange(sessionId, channel.state);
   };
 
   channel.onStatusChange = (state) => {

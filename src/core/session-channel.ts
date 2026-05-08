@@ -175,7 +175,7 @@ function isInternalSubId(id: string): boolean {
 }
 
 /** Count subscribers whose id is not internally-prefixed. */
-function countExternalSubscribers(channel: SessionChannel): number {
+export function countExternalSubscribers(channel: SessionChannel): number {
   let n = 0;
   for (const id of channel.subscribers.keys()) {
     if (!isInternalSubId(id)) n++;
