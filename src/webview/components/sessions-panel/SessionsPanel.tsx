@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTransport } from '../../context/TransportContext.js';
 import { useSession } from '../../context/SessionContext.js';
 import { useTabController } from '../../context/TabControllerContext.js';
+import { formatRelativeTime } from '../../utils/format.js';
 import type { OpenSessionInfo } from '../../transport.js';
 import type { SessionChannelState } from '../../../core/session-channel.js';
 import './sessions-panel.css';
@@ -31,23 +32,28 @@ const STATE_DOT_CLASS: Record<DotState, string> = {
   awaiting_approval: 'crispy-sessions-panel__dot--approval',
 };
 
+// Keep relative timestamps fresh without depending on session-status churn.
+// formatRelativeTime rounds to whole minutes after 60s, so a 15s tick is
+// granular enough and the cost is one setState per interval.
+const TIME_TICK_MS = 15_000;
+
 function labelFor(s: OpenSessionInfo): string {
   return s.title || s.lastUserPrompt || `${s.sessionId.slice(0, 8)}…`;
 }
 
-function basenameOf(path: string | undefined): string | null {
-  if (!path) return null;
-  const parts = path.split(/[\\/]+/).filter(Boolean);
-  return parts[parts.length - 1] ?? path;
-}
-
-function subtitleFor(s: OpenSessionInfo): string | null {
-  const parts: string[] = [];
-  if (s.vendor && s.vendor !== 'unknown') parts.push(s.vendor);
-  const cwd = basenameOf(s.projectPath);
-  if (cwd) parts.push(cwd);
-  if (parts.length === 0) return null;
-  return parts.join(' · ');
+/**
+ * Second-line text. Prefers `lastMessage`; when empty (agent is running tools,
+ * not speaking — the dropdown's "no preview" case), falls back to a state
+ * hint so row heights stay uniform.
+ */
+function messageFor(s: OpenSessionInfo): string {
+  if (s.lastMessage) return s.lastMessage;
+  switch (s.state) {
+    case 'streaming': return 'Running tools…';
+    case 'background': return 'Background task running';
+    case 'awaiting_approval': return 'Awaiting approval';
+    case 'idle': return '';
+  }
 }
 
 export function SessionsPanel({ mode = 'sidebar' }: SessionsPanelProps): React.JSX.Element {
@@ -55,6 +61,7 @@ export function SessionsPanel({ mode = 'sidebar' }: SessionsPanelProps): React.J
   const { sessions, sessionStatuses } = useSession();
   const tabController = useTabController();
   const [openSessions, setOpenSessions] = useState<OpenSessionInfo[] | null>(null);
+  const [, setNowTick] = useState(0);
 
   // Refresh whenever the session list or per-session status events fire.
   // Both signals bump on open/close/state transitions, so this keeps the
@@ -78,6 +85,12 @@ export function SessionsPanel({ mode = 'sidebar' }: SessionsPanelProps): React.J
     return () => { cancelled.current = true; };
   }, [transport, sessions, sessionStatuses]);
 
+  // Tick re-render so relative times advance even when no status events fire.
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(t => t + 1), TIME_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
+
   const handleClick = useCallback((sessionId: string) => {
     tabController.navigateToSession(sessionId);
   }, [tabController]);
@@ -99,8 +112,9 @@ export function SessionsPanel({ mode = 'sidebar' }: SessionsPanelProps): React.J
         ) : (
           openSessions.map((s) => {
             const label = labelFor(s);
-            const subtitle = subtitleFor(s);
+            const message = messageFor(s);
             const dotClass = STATE_DOT_CLASS[s.state] ?? 'crispy-sessions-panel__dot--unknown';
+            const time = s.lastActivityAt ? formatRelativeTime(s.lastActivityAt) : '';
             return (
               <button
                 key={s.sessionId}
@@ -110,14 +124,17 @@ export function SessionsPanel({ mode = 'sidebar' }: SessionsPanelProps): React.J
               >
                 <span className={`crispy-sessions-panel__dot ${dotClass}`} />
                 <span className="crispy-sessions-panel__row-text">
-                  <span className="crispy-sessions-panel__label">{label}</span>
-                  {subtitle && <span className="crispy-sessions-panel__subtitle">{subtitle}</span>}
-                </span>
-                {s.pendingApprovalCount > 0 && (
-                  <span className="crispy-sessions-panel__badge" title={`${s.pendingApprovalCount} pending approval(s)`}>
-                    {s.pendingApprovalCount}
+                  <span className="crispy-sessions-panel__line-1">
+                    <span className="crispy-sessions-panel__label">{label}</span>
+                    {s.pendingApprovalCount > 0 && (
+                      <span className="crispy-sessions-panel__badge" title={`${s.pendingApprovalCount} pending approval(s)`}>
+                        {s.pendingApprovalCount}
+                      </span>
+                    )}
+                    {time && <span className="crispy-sessions-panel__time">{time}</span>}
                   </span>
-                )}
+                  {message && <span className="crispy-sessions-panel__message">{message}</span>}
+                </span>
               </button>
             );
           })
