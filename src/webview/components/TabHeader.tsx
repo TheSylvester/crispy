@@ -106,18 +106,18 @@ function ConnectionDot({
 
   const dotModifier =
     channelState === 'streaming'
-      ? 'crispy-titlebar__dot--streaming'
+      ? 'crispy-status-dot--streaming'
       : channelState === 'idle'
-        ? 'crispy-titlebar__dot--idle'
+        ? 'crispy-status-dot--idle'
         : channelState === 'awaiting_approval'
-          ? 'crispy-titlebar__dot--approval'
+          ? 'crispy-status-dot--approval'
           : channelState === 'background'
-            ? 'crispy-titlebar__dot--background'
+            ? 'crispy-status-dot--background'
             : null;
 
   if (!dotModifier) return null;
 
-  const dotClass = `crispy-titlebar__dot ${dotModifier}${copied ? ' crispy-titlebar__dot--copied' : ''}`;
+  const dotClass = `crispy-status-dot ${dotModifier} crispy-titlebar__dot${copied ? ' crispy-titlebar__dot--copied' : ''}`;
 
   const handleCopy = async () => {
     if (!sessionId) return;

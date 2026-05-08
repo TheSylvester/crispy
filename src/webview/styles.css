@@ -4407,39 +4407,43 @@ body[data-accent-mode="skin"] {
   }
 }
 
-/* --- Connection indicator dot (glow + click-to-copy) --- */
+/* --- Status indicator dot — shared across TitleBar and SessionsPanel --- */
 
-.crispy-titlebar__dot {
+.crispy-status-dot {
   width: 8px;
   height: 8px;
   border-radius: var(--radius-full);
   flex-shrink: 0;
-  cursor: pointer;
   transition:
     background 0.3s ease,
     box-shadow 0.3s ease;
 }
 
-.crispy-titlebar__dot--streaming {
+.crispy-status-dot--idle {
+  background: #999;
+}
+
+.crispy-status-dot--streaming {
   background: var(--vscode-testing-runAction, #73c991);
   box-shadow: 0 0 4px rgba(115, 201, 145, 0.6);
   animation: crispy-dot-pulse-green 2s ease-in-out infinite;
 }
 
-.crispy-titlebar__dot--idle {
-  background: #999;
-}
-
-.crispy-titlebar__dot--approval {
+.crispy-status-dot--approval {
   background: var(--context-moderate);
   box-shadow: 0 0 4px rgba(220, 220, 170, 0.5);
   animation: crispy-dot-pulse-amber 2s ease-in-out infinite;
 }
 
-.crispy-titlebar__dot--background {
+.crispy-status-dot--background {
   background: var(--vscode-charts-blue, #6cb6ff);
   box-shadow: 0 0 4px rgba(108, 182, 255, 0.5);
   animation: crispy-dot-pulse-blue 4s ease-in-out infinite;
+}
+
+/* TitleBar dot adds click-to-copy affordance over the shared status dot. */
+.crispy-titlebar__dot {
+  cursor: pointer;
 }
 
 /* Dot wrapper — positioning context for copied label */
@@ -5505,7 +5509,7 @@ body[data-accent-mode="skin"] {
   .crispy-cp-send__icon,
   .crispy-cp-settings__btn,
   .crispy-cp-rosie__btn,
-  .crispy-titlebar__dot,
+  .crispy-status-dot,
   .crispy-titlebar__dot-copied-label,
   .crispy-welcome__title,
   .crispy-workspace-picker__title {

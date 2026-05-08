@@ -28,10 +28,10 @@ interface SessionsPanelProps {
 type DotState = Exclude<SessionChannelState, 'unattached'>;
 
 const STATE_DOT_CLASS: Record<DotState, string> = {
-  idle: 'crispy-sessions-panel__dot--idle',
-  streaming: 'crispy-sessions-panel__dot--streaming',
-  background: 'crispy-sessions-panel__dot--background',
-  awaiting_approval: 'crispy-sessions-panel__dot--approval',
+  idle: 'crispy-status-dot--idle',
+  streaming: 'crispy-status-dot--streaming',
+  background: 'crispy-status-dot--background',
+  awaiting_approval: 'crispy-status-dot--approval',
 };
 
 // Keep relative timestamps fresh without depending on session-status churn.
@@ -97,14 +97,9 @@ export function SessionsPanel({ mode = 'sidebar', onActivate }: SessionsPanelPro
   }, [onActivate]);
 
   const panelClass = `crispy-sessions-panel${mode === 'tab' ? ' crispy-sessions-panel--tab' : ''}`;
-  const count = openSessions?.length ?? 0;
 
   return (
     <div className={panelClass}>
-      <div className="crispy-sessions-panel__header">
-        <span className="crispy-sessions-panel__title">OPEN SESSIONS</span>
-        <span className="crispy-sessions-panel__count">{count}</span>
-      </div>
       <div className="crispy-sessions-panel__list">
         {openSessions === null ? (
           <div className="crispy-sessions-panel__empty">Loading…</div>
@@ -114,7 +109,7 @@ export function SessionsPanel({ mode = 'sidebar', onActivate }: SessionsPanelPro
           openSessions.map((s) => {
             const label = labelFor(s);
             const message = messageFor(s);
-            const dotClass = STATE_DOT_CLASS[s.state] ?? 'crispy-sessions-panel__dot--unknown';
+            const dotModifier = STATE_DOT_CLASS[s.state] ?? '';
             const time = s.lastActivityAt ? formatRelativeTime(s.lastActivityAt) : '';
             return (
               <button
@@ -123,7 +118,7 @@ export function SessionsPanel({ mode = 'sidebar', onActivate }: SessionsPanelPro
                 onClick={() => handleClick(s.sessionId)}
                 title={`${label}\n${s.sessionId}`}
               >
-                <span className={`crispy-sessions-panel__dot ${dotClass}`} />
+                <span className={`crispy-status-dot ${dotModifier}`} />
                 <span className="crispy-sessions-panel__row-text">
                   <span className="crispy-sessions-panel__line-1">
                     <span className="crispy-sessions-panel__label">{label}</span>
