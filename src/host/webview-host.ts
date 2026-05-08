@@ -49,6 +49,43 @@ export function getActivePanel(): vscode.WebviewPanel | undefined {
 }
 
 /**
+ * Reveal a session in an existing Crispy panel, or open a new one if none exist.
+ *
+ * Panel selection priority: active → most-recent → create-new.
+ * Posts `{kind: 'navigateToSession', sessionId}` to the chosen panel; the
+ * webview-side handler routes through `tabController.navigateToSession`,
+ * which finds an existing tab for the session or creates one.
+ */
+export function revealSessionInAnyPanel(
+  context: vscode.ExtensionContext,
+  sessionId: string,
+): vscode.WebviewPanel {
+  const message = { kind: 'navigateToSession', sessionId };
+
+  const active = getActivePanel();
+  if (active) {
+    active.reveal(active.viewColumn ?? vscode.ViewColumn.Active, false);
+    active.webview.postMessage(message);
+    return active;
+  }
+
+  const recent = getMostRecentPanel();
+  if (recent) {
+    recent.reveal(recent.viewColumn ?? vscode.ViewColumn.Active, false);
+    recent.webview.postMessage(message);
+    return recent;
+  }
+
+  const panel = createCrispyPanel(context, vscode.ViewColumn.Beside);
+  const timers: Array<ReturnType<typeof setTimeout>> = [];
+  panel.onDidDispose(() => { for (const t of timers) clearTimeout(t); });
+  for (const delay of [100, 500, 1500]) {
+    timers.push(setTimeout(() => panel.webview.postMessage(message), delay));
+  }
+  return panel;
+}
+
+/**
  * Create a new panel for "Execute in Crispy".
  * Always creates a fresh panel so the current session is not overwritten.
  * If a panel already exists, opens beside it; otherwise uses column one.
@@ -303,7 +340,7 @@ export function createCrispyPanel(
   return panel;
 }
 
-function getNonce(): string {
+export function getNonce(): string {
   return crypto.randomBytes(16).toString('hex');
 }
 

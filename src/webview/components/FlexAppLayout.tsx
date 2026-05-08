@@ -411,6 +411,22 @@ export function FlexAppLayout(): React.JSX.Element {
     });
   }, [controller, createTab, closeTab, activateTab, findTabBySession, getTabSession, findTabByComponent, toggleGitBorder, toggleFilesBorder, toggleSessionsBorder, toggleTerminalBorder, findFileViewerTab, updateTabConfig, equalizeLayout]);
 
+  // Bridge for `revealSessionInAnyPanel` (host → webview). Distinct from
+  // `openSession`, which swaps the active tab's session in place — this
+  // finds-or-creates a tab. Listener registers once; controller is read
+  // through a ref so active-tab changes don't churn the listener.
+  const controllerRef = useRef(controller);
+  controllerRef.current = controller;
+  useEffect(() => {
+    function handler(ev: MessageEvent) {
+      if (ev.data?.kind === 'navigateToSession' && typeof ev.data.sessionId === 'string') {
+        controllerRef.current.navigateToSession(ev.data.sessionId);
+      }
+    }
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
   // Seed initial active tab so lastActiveTranscriptTabId is set even before
   // any model change fires (needed for file-viewer → transcript tab inserts)
   const seeded = useRef(false);
@@ -606,7 +622,7 @@ export function FlexAppLayout(): React.JSX.Element {
     } else if (node.getComponent() === 'sessions') {
       return (
         <ContentErrorBoundary>
-          <SessionsPanel mode="tab" />
+          <SessionsPanelWithTabController />
         </ContentErrorBoundary>
       );
     } else if (node.getComponent() === 'terminal') {
@@ -722,4 +738,16 @@ function getTabName(sessionId: string, sessions: Array<{ sessionId: string; titl
     return name.length > 42 ? name.slice(0, 42) + '\u2026' : name;
   }
   return sessionId.slice(0, 8) + '\u2026';
+}
+
+// Wrapper that injects FlexLayout's tab-controller navigation into the
+// portable SessionsPanel. Sidebar webviews provide a different onActivate.
+function SessionsPanelWithTabController(): React.JSX.Element {
+  const tabController = useTabController();
+  return (
+    <SessionsPanel
+      mode="tab"
+      onActivate={(id) => tabController.navigateToSession(id)}
+    />
+  );
 }

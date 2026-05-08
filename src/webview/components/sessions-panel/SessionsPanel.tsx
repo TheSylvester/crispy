@@ -2,10 +2,11 @@
  * SessionsPanel — list of currently-open Crispy sessions
  *
  * Lists live in-process channels via transport.listOpenSessions(). Each row
- * activates that session's transcript tab on click (creating one if none
- * exists). Refreshes when the session list or per-session status events fire,
- * which is the cheapest "live" signal — open/close/state transitions all
- * bump sessionStatuses.
+ * fires the injected `onActivate` callback on click — different shells wire
+ * it differently (FlexLayout: navigate to a transcript tab; VS Code sidebar:
+ * post a host message to reveal in an editor panel). Refreshes when the
+ * session list or per-session status events fire, which is the cheapest
+ * "live" signal — open/close/state transitions all bump sessionStatuses.
  *
  * @module sessions-panel/SessionsPanel
  */
@@ -13,7 +14,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTransport } from '../../context/TransportContext.js';
 import { useSession } from '../../context/SessionContext.js';
-import { useTabController } from '../../context/TabControllerContext.js';
 import { formatRelativeTime } from '../../utils/format.js';
 import type { OpenSessionInfo } from '../../transport.js';
 import type { SessionChannelState } from '../../../core/session-channel.js';
@@ -21,6 +21,8 @@ import './sessions-panel.css';
 
 interface SessionsPanelProps {
   mode?: 'sidebar' | 'tab';
+  /** Click handler — caller decides how to surface the activated session. */
+  onActivate?: (sessionId: string) => void;
 }
 
 type DotState = Exclude<SessionChannelState, 'unattached'>;
@@ -56,10 +58,9 @@ function messageFor(s: OpenSessionInfo): string {
   }
 }
 
-export function SessionsPanel({ mode = 'sidebar' }: SessionsPanelProps): React.JSX.Element {
+export function SessionsPanel({ mode = 'sidebar', onActivate }: SessionsPanelProps): React.JSX.Element {
   const transport = useTransport();
   const { sessions, sessionStatuses } = useSession();
-  const tabController = useTabController();
   const [openSessions, setOpenSessions] = useState<OpenSessionInfo[] | null>(null);
   const [, setNowTick] = useState(0);
 
@@ -92,8 +93,8 @@ export function SessionsPanel({ mode = 'sidebar' }: SessionsPanelProps): React.J
   }, []);
 
   const handleClick = useCallback((sessionId: string) => {
-    tabController.navigateToSession(sessionId);
-  }, [tabController]);
+    onActivate?.(sessionId);
+  }, [onActivate]);
 
   const panelClass = `crispy-sessions-panel${mode === 'tab' ? ' crispy-sessions-panel--tab' : ''}`;
   const count = openSessions?.length ?? 0;

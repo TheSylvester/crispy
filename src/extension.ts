@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 
 import { initSettings, startWatchingSettings, stopWatchingSettings } from './core/settings/index.js';
 import { openCrispyPanel, getOrCreatePanelForPrefill, getMostRecentPanel, getActivePanel, createCrispyPanel } from './host/webview-host.js';
+import { OpenSessionsViewProvider } from './host/sessions-sidebar-view.js';
 import { registerPanelOpener, registerPanelCloser } from './host/panel-opener.js';
 import { startRescan, stopRescan } from './core/session-list-manager.js';
 import { findClaudeBinary } from './core/find-claude-binary.js';
@@ -93,6 +94,16 @@ export function activate(context: vscode.ExtensionContext): void {
         panel.webview.postMessage({ kind: 'toggleVoiceInput' });
       }
     }),
+  );
+
+  // Open Sessions sidebar view (Activity Bar)
+  const sidebarProvider = new OpenSessionsViewProvider(context);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      OpenSessionsViewProvider.viewType,
+      sidebarProvider,
+      { webviewOptions: { retainContextWhenHidden: true } },
+    ),
   );
 
   // Initialize settings from settingsPath() (platform-dependent: ~/.crispy/ or %APPDATA%/Crispy/)

@@ -27,7 +27,7 @@ interface SessionState {
   error: string | null;
 }
 
-interface SessionContextValue extends SessionState {
+export interface SessionContextValue extends SessionState {
   setSelectedSessionId: (id: string | null) => void;
   setSelectedCwd: (slug: string | null) => void;
   refreshSessions: () => void;
@@ -42,7 +42,7 @@ interface SessionContextValue extends SessionState {
   isAutoClosePanel: boolean;
 }
 
-const SessionContext = createContext<SessionContextValue | null>(null);
+export const SessionContext = createContext<SessionContextValue | null>(null);
 
 interface SessionProviderProps {
   children: React.ReactNode;
