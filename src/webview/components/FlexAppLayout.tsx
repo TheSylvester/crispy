@@ -411,6 +411,25 @@ export function FlexAppLayout(): React.JSX.Element {
     });
   }, [controller, createTab, closeTab, activateTab, findTabBySession, getTabSession, findTabByComponent, toggleGitBorder, toggleFilesBorder, toggleSessionsBorder, toggleTerminalBorder, findFileViewerTab, updateTabConfig, equalizeLayout]);
 
+  // Bridge for sidebar/CLI session focus (host → webview). The host posts
+  // `navigateToSession` only to a panel that's already subscribed to the
+  // session (per `getPanelHostingSession`), so the matching FlexLayout tab
+  // already exists or was just released — `navigateToSession` finds-or-creates.
+  // Distinct from `openSession`, which swaps the active tab's session in place.
+  // Listener registers once; controller is read through a ref so active-tab
+  // changes don't churn the listener.
+  const controllerRef = useRef(controller);
+  controllerRef.current = controller;
+  useEffect(() => {
+    function handler(ev: MessageEvent) {
+      if (ev.data?.kind === 'navigateToSession' && typeof ev.data.sessionId === 'string') {
+        controllerRef.current.navigateToSession(ev.data.sessionId);
+      }
+    }
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
   // Seed initial active tab so lastActiveTranscriptTabId is set even before
   // any model change fires (needed for file-viewer → transcript tab inserts)
   const seeded = useRef(false);

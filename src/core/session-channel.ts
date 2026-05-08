@@ -241,6 +241,25 @@ export function getActiveChannels(): SessionChannel[] {
   return [...channels.values()].filter((ch) => ch.adapter != null);
 }
 
+/**
+ * List external subscriber ids on a channel. Internal-prefixed subscribers
+ * (rekey watchers, list-notify, await-idle) are filtered out.
+ *
+ * Used by hosts to resolve "which UI clients are watching this session?" —
+ * the subscriber id (= ClientConnection clientId) maps back to a transport
+ * surface (VS Code panel, ws connection, ipc client). Returns [] for unknown
+ * sessionIds so callers can probe without prior existence checks.
+ */
+export function listChannelSubscriberIds(sessionId: string): string[] {
+  const channel = channels.get(sessionId);
+  if (!channel) return [];
+  const ids: string[] = [];
+  for (const id of channel.subscribers.keys()) {
+    if (!isInternalSubId(id)) ids.push(id);
+  }
+  return ids;
+}
+
 /** Destroy a channel — tears down adapter, removes from registry. */
 export function destroyChannel(channelId: string): void {
   const channel = channels.get(channelId);

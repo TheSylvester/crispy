@@ -7,7 +7,7 @@
 import * as vscode from 'vscode';
 
 import { initSettings, startWatchingSettings, stopWatchingSettings } from './core/settings/index.js';
-import { openCrispyPanel, getOrCreatePanelForPrefill, getMostRecentPanel, getActivePanel, createCrispyPanel } from './host/webview-host.js';
+import { openCrispyPanel, getOrCreatePanelForPrefill, getMostRecentPanel, getActivePanel, createCrispyPanel, getPanelHostingSession } from './host/webview-host.js';
 import { OpenSessionsViewProvider } from './host/sessions-sidebar-view.js';
 import { registerPanelOpener, registerPanelCloser } from './host/panel-opener.js';
 import { startRescan, stopRescan } from './core/session-list-manager.js';
@@ -145,27 +145,50 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   });
 
-  // Register panel opener/closer so CLI callers (ipc-server) can open/close VS Code panels
-  const sessionPanels = new Map<string, vscode.WebviewPanel>();
+  // Register panel opener/closer so CLI callers (ipc-server) can open/close VS Code panels.
+  //
+  // Panel→session lookup:
+  // - Opener: `getPanelHostingSession` walks the session-channel's subscribers
+  //   to find ANY panel hosting the session (includes regular Crispy panels
+  //   with FlexLayout tabs, not just dedicated openPanel-spawned ones).
+  // - `dedicatedPanels` Map tracks panels created BY this opener — used for
+  //   (a) the closer (only dispose dedicated panels, not multi-tab hosts) and
+  //   (b) autoClose dispose semantics (CLI panels reap the session on close).
+  //   Also a fast-path for rapid sidebar re-clicks before the new panel's
+  //   webview has finished subscribing to the channel.
+  const dedicatedPanels = new Map<string, vscode.WebviewPanel>();
 
   registerPanelOpener((sessionId, options) => {
-    const existing = sessionPanels.get(sessionId);
+    const dedicated = dedicatedPanels.get(sessionId);
+    if (dedicated) {
+      // Fast path — covers rapid re-clicks before subscription completes,
+      // and stale mappings if user switched the panel to another session
+      // via the dropdown. navigateToSession is harmless for fresh panels
+      // (the openSession bootstrap drives the initial tab) and re-syncs
+      // FlexLayout to the right tab if the panel drifted.
+      dedicated.reveal(undefined, false);
+      dedicated.webview.postMessage({ kind: 'navigateToSession', sessionId });
+      return;
+    }
+    const existing = getPanelHostingSession(sessionId);
     if (existing) {
-      // Sidebar/CLI re-fire: focus existing panel rather than no-op
       existing.reveal(undefined, false);
+      // Multi-tab Crispy panels need to switch the inner FlexLayout tab
+      existing.webview.postMessage({ kind: 'navigateToSession', sessionId });
       return;
     }
     const column = options?.autoClose
       ? { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }
       : vscode.ViewColumn.Beside;
     const panel = createCrispyPanel(context, column, { autoClose: options?.autoClose });
-    sessionPanels.set(sessionId, panel);
+    dedicatedPanels.set(sessionId, panel);
     panel.onDidDispose(() => {
-      if (sessionPanels.get(sessionId) === panel) {
-        sessionPanels.delete(sessionId);
+      if (dedicatedPanels.get(sessionId) === panel) {
+        dedicatedPanels.delete(sessionId);
         // autoClose panels are lifecycle-owned (CLI/observer): closing the
-        // panel reaps the channel. Sidebar-peek panels (no autoClose) are
-        // non-owning views — closing the panel must not kill the agent.
+        // panel reaps the channel. maybeScheduleReap skips child sessions,
+        // so we must close them explicitly here. Sidebar-peek panels
+        // (no autoClose) are non-owning views — closing must not kill the agent.
         if (options?.autoClose) closeSession(sessionId);
       }
     });
@@ -176,8 +199,19 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   registerPanelCloser((sessionId) => {
-    const panel = sessionPanels.get(sessionId);
+    // Only dispose panels we created dedicated for this session. Multi-tab
+    // Crispy panels that happen to be subscribed handle session_close_channel
+    // themselves via the webview-side FlexLayout listener.
+    const panel = dedicatedPanels.get(sessionId);
     if (!panel) return false;
+    // Verify the panel is still hosting this session — if the user switched
+    // the panel to another session via the dropdown, dedicatedPanels is
+    // stale and disposing the whole panel would kill unrelated tabs.
+    const stillHosting = getPanelHostingSession(sessionId);
+    if (stillHosting !== panel) {
+      dedicatedPanels.delete(sessionId);
+      return false;
+    }
     panel.dispose();
     return true;
   });

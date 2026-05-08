@@ -903,8 +903,12 @@ export function createClientConnection(
               }
             }
             if (event.type === 'session_close_channel') {
-              if (closePanelFn(event.sessionId)) return;
-              // No panel closer registered — forward event to webview for FlexLayout
+              // Dispose any dedicated CLI panel as a side effect, but ALWAYS
+              // forward to the webview. Otherwise, in clients ordered before
+              // the dedicated panel in the broadcast, the early return would
+              // swallow the event and leave a stale FlexLayout tab open
+              // for observers that also host this session.
+              try { closePanelFn(event.sessionId); } catch { /* ignored */ }
             }
             sendFn({ kind: "event", sessionId: SESSION_LIST_CHANNEL_ID, event });
           },
