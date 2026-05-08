@@ -19,7 +19,8 @@ import {
   unsubscribeSessionList,
   type SessionListSubscriber,
 } from '../core/session-list-manager.js';
-import { revealSessionInAnyPanel, getNonce } from './webview-host.js';
+import { getNonce } from './webview-host.js';
+import { openPanel } from './panel-opener.js';
 
 let viewCounter = 0;
 
@@ -85,7 +86,7 @@ export class OpenSessionsViewProvider implements vscode.WebviewViewProvider {
       if (!msg || typeof msg !== 'object') return;
 
       if (msg.kind === 'revealSession' && typeof msg.sessionId === 'string') {
-        revealSessionInAnyPanel(this.context, msg.sessionId);
+        openPanel(msg.sessionId);
         return;
       }
 

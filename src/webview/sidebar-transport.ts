@@ -6,7 +6,8 @@
  * refresh — so we hand-roll a small bridge instead of pulling the full
  * `SessionService` machinery (`transport-vscode.ts` + `client-connection.ts`).
  * Outbound clicks turn into a single `revealSession` postMessage that the host
- * routes to `revealSessionInAnyPanel`.
+ * routes to `openPanel`, which reveals the native VS Code editor panel for
+ * that session (or creates a new one). FlexLayout is not involved.
  *
  * Wire shape:
  *   webview → host: { kind: 'request', id, method: 'listOpenSessions' | 'subscribeSessionList' }

@@ -149,7 +149,12 @@ export function activate(context: vscode.ExtensionContext): void {
   const sessionPanels = new Map<string, vscode.WebviewPanel>();
 
   registerPanelOpener((sessionId, options) => {
-    if (sessionPanels.has(sessionId)) return; // dedup guard — openPanelFn is not idempotent
+    const existing = sessionPanels.get(sessionId);
+    if (existing) {
+      // Sidebar/CLI re-fire: focus existing panel rather than no-op
+      existing.reveal(undefined, false);
+      return;
+    }
     const column = options?.autoClose
       ? { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }
       : vscode.ViewColumn.Beside;
@@ -158,14 +163,14 @@ export function activate(context: vscode.ExtensionContext): void {
     panel.onDidDispose(() => {
       if (sessionPanels.get(sessionId) === panel) {
         sessionPanels.delete(sessionId);
-        // Mark the child session closed so it won't replay into new editor
-        // windows via subscribeSessionList → getOpenVisibleChildren.
-        closeSession(sessionId);
+        // autoClose panels are lifecycle-owned (CLI/observer): closing the
+        // panel reaps the channel. Sidebar-peek panels (no autoClose) are
+        // non-owning views — closing the panel must not kill the agent.
+        if (options?.autoClose) closeSession(sessionId);
       }
     });
     const msg = { kind: 'openSession', sessionId };
-    const delays = [100, 500, 1500];
-    for (const delay of delays) {
+    for (const delay of [100, 500, 1500]) {
       setTimeout(() => panel.webview.postMessage(msg), delay);
     }
   });

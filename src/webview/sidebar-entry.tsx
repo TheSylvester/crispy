@@ -2,9 +2,9 @@
  * Sidebar Webview Entry — Open Sessions sidebar mount
  *
  * Renders `SessionsPanel` in VS Code's Activity Bar. Clicks fire a
- * `revealSession` postMessage that the host routes through
- * `revealSessionInAnyPanel`, which finds-or-creates an editor panel and asks
- * its FlexLayout to navigate to that session.
+ * `revealSession` postMessage that the host routes through `openPanel`,
+ * which reveals the native VS Code editor panel for that session (or creates
+ * a new one). FlexLayout is not involved.
  *
  * Data flow: a hand-rolled `sidebar-transport` (see ./sidebar-transport.ts)
  * supplies `listOpenSessions` + a session-list change stream. We provide
