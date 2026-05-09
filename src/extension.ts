@@ -173,8 +173,6 @@ export function activate(context: vscode.ExtensionContext): void {
     const existing = getPanelHostingSession(sessionId);
     if (existing) {
       existing.reveal(undefined, false);
-      // Multi-tab Crispy panels need to switch the inner FlexLayout tab
-      existing.webview.postMessage({ kind: 'navigateToSession', sessionId });
       return;
     }
     const column = options?.autoClose
