@@ -173,13 +173,15 @@ export function activate(context: vscode.ExtensionContext): void {
       },
     });
     if (dedicated) {
-      // Fast path — covers rapid re-clicks before subscription completes,
-      // and stale mappings if user switched the panel to another session
-      // via the dropdown. navigateToSession is harmless for fresh panels
-      // (the openSession bootstrap drives the initial tab) and re-syncs
-      // FlexLayout to the right tab if the panel drifted.
+      // reveal() alone — do NOT post navigateToSession. The session_open_channel
+      // event fans out to every panel's ClientConnection.send(), so openPanelFn
+      // fires N times per dispatch. The first call creates the panel and stores
+      // it in dedicatedPanels; subsequent calls hit this branch — and a
+      // navigateToSession postMessage here adds a spurious FlexLayout tab to
+      // the just-created panel. Mirrors 3331dbe's fix for the existing-host
+      // branch: reveal() is enough; the panel's openSession bootstrap drives
+      // the initial tab.
       dedicated.reveal(undefined, false);
-      dedicated.webview.postMessage({ kind: 'navigateToSession', sessionId });
       return;
     }
     if (existing) {
