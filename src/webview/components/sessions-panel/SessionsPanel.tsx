@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTransport } from '../../context/TransportContext.js';
 import { useSession } from '../../context/SessionContext.js';
+import { useGitInfo } from '../../hooks/useGitInfo.js';
 import { formatRelativeTime } from '../../utils/format.js';
 import type { OpenSessionInfo } from '../../transport.js';
 import type { SessionChannelState } from '../../../core/session-channel.js';
@@ -107,40 +108,57 @@ export function SessionsPanel({ mode = 'sidebar', onActivate }: SessionsPanelPro
         ) : openSessions.length === 0 ? (
           <div className="crispy-sessions-panel__empty">No open sessions</div>
         ) : (
-          openSessions.map((s) => {
-            const label = labelFor(s);
-            const message = messageFor(s);
-            const dotModifier = STATE_DOT_CLASS[s.state] ?? '';
-            const time = s.lastActivityAt ? formatRelativeTime(s.lastActivityAt) : '';
-            const rowClass = `crispy-sessions-panel__row${s.attached ? '' : ' crispy-sessions-panel__row--detached'}`;
-            const rowTitle = s.attached
-              ? `${label}\n${s.sessionId}`
-              : `${label}\n${s.sessionId}\n(no window open — will close in ~30s if idle)`;
-            return (
-              <button
-                key={s.sessionId}
-                className={rowClass}
-                onClick={() => handleClick(s.sessionId)}
-                title={rowTitle}
-              >
-                <span className={`crispy-status-dot ${dotModifier}`} />
-                <span className="crispy-sessions-panel__row-text">
-                  <span className="crispy-sessions-panel__line-1">
-                    <span className="crispy-sessions-panel__label">{label}</span>
-                    {s.pendingApprovalCount > 0 && (
-                      <span className="crispy-sessions-panel__badge" title={`${s.pendingApprovalCount} pending approval(s)`}>
-                        {s.pendingApprovalCount}
-                      </span>
-                    )}
-                    {time && <span className="crispy-sessions-panel__time">{time}</span>}
-                  </span>
-                  {message && <span className="crispy-sessions-panel__message">{message}</span>}
-                </span>
-              </button>
-            );
-          })
+          openSessions.map((s) => (
+            <SessionRow key={s.sessionId} s={s} onClick={handleClick} />
+          ))
         )}
       </div>
     </div>
+  );
+}
+
+interface SessionRowProps {
+  s: OpenSessionInfo;
+  onClick: (sessionId: string) => void;
+}
+
+function SessionRow({ s, onClick }: SessionRowProps): React.JSX.Element {
+  const gitInfo = useGitInfo(s.projectPath);
+  const label = labelFor(s);
+  const message = messageFor(s);
+  const dotModifier = STATE_DOT_CLASS[s.state] ?? '';
+  const time = s.lastActivityAt ? formatRelativeTime(s.lastActivityAt) : '';
+  const rowClass = `crispy-sessions-panel__row${s.attached ? '' : ' crispy-sessions-panel__row--detached'}`;
+  const rowTitle = s.attached
+    ? `${label}\n${s.sessionId}`
+    : `${label}\n${s.sessionId}\n(no window open — will close in ~30s if idle)`;
+  return (
+    <button className={rowClass} onClick={() => onClick(s.sessionId)} title={rowTitle}>
+      <span className={`crispy-status-dot ${dotModifier}`} />
+      <span className="crispy-sessions-panel__row-text">
+        <span className="crispy-sessions-panel__line-1">
+          <span className="crispy-sessions-panel__label">{label}</span>
+          {s.pendingApprovalCount > 0 && (
+            <span className="crispy-sessions-panel__badge" title={`${s.pendingApprovalCount} pending approval(s)`}>
+              {s.pendingApprovalCount}
+            </span>
+          )}
+          {time && <span className="crispy-sessions-panel__time">{time}</span>}
+        </span>
+        {(message || gitInfo) && (
+          <span className="crispy-sessions-panel__line-2">
+            {message && <span className="crispy-sessions-panel__message">{message}</span>}
+            {gitInfo && (
+              <span className="crispy-sessions-panel__git" title={gitInfo.branch}>
+                <span className="crispy-sessions-panel__git-branch">{gitInfo.branch}</span>
+                {gitInfo.dirty && (
+                  <span className="crispy-sessions-panel__git-dirty" aria-label="uncommitted changes">●</span>
+                )}
+              </span>
+            )}
+          </span>
+        )}
+      </span>
+    </button>
   );
 }

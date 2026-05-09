@@ -92,12 +92,44 @@
   font-variant-numeric: tabular-nums;
 }
 
+.crispy-sessions-panel__line-2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .crispy-sessions-panel__message {
+  flex: 1;
   font-size: var(--font-xs);
   opacity: 0.6;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.crispy-sessions-panel__git {
+  flex-shrink: 0;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  opacity: 0.55;
+}
+
+.crispy-sessions-panel__git-branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 14ch;
+}
+
+.crispy-sessions-panel__git-dirty {
+  color: #e2c08d;
+  font-size: 8px;
+  line-height: 1;
 }
 
 .crispy-sessions-panel__badge {
