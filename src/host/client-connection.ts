@@ -897,6 +897,7 @@ export function createClientConnection(
             // to the webview (which would only affect FlexLayout tabs)
             if (event.type === 'session_open_channel') {
               if (hasOpener()) {
+                log({ level: 'info', source: 'panel-opener', summary: 'openPanel dispatch', data: { sessionId: event.sessionId, autoClose: !!event.autoClose, displayName: event.displayName } });
                 try {
                   openPanelFn(event.sessionId, { autoClose: event.autoClose });
                 } catch (err) {

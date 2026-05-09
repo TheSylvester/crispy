@@ -30,7 +30,12 @@ function detectTransport(): { transport: Transport; kind: TransportKind } {
   try {
     const api = acquireVsCodeApi();
     return { transport: createVSCodeTransport(api), kind: 'vscode' };
-  } catch {}
+  } catch (err) {
+    console.error('[crispy] vscode-transport detection FAILED:', err);
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.dataset.crispyTransportError = String(err);
+    }
+  }
 
   // 2. Check for cloud relay mode
   if ((window as any).__CRISPY_CLOUD__) {

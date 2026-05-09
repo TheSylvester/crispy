@@ -196,6 +196,12 @@ export function FlexAppLayout(): React.JSX.Element {
   // Fresh layout on every load — tabs are ephemeral like browser tabs
   const [initialState] = useState(() => {
     const showTabStrip = !isVscode;
+    console.log('[crispy] FlexAppLayout mount', {
+      envKind,
+      isVscode,
+      showTabStrip,
+      transportError: typeof document !== 'undefined' ? document.body.dataset?.crispyTransportError : undefined,
+    });
     return {
       model: Model.fromJson(makeDefaultModel(showTabStrip, gitPanelSide, !isVscode)),  // borders only in standalone/desktop
       tabMap: new Map([['tab-initial', null]]) as TabSessionMap,

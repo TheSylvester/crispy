@@ -23,6 +23,7 @@ import { startRecallCatchup, stopEmbeddingBackfill } from './core/recall/catchup
 import { disposeEmbedder } from './core/recall/embedder.js';
 import { startIpcServer, getSocketPath } from './host/ipc-server.js';
 import { setHostSocketPath, setDefaultCwd, closeSession } from './core/session-manager.js';
+import { log } from './core/log.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const bootStart = performance.now();
@@ -160,6 +161,17 @@ export function activate(context: vscode.ExtensionContext): void {
 
   registerPanelOpener((sessionId, options) => {
     const dedicated = dedicatedPanels.get(sessionId);
+    const existing = dedicated ? undefined : getPanelHostingSession(sessionId);
+    log({
+      level: 'warn',
+      source: 'panel-opener',
+      summary: 'opener decision',
+      data: {
+        sessionId: sessionId.slice(0, 8),
+        branch: dedicated ? 'dedicated' : (existing ? 'hostingPanel' : 'fresh'),
+        autoClose: !!options?.autoClose,
+      },
+    });
     if (dedicated) {
       // Fast path — covers rapid re-clicks before subscription completes,
       // and stale mappings if user switched the panel to another session
@@ -170,7 +182,6 @@ export function activate(context: vscode.ExtensionContext): void {
       dedicated.webview.postMessage({ kind: 'navigateToSession', sessionId });
       return;
     }
-    const existing = getPanelHostingSession(sessionId);
     if (existing) {
       existing.reveal(undefined, false);
       return;

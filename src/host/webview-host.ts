@@ -14,6 +14,7 @@ import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import { createClientConnection, type HostMessage } from './client-connection.js';
 import { listChannelSubscriberIds } from '../core/session-channel.js';
+import { log } from '../core/log.js';
 
 /** All active Crispy panels, keyed by panelId. */
 const panels = new Map<string, vscode.WebviewPanel>();
@@ -130,6 +131,17 @@ export function createCrispyPanel(
   viewColumn: vscode.ViewColumn | { viewColumn: vscode.ViewColumn; preserveFocus: boolean } = vscode.ViewColumn.Beside,
   options?: { workspaceCwd?: string; autoClose?: boolean },
 ): vscode.WebviewPanel {
+  log({
+    level: 'info',
+    source: 'create-panel',
+    summary: 'createCrispyPanel',
+    data: {
+      viewColumn: typeof viewColumn === 'object' ? `Beside+preserveFocus(${viewColumn.preserveFocus})` : String(viewColumn),
+      autoClose: !!options?.autoClose,
+      workspaceCwd: options?.workspaceCwd,
+      stack: new Error('caller').stack?.split('\n').slice(2, 6).join(' | '),
+    },
+  });
   const panel = vscode.window.createWebviewPanel(
     'crispy',
     'Crispy',
