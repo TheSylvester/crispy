@@ -33,6 +33,26 @@ function splitAtParagraphBoundary(text: string): [string, string] {
   return [text.slice(0, lastBreak), text.slice(lastBreak + 2)];
 }
 
+/** SVG chevron — points right by default, rotated 90° via CSS when open */
+function ThinkingChevron(): React.JSX.Element {
+  return (
+    <svg
+      className="crispy-details-chevron"
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="3,2 7,5 3,8" />
+    </svg>
+  );
+}
+
 export function StreamingGhost({ content }: StreamingGhostProps): React.JSX.Element {
   return (
     <div className="message assistant streaming-ghost">
@@ -59,7 +79,10 @@ export function StreamingGhost({ content }: StreamingGhostProps): React.JSX.Elem
             case 'thinking':
               return block.thinking ? (
                 <details key={i} className="streaming-ghost__thinking">
-                  <summary>Thinking…</summary>
+                  <summary>
+                    Thinking…
+                    <ThinkingChevron />
+                  </summary>
                   <pre className="streaming-ghost__thinking-text">{block.thinking}</pre>
                 </details>
               ) : null;

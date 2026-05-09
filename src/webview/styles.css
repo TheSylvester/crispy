@@ -4388,6 +4388,22 @@ body[data-accent-mode="skin"] {
   transform: rotate(180deg);
 }
 
+/* --- Shared <details> chevron utility ---
+ * Drop a <ChevronIcon className="crispy-details-chevron"> into a <summary>;
+ * the icon should point right when closed and rotates 90° when open.
+ */
+
+.crispy-details-chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+details[open] > summary > .crispy-details-chevron,
+details[open] > summary .crispy-details-chevron {
+  transform: rotate(90deg);
+}
+
 /* --- Right section --- */
 
 .crispy-titlebar__right {
@@ -5843,13 +5859,22 @@ body[data-accent-mode="skin"] {
   padding: 4px 0;
   user-select: none;
   list-style: none;
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .crispy-blocks-thinking-summary::-webkit-details-marker {
   display: none;
+}
+
+.crispy-blocks-thinking-summary__text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 /* When expanded, collapse the summary to a thin clickable bar */
@@ -5874,9 +5899,8 @@ body[data-accent-mode="skin"] {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 200px;
+  max-height: min(50vh, 400px);
   overflow-y: auto;
-  cursor: pointer;
 }
 
 /* --- Blocks Unknown Block --- */

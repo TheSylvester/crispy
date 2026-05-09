@@ -76,9 +76,17 @@ function ThinkingView({ block, autoCollapse }: { block: RichBlock; autoCollapse?
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const hasAutoCollapsed = useRef(false);
 
-  const thinkingBlock = block as RichBlock & { thinking: string; isSummary?: boolean };
+  const thinkingBlock = block as RichBlock & {
+    thinking: string;
+    isSummary?: boolean;
+    metadata?: Record<string, unknown>;
+  };
   const content = thinkingBlock.thinking ?? '';
-  const isSummary = thinkingBlock.isSummary ?? false;
+  // Defensive fallback: older persisted JSONL transcripts may have stored
+  // isSummary inside the metadata bag rather than at the top level.
+  const metadataIsSummary =
+    (thinkingBlock.metadata as { isSummary?: unknown } | undefined)?.isSummary === true;
+  const isSummary = thinkingBlock.isSummary ?? metadataIsSummary;
 
   // Start collapsed if summary or auto-collapse is requested
   const defaultOpen = !isSummary && !autoCollapse;
@@ -101,13 +109,31 @@ function ThinkingView({ block, autoCollapse }: { block: RichBlock; autoCollapse?
   return (
     <details ref={detailsRef} className="crispy-blocks-thinking" open={defaultOpen}>
       <summary className="crispy-blocks-thinking-summary">
-        {preview || 'Thinking'}
+        <span className="crispy-blocks-thinking-summary__text">{preview || 'Thinking'}</span>
+        <ThinkingChevron />
       </summary>
-      <pre
-        className="crispy-blocks-thinking-content"
-        onClick={() => { if (detailsRef.current) detailsRef.current.open = false; }}
-      >{content || 'Thinking'}</pre>
+      <pre className="crispy-blocks-thinking-content">{content || 'Thinking'}</pre>
     </details>
+  );
+}
+
+/** SVG chevron — points right by default, rotated 90° via CSS when open */
+function ThinkingChevron(): React.JSX.Element {
+  return (
+    <svg
+      className="crispy-details-chevron"
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="3,2 7,5 3,8" />
+    </svg>
   );
 }
 
