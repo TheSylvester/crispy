@@ -27,10 +27,12 @@ import { createSidebarTransport, type SidebarTransport } from './sidebar-transpo
 
 const sidebarTransport: SidebarTransport = createSidebarTransport();
 
-// SessionsPanel only calls `listOpenSessions`; cast through `unknown` to
-// satisfy the consumed slice without implementing the rest.
+// SessionsPanel only calls `listOpenSessions` and `getGitBranchInfo` (per-row
+// branch/dirty indicator); cast through `unknown` to satisfy the consumed
+// slice without implementing the rest.
 const transportStub = {
   listOpenSessions: () => sidebarTransport.listOpenSessions(),
+  getGitBranchInfo: (cwd: string) => sidebarTransport.getGitBranchInfo(cwd),
 } as unknown as SessionService;
 
 function SidebarApp(): React.JSX.Element {

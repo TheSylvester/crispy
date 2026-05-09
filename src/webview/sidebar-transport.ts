@@ -10,7 +10,7 @@
  * that session (or creates a new one). FlexLayout is not involved.
  *
  * Wire shape:
- *   webview → host: { kind: 'request', id, method: 'listOpenSessions' | 'subscribeSessionList' }
+ *   webview → host: { kind: 'request', id, method: 'listOpenSessions' | 'subscribeSessionList' | 'getGitBranchInfo' }
  *   host → webview: { kind: 'response', id, result } | { kind: 'error', id, error }
  *   host → webview: { kind: 'sessionListChanged' }   // pushed on every session-list event
  *   webview → host: { kind: 'revealSession', sessionId }
@@ -38,6 +38,7 @@ const REQUEST_TIMEOUT_MS = 30_000;
 
 export interface SidebarTransport {
   listOpenSessions(): Promise<OpenSessionInfo[]>;
+  getGitBranchInfo(cwd: string): Promise<{ branch: string; dirty: boolean } | null>;
   /** Register a handler for host-pushed session-list change notifications. */
   onSessionListChange(handler: () => void): () => void;
   /** Tell the host to reveal a session in an editor panel. Fire-and-forget. */
@@ -97,6 +98,8 @@ export function createSidebarTransport(): SidebarTransport {
 
   return {
     listOpenSessions: () => request<OpenSessionInfo[]>('listOpenSessions'),
+    getGitBranchInfo: (cwd) =>
+      request<{ branch: string; dirty: boolean } | null>('getGitBranchInfo', { cwd }),
     onSessionListChange(handler) {
       handlers.add(handler);
       return () => { handlers.delete(handler); };

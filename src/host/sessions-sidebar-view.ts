@@ -19,6 +19,7 @@ import {
   unsubscribeSessionList,
   type SessionListSubscriber,
 } from '../core/session-list-manager.js';
+import { getGitBranchInfoCached } from '../core/git-info-cache.js';
 import { getNonce } from './webview-host.js';
 import { openPanel } from './panel-opener.js';
 
@@ -80,6 +81,11 @@ export class OpenSessionsViewProvider implements vscode.WebviewViewProvider {
         ctx.subscribe();
         return { subscribed: true };
       },
+      getGitBranchInfo: (params) => {
+        const cwd = (params ?? {} as { cwd?: unknown }).cwd;
+        if (typeof cwd !== 'string') throw new Error('getGitBranchInfo: cwd must be a string');
+        return getGitBranchInfoCached(cwd);
+      },
     };
 
     webviewView.webview.onDidReceiveMessage((msg) => {
@@ -104,16 +110,22 @@ export class OpenSessionsViewProvider implements vscode.WebviewViewProvider {
         return;
       }
 
-      try {
-        const result = method(msg.params as RpcParams, { subscribe: ensureSubscribed });
-        webviewView.webview.postMessage({ kind: 'response', id: msg.id, result });
-      } catch (err) {
-        webviewView.webview.postMessage({
-          kind: 'error',
-          id: msg.id,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+      // Async dispatch — methods may return Promises (e.g. getGitBranchInfo).
+      // Sync results pass through unchanged because `await syncValue === syncValue`.
+      void (async () => {
+        try {
+          const result = await method(msg.params as RpcParams, { subscribe: ensureSubscribed });
+          if (disposed) return;
+          webviewView.webview.postMessage({ kind: 'response', id: msg.id, result });
+        } catch (err) {
+          if (disposed) return;
+          webviewView.webview.postMessage({
+            kind: 'error',
+            id: msg.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      })();
     }, undefined, this.context.subscriptions);
 
     webviewView.onDidDispose(() => {
