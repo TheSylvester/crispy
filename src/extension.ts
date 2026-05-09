@@ -204,14 +204,6 @@ export function activate(context: vscode.ExtensionContext): void {
     // themselves via the webview-side FlexLayout listener.
     const panel = dedicatedPanels.get(sessionId);
     if (!panel) return false;
-    // Verify the panel is still hosting this session — if the user switched
-    // the panel to another session via the dropdown, dedicatedPanels is
-    // stale and disposing the whole panel would kill unrelated tabs.
-    const stillHosting = getPanelHostingSession(sessionId);
-    if (stillHosting !== panel) {
-      dedicatedPanels.delete(sessionId);
-      return false;
-    }
     panel.dispose();
     return true;
   });

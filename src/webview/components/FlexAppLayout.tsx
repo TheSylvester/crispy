@@ -177,7 +177,7 @@ function TabContent({ tabId, tabNode, forkConfig, prefillContent, observerMode }
 export function FlexAppLayout(): React.JSX.Element {
   const controller = useTabController();
   const transport = useTransport();
-  const { sessions, selectedSessionId } = useSession();
+  const { sessions, selectedSessionId, isAutoClosePanel } = useSession();
   const envKind = useEnvironment();
   const isVscode = envKind === 'vscode';
   const { gitPanelSide, displayStyle, useDisplayStyleAccent } = usePreferences();
@@ -697,6 +697,13 @@ export function FlexAppLayout(): React.JSX.Element {
         }
         for (const tabId of tabIds) {
           if (tabSessionMapRef.current.size <= 1) {
+            // autoClose panels are ephemeral — the host disposes the whole
+            // panel on close. Don't rewrite the only tab to "New Tab" in
+            // the dispose window, or the user sees an empty splash if the
+            // postMessage races the dispose. Multi-tab branch (size > 1)
+            // is fine: closeTab on observer tabs in regular Crispy panels
+            // is the right behavior.
+            if (isAutoClosePanel) continue;
             tabSessionMapRef.current.set(tabId, null);
             const model = modelRef.current;
             model.doAction(Actions.renameTab(tabId, 'New Tab'));
@@ -707,7 +714,7 @@ export function FlexAppLayout(): React.JSX.Element {
         }
       }
     });
-  }, [transport, controller, closeTab, bump]);
+  }, [transport, controller, closeTab, bump, isAutoClosePanel]);
 
   // Cycle through tabs in order
   function cycleTab(direction: 1 | -1) {

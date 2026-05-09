@@ -908,7 +908,9 @@ export function createClientConnection(
               // forward to the webview. Otherwise, in clients ordered before
               // the dedicated panel in the broadcast, the early return would
               // swallow the event and leave a stale FlexLayout tab open
-              // for observers that also host this session.
+              // for observers that also host this session. The dedicated
+              // panel's webview ignores the close for its only tab via the
+              // isAutoClosePanel guard in FlexAppLayout — see comment there.
               try { closePanelFn(event.sessionId); } catch { /* ignored */ }
             }
             sendFn({ kind: "event", sessionId: SESSION_LIST_CHANNEL_ID, event });
