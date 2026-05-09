@@ -50,6 +50,13 @@ export class OpenSessionsViewProvider implements vscode.WebviewViewProvider {
     let disposed = false;
     let pendingNotify = false;
 
+    const workspaceCwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? null;
+    const workspaceCwdMsg = { kind: 'workspaceCwd', cwd: workspaceCwd };
+    webviewView.webview.postMessage(workspaceCwdMsg);
+    const workspaceCwdRetry = setTimeout(() => {
+      if (!disposed) webviewView.webview.postMessage(workspaceCwdMsg);
+    }, 100);
+
     // Coalesce burst notifications (status changes during streaming, rescan
     // upserts) into one webview ping per microtask — sidebar refetches the
     // full list on each ping, so deduplication matters.
@@ -130,6 +137,7 @@ export class OpenSessionsViewProvider implements vscode.WebviewViewProvider {
 
     webviewView.onDidDispose(() => {
       disposed = true;
+      clearTimeout(workspaceCwdRetry);
       if (listSub) {
         unsubscribeSessionList(listSub);
         listSub = null;

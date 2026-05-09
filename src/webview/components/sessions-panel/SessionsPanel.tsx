@@ -11,7 +11,7 @@
  * @module sessions-panel/SessionsPanel
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTransport } from '../../context/TransportContext.js';
 import { useSession } from '../../context/SessionContext.js';
 import { useGitInfo } from '../../hooks/useGitInfo.js';
@@ -20,6 +20,55 @@ import type { OpenSessionInfo } from '../../transport.js';
 import type { SessionChannelState } from '../../../core/session-channel.js';
 import '../status-dot.css';
 import './sessions-panel.css';
+
+type SessionGroup =
+  | { kind: 'cwd'; path: string; sessions: OpenSessionInfo[]; isAnchor: boolean }
+  | { kind: 'other'; sessions: OpenSessionInfo[] };
+
+const GROUP_HEADER_STYLE: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  padding: '6px 12px 2px',
+  fontSize: 'var(--font-xs)',
+  fontFamily: 'var(--font-mono)',
+  opacity: 0.55,
+  minWidth: 0,
+};
+
+const GROUP_HEADER_LABEL_STYLE: React.CSSProperties = {
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  minWidth: 0,
+};
+
+const GROUP_HEADER_CWD_STYLE: React.CSSProperties = {
+  marginLeft: 'auto',
+  opacity: 0.7,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  maxWidth: '14ch',
+  flexShrink: 0,
+};
+
+function basenameOf(path: string): string {
+  if (!path) return '';
+  const trimmed = path.replace(/[/\\]+$/, '');
+  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+function maxActivity(sessions: OpenSessionInfo[]): number {
+  let max = 0;
+  for (const s of sessions) {
+    if (!s.lastActivityAt) continue;
+    const t = Date.parse(s.lastActivityAt);
+    if (!Number.isNaN(t) && t > max) max = t;
+  }
+  return max;
+}
 
 interface SessionsPanelProps {
   mode?: 'sidebar' | 'tab';
@@ -62,7 +111,7 @@ function messageFor(s: OpenSessionInfo): string {
 
 export function SessionsPanel({ mode = 'sidebar', onActivate }: SessionsPanelProps): React.JSX.Element {
   const transport = useTransport();
-  const { sessions, sessionStatuses } = useSession();
+  const { sessions, sessionStatuses, workspaceCwdPath } = useSession();
   const [openSessions, setOpenSessions] = useState<OpenSessionInfo[] | null>(null);
   const [, setNowTick] = useState(0);
 
@@ -98,21 +147,105 @@ export function SessionsPanel({ mode = 'sidebar', onActivate }: SessionsPanelPro
     onActivate?.(sessionId);
   }, [onActivate]);
 
+  const groups = useMemo<SessionGroup[] | null>(() => {
+    if (!openSessions) return null;
+    const byPath = new Map<string | null, OpenSessionInfo[]>();
+    for (const s of openSessions) {
+      const key = s.projectPath && s.projectPath.length > 0 ? s.projectPath : null;
+      const existing = byPath.get(key);
+      if (existing) existing.push(s);
+      else byPath.set(key, [s]);
+    }
+
+    const cwdGroups: Extract<SessionGroup, { kind: 'cwd' }>[] = [];
+    let other: Extract<SessionGroup, { kind: 'other' }> | null = null;
+    for (const [key, sessionsForGroup] of byPath) {
+      if (key === null) {
+        other = { kind: 'other', sessions: sessionsForGroup };
+      } else {
+        cwdGroups.push({
+          kind: 'cwd',
+          path: key,
+          sessions: sessionsForGroup,
+          isAnchor: key === workspaceCwdPath,
+        });
+      }
+    }
+
+    cwdGroups.sort((a, b) => {
+      if (a.isAnchor !== b.isAnchor) return a.isAnchor ? -1 : 1;
+      return maxActivity(b.sessions) - maxActivity(a.sessions);
+    });
+
+    return other ? [...cwdGroups, other] : cwdGroups;
+  }, [openSessions, workspaceCwdPath]);
+
   const panelClass = `crispy-sessions-panel${mode === 'tab' ? ' crispy-sessions-panel--tab' : ''}`;
 
   return (
     <div className={panelClass}>
       <div className="crispy-sessions-panel__list">
-        {openSessions === null ? (
+        {groups === null ? (
           <div className="crispy-sessions-panel__empty">Loading…</div>
-        ) : openSessions.length === 0 ? (
+        ) : groups.length === 0 ? (
           <div className="crispy-sessions-panel__empty">No open sessions</div>
         ) : (
-          openSessions.map((s) => (
-            <SessionRow key={s.sessionId} s={s} onClick={handleClick} />
+          groups.map((group) => (
+            <SessionGroupSection
+              key={group.kind === 'other' ? '__other__' : group.path}
+              group={group}
+              onClick={handleClick}
+            />
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+interface SessionGroupSectionProps {
+  group: SessionGroup;
+  onClick: (sessionId: string) => void;
+}
+
+function SessionGroupSection({ group, onClick }: SessionGroupSectionProps): React.JSX.Element {
+  return (
+    <>
+      {group.kind === 'other' ? <OtherGroupHeader /> : <CwdGroupHeader group={group} />}
+      {group.sessions.map((s) => (
+        <SessionRow key={s.sessionId} s={s} onClick={onClick} />
+      ))}
+    </>
+  );
+}
+
+function OtherGroupHeader(): React.JSX.Element {
+  return (
+    <div style={GROUP_HEADER_STYLE} title="Other">
+      <span style={GROUP_HEADER_LABEL_STYLE}>Other</span>
+    </div>
+  );
+}
+
+interface CwdGroupHeaderProps {
+  group: Extract<SessionGroup, { kind: 'cwd' }>;
+}
+
+function CwdGroupHeader({ group }: CwdGroupHeaderProps): React.JSX.Element {
+  const gitInfo = useGitInfo(group.path);
+  const branch = gitInfo?.branch ?? '';
+  const basename = basenameOf(group.path);
+  const label = branch || basename || group.path;
+  const showCwdSuffix = !group.isAnchor && !!branch && basename !== branch;
+  const titleText = branch ? `${branch} — ${group.path}` : group.path;
+
+  return (
+    <div style={GROUP_HEADER_STYLE} title={titleText}>
+      <span style={GROUP_HEADER_LABEL_STYLE}>{label}</span>
+      {gitInfo?.dirty && (
+        <span className="crispy-sessions-panel__git-dirty" aria-label="uncommitted changes">●</span>
+      )}
+      {showCwdSuffix && <span style={GROUP_HEADER_CWD_STYLE}>{basename}</span>}
     </div>
   );
 }
@@ -123,7 +256,6 @@ interface SessionRowProps {
 }
 
 function SessionRow({ s, onClick }: SessionRowProps): React.JSX.Element {
-  const gitInfo = useGitInfo(s.projectPath);
   const label = labelFor(s);
   const message = messageFor(s);
   const dotModifier = STATE_DOT_CLASS[s.state] ?? '';
@@ -145,17 +277,9 @@ function SessionRow({ s, onClick }: SessionRowProps): React.JSX.Element {
           )}
           {time && <span className="crispy-sessions-panel__time">{time}</span>}
         </span>
-        {(message || gitInfo) && (
+        {message && (
           <span className="crispy-sessions-panel__line-2">
-            {message && <span className="crispy-sessions-panel__message">{message}</span>}
-            {gitInfo && (
-              <span className="crispy-sessions-panel__git" title={gitInfo.branch}>
-                <span className="crispy-sessions-panel__git-branch">{gitInfo.branch}</span>
-                {gitInfo.dirty && (
-                  <span className="crispy-sessions-panel__git-dirty" aria-label="uncommitted changes">●</span>
-                )}
-              </span>
-            )}
+            <span className="crispy-sessions-panel__message">{message}</span>
           </span>
         )}
       </span>

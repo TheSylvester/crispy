@@ -13,6 +13,7 @@
  *   webview → host: { kind: 'request', id, method: 'listOpenSessions' | 'subscribeSessionList' | 'getGitBranchInfo' }
  *   host → webview: { kind: 'response', id, result } | { kind: 'error', id, error }
  *   host → webview: { kind: 'sessionListChanged' }   // pushed on every session-list event
+ *   host → webview: { kind: 'workspaceCwd', cwd }    // one-shot push at startup
  *   webview → host: { kind: 'revealSession', sessionId }
  *
  * @module sidebar-transport
@@ -41,6 +42,8 @@ export interface SidebarTransport {
   getGitBranchInfo(cwd: string): Promise<{ branch: string; dirty: boolean } | null>;
   /** Register a handler for host-pushed session-list change notifications. */
   onSessionListChange(handler: () => void): () => void;
+  /** Register a handler for the host-pushed workspace cwd. Fires once at startup. */
+  onWorkspaceCwd(handler: (cwd: string | null) => void): () => void;
   /** Tell the host to reveal a session in an editor panel. Fire-and-forget. */
   revealSession(sessionId: string): void;
 }
@@ -49,6 +52,8 @@ export function createSidebarTransport(): SidebarTransport {
   const api = acquireVsCodeApi();
   const pending = new Map<string, PendingRequest>();
   const handlers = new Set<() => void>();
+  const workspaceCwdHandlers = new Set<(cwd: string | null) => void>();
+  let latestWorkspaceCwd: string | null = null;
   let counter = 0;
 
   function nextId(): string {
@@ -74,6 +79,12 @@ export function createSidebarTransport(): SidebarTransport {
 
     if (msg.kind === 'sessionListChanged') {
       for (const h of handlers) h();
+      return;
+    }
+
+    if (msg.kind === 'workspaceCwd') {
+      latestWorkspaceCwd = typeof msg.cwd === 'string' ? msg.cwd : null;
+      for (const h of workspaceCwdHandlers) h(latestWorkspaceCwd);
     }
   });
 
@@ -103,6 +114,11 @@ export function createSidebarTransport(): SidebarTransport {
     onSessionListChange(handler) {
       handlers.add(handler);
       return () => { handlers.delete(handler); };
+    },
+    onWorkspaceCwd(handler) {
+      workspaceCwdHandlers.add(handler);
+      handler(latestWorkspaceCwd);
+      return () => { workspaceCwdHandlers.delete(handler); };
     },
     revealSession(sessionId) {
       api.postMessage({ kind: 'revealSession', sessionId });
