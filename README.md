@@ -19,6 +19,41 @@
 
 ---
 
+## What's New in v0.3.3
+
+A live sessions panel, drag-and-drop file import on the Windows desktop app, and Claude Opus 4.7 thinking restored.
+
+### Open Sessions panel
+
+![Open Sessions sidebar — running sessions grouped by working directory with status, last message, and relative activity time](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/open-sessions-sidebar.png)
+
+A live inbox of every running session — status dot, last message preview, and relative activity time. Sessions are grouped by working directory with git branch and dirty indicator; child sessions (from `/superthink`, dispatch) nest under their parent. Clicking a row focuses the existing panel instead of opening a duplicate.
+
+### Windows desktop app
+
+- **Drag-and-drop file import** — drop files or folders from Explorer onto the Files panel or chat input. Replace, skip, and auto-rename for conflicts; progress and cancel for large transfers. Windows paths are translated to WSL paths automatically when the daemon runs in WSL.
+- **No more flashing console windows** when the app spawns subprocesses on Windows.
+- **Faster WSL workspace detection** — the workspace picker shows its detection state immediately instead of leaving you wondering for several seconds.
+- **WSL provisioning timeout** — a stalled `npm install` is now caught after 3 minutes instead of hanging silently.
+
+### Multi-agent orchestration
+
+- **`/live-sessions` skill** — agents can discover, message, wait on, and read peer sessions without spawning a child. Closes the loop for coordinator and observer patterns.
+- **Richer session metadata** — titles, last-message previews, and last-activity timestamps are now available to orchestration prompts.
+- **Short session ID badge** in the tab header — click to copy the full UUID.
+
+### Claude Opus 4.7 thinking restored
+
+- Bundles `claude-agent-sdk` 0.2.114 and correctly opts into summarized thinking. The thinking flag, chosen model, and 1M-context variant all survive resume, fork, and `/model` mid-session switches.
+- Custom titles (from `/rename` in Anthropic's official extension) and AI-generated titles from Claude Code now show in the session dropdown alongside Crispy's Rosie titles.
+- Clearer warning when your installed Claude CLI lags the bundled SDK, instead of silently dropping features the CLI actually supports.
+
+### Bug fixes
+
+- **Context gauge** — resets when you start a new session instead of showing the previous session's percentage. Defers to the SDK for newly-released models instead of forcing a 200K window.
+- **Concurrent VS Code windows** — shared `~/.crispy/` state files are written atomically so a second window can't read a half-written file.
+- **Improved startup stability.**
+
 ## What's New in v0.3.2
 
 Stability, polish, and a big pass on Windows compatibility.
@@ -45,36 +80,6 @@ Stability fixes and a superthink upgrade.
 - **Approval UI fix** — stale approval popups no longer linger after resolution
 - **Tauri updater fix** — corrected artifact signature path so auto-updates work reliably
 
-## What's New in v0.3.0
-
-### Multi-tab agent workbench
-
-The Windows native app and standalone browser now work like a full IDE — multiple agent sessions open as tabs you can split, resize, and drag into any arrangement, with a built-in terminal, file browser, and Git panel.
-
-![Multi-tab workbench — split sessions, file browser, terminal, and model selector in the Windows native app](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/multi-tab-workbench.png)
-
-- **Multi-tab sessions** — open multiple Claude/Codex conversations side-by-side in split views
-- **Visible agent orchestration** — agents from /superthink surface as live read-only tabs you can watch in real time. No more black-box tool calls
-
-![Superthink visible dispatch — agents open as live tabs you can watch and fork](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/superthink-visual-full-1.gif)
-
-- **Built-in terminal** — integrated terminal docked at the bottom, just like VS Code
-- **Dockable side panels** — Files and Git panels dock to left or right borders independently, with persisted layout preference
-- **File viewer tabs** — open files as editor-style tabs alongside your sessions, with syntax highlighting and "Execute in Crispy"
-- **Auto-reconnect** — the UI recovers automatically from connection drops and re-subscribes to all your sessions
-
-### 10 display styles
-
-![Display styles — Crispy, T3, ChatGPT, Claude.ai, Gemini, Cursor, Copilot, DeepSeek, Perplexity, Terminal](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/crispy-markdown-skins-dark-supercut.gif)
-
-Customize how Crispy looks with 10 display styles (Crispy, T3, ChatGPT, Claude.ai, Gemini, Cursor, Copilot, DeepSeek, Perplexity, Terminal) and 3 badge styles (Frosted, Tinted, Solid).
-
-### Other
-
-- Improved light mode support
-- Fork button now works during streaming
-- Fixed an issue where the activity database could become corrupted under concurrent access
-
 ---
 
 ## Capabilities
@@ -99,6 +104,8 @@ Customize how Crispy looks with 10 display styles (Crispy, T3, ChatGPT, Claude.a
 
 ### Multi-agent coordination
 
+![Superthink visible dispatch — agents open as live tabs you can watch and fork](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/superthink-visual-full-1.gif)
+
 - `/superthink` — pit Claude and Codex against each other on the same question. Sub-agents open as live tabs you can watch. Catches bugs and blind spots a single model misses
 - `/super-implement` — turn plans into self-contained execution prompts, auto-decomposed if too large
 - `/reflect` — verify prompts and plans against the codebase before execution
@@ -115,11 +122,15 @@ Customize how Crispy looks with 10 display styles (Crispy, T3, ChatGPT, Claude.a
 
 ### Conversations
 
+![Multi-tab workbench — split sessions, file browser, terminal, and model selector in the Windows native app](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/multi-tab-workbench.png)
+
+- Multi-tab workspace — as many agent sessions as you want, arranged however you like, with built-in terminal and dockable Files/Git panels
+- Fork and rewind at any point — new session opens as a split tab with full context
+
 ![Fork a conversation into a new side-by-side panel](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/fork.gif)
 
-- Fork and rewind at any point — new session opens as a split tab with full context
-- Multi-tab workspace — as many agent sessions as you want, arranged however you like
 - Session rotation — switch between Claude and Codex mid-conversation without losing context
+- Auto-reconnect — UI recovers automatically from connection drops and re-subscribes to all your sessions
 - Execute prompts in Markdown files with one click from the Explorer or file panel
 - Session browser with search and vendor filtering
 
@@ -129,6 +140,9 @@ Customize how Crispy looks with 10 display styles (Crispy, T3, ChatGPT, Claude.a
 
 - File viewer side panel with word wrap, markdown preview, and quoting
 - Git diff panel — staged, modified, and untracked files with syntax-highlighted diffs
+
+![Display styles — Crispy, T3, ChatGPT, Claude.ai, Gemini, Cursor, Copilot, DeepSeek, Perplexity, Terminal](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/crispy-markdown-skins-dark-supercut.gif)
+
 - 10 display styles and 3 badge styles — make Crispy look like ChatGPT, Claude.ai, Cursor, or your own thing
 - Inline quoting and copy-to-markdown
 - Voice input with local VAD and speech-to-text
