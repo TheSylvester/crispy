@@ -208,12 +208,54 @@ interface SessionGroupSectionProps {
   onClick: (sessionId: string) => void;
 }
 
+// Cap nesting depth in case parentSessionId ever forms an unexpected chain.
+// Real trees are 1–2 deep (superthink, dispatch); 6 is generous headroom.
+const MAX_TREE_DEPTH = 6;
+
 function SessionGroupSection({ group, onClick }: SessionGroupSectionProps): React.JSX.Element {
+  // Build a parent→children index restricted to sessions in this group. A
+  // session whose parent lives in another group (different cwd) or has
+  // already closed renders as a top-level row in its own group.
+  const { topLevel, childrenOf } = useMemo(() => {
+    const ids = new Set(group.sessions.map(s => s.sessionId));
+    const childrenOf = new Map<string, OpenSessionInfo[]>();
+    const topLevel: OpenSessionInfo[] = [];
+    for (const s of group.sessions) {
+      if (s.parentSessionId && ids.has(s.parentSessionId)) {
+        const arr = childrenOf.get(s.parentSessionId);
+        if (arr) arr.push(s);
+        else childrenOf.set(s.parentSessionId, [s]);
+      } else {
+        topLevel.push(s);
+      }
+    }
+    return { topLevel, childrenOf };
+  }, [group.sessions]);
+
   return (
     <>
       {group.kind === 'other' ? <OtherGroupHeader /> : <CwdGroupHeader group={group} />}
-      {group.sessions.map((s) => (
-        <SessionRow key={s.sessionId} s={s} onClick={onClick} />
+      {topLevel.map((s) => (
+        <SessionTree key={s.sessionId} s={s} depth={0} childrenOf={childrenOf} onClick={onClick} />
+      ))}
+    </>
+  );
+}
+
+interface SessionTreeProps {
+  s: OpenSessionInfo;
+  depth: number;
+  childrenOf: Map<string, OpenSessionInfo[]>;
+  onClick: (sessionId: string) => void;
+}
+
+function SessionTree({ s, depth, childrenOf, onClick }: SessionTreeProps): React.JSX.Element {
+  const kids = childrenOf.get(s.sessionId);
+  return (
+    <>
+      <SessionRow s={s} depth={depth} onClick={onClick} />
+      {kids && depth < MAX_TREE_DEPTH && kids.map((c) => (
+        <SessionTree key={c.sessionId} s={c} depth={depth + 1} childrenOf={childrenOf} onClick={onClick} />
       ))}
     </>
   );
@@ -252,10 +294,16 @@ function CwdGroupHeader({ group }: CwdGroupHeaderProps): React.JSX.Element {
 
 interface SessionRowProps {
   s: OpenSessionInfo;
+  depth?: number;
   onClick: (sessionId: string) => void;
 }
 
-function SessionRow({ s, onClick }: SessionRowProps): React.JSX.Element {
+// 16px per nesting level — enough to read as a hierarchy without crowding
+// the row text in a narrow sidebar.
+const INDENT_PER_DEPTH = 16;
+const BASE_ROW_PADDING_LEFT = 12;
+
+function SessionRow({ s, depth = 0, onClick }: SessionRowProps): React.JSX.Element {
   const label = labelFor(s);
   const message = messageFor(s);
   const dotModifier = STATE_DOT_CLASS[s.state] ?? '';
@@ -264,8 +312,11 @@ function SessionRow({ s, onClick }: SessionRowProps): React.JSX.Element {
   const rowTitle = s.attached
     ? `${label}\n${s.sessionId}`
     : `${label}\n${s.sessionId}\n(no window open — will close in ~30s if idle)`;
+  const rowStyle = depth > 0
+    ? { paddingLeft: BASE_ROW_PADDING_LEFT + depth * INDENT_PER_DEPTH }
+    : undefined;
   return (
-    <button className={rowClass} onClick={() => onClick(s.sessionId)} title={rowTitle}>
+    <button className={rowClass} style={rowStyle} onClick={() => onClick(s.sessionId)} title={rowTitle}>
       <span className={`crispy-status-dot ${dotModifier}`} />
       <span className="crispy-sessions-panel__row-text">
         <span className="crispy-sessions-panel__line-1">
