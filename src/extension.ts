@@ -182,6 +182,9 @@ export function activate(context: vscode.ExtensionContext): void {
     dedicatedPanels.set(sessionId, panel);
     panel.onDidDispose(() => {
       if (dedicatedPanels.get(sessionId) === panel) {
+        // Prune the map BEFORE any broadcasting call (closeSession). A subsequent
+        // openPanel for the same id would otherwise find a stale, disposed panel
+        // and throw inside reveal()/postMessage(), routing the event to the webview.
         dedicatedPanels.delete(sessionId);
         // autoClose panels are lifecycle-owned (CLI/observer): closing the
         // panel reaps the channel. maybeScheduleReap skips child sessions,

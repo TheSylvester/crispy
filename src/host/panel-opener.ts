@@ -17,6 +17,10 @@ export function registerPanelOpener(fn: PanelOpener): void {
   opener = fn;
 }
 
+export function hasOpener(): boolean {
+  return opener !== null;
+}
+
 export function registerPanelCloser(fn: PanelCloser): void {
   closer = fn;
 }

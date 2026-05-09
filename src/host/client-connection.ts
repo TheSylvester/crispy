@@ -101,7 +101,7 @@ import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-rea
 // at extension activation time (crashes VS Code's Electron host).
 // import { transcribeAudio } from '../core/voice/index.js'; // <-- lazy below
 import { startCapture, stopCapture, cancelCapture, cleanupOrphanedVoiceFiles } from './audio-capture.js';
-import { openPanel as openPanelFn, closePanel as closePanelFn } from './panel-opener.js';
+import { openPanel as openPanelFn, closePanel as closePanelFn, hasOpener } from './panel-opener.js';
 import {
   createTerminal, writeTerminal, resizeTerminal,
   closeTerminal, listTerminals, attachTerminal, detachTerminal,
@@ -896,12 +896,15 @@ export function createClientConnection(
             // In VS Code mode, open/close native panels instead of forwarding
             // to the webview (which would only affect FlexLayout tabs)
             if (event.type === 'session_open_channel') {
-              try {
-                openPanelFn(event.sessionId, { autoClose: event.autoClose });
-                return; // native panel opened — don't forward to webview
-              } catch {
-                // No panel opener (dev-server) — fall through to webview FlexLayout
+              if (hasOpener()) {
+                try {
+                  openPanelFn(event.sessionId, { autoClose: event.autoClose });
+                } catch (err) {
+                  log({ level: 'error', source: 'panel-opener', summary: 'openPanel threw', data: { err: String(err) } });
+                }
+                return; // VS Code mode: never fall through to webview
               }
+              // No opener registered → browser/Tauri host → forward to webview FlexLayout
             }
             if (event.type === 'session_close_channel') {
               // Dispose any dedicated CLI panel as a side effect, but ALWAYS

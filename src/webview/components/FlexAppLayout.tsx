@@ -686,6 +686,11 @@ export function FlexAppLayout(): React.JSX.Element {
     return transport.onEvent((channelId, event) => {
       if (channelId !== SESSION_LIST_CHANNEL_ID) return;
       if (event.type === 'session_open_channel') {
+        // VS Code autoClose children must open as native editor panels.
+        // If a host-side opener throws transiently under parallel dispatch
+        // and the event falls through to here, we'd otherwise spawn a
+        // FlexLayout sibling tab inside the parent's webview.
+        if (isVscode && event.autoClose) return;
         controller.navigateToSession(event.sessionId, event.displayName, {
           background: event.autoClose,
           config: event.autoClose ? { autoClose: true } : undefined,
@@ -714,7 +719,7 @@ export function FlexAppLayout(): React.JSX.Element {
         }
       }
     });
-  }, [transport, controller, closeTab, bump, isAutoClosePanel]);
+  }, [transport, controller, closeTab, bump, isAutoClosePanel, isVscode]);
 
   // Cycle through tabs in order
   function cycleTab(direction: 1 | -1) {
