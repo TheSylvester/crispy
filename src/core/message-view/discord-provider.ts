@@ -510,7 +510,6 @@ async function handleUserCreatedPost(threadId: string, forumChannelId: string, t
       // title is available we keep the promptText default from above.
       const name =
         sessionInfo.customTitle?.trim()
-        || sessionInfo.title?.trim()
         || sessionInfo.aiTitle?.trim()
         || sessionInfo.lastUserPrompt?.trim()
         || sessionInfo.label?.trim();

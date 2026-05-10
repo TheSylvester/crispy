@@ -60,6 +60,7 @@ Returns `OpenSessionInfo[]` sorted by `sessionId` ascending:
     "childVisible": true,
     "childAutoClose": false,
     "title": "MR slot-sync phantom-link bug",
+    "displayName": "MR slot-sync phantom-link bug",
     "lastUserPrompt": "ok keep going on the spike",
     "lastMessage": "Ran the migration on staging — 0 errors. Moving on next.",
     "lastActivityAt": "2026-04-30T14:22:11.413Z"
@@ -81,11 +82,13 @@ filtered out.
 | `state: idle` + stale `lastActivityAt` (hours) | zombie subscriber — channel attached but session done |
 | `state: awaiting_approval` + `pendingApprovalCount > 0` | blocked on user decision |
 
-`title` collapses the customTitle / title / aiTitle chain — undefined
-means no named title is set, in which case `lastUserPrompt` is the
-best topic signal. `lastUserPrompt` and `lastMessage` are truncated
-to ~300 chars. `lastMessage` is **assistant text only** — tool_use /
-thinking blocks are not surfaced.
+`title` collapses the customTitle / aiTitle chain — undefined means
+no named title is set. `displayName` is the canonical 5-tier cascade
+(`customTitle → aiTitle → lastUserPrompt → label → sessionId-slice`)
+and is always populated; prefer it for any UI-style display so the
+fallback order stays consistent across surfaces. `lastUserPrompt` and
+`lastMessage` are truncated to ~300 chars. `lastMessage` is
+**assistant text only** — tool_use / thinking blocks are not surfaced.
 
 `entryCount` is a monotonic counter — diff across calls to detect new
 entries. Status-only transitions don't bump it. Use `lastActivityAt`

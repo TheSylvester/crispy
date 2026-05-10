@@ -25,6 +25,11 @@ import {
 import type { MessageComponent } from './discord-transport.js';
 import type { AgentDispatch } from '../agent-dispatch-types.js';
 import { listAllSessions } from '../session-manager.js';
+import { getSessionDisplayName } from '../session-display-name.js';
+
+// Re-exported so Discord callers and the rest of this module can keep
+// importing it from here.
+export { getSessionDisplayName };
 
 const SOURCE = 'message-view/commands';
 const COMMANDS_HELP = 'Available: `!sessions`, `!open`, `!stop`, `!status`';
@@ -36,23 +41,6 @@ const PAGE_SIZE = MSG1_SLOTS + MSG2_SLOTS; // 9
 
 /** Auto-refresh the session screen after this many ms of inactivity. */
 const SCREEN_IDLE_REFRESH_MS = 60_000;
-
-// Session display — mirrors webview/utils/session-display.ts (can't import from webview layer)
-export function getSessionDisplayName(s: {
-  customTitle?: string;
-  aiTitle?: string;
-  title?: string;
-  label?: string;
-  lastUserPrompt?: string;
-  sessionId: string;
-}): string {
-  return s.customTitle?.trim()
-    || s.title?.trim()
-    || s.aiTitle?.trim()
-    || s.lastUserPrompt?.trim()
-    || s.label?.trim()
-    || s.sessionId.slice(0, 8) + '\u{2026}';
-}
 
 // ---------------------------------------------------------------------------
 // Session screen state — the bot channel is treated as an interactive display.

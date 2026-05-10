@@ -8676,3 +8676,40 @@ body[data-vscode-theme-kind="vscode-high-contrast-light"] .prose.skin-terminal h
   overflow-x: auto;
   overflow-y: hidden;
 }
+
+/* --- Rename button (TabHeader, between session trigger and ConnectionDot) --- */
+
+.crispy-titlebar__rename-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px !important;
+  color: var(--vscode-descriptionForeground, #888);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.crispy-titlebar__rename-btn:hover:not(:disabled) {
+  color: var(--vscode-foreground, #ccc);
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-titlebar__rename-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Trigger area while renaming — replaces the <button> with a <div> wrapper. */
+.crispy-titlebar__session-btn--editing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.crispy-titlebar__rename-input {
+  min-width: 100px;
+}

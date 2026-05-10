@@ -239,6 +239,7 @@ export function createCloudRelayTransport(wsUrl: string, tunnelId: string): Sess
     listOpenSessions: (params) => request<OpenSessionInfo[]>('listOpenSessions', (params ?? {}) as Record<string, unknown>),
     findSession: (sessionId) => request<WireSessionInfo | null>('findSession', { sessionId }),
     loadSession: (sessionId, options) => request<TranscriptEntry[]>('loadSession', { sessionId, ...options }),
+    setSessionTitle: (sessionId, title) => request<void>('setSessionTitle', { sessionId, title }),
     sendTurn: (intent, pendingId) => request<TurnReceipt>('sendTurn', { intent, ...(pendingId && { pendingId }) }),
     switchSession: (params) => request<{ previousSessionId: string; sessionId: string }>('switchSession', params),
 

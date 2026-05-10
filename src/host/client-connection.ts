@@ -80,7 +80,13 @@ import { readSessionMessages } from '../core/recall/message-store.js';
 import { getGitFiles, fileExists, readImage, readTextFile } from "../core/file-service.js";
 import { getGitBranchInfoCached } from "../core/git-info-cache.js";
 import { getGitDiff } from "../core/git-diff-service.js";
-import { getLineage, getChildSessions, getLineageGraph, dbPath, setSessionTitle } from '../core/activity-index.js';
+import { getLineage, getChildSessions, getLineageGraph, dbPath, getRosieLastTitle } from '../core/activity-index.js';
+import {
+  setSessionTitle as coreSetSessionTitle,
+  getSessionTitle as coreGetSessionTitle,
+  setSessionTitleIfUnchanged as coreSetSessionTitleIfUnchanged,
+} from '../core/session-manager.js';
+import { getSessionDisplayName } from '../core/session-display-name.js';
 import { refreshAndNotify } from '../core/session-list-manager.js';
 import { getProjectsWithDetails, getProjectActivity, updateProjectStage, updateProjectSortOrder, reorderProjectsInStage, getStages, getValidStageNames, writeTrackerResults, mergeProjects, extractTurns, extractTurnsFromMessages, getProjectTitle } from '../core/rosie/tracker/index.js';
 import type { TrackerBlock } from '../core/rosie/tracker/index.js';
@@ -1299,14 +1305,7 @@ export function createClientConnection(
                 return {
                   sessionId: info.sessionId,
                   sessionFile: file,
-                  // NOTE: duplicates getSessionDisplayName() logic from webview — can't import across layer boundary
-                  title:
-                    info.customTitle?.trim()
-                    || info.title?.trim()
-                    || info.aiTitle?.trim()
-                    || info.lastUserPrompt?.trim()
-                    || info.label?.trim()
-                    || info.sessionId.slice(0, 8) + '\u2026',
+                  title: getSessionDisplayName(info),
                   preview: info.lastMessage || undefined,
                   modifiedAt: info.modifiedAt instanceof Date ? info.modifiedAt.toISOString() : String(info.modifiedAt),
                 };
@@ -1446,9 +1445,28 @@ export function createClientConnection(
       case "setSessionTitle": {
         const sessionId = params.sessionId as string;
         const title = params.title as string;
-        setSessionTitle(sessionId, title);
+        await coreSetSessionTitle(sessionId, title);
         refreshAndNotify(sessionId);
         return { status: 'ok', sessionId };
+      }
+
+      case "getSessionTitle": {
+        const sessionId = params.sessionId as string;
+        return { title: await coreGetSessionTitle(sessionId) };
+      }
+
+      case "setSessionTitleIfUnchanged": {
+        const { sessionId, title, expectedCurrentTitle } = params as {
+          sessionId: string; title: string; expectedCurrentTitle: string | null;
+        };
+        const result = await coreSetSessionTitleIfUnchanged(sessionId, title, expectedCurrentTitle);
+        if (result.ok) refreshAndNotify(sessionId);
+        return result;
+      }
+
+      case "getRosieLastTitle": {
+        const { sessionId } = params as { sessionId: string };
+        return { title: getRosieLastTitle(sessionId) };
       }
 
       case "updateProjectSortOrder": {

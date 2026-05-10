@@ -1,0 +1,86 @@
+/* --- Toast Notifications (generic) ---
+ *
+ * Shared by TrackerToast (info, right edge) and ErrorToast (errors, left edge).
+ * The fade-out delay is `--crispy-toast-life` minus the 0.3s out-anim length;
+ * each rendered toast sets the var inline from TOAST_DISMISS_MS in Toast.tsx
+ * so the CSS keeps in sync with the JS dismiss timer.
+ */
+
+.crispy-toast-container {
+  position: fixed;
+  bottom: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.crispy-toast-container--right { right: 16px; }
+.crispy-toast-container--left { left: 16px; }
+
+.crispy-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  --crispy-toast-life: 4s;
+  animation: crispy-toast-in 0.25s ease-out,
+             crispy-toast-out 0.3s ease-in calc(var(--crispy-toast-life) - 0.3s) forwards;
+  max-width: 320px;
+}
+
+.crispy-toast--tracker {
+  background: var(--vscode-editorWidget-background, #252526);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.crispy-toast--error {
+  background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+  border: 1px solid var(--vscode-inputValidation-errorBorder, #be1100);
+  max-width: 360px;
+}
+
+/* Tracker stage modifiers (border-left accents). */
+.crispy-toast--stage_change { border-left: 3px solid #d4a574; }
+.crispy-toast--project_created { border-left: 3px solid #5cb870; }
+
+.crispy-toast__icon {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.crispy-toast__text {
+  font-size: 12px;
+  color: var(--vscode-foreground, #d4d4d4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes crispy-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes crispy-toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+}

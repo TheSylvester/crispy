@@ -88,13 +88,13 @@ describe('getDb', () => {
 // ============================================================================
 
 describe('schema', () => {
-  it('creates _migrations tracking table with version 5', () => {
+  it('creates _migrations tracking table with version 6', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
     const rows = db.all('SELECT version FROM _migrations ORDER BY version') as Array<Record<string, unknown>>;
     expect(rows.length).toBe(1);
-    expect(rows[0]!.version).toBe(5);
+    expect(rows[0]!.version).toBe(6);
   });
 
   it('runs schema idempotently', () => {
@@ -110,7 +110,7 @@ describe('schema', () => {
     expect(rows.length).toBe(1);
   });
 
-  it('creates all 18 regular tables', () => {
+  it('creates the v6 set of regular tables (session_titles retired)', () => {
     const dbPath = join(testDir, 'crispy.db');
     const db = getDb(dbPath);
 
@@ -119,8 +119,11 @@ describe('schema', () => {
     ) as Array<{ name: string }>;
     const tableNames = new Set(tables.map(r => r.name));
 
+    // session_titles was dropped in v6 (rename-sessions plan §H.1).
+    // Replaced by session_kinds + rosie_last_titles + pending_title_migration.
     const expected = [
-      '_migrations', 'session_lineage', 'session_titles',
+      '_migrations', 'session_lineage',
+      'session_kinds', 'rosie_last_titles', 'pending_title_migration',
       'projects', 'project_sessions', 'project_files', 'project_activity', 'stages',
       'messages', 'message_vectors',
       'file_mutations', 'commit_index', 'commit_file_changes',
@@ -131,6 +134,8 @@ describe('schema', () => {
     for (const t of expected) {
       expect(tableNames.has(t), `table ${t} should exist`).toBe(true);
     }
+    // session_titles should NOT exist on a fresh v6 install.
+    expect(tableNames.has('session_titles')).toBe(false);
   });
 
   it('creates 2 FTS5 virtual tables', () => {

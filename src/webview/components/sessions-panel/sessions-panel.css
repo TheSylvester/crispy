@@ -145,3 +145,47 @@
   line-height: 18px;
   text-align: center;
 }
+
+/* --- Inline rename pencil button (Open Sessions sidebar rows) --- */
+
+.crispy-sessions-panel__rename-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground, #888);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.crispy-sessions-panel__row:hover .crispy-sessions-panel__rename-btn,
+.crispy-sessions-panel__row:focus-within .crispy-sessions-panel__rename-btn {
+  opacity: 1;
+}
+
+.crispy-sessions-panel__rename-btn:hover {
+  color: var(--vscode-foreground, #ccc);
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+@media (hover: none) {
+  /* Always visible on touch — opacity-on-hover is invisible there. */
+  .crispy-sessions-panel__rename-btn { opacity: 1; }
+}
+
+.crispy-sessions-panel__row--editing {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-sessions-panel__rename {
+  flex: 1;
+  min-width: 0;
+}

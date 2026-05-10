@@ -57,6 +57,10 @@ import { codexDiscovery } from './codex-discovery.js';
 import type { SkillsListResponse } from './protocol/v2/SkillsListResponse.js';
 import type { ThreadItem } from './protocol/v2/ThreadItem.js';
 import type { UserInput } from './protocol/v2/UserInput.js';
+import type { ThreadSetNameParams } from './protocol/v2/ThreadSetNameParams.js';
+import type { ThreadSetNameResponse } from './protocol/v2/ThreadSetNameResponse.js';
+import type { ThreadNameUpdatedNotification } from './protocol/v2/ThreadNameUpdatedNotification.js';
+import { notifyUpsert } from '../../session-list-manager.js';
 
 // ============================================================================
 // Types
@@ -316,6 +320,30 @@ export class CodexAgentAdapter implements AgentAdapter {
     this._settings = { ...this._settings, permissionMode: mode };
     this.emitSettingsChanged();
     // Applied on next turn/start via overrides
+  }
+
+  /**
+   * Rename a thread via the Codex app-server `thread/name/set` RPC.
+   * Mutates the discovery cache synchronously so the next session-list
+   * upsert reflects the new title without waiting for the 30s TTL refresh.
+   */
+  async setSessionTitle(sessionId: string, title: string): Promise<void> {
+    if (this.client?.alive) {
+      const params: ThreadSetNameParams = { threadId: sessionId, name: title };
+      await this.client.request<ThreadSetNameResponse>('thread/name/set', params);
+      codexDiscovery.updateCachedTitle(sessionId, title);
+      return;
+    }
+    // No live client — delegate to discovery (shares or spawns a client).
+    await codexDiscovery.setSessionTitle(sessionId, title);
+  }
+
+  /**
+   * Read the current title for a thread. Delegates to discovery, which
+   * populates the cache on cold start and returns the cached title.
+   */
+  async getSessionTitle(sessionId: string): Promise<string | null> {
+    return codexDiscovery.getSessionTitle(sessionId);
   }
 
   // --- Private: Startup ---
@@ -924,6 +952,22 @@ export class CodexAgentAdapter implements AgentAdapter {
           type: 'event',
           event: { type: 'notification', kind: 'compacting' },
         });
+        break;
+      }
+
+      case 'thread/name/updated': {
+        const note = p as unknown as ThreadNameUpdatedNotification;
+        const threadId = note.threadId;
+        const threadName = note.threadName ?? null;
+        if (!threadId) break;
+        // Codex echoes this notification on every rename — including ones we
+        // initiated via thread/name/set, where updateCachedTitle already ran
+        // synchronously. Suppress the duplicate upsert when the cache is
+        // already at the target value.
+        const changed = codexDiscovery.updateCachedTitle(threadId, threadName);
+        if (!changed) break;
+        const info = codexDiscovery.findSession(threadId);
+        if (info) notifyUpsert(info);
         break;
       }
 

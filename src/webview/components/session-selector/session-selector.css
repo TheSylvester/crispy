@@ -966,3 +966,42 @@
   background: var(--vscode-list-hoverBackground, #2a2d2e);
 }
 
+
+/* --- Inline rename pencil button (dropdown rows) --- */
+
+.crispy-session-item__rename-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground, #888);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+  flex-shrink: 0;
+}
+
+.crispy-session-item:hover .crispy-session-item__rename-btn,
+.crispy-session-item:focus-within .crispy-session-item__rename-btn,
+.crispy-session-item--selected .crispy-session-item__rename-btn {
+  opacity: 1;
+}
+
+.crispy-session-item__rename-btn:hover {
+  color: var(--vscode-foreground, #ccc);
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+@media (hover: none) {
+  /* Always visible on touch devices — opacity-on-hover is invisible there. */
+  .crispy-session-item__rename-btn { opacity: 1; }
+}
+
+.crispy-session-item--editing {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}

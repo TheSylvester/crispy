@@ -62,7 +62,8 @@ import { refreshAndNotify, notifyStatusChange, broadcastCloseChannel, broadcastO
 import { fireResponseComplete } from './lifecycle-hooks.js';
 import { ingestAndEmbedSession } from './recall/ingest-hook.js';
 import { log } from './log.js';
-import { isSystemSession, setSessionKind } from './activity-index.js';
+import { isSystemSession, setSessionKind, setRosieLastTitle } from './activity-index.js';
+import { getSessionDisplayName } from './session-display-name.js';
 import { getRemoteSessions } from './remote-proxy.js';
 
 /** Type guard for session_changed notification events. */
@@ -477,14 +478,23 @@ export interface OpenSessionInfo {
   childAutoClose?: boolean;
 
   /**
-   * Resolved display title — `customTitle` (user `/rename`) > `title` (Rosie /
-   * session_titles DB) > `aiTitle` (SDK auto-generated). Undefined when no
-   * named title is set, in which case callers should fall back to
-   * `lastUserPrompt` (or `sessionId.slice(0, 8)` for a hard fallback). The
-   * three sources are intentionally not surfaced separately — agents triaging
-   * "what is this session about?" don't need provenance, they need a string.
+   * Resolved display title — `customTitle` (user `/rename`, vendor-native) >
+   * `aiTitle` (SDK auto-generated). Undefined when no named title is set, in
+   * which case callers should fall back to `lastUserPrompt` (or
+   * `sessionId.slice(0, 8)` for a hard fallback). The two sources are
+   * intentionally not surfaced separately — agents triaging "what is this
+   * session about?" don't need provenance, they need a string.
    */
   title?: string;
+
+  /**
+   * Pre-computed display name applying the canonical 5-tier cascade
+   * (`customTitle → aiTitle → lastUserPrompt → label → sessionId-slice`).
+   * Always populated. UIs should prefer this over hand-rolling the cascade
+   * so the order stays consistent across surfaces. See
+   * `src/core/session-display-name.ts`.
+   */
+  displayName: string;
 
   /**
    * Most recent user prompt text, truncated to ~PREVIEW_MAX_CHARS with an
@@ -672,10 +682,9 @@ export function listOpenChannels(
       ? resolvedParent
       : undefined;
 
-    // Title: collapsed chain. Prefer most-explicit user intent.
+    // Title: customTitle (user `/rename`) > aiTitle (SDK auto-generated).
     const title =
       info?.customTitle?.trim() ||
-      info?.title?.trim() ||
       info?.aiTitle?.trim() ||
       undefined;
 
@@ -691,6 +700,18 @@ export function listOpenChannels(
     const lastEntryTs = findLastEntryTimestamp(channel.entries);
     const diskMtime = info?.modifiedAt?.toISOString();
     const lastActivityAt = pickFreshest(lastEntryTs, diskMtime);
+
+    // Display name: canonical 5-tier cascade. Always populated so UIs don't
+    // re-derive it inconsistently (Open Sessions sidebar previously dropped
+    // the `label` tier). Computed from the channel-derived `lastUserPrompt`
+    // (preferred over disk's `lastUserPrompt`) plus disk-sourced label.
+    const displayName = getSessionDisplayName({
+      customTitle: info?.customTitle,
+      aiTitle: info?.aiTitle,
+      lastUserPrompt,
+      label: info?.label,
+      sessionId: id,
+    });
 
     results.push({
       sessionId: id,
@@ -708,6 +729,7 @@ export function listOpenChannels(
         childAutoClose: childMeta!.autoClose,
       } : {}),
       ...(title ? { title } : {}),
+      displayName,
       ...(lastUserPrompt ? { lastUserPrompt } : {}),
       ...(lastMessage ? { lastMessage } : {}),
       ...(lastActivityAt ? { lastActivityAt } : {}),
@@ -1946,6 +1968,161 @@ export async function interruptSession(sessionId: string): Promise<void> {
     throw new Error(`Channel for session "${sessionId}" has no adapter.`);
   }
   await channel.adapter.interrupt();
+}
+
+// ============================================================================
+// Session title — vendor-native rename
+// ============================================================================
+
+/**
+ * Locate a session and resolve a callable rename target.
+ *
+ * Prefers the live channel's adapter when one exists (so vendor-specific
+ * cache mutations happen synchronously). Falls back to the discovery
+ * object's stateless setSessionTitle/getSessionTitle when no live adapter
+ * is attached.
+ */
+function resolveTitleHandler(sessionId: string): {
+  setTitle: (title: string) => Promise<void>;
+  getTitle: () => Promise<string | null>;
+  vendor: Vendor;
+} {
+  const live = sessions.get(sessionId)?.adapter;
+  const info = findSession(sessionId);
+  // Cold-cache fallback: when a live adapter is attached but the vendor's
+  // discovery hasn't populated its cache yet (Codex on first startup),
+  // findSession() returns undefined. Trust the live adapter's vendor.
+  const vendor = info?.vendor ?? live?.vendor;
+  if (!vendor) {
+    throw new Error(`No session found for ${sessionId}`);
+  }
+  const reg = adapters.get(vendor);
+  if (!reg) {
+    throw new Error(`No adapter registered for vendor "${vendor}"`);
+  }
+  const discovery = reg.discovery;
+
+  const setTitle = async (title: string) => {
+    if (live?.setSessionTitle) {
+      await live.setSessionTitle(sessionId, title);
+      return;
+    }
+    if (discovery.setSessionTitle) {
+      await discovery.setSessionTitle(sessionId, title);
+      return;
+    }
+    throw new Error(`Vendor '${vendor}' does not support rename`);
+  };
+
+  const getTitle = async () => {
+    if (live?.getSessionTitle) return live.getSessionTitle(sessionId);
+    if (discovery.getSessionTitle) return discovery.getSessionTitle(sessionId);
+    return null;
+  };
+
+  return { setTitle, getTitle, vendor };
+}
+
+/**
+ * Rename a session via its vendor adapter (live) or discovery (offline).
+ * Throws if the vendor does not support rename or the session is unknown.
+ * Caller is responsible for invoking refreshAndNotify(sessionId) to push a
+ * session-list upsert.
+ */
+export async function setSessionTitle(sessionId: string, title: string): Promise<void> {
+  const resolvedId = resolveSessionPrefix(resolveSessionId(sessionId));
+  const { setTitle } = resolveTitleHandler(resolvedId);
+  await setTitle(title);
+}
+
+/**
+ * Read the current vendor-native title for a session.
+ * Returns null when no title is set or the vendor doesn't expose reads.
+ */
+export async function getSessionTitle(sessionId: string): Promise<string | null> {
+  const resolvedId = resolveSessionPrefix(resolveSessionId(sessionId));
+  const { getTitle } = resolveTitleHandler(resolvedId);
+  return getTitle();
+}
+
+/**
+ * Compare-and-swap rename outcome.
+ *
+ * `ok: true`            — title was written.
+ * `reason: 'changed'`   — vendor's current title differs from `expectedCurrentTitle`;
+ *                         no write occurred. `current` reports what was observed.
+ * `reason: 'unsupported'` — vendor doesn't expose rename.
+ */
+export type CASResult =
+  | { ok: true }
+  | { ok: false; reason: 'changed'; current: string | null }
+  | { ok: false; reason: 'unsupported' };
+
+/**
+ * Per-session lock chain. Different sessionIds run in parallel; concurrent
+ * calls for the SAME sessionId serialize behind the most recent in-flight
+ * promise so the read→compare→write is atomic within the host process.
+ *
+ * Cross-process races (two Crispy windows) are not covered — Rosie clobber
+ * is best-effort across processes by design.
+ */
+const sessionTitleLocks = new Map<string, Promise<unknown>>();
+
+/**
+ * Compare-and-swap rename. Reads the current title, compares against
+ * `expectedCurrentTitle` (whitespace/empty normalized to null), and only
+ * writes when they match. Used by Rosie's tracker so it doesn't clobber
+ * a human rename that landed between Rosie's read and write.
+ */
+export async function setSessionTitleIfUnchanged(
+  sessionId: string,
+  newTitle: string,
+  expectedCurrentTitle: string | null,
+): Promise<CASResult> {
+  const resolvedId = resolveSessionPrefix(resolveSessionId(sessionId));
+  const prior = sessionTitleLocks.get(resolvedId) ?? Promise.resolve();
+  // Detach from prior's rejection so a transient failure on an earlier CAS
+  // doesn't poison subsequent calls for the same sessionId. We only care
+  // that prior has settled, not how it settled.
+  const run = prior.catch(() => undefined).then(async (): Promise<CASResult> => {
+    let handler;
+    try {
+      handler = resolveTitleHandler(resolvedId);
+    } catch {
+      return { ok: false, reason: 'unsupported' };
+    }
+    const { setTitle, getTitle } = handler;
+
+    const rawCurrent = await getTitle();
+    const norm = (s: string | null): string | null => (s?.trim() || null);
+    if (norm(rawCurrent) !== norm(expectedCurrentTitle)) {
+      return { ok: false, reason: 'changed', current: rawCurrent };
+    }
+    try {
+      await setTitle(newTitle);
+    } catch (err) {
+      // Vendor refused (e.g. 'does not support rename') — surface as unsupported
+      // so callers don't retry. Other errors should propagate.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/does not support rename/.test(msg)) {
+        return { ok: false, reason: 'unsupported' };
+      }
+      throw err;
+    }
+    // Persist Rosie's last-written so the next CAS knows what we wrote.
+    // The CAS RPC is the Rosie path by convention — see crispy-tracker.mjs.
+    setRosieLastTitle(resolvedId, newTitle);
+    return { ok: true };
+  });
+  sessionTitleLocks.set(resolvedId, run);
+  try {
+    return await run;
+  } finally {
+    // Evict only if no chained call has overwritten our slot.
+    if (sessionTitleLocks.get(resolvedId) === run) {
+      sessionTitleLocks.delete(resolvedId);
+    }
+  }
 }
 
 /**

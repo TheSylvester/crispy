@@ -267,12 +267,19 @@ Flags:
 
 Flags:
   --session  (required) Session ID
-  --title    (required) New session title`,
+  --title    (required) New session title
 
+Uses compare-and-swap against the title Rosie last wrote so user renames
+between Rosie's read and write are not clobbered. If the human renamed
+the session, the call returns ok:false / reason:changed and the tracker
+yields without retrying.`,
+
+    // Note: this command needs two RPCs (read rosie_last_titles, then CAS).
+    // Returning the spec lets main() detect the multi-step shape.
     run(args) {
       const flags = parseFlags(args, { session: {}, title: {} });
       return {
-        method: 'setSessionTitle',
+        method: '__cas_rename__',
         params: { sessionId: flags.session, title: flags.title },
       };
     },
@@ -450,7 +457,21 @@ async function main() {
 
   // Execute
   try {
-    const result = await callRpc(socketPath, method, params);
+    let result;
+
+    if (method === '__cas_rename__') {
+      // Two-step: read Rosie's last-written title, then compare-and-swap.
+      // Server upserts rosie_last_titles on a successful CAS so the next
+      // turn knows what we wrote.
+      const last = await callRpc(socketPath, 'getRosieLastTitle', { sessionId: params.sessionId });
+      result = await callRpc(socketPath, 'setSessionTitleIfUnchanged', {
+        sessionId: params.sessionId,
+        title: params.title,
+        expectedCurrentTitle: last?.title ?? null,
+      });
+    } else {
+      result = await callRpc(socketPath, method, params);
+    }
 
     // Optional client-side formatting
     if (format && subcommand === 'list') {

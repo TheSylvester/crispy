@@ -250,8 +250,68 @@ function ensureSchema(db: Database): void {
     return;
   }
 
-  // v5 = current schema. Return early — nothing to do.
-  if (currentVersion >= 5) return;
+  // v5→v6: split session_titles into session_kinds + rosie_last_titles +
+  // pending_title_migration. Titles now live in vendor stores; the staging
+  // table feeds the async backfill in migrations/retire-session-titles.ts.
+  if (currentVersion === 5) {
+    db.exec('BEGIN');
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS session_kinds (
+          session_id TEXT PRIMARY KEY,
+          session_kind TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS rosie_last_titles (
+          session_id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS pending_title_migration (
+          session_id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          updated_at TEXT NOT NULL
+        );
+      `);
+
+      // Migrate session_kind values from session_titles → session_kinds
+      db.exec(`
+        INSERT OR IGNORE INTO session_kinds (session_id, session_kind, updated_at)
+        SELECT session_id, session_kind, updated_at
+        FROM session_titles
+        WHERE session_kind IS NOT NULL;
+      `);
+
+      // Seed rosie_last_titles alongside staging so Rosie's first CAS doesn't
+      // misclassify the migrated value as a human rename. Provenance is lost
+      // here: pre-migration USER renames look identical to Rosie writes, so
+      // Rosie may rewrite them on its next pass — accepted regression.
+      db.exec(`
+        INSERT OR IGNORE INTO pending_title_migration (session_id, title, updated_at)
+        SELECT session_id, title, updated_at FROM session_titles WHERE title <> '';
+        INSERT OR IGNORE INTO rosie_last_titles (session_id, title, updated_at)
+        SELECT session_id, title, updated_at FROM session_titles WHERE title <> '';
+      `);
+
+      db.exec(`DROP TABLE session_titles;`);
+
+      db.run(
+        'INSERT OR IGNORE INTO _migrations (version, description) VALUES (?, ?)',
+        [6, 'split session_titles into session_kinds + rosie_last_titles + pending_title_migration'],
+      );
+      db.exec('COMMIT');
+      log({ source: 'db', level: 'info', summary: 'DB: applied schema v6 — session_titles retired' });
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+    return;
+  }
+
+  // v6 = current schema. Return early — nothing to do.
+  if (currentVersion >= 6) return;
 
   // Old DBs (v1 or the legacy 24-migration system) — wipe and recreate.
   if (currentVersion >= 1) {
@@ -289,6 +349,9 @@ function ensureSchema(db: Database): void {
       DROP TABLE IF EXISTS messages;
       DROP TABLE IF EXISTS stages;
       DROP TABLE IF EXISTS session_titles;
+      DROP TABLE IF EXISTS session_kinds;
+      DROP TABLE IF EXISTS rosie_last_titles;
+      DROP TABLE IF EXISTS pending_title_migration;
       DROP TABLE IF EXISTS session_lineage;
       DROP TABLE IF EXISTS session_meta;
       DROP TABLE IF EXISTS projects;
@@ -327,14 +390,39 @@ function ensureSchema(db: Database): void {
     `);
 
     // ====================================================================
-    // session_titles — display name cache
+    // session_kinds — system/user marker (orthogonal to titles)
     // ====================================================================
     db.exec(`
-      CREATE TABLE IF NOT EXISTS session_titles (
+      CREATE TABLE IF NOT EXISTS session_kinds (
+        session_id TEXT PRIMARY KEY,
+        session_kind TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    // ====================================================================
+    // rosie_last_titles — CAS support for tracker rename clobber detection
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS rosie_last_titles (
         session_id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        session_kind TEXT
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    // ====================================================================
+    // pending_title_migration — staging for async vendor-native rename backfill
+    // (populated by the v5→v6 migration; drained by retire-session-titles.ts).
+    // Empty in fresh installs.
+    // ====================================================================
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pending_title_migration (
+        session_id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        updated_at TEXT NOT NULL
       );
     `);
 
@@ -697,11 +785,11 @@ function ensureSchema(db: Database): void {
     // Record schema version
     db.run(
       'INSERT INTO _migrations (version, description) VALUES (?, ?)',
-      [5, 'add workspace_roots'],
+      [6, 'fresh schema with session_kinds + rosie_last_titles + pending_title_migration'],
     );
 
     db.exec('COMMIT');
-    log({ source: 'db', level: 'info', summary: 'DB: schema v5 created — includes workspace_roots' });
+    log({ source: 'db', level: 'info', summary: 'DB: schema v6 created' });
   } catch (err) {
     db.exec('ROLLBACK');
     throw err;

@@ -1080,18 +1080,11 @@ describe('listOpenChannels', () => {
     expect(info.entryCount).toBe(2);
   });
 
-  it('resolves title chain: customTitle wins over title wins over aiTitle', async () => {
+  it('resolves title chain: customTitle wins over aiTitle', async () => {
     const sCustom = makeSessionInfo({
       sessionId: 'sess-custom',
       vendor: 'claude',
       customTitle: 'User Rename',
-      title: 'Rosie Title',
-      aiTitle: 'SDK Title',
-    });
-    const sTitle = makeSessionInfo({
-      sessionId: 'sess-title',
-      vendor: 'claude',
-      title: 'Rosie Title',
       aiTitle: 'SDK Title',
     });
     const sAi = makeSessionInfo({
@@ -1102,18 +1095,16 @@ describe('listOpenChannels', () => {
     const sNone = makeSessionInfo({ sessionId: 'sess-none', vendor: 'claude' });
     const discovery = createMockDiscovery({
       vendor: 'claude',
-      sessions: [sCustom, sTitle, sAi, sNone],
+      sessions: [sCustom, sAi, sNone],
     });
     registerAdapter(discovery, () => createMockAdapter({ vendor: 'claude' }));
 
     await subscribeSession('sess-custom', createTestSubscriber('s-c'));
-    await subscribeSession('sess-title', createTestSubscriber('s-t'));
     await subscribeSession('sess-ai', createTestSubscriber('s-a'));
     await subscribeSession('sess-none', createTestSubscriber('s-n'));
 
     const byId = new Map(listOpenChannels().map((r) => [r.sessionId, r]));
     expect(byId.get('sess-custom')!.title).toBe('User Rename');
-    expect(byId.get('sess-title')!.title).toBe('Rosie Title');
     expect(byId.get('sess-ai')!.title).toBe('SDK Title');
     expect(byId.get('sess-none')!.title).toBeUndefined();
   });

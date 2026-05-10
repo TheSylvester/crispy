@@ -18,6 +18,8 @@ import { useIsActiveTab } from '../context/TabContainerContext.js';
 import { SessionSelector } from './session-selector/index.js';
 import { useTransport } from '../context/TransportContext.js';
 import { getSessionDisplayName } from '../utils/session-display.js';
+import { InlineRename } from './session-rename/InlineRename.js';
+import { pushErrorToast } from './notifications/ErrorToast.js';
 import './status-dot.css';
 
 // ============================================================================
@@ -46,6 +48,15 @@ function PlusIcon(): React.JSX.Element {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
       <path d="M6 2V10M2 6H10" />
+    </svg>
+  );
+}
+
+function PencilIcon(): React.JSX.Element {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      {/* Tip + body */}
+      <path d="M8.5 1.5l2 2-7 7H1.5v-2l7-7z" />
     </svg>
   );
 }
@@ -171,6 +182,7 @@ export function TabHeader(): React.JSX.Element {
   const { sessions } = useSession();
   const { effectiveSessionId, setSelectedSessionId } = useTabSession();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [renamingHeader, setRenamingHeader] = useState(false);
   const { toolPanelOpen, setToolPanelOpen } = useTabPanel();
   const { channelState } = useSessionStatus(effectiveSessionId);
   const tabController = useTabControllerOptional();
@@ -193,6 +205,14 @@ export function TabHeader(): React.JSX.Element {
 
   const toggleDropdown = useCallback(() => {
     setDropdownOpen(open => !open);
+  }, []);
+
+  // Entering edit mode collapses any open dropdown so hovering UI can't
+  // float over the input and so the click-outside handler doesn't race
+  // with the input's blur.
+  const handleStartRename = useCallback(() => {
+    setDropdownOpen(false);
+    setRenamingHeader(true);
   }, []);
 
   const handleNew = useCallback(() => {
@@ -231,9 +251,12 @@ export function TabHeader(): React.JSX.Element {
     transport.postRaw?.({ kind: 'setTitle', title: label });
   }, [isActiveTab, currentSession, transport]);
 
-  // Click-outside to close session dropdown
+  // Click-outside to close session dropdown.
+  // Gated on !renamingHeader so click-outside while editing doesn't fight
+  // with the input's blur — without this gate, blur and outside-click race
+  // and the dropdown can close mid-edit on some browsers.
   useEffect(() => {
-    if (!dropdownOpen) return;
+    if (!dropdownOpen || renamingHeader) return;
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
       if (dropdownContainerRef.current && !dropdownContainerRef.current.contains(target)) {
@@ -242,20 +265,46 @@ export function TabHeader(): React.JSX.Element {
     };
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
-  }, [dropdownOpen]);
+  }, [dropdownOpen, renamingHeader]);
 
   return (
     <div className="crispy-tab-header">
-      {/* Left — Session selector + connection dot */}
+      {/* Left — Session selector + rename button + connection dot */}
       <div className="crispy-tab-header__left" ref={dropdownContainerRef}>
+        {renamingHeader && currentSession ? (
+          // Root-element swap: while editing the trigger area, we render a
+          // <div> containing the input + a visual-only chevron. This avoids
+          // nesting <input> inside <button> (invalid HTML) and prevents
+          // toggleDropdown from firing on bubbled clicks during edit.
+          <div className="crispy-titlebar__btn crispy-titlebar__session-btn crispy-titlebar__session-btn--editing">
+            <InlineRename
+              sessionId={currentSession.sessionId}
+              currentTitle={buttonLabel}
+              onDone={() => setRenamingHeader(false)}
+              onError={(msg) => pushErrorToast(msg)}
+              className="crispy-titlebar__rename-input"
+            />
+            <Chevron open={dropdownOpen} />
+          </div>
+        ) : (
+          <button
+            className="crispy-titlebar__btn crispy-titlebar__session-btn"
+            onClick={toggleDropdown}
+            aria-label={dropdownOpen ? 'Close sessions' : 'Open sessions'}
+            title={currentSession?.title || 'Toggle session list'}
+          >
+            <span className="crispy-titlebar__label">{buttonLabel}</span>
+            <Chevron open={dropdownOpen} />
+          </button>
+        )}
         <button
-          className="crispy-titlebar__btn crispy-titlebar__session-btn"
-          onClick={toggleDropdown}
-          aria-label={dropdownOpen ? 'Close sessions' : 'Open sessions'}
-          title={currentSession?.title || 'Toggle session list'}
+          className="crispy-titlebar__btn crispy-titlebar__rename-btn"
+          onClick={handleStartRename}
+          disabled={!currentSession || renamingHeader}
+          title={currentSession ? 'Rename session' : 'No session selected'}
+          aria-label="Rename session"
         >
-          <span className="crispy-titlebar__label">{buttonLabel}</span>
-          <Chevron open={dropdownOpen} />
+          <PencilIcon />
         </button>
         {dropdownOpen && (
           <div className="crispy-session-dropdown">

@@ -1,63 +1,61 @@
 /**
- * TrackerToast — Fixed bottom-right toast for tracker notifications
+ * TrackerToast — tracker variant of the generic Toast.
  *
- * Shows project created/matched/stage-change/trivial notifications.
- * Auto-dismisses after 4 seconds with fade-out animation.
+ * Subscribes to tracker notification events (project created/matched/
+ * stage-change/trivial) via `useTrackerNotifications` and renders them
+ * through the shared Toast primitive. Rendering, animation, and dismiss
+ * timing live in `Toast.tsx`; this module only translates tracker
+ * events into ToastItems and routes the variant.
  *
  * @module notifications/TrackerToast
  */
 
 import { useTrackerNotifications } from '../../hooks/useTrackerNotifications.js';
 import type { TrackerNotification } from '../../../core/rosie/tracker/tracker-notifications.js';
-import './tracker-toast.css';
+import { ToastContainer, type ToastItem } from './Toast.js';
 
-function formatNotification(n: TrackerNotification): { icon: string; text: string } {
+function toToastItem(n: TrackerNotification): ToastItem {
   switch (n.kind) {
     case 'project_created':
       return {
+        id: n.id,
         icon: n.icon || '\u{2728}',
         text: `Created "${n.projectTitle}"`,
+        modifier: 'project_created',
       };
     case 'project_matched':
       return {
+        id: n.id,
         icon: n.icon || '\u{1F4CC}',
         text: `Tracked "${n.projectTitle}"`,
       };
     case 'stage_change':
       return {
+        id: n.id,
         icon: n.icon || '\u{1F504}',
-        text: `${n.projectTitle}: ${n.oldStage || '?'} \u2192 ${n.newStage || '?'}`,
+        text: `${n.projectTitle}: ${n.oldStage || '?'} → ${n.newStage || '?'}`,
+        modifier: 'stage_change',
       };
     case 'trivial':
       return {
+        id: n.id,
         icon: '\u{1F4AD}',
         text: n.status || 'Trivial session',
       };
     default:
-      return { icon: '\u{1F514}', text: 'Tracker update' };
+      return { id: n.id, icon: '\u{1F514}', text: 'Tracker update' };
   }
 }
 
 export function TrackerToast(): React.JSX.Element | null {
   const { notifications, dismiss } = useTrackerNotifications();
-
-  if (notifications.length === 0) return null;
-
+  const items = notifications.map(toToastItem);
   return (
-    <div className="crispy-tracker-toast-container">
-      {notifications.map(n => {
-        const { icon, text } = formatNotification(n);
-        return (
-          <div
-            key={n.id}
-            className={`crispy-tracker-toast crispy-tracker-toast--${n.kind}`}
-            onClick={() => dismiss(n.id)}
-          >
-            <span className="crispy-tracker-toast__icon">{icon}</span>
-            <span className="crispy-tracker-toast__text">{text}</span>
-          </div>
-        );
-      })}
-    </div>
+    <ToastContainer
+      items={items}
+      variant="tracker"
+      position="right"
+      onDismiss={(id) => dismiss(id as number)}
+    />
   );
 }

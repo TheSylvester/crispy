@@ -51,7 +51,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources';
 
-import { query, forkSession } from '@anthropic-ai/claude-agent-sdk';
+import { query, forkSession, renameSession as sdkRenameSession } from '@anthropic-ai/claude-agent-sdk';
 import type { SpawnOptions as SDKSpawnOptions } from '@anthropic-ai/claude-agent-sdk';
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
@@ -72,7 +72,6 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, unlinkSync } fr
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { homedir } from 'os';
-import { getSessionTitleFromDb } from '../../activity-index.js';
 import { getContextWindowTokens } from '../../model-utils.js';
 import { checkCliVersion, cliSupportsThinkingDisplay, warnOnceIfOld } from './cli-version-gate.js';
 
@@ -466,7 +465,12 @@ export interface SessionInfo {
   lastUserPrompt?: string;
   vendor: 'claude';
   isSidechain?: boolean;
-  /** Short session title from the session_titles table (Rosie-generated). */
+  /**
+   * Deprecated. Vendor titles are now exposed via `customTitle` / `aiTitle`
+   * (the rename-sessions plan retired the `session_titles` DB column in v6).
+   * Retained for one release for wire-format backward compatibility; will
+   * be removed in 0.3.4. No producer populates this field.
+   */
   title?: string;
   /** Title from JSONL `custom-title` entry (user-set via /rename). */
   customTitle?: string;
@@ -814,6 +818,22 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     log({ level: 'info', source: 'claude-adapter', summary: `[PERMISSION MODE] Changing: ${prev} → ${mode}` });
     this.options.permissionMode = mode;
     await this.requireQuery('setPermissionMode').setPermissionMode(mode);
+  }
+
+  /**
+   * Rename a session by appending a `custom-title` entry to its JSONL.
+   * Operates on disk via the SDK; does not emit a channel event.
+   */
+  async setSessionTitle(sessionId: string, title: string): Promise<void> {
+    await renameClaudeSession(sessionId, title);
+  }
+
+  /**
+   * Read the current title from the session JSONL.
+   * Returns customTitle (user `/rename`) over aiTitle (SDK auto-generated).
+   */
+  async getSessionTitle(sessionId: string): Promise<string | null> {
+    return getClaudeSessionTitle(sessionId);
   }
 
   /**
@@ -2029,8 +2049,6 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
         continue;
       }
 
-      const gen3Title = getSessionTitleFromDb(sessionId);
-
       // Prefer the last transcript entry's timestamp over filesystem mtime
       // for accurate sort order — mtime can drift due to atomic writes, rsync, etc.
       const modifiedAt = meta?.lastTimestamp
@@ -2051,7 +2069,6 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
         isSidechain: meta?.isSidechain,
         ...(meta?.customTitle && { customTitle: meta.customTitle }),
         ...(meta?.aiTitle && { aiTitle: meta.aiTitle }),
-        ...(gen3Title && { title: gen3Title }),
       });
     }
   }
@@ -2087,7 +2104,6 @@ export function findSession(sessionId: string): SessionInfo | undefined {
     }
 
     const meta = extractMetadataFast(filePath);
-    const gen3Title = getSessionTitleFromDb(sessionId);
     const modifiedAt = meta?.lastTimestamp
       ? new Date(meta.lastTimestamp)
       : stat.mtime;
@@ -2106,7 +2122,6 @@ export function findSession(sessionId: string): SessionInfo | undefined {
       isSidechain: meta?.isSidechain,
       ...(meta?.customTitle && { customTitle: meta.customTitle }),
       ...(meta?.aiTitle && { aiTitle: meta.aiTitle }),
-      ...(gen3Title && { title: gen3Title }),
     };
   }
 
@@ -2122,6 +2137,41 @@ export function getResumeModel(sessionId: string, opts?: { upToUuid?: string }):
   const info = findSession(sessionId);
   if (!info) return undefined;
   return extractInitModel(info.path) ?? extractLatestAssistantModel(info.path, opts);
+}
+
+/**
+ * Rename a Claude session by appending a `custom-title` entry to its JSONL.
+ *
+ * Stateless — uses the SDK directly, no live adapter required. The
+ * adapter method (ClaudeAgentAdapter.setSessionTitle) delegates here
+ * so live and offline paths share one implementation.
+ */
+export async function renameClaudeSession(sessionId: string, title: string): Promise<void> {
+  const info = findSession(sessionId);
+  const dir = info?.projectPath;
+  try {
+    await sdkRenameSession(sessionId, title, dir ? { dir } : undefined);
+  } catch (e) {
+    // info.projectPath may diverge from the JSONL's actual location
+    // (forked sessions, custom-cwd Rosie spawns). Retry with full-projects
+    // scan when the fast path can't find the file.
+    if (dir && /not.*found/i.test(String((e as Error).message))) {
+      await sdkRenameSession(sessionId, title);
+    } else {
+      throw e;
+    }
+  }
+}
+
+/**
+ * Read a Claude session's title from disk (customTitle wins over aiTitle).
+ * Returns null when the session is missing or has no title.
+ */
+export function getClaudeSessionTitle(sessionId: string): string | null {
+  const info = findSession(sessionId);
+  if (!info) return null;
+  const meta = extractMetadataFast(info.path);
+  return meta?.customTitle ?? meta?.aiTitle ?? null;
 }
 
 // ============================================================================

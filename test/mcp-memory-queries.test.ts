@@ -62,13 +62,12 @@ function insertMessage(opts: {
   );
 }
 
-function insertTitle(sessionId: string, title: string): void {
-  const db = getDb(dbPath);
-  db.run(
-    `INSERT INTO session_titles (session_id, title, updated_at)
-     VALUES (?, ?, ?)`,
-    [sessionId, title, new Date().toISOString()],
-  );
+// listSessions no longer surfaces titles — they come from vendor stores via
+// SessionInfo.customTitle/aiTitle. ListResult.title is kept as `null` for
+// scripts/recall.ts back-compat; this helper is a no-op so tests asserting
+// "no title surfaced" still read coherently.
+function insertTitle(_sessionId: string, _title: string): void {
+  /* no-op */
 }
 
 // ============================================================================
@@ -94,16 +93,15 @@ describe('listSessions', () => {
     expect(rows[1]!.message_count).toBe(2);
   });
 
-  it('includes session titles when available', () => {
+  it('always returns null title (titles now come from vendor stores)', () => {
     const t1 = new Date('2025-06-01T10:00:00Z').getTime();
 
     insertMessage({ messageId: 'a1', sessionId: 'sess-a', seq: 0, text: 'hello', createdAt: t1 });
-    insertTitle('sess-a', 'My Session Title');
 
     const rows = listSessions(dbPath);
 
     expect(rows.length).toBe(1);
-    expect(rows[0]!.title).toBe('My Session Title');
+    expect(rows[0]!.title).toBeNull();
   });
 
   it('returns null title when no title set', () => {

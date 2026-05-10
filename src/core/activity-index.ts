@@ -33,7 +33,6 @@ export { dbPath, crispyRoot };
 export function _setTestDir(dir: string): () => void {
   _resetDb(); // Close existing DB connection
   const restoreRoot = _setTestRoot(dir);
-  sessionTitleCache = null;
   systemSessionIds = null;
   // Create dir and init DB in test directory
   fs.mkdirSync(dir, { recursive: true });
@@ -41,7 +40,6 @@ export function _setTestDir(dir: string): () => void {
   return () => {
     _resetDb(); // Close test DB
     restoreRoot();
-    sessionTitleCache = null;
     systemSessionIds = null;
   };
 }
@@ -94,65 +92,17 @@ function persistLogEntry(entry: LogEntry): void {
 // Wire up persistence so log() writes to SQLite automatically.
 registerLogPersister(persistLogEntry);
 
-/**
- * Lazy cache of session titles from the session_titles table.
- * Built on first access, invalidated by invalidateSessionTitleCache().
- */
-let sessionTitleCache: Map<string, string> | null = null;
-
-function buildSessionTitleCache(): Map<string, string> {
-  try {
-    const db = getDb(dbPath());
-    const rows = db.all(`SELECT session_id, title FROM session_titles`) as
-      Array<{ session_id: string; title: string }>;
-    return new Map(rows.map(r => [r.session_id, r.title]));
-  } catch {
-    return new Map();
-  }
-}
-
-/** Invalidate the session title cache, forcing a rebuild on next access. */
-export function invalidateSessionTitleCache(): void {
-  sessionTitleCache = null;
-}
-
-/**
- * Look up a session title from the session_titles table.
- * Uses a lazy in-memory cache.
- * Returns null if no title is set for this session.
- */
-export function getSessionTitleFromDb(sessionId: string): string | null {
-  if (!sessionTitleCache) {
-    sessionTitleCache = buildSessionTitleCache();
-  }
-  return sessionTitleCache.get(sessionId) ?? null;
-}
-
-/**
- * Write a session title to the session_titles table.
- * Invalidates the in-memory cache after the write.
- */
-export function setSessionTitle(sessionId: string, title: string): void {
-  const db = getDb(dbPath());
-  db.run(
-    `INSERT INTO session_titles (session_id, title, updated_at) VALUES (?, ?, ?)
-     ON CONFLICT(session_id) DO UPDATE SET title=excluded.title, updated_at=excluded.updated_at`,
-    [sessionId, title, new Date().toISOString()],
-  );
-  invalidateSessionTitleCache();
-}
-
 // ============================================================================
-// Session Kind (system vs user)
+// Session Kind (system vs user) — stored in session_kinds (post v6 schema)
 // ============================================================================
 
-/** Cache of system session IDs, loaded from session_titles where session_kind = 'system'. */
+/** Cache of system session IDs, loaded from session_kinds where session_kind = 'system'. */
 let systemSessionIds: Set<string> | null = null;
 
 function buildSystemSessionCache(): Set<string> {
   try {
     const db = getDb(dbPath());
-    const rows = db.all(`SELECT session_id FROM session_titles WHERE session_kind = 'system'`) as
+    const rows = db.all(`SELECT session_id FROM session_kinds WHERE session_kind = 'system'`) as
       Array<{ session_id: string }>;
     return new Set(rows.map(r => r.session_id));
   } catch {
@@ -172,12 +122,55 @@ export function isSystemSession(sessionId: string): boolean {
 export function setSessionKind(sessionId: string, kind: 'user' | 'system'): void {
   const db = getDb(dbPath());
   db.run(
-    `INSERT INTO session_titles (session_id, title, updated_at, session_kind)
-     VALUES (?, '', ?, ?)
-     ON CONFLICT(session_id) DO UPDATE SET session_kind = excluded.session_kind`,
-    [sessionId, new Date().toISOString(), kind],
+    `INSERT INTO session_kinds (session_id, session_kind, updated_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(session_id) DO UPDATE SET session_kind = excluded.session_kind, updated_at = excluded.updated_at`,
+    [sessionId, kind, new Date().toISOString()],
   );
   systemSessionIds = null; // invalidate cache
+}
+
+// ============================================================================
+// Rosie Last-Written Titles (CAS support)
+// ============================================================================
+
+/**
+ * Read the title Rosie last wrote for a session, or null if Rosie has
+ * never written one.
+ *
+ * Used by the tracker's CAS rename to detect human renames between
+ * Rosie iterations: if the vendor's current title differs from what
+ * Rosie last wrote, a human renamed and Rosie yields.
+ */
+export function getRosieLastTitle(sessionId: string): string | null {
+  try {
+    const db = getDb(dbPath());
+    const row = db.get(
+      'SELECT title FROM rosie_last_titles WHERE session_id = ?',
+      [sessionId],
+    );
+    if (!row) return null;
+    return (row as { title: string }).title;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * UPSERT the title Rosie just wrote. Called after a successful CAS so
+ * the next iteration's expected-current-title is fresh.
+ */
+export function setRosieLastTitle(sessionId: string, title: string): void {
+  try {
+    const db = getDb(dbPath());
+    db.run(
+      `INSERT INTO rosie_last_titles (session_id, title, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(session_id) DO UPDATE SET title=excluded.title, updated_at=excluded.updated_at`,
+      [sessionId, title, new Date().toISOString()],
+    );
+  } catch {
+    // Non-fatal — clobber detection degrades gracefully if the DB is unavailable.
+  }
 }
 
 // ============================================================================
@@ -342,8 +335,7 @@ export function pruneDeletedFiles(livePaths: Set<string>): number {
       throw e;
     }
 
-    // Invalidate caches — pruned files may have had session titles or system kind
-    sessionTitleCache = null;
+    // Invalidate caches — pruned files may have had a system kind set
     systemSessionIds = null;
 
     if (stalePaths.length > 0) {

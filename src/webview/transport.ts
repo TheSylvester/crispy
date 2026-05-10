@@ -91,6 +91,9 @@ export interface SessionService {
   findSession(sessionId: string): Promise<WireSessionInfo | null>;
   loadSession(sessionId: string, options?: { until?: string }): Promise<TranscriptEntry[]>;
 
+  /** Rename a session via the vendor's native store. Throws on vendor errors. */
+  setSessionTitle(sessionId: string, title: string): Promise<void>;
+
   /**
    * Send a turn (user message + settings) with unified routing.
    *

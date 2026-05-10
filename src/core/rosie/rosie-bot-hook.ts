@@ -21,7 +21,6 @@ import { recordTrackerOutcome, getStagesForPrompt, getCompactProjectsForPrompt }
 import { VALID_TYPES } from './tracker/types.js';
 import { extractTurnsFromMessages, formatTurnContent } from './tracker/turn-extractor.js';
 import { readSessionMessages, getSessionMessageCount } from '../recall/message-store.js';
-import { getSessionTitleFromDb } from '../activity-index.js';
 
 // ============================================================================
 // Module State
@@ -122,9 +121,10 @@ function initRosieTracker(d: AgentDispatch): void {
 
     const rosieModel = snap.settings.rosie.bot.model;
     const debugTracker = snap.settings.rosie.bot.debugTracker ?? false;
+    const currentTitle = info.customTitle ?? info.aiTitle ?? null;
     trackerInflight.add(sessionId);
     try {
-      await runTracker(d, sessionId, info.path, info.vendor, rosieModel, info.projectPath, debugTracker);
+      await runTracker(d, sessionId, info.path, info.vendor, rosieModel, info.projectPath, debugTracker, currentTitle);
     } catch (err) {
       log({ source: 'rosie-bot:tracker', level: 'error',
         summary: `Tracker error: ${err instanceof Error ? err.message : String(err)}` });
@@ -149,6 +149,7 @@ async function runTracker(
   modelOverride?: string,
   projectPath?: string,
   debugTracker = false,
+  currentTitle: string | null = null,
 ): Promise<void> {
   const parsed = modelOverride ? parseModelOption(modelOverride) : undefined;
   const vendor = parsed?.vendor ?? parentVendor;
@@ -181,11 +182,7 @@ async function runTracker(
   // Build compact project state
   const projectState = getCompactProjectsForPrompt(projectPath);
 
-  // Read current session title
-  const sessionTitle = getSessionTitleFromDb(sessionId);
-
-  // Build the per-turn injection
-  const injection = buildPerTurnInjection(projectState, turnContent, turnNumber, sessionTitle);
+  const injection = buildPerTurnInjection(projectState, turnContent, turnNumber, currentTitle);
 
   const existingTrackerSessionId = trackerSessions.get(sessionId);
 

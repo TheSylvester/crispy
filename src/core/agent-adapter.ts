@@ -58,7 +58,12 @@ export interface SessionInfo {
   lastUserPrompt?: string;
   vendor: Vendor;
   isSidechain?: boolean;
-  /** Short session title from the session_titles table. */
+  /**
+   * Deprecated. Vendor titles are now exposed via `customTitle` / `aiTitle`
+   * (the rename-sessions plan retired the `session_titles` DB column in v6).
+   * Retained for one release for wire-format backward compatibility; will
+   * be removed in 0.3.4. No producer populates this field.
+   */
   title?: string;
   /** Title from JSONL `custom-title` entry (user-set via /rename). */
   customTitle?: string;
@@ -150,6 +155,26 @@ export interface VendorDiscovery {
    * Callers should already have tried live in-memory state first.
    */
   resolveModelForSession?(sessionId: string, opts?: { upToUuid?: string }): string | undefined;
+
+  /**
+   * Stateless rename — used when no live adapter is attached for the session.
+   * Mirrors AgentAdapter.setSessionTitle so session-manager can dispatch
+   * uniformly across live and offline paths.
+   */
+  setSessionTitle?(sessionId: string, title: string): Promise<void>;
+
+  /** Stateless title read; same fallback semantics as setSessionTitle. */
+  getSessionTitle?(sessionId: string): Promise<string | null>;
+
+  /**
+   * Force-populate any internal session cache.
+   *
+   * Optional — vendors with no cache (e.g. Claude reads disk on every call)
+   * omit this. Vendors with TTL caches (Codex) implement it so callers that
+   * need a fresh, complete view (e.g. the title-migration drain at startup)
+   * can wait for population before iterating.
+   */
+  refresh?(): Promise<void>;
 }
 
 // ============================================================================
@@ -398,4 +423,16 @@ export interface AgentAdapter {
    * Vendors that don't support this should throw with a descriptive message.
    */
   setPermissionMode(mode: string): Promise<void>;
+
+  /**
+   * Rename a session in the vendor's native store.
+   * Adapters that don't support rename omit this method.
+   */
+  setSessionTitle?(sessionId: string, title: string): Promise<void>;
+
+  /**
+   * Read the current vendor-native title for a session.
+   * Returns null if no title is set.
+   */
+  getSessionTitle?(sessionId: string): Promise<string | null>;
 }

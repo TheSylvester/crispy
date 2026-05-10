@@ -18,6 +18,8 @@ import { useGitInfo } from '../../hooks/useGitInfo.js';
 import { formatRelativeTime } from '../../utils/format.js';
 import type { OpenSessionInfo } from '../../transport.js';
 import type { SessionChannelState } from '../../../core/session-channel.js';
+import { InlineRename } from '../session-rename/InlineRename.js';
+import { pushErrorToast } from '../notifications/ErrorToast.js';
 import '../status-dot.css';
 import './sessions-panel.css';
 
@@ -91,7 +93,7 @@ const STATE_DOT_CLASS: Record<DotState, string> = {
 const TIME_TICK_MS = 15_000;
 
 function labelFor(s: OpenSessionInfo): string {
-  return s.title || s.lastUserPrompt || `${s.sessionId.slice(0, 8)}…`;
+  return s.displayName;
 }
 
 /**
@@ -304,36 +306,81 @@ const INDENT_PER_DEPTH = 16;
 const BASE_ROW_PADDING_LEFT = 12;
 
 function SessionRow({ s, depth = 0, onClick }: SessionRowProps): React.JSX.Element {
+  const [editing, setEditing] = useState(false);
   const label = labelFor(s);
   const message = messageFor(s);
   const dotModifier = STATE_DOT_CLASS[s.state] ?? '';
   const time = s.lastActivityAt ? formatRelativeTime(s.lastActivityAt) : '';
-  const rowClass = `crispy-sessions-panel__row${s.attached ? '' : ' crispy-sessions-panel__row--detached'}`;
+  const rowClass = `crispy-sessions-panel__row${s.attached ? '' : ' crispy-sessions-panel__row--detached'}${editing ? ' crispy-sessions-panel__row--editing' : ''}`;
   const rowTitle = s.attached
     ? `${label}\n${s.sessionId}`
     : `${label}\n${s.sessionId}\n(no window open — will close in ~30s if idle)`;
   const rowStyle = depth > 0
     ? { paddingLeft: BASE_ROW_PADDING_LEFT + depth * INDENT_PER_DEPTH }
     : undefined;
-  return (
-    <button className={rowClass} style={rowStyle} onClick={() => onClick(s.sessionId)} title={rowTitle}>
+
+  // Inner row content — identical between the two roots so structure stays
+  // stable when toggling edit mode.
+  const inner = (
+    <>
       <span className={`crispy-status-dot ${dotModifier}`} />
       <span className="crispy-sessions-panel__row-text">
         <span className="crispy-sessions-panel__line-1">
-          <span className="crispy-sessions-panel__label">{label}</span>
+          {editing ? (
+            <InlineRename
+              sessionId={s.sessionId}
+              currentTitle={label}
+              onDone={() => setEditing(false)}
+              onError={(msg) => pushErrorToast(msg)}
+              className="crispy-sessions-panel__rename"
+            />
+          ) : (
+            <span className="crispy-sessions-panel__label">{label}</span>
+          )}
           {s.pendingApprovalCount > 0 && (
             <span className="crispy-sessions-panel__badge" title={`${s.pendingApprovalCount} pending approval(s)`}>
               {s.pendingApprovalCount}
             </span>
           )}
+          {!editing && (
+            <button
+              type="button"
+              className="crispy-sessions-panel__rename-btn"
+              aria-label="Rename session"
+              title="Rename session"
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditing(true);
+              }}
+            >
+              {'✎'}
+            </button>
+          )}
           {time && <span className="crispy-sessions-panel__time">{time}</span>}
         </span>
-        {message && (
+        {message && !editing && (
           <span className="crispy-sessions-panel__line-2">
             <span className="crispy-sessions-panel__message">{message}</span>
           </span>
         )}
       </span>
+    </>
+  );
+
+  if (editing) {
+    // Root-element swap: while editing, the row is a presentation div so the
+    // <input> isn't nested inside a <button> (invalid HTML, accessibility
+    // failure, and event-bubbling chaos).
+    return (
+      <div className={rowClass} style={rowStyle} role="presentation" title={rowTitle}>
+        {inner}
+      </div>
+    );
+  }
+
+  return (
+    <button className={rowClass} style={rowStyle} onClick={() => onClick(s.sessionId)} title={rowTitle}>
+      {inner}
     </button>
   );
 }

@@ -28,7 +28,6 @@ import { CodexRpcClient, type CodexRpcClientOptions } from './codex-rpc-client.j
 import { log } from '../../log.js';
 import { normalizePath } from '../../url-path-resolver.js';
 import { CRISPY_VERSION } from '../../version.js';
-import { getSessionTitleFromDb } from '../../activity-index.js';
 
 // ============================================================================
 // CodexDiscovery
@@ -92,6 +91,59 @@ export class CodexDiscovery implements VendorDiscovery {
     // Trigger refresh if cache is stale (fire-and-forget)
     this.maybeRefresh();
     return this.sessionCache.find((s) => s.sessionId === sessionId);
+  }
+
+  /**
+   * Synchronously mutate the cached title for a thread.
+   * Used by the adapter after a successful `thread/name/set` so the UI
+   * reflects the new title without waiting for the 30s TTL refresh.
+   *
+   * Returns true when the cached value actually changed; false on
+   * cache miss OR when the new value matches the cached one. Callers
+   * use the return to skip downstream notifications on no-op.
+   */
+  updateCachedTitle(sessionId: string, title: string | null): boolean {
+    const cached = this.sessionCache.find((s) => s.sessionId === sessionId);
+    if (!cached) return false;
+    const next = title || undefined;
+    if (cached.customTitle === next) return false;
+    if (next) {
+      cached.customTitle = next;
+    } else {
+      delete cached.customTitle;
+    }
+    return true;
+  }
+
+  /**
+   * Force the cache to be populated (for cold-start gets).
+   * Awaits a refresh if the cache is empty; no-op if already populated.
+   */
+  async ensureCachePopulated(): Promise<void> {
+    if (this.sessionCache.length === 0) {
+      await this.refresh();
+    }
+  }
+
+  /**
+   * Stateless rename — sends `thread/name/set` via the shared (or temporary)
+   * RPC client. Throws if the Codex app-server cannot be reached.
+   */
+  async setSessionTitle(sessionId: string, title: string): Promise<void> {
+    const client = await this.ensureClient();
+    await client.request('thread/name/set', { threadId: sessionId, name: title });
+    this.updateCachedTitle(sessionId, title);
+  }
+
+  /**
+   * Stateless read — populates the cache on first call (cold start) and
+   * returns the cached title if known. Returns null when the thread is
+   * absent or has no name.
+   */
+  async getSessionTitle(sessionId: string): Promise<string | null> {
+    await this.ensureCachePopulated();
+    const info = this.sessionCache.find((s) => s.sessionId === sessionId);
+    return info?.customTitle ?? null;
   }
 
   /**
@@ -260,7 +312,6 @@ export class CodexDiscovery implements VendorDiscovery {
   }
 
   private threadToSessionInfo(thread: Thread): SessionInfo {
-    const gen3Title = getSessionTitleFromDb(thread.id);
     return {
       sessionId: thread.id,
       path: thread.path ?? '',
@@ -271,7 +322,7 @@ export class CodexDiscovery implements VendorDiscovery {
       label: thread.preview?.slice(0, 80),
       lastMessage: thread.preview,
       vendor: 'codex',
-      ...(gen3Title && { title: gen3Title }),
+      ...(thread.name && { customTitle: thread.name }),
     };
   }
 

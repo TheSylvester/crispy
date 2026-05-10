@@ -496,4 +496,109 @@ describe('CodexDiscovery', () => {
       expect(sessions[0].projectSlug).toBe('c--Users-developer-projects-my-app');
     });
   });
+
+  // ========== Vendor-native rename (rename-sessions plan §C) ==========
+
+  describe('thread.name → SessionInfo.customTitle', () => {
+    it('flows thread.name into SessionInfo.customTitle', async () => {
+      const thread = createMockThread({ id: 'named-1', name: 'My Renamed Thread' } as Partial<Thread>);
+
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      (async () => {
+        await handleInitialize(mockProcess);
+        const req = await mockProcess.getNextClientMessage();
+        mockProcess.pushResponse(req.id, { data: [thread], nextCursor: null });
+      })();
+
+      await discovery.refresh();
+
+      const sessions = discovery.listSessions();
+      expect(sessions[0].customTitle).toBe('My Renamed Thread');
+    });
+
+    it('omits customTitle when thread.name is null', async () => {
+      const thread = createMockThread({ id: 'unnamed-1', name: null } as Partial<Thread>);
+
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      (async () => {
+        await handleInitialize(mockProcess);
+        const req = await mockProcess.getNextClientMessage();
+        mockProcess.pushResponse(req.id, { data: [thread], nextCursor: null });
+      })();
+
+      await discovery.refresh();
+
+      const sessions = discovery.listSessions();
+      expect(sessions[0].customTitle).toBeUndefined();
+    });
+  });
+
+  describe('updateCachedTitle (synchronous cache mutation)', () => {
+    it('mutates the cached SessionInfo.customTitle in place', async () => {
+      const thread = createMockThread({ id: 'cache-1', name: 'Old Name' } as Partial<Thread>);
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      (async () => {
+        await handleInitialize(mockProcess);
+        const req = await mockProcess.getNextClientMessage();
+        mockProcess.pushResponse(req.id, { data: [thread], nextCursor: null });
+      })();
+      await discovery.refresh();
+
+      expect(discovery.findSession('cache-1')?.customTitle).toBe('Old Name');
+
+      const ok = discovery.updateCachedTitle('cache-1', 'New Name');
+      expect(ok).toBe(true);
+      // Synchronous read sees the new title — no waiting on the 30s TTL.
+      expect(discovery.findSession('cache-1')?.customTitle).toBe('New Name');
+    });
+
+    it('removes customTitle when title is null', async () => {
+      const thread = createMockThread({ id: 'cache-2', name: 'Has Title' } as Partial<Thread>);
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      (async () => {
+        await handleInitialize(mockProcess);
+        const req = await mockProcess.getNextClientMessage();
+        mockProcess.pushResponse(req.id, { data: [thread], nextCursor: null });
+      })();
+      await discovery.refresh();
+
+      discovery.updateCachedTitle('cache-2', null);
+      expect(discovery.findSession('cache-2')?.customTitle).toBeUndefined();
+    });
+
+    it('returns false when the session is not in the cache', () => {
+      // Clean cache (no refresh) — updateCachedTitle should report miss.
+      const ok = discovery.updateCachedTitle('does-not-exist', 'X');
+      expect(ok).toBe(false);
+    });
+  });
+
+  describe('setSessionTitle (RPC-only, no SQLite fallback)', () => {
+    it('sends thread/name/set and mutates the cache', async () => {
+      const thread = createMockThread({ id: 'rename-1', name: null } as Partial<Thread>);
+
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      (async () => {
+        await handleInitialize(mockProcess);
+        // First call: thread/list (from refresh inside ensureClient/setSessionTitle path)
+        const list = await mockProcess.getNextClientMessage();
+        expect(list.method).toBe('thread/list');
+        mockProcess.pushResponse(list.id, { data: [thread], nextCursor: null });
+
+        // Then thread/name/set
+        const setName = await mockProcess.getNextClientMessage();
+        expect(setName.method).toBe('thread/name/set');
+        expect(setName.params).toEqual({ threadId: 'rename-1', name: 'Hello' });
+        mockProcess.pushResponse(setName.id, {});
+      })();
+
+      // Prime the cache so updateCachedTitle has something to update.
+      await discovery.refresh();
+
+      await discovery.setSessionTitle('rename-1', 'Hello');
+
+      // Cache mutated synchronously after the RPC returned.
+      expect(discovery.findSession('rename-1')?.customTitle).toBe('Hello');
+    });
+  });
 });

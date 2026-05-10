@@ -302,6 +302,16 @@ export function registerAllAdapters(config: HostAdapterConfig): () => void {
     console.error(`[adapter-registry] ${reg.vendor} adapter registered`);
   }
 
+  // Async data migration — drain pending_title_migration rows into vendor
+  // stores. Empty after first successful run; non-blocking on startup
+  // (rows that fail get retried at next startup with attempt cap of 5).
+  // Imported lazily so test/non-host environments don't pull DB I/O at module load.
+  void import('../core/migrations/retire-session-titles.js')
+    .then(({ runPendingTitleMigration }) => runPendingTitleMigration())
+    .catch((err) => {
+      console.error(`[adapter-registry] Title migration failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+
   return () => {
     for (const vendor of registered) {
       unregisterAdapter(vendor as Vendor);

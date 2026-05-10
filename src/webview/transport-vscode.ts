@@ -102,6 +102,9 @@ export function createVSCodeTransport(api: VSCodeAPI): SessionService {
     loadSession: (sessionId, options) =>
       request<TranscriptEntry[]>('loadSession', { sessionId, ...options }),
 
+    setSessionTitle: (sessionId, title) =>
+      request<void>('setSessionTitle', { sessionId, title }),
+
     sendTurn: (intent, pendingId) =>
       request<TurnReceipt>('sendTurn', { intent, ...(pendingId && { pendingId }) }),
 
