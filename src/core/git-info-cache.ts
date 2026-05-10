@@ -29,7 +29,7 @@ interface Entry {
   inflight?: Promise<GitInfo | null>;
 }
 
-const TTL_MS = 15_000;
+const TTL_MS = 8_000;
 const MAX_ENTRIES = 100;
 const MAX_CONCURRENT = 4;
 
