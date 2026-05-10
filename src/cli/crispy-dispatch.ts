@@ -98,7 +98,7 @@ function parseArgs(argv: string[]): CliArgs {
   const approvalEnv = process.env.CRISPY_DISPATCH_APPROVAL as ApprovalMode | undefined;
   const args: CliArgs = {
     vendor: 'claude',
-    timeoutMs: 600_000,
+    timeoutMs: 0,
     autoClose: true,
     visible: false,
     background: false,
@@ -115,7 +115,6 @@ function parseArgs(argv: string[]): CliArgs {
   }
 
   const positionalParts: string[] = [];
-  let explicitTimeout = false;
   let i = 2; // skip node + script
 
   while (i < argv.length) {
@@ -145,7 +144,6 @@ function parseArgs(argv: string[]): CliArgs {
         break;
       case '--timeout':
         args.timeoutMs = parseInt(requireValue('--timeout', argv, i), 10);
-        explicitTimeout = true;
         i++;
         break;
       case '--no-auto-close':
@@ -214,11 +212,10 @@ function parseArgs(argv: string[]): CliArgs {
     args.prompt = positionalParts.join(' ');
   }
 
-  // Long-running agent sessions (--no-auto-close) default to no timeout —
-  // wait indefinitely for the turn to complete. Explicit --timeout overrides.
-  if (!args.autoClose && !explicitTimeout) {
-    args.timeoutMs = 0;
-  }
+  // Default: no timeout — wait indefinitely for the turn to complete. A
+  // CLI-side cap doesn't stop the host-side agent (the channel keeps running
+  // after the watch fires), so a default cap only surfaces false-completion
+  // signals to callers. `--timeout <ms>` opts a caller into an explicit cap.
 
   return args;
 }
