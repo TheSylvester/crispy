@@ -326,12 +326,13 @@ function SessionRow({ s, depth = 0, onClick }: SessionRowProps): React.JSX.Eleme
     ? { paddingLeft: BASE_ROW_PADDING_LEFT + depth * INDENT_PER_DEPTH }
     : undefined;
 
+  const showVendorIcon = s.vendor !== 'unknown';
+
   // Inner row content — identical between the two roots so structure stays
   // stable when toggling edit mode.
   const inner = (
     <>
       <span className={`crispy-status-dot ${dotModifier}`} />
-      {s.vendor !== 'unknown' && <VendorIcon vendor={s.vendor} />}
       <span className="crispy-sessions-panel__row-text">
         <span className="crispy-sessions-panel__line-1">
           {editing ? (
@@ -366,9 +367,10 @@ function SessionRow({ s, depth = 0, onClick }: SessionRowProps): React.JSX.Eleme
           )}
           {time && <span className="crispy-sessions-panel__time">{time}</span>}
         </span>
-        {message && !editing && (
+        {!editing && (message || showVendorIcon) && (
           <span className="crispy-sessions-panel__line-2">
-            <span className="crispy-sessions-panel__message">{message}</span>
+            {message && <span className="crispy-sessions-panel__message">{message}</span>}
+            {showVendorIcon && <VendorIcon vendor={s.vendor} />}
           </span>
         )}
       </span>

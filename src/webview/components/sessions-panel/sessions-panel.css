@@ -108,6 +108,13 @@
   white-space: nowrap;
 }
 
+/* Push the vendor icon to the right edge of line-2 so it sits visually
+ * beneath the last-activity time on line-1. margin-left: auto handles the
+ * no-message case where there's no flex:1 sibling pushing it over. */
+.crispy-sessions-panel__line-2 .crispy-vendor-icon {
+  margin-left: auto;
+}
+
 .crispy-sessions-panel__git {
   flex-shrink: 0;
   margin-left: auto;
