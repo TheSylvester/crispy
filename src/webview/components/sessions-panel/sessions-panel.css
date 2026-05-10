@@ -197,3 +197,38 @@
   flex: 1;
   min-width: 0;
 }
+
+/* --- Hover-revealed kill button (destroys the live channel) --- */
+
+.crispy-sessions-panel__kill-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--vscode-descriptionForeground, #888);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+  flex-shrink: 0;
+}
+
+.crispy-sessions-panel__row:hover .crispy-sessions-panel__kill-btn,
+.crispy-sessions-panel__row:focus-within .crispy-sessions-panel__kill-btn {
+  opacity: 1;
+}
+
+.crispy-sessions-panel__kill-btn:hover {
+  color: #f87171;
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+@media (hover: none) {
+  /* Always visible on touch — opacity-on-hover is invisible there. */
+  .crispy-sessions-panel__kill-btn { opacity: 1; }
+}

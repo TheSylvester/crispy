@@ -15,6 +15,7 @@
  *   host → webview: { kind: 'sessionListChanged' }   // pushed on every session-list event
  *   host → webview: { kind: 'workspaceCwd', cwd }    // one-shot push at startup
  *   webview → host: { kind: 'revealSession', sessionId }
+ *   webview → host: { kind: 'closeSession', sessionId }
  *
  * @module sidebar-transport
  */
@@ -46,6 +47,8 @@ export interface SidebarTransport {
   onWorkspaceCwd(handler: (cwd: string | null) => void): () => void;
   /** Tell the host to reveal a session in an editor panel. Fire-and-forget. */
   revealSession(sessionId: string): void;
+  /** Tell the host to kill a live session (destroy channel, close panels). Fire-and-forget. */
+  closeSession(sessionId: string): void;
 }
 
 export function createSidebarTransport(): SidebarTransport {
@@ -122,6 +125,9 @@ export function createSidebarTransport(): SidebarTransport {
     },
     revealSession(sessionId) {
       api.postMessage({ kind: 'revealSession', sessionId });
+    },
+    closeSession(sessionId) {
+      api.postMessage({ kind: 'closeSession', sessionId });
     },
   };
 }

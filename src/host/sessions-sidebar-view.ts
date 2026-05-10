@@ -13,10 +13,11 @@
  */
 
 import * as vscode from 'vscode';
-import { listOpenChannels } from '../core/session-manager.js';
+import { listOpenChannels, closeSession } from '../core/session-manager.js';
 import {
   subscribeSessionList,
   unsubscribeSessionList,
+  broadcastCloseChannel,
   type SessionListSubscriber,
 } from '../core/session-list-manager.js';
 import { getGitBranchInfoCached } from '../core/git-info-cache.js';
@@ -100,6 +101,14 @@ export class OpenSessionsViewProvider implements vscode.WebviewViewProvider {
 
       if (msg.kind === 'revealSession' && typeof msg.sessionId === 'string') {
         openPanel(msg.sessionId);
+        return;
+      }
+
+      if (msg.kind === 'closeSession' && typeof msg.sessionId === 'string') {
+        // Broadcast close-channel first so subscribed UIs (FlexLayout tabs,
+        // dedicated VS Code panels) tear down before the channel is destroyed.
+        broadcastCloseChannel(msg.sessionId);
+        closeSession(msg.sessionId);
         return;
       }
 

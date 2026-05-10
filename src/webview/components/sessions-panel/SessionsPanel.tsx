@@ -77,6 +77,8 @@ interface SessionsPanelProps {
   mode?: 'sidebar' | 'tab';
   /** Click handler — caller decides how to surface the activated session. */
   onActivate?: (sessionId: string) => void;
+  /** Hover-revealed "×" handler — destroys the live channel. Omit to hide the button. */
+  onKill?: (sessionId: string) => void;
 }
 
 type DotState = Exclude<SessionChannelState, 'unattached'>;
@@ -112,7 +114,7 @@ function messageFor(s: OpenSessionInfo): string {
   }
 }
 
-export function SessionsPanel({ mode = 'sidebar', onActivate }: SessionsPanelProps): React.JSX.Element {
+export function SessionsPanel({ mode = 'sidebar', onActivate, onKill }: SessionsPanelProps): React.JSX.Element {
   const transport = useTransport();
   const { sessions, sessionStatuses, workspaceCwdPath } = useSession();
   const [openSessions, setOpenSessions] = useState<OpenSessionInfo[] | null>(null);
@@ -198,6 +200,7 @@ export function SessionsPanel({ mode = 'sidebar', onActivate }: SessionsPanelPro
               key={group.kind === 'other' ? '__other__' : group.path}
               group={group}
               onClick={handleClick}
+              onKill={onKill}
             />
           ))
         )}
@@ -209,13 +212,14 @@ export function SessionsPanel({ mode = 'sidebar', onActivate }: SessionsPanelPro
 interface SessionGroupSectionProps {
   group: SessionGroup;
   onClick: (sessionId: string) => void;
+  onKill?: (sessionId: string) => void;
 }
 
 // Cap nesting depth in case parentSessionId ever forms an unexpected chain.
 // Real trees are 1–2 deep (superthink, dispatch); 6 is generous headroom.
 const MAX_TREE_DEPTH = 6;
 
-function SessionGroupSection({ group, onClick }: SessionGroupSectionProps): React.JSX.Element {
+function SessionGroupSection({ group, onClick, onKill }: SessionGroupSectionProps): React.JSX.Element {
   // Build a parent→children index restricted to sessions in this group. A
   // session whose parent lives in another group (different cwd) or has
   // already closed renders as a top-level row in its own group.
@@ -239,7 +243,7 @@ function SessionGroupSection({ group, onClick }: SessionGroupSectionProps): Reac
     <>
       {group.kind === 'other' ? <OtherGroupHeader /> : <CwdGroupHeader group={group} />}
       {topLevel.map((s) => (
-        <SessionTree key={s.sessionId} s={s} depth={0} childrenOf={childrenOf} onClick={onClick} />
+        <SessionTree key={s.sessionId} s={s} depth={0} childrenOf={childrenOf} onClick={onClick} onKill={onKill} />
       ))}
     </>
   );
@@ -250,15 +254,16 @@ interface SessionTreeProps {
   depth: number;
   childrenOf: Map<string, OpenSessionInfo[]>;
   onClick: (sessionId: string) => void;
+  onKill?: (sessionId: string) => void;
 }
 
-function SessionTree({ s, depth, childrenOf, onClick }: SessionTreeProps): React.JSX.Element {
+function SessionTree({ s, depth, childrenOf, onClick, onKill }: SessionTreeProps): React.JSX.Element {
   const kids = childrenOf.get(s.sessionId);
   return (
     <>
-      <SessionRow s={s} depth={depth} onClick={onClick} />
+      <SessionRow s={s} depth={depth} onClick={onClick} onKill={onKill} />
       {kids && depth < MAX_TREE_DEPTH && kids.map((c) => (
-        <SessionTree key={c.sessionId} s={c} depth={depth + 1} childrenOf={childrenOf} onClick={onClick} />
+        <SessionTree key={c.sessionId} s={c} depth={depth + 1} childrenOf={childrenOf} onClick={onClick} onKill={onKill} />
       ))}
     </>
   );
@@ -299,6 +304,7 @@ interface SessionRowProps {
   s: OpenSessionInfo;
   depth?: number;
   onClick: (sessionId: string) => void;
+  onKill?: (sessionId: string) => void;
 }
 
 // 16px per nesting level — enough to read as a hierarchy without crowding
@@ -306,7 +312,7 @@ interface SessionRowProps {
 const INDENT_PER_DEPTH = 16;
 const BASE_ROW_PADDING_LEFT = 12;
 
-function SessionRow({ s, depth = 0, onClick }: SessionRowProps): React.JSX.Element {
+function SessionRow({ s, depth = 0, onClick, onKill }: SessionRowProps): React.JSX.Element {
   const [editing, setEditing] = useState(false);
   const label = labelFor(s);
   // Rename source — the actual existing vendor title, NOT the cascade-resolved
@@ -366,6 +372,20 @@ function SessionRow({ s, depth = 0, onClick }: SessionRowProps): React.JSX.Eleme
             </button>
           )}
           {time && <span className="crispy-sessions-panel__time">{time}</span>}
+          {!editing && onKill && (
+            <button
+              type="button"
+              className="crispy-sessions-panel__kill-btn"
+              aria-label="Kill session"
+              title="Kill session — destroys the live channel"
+              onClick={(e) => {
+                e.stopPropagation();
+                onKill(s.sessionId);
+              }}
+            >
+              {'×'}
+            </button>
+          )}
         </span>
         {!editing && (message || showVendorIcon) && (
           <span className="crispy-sessions-panel__line-2">

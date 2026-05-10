@@ -82,6 +82,7 @@ function SidebarApp(): React.JSX.Element {
         <SessionsPanel
           mode="sidebar"
           onActivate={(sessionId) => sidebarTransport.revealSession(sessionId)}
+          onKill={(sessionId) => sidebarTransport.closeSession(sessionId)}
         />
       </SessionContext.Provider>
     </TransportProvider>

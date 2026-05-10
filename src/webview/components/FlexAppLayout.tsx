@@ -765,10 +765,12 @@ function getTabName(sessionId: string, sessions: Array<{ sessionId: string; titl
 // portable SessionsPanel. Sidebar webviews provide a different onActivate.
 function SessionsPanelWithTabController(): React.JSX.Element {
   const tabController = useTabController();
+  const transport = useTransport();
   return (
     <SessionsPanel
       mode="tab"
       onActivate={(id) => tabController.navigateToSession(id)}
+      onKill={(id) => { transport.close(id).catch(() => { /* best-effort */ }); }}
     />
   );
 }
