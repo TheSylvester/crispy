@@ -78,13 +78,8 @@ function hasAncestor(node: Node, selector: string): boolean {
   return false;
 }
 
-function formatAnnotation(text: string, isCodeBlock: boolean, comment: string): string {
-  let annotation: string;
-  if (isCodeBlock) {
-    annotation = `\`\`\`\`\n${text}\n\`\`\`\`\n`;
-  } else {
-    annotation = text.split('\n').map(line => `> ${line}`).join('\n') + '\n';
-  }
+function formatAnnotation(text: string, _isCodeBlock: boolean, comment: string): string {
+  let annotation = `\`\`\`\`\n${text}\n\`\`\`\`\n`;
   if (comment) {
     const lines = comment.split('\n');
     annotation += lines.map(line => `* ${line}`).join('\n') + '\n';
