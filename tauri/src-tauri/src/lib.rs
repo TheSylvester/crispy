@@ -583,9 +583,13 @@ fn spawn_new_window(app: &AppHandle, query: Option<&str>, explicit_path: Option<
             .inner_size(1200.0, 800.0)
             .min_inner_size(600.0, 400.0)
             .center()
-            // Native drag-drop handler is enabled (default). The webview
-            // subscribes via `getCurrentWebview().onDragDropEvent()` to route
-            // OS-dropped files through the Files Panel import flow.
+            // Native drag-drop handler disabled. wry's WebView2 backend takes
+            // over the child HWND's IDropTarget when this is on, which blocks
+            // *all* HTML5 drag-drop in the page (FlexLayout tab reorder,
+            // ProjectsView Kanban drag, FileTree → ChatInput intra-app drag),
+            // not just OS file drops. Disabling here costs us drag-from-
+            // Explorer into the Files Panel and chat input.
+            .disable_drag_drop_handler()
             .on_navigation(|url| {
                 if is_local_url(url.as_str()) {
                     true
@@ -1476,8 +1480,10 @@ pub fn run() {
             .inner_size(1200.0, 800.0)
             .min_inner_size(600.0, 400.0)
             .center()
-            // Native drag-drop handler is enabled (default). See companion
-            // comment in the secondary-window builder above for rationale.
+            // Native drag-drop handler disabled — see companion comment on
+            // the secondary-window builder above. Required for HTML5 drag in
+            // the page; cost is OS file drops into Files Panel / chat input.
+            .disable_drag_drop_handler()
             .on_navigation(|url| {
                 if is_local_url(url.as_str()) {
                     true
