@@ -14,6 +14,7 @@
  * @module StreamingGhost
  */
 
+import { useEffect, useRef } from 'react';
 import type { ContentBlock } from '../../core/transcript.js';
 import { CrispyMarkdown } from '../renderers/CrispyMarkdown.js';
 import './StreamingGhost.css';
@@ -31,6 +32,37 @@ function splitAtParagraphBoundary(text: string): [string, string] {
   const lastBreak = text.lastIndexOf('\n\n');
   if (lastBreak === -1) return ['', text];
   return [text.slice(0, lastBreak), text.slice(lastBreak + 2)];
+}
+
+/**
+ * Streaming thinking block — renders a `<details>` whose open state is
+ * controlled by the parent. While `open`, auto-scrolls the inner `<pre>`
+ * to its bottom on every text update so live reasoning stays in view.
+ */
+function StreamingThinkingBlock({
+  thinking,
+  open,
+}: {
+  thinking: string;
+  open: boolean;
+}): React.JSX.Element {
+  const preRef = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    if (open && preRef.current) {
+      preRef.current.scrollTop = preRef.current.scrollHeight;
+    }
+  }, [thinking, open]);
+  return (
+    <details className="streaming-ghost__thinking" open={open}>
+      <summary>
+        Thinking…
+        <ThinkingChevron />
+      </summary>
+      <pre ref={preRef} className="streaming-ghost__thinking-text">
+        {thinking}
+      </pre>
+    </details>
+  );
 }
 
 /** SVG chevron — points right by default, rotated 90° via CSS when open */
@@ -54,6 +86,18 @@ function ThinkingChevron(): React.JSX.Element {
 }
 
 export function StreamingGhost({ content }: StreamingGhostProps): React.JSX.Element {
+  let lastMeaningfulIndex = -1;
+  for (let idx = content.length - 1; idx >= 0; idx--) {
+    const b = content[idx];
+    if (
+      (b.type === 'text' && Boolean(b.text)) ||
+      (b.type === 'thinking' && Boolean(b.thinking)) ||
+      b.type === 'tool_use'
+    ) {
+      lastMeaningfulIndex = idx;
+      break;
+    }
+  }
   return (
     <div className="message assistant streaming-ghost">
       <div className="streaming-ghost__blocks">
@@ -78,13 +122,11 @@ export function StreamingGhost({ content }: StreamingGhostProps): React.JSX.Elem
 
             case 'thinking':
               return block.thinking ? (
-                <details key={i} className="streaming-ghost__thinking">
-                  <summary>
-                    Thinking…
-                    <ThinkingChevron />
-                  </summary>
-                  <pre className="streaming-ghost__thinking-text">{block.thinking}</pre>
-                </details>
+                <StreamingThinkingBlock
+                  key={i}
+                  thinking={block.thinking}
+                  open={i === lastMeaningfulIndex}
+                />
               ) : null;
 
             case 'tool_use':
