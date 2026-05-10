@@ -137,8 +137,13 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
           return next;
         });
       } else if (event.type === 'session_status_changed') {
+        // Always bump Map identity, even when status is unchanged. This event
+        // is the only push signal for subscriber-count flips (0↔1 attached),
+        // which don't change `status` but DO change the OpenSessionInfo
+        // snapshot. Without identity churn here, SessionsPanel's refresh
+        // useEffect (deps include sessionStatuses) misses re-attach and the
+        // row stays dimmed.
         setSessionStatuses(prev => {
-          if (prev.get(event.sessionId) === event.status) return prev;
           const next = new Map(prev);
           next.set(event.sessionId, event.status as SessionChannelState);
           return next;

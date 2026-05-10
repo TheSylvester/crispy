@@ -602,12 +602,14 @@ export function createClientConnection(
           }
 
           // Swap to mutable subscriber BEFORE sendTurn to avoid event-loss window.
-          // The mutable subscriber is already installed on the channel when
-          // sendTurn() potentially triggers a vendor switch.
+          // subscribe() does set(id, subscriber) — the new mutable has the same
+          // clientId, so it atomically replaces the old subscriber in the
+          // channel.subscribers Map. Count stays at 1 throughout; no spurious
+          // onExternalSubscribersGone/Returned hook pair fires (which would
+          // flicker the `attached` flag through 0 and confuse the sidebar).
           // skipCatchup: the client is already subscribed and has current state —
           // a catchup here would send stale 'idle' and overwrite the client's
           // optimistic 'streaming' state before the adapter emits 'active'.
-          unsubscribe(sub.channel, sub.subscriber);
           const mutable = createMutableSubscriber(targetSessionId);
           subscribe(sub.channel, mutable.subscriber, { skipCatchup: true });
           subscriptions.set(targetSessionId, {
