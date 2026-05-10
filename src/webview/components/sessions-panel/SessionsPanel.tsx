@@ -308,6 +308,12 @@ const BASE_ROW_PADDING_LEFT = 12;
 function SessionRow({ s, depth = 0, onClick }: SessionRowProps): React.JSX.Element {
   const [editing, setEditing] = useState(false);
   const label = labelFor(s);
+  // Rename source — the actual existing vendor title, NOT the cascade-resolved
+  // displayName. OpenSessionInfo.title is `customTitle ?? aiTitle ?? undefined`,
+  // exactly the right pre-fill: edit-on-existing for set titles, blank when
+  // none. Falling back to displayName/label would freeze a lastUserPrompt
+  // slice (up to 300 chars) as the canonical customTitle on submit.
+  const renameSource = s.title ?? '';
   const message = messageFor(s);
   const dotModifier = STATE_DOT_CLASS[s.state] ?? '';
   const time = s.lastActivityAt ? formatRelativeTime(s.lastActivityAt) : '';
@@ -329,7 +335,7 @@ function SessionRow({ s, depth = 0, onClick }: SessionRowProps): React.JSX.Eleme
           {editing ? (
             <InlineRename
               sessionId={s.sessionId}
-              currentTitle={label}
+              currentTitle={renameSource}
               onDone={() => setEditing(false)}
               onError={(msg) => pushErrorToast(msg)}
               className="crispy-sessions-panel__rename"
@@ -378,9 +384,33 @@ function SessionRow({ s, depth = 0, onClick }: SessionRowProps): React.JSX.Eleme
     );
   }
 
+  // Non-editing path: role="button" div instead of <button>, so the inner
+  // pencil <button> isn't nested inside another <button> (HTML "Phrasing
+  // content" rule). Enter/Space activate via onKeyDown to preserve keyboard
+  // accessibility.
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Only activate the row when the keypress originates on the row itself,
+    // not bubbled from an inner interactive element (e.g. the pencil button).
+    // Without this, tab→pencil→Enter would preventDefault the pencil's own
+    // click and instead switch to the session — see round 2 review.
+    if (e.target !== e.currentTarget) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onClick(s.sessionId);
+    }
+  };
+
   return (
-    <button className={rowClass} style={rowStyle} onClick={() => onClick(s.sessionId)} title={rowTitle}>
+    <div
+      className={rowClass}
+      style={rowStyle}
+      role="button"
+      tabIndex={0}
+      onClick={() => onClick(s.sessionId)}
+      onKeyDown={handleKeyDown}
+      title={rowTitle}
+    >
       {inner}
-    </button>
+    </div>
   );
 }

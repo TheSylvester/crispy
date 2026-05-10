@@ -202,6 +202,13 @@ export function TabHeader(): React.JSX.Element {
       : 'Conversations',
     [currentSession],
   );
+  // Rename source — the actual existing vendor title, NOT the truncated
+  // button label. Submitting the truncated label as a new title would
+  // silently chop the original; submitting the untruncated displayName
+  // would freeze a lastUserPrompt slice as customTitle.
+  const renameSource = currentSession
+    ? (currentSession.customTitle ?? currentSession.aiTitle ?? '')
+    : '';
 
   const toggleDropdown = useCallback(() => {
     setDropdownOpen(open => !open);
@@ -279,7 +286,7 @@ export function TabHeader(): React.JSX.Element {
           <div className="crispy-titlebar__btn crispy-titlebar__session-btn crispy-titlebar__session-btn--editing">
             <InlineRename
               sessionId={currentSession.sessionId}
-              currentTitle={buttonLabel}
+              currentTitle={renameSource}
               onDone={() => setRenamingHeader(false)}
               onError={(msg) => pushErrorToast(msg)}
               className="crispy-titlebar__rename-input"
@@ -291,7 +298,7 @@ export function TabHeader(): React.JSX.Element {
             className="crispy-titlebar__btn crispy-titlebar__session-btn"
             onClick={toggleDropdown}
             aria-label={dropdownOpen ? 'Close sessions' : 'Open sessions'}
-            title={currentSession?.title || 'Toggle session list'}
+            title={currentSession ? buttonLabel : 'Toggle session list'}
           >
             <span className="crispy-titlebar__label">{buttonLabel}</span>
             <Chevron open={dropdownOpen} />
