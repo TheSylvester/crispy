@@ -200,9 +200,9 @@ export function activate(context: vscode.ExtensionContext): void {
         // and throw inside reveal()/postMessage(), routing the event to the webview.
         dedicatedPanels.delete(sessionId);
         // autoClose panels are lifecycle-owned (CLI/observer): closing the
-        // panel reaps the channel. maybeScheduleReap skips child sessions,
-        // so we must close them explicitly here. Sidebar-peek panels
-        // (no autoClose) are non-owning views — closing must not kill the agent.
+        // panel closes the channel immediately rather than waiting for the
+        // idle reaper's grace window. Sidebar-peek panels (no autoClose) are
+        // non-owning views — closing must not kill the agent.
         if (options?.autoClose) closeSession(sessionId);
       }
     });

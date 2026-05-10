@@ -1977,20 +1977,19 @@ export function closeSession(sessionId: string): void {
  *
  * Skipped when:
  * - Reaper is disabled (`CRISPY_IDLE_CHANNEL_REAP_MS=0`).
- * - Session has child-session metadata. Children have explicit lifecycle
- *   (dispatchChildSession.cleanup, onIdle+autoClose). Reaping them risks
- *   killing observer-mode sessions (`autoClose:false`) before the user sees
- *   the result.
  * - Channel is not idle (still streaming/awaiting_approval/background).
  *   `onIdle` will retry once the adapter settles.
  * - Approvals are still pending — those need a human, not a reaper.
- * - External subscribers exist — someone's still watching.
+ * - External subscribers exist — someone's still watching. Child sessions
+ *   spawned with `autoClose:false` (observer mode) survive reap only while
+ *   an external subscriber is attached; once detached and idle, they reap
+ *   like any other channel. `--no-auto-close` means "don't close on turn
+ *   settle," not "live forever with nothing observing."
  * - A timer is already armed for this session.
  */
 function maybeScheduleReap(sessionId: string): void {
   if (IDLE_REAP_GRACE_MS === 0) return;
   if (reapTimers.has(sessionId)) return;
-  if (childSessions.has(sessionId)) return;
 
   const channel = sessions.get(sessionId);
   if (!channel) return;
@@ -2008,7 +2007,6 @@ function maybeScheduleReap(sessionId: string): void {
     const ch = sessions.get(sessionId);
     if (!ch) return;
     if (ch.tearing) return;
-    if (childSessions.has(sessionId)) return;
     if (ch.state !== 'idle') return;
     if (ch.pendingApprovals.size > 0) return;
     for (const id of ch.subscribers.keys()) {

@@ -656,7 +656,7 @@ describe('Idle channel reaper', () => {
     expect(getChannel('sess-approval')).toBeDefined();
   });
 
-  it('does not reap registered child sessions (their lifecycle is owned by dispatch)', async () => {
+  it('reaps a registered child session once detached and idle (no observer = no reason to live)', async () => {
     const session = makeSessionInfo({ sessionId: 'sess-child', vendor: 'claude' });
     const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
     registerAdapter(discovery, createSessionIdFactory('sess-child'));
@@ -672,8 +672,26 @@ describe('Idle channel reaper', () => {
     });
     unsubscribe(channel, sub);
 
+    await vi.advanceTimersByTimeAsync(30_001);
+    expect(getChannel('sess-child')).toBeUndefined();
+  });
+
+  it('does not reap a registered child session while an external subscriber is still attached', async () => {
+    const session = makeSessionInfo({ sessionId: 'sess-child-attached', vendor: 'claude' });
+    const discovery = createMockDiscovery({ vendor: 'claude', sessions: [session] });
+    registerAdapter(discovery, createSessionIdFactory('sess-child-attached'));
+
+    const sub = createTestSubscriber('client-1');
+    await subscribeSession('sess-child-attached', sub);
+
+    registerChildSession('sess-child-attached', {
+      parentSessionId: 'sess-parent',
+      autoClose: false,
+      visible: true,
+    });
+
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(getChannel('sess-child')).toBeDefined();
+    expect(getChannel('sess-child-attached')).toBeDefined();
   });
 });
 
