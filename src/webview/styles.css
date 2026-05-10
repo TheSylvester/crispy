@@ -2042,6 +2042,13 @@ body[data-accent-mode="skin"] {
   background: var(--vscode-button-hoverBackground, #1177bb);
 }
 
+.crispy-annotation-popover__actions .crispy-cp-mic {
+  position: static;
+  margin-right: auto;
+  width: 24px;
+  height: 24px;
+}
+
 ::highlight(crispy-transcript-annotation) {
   background-color: var(
     --vscode-editor-findMatchHighlightBackground,

@@ -12,9 +12,18 @@
  * @module components/TranscriptAnnotationPopover
  */
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { TranscriptAnnotationState } from '../hooks/useTranscriptAnnotation.js';
+import { useTransport } from '../context/TransportContext.js';
+import { useVoiceInput, type VoiceState } from '../hooks/useVoiceInput.js';
+import { MicIcon } from './control-panel/icons.js';
+
+const MIC_TITLES: Record<VoiceState, string> = {
+  idle: 'Voice input',
+  recording: 'Stop recording',
+  transcribing: 'Transcribing…',
+};
 
 /** Clamp popover position so it doesn't overflow the viewport */
 function clampToViewport(
@@ -51,6 +60,29 @@ export function TranscriptAnnotationPopover({
   const popoverRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const transport = useTransport();
+  const hostCapture = useMemo(() => {
+    if (!transport.startVoiceCapture || !transport.stopVoiceCapture) return undefined;
+    return {
+      start: transport.startVoiceCapture.bind(transport),
+      stop: transport.stopVoiceCapture.bind(transport),
+    };
+  }, [transport]);
+  const annotationTextRef = useRef(annotationText);
+  annotationTextRef.current = annotationText;
+  const voice = useVoiceInput({
+    transcribe: useCallback(
+      (pcm: Float32Array, sr: number) => transport.transcribeAudio(pcm, sr),
+      [transport],
+    ),
+    onTranscript: useCallback((text: string) => {
+      const current = annotationTextRef.current;
+      const sep = current && !current.endsWith(' ') ? ' ' : '';
+      setAnnotationText(current + sep + text);
+      textareaRef.current?.focus();
+    }, [setAnnotationText]),
+    hostCapture,
+  });
 
   // Measure and clamp after render (selection change or mode change)
   useEffect(() => {
@@ -112,6 +144,15 @@ export function TranscriptAnnotationPopover({
             rows={3}
           />
           <div className="crispy-annotation-popover__actions">
+            <button
+              type="button"
+              className={`crispy-cp-mic ${voice.state !== 'idle' ? `crispy-cp-mic--${voice.state}` : ''}`}
+              title={MIC_TITLES[voice.state]}
+              disabled={voice.state === 'transcribing'}
+              onClick={voice.toggle}
+            >
+              <MicIcon />
+            </button>
             <button
               className="crispy-annotation-popover__cancel"
               onClick={cancelAnnotation}
