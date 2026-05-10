@@ -1234,8 +1234,13 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         this.activeQuery = null;
         this.inputQueue = null;
         this.abortController = null;
+        // Reset background subagent counter — once the query loop is exiting,
+        // any in-flight subagents are unreachable, so a leaked task_started
+        // (e.g. subagent aborted before delivering `task_notification`) must
+        // not survive into the next query and synthesize 'background' forever.
+        this.backgroundTaskCount = 0;
         if (!this._closed) {
-          this.emitStatus(this.backgroundTaskCount > 0 ? 'background' : 'idle');
+          this.emitStatus('idle');
         }
       }
     }
