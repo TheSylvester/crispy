@@ -21,7 +21,7 @@
 
 ## What's New in v0.3.3
 
-A live sessions panel, drag-and-drop file import on the Windows desktop app, and Claude Opus 4.7 thinking restored.
+A live sessions panel, Windows desktop polish, and Claude Opus 4.7 thinking restored.
 
 ### Open Sessions panel
 
@@ -31,7 +31,6 @@ A live inbox of every running session — status dot, last message preview, and 
 
 ### Windows desktop app
 
-- **Drag-and-drop file import** — drop files or folders from Explorer onto the Files panel or chat input. Replace, skip, and auto-rename for conflicts; progress and cancel for large transfers. Windows paths are translated to WSL paths automatically when the daemon runs in WSL.
 - **No more flashing console windows** when the app spawns subprocesses on Windows.
 - **Faster WSL workspace detection** — the workspace picker shows its detection state immediately instead of leaving you wondering for several seconds.
 - **WSL provisioning timeout** — a stalled `npm install` is now caught after 3 minutes instead of hanging silently.
@@ -172,6 +171,7 @@ Stability fixes and a superthink upgrade.
 ## Coming Soon
 
 - Gemini CLI and OpenCode support
+- File import on the Windows desktop app — drag-from-Explorer or pick-via-dialog into the Files panel and chat input
 
 ---
 
