@@ -992,6 +992,63 @@ body[data-accent-mode="skin"] {
   word-break: normal;
 }
 
+/* Per-block hover affordances (copy + wrap toggle).
+   The existing .md-code-block rule above provides the box styling (padding,
+   background, border, overflow-x). We add position:relative so the overlay
+   is anchored to the wrapper. The inner <pre> sits inside with stripped
+   defaults — it owns horizontal scroll so the overlay stays put when the
+   user scrolls the code. */
+.md-code-block { position: relative; }
+
+.md-code-block__pre {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  overflow-x: auto;
+  font: inherit;
+  color: inherit;
+}
+
+/* Wrap-state overrides. Prism's wrapper has its own white-space: pre, so
+   override both the pre and the highlight wrapper when --wrap is on. */
+.md-code-block--wrap .md-code-block__pre {
+  overflow-x: visible;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.md-code-block--wrap .md-code-highlight {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Overlay: top-right corner, hover-revealed, never blocks text selection.
+   pointer-events:none on the container, auto on the buttons themselves. */
+.md-code-block__overlay {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 5;
+}
+.md-code-block:hover > .md-code-block__overlay,
+.md-code-block:focus-within > .md-code-block__overlay {
+  opacity: 1;
+}
+.md-code-block__btn {
+  pointer-events: auto;
+}
+
+/* Active state for wrap toggle — accent-tinted to clearly signal "on". */
+.md-code-block__wrap-btn--active {
+  color: var(--color-accent, var(--vscode-foreground, #d4d4d4));
+  background: color-mix(in srgb, var(--color-accent, #007acc) 20%, transparent);
+}
+
 /* Lists */
 .prose ul {
   list-style-type: disc;
