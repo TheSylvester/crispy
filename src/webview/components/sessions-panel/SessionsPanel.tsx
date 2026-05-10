@@ -19,6 +19,7 @@ import { formatRelativeTime } from '../../utils/format.js';
 import type { OpenSessionInfo } from '../../transport.js';
 import type { SessionChannelState } from '../../../core/session-channel.js';
 import { InlineRename } from '../session-rename/InlineRename.js';
+import { VendorIcon } from '../session-selector/VendorIcon.js';
 import { pushErrorToast } from '../notifications/ErrorToast.js';
 import '../status-dot.css';
 import './sessions-panel.css';
@@ -330,6 +331,7 @@ function SessionRow({ s, depth = 0, onClick }: SessionRowProps): React.JSX.Eleme
   const inner = (
     <>
       <span className={`crispy-status-dot ${dotModifier}`} />
+      {s.vendor !== 'unknown' && <VendorIcon vendor={s.vendor} />}
       <span className="crispy-sessions-panel__row-text">
         <span className="crispy-sessions-panel__line-1">
           {editing ? (
