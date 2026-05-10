@@ -91,11 +91,6 @@ export function SessionItem({
           </span>
         )}
         <div className="crispy-session-item__meta">
-          <VendorIcon vendor={session.vendor} />
-          {session.remoteEnvironment && (
-            <span className="crispy-session-item__env">{session.remoteEnvironment}</span>
-          )}
-          {isLive && <span className="crispy-session-item__live">LIVE</span>}
           {!editing && (
             <button
               type="button"
@@ -110,6 +105,11 @@ export function SessionItem({
               {'✎'}
             </button>
           )}
+          <VendorIcon vendor={session.vendor} />
+          {session.remoteEnvironment && (
+            <span className="crispy-session-item__env">{session.remoteEnvironment}</span>
+          )}
+          {isLive && <span className="crispy-session-item__live">LIVE</span>}
           <span className="crispy-session-item__time">
             {formatRelativeTime(session.modifiedAt)}
           </span>
