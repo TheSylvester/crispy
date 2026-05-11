@@ -612,7 +612,7 @@ describe('Idle channel reaper', () => {
     unsubscribe(channel, sub);
 
     expect(getChannel('sess-reap')).toBeDefined();
-    await vi.advanceTimersByTimeAsync(30_001);
+    await vi.advanceTimersByTimeAsync(15_001);
     expect(getChannel('sess-reap')).toBeUndefined();
   });
 
@@ -626,11 +626,11 @@ describe('Idle channel reaper', () => {
     const channel = await subscribeSession('sess-keep', sub1);
 
     unsubscribe(channel, sub1);
-    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.advanceTimersByTimeAsync(7_500);
     const sub2 = createTestSubscriber('client-2');
     subscribe(channel, sub2);
 
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(15_000);
     expect(getChannel('sess-keep')).toBeDefined();
   });
 
@@ -672,7 +672,7 @@ describe('Idle channel reaper', () => {
     });
     unsubscribe(channel, sub);
 
-    await vi.advanceTimersByTimeAsync(30_001);
+    await vi.advanceTimersByTimeAsync(15_001);
     expect(getChannel('sess-child')).toBeUndefined();
   });
 

@@ -123,9 +123,9 @@ const reapTimers = new Map<string, ReturnType<typeof setTimeout>>();
  */
 const IDLE_REAP_GRACE_MS = (() => {
   const raw = process.env.CRISPY_IDLE_CHANNEL_REAP_MS;
-  if (raw === undefined) return 30_000;
+  if (raw === undefined) return 15_000;
   const n = Number(raw);
-  return Number.isFinite(n) && n >= 0 ? n : 30_000;
+  return Number.isFinite(n) && n >= 0 ? n : 15_000;
 })();
 
 function cancelReapTimer(sessionId: string): void {
