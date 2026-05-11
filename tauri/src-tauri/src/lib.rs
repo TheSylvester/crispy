@@ -895,6 +895,31 @@ fn build_tray(app: &AppHandle, we_own_daemon: bool) -> Result<(), String> {
 // WSL Detection & Daemon Management (Windows only)
 // ============================================================================
 
+/// Append a timestamped diagnostic line to `~/.crispy/logs/wsl-debug.log`.
+/// Exists because env_logger writes to stderr, and Tauri's windowed subsystem
+/// has no attached console — so log::* calls vanish in installed builds.
+/// Tagged with the app version so CI-built rc1 vs local-built rc2 logs
+/// can be distinguished when both have run on the same machine.
+#[cfg(windows)]
+fn wsl_debug_log(msg: &str) {
+    use std::io::Write;
+    let Some(home) = dirs::home_dir() else { return };
+    let dir = home.join(".crispy").join("logs");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("wsl-debug.log");
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(f, "[{ts}] [v{}] {msg}", env!("CARGO_PKG_VERSION"));
+    }
+}
+
 /// Result of WSL detection: distro name, install state, and version info.
 #[allow(dead_code)]
 struct WslDetection {
@@ -920,13 +945,26 @@ fn wsl_command() -> Command {
 /// Detect the default WSL distro and check if crispy-code is available.
 #[cfg(windows)]
 fn detect_wsl() -> Option<WslDetection> {
+    wsl_debug_log("detect_wsl: enter");
     // Run `wsl.exe -l -v` to list distros
-    let output = wsl_command()
-        .args(["-l", "-v"])
-        .output()
-        .ok()?;
+    let output = match wsl_command().args(["-l", "-v"]).output() {
+        Ok(o) => o,
+        Err(e) => {
+            wsl_debug_log(&format!("detect_wsl: wsl.exe spawn failed: {}", e));
+            return None;
+        }
+    };
+
+    wsl_debug_log(&format!(
+        "detect_wsl: wsl.exe -l -v exit={:?} stdout_bytes={} stderr_bytes={}",
+        output.status.code(),
+        output.stdout.len(),
+        output.stderr.len()
+    ));
 
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        wsl_debug_log(&format!("detect_wsl: non-zero exit; stderr_lossy={:?}", stderr));
         return None;
     }
 
@@ -937,6 +975,12 @@ fn detect_wsl() -> Option<WslDetection> {
             .map(|c| u16::from_le_bytes([c[0], c[1]]))
             .collect::<Vec<u16>>()
     );
+
+    wsl_debug_log(&format!(
+        "detect_wsl: decoded UTF-16 -> {} chars, first 200: {:?}",
+        stdout.len(),
+        stdout.chars().take(200).collect::<String>()
+    ));
 
     // Parse lines: "  NAME    STATE   VERSION"
     // Default distro has a '*' prefix
@@ -963,7 +1007,16 @@ fn detect_wsl() -> Option<WslDetection> {
         }
     }
 
-    let distro = default_distro?;
+    let distro = match default_distro {
+        Some(d) => {
+            wsl_debug_log(&format!("detect_wsl: parsed default_distro={}", d));
+            d
+        }
+        None => {
+            wsl_debug_log("detect_wsl: no default distro parsed from wsl.exe output");
+            return None;
+        }
+    };
 
     // Check if crispy-code is installed (global PATH or ~/.crispy/bin/)
     let which_result = wsl_command()
@@ -1018,6 +1071,11 @@ fn detect_wsl() -> Option<WslDetection> {
     } else {
         None
     };
+
+    wsl_debug_log(&format!(
+        "detect_wsl: return Some(distro={}, crispy_installed={}, installed_version={:?}, daemon_port={:?})",
+        distro, crispy_installed, installed_version, daemon_port
+    ));
 
     Some(WslDetection { distro, crispy_installed, installed_version, daemon_port })
 }
@@ -1146,11 +1204,14 @@ done"#,
 /// Start WSL daemon detection and management after primary daemon is ready.
 #[cfg(windows)]
 fn start_wsl_daemon_manager(app_handle: AppHandle) {
+    wsl_debug_log("start_wsl_daemon_manager: called (sync entry)");
     tauri::async_runtime::spawn(async move {
+        wsl_debug_log("start_wsl_daemon_manager: task spawned");
         // Read WSL settings
         // TODO: read from %APPDATA%\Crispy\settings.json for wslEnabled/wslDistro
 
-        let set_status = |handle: &AppHandle, status: WslStatus| {
+        let set_status = |handle: &AppHandle, status: WslStatus, label: &str| {
+            wsl_debug_log(&format!("set_status -> {}", label));
             let state = handle.state::<Mutex<AppState>>();
             let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
             s.wsl_status = status;
@@ -1161,7 +1222,7 @@ fn start_wsl_daemon_manager(app_handle: AppHandle) {
             Some(d) => d,
             None => {
                 log::info!("No WSL detected or WSL not available");
-                set_status(&app_handle, WslStatus::NotFound);
+                set_status(&app_handle, WslStatus::NotFound, "NotFound (detect_wsl returned None)");
                 return;
             }
         };
@@ -1174,14 +1235,16 @@ fn start_wsl_daemon_manager(app_handle: AppHandle) {
         if !detection.crispy_installed {
             // Not installed at all — try auto-provisioning from bundled tarball
             log::info!("crispy-code not installed in WSL, attempting auto-provision...");
-            set_status(&app_handle, WslStatus::Starting { distro: detection.distro.clone() });
+            set_status(&app_handle, WslStatus::Starting { distro: detection.distro.clone() }, "Starting (provisioning fresh install)");
             match provision_wsl_crispy(&app_handle, &detection.distro).await {
                 Ok(()) => {
                     log::info!("Auto-provisioned crispy-code in WSL");
+                    wsl_debug_log("provision_wsl_crispy: ok (fresh install)");
                 }
                 Err(e) => {
                     log::error!("Auto-provision failed: {}", e);
-                    set_status(&app_handle, WslStatus::NotInstalled { distro: detection.distro.clone() });
+                    wsl_debug_log(&format!("provision_wsl_crispy: ERROR (fresh install): {}", e));
+                    set_status(&app_handle, WslStatus::NotInstalled { distro: detection.distro.clone() }, "NotInstalled (provision failed)");
                     return;
                 }
             }
@@ -1189,13 +1252,19 @@ fn start_wsl_daemon_manager(app_handle: AppHandle) {
             // Version mismatch — upgrade from bundled tarball
             log::info!("WSL crispy-code version mismatch ({:?} vs {}), upgrading...",
                 detection.installed_version, app_version);
-            set_status(&app_handle, WslStatus::Starting { distro: detection.distro.clone() });
+            wsl_debug_log(&format!(
+                "version mismatch: installed={:?} app={}",
+                detection.installed_version, app_version
+            ));
+            set_status(&app_handle, WslStatus::Starting { distro: detection.distro.clone() }, "Starting (upgrading mismatched version)");
             match provision_wsl_crispy(&app_handle, &detection.distro).await {
                 Ok(()) => {
                     log::info!("Upgraded crispy-code in WSL to {}", app_version);
+                    wsl_debug_log("provision_wsl_crispy: ok (upgrade)");
                 }
                 Err(e) => {
                     log::warn!("Upgrade failed, proceeding with existing version: {}", e);
+                    wsl_debug_log(&format!("provision_wsl_crispy: WARN (upgrade): {}", e));
                     // Don't abort — try with the old version, it might partially work
                 }
             }
@@ -1203,7 +1272,7 @@ fn start_wsl_daemon_manager(app_handle: AppHandle) {
 
         // Always kill existing WSL daemon and start fresh — same reasoning as
         // the native daemon: attaching to a stale daemon serves old JS.
-        set_status(&app_handle, WslStatus::Starting { distro: detection.distro.clone() });
+        set_status(&app_handle, WslStatus::Starting { distro: detection.distro.clone() }, "Starting (about to spawn daemon)");
 
         if detection.daemon_port.is_some() {
             log::info!("Killing existing WSL daemon to ensure fresh runtime");
@@ -1231,14 +1300,19 @@ rm -f ~/.crispy/run/crispy.pid ~/.crispy/run/crispy.port"#])
 
         let port = {
             let wsl_port = read_port_config().wsl_port;
+            wsl_debug_log(&format!("spawn_wsl_daemon: starting on wsl_port={}", wsl_port));
             match spawn_wsl_daemon(&detection.distro, wsl_port).await {
-                Ok(p) => p,
+                Ok(p) => {
+                    wsl_debug_log(&format!("spawn_wsl_daemon: ok, port={}", p));
+                    p
+                }
                 Err(e) => {
                     log::error!("Failed to spawn WSL daemon: {}", e);
+                    wsl_debug_log(&format!("spawn_wsl_daemon: ERROR: {}", e));
                     set_status(&app_handle, WslStatus::Failed {
                         distro: detection.distro.clone(),
                         error: e.clone(),
-                    });
+                    }, "Failed (spawn_wsl_daemon error)");
                     return;
                 }
             }
@@ -1260,6 +1334,7 @@ rm -f ~/.crispy/run/crispy.pid ~/.crispy/run/crispy.port"#])
                 port,
             };
         }
+        wsl_debug_log(&format!("set_status -> Connected(distro={}, port={})", detection.distro, port));
 
         log::info!("WSL daemon ready at port {} (distro: {})", port, detection.distro);
     });
@@ -1553,10 +1628,17 @@ pub fn run() {
                         start_update_checker(handle_for_spawn.clone());
 
                         // Start WSL daemon detection (Windows only, no-op elsewhere)
+                        #[cfg(windows)]
+                        wsl_debug_log(&format!(
+                            "native daemon ready at port {} (we_own={}); calling start_wsl_daemon_manager",
+                            port, we_own
+                        ));
                         start_wsl_daemon_manager(handle_for_spawn);
                     }
                     Err(e) => {
                         log::error!("Daemon startup failed: {}", e);
+                        #[cfg(windows)]
+                        wsl_debug_log(&format!("native daemon FAILED to start: {}", e));
                         use tauri_plugin_dialog::DialogExt;
                         handle_for_spawn
                             .dialog()
