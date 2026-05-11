@@ -1441,8 +1441,12 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     // The query stays alive (waiting for next user input via inputQueue), so
     // drainOutput's finally block won't fire until the query is fully
     // closed/aborted.
-    this.emitStatus(this.backgroundTaskCount > 0 ? 'background' : 'idle',
-      { turnComplete: true });
+    const endStatus = this.backgroundTaskCount > 0 ? 'background' : 'idle';
+    log({
+      source: 'claude-adapter', level: 'info',
+      summary: `[BG] result → emitStatus('${endStatus}') turnComplete, count=${this.backgroundTaskCount}`,
+    });
+    this.emitStatus(endStatus, { turnComplete: true });
   }
 
   private handleSystemMessage(msg: SDKMessage): void {
@@ -1613,12 +1617,26 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         break;
 
       // Background agent lifecycle
-      case 'task_started':
+      case 'task_started': {
         this.backgroundTaskCount++;
+        const m = msg as unknown as Record<string, unknown>;
+        log({
+          source: 'claude-adapter', level: 'info',
+          summary: `[BG] task_started → count=${this.backgroundTaskCount}`,
+          data: { taskId: m.task_id, toolUseId: m.tool_use_id, description: m.description, taskType: m.task_type },
+        });
         this.emitEntry(msg);
         break;
+      }
       case 'task_notification': {
+        const before = this.backgroundTaskCount;
         this.backgroundTaskCount = Math.max(0, this.backgroundTaskCount - 1);
+        const m = msg as unknown as Record<string, unknown>;
+        log({
+          source: 'claude-adapter', level: 'info',
+          summary: `[BG] task_notification (${m.status}) → count=${this.backgroundTaskCount} (was ${before}), _status=${this._status}`,
+          data: { taskId: m.task_id, toolUseId: m.tool_use_id, status: m.status },
+        });
         this.emitEntry(msg);
         // All background tasks finished while in background state → go idle
         if (this.backgroundTaskCount === 0 && this._status === 'background') {
