@@ -15,11 +15,15 @@ import { getResumeModel } from '../src/core/adapters/claude/claude-code-adapter.
 let tempHome: string;
 let projectsDir: string;
 let originalHome: string | undefined;
+let originalUserProfile: string | undefined;
 
 beforeEach(() => {
   originalHome = process.env.HOME;
+  originalUserProfile = process.env.USERPROFILE;
   tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'crispy-home-'));
   process.env.HOME = tempHome;
+  // os.homedir() reads USERPROFILE on Windows, ignores HOME
+  process.env.USERPROFILE = tempHome;
   projectsDir = path.join(tempHome, '.claude', 'projects', 'test-project');
   fs.mkdirSync(projectsDir, { recursive: true });
 });
@@ -27,6 +31,8 @@ beforeEach(() => {
 afterEach(() => {
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
+  if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = originalUserProfile;
   fs.rmSync(tempHome, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 });
 

@@ -167,7 +167,7 @@ async function sendRequestAndGetResponse(
   method: string,
   params?: Record<string, unknown>,
 ): Promise<HostMessage> {
-  const id = `test-${method}-${Date.now()}`;
+  const id = `test-${method}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const beforeCount = sendMessages.length;
   await handler.handleMessage({
     kind: 'request',
