@@ -27,7 +27,7 @@ A live sessions panel, Windows desktop polish, and Claude Opus 4.7 thinking rest
 
 ![Open Sessions sidebar — running sessions grouped by working directory with status, last message, and relative activity time](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/open-sessions-sidebar.png)
 
-A live inbox of every running session — status dot, last message preview, and relative activity time. Sessions are grouped by working directory with git branch and dirty indicator; child sessions (from `/superthink`, dispatch) nest under their parent. Clicking a row focuses the existing panel instead of opening a duplicate.
+A live inbox of every running session — status dot, last message preview, and relative activity time. Sessions are grouped by working directory with git branch and dirty indicator; child sessions (from `/superthink`, dispatch) nest under their parent. Clicking a row focuses the existing panel instead of opening a duplicate. Hover a row to rename or kill the channel — closing broadcasts a teardown so subscribed panels detach cleanly.
 
 ### Windows desktop app
 
@@ -46,6 +46,10 @@ A live inbox of every running session — status dot, last message preview, and 
 - Bundles `claude-agent-sdk` 0.2.114 and correctly opts into summarized thinking. The thinking flag, chosen model, and 1M-context variant all survive resume, fork, and `/model` mid-session switches.
 - Custom titles (from `/rename` in Anthropic's official extension) and AI-generated titles from Claude Code now show in the session dropdown alongside Crispy's Rosie titles.
 - Clearer warning when your installed Claude CLI lags the bundled SDK, instead of silently dropping features the CLI actually supports.
+
+### Code blocks
+
+Every fenced code block in assistant output reveals copy and word-wrap buttons on hover. Wrap state is per-block; defaults off to preserve literal layout.
 
 ### Bug fixes
 
