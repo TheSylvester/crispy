@@ -58,6 +58,7 @@ function resolveViaWhich(): string | undefined {
       encoding: 'utf-8',
       timeout: 5_000,
       stdio: ['ignore', 'pipe', 'ignore'],
+      windowsHide: true,
     }).trim();
 
     // `where` on Windows may return multiple lines — take the first

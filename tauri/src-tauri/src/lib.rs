@@ -282,9 +282,12 @@ fn is_process_alive(pid: u32) -> bool {
     }
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
         use std::process::Command;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         Command::new("tasklist")
             .args(["/FI", &format!("PID eq {}", pid), "/NH"])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .map(|o| {
                 let out = String::from_utf8_lossy(&o.stdout);
@@ -306,9 +309,12 @@ fn kill_daemon_signal(pid: u32, _force: bool) {
     }
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         // taskkill /F is always forceful on Windows
         let _ = Command::new("taskkill")
             .args(["/F", "/T", "/PID", &pid.to_string()])
+            .creation_flags(CREATE_NO_WINDOW)
             .status();
     }
 }
@@ -577,6 +583,12 @@ fn spawn_new_window(app: &AppHandle, query: Option<&str>, explicit_path: Option<
             .inner_size(1200.0, 800.0)
             .min_inner_size(600.0, 400.0)
             .center()
+            // Native drag-drop handler disabled. wry's WebView2 backend takes
+            // over the child HWND's IDropTarget when this is on, which blocks
+            // *all* HTML5 drag-drop in the page (FlexLayout tab reorder,
+            // ProjectsView Kanban drag, FileTree → ChatInput intra-app drag),
+            // not just OS file drops. Disabling here costs us drag-from-
+            // Explorer into the Files Panel and chat input.
             .disable_drag_drop_handler()
             .on_navigation(|url| {
                 if is_local_url(url.as_str()) {
@@ -1101,10 +1113,15 @@ done"#,
     let mut cmd = tokio::process::Command::new("wsl.exe");
     cmd.args(["-d", distro, "-e", "bash", "-lic", &install_cmd]);
     cmd.creation_flags(CREATE_NO_WINDOW);
-    let output = cmd
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run WSL provision: {}", e))?;
+    cmd.kill_on_drop(true);
+    let output = match tokio::time::timeout(
+        std::time::Duration::from_secs(180),
+        cmd.output(),
+    ).await {
+        Ok(Ok(o)) => o,
+        Ok(Err(e)) => return Err(format!("Failed to run WSL provision: {}", e)),
+        Err(_) => return Err("WSL provision timed out after 180s".to_string()),
+    };
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
 
@@ -1120,9 +1137,6 @@ done"#,
 #[cfg(windows)]
 fn start_wsl_daemon_manager(app_handle: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        // Short delay to let the primary daemon stabilize
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-
         // Read WSL settings
         // TODO: read from %APPDATA%\Crispy\settings.json for wslEnabled/wslDistro
 
@@ -1377,7 +1391,7 @@ pub fn run() {
             primary_daemon: None,
             wsl_daemon: None,
             is_quitting: false,
-            wsl_status: WslStatus::Detecting,
+            wsl_status: if cfg!(windows) { WslStatus::Detecting } else { WslStatus::NotFound },
         }))
         .setup(|app| {
             let app_handle = app.handle().clone();
@@ -1466,6 +1480,9 @@ pub fn run() {
             .inner_size(1200.0, 800.0)
             .min_inner_size(600.0, 400.0)
             .center()
+            // Native drag-drop handler disabled — see companion comment on
+            // the secondary-window builder above. Required for HTML5 drag in
+            // the page; cost is OS file drops into Files Panel / chat input.
             .disable_drag_drop_handler()
             .on_navigation(|url| {
                 if is_local_url(url.as_str()) {

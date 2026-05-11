@@ -1,7 +1,8 @@
 /**
- * useGitInfo — polls git branch name + dirty status for the current CWD
+ * useGitInfo — polls git branch name + dirty status for a CWD
  *
- * Calls `transport.getGitBranchInfo(fullPath)` on mount and every 30 seconds.
+ * Calls `transport.getGitBranchInfo(cwd)` on mount and every 10 seconds.
+ * When `cwd` is omitted, defaults to the active session's CWD.
  * Returns `null` when CWD is unknown or not a git repo.
  *
  * @module useGitInfo
@@ -16,11 +17,12 @@ export interface GitInfo {
   dirty: boolean;
 }
 
-const POLL_INTERVAL = 30_000;
+const POLL_INTERVAL = 10_000;
 
-export function useGitInfo(): GitInfo | null {
+export function useGitInfo(cwd?: string): GitInfo | null {
   const transport = useTransport();
-  const { fullPath } = useCwd();
+  const activeCwd = useCwd().fullPath;
+  const fullPath = cwd ?? activeCwd;
   const [info, setInfo] = useState<GitInfo | null>(null);
   const fullPathRef = useRef(fullPath);
   fullPathRef.current = fullPath;

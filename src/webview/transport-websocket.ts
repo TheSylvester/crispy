@@ -10,7 +10,7 @@
 
 import type { HostEvent } from '../host/client-connection.js';
 import type { TunnelStatusInfo } from '../host/tunnel-client.js';
-import type { SessionService, WireSessionInfo, WireProject, WireProjectActivity, WireStage } from './transport.js';
+import type { SessionService, WireSessionInfo, WireProject, WireProjectActivity, WireStage, OpenSessionInfo } from './transport.js';
 import type { WorkspaceListResponse } from '../core/workspace-roots.js';
 import type { TranscriptEntry } from '../core/transcript.js';
 import type { TurnReceipt } from '../core/agent-adapter.js';
@@ -19,6 +19,7 @@ import type { VendorModelGroup } from './components/control-panel/types.js';
 import type { CatchupStatus } from '../core/recall/catchup-types.js';
 import type { GitDiffResult } from '../core/git-diff-service.js';
 import type { InputCommand } from '../core/input-command-service.js';
+import type { ImportPlan, ImportReport, Resolutions } from '../core/import-types.js';
 import { float32ToBase64 } from './utils/encoding.js';
 
 /** Pending request awaiting a response. */
@@ -68,6 +69,7 @@ export function createWebSocketTransport(url: string): SessionService & {
   let logSubscribed = false;
   let trackerNotifySubscribed = false;
   let recallCatchupSubscribed = false;
+  let importProgressSubscribed = false;
 
   function setConnectionState(state: ConnectionState): void {
     if (state === connectionState) return;
@@ -209,6 +211,9 @@ export function createWebSocketTransport(url: string): SessionService & {
     if (recallCatchupSubscribed) {
       sendRaw(JSON.stringify({ kind: 'request', id: nextId(), method: 'subscribeRecallCatchup' }));
     }
+    if (importProgressSubscribed) {
+      sendRaw(JSON.stringify({ kind: 'request', id: nextId(), method: 'subscribeImportProgress' }));
+    }
   }
 
   function sendRaw(data: string): void {
@@ -248,11 +253,17 @@ export function createWebSocketTransport(url: string): SessionService & {
   return {
     listSessions: () => request<WireSessionInfo[]>('listSessions'),
 
+    listOpenSessions: (params) =>
+      request<OpenSessionInfo[]>('listOpenSessions', (params ?? {}) as Record<string, unknown>),
+
     findSession: (sessionId) =>
       request<WireSessionInfo | null>('findSession', { sessionId }),
 
     loadSession: (sessionId, options) =>
       request<TranscriptEntry[]>('loadSession', { sessionId, ...options }),
+
+    setSessionTitle: (sessionId, title) =>
+      request<void>('setSessionTitle', { sessionId, title }),
 
     sendTurn: (intent, pendingId) =>
       request<TurnReceipt>('sendTurn', { intent, ...(pendingId && { pendingId }) }),
@@ -413,6 +424,19 @@ export function createWebSocketTransport(url: string): SessionService & {
           cb((event as any).data);
         }
       });
+    },
+
+    // --- OS-drop import (Tauri shell) ---
+    previewImport: (args) => request<ImportPlan>('previewImport', args as Record<string, unknown>),
+    executeImport: (args) => request<ImportReport>('executeImport', args as Record<string, unknown>),
+    cancelImport: (args) => request<{ cancelled: boolean }>('cancelImport', args as Record<string, unknown>),
+    subscribeImportProgress: () => {
+      importProgressSubscribed = true;
+      return request<{ subscribed: boolean }>('subscribeImportProgress');
+    },
+    unsubscribeImportProgress: () => {
+      importProgressSubscribed = false;
+      return request<{ unsubscribed: boolean }>('unsubscribeImportProgress');
     },
 
     getTunnelStatus: () => request<TunnelStatusInfo>('getTunnelStatus'),

@@ -1,0 +1,242 @@
+/* SessionsPanel — list of currently-open Crispy sessions */
+
+.crispy-sessions-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--vscode-sideBar-background, #252526);
+  overflow: hidden;
+}
+
+.crispy-sessions-panel--tab {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.crispy-sessions-panel__list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+.crispy-sessions-panel__empty {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: var(--font-sm);
+  font-style: italic;
+}
+
+.crispy-sessions-panel__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--font-sm);
+}
+
+.crispy-sessions-panel__row:hover {
+  background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.04));
+}
+
+/* Channel is alive but no UI surface is currently attached — fade the row
+ * so the user can tell at a glance that the session is unattended (and will
+ * be reaped after the idle grace period). Hover restores full opacity. */
+.crispy-sessions-panel__row--detached {
+  opacity: 0.55;
+}
+
+.crispy-sessions-panel__row--detached:hover {
+  opacity: 1;
+}
+
+.crispy-sessions-panel__row-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+
+.crispy-sessions-panel__line-1 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.crispy-sessions-panel__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crispy-sessions-panel__time {
+  flex-shrink: 0;
+  font-size: var(--font-xs);
+  opacity: 0.5;
+  font-variant-numeric: tabular-nums;
+}
+
+.crispy-sessions-panel__line-2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.crispy-sessions-panel__message {
+  flex: 1;
+  font-size: var(--font-xs);
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Push the vendor icon to the right edge of line-2 so it sits visually
+ * beneath the last-activity time on line-1. margin-left: auto handles the
+ * no-message case where there's no flex:1 sibling pushing it over. */
+.crispy-sessions-panel__line-2 .crispy-vendor-icon {
+  margin-left: auto;
+}
+
+.crispy-sessions-panel__git {
+  flex-shrink: 0;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-xs);
+  font-family: var(--font-mono);
+  opacity: 0.55;
+}
+
+.crispy-sessions-panel__git-branch {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 14ch;
+}
+
+.crispy-sessions-panel__git-dirty {
+  color: #e2c08d;
+  font-size: 8px;
+  line-height: 1;
+}
+
+.crispy-sessions-panel__badge {
+  flex-shrink: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #f87171;
+  color: #fff;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* --- Inline rename pencil button (Open Sessions sidebar rows) --- */
+
+.crispy-sessions-panel__rename-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground, #888);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.crispy-sessions-panel__row:hover .crispy-sessions-panel__rename-btn,
+.crispy-sessions-panel__row:focus-within .crispy-sessions-panel__rename-btn {
+  opacity: 1;
+}
+
+.crispy-sessions-panel__rename-btn:hover {
+  color: var(--vscode-foreground, #ccc);
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+@media (hover: none) {
+  /* Always visible on touch — opacity-on-hover is invisible there. */
+  .crispy-sessions-panel__rename-btn { opacity: 1; }
+}
+
+.crispy-sessions-panel__row--editing {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.crispy-sessions-panel__rename {
+  flex: 1;
+  min-width: 0;
+}
+
+/* --- Hover-revealed kill button (destroys the live channel) ---
+ * Positioned absolute (out of flow) so the row's right-align cluster stays
+ * flush — the in-flow slot was reserving ~24px to the right of the time
+ * display even while the button was opacity:0. On hover the button overlays
+ * the time; the panel-bg backdrop occludes whatever sits underneath. */
+
+.crispy-sessions-panel__kill-btn {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--vscode-descriptionForeground, #888);
+  background: var(--vscode-sideBar-background, #252526);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.crispy-sessions-panel__row:hover .crispy-sessions-panel__kill-btn,
+.crispy-sessions-panel__row:focus-within .crispy-sessions-panel__kill-btn {
+  opacity: 1;
+}
+
+.crispy-sessions-panel__kill-btn:hover {
+  color: #f87171;
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+@media (hover: none) {
+  /* Always visible on touch — opacity-on-hover is invisible there. */
+  .crispy-sessions-panel__kill-btn { opacity: 1; }
+}

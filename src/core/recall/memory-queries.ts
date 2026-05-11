@@ -90,14 +90,16 @@ export function listSessions(
   const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
   params.push(limit);
 
+  // Titles live in vendor stores (Claude JSONL custom-title, Codex
+  // thread.name) and are surfaced via SessionInfo.customTitle/aiTitle.
+  // Callers join with SessionInfo elsewhere when they need a display name.
   return db.all(`
     SELECT m.session_id,
            MIN(m.created_at) as first_activity,
            MAX(m.created_at) as last_activity,
            COUNT(*) as message_count,
-           t.title
+           NULL as title
     FROM messages m
-    LEFT JOIN session_titles t ON t.session_id = m.session_id
     ${whereClause}
     GROUP BY m.session_id
     ORDER BY last_activity DESC

@@ -7,7 +7,8 @@
 import * as vscode from 'vscode';
 
 import { initSettings, startWatchingSettings, stopWatchingSettings } from './core/settings/index.js';
-import { openCrispyPanel, getOrCreatePanelForPrefill, getMostRecentPanel, getActivePanel, createCrispyPanel } from './host/webview-host.js';
+import { openCrispyPanel, getOrCreatePanelForPrefill, getMostRecentPanel, getActivePanel, createCrispyPanel, getPanelHostingSession } from './host/webview-host.js';
+import { OpenSessionsViewProvider } from './host/sessions-sidebar-view.js';
 import { registerPanelOpener, registerPanelCloser } from './host/panel-opener.js';
 import { startRescan, stopRescan } from './core/session-list-manager.js';
 import { findClaudeBinary } from './core/find-claude-binary.js';
@@ -21,7 +22,8 @@ import { initRecallIngest, shutdownRecallIngest } from './core/recall/ingest-hoo
 import { startRecallCatchup, stopEmbeddingBackfill } from './core/recall/catchup-manager.js';
 import { disposeEmbedder } from './core/recall/embedder.js';
 import { startIpcServer, getSocketPath } from './host/ipc-server.js';
-import { setHostSocketPath, setDefaultCwd } from './core/session-manager.js';
+import { setHostSocketPath, setDefaultCwd, closeSession } from './core/session-manager.js';
+import { log } from './core/log.js';
 
 export function activate(context: vscode.ExtensionContext): void {
   const bootStart = performance.now();
@@ -95,6 +97,16 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  // Open Sessions sidebar view (Activity Bar)
+  const sidebarProvider = new OpenSessionsViewProvider(context);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      OpenSessionsViewProvider.viewType,
+      sidebarProvider,
+      { webviewOptions: { retainContextWhenHidden: true } },
+    ),
+  );
+
   // Initialize settings from settingsPath() (platform-dependent: ~/.crispy/ or %APPDATA%/Crispy/)
   const providerBase = pathToClaudeCodeExecutable
     ? { cwd, pathToClaudeCodeExecutable }
@@ -134,28 +146,77 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   });
 
-  // Register panel opener/closer so CLI callers (ipc-server) can open/close VS Code panels
-  const sessionPanels = new Map<string, vscode.WebviewPanel>();
+  // Register panel opener/closer so CLI callers (ipc-server) can open/close VS Code panels.
+  //
+  // Panel→session lookup:
+  // - Opener: `getPanelHostingSession` walks the session-channel's subscribers
+  //   to find ANY panel hosting the session (includes regular Crispy panels
+  //   with FlexLayout tabs, not just dedicated openPanel-spawned ones).
+  // - `dedicatedPanels` Map tracks panels created BY this opener — used for
+  //   (a) the closer (only dispose dedicated panels, not multi-tab hosts) and
+  //   (b) autoClose dispose semantics (CLI panels reap the session on close).
+  //   Also a fast-path for rapid sidebar re-clicks before the new panel's
+  //   webview has finished subscribing to the channel.
+  const dedicatedPanels = new Map<string, vscode.WebviewPanel>();
 
   registerPanelOpener((sessionId, options) => {
-    if (sessionPanels.has(sessionId)) return; // dedup guard — openPanelFn is not idempotent
+    const dedicated = dedicatedPanels.get(sessionId);
+    const existing = dedicated ? undefined : getPanelHostingSession(sessionId);
+    log({
+      level: 'warn',
+      source: 'panel-opener',
+      summary: 'opener decision',
+      data: {
+        sessionId: sessionId.slice(0, 8),
+        branch: dedicated ? 'dedicated' : (existing ? 'hostingPanel' : 'fresh'),
+        autoClose: !!options?.autoClose,
+      },
+    });
+    if (dedicated) {
+      // reveal() alone — do NOT post navigateToSession. The session_open_channel
+      // event fans out to every panel's ClientConnection.send(), so openPanelFn
+      // fires N times per dispatch. The first call creates the panel and stores
+      // it in dedicatedPanels; subsequent calls hit this branch — and a
+      // navigateToSession postMessage here adds a spurious FlexLayout tab to
+      // the just-created panel. Mirrors 3331dbe's fix for the existing-host
+      // branch: reveal() is enough; the panel's openSession bootstrap drives
+      // the initial tab.
+      dedicated.reveal(undefined, false);
+      return;
+    }
+    if (existing) {
+      existing.reveal(undefined, false);
+      return;
+    }
     const column = options?.autoClose
       ? { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true }
       : vscode.ViewColumn.Beside;
     const panel = createCrispyPanel(context, column, { autoClose: options?.autoClose });
-    sessionPanels.set(sessionId, panel);
+    dedicatedPanels.set(sessionId, panel);
     panel.onDidDispose(() => {
-      if (sessionPanels.get(sessionId) === panel) sessionPanels.delete(sessionId);
+      if (dedicatedPanels.get(sessionId) === panel) {
+        // Prune the map BEFORE any broadcasting call (closeSession). A subsequent
+        // openPanel for the same id would otherwise find a stale, disposed panel
+        // and throw inside reveal()/postMessage(), routing the event to the webview.
+        dedicatedPanels.delete(sessionId);
+        // autoClose panels are lifecycle-owned (CLI/observer): closing the
+        // panel closes the channel immediately rather than waiting for the
+        // idle reaper's grace window. Sidebar-peek panels (no autoClose) are
+        // non-owning views — closing must not kill the agent.
+        if (options?.autoClose) closeSession(sessionId);
+      }
     });
     const msg = { kind: 'openSession', sessionId };
-    const delays = [100, 500, 1500];
-    for (const delay of delays) {
+    for (const delay of [100, 500, 1500]) {
       setTimeout(() => panel.webview.postMessage(msg), delay);
     }
   });
 
   registerPanelCloser((sessionId) => {
-    const panel = sessionPanels.get(sessionId);
+    // Only dispose panels we created dedicated for this session. Multi-tab
+    // Crispy panels that happen to be subscribed handle session_close_channel
+    // themselves via the webview-side FlexLayout listener.
+    const panel = dedicatedPanels.get(sessionId);
     if (!panel) return false;
     panel.dispose();
     return true;

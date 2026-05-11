@@ -22,6 +22,7 @@ import { ContentErrorBoundary } from './ErrorBoundary.js';
 import { TranscriptViewer } from './TranscriptViewer.js';
 import { GitPanel } from './git-panel/GitPanel.js';
 import { FilePanel } from './file-panel/FilePanel.js';
+import { SessionsPanel } from './sessions-panel/SessionsPanel.js';
 import { FileViewerTab } from './file-panel/FileViewerTab.js';
 import { XTermPanel } from './XTermPanel.js';
 import { TabHeader } from './TabHeader.js';
@@ -40,9 +41,10 @@ import './flexlayout-overrides.css';
 // ============================================================================
 
 const MAIN_TABSET_ID = 'main-tabset';
-const TERMINAL_BORDER_TAB_ID = 'terminal-border-tab';
+const TERMINAL_BORDER_ID = 'border_bottom';  // FlexLayout hardcodes border IDs as `border_<location>`
 const GIT_BORDER_TAB_ID = 'git-border-tab';
 const FILES_BORDER_TAB_ID = 'files-border-tab';
+const SESSIONS_BORDER_TAB_ID = 'sessions-border-tab';
 
 function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' = 'left', showBorders = false): IJsonModel {
   return {
@@ -79,6 +81,14 @@ function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' 
             enableClose: false,
             enableDrag: false,
           },
+          {
+            type: 'tab' as const,
+            id: SESSIONS_BORDER_TAB_ID,
+            name: 'Sessions',
+            component: 'sessions',
+            enableClose: false,
+            enableDrag: false,
+          },
         ],
       }] : []),
       ...(showBorders ? [{
@@ -88,11 +98,9 @@ function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' 
         children: [
           {
             type: 'tab' as const,
-            id: TERMINAL_BORDER_TAB_ID,
             name: 'Terminal',
             component: 'terminal',
-            enableClose: false,
-            enableDrag: false,
+            // enableClose/enableDrag inherit global tabEnableClose/tabEnableDrag (true when showTabStrip)
           },
         ],
       }] : []),
@@ -135,23 +143,28 @@ type TabSessionMap = Map<string, string | null>;
 
 function TabContent({ tabId, tabNode, forkConfig, prefillContent, observerMode }: { tabId: string; tabNode?: TabNode; forkConfig?: ForkConfig | null; prefillContent?: string | null; observerMode?: boolean }): React.JSX.Element {
   const { effectiveSessionId } = useTabSession();
+  // Outer boundary wraps the provider cascade so a provider mount throw
+  // (e.g. from a racy RPC response during concurrent-window startup) is
+  // contained to this tab instead of reloading the whole app.
   return (
-    <TabContainerProvider tabId={tabId} tabNode={tabNode}>
-      <TabPanelProvider>
-        <FileIndexProvider>
-          <FilePanelProvider>
-            <ControlPanelProvider selectedSessionId={effectiveSessionId} initialForkConfig={forkConfig} initialPrefill={prefillContent}>
-              <ContentErrorBoundary>
-                <TabHeader />
-                <TabLayout>
-                  <TranscriptViewer observerMode={observerMode} />
-                </TabLayout>
-              </ContentErrorBoundary>
-            </ControlPanelProvider>
-          </FilePanelProvider>
-        </FileIndexProvider>
-      </TabPanelProvider>
-    </TabContainerProvider>
+    <ContentErrorBoundary>
+      <TabContainerProvider tabId={tabId} tabNode={tabNode}>
+        <TabPanelProvider>
+          <FileIndexProvider>
+            <FilePanelProvider>
+              <ControlPanelProvider selectedSessionId={effectiveSessionId} initialForkConfig={forkConfig} initialPrefill={prefillContent}>
+                <ContentErrorBoundary>
+                  <TabHeader />
+                  <TabLayout>
+                    <TranscriptViewer observerMode={observerMode} />
+                  </TabLayout>
+                </ContentErrorBoundary>
+              </ControlPanelProvider>
+            </FilePanelProvider>
+          </FileIndexProvider>
+        </TabPanelProvider>
+      </TabContainerProvider>
+    </ContentErrorBoundary>
   );
 }
 
@@ -162,7 +175,7 @@ function TabContent({ tabId, tabNode, forkConfig, prefillContent, observerMode }
 export function FlexAppLayout(): React.JSX.Element {
   const controller = useTabController();
   const transport = useTransport();
-  const { sessions, selectedSessionId } = useSession();
+  const { sessions, selectedSessionId, isAutoClosePanel } = useSession();
   const envKind = useEnvironment();
   const isVscode = envKind === 'vscode';
   const { gitPanelSide, displayStyle, useDisplayStyleAccent } = usePreferences();
@@ -181,6 +194,12 @@ export function FlexAppLayout(): React.JSX.Element {
   // Fresh layout on every load — tabs are ephemeral like browser tabs
   const [initialState] = useState(() => {
     const showTabStrip = !isVscode;
+    console.log('[crispy] FlexAppLayout mount', {
+      envKind,
+      isVscode,
+      showTabStrip,
+      transportError: typeof document !== 'undefined' ? document.body.dataset?.crispyTransportError : undefined,
+    });
     return {
       model: Model.fromJson(makeDefaultModel(showTabStrip, gitPanelSide, !isVscode)),  // borders only in standalone/desktop
       tabMap: new Map([['tab-initial', null]]) as TabSessionMap,
@@ -192,6 +211,7 @@ export function FlexAppLayout(): React.JSX.Element {
   const gitPanelSideRef = useRef(gitPanelSide);
   const prevActiveTabRef = useRef<string | null>(null);
   const prevTabsetCountRef = useRef(modelRef.current.getRoot().getChildren().length);
+  const lastSelectedTerminalIdxRef = useRef<number>(-1);
 
   // Determine initial active tab from the restored model
   const [activeTabId, setActiveTabId] = useState<string | null>(() => {
@@ -249,6 +269,58 @@ export function FlexAppLayout(): React.JSX.Element {
 
   // --- Tab operations (registered with controller) ---
 
+  const killTerminalIfTerminalTab = useCallback((tabId: string): void => {
+    const node = modelRef.current.getNodeById(tabId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (!node || (node as any).getComponent?.() !== 'terminal') return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const terminalId = (node.getConfig() as any)?.terminalId as string | undefined;
+    if (terminalId) {
+      transport.closeTerminal(terminalId).catch(() => { /* best-effort */ });
+    }
+    // If terminalId is missing, XTermPanel's createTerminal RPC may still be pending.
+    // The orphan PTY will die on server shutdown — acceptable per existing behavior.
+  }, [transport]);
+
+  const createTerminalTab = useCallback((): string | null => {
+    const model = modelRef.current;
+    const border = model.getNodeById(TERMINAL_BORDER_ID);
+    if (!border) return null;
+    // Collect all terminal tabs across the whole model (border + dragged-out)
+    const existing: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    model.visitNodes((node: any) => {
+      if (node.getType() === 'tab' && node.getComponent?.() === 'terminal') {
+        existing.push(node.getId());
+      }
+    });
+    // Naming: 0 existing → "Terminal" (no number). 1 existing → rename it to
+    // "Terminal 1" and name new one "Terminal 2". ≥2 existing → "Terminal N+1".
+    let newName: string;
+    if (existing.length === 0) {
+      newName = 'Terminal';
+    } else if (existing.length === 1) {
+      model.doAction(Actions.renameTab(existing[0], 'Terminal 1'));
+      newName = 'Terminal 2';
+    } else {
+      newName = `Terminal ${existing.length + 1}`;
+    }
+    model.doAction(
+      Actions.addNode(
+        {
+          type: 'tab',
+          name: newName,
+          component: 'terminal',
+        },
+        TERMINAL_BORDER_ID,
+        DockLocation.CENTER,
+        -1,
+        true, // select — this also opens the border
+      ),
+    );
+    return TERMINAL_BORDER_ID;
+  }, []);
+
   const createTab = useCallback((config?: TabCreateConfig): string => {
     const tabId = `tab-${Date.now()}`;
     const component = config?.component ?? 'transcript';
@@ -296,9 +368,10 @@ export function FlexAppLayout(): React.JSX.Element {
     // Don't close the last transcript tab
     if (isTranscriptTab && tabSessionMapRef.current.size <= 1) return;
     if (isTranscriptTab) tabSessionMapRef.current.delete(tabId);
+    killTerminalIfTerminalTab(tabId);
     modelRef.current.doAction(Actions.deleteTab(tabId));
     bump();
-  }, [bump]);
+  }, [bump, killTerminalIfTerminalTab]);
 
   const activateTab = useCallback((tabId: string) => {
     modelRef.current.doAction(Actions.selectTab(tabId));
@@ -325,10 +398,37 @@ export function FlexAppLayout(): React.JSX.Element {
     modelRef.current.doAction(Actions.selectTab(FILES_BORDER_TAB_ID));
   }, []);
 
+  /** Toggle the Sessions border panel open/closed */
+  const toggleSessionsBorder = useCallback(() => {
+    modelRef.current.doAction(Actions.selectTab(SESSIONS_BORDER_TAB_ID));
+  }, []);
+
   /** Toggle the Terminal border panel open/closed */
   const toggleTerminalBorder = useCallback(() => {
-    modelRef.current.doAction(Actions.selectTab(TERMINAL_BORDER_TAB_ID));
-  }, []);
+    const model = modelRef.current;
+    const border = model.getNodeById(TERMINAL_BORDER_ID);
+    if (!border) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const b = border as any;
+    const children = b.getChildren?.() ?? [];
+    if (children.length === 0) {
+      createTerminalTab();
+      return;
+    }
+    const selected = b.getSelected?.() ?? -1;
+    if (selected === -1) {
+      // Border collapsed — re-open. Use remembered last index if valid, else rightmost.
+      const targetIdx = (lastSelectedTerminalIdxRef.current >= 0
+        && lastSelectedTerminalIdxRef.current < children.length)
+        ? lastSelectedTerminalIdxRef.current
+        : children.length - 1;
+      model.doAction(Actions.selectTab(children[targetIdx].getId()));
+    } else {
+      // Border open — selecting the currently-selected tab toggles closed.
+      lastSelectedTerminalIdxRef.current = selected;
+      model.doAction(Actions.selectTab(children[selected].getId()));
+    }
+  }, [createTerminalTab]);
 
   /** Equalize weights of all children in the root row */
   const equalizeLayout = useCallback(() => {
@@ -383,12 +483,32 @@ export function FlexAppLayout(): React.JSX.Element {
       findTabByComponent,
       toggleGitBorder,
       toggleFilesBorder,
+      toggleSessionsBorder,
       toggleTerminalBorder,
       findFileViewerTab,
       updateTabConfig,
       equalizeLayout,
     });
-  }, [controller, createTab, closeTab, activateTab, findTabBySession, getTabSession, findTabByComponent, toggleGitBorder, toggleFilesBorder, toggleTerminalBorder, findFileViewerTab, updateTabConfig, equalizeLayout]);
+  }, [controller, createTab, closeTab, activateTab, findTabBySession, getTabSession, findTabByComponent, toggleGitBorder, toggleFilesBorder, toggleSessionsBorder, toggleTerminalBorder, findFileViewerTab, updateTabConfig, equalizeLayout]);
+
+  // Bridge for sidebar/CLI session focus (host → webview). The host posts
+  // `navigateToSession` only to a panel that's already subscribed to the
+  // session (per `getPanelHostingSession`), so the matching FlexLayout tab
+  // already exists or was just released — `navigateToSession` finds-or-creates.
+  // Distinct from `openSession`, which swaps the active tab's session in place.
+  // Listener registers once; controller is read through a ref so active-tab
+  // changes don't churn the listener.
+  const controllerRef = useRef(controller);
+  controllerRef.current = controller;
+  useEffect(() => {
+    function handler(ev: MessageEvent) {
+      if (ev.data?.kind === 'navigateToSession' && typeof ev.data.sessionId === 'string') {
+        controllerRef.current.navigateToSession(ev.data.sessionId);
+      }
+    }
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
 
   // Seed initial active tab so lastActiveTranscriptTabId is set even before
   // any model change fires (needed for file-viewer → transcript tab inserts)
@@ -440,9 +560,10 @@ export function FlexAppLayout(): React.JSX.Element {
       const isTranscriptTab = tabId && tabSessionMapRef.current.has(tabId);
       // Block closing the last transcript tab, but always allow closing non-transcript tabs
       if (isTranscriptTab && tabSessionMapRef.current.size <= 1) return undefined;
+      if (tabId) killTerminalIfTerminalTab(tabId);
     }
     return action;
-  }, []);
+  }, [killTerminalIfTerminalTab]);
 
   // --- onModelChange: detect tab activations and deletions ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -455,6 +576,21 @@ export function FlexAppLayout(): React.JSX.Element {
     prevTabsetCountRef.current = currentTabsetCount;
     if (tabsetCountChanged) {
       equalizeLayout();
+    }
+
+    // Track which terminal tab is selected so Alt+J can re-open to the same one
+    if (action.type === Actions.SELECT_TAB) {
+      const tabId = action.data?.tabNode as string | undefined;
+      if (tabId) {
+        const node = modelRef.current.getNodeById(tabId);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const parent = node ? (node as any).getParent?.() : null;
+        if (parent && parent.getId?.() === TERMINAL_BORDER_ID) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const idx = (parent as any).getChildren?.().findIndex((c: any) => c.getId() === tabId);
+          if (idx >= 0) lastSelectedTerminalIdxRef.current = idx;
+        }
+      }
     }
 
     if (action.type === Actions.SELECT_TAB || action.type === Actions.ADD_NODE ||
@@ -482,6 +618,18 @@ export function FlexAppLayout(): React.JSX.Element {
       const deletedTabId = action.data?.node ?? null;
       if (deletedTabId) {
         tabSessionMapRef.current.delete(deletedTabId);
+      }
+      // If a terminal close leaves exactly one terminal remaining, rename it
+      // back to plain "Terminal" (mirrors createTerminalTab's "no number for solo").
+      const remaining: { id: string; name: string }[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      modelRef.current.visitNodes((node: any) => {
+        if (node.getType() === 'tab' && node.getComponent?.() === 'terminal') {
+          remaining.push({ id: node.getId(), name: node.getName?.() ?? '' });
+        }
+      });
+      if (remaining.length === 1 && remaining[0].name !== 'Terminal') {
+        modelRef.current.doAction(Actions.renameTab(remaining[0].id, 'Terminal'));
       }
       // Use setTimeout to avoid dispatching during render
       setTimeout(() => {
@@ -521,8 +669,19 @@ export function FlexAppLayout(): React.JSX.Element {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleRenderTabSet = useCallback((node: any, renderValues: any) => {
     if (isVscode) return; // VS Code uses native editor tabs
-    // Don't add "+" to border panels (git, files, terminal)
-    if (node.getType() === 'border') return;
+    if (node.getType() === 'border') {
+      if (node.getLocation?.() === DockLocation.BOTTOM) {
+        renderValues.stickyButtons.push(
+          <button
+            key="add-terminal"
+            className="crispy-tab-add-btn"
+            title="New terminal"
+            onClick={() => createTerminalTab()}
+          >+</button>,
+        );
+      }
+      return;
+    }
     const tabsetId = node.getId() as string;
     renderValues.stickyButtons.push(
       <button
@@ -534,7 +693,7 @@ export function FlexAppLayout(): React.JSX.Element {
         +
       </button>,
     );
-  }, [createTab, isVscode]);
+  }, [createTab, createTerminalTab, isVscode]);
 
   // --- Factory: create per-tab provider cascade ---
   const factory = useCallback((node: TabNode): React.JSX.Element | null => {
@@ -581,6 +740,12 @@ export function FlexAppLayout(): React.JSX.Element {
             </ContentErrorBoundary>
           </FilePanelProvider>
         </FileIndexProvider>
+      );
+    } else if (node.getComponent() === 'sessions') {
+      return (
+        <ContentErrorBoundary>
+          <SessionsPanelWithTabController />
+        </ContentErrorBoundary>
       );
     } else if (node.getComponent() === 'terminal') {
       return (
@@ -640,6 +805,11 @@ export function FlexAppLayout(): React.JSX.Element {
     return transport.onEvent((channelId, event) => {
       if (channelId !== SESSION_LIST_CHANNEL_ID) return;
       if (event.type === 'session_open_channel') {
+        // VS Code autoClose children must open as native editor panels.
+        // If a host-side opener throws transiently under parallel dispatch
+        // and the event falls through to here, we'd otherwise spawn a
+        // FlexLayout sibling tab inside the parent's webview.
+        if (isVscode && event.autoClose) return;
         controller.navigateToSession(event.sessionId, event.displayName, {
           background: event.autoClose,
           config: event.autoClose ? { autoClose: true } : undefined,
@@ -651,6 +821,13 @@ export function FlexAppLayout(): React.JSX.Element {
         }
         for (const tabId of tabIds) {
           if (tabSessionMapRef.current.size <= 1) {
+            // autoClose panels are ephemeral — the host disposes the whole
+            // panel on close. Don't rewrite the only tab to "New Tab" in
+            // the dispose window, or the user sees an empty splash if the
+            // postMessage races the dispose. Multi-tab branch (size > 1)
+            // is fine: closeTab on observer tabs in regular Crispy panels
+            // is the right behavior.
+            if (isAutoClosePanel) continue;
             tabSessionMapRef.current.set(tabId, null);
             const model = modelRef.current;
             model.doAction(Actions.renameTab(tabId, 'New Tab'));
@@ -661,7 +838,7 @@ export function FlexAppLayout(): React.JSX.Element {
         }
       }
     });
-  }, [transport, controller, closeTab, bump]);
+  }, [transport, controller, closeTab, bump, isAutoClosePanel, isVscode]);
 
   // Cycle through tabs in order
   function cycleTab(direction: 1 | -1) {
@@ -695,4 +872,18 @@ function getTabName(sessionId: string, sessions: Array<{ sessionId: string; titl
     return name.length > 42 ? name.slice(0, 42) + '\u2026' : name;
   }
   return sessionId.slice(0, 8) + '\u2026';
+}
+
+// Wrapper that injects FlexLayout's tab-controller navigation into the
+// portable SessionsPanel. Sidebar webviews provide a different onActivate.
+function SessionsPanelWithTabController(): React.JSX.Element {
+  const tabController = useTabController();
+  const transport = useTransport();
+  return (
+    <SessionsPanel
+      mode="tab"
+      onActivate={(id) => tabController.navigateToSession(id)}
+      onKill={(id) => { transport.close(id).catch(() => { /* best-effort */ }); }}
+    />
+  );
 }

@@ -19,7 +19,7 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import { PreBlock } from './markdown-components.js';
+import { MarkdownCodeBlock } from './markdown-components.js';
 import { LinkifiedP, LinkifiedLi, LinkifiedTd, LinkifiedCode } from './linkify-components.js';
 import type { Components } from 'react-markdown';
 import type { PluggableList } from 'unified';
@@ -29,7 +29,7 @@ const remarkPluginsWithBreaks: PluggableList = [remarkGfm, [remarkMath, { single
 const rehypePlugins: PluggableList = [[rehypeKatex, { output: 'mathml' }]];
 const defaultComponents = {
   code: LinkifiedCode,
-  pre: PreBlock,
+  pre: MarkdownCodeBlock,
   p: LinkifiedP,
   li: LinkifiedLi,
   td: LinkifiedTd,

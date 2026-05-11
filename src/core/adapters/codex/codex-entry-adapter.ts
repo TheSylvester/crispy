@@ -158,7 +158,8 @@ export function adaptCodexDelta(
             {
               type: 'thinking',
               thinking: delta,
-              metadata: { isSummary: true, summaryIndex },
+              isSummary: true,
+              metadata: { summaryIndex },
             } as ThinkingBlock,
           ],
         },
@@ -229,7 +230,7 @@ function adaptReasoning(item: ReasoningItem, base: BaseFields): TranscriptEntry 
   const thinkingBlocks: ThinkingBlock[] = item.summary.map((text) => ({
     type: 'thinking',
     thinking: text,
-    metadata: { isSummary: true },
+    isSummary: true,
   }));
 
   // If we have raw content, add those as well

@@ -38,6 +38,7 @@ import type {
   SDKCompactBoundaryMessage,
   SDKTaskStartedMessage,
   SDKTaskNotificationMessage,
+  SDKTaskUpdatedMessage,
   SDKTaskProgressMessage,
   SDKLocalCommandOutputMessage,
   SDKElicitationCompleteMessage,
@@ -46,17 +47,19 @@ import type {
   PermissionUpdate,
   McpServerConfig,
   McpSdkServerConfigWithInstance,
+  ThinkingConfig,
+  ThinkingAdaptive,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources';
 
-import { query, forkSession } from '@anthropic-ai/claude-agent-sdk';
+import { query, forkSession, renameSession as sdkRenameSession } from '@anthropic-ai/claude-agent-sdk';
 import type { SpawnOptions as SDKSpawnOptions } from '@anthropic-ai/claude-agent-sdk';
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 import { platform } from 'os';
 import { AsyncIterableQueue } from '../../async-iterable-queue.js';
 import { adaptClaudeEntry, adaptClaudeEntries } from './claude-entry-adapter.js';
-import { parseJsonlFile, extractMetadataFast, readLinesFromOffset, extractInitModel, scanUserMessages } from './jsonl-reader.js';
+import { parseJsonlFile, extractMetadataFast, readLinesFromOffset, extractInitModel, extractLatestAssistantModel, scanUserMessages } from './jsonl-reader.js';
 import { loadSubagentEntries } from './subagent-loader.js';
 import {
   serializeToClaudeJsonl,
@@ -70,8 +73,8 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, unlinkSync } fr
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { homedir } from 'os';
-import { getSessionTitleFromDb } from '../../activity-index.js';
 import { getContextWindowTokens } from '../../model-utils.js';
+import { checkCliVersion, cliSupportsThinkingDisplay, warnOnceIfOld } from './cli-version-gate.js';
 
 // ============================================================================
 // Configuration — Full SDK Options Surface
@@ -174,12 +177,25 @@ export interface ClaudeSessionOptions {
 
   // --- Model & thinking ---
 
-  /** Claude model to use */
+  /** Claude model to use — forwarded as `--model` to the CLI. Leave unset to
+   *  let the CLI pick its own default (which includes the `[1m]` 1M-context
+   *  append on accounts with 1M access). Only set this when the user has
+   *  explicitly picked a model — never from a disk-inferred value. */
   model?: string;
+  /** Inferred model-family marker for in-process capability gating only
+   *  (thinking config, diffNeedsRestart band compare). NEVER forwarded to
+   *  the CLI spawn args — that lets the CLI's default resolution stay
+   *  authoritative. Populated on resume/fork from disk or the live parent
+   *  adapter when the caller didn't pass an explicit `model`. */
+  capabilityHint?: string;
   /** Fallback model if primary fails */
   fallbackModel?: string;
-  /** Maximum tokens for extended thinking */
-  maxThinkingTokens?: number;
+  /**
+   * Thinking display when the model supports adaptive thinking (Opus 4.6+).
+   * `'summarized'` surfaces visible thinking content; `'omitted'` suppresses it.
+   * Default `'summarized'`. Non-Opus models ignore this (thinking omitted).
+   */
+  thinkingDisplay?: 'summarized' | 'omitted';
 
   // --- Permissions ---
 
@@ -290,6 +306,79 @@ export interface ClaudeSessionOptions {
 }
 
 // ============================================================================
+// Thinking capability (cold-start table + helpers)
+// ============================================================================
+
+/**
+ * Cold-start capability table.
+ *
+ * The authoritative `supportsAdaptiveThinking` flag lives on `ModelInfo` in
+ * `SDKControlInitializeResponse.models[]`, accessible only via
+ * `query.initializationResult()` which resolves AFTER the subprocess begins
+ * processing the first prompt. `startQuery()` builds the `Options` (including
+ * `thinking`) BEFORE the first prompt is sent, so for turn 1 of any fresh
+ * session the authoritative signal does not exist. Without this table,
+ * Opus 4.7 sessions render empty thinking on turn 1.
+ *
+ * Scope: Opus 4.6+ only (per SDK JSDoc). Opus 4.5 and Sonnet/Haiku 4.x are
+ * not promised to support adaptive — sending `{ type: 'adaptive' }` there
+ * may 400 or silently no-op.
+ *
+ * No speculative widening (no `4-\d+` regex, no `-preview` suffix). When
+ * Opus 4.8 ships, add it to the table explicitly. Evidence-based entries
+ * only.
+ */
+const ADAPTIVE_THINKING_COLD_START: ReadonlySet<string> = new Set([
+  'claude-opus-4-7',
+  'claude-opus-4-6',
+  'opus',
+]);
+
+/**
+ * Strip variant markers so the capability table matches on the base model:
+ * - `[1m]` context-window suffix (1M-context beta)
+ * - `-YYYYMMDD` or `-YYYY-MM-DD` SDK date suffix
+ * Order matters — strip the bracket variant first so a bracket+date combo normalizes cleanly.
+ */
+export function normalizeModelString(model: string): string {
+  return model
+    .replace(/\[[^\]]*\]$/, '')
+    .replace(/(?:-\d{8}|-\d{4}-\d{2}-\d{2})$/, '');
+}
+
+/** Returns true when the model is known to accept `thinking: { type: 'adaptive' }`. */
+export function modelSupportsAdaptiveThinking(model: string | undefined): boolean {
+  if (!model) return false;
+  return ADAPTIVE_THINKING_COLD_START.has(normalizeModelString(model));
+}
+
+/**
+ * Build the SDK's `thinking` config from adapter options.
+ *
+ * Returns `undefined` (omit the field) for:
+ * - structured-output forks (`outputFormat` set) — keep `maxTurns: 1` hot path simple
+ * - models not in the cold-start capability table
+ *
+ * `context.supportsDisplay` should be `false` only when the observed CLI
+ * version is below `MIN_DISPLAY_CLI_VERSION` (2.1.94) — below that the CLI
+ * doesn't know the `display` field. Above it, always send `display`. This
+ * is distinct from the SDK-drift warning, which fires on any CLI older
+ * than the bundled SDK's expected version.
+ */
+export function buildThinkingConfig(
+  opts: ClaudeSessionOptions,
+  context: { supportsDisplay: boolean },
+): ThinkingConfig | undefined {
+  if (opts.outputFormat) return undefined;
+  if (!modelSupportsAdaptiveThinking(opts.model)) return undefined;
+  const base: ThinkingAdaptive = { type: 'adaptive' };
+  if (context.supportsDisplay) {
+    base.display = opts.thinkingDisplay ?? 'summarized';
+  }
+  return base;
+}
+
+// ============================================================================
 // Session Metadata — Captured from SDK init message
 // ============================================================================
 
@@ -309,6 +398,8 @@ export interface ClaudeSessionMetadata {
   agents: string[];
   permissionMode: string;
   apiKeySource: string;
+  /** The Claude CLI version reported in the SDK init message. */
+  claudeCodeVersion: string;
 }
 
 // ============================================================================
@@ -375,6 +466,17 @@ export interface SessionInfo {
   lastUserPrompt?: string;
   vendor: 'claude';
   isSidechain?: boolean;
+  /**
+   * Deprecated. Vendor titles are now exposed via `customTitle` / `aiTitle`
+   * (the rename-sessions plan retired the `session_titles` DB column in v6).
+   * Retained for one release for wire-format backward compatibility; will
+   * be removed in 0.3.4. No producer populates this field.
+   */
+  title?: string;
+  /** Title from JSONL `custom-title` entry (user-set via /rename). */
+  customTitle?: string;
+  /** Title from JSONL `ai-title` entry (SDK auto-generated). */
+  aiTitle?: string;
 }
 
 // ============================================================================
@@ -403,6 +505,11 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   private _closed = false;
   private _metadata: ClaudeSessionMetadata | null = null;
   private _contextUsage: ContextUsage | null = null;
+  /**
+   * Whether the observed CLI understands `thinking.display`. Default `true`
+   * (optimistic) until the first init message resolves the real version.
+   */
+  private _cliSupportsDisplay = true;
 
   /** The input queue fed to query() as the prompt. */
   private inputQueue: AsyncIterableQueue<SDKUserMessage> | null = null;
@@ -422,8 +529,8 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   private syntheticSessionPath: string | undefined;
   /** MCP servers created for the current query — closed on teardown. */
   private activeMcpServers: Record<string, McpServerConfig> | null = null;
-  /** Number of background agents/tasks currently running. */
-  private backgroundTaskCount = 0;
+  /** IDs of background agents/tasks currently running. Set semantics give free dedup. */
+  private backgroundTaskIds = new Set<string>();
   /** Per-instance temp dir so nested CLI processes don't purge each other's
    *  Bash tool output files (they all share /tmp/claude-<uid>/<slug>/tasks/). */
   private readonly instanceTmpdir: string;
@@ -567,6 +674,20 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       }
     }
 
+    // Capability-band change forces respawn: the SDK freezes `thinking` config
+    // at startQuery time and exposes no setThinking control — toggling adaptive
+    // support requires a new process. Compare effective models (so swapping to
+    // "Default" that resolves to the same band doesn't cause a spurious restart).
+    if (settings.model !== undefined && settings.model !== this.options.model) {
+      const env = this.options.env ?? {};
+      const hint = this.options.capabilityHint;
+      const oldEffective = this.options.model || hint || resolveCliDefaultModel(env);
+      const newEffective = settings.model || hint || resolveCliDefaultModel(env);
+      if (modelSupportsAdaptiveThinking(oldEffective) !== modelSupportsAdaptiveThinking(newEffective)) {
+        return true;
+      }
+    }
+
     return false;
   }
 
@@ -665,8 +786,8 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     // Clean up per-instance tmpdir (created in constructor to isolate Bash tool output)
     try { rmSync(this.instanceTmpdir, { recursive: true, force: true }); } catch { /* best-effort */ }
 
-    // Reset background counter — adapter teardown always goes fully idle
-    this.backgroundTaskCount = 0;
+    // Reset background tasks — adapter teardown always goes fully idle
+    this.backgroundTaskIds.clear();
     this.emitStatus('idle');
     this.outputQueue.done();
   }
@@ -700,9 +821,20 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     await this.requireQuery('setPermissionMode').setPermissionMode(mode);
   }
 
-  /** Change thinking token budget mid-conversation. */
-  async setMaxThinkingTokens(tokens: number | null): Promise<void> {
-    await this.requireQuery('setMaxThinkingTokens').setMaxThinkingTokens(tokens);
+  /**
+   * Rename a session by appending a `custom-title` entry to its JSONL.
+   * Operates on disk via the SDK; does not emit a channel event.
+   */
+  async setSessionTitle(sessionId: string, title: string): Promise<void> {
+    await renameClaudeSession(sessionId, title);
+  }
+
+  /**
+   * Read the current title from the session JSONL.
+   * Returns customTitle (user `/rename`) over aiTitle (SDK auto-generated).
+   */
+  async getSessionTitle(sessionId: string): Promise<string | null> {
+    return getClaudeSessionTitle(sessionId);
   }
 
   /**
@@ -864,10 +996,19 @@ export class ClaudeAgentAdapter implements AgentAdapter {
       ...(opts.persistSession !== undefined && { persistSession: opts.persistSession }),
       ...(opts.skipPersistSession && { persistSession: false }),
 
-      // Model & thinking
+      // Model & thinking — the capability gate uses the effective-model
+      // resolution chain (explicit opts.model > capabilityHint > CLI default).
+      // `capabilityHint` never reaches the SDK — it's a local family-marker
+      // used only by the gate — so when the user didn't pick explicitly,
+      // we pass no `--model` and the CLI applies its own default (including
+      // the `[1m]` 1M-context append on accounts with 1M access).
       ...(opts.model && { model: opts.model }),
       ...(opts.fallbackModel && { fallbackModel: opts.fallbackModel }),
-      ...(opts.maxThinkingTokens !== undefined && { maxThinkingTokens: opts.maxThinkingTokens }),
+      ...((() => {
+        const effectiveModel = opts.model || opts.capabilityHint || resolveCliDefaultModel(opts.env ?? {});
+        const thinking = buildThinkingConfig({ ...opts, model: effectiveModel }, { supportsDisplay: this._cliSupportsDisplay });
+        return thinking ? { thinking } : {};
+      })()),
 
       // Permissions
       ...(opts.permissionMode && { permissionMode: opts.permissionMode }),
@@ -946,7 +1087,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         const command = isWindows && spawnOpts.command.includes(' ')
           ? `"${spawnOpts.command}"`
           : spawnOpts.command;
-        log({ source: 'claude-adapter', level: 'info', summary: `[SPAWN] command=${command} args=${JSON.stringify(spawnOpts.args?.slice(0, 3))} cwd=${spawnOpts.cwd}` });
+        log({ source: 'claude-adapter', level: 'info', summary: `[SPAWN] command=${command} args=${JSON.stringify(spawnOpts.args)} cwd=${spawnOpts.cwd}` });
         const child = spawn(command, spawnOpts.args, {
           cwd: spawnOpts.cwd,
           env: spawnOpts.env,
@@ -1031,6 +1172,10 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     // Reset echo suppression counter
     this.pendingSendCount = 0;
 
+    // Reset background subagent tracker — query restart must not carry stale
+    // task IDs from the previous query into the new one.
+    this.backgroundTaskIds.clear();
+
     // Deny any pending approvals (take snapshot to avoid mutation during iteration)
     const pendingEntries = [...this.pendingApprovals.values()];
     this.pendingApprovals.clear();
@@ -1094,8 +1239,13 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         this.activeQuery = null;
         this.inputQueue = null;
         this.abortController = null;
+        // Reset background subagent tracker — once the query loop is exiting,
+        // any in-flight subagents are unreachable, so a leaked task_started
+        // (e.g. subagent aborted before delivering `task_notification`) must
+        // not survive into the next query and synthesize 'background' forever.
+        this.backgroundTaskIds.clear();
         if (!this._closed) {
-          this.emitStatus(this.backgroundTaskCount > 0 ? 'background' : 'idle');
+          this.emitStatus('idle');
         }
       }
     }
@@ -1223,6 +1373,45 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     // Skip replayed messages (they're history, not new content)
     if ('isReplay' in msg && (msg as { isReplay?: boolean }).isReplay) return;
 
+    // Background-task completion notifications arrive as user-role messages
+    // with origin.kind === 'task-notification' (text body: `<task-notification>
+    // <task-id>...</task-id>...`). These are the same logical signal as a
+    // task_notification system message, but routed through the user channel,
+    // so the system-message switch never sees them and the Set would leak.
+    //
+    // Handled BEFORE the isSynthetic gate because the SDK may mark these
+    // synthetic; the gate would otherwise drop the decrement and leak the
+    // counter. Handled BEFORE echo suppression because they're not sendTurn
+    // echoes. Emit + return; the entry is classified as system context by
+    // claude-entry-adapter.ts and filtered from the UI downstream.
+    if (msg.origin?.kind === 'task-notification') {
+      const taskIds = this.extractTaskNotificationTaskIds(msg);
+      const before = this.backgroundTaskIds.size;
+      let removed = 0;
+      if (taskIds.length > 0) {
+        for (const id of taskIds) {
+          if (this.backgroundTaskIds.delete(id)) removed++;
+        }
+      } else if (this.backgroundTaskIds.size === 1) {
+        // Defensive snap, narrowly scoped: a task-notification arrived without
+        // a parseable task_id, but exactly one task is in flight — it must be
+        // the one being notified about. Don't clear when size > 1 (could
+        // false-clear a live task), don't clear when size === 0 (nothing to do).
+        this.backgroundTaskIds.clear();
+        removed = 1;
+      }
+      log({
+        source: 'claude-adapter', level: 'info',
+        summary: `[BG] task-notification (text-route) → count=${this.backgroundTaskIds.size} (was ${before}, removed=${removed}, ids=${taskIds.length}), _status=${this._status}`,
+        data: { taskIds },
+      });
+      if (this.backgroundTaskIds.size === 0 && this._status === 'background') {
+        this.emitStatus('idle');
+      }
+      this.emitEntry(msg);
+      return;
+    }
+
     // Skip SDK-injected synthetic messages (slash command echoes like /model,
     // meta messages, transcript-only entries). These have isSynthetic: true
     // and are not real user input — letting them through pollutes the transcript
@@ -1244,6 +1433,35 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     }
 
     this.emitEntry(msg);
+  }
+
+  /**
+   * Extract every task_id from a task-notification user message's text content.
+   * Convention: text body contains one or more `<task-id>xxx</task-id>` tags.
+   * The SDK may batch multiple completions into a single message when tasks
+   * finish near-simultaneously between turns — capture all of them so each
+   * one decrements the Set.
+   * Returns an empty array if none are parseable.
+   */
+  private extractTaskNotificationTaskIds(msg: SDKUserMessage): string[] {
+    const content = msg.message?.content;
+    const texts: string[] = [];
+    if (typeof content === 'string') {
+      texts.push(content);
+    } else if (Array.isArray(content)) {
+      for (const block of content) {
+        if (typeof block === 'object' && block !== null && 'type' in block && block.type === 'text' && typeof (block as { text?: unknown }).text === 'string') {
+          texts.push((block as { text: string }).text);
+        }
+      }
+    }
+    const ids: string[] = [];
+    for (const text of texts) {
+      for (const m of text.matchAll(/<task-id>([^<]+)<\/task-id>/g)) {
+        ids.push(m[1]);
+      }
+    }
+    return ids;
   }
 
   /**
@@ -1290,19 +1508,24 @@ export class ClaudeAgentAdapter implements AgentAdapter {
 
     this.emitEntry(msg);
 
-    // Result marks end-of-turn — transition to idle (or background if agents
-    // are still running) so subscribers know streaming has stopped. The query
-    // stays alive (waiting for next user input via inputQueue), so
+    // Result marks end-of-turn — always carry `turnComplete: true` so consumers
+    // can resolve on the authoritative signal regardless of whether the channel
+    // stays quiescent ('idle') or has lingering background work ('background').
+    // The query stays alive (waiting for next user input via inputQueue), so
     // drainOutput's finally block won't fire until the query is fully
     // closed/aborted.
-    this.emitStatus(this.backgroundTaskCount > 0 ? 'background' : 'idle',
-      this.backgroundTaskCount > 0 ? undefined : { turnComplete: true });
+    const endStatus = this.backgroundTaskIds.size > 0 ? 'background' : 'idle';
+    log({
+      source: 'claude-adapter', level: 'info',
+      summary: `[BG] result → emitStatus('${endStatus}') turnComplete, count=${this.backgroundTaskIds.size}`,
+    });
+    this.emitStatus(endStatus, { turnComplete: true });
   }
 
   private handleSystemMessage(msg: SDKMessage): void {
     const systemMsg = msg as
       | SDKSystemMessage | SDKStatusMessage | SDKCompactBoundaryMessage
-      | SDKTaskStartedMessage | SDKTaskNotificationMessage | SDKTaskProgressMessage
+      | SDKTaskStartedMessage | SDKTaskNotificationMessage | SDKTaskUpdatedMessage | SDKTaskProgressMessage
       | SDKLocalCommandOutputMessage | SDKElicitationCompleteMessage;
 
     if (!('subtype' in systemMsg)) {
@@ -1327,7 +1550,15 @@ export class ClaudeAgentAdapter implements AgentAdapter {
           agents: (initMsg.agents as string[]) ?? [],
           permissionMode: ((initMsg.permissionMode ?? initMsg.permission_mode) as string) ?? '',
           apiKeySource: ((initMsg.apiKeySource ?? initMsg.api_key_source) as string) ?? '',
+          claudeCodeVersion: (initMsg.claude_code_version as string) ?? '',
         };
+
+        // --- CLI version checks ---
+        // Capability gate: does the CLI know about `thinking.display`?
+        // (Hard floor at MIN_DISPLAY_CLI_VERSION.)
+        this._cliSupportsDisplay = cliSupportsThinkingDisplay(this._metadata.claudeCodeVersion);
+        // Drift canary: warn once when the user's CLI lags the SDK bundle.
+        warnOnceIfOld(checkCliVersion(this._metadata.claudeCodeVersion));
 
         // --- Sync options from init so adapter.settings reflects actual state ---
         // The SDK's init message reports the authoritative model and permissionMode
@@ -1459,17 +1690,52 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         break;
 
       // Background agent lifecycle
-      case 'task_started':
-        this.backgroundTaskCount++;
+      case 'task_started': {
+        const m = msg as SDKTaskStartedMessage;
+        if (typeof m.task_id === 'string') {
+          this.backgroundTaskIds.add(m.task_id);
+        }
+        log({
+          source: 'claude-adapter', level: 'info',
+          summary: `[BG] task_started → count=${this.backgroundTaskIds.size}`,
+          data: { taskId: m.task_id, toolUseId: m.tool_use_id, description: m.description, taskType: m.task_type },
+        });
         this.emitEntry(msg);
         break;
+      }
       case 'task_notification': {
-        this.backgroundTaskCount = Math.max(0, this.backgroundTaskCount - 1);
+        const m = msg as SDKTaskNotificationMessage;
+        const before = this.backgroundTaskIds.size;
+        const removed = typeof m.task_id === 'string' && this.backgroundTaskIds.delete(m.task_id);
+        log({
+          source: 'claude-adapter', level: 'info',
+          summary: `[BG] task_notification (${m.status}) → count=${this.backgroundTaskIds.size} (was ${before}, removed=${removed}), _status=${this._status}`,
+          data: { taskId: m.task_id, toolUseId: m.tool_use_id, status: m.status },
+        });
         this.emitEntry(msg);
         // All background tasks finished while in background state → go idle
-        if (this.backgroundTaskCount === 0 && this._status === 'background') {
+        if (this.backgroundTaskIds.size === 0 && this._status === 'background') {
           this.emitStatus('idle');
         }
+        break;
+      }
+      case 'task_updated': {
+        const m = msg as SDKTaskUpdatedMessage;
+        const status = m.patch?.status;
+        const terminal = status === 'completed' || status === 'failed' || status === 'killed';
+        if (terminal && typeof m.task_id === 'string') {
+          const before = this.backgroundTaskIds.size;
+          const removed = this.backgroundTaskIds.delete(m.task_id);
+          log({
+            source: 'claude-adapter', level: 'info',
+            summary: `[BG] task_updated (${status}) → count=${this.backgroundTaskIds.size} (was ${before}, removed=${removed}), _status=${this._status}`,
+            data: { taskId: m.task_id, status },
+          });
+          if (this.backgroundTaskIds.size === 0 && this._status === 'background') {
+            this.emitStatus('idle');
+          }
+        }
+        this.emitEntry(msg);
         break;
       }
 
@@ -1900,8 +2166,6 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
         continue;
       }
 
-      const gen3Title = getSessionTitleFromDb(sessionId);
-
       // Prefer the last transcript entry's timestamp over filesystem mtime
       // for accurate sort order — mtime can drift due to atomic writes, rsync, etc.
       const modifiedAt = meta?.lastTimestamp
@@ -1920,7 +2184,8 @@ export function listSessions(projectSlug?: string): SessionInfo[] {
         lastUserPrompt: meta?.lastUserPrompt,
         vendor: 'claude',
         isSidechain: meta?.isSidechain,
-        ...(gen3Title && { title: gen3Title }),
+        ...(meta?.customTitle && { customTitle: meta.customTitle }),
+        ...(meta?.aiTitle && { aiTitle: meta.aiTitle }),
       });
     }
   }
@@ -1956,7 +2221,6 @@ export function findSession(sessionId: string): SessionInfo | undefined {
     }
 
     const meta = extractMetadataFast(filePath);
-    const gen3Title = getSessionTitleFromDb(sessionId);
     const modifiedAt = meta?.lastTimestamp
       ? new Date(meta.lastTimestamp)
       : stat.mtime;
@@ -1973,7 +2237,8 @@ export function findSession(sessionId: string): SessionInfo | undefined {
       lastUserPrompt: meta?.lastUserPrompt,
       vendor: 'claude',
       isSidechain: meta?.isSidechain,
-      ...(gen3Title && { title: gen3Title }),
+      ...(meta?.customTitle && { customTitle: meta.customTitle }),
+      ...(meta?.aiTitle && { aiTitle: meta.aiTitle }),
     };
   }
 
@@ -1981,20 +2246,77 @@ export function findSession(sessionId: string): SessionInfo | undefined {
 }
 
 /**
- * Extract the model string for a resumed session by reading its JSONL init entry.
- *
- * Convenience wrapper: finds the session file on disk, then reads the first 8KB
- * to extract the model from the `{ type: "system", subtype: "init" }` entry.
- * Used by adapter factories to populate model at construction time (before any
- * SDK query), so the catchup message includes the correct model.
- *
- * @param sessionId - The session UUID to look up
- * @returns The model string (e.g. "claude-sonnet-4-20250514"), or undefined
+ * Recover the model for a session by reading its JSONL.
+ * Tries `system/init` (pre-Crispy sessions), then the latest assistant entry's
+ * `message.model` (Crispy-tracked sessions). `upToUuid` scopes the scan for forks.
  */
-export function getResumeModel(sessionId: string): string | undefined {
+export function getResumeModel(sessionId: string, opts?: { upToUuid?: string }): string | undefined {
   const info = findSession(sessionId);
   if (!info) return undefined;
-  return extractInitModel(info.path);
+  return extractInitModel(info.path) ?? extractLatestAssistantModel(info.path, opts);
+}
+
+/**
+ * Rename a Claude session by appending a `custom-title` entry to its JSONL.
+ *
+ * Stateless — uses the SDK directly, no live adapter required. The
+ * adapter method (ClaudeAgentAdapter.setSessionTitle) delegates here
+ * so live and offline paths share one implementation.
+ */
+export async function renameClaudeSession(sessionId: string, title: string): Promise<void> {
+  const info = findSession(sessionId);
+  const dir = info?.projectPath;
+  try {
+    await sdkRenameSession(sessionId, title, dir ? { dir } : undefined);
+  } catch (e) {
+    // info.projectPath may diverge from the JSONL's actual location
+    // (forked sessions, custom-cwd Rosie spawns). Retry with full-projects
+    // scan when the fast path can't find the file.
+    if (dir && /not.*found/i.test(String((e as Error).message))) {
+      await sdkRenameSession(sessionId, title);
+    } else {
+      throw e;
+    }
+  }
+}
+
+/**
+ * Read a Claude session's title from disk (customTitle wins over aiTitle).
+ * Returns null when the session is missing or has no title.
+ */
+export function getClaudeSessionTitle(sessionId: string): string | null {
+  const info = findSession(sessionId);
+  if (!info) return null;
+  const meta = extractMetadataFast(info.path);
+  return meta?.customTitle ?? meta?.aiTitle ?? null;
+}
+
+// ============================================================================
+// CLI default model resolution (effective-model for capability gating)
+// ============================================================================
+
+/**
+ * Hardcoded fallback used when neither session env nor process env sets
+ * `ANTHROPIC_MODEL`. Mirrors the CLI's current default; if Claude Code
+ * changes its default in a future release, update here too.
+ */
+const CLI_FALLBACK_DEFAULT_MODEL = 'claude-opus-4-7';
+
+/**
+ * Compute the model the CLI will pick when no `--model` flag is passed.
+ *
+ * Used for capability-gate decisions only — the spawn args still suppress
+ * `--model` so the user's "Default" pick is honored. Mirrors the env
+ * precedence applied at spawn time: session env wins over process env.
+ *
+ * @param sessionEnv - The merged adapter env that will be forwarded to spawn
+ */
+export function resolveCliDefaultModel(sessionEnv: Record<string, string>): string {
+  const sessionVal = sessionEnv.ANTHROPIC_MODEL;
+  if (sessionVal) return sessionVal;
+  const procVal = process.env.ANTHROPIC_MODEL;
+  if (procVal) return procVal;
+  return CLI_FALLBACK_DEFAULT_MODEL;
 }
 
 /**
@@ -2070,6 +2392,10 @@ export const claudeDiscovery: VendorDiscovery = {
       dir: options?.dir,
     });
     return { sessionId: result.sessionId };
+  },
+
+  resolveModelForSession(sessionId, opts) {
+    return getResumeModel(sessionId, opts);
   },
 };
 

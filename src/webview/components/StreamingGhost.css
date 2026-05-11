@@ -52,6 +52,14 @@
 .streaming-ghost__thinking summary {
   cursor: pointer;
   font-style: italic;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.streaming-ghost__thinking summary::-webkit-details-marker {
+  display: none;
 }
 
 .streaming-ghost__thinking-text {
@@ -62,7 +70,7 @@
   font-size: 0.85em;
   background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.1));
   border-radius: 4px;
-  max-height: 200px;
+  max-height: min(50vh, 400px);
   overflow-y: auto;
 }
 

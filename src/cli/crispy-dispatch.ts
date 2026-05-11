@@ -19,15 +19,17 @@
  */
 
 import { connect, type Socket } from 'node:net';
-import { join, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 import {
   EXIT_OK, EXIT_APPROVAL, EXIT_TIMEOUT, EXIT_TRANSPORT, EXIT_USAGE,
   discoverSocket, MessageRouter,
   type RpcEvent,
 } from './ipc-client.js';
+import { startIdleWatch } from '../core/channel-idle.js';
+import type { ChannelMessage } from '../core/agent-adapter.js';
+import type { SubscriberMessage } from '../core/session-channel.js';
 
 // ============================================================================
 // Structured Output
@@ -96,7 +98,7 @@ function parseArgs(argv: string[]): CliArgs {
   const approvalEnv = process.env.CRISPY_DISPATCH_APPROVAL as ApprovalMode | undefined;
   const args: CliArgs = {
     vendor: 'claude',
-    timeoutMs: 600_000,
+    timeoutMs: 0,
     autoClose: true,
     visible: false,
     background: false,
@@ -113,7 +115,6 @@ function parseArgs(argv: string[]): CliArgs {
   }
 
   const positionalParts: string[] = [];
-  let explicitTimeout = false;
   let i = 2; // skip node + script
 
   while (i < argv.length) {
@@ -143,7 +144,6 @@ function parseArgs(argv: string[]): CliArgs {
         break;
       case '--timeout':
         args.timeoutMs = parseInt(requireValue('--timeout', argv, i), 10);
-        explicitTimeout = true;
         i++;
         break;
       case '--no-auto-close':
@@ -212,11 +212,10 @@ function parseArgs(argv: string[]): CliArgs {
     args.prompt = positionalParts.join(' ');
   }
 
-  // Long-running agent sessions (--no-auto-close) default to no timeout —
-  // wait indefinitely for the turn to complete. Explicit --timeout overrides.
-  if (!args.autoClose && !explicitTimeout) {
-    args.timeoutMs = 0;
-  }
+  // Default: no timeout — wait indefinitely for the turn to complete. A
+  // CLI-side cap doesn't stop the host-side agent (the channel keeps running
+  // after the watch fires), so a default cap only surfaces false-completion
+  // signals to callers. `--timeout <ms>` opts a caller into an explicit cap.
 
   return args;
 }
@@ -275,8 +274,6 @@ Environment:
 // Main
 // ============================================================================
 
-const OUTPUT_DIR = join(tmpdir(), 'crispy-agents');
-
 async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) return '';
   const chunks: Buffer[] = [];
@@ -332,14 +329,6 @@ async function main(): Promise<void> {
     }
   }
 
-  // Set up output file
-  let outputFile: string | null = null;
-  try {
-    mkdirSync(OUTPUT_DIR, { recursive: true });
-    outputFile = join(OUTPUT_DIR, `crispy-dispatch-${Date.now()}-${process.pid}.log`);
-    if (args.debug) console.error(`[output_file: ${outputFile}]`);
-  } catch { /* best-effort */ }
-
   // Build settings
   const settings: Record<string, unknown> = {};
   if (args.model) settings.model = args.model;
@@ -393,7 +382,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    await runMode(router, args, prompt!, settings, outputFile);
+    await runMode(router, args, prompt!, settings);
   } catch (err) {
     emitResult({
       status: 'error',
@@ -411,48 +400,11 @@ async function main(): Promise<void> {
 // Unified Mode — all dispatches via sendTurn RPC with client-side event streaming
 // ============================================================================
 
-/** Format a channel message for log file streaming (matches server-side formatLogEntry). */
-function formatLogEntry(event: Record<string, unknown>): string | null {
-  const d = new Date();
-  const ts = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-
-  if (event.type === 'entry' && event.entry) {
-    const entry = event.entry as { type?: string; message?: { content?: unknown } };
-    if (entry.type === 'assistant' && entry.message) {
-      const content = entry.message.content;
-      if (Array.isArray(content)) {
-        const texts: string[] = [];
-        for (const block of content) {
-          if (block.type === 'text' && block.text) texts.push(block.text);
-          else if (block.type === 'tool_use') texts.push(`[tool: ${(block as { name?: string }).name ?? '?'}]`);
-        }
-        return texts.length > 0 ? `[${ts}] ${texts.join(' ')}` : null;
-      }
-      if (typeof content === 'string') return `[${ts}] ${content}`;
-    }
-    if (entry.type === 'result' && entry.message) {
-      const content = entry.message.content;
-      let text = '';
-      if (Array.isArray(content)) {
-        for (const block of content) {
-          if (block.type === 'text' && block.text) text += block.text;
-        }
-      } else if (typeof content === 'string') {
-        text = content;
-      }
-      if (text) return `[${ts}] result: ${text.length > 200 ? text.slice(0, 200) + '…' : text}`;
-    }
-    return null;
-  }
-  return null;
-}
-
 async function runMode(
   router: MessageRouter,
   args: CliArgs,
   prompt: string,
   settings: Record<string, unknown>,
-  outputFile: string | null,
 ): Promise<void> {
   const skipPersistSession = !args.persist;
 
@@ -499,135 +451,93 @@ async function runMode(
     ...(parentSessionId && { parentSessionId }),
   };
 
-  // Write log header
-  if (outputFile) {
-    writeFileSync(outputFile,
-      `# crispy-dispatch vendor=${args.vendor} started=${new Date().toISOString()}\n---\n`,
-      'utf8');
-  }
-
   // State for event collection
   let sessionId = '';
   let text = '';
-  let settled = false;
   let approvalInfo: { toolName: string; toolUseId: string } | null = null;
-  let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
-  // Install event handler BEFORE any RPCs — no event gap
-  const done = new Promise<ResultStatus>((resolve) => {
-    // timeoutMs === 0 means "no timeout" (wait indefinitely for turn completion)
-    const timer = args.timeoutMs > 0
-      ? setTimeout(() => {
-          if (!settled) {
-            settled = true;
-            if (idleTimer) clearTimeout(idleTimer);
-            resolve('timeout');
-          }
-        }, args.timeoutMs)
-      : undefined;
+  // Idle/debounce/timeout/approval-fail are all centralized in `startIdleWatch`.
+  // The CLI feeds RPC events into the watcher; everything else (text streaming,
+  // session-id rekey tracking, error logging) stays in the event handler.
+  const watcher = startIdleWatch({
+    ...(args.timeoutMs > 0 && { timeoutMs: args.timeoutMs }),
+    onMessage: (msg) => {
+      if (
+        msg.type === 'event' &&
+        msg.event.type === 'status' &&
+        msg.event.status === 'awaiting_approval' &&
+        args.approval === 'fail'
+      ) {
+        approvalInfo = {
+          toolName: msg.event.toolName ?? 'unknown',
+          toolUseId: msg.event.toolUseId ?? '',
+        };
+        return 'interrupt';
+      }
+    },
+  });
 
-    router.setEventHandler((evt) => {
-      if (settled) return;
-      const event = evt.event;
+  router.setEventHandler((evt) => {
+    const event = evt.event as unknown as SubscriberMessage;
 
-      // Unwrap ChannelMessage envelope: EventMessage wraps the real event
-      // as { type: 'event', event: ChannelEvent }, while EntryMessage has
-      // { type: 'entry', entry: TranscriptEntry } — no extra nesting.
-      const inner = event.type === 'event' && event.event ? event.event as Record<string, unknown> : event;
-
-      // Track session ID rekey (pending → real)
-      if (inner.type === 'notification' && inner.kind === 'session_changed' && inner.sessionId) {
-        const newId = inner.sessionId as string;
+    // Track session ID rekey (pending → real). Done up front so the
+    // sidecar file always carries the real ID even if the watcher has
+    // already resolved.
+    if (event.type === 'event' && event.event.type === 'notification') {
+      const notif = event.event;
+      if (notif.kind === 'session_changed' && 'sessionId' in notif && typeof notif.sessionId === 'string') {
+        const newId = notif.sessionId;
         if (args.debug) console.error(`[crispy-dispatch] Session rekey: ${sessionId} → ${newId}`);
         sessionId = newId;
-        // Update sidecar so callers see the real ID, not the pending one
         if (args.sessionIdFile) {
           try { writeFileSync(args.sessionIdFile, newId, 'utf8'); } catch { /* best-effort */ }
         }
       }
+      if (notif.kind === 'error') {
+        console.error(`[crispy-dispatch] Error: ${(notif as { error?: string }).error ?? 'unknown'}`);
+      }
+    }
 
-      // Collect assistant text from entry messages
-      if (event.type === 'entry' && event.entry) {
-        const entry = event.entry as { type?: string; message?: { content?: unknown } };
-        if ((entry.type === 'assistant' || entry.type === 'result') && entry.message) {
-          const content = entry.message.content;
-          if (Array.isArray(content)) {
-            for (const block of content) {
-              if (block.type === 'text' && block.text) {
-                process.stdout.write(block.text);
-                text += block.text;
-              }
+    // Collect assistant text from entry messages.
+    if (event.type === 'entry' && event.entry) {
+      const entry = event.entry as { type?: string; message?: { content?: unknown } };
+      if ((entry.type === 'assistant' || entry.type === 'result') && entry.message) {
+        const content = entry.message.content;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === 'text' && block.text) {
+              process.stdout.write(block.text);
+              text += block.text;
             }
-          } else if (typeof content === 'string') {
-            process.stdout.write(content);
-            text += content;
           }
-        }
-
-        // Stream formatted entries to log file
-        if (outputFile) {
-          try {
-            const line = formatLogEntry(event);
-            if (line) appendFileSync(outputFile, line + '\n', 'utf8');
-          } catch { /* best-effort */ }
+        } else if (typeof content === 'string') {
+          process.stdout.write(content);
+          text += content;
         }
       }
+    }
 
-      // Turn complete — two-tier detection:
-      // 1. turnComplete flag on idle → resolve immediately (authoritative)
-      // 2. Debounced idle fallback → resolve after 2s stable idle
-      if (inner.type === 'status' && inner.status === 'idle') {
-        if (args.debug) console.error(`[crispy-dispatch] Session idle (turnComplete: ${'turnComplete' in inner && inner.turnComplete})`);
-
-        if ('turnComplete' in inner && inner.turnComplete) {
-          // Authoritative completion — resolve immediately
-          settled = true;
-          if (idleTimer) clearTimeout(idleTimer);
-          clearTimeout(timer);
-          resolve('completed');
-        } else {
-          // Debounced fallback — wait 2s for stable idle
-          if (idleTimer) clearTimeout(idleTimer);
-          idleTimer = setTimeout(() => {
-            if (!settled) {
-              settled = true;
-              clearTimeout(timer);
-              resolve('completed');
-            }
-          }, 2000);
-        }
+    if (args.debug && event.type === 'event' && event.event.type === 'status') {
+      const status = event.event.status;
+      const turnComplete = status === 'idle' && 'turnComplete' in event.event && event.event.turnComplete;
+      console.error(`[crispy-dispatch] Status: ${status}${turnComplete ? ' (turnComplete)' : ''}`);
+      if (status === 'awaiting_approval' && args.approval === 'manual') {
+        console.error(`[crispy-dispatch] Awaiting approval for "${event.event.toolName}". Approve in Crispy UI.`);
       }
+    }
 
-      // Non-idle status cancels the idle debounce timer
-      if (inner.type === 'status' && inner.status !== 'idle') {
-        if (idleTimer) { clearTimeout(idleTimer); idleTimer = undefined; }
-      }
+    if (event.type === 'event' || event.type === 'entry') {
+      watcher.feed(event as ChannelMessage);
+    }
+  });
 
-      // Approval required
-      if (inner.type === 'status' && inner.status === 'awaiting_approval') {
-        if (args.approval === 'fail') {
-          approvalInfo = {
-            toolName: (inner.toolName as string) ?? 'unknown',
-            toolUseId: (inner.toolUseId as string) ?? '',
-          };
-          settled = true;
-          if (idleTimer) clearTimeout(idleTimer);
-          clearTimeout(timer);
-          resolve('approval_required');
-        } else if (args.approval === 'manual') {
-          if (args.debug) console.error(
-            `[crispy-dispatch] Awaiting approval for "${inner.toolName}". Approve in Crispy UI.`,
-          );
-          // Don't resolve — wait for idle or timeout
-        }
-        // bypass: never reaches here (permissionMode=bypassPermissions)
-      }
-
-      // Error notification
-      if (inner.type === 'notification' && inner.kind === 'error') {
-        console.error(`[crispy-dispatch] Error: ${(inner as { error?: string }).error ?? 'unknown'}`);
-      }
-    });
+  const done: Promise<ResultStatus> = watcher.promise.then((reason) => {
+    switch (reason) {
+      case 'turnComplete':
+      case 'settled': return 'completed';
+      case 'timeout': return 'timeout';
+      case 'interrupted': return 'approval_required';
+    }
   });
 
   // For existing sessions, subscribe first
@@ -653,11 +563,6 @@ async function runMode(
 
   // Wait for completion
   const status = await done;
-
-  // Write output file (bulk fallback — streaming writes happen above)
-  if (outputFile && text) {
-    try { writeFileSync(outputFile, text, 'utf8'); } catch { /* best-effort */ }
-  }
 
   // Auto-close
   if (args.autoClose && status === 'completed') {

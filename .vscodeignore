@@ -42,7 +42,7 @@ tauri/**
 *.vsix
 *.tgz
 **/*.map
-vitest.config.ts
+vitest.config.*
 architecture.md
 projects-view-playground.html
 skills-lock.json

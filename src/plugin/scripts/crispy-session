@@ -85,7 +85,7 @@ if [[ "${1:-}" == "list" ]]; then
       (.sessionId[:8]) + "  " +
       (.vendor // "?" | trunc(6) | . + (" " * (6 - length))) + "  " +
       ((.modifiedAt // 0) | age | . + (" " * (7 - length))) + "  " +
-      ((.title // .lastMessage // "(untitled)") | trunc(45))
+      ((.customTitle // .aiTitle // .lastUserPrompt // .label // (.sessionId[:8] + "…")) | trunc(45))
     ),
 
     # Footer

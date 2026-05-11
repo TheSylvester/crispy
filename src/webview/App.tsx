@@ -19,7 +19,9 @@ import { FlexAppLayout } from './components/FlexAppLayout.js';
 import { TitleBar } from './components/TitleBar.js';
 import { isPerfMode, PerfOverlay, PerfProfiler } from './perf/index.js';
 import { TrackerToast } from './components/notifications/TrackerToast.js';
+import { ErrorToast } from './components/notifications/ErrorToast.js';
 import { WorkspacePicker } from './components/WorkspacePicker.js';
+import { OsDropOverlay } from './components/file-panel/OsDropOverlay.js';
 
 interface AppProps {
   transport: Transport;
@@ -38,6 +40,8 @@ export function App({ transport, transportKind }: AppProps): React.JSX.Element {
               </PerfProfiler>
               {isPerfMode && <PerfOverlay />}
               <TrackerToast />
+              <ErrorToast />
+              <OsDropOverlay />
             </PreferencesProvider>
           </TabControllerBridge>
         </SessionProvider>

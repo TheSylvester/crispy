@@ -12,7 +12,7 @@
 
 import type { HostEvent } from '../host/client-connection.js';
 import type { TunnelStatusInfo } from '../host/tunnel-client.js';
-import type { SessionService, WireSessionInfo, WireProject, WireProjectActivity, WireStage } from './transport.js';
+import type { SessionService, WireSessionInfo, WireProject, WireProjectActivity, WireStage, OpenSessionInfo } from './transport.js';
 import type { WorkspaceListResponse } from '../core/workspace-roots.js';
 import type { TranscriptEntry } from '../core/transcript.js';
 import type { TurnReceipt } from '../core/agent-adapter.js';
@@ -236,8 +236,10 @@ export function createCloudRelayTransport(wsUrl: string, tunnelId: string): Sess
 
   return {
     listSessions: () => request<WireSessionInfo[]>('listSessions'),
+    listOpenSessions: (params) => request<OpenSessionInfo[]>('listOpenSessions', (params ?? {}) as Record<string, unknown>),
     findSession: (sessionId) => request<WireSessionInfo | null>('findSession', { sessionId }),
     loadSession: (sessionId, options) => request<TranscriptEntry[]>('loadSession', { sessionId, ...options }),
+    setSessionTitle: (sessionId, title) => request<void>('setSessionTitle', { sessionId, title }),
     sendTurn: (intent, pendingId) => request<TurnReceipt>('sendTurn', { intent, ...(pendingId && { pendingId }) }),
     switchSession: (params) => request<{ previousSessionId: string; sessionId: string }>('switchSession', params),
 
@@ -346,6 +348,13 @@ export function createCloudRelayTransport(wsUrl: string, tunnelId: string): Sess
         }
       });
     },
+
+    // OS-drop import: cloud-relay clients have no OS to drop from.
+    previewImport: async () => { throw new Error('OS-drop import is not available over cloud relay'); },
+    executeImport: async () => { throw new Error('OS-drop import is not available over cloud relay'); },
+    cancelImport: async () => ({ cancelled: false }),
+    subscribeImportProgress: async () => ({ subscribed: false }),
+    unsubscribeImportProgress: async () => ({ unsubscribed: true }),
 
     dispose() {
       disposed = true;

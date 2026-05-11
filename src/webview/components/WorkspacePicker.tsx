@@ -388,7 +388,9 @@ export function WorkspacePicker(): React.JSX.Element {
   }, []);
 
   // Poll WSL lifecycle status from Tauri backend.
-  // Polls every 2s until a terminal state (not_found, not_installed, connected, failed).
+  // Fires immediately on mount, then polls every 500ms while non-terminal.
+  // Stops on terminal states (not_found, not_installed, connected, failed).
+  // Tolerates transient IPC errors by rescheduling from the catch branch.
   useEffect(() => {
     const ipc = (window as any).__TAURI_INTERNALS__;
     if (!ipc) return;
@@ -398,16 +400,34 @@ export function WorkspacePicker(): React.JSX.Element {
       s.status === 'connected' || s.status === 'failed';
 
     let cancelled = false;
-    const poll = setInterval(async () => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const sameStatus = (a: WslBackendStatus | null, b: WslBackendStatus) =>
+      a !== null
+      && a.status === b.status
+      && (a as { distro?: string }).distro === (b as { distro?: string }).distro
+      && (a as { port?: number }).port === (b as { port?: number }).port
+      && (a as { error?: string }).error === (b as { error?: string }).error;
+
+    const tick = async () => {
       if (cancelled) return;
       try {
         const status: WslBackendStatus = await ipc.invoke('get_wsl_status');
-        setWslStatus(status);
-        if (isTerminal(status)) clearInterval(poll);
-      } catch { /* command not available */ }
-    }, 2000);
+        if (cancelled) return;
+        setWslStatus(prev => sameStatus(prev, status) ? prev : status);
+        if (isTerminal(status)) return;
+        timer = setTimeout(tick, 500);
+      } catch {
+        if (!cancelled) timer = setTimeout(tick, 500);
+      }
+    };
 
-    return () => { cancelled = true; clearInterval(poll); };
+    tick();
+
+    return () => {
+      cancelled = true;
+      if (timer !== null) clearTimeout(timer);
+    };
   }, []);
 
   // Load pinned workspaces from localStorage
@@ -564,6 +584,14 @@ export function WorkspacePicker(): React.JSX.Element {
 
         {error && (
           <div className="crispy-workspace-picker__error">{error}</div>
+        )}
+
+        {wslStatus && wslStatus.status === 'detecting' && (
+          <div className="crispy-wsl-install-card">
+            <div className="crispy-wsl-install-card__title">
+              Checking for WSL…
+            </div>
+          </div>
         )}
 
         {wslStatus && wslStatus.status === 'not_installed' && (

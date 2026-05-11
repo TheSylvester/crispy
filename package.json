@@ -3,7 +3,7 @@
   "displayName": "Crispy",
   "icon": "media/crispy-icon.png",
   "description": "A GUI for Claude Code and Codex, built for multi-agent orchestration — with 'superthink' adversarial verification, agent memory, and Discord remote access.",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "publisher": "the-sylvester",
   "license": "MIT",
   "files": [
@@ -52,10 +52,11 @@
   },
   "main": "./dist/extension.js",
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.76",
-    "@anthropic-ai/sdk": "^0.74.0",
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.114",
+    "@anthropic-ai/sdk": "^0.81.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@opencode-ai/sdk": "^1.2.20",
+    "@tauri-apps/api": "^2.4.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/xterm": "^6.0.0",
@@ -96,11 +97,15 @@
   },
   "scripts": {
     "postinstall": "node -e \"try{require('fs').accessSync('scripts/ensure-sharp-stub.mjs');require('child_process').execSync('node scripts/ensure-sharp-stub.mjs',{stdio:'ignore'})}catch{}\"",
+    "generate:sdk-version": "node --import tsx scripts/generate-sdk-constants.ts",
+    "prebuild": "npm run generate:sdk-version",
+    "pretypecheck": "npm run generate:sdk-version",
     "build:extension": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --external:onnxruntime-node --external:@huggingface/transformers --external:@homebridge/node-pty-prebuilt-multiarch --format=cjs --platform=node --sourcemap --loader:.md=text && cp node_modules/node-sqlite3-wasm/dist/node-sqlite3-wasm.wasm dist/ && cp src/core/rosie/tracker/crispy-tracker.mjs dist/",
     "build:webview": "esbuild src/webview/main.tsx --bundle --outfile=dist/webview/main.js --format=esm --platform=browser --sourcemap --jsx=automatic --loader:.svg=text && cp src/webview/index.html dist/webview/ && cp src/webview/theme-defaults.css dist/webview/ && cp src/webview/styles.css dist/webview/ && cp media/favicon.png dist/webview/ && cp src/webview/manifest.json dist/webview/ && cp media/icons/icon-192.png dist/webview/ && cp media/icons/icon-512.png dist/webview/ && cp media/crispy-logo.png dist/webview/",
+    "build:sidebar": "esbuild src/webview/sidebar-entry.tsx --bundle --outfile=dist/webview/sidebar.js --format=esm --platform=browser --sourcemap --jsx=automatic --loader:.svg=text",
     "build:dev-server": "esbuild src/host/dev-server.ts --bundle --outfile=dist/dev-server.js --external:@anthropic-ai/* --external:ws --external:onnxruntime-node --external:@huggingface/transformers --external:@homebridge/node-pty-prebuilt-multiarch --format=esm --platform=node --sourcemap --loader:.md=text && cp node_modules/node-sqlite3-wasm/dist/node-sqlite3-wasm.wasm dist/ && cp src/core/rosie/tracker/crispy-tracker.mjs dist/",
     "build:crispy-plugin": "rm -rf dist/crispy-plugin && cp -r src/plugin dist/crispy-plugin",
-    "build": "npm run build:extension && npm run build:webview && npm run build:dev-server && npm run build:recall && npm run build:cli && npm run build:agent && npm run build:cli-entry && npm run build:crispy-plugin",
+    "build": "npm run build:extension && npm run build:webview && npm run build:sidebar && npm run build:dev-server && npm run build:recall && npm run build:cli && npm run build:agent && npm run build:cli-entry && npm run build:crispy-plugin",
     "watch": "npm run build:extension -- --watch",
     "typecheck": "tsc --noEmit",
     "package": "npm run build && vsce package",
@@ -127,7 +132,8 @@
     "Chat"
   ],
   "activationEvents": [
-    "onWebviewPanel:crispy"
+    "onWebviewPanel:crispy",
+    "onView:crispy.openSessions"
   ],
   "contributes": {
     "commands": [
@@ -181,6 +187,24 @@
         "when": "activeWebviewPanelId == 'crispy' && webviewFocus"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "crispy-sidebar",
+          "title": "Crispy",
+          "icon": "media/crispy-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "crispy-sidebar": [
+        {
+          "type": "webview",
+          "id": "crispy.openSessions",
+          "name": "Open Sessions"
+        }
+      ]
+    },
     "menus": {
       "editor/title": [
         {

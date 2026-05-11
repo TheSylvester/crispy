@@ -55,29 +55,49 @@ may change your verification strategy.
 **Codex routinely takes 2-3x longer than Claude.** Do not assume Codex is
 dead, timed out, or stuck just because Claude finished first.
 
+### During the wait
+
+Trust `run_in_background` — the Bash tool notifies you when each agent
+finishes. Do not poll. If you genuinely need a progress check before both
+finish (e.g. one is hours-long), use:
+
+- `$CRISPY_DISPATCH rpc listOpenSessions` — see `state`, `entryCount`,
+  `lastMessage` for every live session
+- `$CRISPY_DISPATCH rpc readDialogue '{"sessionId":"<id>"}'` — read
+  turns produced so far
+
+`entryCount` climbing across two polls = agent is working. `state: streaming`
+with stale `lastActivityAt` (>2min) = wedged.
+
+See `crispy:live-sessions` for the broader verb set (`postMessage`,
+`waitForIdle`) covering live peer sessions in general. Superthink relies on
+`--resume` for round-to-round dispatch because its child sessions auto-close
+between rounds — `live-sessions` verbs apply when you have a session that's
+intentionally kept alive.
+
 ### Collect output via RPC
 
 Query your child sessions via the `listChildSessions` RPC — this returns
 all children spawned by your session, including completed ones:
 
 ```bash
-crispy-dispatch rpc listChildSessions
+$CRISPY_DISPATCH rpc listChildSessions
 ```
 
 This returns a JSON object with a `sessions` array. Each entry has
 `sessionId`, `vendor`, `status`, `closed`, `visible`, and `autoClose`.
 
-For each child, read the transcript via `readSessionTurns`:
+For each child, read the transcript via `readDialogue`:
 
 ```bash
-crispy-dispatch rpc readSessionTurns '{"sessionId": "<child-session-id>"}'
+$CRISPY_DISPATCH rpc readDialogue '{"sessionId": "<child-session-id>"}'
 ```
+
+Returns `{ turns: [...] }` where each turn has `turn`, `user`, and
+`assistant` fields. `turn` is a 1-indexed number stable for the session ID.
 
 Extract the final assistant response from the last turn. This is the
 agent's analysis output.
-
-**Do not read from `crispy-agents/` log files in the temp directory.** Always use the RPC
-methods above — they are reliable and immune to interleaving issues.
 
 Capture each agent's session ID for use in resume operations below.
 

@@ -113,6 +113,18 @@ export function CheckIcon({ className, ...props }: IconProps): React.JSX.Element
   );
 }
 
+/** Word wrap icon — toggles soft-wrap of preformatted code. */
+export function WrapTextIcon({ className, ...props }: IconProps): React.JSX.Element {
+  return (
+    <svg className={className} width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <line x1="2" y1="3.5" x2="14" y2="3.5" />
+      <path d="M2 8h9.5a2 2 0 0 1 0 4H8.5" />
+      <polyline points="10.5 10 8 12 10.5 14" />
+      <line x1="2" y1="12.5" x2="5.5" y2="12.5" />
+    </svg>
+  );
+}
+
 /** Send arrow icon — upward chevron arrow for the send button. */
 export function SendIcon({ className, ...props }: IconProps): React.JSX.Element {
   return (

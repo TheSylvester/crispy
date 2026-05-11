@@ -17,7 +17,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import type { TurnIntent, ChannelMessage, SessionOpenSpec } from "../core/agent-adapter.js";
-import type { Vendor } from "../core/transcript.js";
+import type { Vendor, MessageContent } from "../core/transcript.js";
 import type {
   Subscriber,
   SessionChannel,
@@ -45,10 +45,13 @@ import {
   dispatchChildSession,
   resumeChildSession,
   listChildSessions,
+  listOpenChannels,
   resolveSessionId,
   resolveSessionPrefix,
   switchSession,
+  awaitChannelIdle,
 } from "../core/session-manager.js";
+import type { IdleReason } from "../core/channel-idle.js";
 import type { ChildSessionOptions, ResumeChildOptions } from "../core/session-manager.js";
 import {
   subscribeSessionList,
@@ -74,11 +77,18 @@ import {
   type CatchupSubscriber,
 } from '../core/recall/catchup-manager.js';
 import { readSessionMessages } from '../core/recall/message-store.js';
-import { getGitFiles, getGitBranchInfo, fileExists, readImage, readTextFile } from "../core/file-service.js";
+import { getGitFiles, fileExists, readImage, readTextFile } from "../core/file-service.js";
+import { getGitBranchInfoCached } from "../core/git-info-cache.js";
 import { getGitDiff } from "../core/git-diff-service.js";
-import { getLineage, getChildSessions, getLineageGraph, dbPath, setSessionTitle } from '../core/activity-index.js';
+import { getLineage, getChildSessions, getLineageGraph, dbPath, getRosieLastTitle } from '../core/activity-index.js';
+import {
+  setSessionTitle as coreSetSessionTitle,
+  getSessionTitle as coreGetSessionTitle,
+  setSessionTitleIfUnchanged as coreSetSessionTitleIfUnchanged,
+} from '../core/session-manager.js';
+import { getSessionDisplayName } from '../core/session-display-name.js';
 import { refreshAndNotify } from '../core/session-list-manager.js';
-import { getProjectsWithDetails, getProjectActivity, updateProjectStage, updateProjectSortOrder, reorderProjectsInStage, getStages, getValidStageNames, writeTrackerResults, mergeProjects, extractTurnsFromMessages, getProjectTitle } from '../core/rosie/tracker/index.js';
+import { getProjectsWithDetails, getProjectActivity, updateProjectStage, updateProjectSortOrder, reorderProjectsInStage, getStages, getValidStageNames, writeTrackerResults, mergeProjects, extractTurns, extractTurnsFromMessages, getProjectTitle } from '../core/rosie/tracker/index.js';
 import type { TrackerBlock } from '../core/rosie/tracker/index.js';
 import { getDb } from '../core/crispy-db.js';
 import {
@@ -97,12 +107,23 @@ import { readCodexResponsePreview } from '../core/adapters/codex/codex-jsonl-rea
 // at extension activation time (crashes VS Code's Electron host).
 // import { transcribeAudio } from '../core/voice/index.js'; // <-- lazy below
 import { startCapture, stopCapture, cancelCapture, cleanupOrphanedVoiceFiles } from './audio-capture.js';
-import { openPanel as openPanelFn, closePanel as closePanelFn } from './panel-opener.js';
+import { openPanel as openPanelFn, closePanel as closePanelFn, hasOpener } from './panel-opener.js';
 import {
   createTerminal, writeTerminal, resizeTerminal,
   closeTerminal, listTerminals, attachTerminal, detachTerminal,
   type SendEventFn,
 } from './terminal-manager.js';
+import {
+  previewImport as importServicePreview,
+  executeImport as importServiceExecute,
+  cancelImport as importServiceCancel,
+} from '../core/import-service.js';
+import type {
+  ImportPlan,
+  ImportReport,
+  ImportProgressEvent,
+  Resolutions,
+} from '../core/import-types.js';
 
 // Clean up any orphaned voice temp files from previous sessions on module load.
 cleanupOrphanedVoiceFiles();
@@ -188,8 +209,11 @@ export type ClientMessage = {
   params?: Record<string, unknown>;
 };
 
+/** Sentinel sessionId used to route OS-drop import progress events. */
+export const IMPORT_PROGRESS_CHANNEL_ID = '__import_progress__';
+
 /** Union of all events that can be pushed over the wire. */
-export type HostEvent = SubscriberMessage | SessionListEvent | SettingsChangedGlobalEvent | LogEvent | RecallCatchupEvent | TrackerNotifyEvent;
+export type HostEvent = SubscriberMessage | SessionListEvent | SettingsChangedGlobalEvent | LogEvent | RecallCatchupEvent | TrackerNotifyEvent | ImportProgressEvent;
 
 /** Host → Client response or push event. */
 export type HostMessage =
@@ -274,6 +298,12 @@ export function createClientConnection(
   /** Terminal IDs owned by this client — detached on disconnect. */
   const ownedTerminals = new Set<string>();
 
+  /** Import plan IDs owned by this client — cancelled on disconnect. */
+  const clientOwnedPlans = new Set<string>();
+
+  /** Per-client subscription flag for OS-drop import progress events. */
+  let importProgressSub = false;
+
   /**
    * Validate that `filePath` is inside an allowed directory before performing
    * any file-system read. Allowed roots:
@@ -303,6 +333,30 @@ export function createClientConnection(
 
     throw new Error(
       `Path "${filePath}" is outside the workspace. File access is restricted to session working directories and ~/.claude/.`,
+    );
+  }
+
+  /**
+   * Resolve the trust root for an OS-drop import.
+   *
+   * Webview supplies `{ sessionId?, projectCwdHint }`. The hint is validated
+   * against either the named subscribed session's projectPath or the
+   * `extraAllowedRoots` set (which `getGitFiles` populates when a workspace
+   * is opened). The hint itself is never trusted as truth — same containment
+   * model as `assertPathAllowed`.
+   */
+  function resolveImportTrustRoot(sessionId: string | undefined, projectCwdHint: string): string {
+    const hintAbs = resolve(projectCwdHint);
+
+    if (sessionId) {
+      const info = findSession(sessionId);
+      if (info?.projectPath && resolve(info.projectPath) === hintAbs) {
+        return hintAbs;
+      }
+    }
+    if (extraAllowedRoots.has(hintAbs)) return hintAbs;
+    throw new Error(
+      `Path "${projectCwdHint}" is outside the workspace. File access is restricted to session working directories.`,
     );
   }
 
@@ -363,6 +417,24 @@ export function createClientConnection(
     };
   }
 
+  /** Resolve a session ID and assert the channel is live (rekeyed,
+   *  attached, not tearing). Throws `"Session not active: <id>"` on
+   *  any failure mode. Shared by `postMessage` and `waitForIdle`. */
+  function requireLiveChannel(rawId: string): { sessionId: string; channel: SessionChannel } {
+    const sessionId = resolveSessionPrefix(resolveSessionId(rawId));
+    // Pending channels register in both live registries, so the
+    // tombstone gate alone wouldn't catch them. Explicit prefix check
+    // keeps these RPCs scoped to existing rekeyed sessions.
+    if (sessionId.startsWith('pending:')) {
+      throw new Error(`Session not active: ${sessionId}`);
+    }
+    const channel = getChannel(sessionId);
+    if (!channel || channel.state === 'unattached' || channel.tearing) {
+      throw new Error(`Session not active: ${sessionId}`);
+    }
+    return { sessionId, channel };
+  }
+
   async function routeMethod(
     method: string,
     params: Record<string, unknown>,
@@ -370,6 +442,65 @@ export function createClientConnection(
     switch (method) {
       case "listSessions":
         return listAllSessions();
+
+      case "listOpenSessions":
+        return listOpenChannels({
+          includeSystem: params.includeSystem as boolean | undefined,
+          includeSidechains: params.includeSidechains as boolean | undefined,
+        });
+
+      case "postMessage": {
+        const rawId = params.sessionId as string;
+        const content = params.content as MessageContent;
+        const callerClientMessageId = params.clientMessageId as string | undefined;
+
+        const isString = typeof content === 'string';
+        const isArray = Array.isArray(content);
+        if (!(isString || isArray) || content.length === 0) {
+          const err = 'postMessage: content must be non-empty string or MessageContent';
+          log({ level: 'warn', source: 'session', summary: err });
+          throw new Error(err);
+        }
+
+        const { sessionId: resolvedId } = requireLiveChannel(rawId);
+
+        // Construct the intent ourselves — never forward caller-supplied
+        // target (e.g., target.model would trigger the vendor-switch
+        // path, which has no caller subscription to re-key).
+        const intent: TurnIntent = {
+          target: { kind: 'existing', sessionId: resolvedId },
+          content,
+          clientMessageId: callerClientMessageId ?? randomUUID(),
+          settings: {},
+        };
+
+        // Cross-session post: the caller doesn't subscribe — delivery
+        // reaches the target's existing subscribers via the channel's
+        // own broadcast. The no-op satisfies sendTurn's signature.
+        const noopSubscriber: Subscriber = {
+          id: `postMessage:${randomUUID()}`,
+          send: () => {},
+        };
+
+        const result = await sendTurn(intent, noopSubscriber);
+        log({ level: 'info', source: 'session', summary: `postMessage: ${resolvedId.slice(0, 12)}…`, data: { sessionId: resolvedId, contentType: isString ? 'string' : 'blocks' } });
+        return { sessionId: result.sessionId };
+      }
+
+      case "waitForIdle": {
+        const rawId = params.sessionId as string;
+        const timeoutMs = params.timeoutMs as number | undefined;
+        const startedAt = Date.now();
+        log({ level: 'debug', source: 'session', summary: `waitForIdle: enter (sessionId: ${rawId.slice(0, 12)}…, timeoutMs: ${timeoutMs ?? 0})` });
+        const { sessionId: resolvedId, channel } = requireLiveChannel(rawId);
+        const reason = await awaitChannelIdle(channel, {
+          ...(timeoutMs !== undefined && { timeoutMs }),
+        });
+        // Helper returns ChannelIdleResult, but this RPC never passes
+        // `onMessage`, so 'interrupted' is unreachable here.
+        log({ level: 'info', source: 'session', summary: `waitForIdle: ${reason} (sessionId: ${resolvedId.slice(0, 12)}…)`, data: { sessionId: resolvedId, reason, timeoutMs, elapsedMs: Date.now() - startedAt } });
+        return { reason: reason as IdleReason };
+      }
 
       case "findSession":
         return findSession(params.sessionId as string) ?? null;
@@ -379,14 +510,30 @@ export function createClientConnection(
           until: params.until as string | undefined,
         });
 
-      case "readSessionTurns": {
+      case "readDialogue": {
         const sid = params.sessionId as string;
         const page = readSessionMessages(sid, 0, 10000);
-        if (!page) return [];
-        const allTurns = extractTurnsFromMessages(page.messages);
-        const from = (params.from as number | undefined) ?? 1;
-        const to = (params.to as number | undefined) ?? allTurns.length;
-        return allTurns.filter(t => t.turn >= from && t.turn <= to);
+
+        // Fallback when ingest hasn't caught up yet (JSONL flush lag or
+        // recall-ingest still running): read transcript directly from disk.
+        let allTurns;
+        if (page) {
+          allTurns = extractTurnsFromMessages(page.messages);
+        } else {
+          const entries = await loadSession(sid);
+          allTurns = extractTurns(entries);
+        }
+
+        const total = allTurns.length;
+        const rawFrom = (params.from as number | undefined) ?? 1;
+        const rawTo   = (params.to   as number | undefined) ?? total;
+        // Negative values count back from the end. `from: -5` on a
+        // 10-turn transcript means "start at turn 6"; `to: -1` means
+        // "up to and including the last turn." Math.max clamps very
+        // negative `from` values to 1.
+        const normFrom = rawFrom < 0 ? Math.max(1, total + rawFrom + 1) : rawFrom;
+        const normTo   = rawTo   < 0 ? total + rawTo + 1               : rawTo;
+        return { turns: allTurns.filter(t => t.turn >= normFrom && t.turn <= normTo) };
       }
 
       case "listChildSessions": {
@@ -455,12 +602,14 @@ export function createClientConnection(
           }
 
           // Swap to mutable subscriber BEFORE sendTurn to avoid event-loss window.
-          // The mutable subscriber is already installed on the channel when
-          // sendTurn() potentially triggers a vendor switch.
+          // subscribe() does set(id, subscriber) — the new mutable has the same
+          // clientId, so it atomically replaces the old subscriber in the
+          // channel.subscribers Map. Count stays at 1 throughout; no spurious
+          // onExternalSubscribersGone/Returned hook pair fires (which would
+          // flicker the `attached` flag through 0 and confuse the sidebar).
           // skipCatchup: the client is already subscribed and has current state —
           // a catchup here would send stale 'idle' and overwrite the client's
           // optimistic 'streaming' state before the adapter emits 'active'.
-          unsubscribe(sub.channel, sub.subscriber);
           const mutable = createMutableSubscriber(targetSessionId);
           subscribe(sub.channel, mutable.subscriber, { skipCatchup: true });
           subscriptions.set(targetSessionId, {
@@ -755,16 +904,26 @@ export function createClientConnection(
             // In VS Code mode, open/close native panels instead of forwarding
             // to the webview (which would only affect FlexLayout tabs)
             if (event.type === 'session_open_channel') {
-              try {
-                openPanelFn(event.sessionId, { autoClose: event.autoClose });
-                return; // native panel opened — don't forward to webview
-              } catch {
-                // No panel opener (dev-server) — fall through to webview FlexLayout
+              if (hasOpener()) {
+                log({ level: 'info', source: 'panel-opener', summary: 'openPanel dispatch', data: { sessionId: event.sessionId, autoClose: !!event.autoClose, displayName: event.displayName } });
+                try {
+                  openPanelFn(event.sessionId, { autoClose: event.autoClose });
+                } catch (err) {
+                  log({ level: 'error', source: 'panel-opener', summary: 'openPanel threw', data: { err: String(err) } });
+                }
+                return; // VS Code mode: never fall through to webview
               }
+              // No opener registered → browser/Tauri host → forward to webview FlexLayout
             }
             if (event.type === 'session_close_channel') {
-              if (closePanelFn(event.sessionId)) return;
-              // No panel closer registered — forward event to webview for FlexLayout
+              // Dispose any dedicated CLI panel as a side effect, but ALWAYS
+              // forward to the webview. Otherwise, in clients ordered before
+              // the dedicated panel in the broadcast, the early return would
+              // swallow the event and leave a stale FlexLayout tab open
+              // for observers that also host this session. The dedicated
+              // panel's webview ignores the close for its only tab via the
+              // isAutoClosePanel guard in FlexAppLayout — see comment there.
+              try { closePanelFn(event.sessionId); } catch { /* ignored */ }
             }
             sendFn({ kind: "event", sessionId: SESSION_LIST_CHANNEL_ID, event });
           },
@@ -843,6 +1002,71 @@ export function createClientConnection(
         return { unsubscribed: true };
       }
 
+      // --- OS-drop import (Tauri shell; VS Code follow-up) ---
+      case "subscribeImportProgress": {
+        importProgressSub = true;
+        return { subscribed: true };
+      }
+
+      case "unsubscribeImportProgress": {
+        importProgressSub = false;
+        return { unsubscribed: true };
+      }
+
+      case "previewImport": {
+        const sessionId = params.sessionId as string | undefined;
+        const projectCwdHint = params.projectCwdHint as string;
+        const destRelDir = (params.destRelDir as string) ?? '';
+        const srcs = params.srcs as string[];
+        if (!projectCwdHint || !Array.isArray(srcs)) {
+          throw new Error('previewImport requires projectCwdHint and srcs[]');
+        }
+        const trustRoot = resolveImportTrustRoot(sessionId, projectCwdHint);
+        const plan: ImportPlan = await importServicePreview({ trustRoot, destRelDir, srcs });
+        clientOwnedPlans.add(plan.planId);
+        return plan;
+      }
+
+      case "executeImport": {
+        const planId = params.planId as string;
+        const resolutions = (params.resolutions as Resolutions | undefined) ?? {};
+        if (!planId) throw new Error('executeImport requires planId');
+        if (!clientOwnedPlans.has(planId)) {
+          throw new Error('Plan not owned by this client');
+        }
+        // Throttle progress emission to ~10 frames/sec; always pass the
+        // terminal frame through so the toast can resolve.
+        let lastEmitMs = 0;
+        const onProgress = (event: ImportProgressEvent): void => {
+          if (!importProgressSub) return;
+          const now = Date.now();
+          if (!event.done && now - lastEmitMs < 100) return;
+          lastEmitMs = now;
+          sendFn({ kind: 'event', sessionId: IMPORT_PROGRESS_CHANNEL_ID, event });
+        };
+        try {
+          const report: ImportReport = await importServiceExecute({ planId, resolutions, onProgress });
+          // Keep the membership during the post-finish grace window so a
+          // late `cancelImport` call still hits the ownership check; the
+          // service GCs the plan itself after ~60s.
+          setTimeout(() => clientOwnedPlans.delete(planId), 60_000).unref();
+          return report;
+        } catch (err) {
+          clientOwnedPlans.delete(planId);
+          throw err;
+        }
+      }
+
+      case "cancelImport": {
+        const planId = params.planId as string;
+        if (!planId) throw new Error('cancelImport requires planId');
+        if (!clientOwnedPlans.has(planId)) {
+          throw new Error('Plan not owned by this client');
+        }
+        importServiceCancel(planId);
+        return { cancelled: true };
+      }
+
       case "startEmbeddingBackfill": {
         startEmbeddingBackfill();
         return { ok: true };
@@ -867,7 +1091,7 @@ export function createClientConnection(
 
       case "getGitBranchInfo": {
         const cwd = params.cwd as string;
-        return getGitBranchInfo(cwd);
+        return getGitBranchInfoCached(cwd);
       }
 
       case "getGitDiff": {
@@ -1083,8 +1307,7 @@ export function createClientConnection(
                 return {
                   sessionId: info.sessionId,
                   sessionFile: file,
-                  // NOTE: duplicates getSessionDisplayName() logic from webview — can't import across layer boundary
-                  title: info.title?.trim() || info.label?.trim() || info.sessionId.slice(0, 8) + '\u2026',
+                  title: getSessionDisplayName(info),
                   preview: info.lastMessage || undefined,
                   modifiedAt: info.modifiedAt instanceof Date ? info.modifiedAt.toISOString() : String(info.modifiedAt),
                 };
@@ -1224,9 +1447,28 @@ export function createClientConnection(
       case "setSessionTitle": {
         const sessionId = params.sessionId as string;
         const title = params.title as string;
-        setSessionTitle(sessionId, title);
+        await coreSetSessionTitle(sessionId, title);
         refreshAndNotify(sessionId);
         return { status: 'ok', sessionId };
+      }
+
+      case "getSessionTitle": {
+        const sessionId = params.sessionId as string;
+        return { title: await coreGetSessionTitle(sessionId) };
+      }
+
+      case "setSessionTitleIfUnchanged": {
+        const { sessionId, title, expectedCurrentTitle } = params as {
+          sessionId: string; title: string; expectedCurrentTitle: string | null;
+        };
+        const result = await coreSetSessionTitleIfUnchanged(sessionId, title, expectedCurrentTitle);
+        if (result.ok) refreshAndNotify(sessionId);
+        return result;
+      }
+
+      case "getRosieLastTitle": {
+        const { sessionId } = params as { sessionId: string };
+        return { title: getRosieLastTitle(sessionId) };
       }
 
       case "updateProjectSortOrder": {
@@ -1397,6 +1639,13 @@ export function createClientConnection(
     }
     ownedTerminals.clear();
 
+    // Cancel any in-flight import plans owned by this client. Plans expire
+    // on their own, so we just signal cancellation; the service GCs.
+    for (const planId of clientOwnedPlans) {
+      try { importServiceCancel(planId); } catch { /* best-effort */ }
+    }
+    clientOwnedPlans.clear();
+    importProgressSub = false;
   }
 
   return {

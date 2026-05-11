@@ -38,6 +38,12 @@ interface UseVoiceInputOptions {
 interface UseVoiceInputResult {
   state: VoiceState;
   toggle: () => void;
+  /**
+   * Stop and discard any in-flight recording/transcription. Used when the
+   * surrounding UI is closing and the result is no longer wanted. Safe to call
+   * in any state (no-op when idle).
+   */
+  abort: () => void;
 }
 
 /**
@@ -66,6 +72,15 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
 
   // ---------- Double-click guard ----------
   const actionInFlightRef = useRef(false);
+
+  // ---------- Cancellation ----------
+  // Flipped true by abort() or unmount cleanup. In-flight transcription
+  // promises check this before delivering text via onTranscript.
+  const cancelledRef = useRef(false);
+
+  // Latest state, readable from non-reactive code paths (cleanup, abort).
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   // ---------- Browser capture refs (unused in host mode) ----------
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -110,6 +125,7 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
 
     console.log('[Voice] startHostRecording: delegating to extension host...');
     actionInFlightRef.current = true;
+    cancelledRef.current = false;
     try {
       await hostCapture.start();
       setState('recording');
@@ -133,6 +149,10 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
 
     try {
       const { text } = await hostCapture.stop();
+      if (cancelledRef.current) {
+        console.log('[Voice] host transcription discarded (cancelled)');
+        return;
+      }
       console.log(`[Voice] host transcription result: "${text.slice(0, 100)}"${text.length > 100 ? '...' : ''}`);
       if (text.trim().length > 0) {
         optionsRef.current.onTranscript(text);
@@ -140,6 +160,7 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
         console.log('[Voice] empty host transcription, no text appended');
       }
     } catch (err: unknown) {
+      if (cancelledRef.current) return;
       const message = err instanceof Error ? err.message : 'Host transcription failed';
       console.error('[Voice] host transcription error:', err);
       optionsRef.current.onError?.(message);
@@ -159,6 +180,7 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
   const startBrowserRecording = useCallback(async () => {
     console.log('[Voice] startBrowserRecording: requesting getUserMedia...');
     actionInFlightRef.current = true;
+    cancelledRef.current = false;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       console.log('[Voice] getUserMedia granted, tracks:', stream.getAudioTracks().map(t => `${t.label} (${t.readyState})`));
@@ -233,6 +255,10 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
 
     try {
       const { text } = await optionsRef.current.transcribe(pcm, sampleRate);
+      if (cancelledRef.current) {
+        console.log('[Voice] browser transcription discarded (cancelled)');
+        return;
+      }
       console.log(`[Voice] transcription result: "${text.slice(0, 100)}"${text.length > 100 ? '...' : ''}`);
       if (text.trim().length > 0) {
         optionsRef.current.onTranscript(text);
@@ -240,6 +266,7 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
         console.log('[Voice] empty transcription, no text appended');
       }
     } catch (err: unknown) {
+      if (cancelledRef.current) return;
       const message = err instanceof Error ? err.message : 'Transcription failed';
       console.error('[Voice] transcription error:', err);
       optionsRef.current.onError?.(message);
@@ -275,12 +302,40 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
     // 'transcribing' — ignore clicks while processing.
   }, [state, startHostRecording, stopHostAndTranscribe, startBrowserRecording, stopBrowserAndTranscribe]);
 
-  // Cleanup on unmount: stop recording if still active.
+  // Stop host-side recording (fire-and-forget). Result discarded by the caller
+  // because cancelledRef will already be true.
+  const stopHostFireAndForget = useCallback(() => {
+    const hostCapture = optionsRef.current.hostCapture;
+    if (!hostCapture) return;
+    if (stateRef.current !== 'recording') return;
+    hostCapture.stop().catch(() => {});
+  }, []);
+
+  // Public abort — signal cancel, tear down resources, return to idle.
+  // The corresponding in-flight transcription promise (if any) checks
+  // cancelledRef before delivering text, so no late onTranscript call fires.
+  const abort = useCallback(() => {
+    if (stateRef.current === 'idle') return;
+    console.log(`[Voice] abort called from state: ${stateRef.current}`);
+    cancelledRef.current = true;
+    stopHostFireAndForget();
+    teardown();
+    setState('idle');
+  }, [stopHostFireAndForget, teardown]);
+
+  // Cleanup on unmount: stop both host- and browser-side capture, drop result.
   useEffect(() => {
     return () => {
+      if (stateRef.current === 'idle') {
+        teardown();
+        return;
+      }
+      console.log(`[Voice] unmount cleanup from state: ${stateRef.current}`);
+      cancelledRef.current = true;
+      stopHostFireAndForget();
       teardown();
     };
-  }, [teardown]);
+  }, [stopHostFireAndForget, teardown]);
 
-  return { state, toggle };
+  return { state, toggle, abort };
 }

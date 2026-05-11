@@ -27,7 +27,7 @@ interface SessionState {
   error: string | null;
 }
 
-interface SessionContextValue extends SessionState {
+export interface SessionContextValue extends SessionState {
   setSelectedSessionId: (id: string | null) => void;
   setSelectedCwd: (slug: string | null) => void;
   refreshSessions: () => void;
@@ -42,7 +42,7 @@ interface SessionContextValue extends SessionState {
   isAutoClosePanel: boolean;
 }
 
-const SessionContext = createContext<SessionContextValue | null>(null);
+export const SessionContext = createContext<SessionContextValue | null>(null);
 
 interface SessionProviderProps {
   children: React.ReactNode;
@@ -137,8 +137,13 @@ export function SessionProvider({ children }: SessionProviderProps): React.JSX.E
           return next;
         });
       } else if (event.type === 'session_status_changed') {
+        // Always bump Map identity, even when status is unchanged. This event
+        // is the only push signal for subscriber-count flips (0↔1 attached),
+        // which don't change `status` but DO change the OpenSessionInfo
+        // snapshot. Without identity churn here, SessionsPanel's refresh
+        // useEffect (deps include sessionStatuses) misses re-attach and the
+        // row stays dimmed.
         setSessionStatuses(prev => {
-          if (prev.get(event.sessionId) === event.status) return prev;
           const next = new Map(prev);
           next.set(event.sessionId, event.status as SessionChannelState);
           return next;

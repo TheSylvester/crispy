@@ -14,7 +14,7 @@
 
 import { useMemo } from 'react';
 import type { ContextUsage, TranscriptEntry, Vendor } from '../../core/transcript.js';
-import { getContextWindowTokens, parseModelOption } from '../../core/model-utils.js';
+import { getContextWindowTokens, lookupContextWindow, parseModelOption } from '../../core/model-utils.js';
 import { useChannelStore } from './useChannelStore.js';
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
@@ -114,23 +114,31 @@ export function useContextUsage(
   // Always compute from entries when available — not gated by liveUsage.
   // Entries usage updates every time a new assistant message with message.usage
   // arrives. Catchup (liveUsage) only fires once on subscribe.
+  //
+  // Skip when there's no session: useChannelStore's stale-while-revalidate
+  // ref retains the prior session's entries when sessionId flips to null
+  // (e.g. pressing "+ New"), so without this guard the gauge would keep
+  // displaying the previous session's percentage.
   const entriesUsage = useMemo(() => {
+    if (!sessionId) return null;
     if (!entries || entries.length === 0) return null;
     return computeContextFromEntries(entries);
-  }, [entries]);
+  }, [sessionId, entries]);
 
   // Prefer live usage (adapter has authoritative contextWindow from SDK) over
   // entries-based (which can't extract contextWindow from entry metadata).
   const raw = liveUsage ?? entriesUsage;
 
-  // Override contextWindow from the model dropdown when known. The dropdown
-  // tracks the exact model the user selected — this is the same signal shown
-  // in the UI, so the gauge always agrees with the dropdown.
+  // Override contextWindow from the model dropdown only when we have a known
+  // entry for that exact model. Falling through to a vendor default would
+  // clobber the SDK's authoritative `modelContextWindow` (Codex) or
+  // `modelUsage.contextWindow` (Claude) with a 200k guess whenever the user
+  // selects a model we haven't seen yet (e.g. a freshly-released Codex model).
   return useMemo(() => {
     if (!raw || !modelOption) return raw;
     const { vendor, model } = parseModelOption(modelOption);
-    const cw = getContextWindowTokens(vendor, model);
-    if (cw === raw.contextWindow) return raw;
+    const cw = lookupContextWindow(vendor, model);
+    if (cw === null || cw === raw.contextWindow) return raw;
     return {
       ...raw,
       contextWindow: cw,

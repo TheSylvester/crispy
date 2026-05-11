@@ -13,6 +13,8 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import { createClientConnection, type HostMessage } from './client-connection.js';
+import { listChannelSubscriberIds } from '../core/session-channel.js';
+import { log } from '../core/log.js';
 
 /** All active Crispy panels, keyed by panelId. */
 const panels = new Map<string, vscode.WebviewPanel>();
@@ -44,6 +46,28 @@ export function getMostRecentPanel(): vscode.WebviewPanel | undefined {
 export function getActivePanel(): vscode.WebviewPanel | undefined {
   for (const panel of panels.values()) {
     if (panel.active) return panel;
+  }
+  return undefined;
+}
+
+/**
+ * Find a panel currently hosting (subscribed to) the given session.
+ *
+ * Walks the session-channel's external subscribers — each panel's
+ * ClientConnection uses `clientId = panelId`, which becomes the subscriber id
+ * on every channel it joins. So the channel's subscriber list is itself the
+ * panel→session index, with no separate bookkeeping. Non-panel subscribers
+ * (`ipc-N`, `ws-client-N`, `dispatch-*`, `tunnel-relay`) don't match a key
+ * in `panels` and are skipped naturally.
+ *
+ * Returns the first match — multiple panels can host the same session
+ * (e.g. observer panel + dedicated CLI panel), but for focus purposes any
+ * one is fine.
+ */
+export function getPanelHostingSession(sessionId: string): vscode.WebviewPanel | undefined {
+  for (const subId of listChannelSubscriberIds(sessionId)) {
+    const panel = panels.get(subId);
+    if (panel) return panel;
   }
   return undefined;
 }
@@ -107,6 +131,17 @@ export function createCrispyPanel(
   viewColumn: vscode.ViewColumn | { viewColumn: vscode.ViewColumn; preserveFocus: boolean } = vscode.ViewColumn.Beside,
   options?: { workspaceCwd?: string; autoClose?: boolean },
 ): vscode.WebviewPanel {
+  log({
+    level: 'info',
+    source: 'create-panel',
+    summary: 'createCrispyPanel',
+    data: {
+      viewColumn: typeof viewColumn === 'object' ? `Beside+preserveFocus(${viewColumn.preserveFocus})` : String(viewColumn),
+      autoClose: !!options?.autoClose,
+      workspaceCwd: options?.workspaceCwd,
+      stack: new Error('caller').stack?.split('\n').slice(2, 6).join(' | '),
+    },
+  });
   const panel = vscode.window.createWebviewPanel(
     'crispy',
     'Crispy',
@@ -303,7 +338,7 @@ export function createCrispyPanel(
   return panel;
 }
 
-function getNonce(): string {
+export function getNonce(): string {
   return crypto.randomBytes(16).toString('hex');
 }
 

@@ -58,7 +58,11 @@ export function discoverSocket(): string {
   entries = entries.filter(e => isPidAlive(e.pid));
 
   if (entries.length === 0) throw new Error('No Crispy IPC servers running.');
-  if (entries.length === 1) return entries[0]!.socket;
+  if (entries.length === 1) {
+    const chosen = entries[0]!;
+    console.error('[crispy-dispatch] discoverSocket selected:', { socket: chosen.socket, pid: chosen.pid, cwd: chosen.cwd, candidatesCount: entries.length });
+    return chosen.socket;
+  }
 
   // Multiple servers — match by longest CWD prefix with path-boundary check
   const pwd = process.cwd();
@@ -66,7 +70,11 @@ export function discoverSocket(): string {
     .filter(e => isWithinDir(pwd, e.cwd))
     .sort((a, b) => b.cwd.length - a.cwd.length);
 
-  if (sorted.length > 0) return sorted[0]!.socket;
+  if (sorted.length > 0) {
+    const chosen = sorted[0]!;
+    console.error('[crispy-dispatch] discoverSocket selected:', { socket: chosen.socket, pid: chosen.pid, cwd: chosen.cwd, candidatesCount: sorted.length });
+    return chosen.socket;
+  }
   throw new Error(
     `Multiple Crispy servers running but none match CWD "${pwd}". Use CRISPY_SOCK to specify.\n` +
     `Active servers:\n${entries.map(e => `  PID ${e.pid}: ${e.cwd}`).join('\n')}`,

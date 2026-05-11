@@ -931,24 +931,10 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         }
       };
 
-      const onDrop = (e: DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        panelEl.classList.remove('drag-over');
-
-        // 1. Check for Crispy file panel drag FIRST (before extractFilePathsFromDragEvent)
-        //    to prevent double-processing (the drag also sets text/plain).
-        const crispyFile = e.dataTransfer?.getData('application/x-crispy-file');
-        if (crispyFile) {
-          insertAtCursor(crispyFile);
-          return;
-        }
-
-        // Collect both data sources synchronously (getData() returns empty
-        // strings if called after the event is released).
-        const paths = extractFilePathsFromDragEvent(e);
-        const fileObjects = e.dataTransfer?.files ? Array.from(e.dataTransfer.files) : [];
-
+      // Branch B: OS file drops (VS Code Explorer / editor tabs / WSL remote /
+      // image File objects). Extracted so the Tauri OS-drop dispatcher
+      // (`useOsDropDispatch`) can reuse it via a synthetic CustomEvent.
+      const handleOsFileDrop = (paths: string[], fileObjects: File[]): void => {
         // Identify images in fileObjects by MIME type OR extension (robustness for Linux).
         // Exclude SVG — the API only accepts raster formats (jpeg, png, gif, webp).
         const imageFiles = fileObjects.filter(f => {
@@ -997,7 +983,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
           return;
         }
 
-        // --- Path-based drops (VS Code Explorer / editor tabs / WSL remote) ---
+        // --- Path-based drops (VS Code Explorer / editor tabs / WSL remote / Tauri OS-drop) ---
         if (paths.length > 0) {
           for (const filePath of paths) {
             const dotIdx = filePath.lastIndexOf('.');
@@ -1034,13 +1020,46 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         textarea?.focus();
       };
 
+      const onDrop = (e: DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        panelEl.classList.remove('drag-over');
+
+        // Branch A — Crispy intra-app drag (synthetic, never traverses OS).
+        // Check FIRST to prevent double-processing (the drag also sets text/plain).
+        const crispyFile = e.dataTransfer?.getData('application/x-crispy-file');
+        if (crispyFile) {
+          insertAtCursor(crispyFile);
+          return;
+        }
+
+        // Branch B — OS file drop. Collect synchronously (getData() returns
+        // empty strings if called after the event is released).
+        const paths = extractFilePathsFromDragEvent(e);
+        const fileObjects = e.dataTransfer?.files ? Array.from(e.dataTransfer.files) : [];
+        handleOsFileDrop(paths, fileObjects);
+      };
+
+      // Tauri shell: the native drag-drop handler intercepts OS drops before
+      // HTML5 events fire. `useOsDropDispatch` hit-tests, then dispatches a
+      // CustomEvent on this zone with `{ paths }`. No File objects available
+      // (Tauri payload is paths only), so image attach falls back to
+      // `transport.readImage(filePath)` per the path branch above.
+      const onTauriOsDrop = (e: Event) => {
+        const detail = (e as CustomEvent<{ paths: string[] }>).detail;
+        if (!detail || !Array.isArray(detail.paths)) return;
+        handleOsFileDrop(detail.paths, []);
+      };
+
       panelEl.addEventListener('dragover', onDragOver);
       panelEl.addEventListener('dragleave', onDragLeave);
       panelEl.addEventListener('drop', onDrop);
+      panelEl.addEventListener('crispy:os-drop-files', onTauriOsDrop as EventListener);
       return () => {
         panelEl.removeEventListener('dragover', onDragOver);
         panelEl.removeEventListener('dragleave', onDragLeave);
         panelEl.removeEventListener('drop', onDrop);
+        panelEl.removeEventListener('crispy:os-drop-files', onTauriOsDrop as EventListener);
         panelEl.classList.remove('drag-over');
       };
     }, [panelEl, children, transport, attachImageFile, insertAtCursor]);
@@ -1277,6 +1296,7 @@ export const ControlPanel = forwardRef<HTMLDivElement, ControlPanelProps>(
         ref={panelRefCallback}
         className="crispy-cp"
         data-agency={state.agencyMode}
+        data-drop-zone="chat-input"
       >
         {sendError && (
           <div className="crispy-control-panel__error" role="alert">

@@ -378,6 +378,104 @@ describe('Subscribe / Unsubscribe', () => {
     // No events should be sent — channel is unattached
     expect(lateSub.events.length).toBe(0);
   });
+
+  // External-subscriber lifecycle hooks — drive idle-channel reaping.
+  describe('onExternalSubscribersGone / Returned hooks', () => {
+    it('onExternalSubscribersGone fires when last external subscriber leaves', () => {
+      const ch = createChannel('ch-1');
+      const gone = vi.fn();
+      ch.onExternalSubscribersGone = gone;
+
+      const sub = createTestSubscriber('client-1');
+      subscribe(ch, sub);
+      expect(gone).not.toHaveBeenCalled();
+
+      unsubscribe(ch, sub);
+      expect(gone).toHaveBeenCalledTimes(1);
+    });
+
+    it('onExternalSubscribersGone fires only on the last external removal', () => {
+      const ch = createChannel('ch-1');
+      const gone = vi.fn();
+      ch.onExternalSubscribersGone = gone;
+
+      const a = createTestSubscriber('client-a');
+      const b = createTestSubscriber('client-b');
+      subscribe(ch, a);
+      subscribe(ch, b);
+
+      unsubscribe(ch, a);
+      expect(gone).not.toHaveBeenCalled();
+      unsubscribe(ch, b);
+      expect(gone).toHaveBeenCalledTimes(1);
+    });
+
+    it('internal `__`-prefixed subscribers do not trigger lifecycle hooks', () => {
+      const ch = createChannel('ch-1');
+      const gone = vi.fn();
+      const returned = vi.fn();
+      ch.onExternalSubscribersGone = gone;
+      ch.onExternalSubscribersReturned = returned;
+
+      const internal = createTestSubscriber('__list_notify__abc');
+      subscribe(ch, internal);
+      unsubscribe(ch, internal);
+
+      expect(returned).not.toHaveBeenCalled();
+      expect(gone).not.toHaveBeenCalled();
+    });
+
+    it('internal subscriber does not block onExternalSubscribersGone for an external sibling', () => {
+      const ch = createChannel('ch-1');
+      const gone = vi.fn();
+      ch.onExternalSubscribersGone = gone;
+
+      const internal = createTestSubscriber('__await_idle__xyz');
+      const external = createTestSubscriber('client-1');
+      subscribe(ch, internal);
+      subscribe(ch, external);
+
+      // External leaves; internal still attached but doesn't count.
+      unsubscribe(ch, external);
+      expect(gone).toHaveBeenCalledTimes(1);
+      // Channel still has the internal subscriber present.
+      expect(ch.subscribers.size).toBe(1);
+    });
+
+    it('onExternalSubscribersReturned fires on 0→1 external transition', () => {
+      const ch = createChannel('ch-1');
+      const returned = vi.fn();
+      ch.onExternalSubscribersReturned = returned;
+
+      const sub = createTestSubscriber('client-1');
+      subscribe(ch, sub);
+      expect(returned).toHaveBeenCalledTimes(1);
+    });
+
+    it('onExternalSubscribersReturned does not fire on idempotent re-subscribe', () => {
+      const ch = createChannel('ch-1');
+      const sub1 = createTestSubscriber('client-1');
+      subscribe(ch, sub1);
+
+      const returned = vi.fn();
+      ch.onExternalSubscribersReturned = returned;
+
+      // Same id replaces existing — count stays at 1, no transition.
+      const sub2 = createTestSubscriber('client-1');
+      subscribe(ch, sub2);
+      expect(returned).not.toHaveBeenCalled();
+    });
+
+    it('onExternalSubscribersReturned does not fire when count goes 1→2', () => {
+      const ch = createChannel('ch-1');
+      subscribe(ch, createTestSubscriber('client-1'));
+
+      const returned = vi.fn();
+      ch.onExternalSubscribersReturned = returned;
+      subscribe(ch, createTestSubscriber('client-2'));
+      expect(returned).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // ========== 3. Adapter Management ==========

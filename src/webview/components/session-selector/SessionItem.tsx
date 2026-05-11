@@ -11,10 +11,13 @@
  * @module SessionItem
  */
 
+import { useState } from 'react';
 import type { WireSessionInfo } from '../../transport.js';
 import { VendorIcon } from './VendorIcon.js';
 import { getSessionDisplayName, getSessionSubtitle } from '../../utils/session-display.js';
 import { formatRelativeTime } from '../../utils/format.js';
+import { InlineRename } from '../session-rename/InlineRename.js';
+import { pushErrorToast } from '../notifications/ErrorToast.js';
 
 interface SessionItemProps {
   session: WireSessionInfo;
@@ -54,10 +57,13 @@ export function SessionItem({
   onClick,
   index,
 }: SessionItemProps): React.JSX.Element {
+  const [editing, setEditing] = useState(false);
+
   const classNames = [
     'crispy-session-item',
     isSelected && 'crispy-session-item--selected',
     isFocused && 'crispy-session-item--focused',
+    editing && 'crispy-session-item--editing',
   ].filter(Boolean).join(' ');
 
   const label = getSessionDisplayName(session);
@@ -66,15 +72,39 @@ export function SessionItem({
   return (
     <li
       className={classNames}
-      onClick={onClick}
+      onClick={editing ? undefined : onClick}
       data-session-index={index}
       title={label}
     >
       <div className="crispy-session-item__header">
-        <span className="crispy-session-item__label">
-          {highlightMatch(label, searchQuery)}
-        </span>
+        {editing ? (
+          <InlineRename
+            sessionId={session.sessionId}
+            currentTitle={label}
+            onDone={() => setEditing(false)}
+            onError={(msg) => pushErrorToast(msg)}
+            className="crispy-session-item__rename"
+          />
+        ) : (
+          <span className="crispy-session-item__label">
+            {highlightMatch(label, searchQuery)}
+          </span>
+        )}
         <div className="crispy-session-item__meta">
+          {!editing && (
+            <button
+              type="button"
+              className="crispy-session-item__rename-btn"
+              aria-label="Rename session"
+              title="Rename session"
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditing(true);
+              }}
+            >
+              {'✎'}
+            </button>
+          )}
           <VendorIcon vendor={session.vendor} />
           {session.remoteEnvironment && (
             <span className="crispy-session-item__env">{session.remoteEnvironment}</span>
@@ -85,7 +115,7 @@ export function SessionItem({
           </span>
         </div>
       </div>
-      {subtitle && (
+      {subtitle && !editing && (
         <div className="crispy-session-item__preview">
           {highlightMatch(subtitle, searchQuery)}
         </div>

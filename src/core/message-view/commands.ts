@@ -25,6 +25,11 @@ import {
 import type { MessageComponent } from './discord-transport.js';
 import type { AgentDispatch } from '../agent-dispatch-types.js';
 import { listAllSessions } from '../session-manager.js';
+import { getSessionDisplayName } from '../session-display-name.js';
+
+// Re-exported so Discord callers and the rest of this module can keep
+// importing it from here.
+export { getSessionDisplayName };
 
 const SOURCE = 'message-view/commands';
 const COMMANDS_HELP = 'Available: `!sessions`, `!open`, `!stop`, `!status`';
@@ -36,11 +41,6 @@ const PAGE_SIZE = MSG1_SLOTS + MSG2_SLOTS; // 9
 
 /** Auto-refresh the session screen after this many ms of inactivity. */
 const SCREEN_IDLE_REFRESH_MS = 60_000;
-
-// Session display — mirrors webview/utils/session-display.ts (can't import from webview layer)
-function getSessionDisplayName(s: { title?: string; label?: string; lastUserPrompt?: string; sessionId: string }): string {
-  return s.title?.trim() || s.lastUserPrompt?.trim() || s.label?.trim() || s.sessionId.slice(0, 8) + '\u{2026}';
-}
 
 // ---------------------------------------------------------------------------
 // Session screen state — the bot channel is treated as an interactive display.
@@ -391,7 +391,7 @@ async function handleOpen(channelId: string, args: string, ctx: CommandContext):
   }
 
   const lines = available.map((s, i) =>
-    `${i + 1}\u{FE0F}\u{20E3} ${(s.title ?? s.label ?? '(untitled)').slice(0, 60)} (\`${s.sessionId.slice(0, 8)}\`)`
+    `${i + 1}\u{FE0F}\u{20E3} ${getSessionDisplayName(s).slice(0, 60)} (\`${s.sessionId.slice(0, 8)}\`)`
   );
   await sendMessage(channelId, `\u{1F4C2} Sessions on disk:\n${lines.join('\n')}\n\nUse \`!open <id-prefix>\` to open one.`).catch(() => {});
 }

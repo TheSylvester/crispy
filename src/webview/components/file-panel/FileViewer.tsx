@@ -11,6 +11,7 @@
 import type { ActiveFileView } from '../../context/FilePanelContext.js';
 import { CodePreview } from '../../renderers/tools/shared/CodePreview.js';
 import { CrispyMarkdown } from '../../renderers/CrispyMarkdown.js';
+import { formatBytes } from '../../utils/format.js';
 
 interface FileViewerProps {
   file: ActiveFileView;
@@ -18,12 +19,6 @@ interface FileViewerProps {
   loading?: boolean;
   wordWrap?: boolean;
   markdownPreview?: boolean;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function FileViewer({ file, error, loading, wordWrap, markdownPreview }: FileViewerProps): React.JSX.Element {
@@ -49,7 +44,7 @@ export function FileViewer({ file, error, loading, wordWrap, markdownPreview }: 
     <div className="crispy-file-viewer">
       <div className="crispy-file-viewer__info">
         <span className="crispy-file-viewer__lang">{file.language}</span>
-        <span className="crispy-file-viewer__size">{formatSize(file.size)}</span>
+        <span className="crispy-file-viewer__size">{formatBytes(file.size)}</span>
       </div>
       {markdownPreview ? (
         <div className="crispy-file-viewer__markdown">
@@ -74,7 +69,7 @@ function ErrorMessage({ error }: { error: string }): React.JSX.Element {
     return <span>Cannot preview binary file ({ext}). Use the terminal to view.</span>;
   }
   if (error.startsWith('File too large:')) {
-    return <span>{error.replace(/max \d+/, (m) => `max ${formatSize(parseInt(m.replace('max ', '')))}`)}</span>;
+    return <span>{error.replace(/max \d+/, (m) => `max ${formatBytes(parseInt(m.replace('max ', '')))}`)}</span>;
   }
   if (error.includes('ENOENT') || error.includes('no such file')) {
     return <span>File not found. It may have been deleted.</span>;

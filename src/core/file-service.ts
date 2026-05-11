@@ -83,48 +83,57 @@ export async function getGitFiles(cwd: string): Promise<string[]> {
   return main;
 }
 
+export interface GitInfo {
+  branch: string;
+  dirty: boolean;
+}
+
 /**
  * Get current git branch name and dirty status for the given working directory.
  *
  * Returns `null` if `cwd` is not inside a git repo. For detached HEAD,
  * returns the short SHA instead of a branch name.
+ *
+ * Single subprocess via `git status --branch --porcelain=v2 -z`. Headers
+ * carry branch.oid + branch.head; any non-`#` record means dirty.
  */
-export async function getGitBranchInfo(
-  cwd: string,
-): Promise<{ branch: string; dirty: boolean } | null> {
+export async function getGitBranchInfo(cwd: string): Promise<GitInfo | null> {
   try {
-    const branch = await new Promise<string>((resolve, reject) => {
+    const stdout = await new Promise<string>((resolve, reject) => {
       execFile(
         "git",
-        ["rev-parse", "--abbrev-ref", "HEAD"],
-        { cwd, windowsHide: true },
-        (err, stdout) => (err ? reject(err) : resolve(stdout.trim())),
+        ["status", "--branch", "--porcelain=v2", "-z", "--untracked-files=normal"],
+        {
+          cwd,
+          maxBuffer: 1024 * 1024,
+          windowsHide: true,
+          timeout: 3000,
+          env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+        },
+        (err, out) => (err ? reject(err) : resolve(out)),
       );
     });
 
-    // Detached HEAD — rev-parse returns literal "HEAD"
-    const displayBranch =
-      branch === "HEAD"
-        ? await new Promise<string>((resolve, reject) => {
-            execFile(
-              "git",
-              ["rev-parse", "--short", "HEAD"],
-              { cwd, windowsHide: true },
-              (err, stdout) => (err ? reject(err) : resolve(stdout.trim())),
-            );
-          })
-        : branch;
+    let head: string | null = null;
+    let oid: string | null = null;
+    let dirty = false;
 
-    const porcelain = await new Promise<string>((resolve, reject) => {
-      execFile(
-        "git",
-        ["status", "--porcelain"],
-        { cwd, maxBuffer: 1024 * 1024, windowsHide: true },
-        (err, stdout) => (err ? reject(err) : resolve(stdout)),
-      );
-    });
+    // porcelain v2 emits NUL-separated records; headers prefixed with `#`.
+    for (const record of stdout.split("\0")) {
+      if (record.length === 0) continue;
+      if (record.startsWith("# ")) {
+        if (record.startsWith("# branch.oid ")) oid = record.slice(13).trim();
+        else if (record.startsWith("# branch.head ")) head = record.slice(14).trim();
+        continue;
+      }
+      dirty = true;
+      break;
+    }
 
-    return { branch: displayBranch, dirty: porcelain.length > 0 };
+    if (!head) return null;
+    const branch = head === "(detached)" ? (oid ?? "").slice(0, 7) : head;
+    if (!branch) return null;
+    return { branch, dirty };
   } catch {
     return null;
   }

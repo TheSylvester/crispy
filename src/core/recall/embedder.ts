@@ -169,7 +169,7 @@ function getServerBinaryPath(): string {
 /** Detect NVIDIA GPU by checking if nvidia-smi exits successfully. */
 async function hasNvidiaGpu(): Promise<boolean> {
   try {
-    await execFileAsync('nvidia-smi', [], { timeout: 5000 });
+    await execFileAsync('nvidia-smi', [], { timeout: 5000, windowsHide: true });
     return true;
   } catch {
     return false;
@@ -283,7 +283,7 @@ async function validateBinary(binPath: string): Promise<{ ok: boolean; error?: s
     } else {
       env.LD_LIBRARY_PATH = libDir;
     }
-    await execFileAsync(binPath, ['--help'], { env, timeout: 10_000 });
+    await execFileAsync(binPath, ['--help'], { env, timeout: 10_000, windowsHide: true });
     return { ok: true };
   } catch (err: unknown) {
     // Non-zero exit code = binary loaded and ran, just didn't like the args → pass

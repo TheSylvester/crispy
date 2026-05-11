@@ -127,7 +127,7 @@ function formatEntry(entry: ClaudeTranscriptEntry): string | null {
   const { type, message, timestamp } = entry;
 
   // Skip metadata and operational entries
-  if (['system', 'summary', 'custom-title', 'stream_event', 'progress', 'queue-operation', 'file-history-snapshot', 'attachment'].includes(type)) {
+  if (['system', 'summary', 'custom-title', 'ai-title', 'stream_event', 'progress', 'queue-operation', 'file-history-snapshot', 'attachment'].includes(type)) {
     return null;
   }
 

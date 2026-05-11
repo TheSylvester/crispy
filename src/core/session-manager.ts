@@ -47,7 +47,7 @@ export function setDefaultCwd(cwd: string): void { defaultCwd = cwd; }
 import type { AgentAdapter, VendorDiscovery, SessionInfo, SessionOpenSpec, ChannelMessage, TurnIntent, TurnTarget, TurnSettings, SubagentEntriesResult, EphemeralTargetOptions, LocalPlugin } from './agent-adapter.js';
 import type { ArbiterPolicy } from './arbiter/types.js';
 import type { TranscriptEntry, MessageContent, Vendor, Usage } from './transcript.js';
-import type { SessionChannel, Subscriber, SubscriberMessage } from './session-channel.js';
+import type { SessionChannel, SessionChannelState, Subscriber, SubscriberMessage } from './session-channel.js';
 import { parseModelOption } from './model-utils.js';
 import { normalizePath } from './url-path-resolver.js';
 
@@ -56,11 +56,14 @@ import {
   destroyChannel, rekeyChannel, getChannel, rotateAdapter,
   broadcastUserEntry as channelBroadcastUserEntry,
   broadcastEvent,
+  countExternalSubscribers,
 } from './session-channel.js';
 import { refreshAndNotify, notifyStatusChange, broadcastCloseChannel, broadcastOpenChannel } from './session-list-manager.js';
 import { fireResponseComplete } from './lifecycle-hooks.js';
+import { ingestAndEmbedSession } from './recall/ingest-hook.js';
 import { log } from './log.js';
-import { isSystemSession, setSessionKind } from './activity-index.js';
+import { isSystemSession, setSessionKind, setRosieLastTitle } from './activity-index.js';
+import { getSessionDisplayName } from './session-display-name.js';
 import { getRemoteSessions } from './remote-proxy.js';
 
 /** Type guard for session_changed notification events. */
@@ -100,14 +103,114 @@ const pending = new Map<string, Promise<SessionChannel>>();
 /** Maps pending IDs to their resolved real IDs for CLI session resolution. */
 const pendingToReal = new Map<string, string>();
 
+/**
+ * Pending idle-channel reap timers, keyed by session id.
+ *
+ * A timer is armed when the last external subscriber leaves an idle channel,
+ * and cancelled when a new external subscriber arrives. On fire, conditions
+ * are re-validated and the channel is closed if still idle/unsubscribed.
+ *
+ * Disk state is unaffected — a reaped session can be reopened from the
+ * Sessions Browser, which re-creates the channel.
+ */
+const reapTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * Grace period between "last subscriber left" and `closeSession()`. Absorbs
+ * webview reload, panel reopen, and brief navigation. Set to 0 to disable
+ * the reaper entirely (preserves pre-0.3.3 behavior where channels live
+ * until host exit).
+ */
+const IDLE_REAP_GRACE_MS = (() => {
+  const raw = process.env.CRISPY_IDLE_CHANNEL_REAP_MS;
+  if (raw === undefined) return 15_000;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : 15_000;
+})();
+
+function cancelReapTimer(sessionId: string): void {
+  const t = reapTimers.get(sessionId);
+  if (t) {
+    clearTimeout(t);
+    reapTimers.delete(sessionId);
+  }
+}
+
 // ============================================================================
 // Child Session Dispatch
 // ============================================================================
 
-/** Idle debounce window (ms). After an idle event, wait this long before
- *  resolving. If 'active' fires within the window, the timer resets.
- *  Prevents spurious early resolution in multi-step agent work. */
-const IDLE_SETTLE_MS = 2000;
+import { startIdleWatch } from './channel-idle.js';
+import type {
+  ChannelIdleResult,
+  AwaitChannelIdleOptions,
+} from './channel-idle.js';
+
+/**
+ * Wait for a session channel to settle into idle. Thin wrapper around
+ * `startIdleWatch` that installs its own subscriber on `channel.subscribers`
+ * to feed events into the watcher.
+ *
+ * Resolution rules:
+ * - Authoritative: an `IdleEvent` with `turnComplete: true` resolves
+ *   immediately with reason `'turnComplete'`.
+ * - Debounced: a non-authoritative idle arms an `IDLE_SETTLE_MS` timer.
+ *   `status:active` during the window cancels the timer; on fire the
+ *   helper resolves `'settled'`.
+ * - Already-idle entry: if `channel.state === 'idle'` AND
+ *   `channel.pendingApprovals.size === 0` AND no `deferUntil` is
+ *   pending, the helper enters a 500ms grace window. `status:active`
+ *   or `awaiting_approval` during the window cancels the grace timer
+ *   and falls through to the normal idle watch. Otherwise the helper
+ *   resolves `'settled'` after the grace window.
+ * - Timeout: if `timeoutMs > 0` and no resolution within that window,
+ *   resolves `'timeout'`.
+ * - Interrupt: if `onMessage` returns `'interrupt'`, resolves
+ *   `'interrupted'`.
+ *
+ * Subscriber lifecycle: the helper installs its OWN internal subscriber
+ * on `channel.subscribers` purely to observe status events. It is
+ * unsubscribed synchronously inside the resolve path BEFORE the
+ * promise resolves to the caller. Callers that need to observe entries
+ * (text streaming, token accumulation) must keep their own separate
+ * subscriber installed.
+ */
+export function awaitChannelIdle(
+  channel: SessionChannel,
+  options: AwaitChannelIdleOptions = {},
+): Promise<ChannelIdleResult> {
+  const sidSlice = (channel.adapter?.sessionId ?? channel.channelId).slice(0, 12);
+  log({ level: 'debug', source: 'session', summary: `awaitChannelIdle: enter (session: ${sidSlice}, state: ${channel.state}, deferUntil: ${!!options.deferUntil}, timeoutMs: ${options.timeoutMs ?? 0})` });
+
+  const alreadyIdle =
+    channel.state === 'idle' && channel.pendingApprovals.size === 0;
+  const watcher = startIdleWatch(options, alreadyIdle);
+
+  // Internal `__` prefix excludes this subscriber from external-subscriber
+  // accounting so it doesn't drive idle-channel reap decisions while merely
+  // observing for an idle transition.
+  const subId = `__await_idle__${crypto.randomUUID()}`;
+  const internalSubscriber: Subscriber = {
+    id: subId,
+    send: (msg) => watcher.feed(msg),
+  };
+  // Skip catchup so we don't synthesize an idle resolution from the
+  // channel's current state — entry semantics are handled by `alreadyIdle`.
+  subscribe(channel, internalSubscriber, { skipCatchup: true });
+
+  return watcher.promise.finally(() => {
+    unsubscribe(channel, internalSubscriber);
+  });
+}
+
+/** Ceiling for how long to wait in `background` status before force-resolving
+ *  a dispatch. If an adapter emits `status=background` (e.g. Claude SDK with
+ *  a run_in_background bash still running at end of turn), the dispatcher
+ *  would otherwise wait forever. Env-overridable for tuning. */
+const BACKGROUND_CEILING_MS = (() => {
+  const raw = Number(process.env.CRISPY_BACKGROUND_CEILING_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 60_000;
+})();
 
 export interface ChildSessionOptions {
   /** Session that's spawning this child. */
@@ -231,6 +334,7 @@ const childSessions = new Map<string, {
   autoClose: boolean;
   visible: boolean;
   closed?: boolean;
+  sessionKind?: 'user' | 'system';
 }>();
 
 /** Check if a session was spawned by dispatchChildSession or registered as a child
@@ -247,7 +351,7 @@ export function isChildSession(sessionId: string): boolean {
  */
 export function registerChildSession(
   sessionId: string,
-  meta: { parentSessionId: string; autoClose: boolean; visible: boolean; closed?: boolean },
+  meta: { parentSessionId: string; autoClose: boolean; visible: boolean; closed?: boolean; sessionKind?: 'user' | 'system' },
 ): void {
   childSessions.set(sessionId, meta);
 }
@@ -304,6 +408,335 @@ export function getOpenVisibleChildren(): Array<{
       results.push({ sessionId: id, autoClose: meta.autoClose });
     }
   }
+  return results;
+}
+
+/**
+ * Shape returned by `listOpenChannels()` — a snapshot of one live session.
+ *
+ * Wire-safe (all primitives) so it round-trips over JSON-RPC without a
+ * separate Wire* variant. `vendor` is sourced from the live adapter
+ * (`channel.adapter?.vendor`) and is 'unknown' only during a narrow
+ * rotation/teardown window where the adapter is transiently null.
+ *
+ * Designed for AI consumption: title chain and timestamps are pre-collapsed
+ * to minimize token cost. Previews are truncated at PREVIEW_MAX_CHARS so the
+ * payload stays compact even with 20+ open sessions.
+ */
+export interface OpenSessionInfo {
+  /**
+   * Session ID. By convention this is the real (post-rekey) ID — pending
+   * IDs are filtered via `startsWith('pending:')`. The pending-ID prefix is
+   * a convention, not an enforced invariant, so a malformed caller-supplied
+   * pendingId could theoretically leak through (same limitation as
+   * `listChildSessions` and `getOpenVisibleChildren`).
+   */
+  sessionId: string;
+
+  /** Vendor from the live adapter. 'unknown' during a narrow rotation window. */
+  vendor: Vendor | 'unknown';
+
+  /** Working directory from disk index, if the session has been indexed. */
+  projectPath?: string;
+
+  /**
+   * Live channel state. Tombstones (`unattached`) are filtered out of results.
+   *
+   * Liveness signal: combine with `lastActivityAt` to disambiguate.
+   * - `streaming` + recent `lastActivityAt` → actively producing output
+   * - `streaming` + stale `lastActivityAt` → wedged or mid-tool-call
+   * - `background` + empty `lastMessage` → tool (e.g. run_in_background bash) still running
+   * - `awaiting_approval` → blocked on `pendingApprovalCount` user decisions
+   */
+  state: Exclude<SessionChannelState, 'unattached'>;
+
+  /** Number of unresolved approvals on the channel. */
+  pendingApprovalCount: number;
+
+  /**
+   * Count of entries accumulated in the channel (including any history
+   * seeded at createChannel time). Suitable for diffing across calls to
+   * detect *entry* advancement. NOT a general freshness or activity signal —
+   * status-only transitions (awaiting_approval, background) do not bump it,
+   * and a freshly-resumed session starts with a non-zero count.
+   */
+  entryCount: number;
+
+  /** 'system' for Rosie-like internal sessions; omitted for user sessions. */
+  sessionKind?: 'system';
+
+  /** True for Claude sidechain sessions (never set for other vendors). */
+  isSidechain?: boolean;
+
+  /** Parent session ID if this is a child session. Omitted when unknown. */
+  parentSessionId?: string;
+
+  /** True if the child was spawned with a visible tab/panel. Only set when `parentSessionId` is present. */
+  childVisible?: boolean;
+
+  /** True if the child auto-closes after idle. Only set when `parentSessionId` is present. */
+  childAutoClose?: boolean;
+
+  /**
+   * Resolved display title — `customTitle` (user `/rename`, vendor-native) >
+   * `aiTitle` (SDK auto-generated). Undefined when no named title is set, in
+   * which case callers should fall back to `lastUserPrompt` (or
+   * `sessionId.slice(0, 8)` for a hard fallback). The two sources are
+   * intentionally not surfaced separately — agents triaging "what is this
+   * session about?" don't need provenance, they need a string.
+   */
+  title?: string;
+
+  /**
+   * Pre-computed display name applying the canonical 5-tier cascade
+   * (`customTitle → aiTitle → lastUserPrompt → label → sessionId-slice`).
+   * Always populated. UIs should prefer this over hand-rolling the cascade
+   * so the order stays consistent across surfaces. See
+   * `src/core/session-display-name.ts`.
+   */
+  displayName: string;
+
+  /**
+   * Most recent user prompt text, truncated to ~PREVIEW_MAX_CHARS with an
+   * ellipsis. Sourced from the live channel entries first (freshest), with
+   * the disk index `lastUserPrompt` as fallback when the channel is empty.
+   * Whitespace is collapsed so the preview is single-line.
+   */
+  lastUserPrompt?: string;
+
+  /**
+   * Most recent assistant text, truncated to ~PREVIEW_MAX_CHARS with an
+   * ellipsis. Text blocks only — tool_use / thinking blocks are not surfaced
+   * (matches the dropdown's display rule). An assistant turn that is purely
+   * tool-calls produces an empty preview, which combined with `state` is the
+   * "agent is running tools, not speaking" signal.
+   */
+  lastMessage?: string;
+
+  /**
+   * ISO timestamp of the most recent activity — the maximum of the latest
+   * channel entry timestamp and the disk file mtime. Use to detect:
+   * - "streaming but stuck" (state=streaming, lastActivityAt is old)
+   * - "background but quietly working" (state=background, lastActivityAt advancing)
+   * - "zombie subscriber" (state=idle but lastActivityAt is hours old)
+   */
+  lastActivityAt?: string;
+
+  /**
+   * True iff at least one external (non-`__`-prefixed) subscriber is currently
+   * attached to the channel — i.e. some UI surface (FlexLayout tab, browser app,
+   * Tauri client) is rendering this session right now.
+   *
+   * False means the channel is alive in memory but no window is showing it.
+   * The reaper will close the channel ~30s after this transitions to false
+   * (assuming idle, no pending approvals, not a registered child).
+   *
+   * Mirrors the same external-subscriber count the reaper consults.
+   */
+  attached: boolean;
+}
+
+/** Options for `listOpenChannels()`. */
+export interface ListOpenChannelsOptions {
+  /** Include system sessions (Rosie-like). Default: false — mirrors listSessions. */
+  includeSystem?: boolean;
+  /** Include Claude sidechain sessions. Default: false — mirrors listSessions. */
+  includeSidechains?: boolean;
+}
+
+/**
+ * Preview truncation cap (chars). ~300 fits 1-2 sentences — enough to
+ * disambiguate "agent mid-thought" from "agent wrapped up" without flooding
+ * the caller's context. At 20 sessions × 2 preview fields × 300 chars, the
+ * payload stays under ~12KB raw / ~3K tokens.
+ */
+const PREVIEW_MAX_CHARS = 300;
+
+/** Truncate to PREVIEW_MAX_CHARS, normalize whitespace, append ellipsis when cut. */
+function truncatePreview(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) return undefined;
+  if (normalized.length <= PREVIEW_MAX_CHARS) return normalized;
+  return normalized.slice(0, PREVIEW_MAX_CHARS - 1) + '…';
+}
+
+/** Extract plain text from a TranscriptEntry's message content. Text blocks only. */
+function extractEntryText(entry: TranscriptEntry): string | undefined {
+  const content = entry.message?.content;
+  if (!content) return undefined;
+  if (typeof content === 'string') return content || undefined;
+  const text = content
+    .filter((b): b is { type: 'text'; text: string } =>
+      b.type === 'text' && 'text' in b && typeof (b as { text: unknown }).text === 'string',
+    )
+    .map((b) => b.text)
+    .join('\n');
+  return text || undefined;
+}
+
+/**
+ * Scan channel entries newest-first for the most recent main-thread entry of
+ * a given role and extract its text. Skips meta entries (custom-title, etc.)
+ * and sub-agent entries (parentToolUseID set) so the preview reflects the
+ * primary conversation, not background fan-out.
+ */
+function findLastEntryText(
+  entries: readonly TranscriptEntry[],
+  role: 'user' | 'assistant',
+): string | undefined {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    if (entry.type !== role) continue;
+    if (entry.isMeta) continue;
+    if (entry.parentToolUseID) continue;
+    const text = extractEntryText(entry);
+    if (text) return text;
+  }
+  return undefined;
+}
+
+/** Most recent timestamp from any entry, or undefined if none carry one. */
+function findLastEntryTimestamp(entries: readonly TranscriptEntry[]): string | undefined {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const ts = entries[i].timestamp;
+    if (ts) return ts;
+  }
+  return undefined;
+}
+
+/**
+ * Pick the freshest of two ISO timestamps. Either can be undefined; if both
+ * are undefined the result is undefined. Avoids `new Date()` for the typical
+ * path — string compare on ISO-8601 is monotonic when both are well-formed.
+ */
+function pickFreshest(a: string | undefined, b: string | undefined): string | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return a >= b ? a : b;
+}
+
+/**
+ * Snapshot the currently-open session channels in this host.
+ *
+ * Returns sessions that have a live channel in the session-manager registry,
+ * filtered to exclude tombstones (`unattached`, `tearing`) and pending IDs.
+ * By default sidechains and system sessions are filtered to approximately
+ * mirror `listSessions` exposure (best-effort — the sidechain filter depends
+ * on the disk index, which may briefly lag a just-opened channel).
+ *
+ * Sorted by `sessionId` ascending so polling callers can diff across calls
+ * without sorting themselves. Map insertion order is not stable — rekey
+ * deletes and re-inserts.
+ */
+export function listOpenChannels(
+  opts: ListOpenChannelsOptions = {},
+): OpenSessionInfo[] {
+  const { includeSystem = false, includeSidechains = false } = opts;
+
+  // Snapshot to avoid mid-iteration mutation from subscribe/close/rekey.
+  const snapshot = Array.from(sessions.entries());
+  const results: OpenSessionInfo[] = [];
+
+  for (const [id, channel] of snapshot) {
+    // Filter pending IDs — established convention with siblings
+    // (getOpenVisibleChildren, listChildSessions).
+    if (id.startsWith('pending:')) continue;
+
+    // Filter tombstones: `unattached` (stream exhausted / errored) and
+    // `tearing` (closeSession in flight) channels are not "live".
+    if (channel.state === 'unattached' || channel.tearing) continue;
+
+    // Default-filter system sessions unless opted in.
+    const isSystem = isSystemSession(id);
+    if (isSystem && !includeSystem) continue;
+
+    // Vendor from the live adapter — authoritative. During rotation the
+    // adapter is briefly null, which we surface as 'unknown' rather than
+    // blowing up.
+    const adapterVendor = channel.adapter?.vendor;
+
+    // Enrich from disk index without going through findSession(), which
+    // calls resolveSessionPrefix() and would throw on ambiguous prefixes
+    // or leak cross-session metadata when the map key is a caller-supplied
+    // non-canonical ID (the documented pending-bypass path). Direct per-
+    // adapter lookup mirrors listChildSessions' enrichment pattern.
+    let info: SessionInfo | undefined;
+    for (const { discovery } of adapters.values()) {
+      info = discovery.findSession(id);
+      if (info) break;
+    }
+
+    // Sidechain filter: Claude-specific; other vendors never set isSidechain.
+    if (info?.isSidechain && !includeSidechains) continue;
+
+    const childMeta = childSessions.get(id);
+    // Normalize parentSessionId: resolve pending→real via resolveSessionId
+    // (the parent may have rekeyed since the child was registered), then
+    // drop if still falsy or still pending. Unresolved pending parents
+    // (e.g. caller was itself a dispatch-only pending ID) shouldn't leak
+    // into caller-visible output.
+    const rawParent = childMeta?.parentSessionId;
+    const resolvedParent = rawParent ? resolveSessionId(rawParent) : undefined;
+    const parent = resolvedParent && !resolvedParent.startsWith('pending:')
+      ? resolvedParent
+      : undefined;
+
+    // Title: customTitle (user `/rename`) > aiTitle (SDK auto-generated).
+    const title =
+      info?.customTitle?.trim() ||
+      info?.aiTitle?.trim() ||
+      undefined;
+
+    // Previews: prefer fresh live channel entries; disk index is fallback for
+    // lastUserPrompt only (disk's `lastMessage` mixes user/assistant text and
+    // would be misleading in the assistant slot).
+    const liveLastUser = findLastEntryText(channel.entries, 'user');
+    const liveLastAssistant = findLastEntryText(channel.entries, 'assistant');
+    const lastUserPrompt = truncatePreview(liveLastUser ?? info?.lastUserPrompt);
+    const lastMessage = truncatePreview(liveLastAssistant);
+
+    // Activity: max of newest channel entry timestamp and disk file mtime.
+    const lastEntryTs = findLastEntryTimestamp(channel.entries);
+    const diskMtime = info?.modifiedAt?.toISOString();
+    const lastActivityAt = pickFreshest(lastEntryTs, diskMtime);
+
+    // Display name: canonical 5-tier cascade. Always populated so UIs don't
+    // re-derive it inconsistently (Open Sessions sidebar previously dropped
+    // the `label` tier). Computed from the channel-derived `lastUserPrompt`
+    // (preferred over disk's `lastUserPrompt`) plus disk-sourced label.
+    const displayName = getSessionDisplayName({
+      customTitle: info?.customTitle,
+      aiTitle: info?.aiTitle,
+      lastUserPrompt,
+      label: info?.label,
+      sessionId: id,
+    });
+
+    results.push({
+      sessionId: id,
+      vendor: adapterVendor ?? 'unknown',
+      projectPath: info?.projectPath,
+      state: channel.state as Exclude<SessionChannelState, 'unattached'>,
+      pendingApprovalCount: channel.pendingApprovals.size,
+      entryCount: channel.entries.length,
+      attached: countExternalSubscribers(channel) > 0,
+      ...(isSystem ? { sessionKind: 'system' as const } : {}),
+      ...(info?.isSidechain ? { isSidechain: true } : {}),
+      ...(parent ? {
+        parentSessionId: parent,
+        childVisible: childMeta!.visible,
+        childAutoClose: childMeta!.autoClose,
+      } : {}),
+      ...(title ? { title } : {}),
+      displayName,
+      ...(lastUserPrompt ? { lastUserPrompt } : {}),
+      ...(lastMessage ? { lastMessage } : {}),
+      ...(lastActivityAt ? { lastActivityAt } : {}),
+    });
+  }
+
+  results.sort((a, b) => a.sessionId.localeCompare(b.sessionId));
   return results;
 }
 
@@ -384,6 +817,8 @@ export function _resetRegistry(): void {
   for (const [sessionId] of sessions) {
     destroyChannel(sessionId);
   }
+  for (const t of reapTimers.values()) clearTimeout(t);
+  reapTimers.clear();
   sessions.clear();
   pending.clear();
   adapters.clear();
@@ -596,11 +1031,25 @@ function wireLifecycleHooks(channel: SessionChannel): void {
     const sessionId = channel.adapter?.sessionId;
     if (!sessionId) return;
     const childMeta = childSessions.get(sessionId);
-    if (childMeta && !childMeta.visible) return;
+    if (childMeta && !childMeta.visible) {
+      // 150ms matches root branch: JSONL flush is async, ingest reads from disk.
+      // Route ingest around fireResponseComplete — its child-session guard
+      // (lifecycle-hooks.ts) is load-bearing to prevent Rosie recursion.
+      // Skip system children (Rosie tracker etc.) — their sessionKind persists
+      // async, so isSystemSession() inside ingestAndEmbedSession races the
+      // rekey handler. childMeta.sessionKind is synchronous and reliable.
+      if (childMeta.sessionKind !== 'system') {
+        setTimeout(() => { ingestAndEmbedSession(sessionId); }, 150);
+      }
+      return;
+    }
     if (childMeta?.visible) {
       setTimeout(() => {
         const currentId = channel.adapter?.sessionId ?? sessionId;
         refreshAndNotify(currentId);
+        if (childMeta.sessionKind !== 'system') {
+          ingestAndEmbedSession(currentId);
+        }
         if (childMeta.autoClose) {
           broadcastCloseChannel(currentId);
           closeSession(currentId);
@@ -617,7 +1066,28 @@ function wireLifecycleHooks(channel: SessionChannel): void {
     setTimeout(() => {
       refreshAndNotify(sessionId);
       fireResponseComplete(sessionId);
+      // Idle entry: if no external subscribers remain (e.g. user closed all
+      // tabs while the turn was still streaming), arm the reap timer now.
+      // The onExternalSubscribersGone hook would have fired earlier but
+      // skipped scheduling because state wasn't yet idle.
+      maybeScheduleReap(sessionId);
     }, 150);
+  };
+
+  channel.onExternalSubscribersGone = () => {
+    const sessionId = channel.adapter?.sessionId;
+    if (!sessionId) return;
+    maybeScheduleReap(sessionId);
+    // Re-broadcast current state so subscribers (sidebar) refetch and pick
+    // up the flipped `attached` flag without waiting for a real status change.
+    notifyStatusChange(sessionId, channel.state);
+  };
+
+  channel.onExternalSubscribersReturned = () => {
+    const sessionId = channel.adapter?.sessionId;
+    if (!sessionId) return;
+    cancelReapTimer(sessionId);
+    notifyStatusChange(sessionId, channel.state);
   };
 
   channel.onStatusChange = (state) => {
@@ -1037,7 +1507,7 @@ export function createSession(
   vendor: Vendor,
   cwd: string,
   subscriber: Subscriber,
-  options?: { model?: string; permissionMode?: TurnSettings['permissionMode']; allowDangerouslySkipPermissions?: boolean; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' },
+  options?: { model?: string; capabilityHint?: string; permissionMode?: TurnSettings['permissionMode']; allowDangerouslySkipPermissions?: boolean; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' },
   explicitPendingId?: string,
 ): PendingChannelResult {
   if (!adapters.has(vendor)) {
@@ -1048,6 +1518,7 @@ export function createSession(
     mode: 'fresh',
     cwd,
     ...(options?.model && { model: options.model }),
+    ...(options?.capabilityHint && { capabilityHint: options.capabilityHint }),
     ...(options?.permissionMode && { permissionMode: options.permissionMode }),
     ...(options?.allowDangerouslySkipPermissions && { allowDangerouslySkipPermissions: true }),
     ...(options?.extraArgs && { extraArgs: options.extraArgs }),
@@ -1155,11 +1626,23 @@ export async function createForkSession(
     log({ source: 'session', level: 'warn', summary: `Failed to pre-load fork history`, data: { fromSessionId, error: String(err) } });
   }
 
+  // Fork model resolution splits explicit vs inferred:
+  //  - `spec.model` carries the user's explicit choice only (becomes --model).
+  //  - `spec.capabilityHint` carries the inherited family marker (live parent
+  //    adapter > disk fallback) and powers the thinking-config gate without
+  //    being forwarded to the CLI. Leaving --model unset on forks that share
+  //    the parent's family lets the CLI default kick in (including `[1m]`).
+  const liveParent = sessions.get(fromSessionId);
+  const inferredHint =
+    liveParent?.adapter?.settings?.model ||
+    reg.discovery.resolveModelForSession?.(fromSessionId, options?.atMessageId ? { upToUuid: options.atMessageId } : undefined);
+
   const spec: SessionOpenSpec = {
     mode: 'fork',
     fromSessionId,
     ...(options?.atMessageId && { atMessageId: options.atMessageId }),
     ...(options?.settings?.model && { model: options.settings.model }),
+    ...(inferredHint && { capabilityHint: inferredHint }),
     ...(options?.settings?.permissionMode && { permissionMode: options.settings.permissionMode }),
     ...(options?.settings?.allowDangerouslySkipPermissions && { allowDangerouslySkipPermissions: true }),
     ...(options?.settings?.outputFormat && { outputFormat: options.settings.outputFormat }),
@@ -1287,12 +1770,19 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
       }
       if (!cwd) cwd = normalizePath(defaultCwd);
 
-      // Inherit model from parent session when same vendor and no explicit model
-      let inheritedModel: string | undefined;
+      // Inherit parent's model family as a capability hint (not a spawn arg)
+      // when the caller didn't pick one explicitly. The hint powers thinking
+      // config and band compares without overriding the CLI's own default
+      // resolution — so dispatched children of a `[1m]` parent still get the
+      // CLI's 1M-context append instead of being forced into 200K.
+      let capabilityHint: string | undefined;
       if (!intent.settings.model && intent.target.parentSessionId) {
         const parentChannel = sessions.get(intent.target.parentSessionId);
         if (parentChannel?.adapter?.vendor === intent.target.vendor) {
-          inheritedModel = parentChannel.adapter.settings?.model;
+          const discovery = adapters.get(intent.target.vendor as Vendor)?.discovery;
+          capabilityHint =
+            parentChannel.adapter.settings?.model
+            ?? discovery?.resolveModelForSession?.(intent.target.parentSessionId);
         }
       }
 
@@ -1301,8 +1791,8 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
         cwd,
         subscriber,
         {
-          ...(inheritedModel && { model: inheritedModel }),
           ...intent.settings,
+          ...(capabilityHint && { capabilityHint }),
           ...(intent.target.skipPersistSession && { skipPersistSession: true }),
           ...(intent.target.mcpServers && { mcpServers: intent.target.mcpServers }),
           ...(intent.target.env && { env: intent.target.env }),
@@ -1387,10 +1877,12 @@ export async function sendTurn(intent: TurnIntent, subscriber: Subscriber, pendi
   // dispatchChildSession manages its own childSessions map — only the IPC path sets
   // intent.parentSessionId, so this block won't fire for internal callers.
   if (intent.parentSessionId) {
+    const targetSessionKindForRegister = 'sessionKind' in intent.target ? (intent.target as { sessionKind?: 'user' | 'system' }).sessionKind : undefined;
     registerChildSession(sessionId, {
       parentSessionId: intent.parentSessionId,
       autoClose: !!intent.autoClose,
       visible: !!intent.visible,
+      sessionKind: targetSessionKindForRegister,
     });
 
     if (rekeyPromise) {
@@ -1478,6 +1970,161 @@ export async function interruptSession(sessionId: string): Promise<void> {
   await channel.adapter.interrupt();
 }
 
+// ============================================================================
+// Session title — vendor-native rename
+// ============================================================================
+
+/**
+ * Locate a session and resolve a callable rename target.
+ *
+ * Prefers the live channel's adapter when one exists (so vendor-specific
+ * cache mutations happen synchronously). Falls back to the discovery
+ * object's stateless setSessionTitle/getSessionTitle when no live adapter
+ * is attached.
+ */
+function resolveTitleHandler(sessionId: string): {
+  setTitle: (title: string) => Promise<void>;
+  getTitle: () => Promise<string | null>;
+  vendor: Vendor;
+} {
+  const live = sessions.get(sessionId)?.adapter;
+  const info = findSession(sessionId);
+  // Cold-cache fallback: when a live adapter is attached but the vendor's
+  // discovery hasn't populated its cache yet (Codex on first startup),
+  // findSession() returns undefined. Trust the live adapter's vendor.
+  const vendor = info?.vendor ?? live?.vendor;
+  if (!vendor) {
+    throw new Error(`No session found for ${sessionId}`);
+  }
+  const reg = adapters.get(vendor);
+  if (!reg) {
+    throw new Error(`No adapter registered for vendor "${vendor}"`);
+  }
+  const discovery = reg.discovery;
+
+  const setTitle = async (title: string) => {
+    if (live?.setSessionTitle) {
+      await live.setSessionTitle(sessionId, title);
+      return;
+    }
+    if (discovery.setSessionTitle) {
+      await discovery.setSessionTitle(sessionId, title);
+      return;
+    }
+    throw new Error(`Vendor '${vendor}' does not support rename`);
+  };
+
+  const getTitle = async () => {
+    if (live?.getSessionTitle) return live.getSessionTitle(sessionId);
+    if (discovery.getSessionTitle) return discovery.getSessionTitle(sessionId);
+    return null;
+  };
+
+  return { setTitle, getTitle, vendor };
+}
+
+/**
+ * Rename a session via its vendor adapter (live) or discovery (offline).
+ * Throws if the vendor does not support rename or the session is unknown.
+ * Caller is responsible for invoking refreshAndNotify(sessionId) to push a
+ * session-list upsert.
+ */
+export async function setSessionTitle(sessionId: string, title: string): Promise<void> {
+  const resolvedId = resolveSessionPrefix(resolveSessionId(sessionId));
+  const { setTitle } = resolveTitleHandler(resolvedId);
+  await setTitle(title);
+}
+
+/**
+ * Read the current vendor-native title for a session.
+ * Returns null when no title is set or the vendor doesn't expose reads.
+ */
+export async function getSessionTitle(sessionId: string): Promise<string | null> {
+  const resolvedId = resolveSessionPrefix(resolveSessionId(sessionId));
+  const { getTitle } = resolveTitleHandler(resolvedId);
+  return getTitle();
+}
+
+/**
+ * Compare-and-swap rename outcome.
+ *
+ * `ok: true`            — title was written.
+ * `reason: 'changed'`   — vendor's current title differs from `expectedCurrentTitle`;
+ *                         no write occurred. `current` reports what was observed.
+ * `reason: 'unsupported'` — vendor doesn't expose rename.
+ */
+export type CASResult =
+  | { ok: true }
+  | { ok: false; reason: 'changed'; current: string | null }
+  | { ok: false; reason: 'unsupported' };
+
+/**
+ * Per-session lock chain. Different sessionIds run in parallel; concurrent
+ * calls for the SAME sessionId serialize behind the most recent in-flight
+ * promise so the read→compare→write is atomic within the host process.
+ *
+ * Cross-process races (two Crispy windows) are not covered — Rosie clobber
+ * is best-effort across processes by design.
+ */
+const sessionTitleLocks = new Map<string, Promise<unknown>>();
+
+/**
+ * Compare-and-swap rename. Reads the current title, compares against
+ * `expectedCurrentTitle` (whitespace/empty normalized to null), and only
+ * writes when they match. Used by Rosie's tracker so it doesn't clobber
+ * a human rename that landed between Rosie's read and write.
+ */
+export async function setSessionTitleIfUnchanged(
+  sessionId: string,
+  newTitle: string,
+  expectedCurrentTitle: string | null,
+): Promise<CASResult> {
+  const resolvedId = resolveSessionPrefix(resolveSessionId(sessionId));
+  const prior = sessionTitleLocks.get(resolvedId) ?? Promise.resolve();
+  // Detach from prior's rejection so a transient failure on an earlier CAS
+  // doesn't poison subsequent calls for the same sessionId. We only care
+  // that prior has settled, not how it settled.
+  const run = prior.catch(() => undefined).then(async (): Promise<CASResult> => {
+    let handler;
+    try {
+      handler = resolveTitleHandler(resolvedId);
+    } catch {
+      return { ok: false, reason: 'unsupported' };
+    }
+    const { setTitle, getTitle } = handler;
+
+    const rawCurrent = await getTitle();
+    const norm = (s: string | null): string | null => (s?.trim() || null);
+    if (norm(rawCurrent) !== norm(expectedCurrentTitle)) {
+      return { ok: false, reason: 'changed', current: rawCurrent };
+    }
+    try {
+      await setTitle(newTitle);
+    } catch (err) {
+      // Vendor refused (e.g. 'does not support rename') — surface as unsupported
+      // so callers don't retry. Other errors should propagate.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/does not support rename/.test(msg)) {
+        return { ok: false, reason: 'unsupported' };
+      }
+      throw err;
+    }
+    // Persist Rosie's last-written so the next CAS knows what we wrote.
+    // The CAS RPC is the Rosie path by convention — see crispy-tracker.mjs.
+    setRosieLastTitle(resolvedId, newTitle);
+    return { ok: true };
+  });
+  sessionTitleLocks.set(resolvedId, run);
+  try {
+    return await run;
+  } finally {
+    // Evict only if no chained call has overwritten our slot.
+    if (sessionTitleLocks.get(resolvedId) === run) {
+      sessionTitleLocks.delete(resolvedId);
+    }
+  }
+}
+
 /**
  * Close a session's live channel and remove it from the registry.
  *
@@ -1488,12 +2135,73 @@ export async function interruptSession(sessionId: string): Promise<void> {
 export function closeSession(sessionId: string): void {
   if (!sessions.has(sessionId)) return;
   log({ source: 'session', level: 'info', summary: `Session: destroyed ${sessionId.slice(0, 12)}…` });
+  cancelReapTimer(sessionId);
   destroyChannel(sessionId);
   sessions.delete(sessionId);
   // Mark child session as closed instead of deleting — closed children must
   // remain queryable so callers (e.g. superthink) can read their transcripts.
   const closeMeta = childSessions.get(sessionId);
   if (closeMeta) childSessions.set(sessionId, { ...closeMeta, closed: true });
+}
+
+/**
+ * Decide whether to arm the idle-channel reaper for a session, and arm it
+ * if all conditions hold.
+ *
+ * The reaper closes channels with no UI/RPC presence after a grace period,
+ * so they don't accumulate forever in the host process. Disk state is
+ * preserved — `subscribeSession()` re-creates the channel on demand.
+ *
+ * Skipped when:
+ * - Reaper is disabled (`CRISPY_IDLE_CHANNEL_REAP_MS=0`).
+ * - Channel is not idle (still streaming/awaiting_approval/background).
+ *   `onIdle` will retry once the adapter settles.
+ * - Approvals are still pending — those need a human, not a reaper.
+ * - External subscribers exist — someone's still watching. Child sessions
+ *   spawned with `autoClose:false` (observer mode) survive reap only while
+ *   an external subscriber is attached; once detached and idle, they reap
+ *   like any other channel. `--no-auto-close` means "don't close on turn
+ *   settle," not "live forever with nothing observing."
+ * - A timer is already armed for this session.
+ */
+function maybeScheduleReap(sessionId: string): void {
+  if (IDLE_REAP_GRACE_MS === 0) return;
+  if (reapTimers.has(sessionId)) return;
+
+  const channel = sessions.get(sessionId);
+  if (!channel) return;
+  if (channel.tearing) return;
+  if (channel.state !== 'idle') return;
+  if (channel.pendingApprovals.size > 0) return;
+  for (const id of channel.subscribers.keys()) {
+    if (!id.startsWith('__')) return;
+  }
+
+  const timer = setTimeout(() => {
+    reapTimers.delete(sessionId);
+    // Re-validate at fire time — conditions may have changed during the
+    // grace window. Each check mirrors maybeScheduleReap's preconditions.
+    const ch = sessions.get(sessionId);
+    if (!ch) return;
+    if (ch.tearing) return;
+    if (ch.state !== 'idle') return;
+    if (ch.pendingApprovals.size > 0) return;
+    for (const id of ch.subscribers.keys()) {
+      if (!id.startsWith('__')) return;
+    }
+    log({
+      source: 'session',
+      level: 'info',
+      summary: `Session: reaping idle channel ${sessionId.slice(0, 12)}… (no subscribers)`,
+    });
+    broadcastCloseChannel(sessionId);
+    closeSession(sessionId);
+  }, IDLE_REAP_GRACE_MS);
+  // Don't keep the host process alive just because a reap timer is pending.
+  if (typeof timer === 'object' && timer && 'unref' in timer && typeof (timer as { unref?: () => unknown }).unref === 'function') {
+    (timer as { unref: () => void }).unref();
+  }
+  reapTimers.set(sessionId, timer);
 }
 
 // ============================================================================
@@ -1609,55 +2317,24 @@ export async function dispatchChildSession(
     let settled = false;
     // Track the current session ID — starts as the pending ID, may be rekeyed.
     let currentId: string = pendingId;
-    // Captured from sendTurn result — used by idle handler for autoClose:false
+    // Captured from sendTurn result — used as deferUntil for awaitChannelIdle
+    // so finalization waits for the pending→real rekey to land.
     let rekeyPromise: Promise<string> | undefined;
-    // Idle debounce timer — prevents spurious early resolution (fix #8)
-    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    let backgroundTimer: ReturnType<typeof setTimeout> | null = null;
     // Token accumulators — sum per-entry usage for accurate totals (Claude)
     const tokenAcc: ChildTokenAccumulator = { input: 0, output: 0, cacheRead: 0 };
-
-    // Timeout: safety net for hung adapters / infinite loops.
-    // timeoutMs=0 disables the timeout — used for long-running agent sessions
-    // that should wait indefinitely for the turn to complete naturally.
-    const timer = timeoutMs > 0 ? setTimeout(() => {
-      if (!settled) {
-        if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-        const parts: string[] = [];
-        if (lastError) parts.push(`error: ${lastError}`);
-        parts.push(`entries: [${entryTypes.join(', ')}]`);
-        if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
-        parts.push(`text: ${text.length} chars`);
-        log({ level: 'debug', source: 'dispatch', summary: `Timeout fired: ${timeoutMs}ms elapsed, entries: ${entryTypes.length}, textLen: ${text.length} (parent: ${parentSessionId})` });
-        log({ level: 'warn', source: 'child-session', summary: `Timeout after ${timeoutMs}ms — no idle event received (parent: ${parentSessionId}, vendor: ${vendor}) — ${parts.join(' | ')}` });
-        settled = true;
-        if (text) {
-          const contextUsage = buildChildUsage(currentId, tokenAcc);
-          cleanup();
-          log({ level: 'debug', source: 'dispatch', summary: `Timeout with partial text — returning partial result (${text.length} chars)` });
-          log({ level: 'warn', source: 'child-session', summary: `Timeout with partial text (${text.length} chars) -- returning partial result (parent: ${parentSessionId}, vendor: ${vendor})` });
-          resolve({ sessionId: currentId, text, structured, contextUsage });
-        } else {
-          // No text → caller gets null and has no session ID to clean up.
-          // Force-close to prevent leaking channel+adapter+MCP subprocesses.
-          log({ level: 'debug', source: 'dispatch', summary: `Timeout null result: no text collected, force-closing channel (parent: ${parentSessionId})` });
-          cleanup(/* force */ true);
-          resolve(null);
-        }
-      }
-    }, timeoutMs) : null;
 
     // force=true tears down even when autoClose:false — used when the dispatch
     // resolves null (no session ID returned to caller → unreachable channel).
     const cleanup = (force = false) => {
-      if (timer) clearTimeout(timer);
-      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+      if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
       const shouldClose = autoClose || force;
       // Clean up both pendingId and currentId to handle the rekey race —
-      // if timeout fires mid-rekey, currentId may differ from pendingId.
+      // if cleanup fires mid-rekey, currentId may differ from pendingId.
       for (const id of new Set([pendingId, currentId])) {
         const ch = getChannel(id);
         if (ch) {
-          unsubscribe(ch, internalSubscriber);
+          unsubscribe(ch, dataSubscriber);
           if (shouldClose) {
             closeSession(id);
           }
@@ -1680,7 +2357,24 @@ export async function dispatchChildSession(
     const contentSummaries: string[] = [];
     let streamingDots = false;
 
-    const internalSubscriber: Subscriber = {
+    const finalize = (resolvedId: string) => {
+      if (text || structured !== undefined || entryTypes.length > 1) {
+        const contextUsage = buildChildUsage(resolvedId, tokenAcc);
+        cleanup();
+        resolve({ sessionId: resolvedId, text, structured, contextUsage });
+      } else {
+        const parts: string[] = [];
+        if (lastError) parts.push(`error: ${lastError}`);
+        parts.push(`entries: [${entryTypes.join(', ')}]`);
+        if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
+        log({ source: 'session-manager:dispatch', level: 'warn',
+          summary: `Turn completed with empty response (parent: ${parentSessionId}) — ${parts.join(' | ')}` });
+        cleanup(/* force */ true);
+        resolve(null);
+      }
+    };
+
+    const dataSubscriber: Subscriber = {
       id: `child-${crypto.randomUUID()}`,
       send(msg) {
         if (settled) return;
@@ -1751,85 +2445,54 @@ export async function dispatchChildSession(
         // Stream entries to caller via onEntry callback
         options.onEntry?.(msg);
 
-        // Idle debounce: wait IDLE_SETTLE_MS after idle before resolving.
-        // Cancels if 'active' fires (agent starting another tool round).
-        // Prevents spurious early resolution in multi-step agent work (fix #8).
-        if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'active') {
-          if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+        // Any non-background status means the child is no longer stalled in
+        // background — clear the ceiling. Handles active/idle/awaiting_approval
+        // uniformly (awaiting_approval can block for human input far longer
+        // than the ceiling, so we must not force-resolve).
+        if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status !== 'background') {
+          if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
         }
 
-        // For autoClose:false children, ensure we return the real (rekeyed) ID
-        // so resumeChildSession can find the channel. Idle can fire before the
-        // rekey promise resolves, leaving currentId as the stale pending ID.
-        const finalize = (resolvedId: string) => {
-          if (text || structured !== undefined || entryTypes.length > 1) {
-            const contextUsage = buildChildUsage(resolvedId, tokenAcc);
-            cleanup();
-            resolve({ sessionId: resolvedId, text, structured, contextUsage });
-          } else {
-            const parts: string[] = [];
-            if (lastError) parts.push(`error: ${lastError}`);
-            parts.push(`entries: [${entryTypes.join(', ')}]`);
-            if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
-            log({ source: 'session-manager:dispatch', level: 'warn',
-              summary: `Turn completed with empty response (parent: ${parentSessionId}) — ${parts.join(' | ')}` });
-            cleanup(/* force */ true);
-            resolve(null);
-          }
-        };
-
-        const awaitRekeyThenFinalize = () => {
-          if (!autoClose && rekeyPromise) {
-            rekeyPromise.then((realId) => {
-              childSessions.delete(pendingId);
-              childSessions.set(realId, { parentSessionId, autoClose, visible: !!options.openChannel });
-              finalize(realId);
-            }).catch(() => finalize(currentId));
-          } else {
-            finalize(currentId);
-          }
-        };
-
-        // Turn complete — check for authoritative turnComplete signal
-        if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'idle') {
-          log({ level: 'debug', source: 'dispatch', summary: `Idle event received (parent: ${parentSessionId}, textSoFar: ${text.length} chars, entries: ${entryTypes.length})` });
-
-          // Authoritative turn completion — resolve immediately, no debounce
-          if ('turnComplete' in msg.event && msg.event.turnComplete) {
+        // Background ceiling respects `timeoutMs: 0` (indefinite-wait callers
+        // like Rosie tracker): if the outer safety-net timer is disabled, the
+        // background ceiling is disabled too.
+        if (timeoutMs > 0 && msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'background') {
+          if (backgroundTimer) clearTimeout(backgroundTimer);
+          backgroundTimer = setTimeout(() => {
             if (settled) return;
+            log({
+              source: 'session-manager:dispatch',
+              level: 'warn',
+              summary: `background ceiling reached — forcing resolve (parent: ${parentSessionId}, child: ${currentId})`,
+            });
             settled = true;
-            if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-            awaitRekeyThenFinalize();
-            return;
-          }
-
-          // Fallback: debounced idle for adapters without turnComplete
-          if (idleTimer) clearTimeout(idleTimer);
-          idleTimer = setTimeout(() => {
-            if (settled) return;
-            settled = true;
-            if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-            awaitRekeyThenFinalize();
-          }, IDLE_SETTLE_MS);
+            if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
+            // Defer to rekey before finalizing so the caller gets the real ID.
+            if (!autoClose && rekeyPromise) {
+              rekeyPromise.then((realId) => finalize(realId)).catch(() => finalize(currentId));
+            } else {
+              finalize(currentId);
+            }
+          }, BACKGROUND_CEILING_MS);
         }
       },
     };
 
     // Register the pending ID as a child session before sendTurn so cleanup
     // always has something to work with.
-    childSessions.set(pendingId, { parentSessionId, autoClose, visible: !!options.openChannel });
+    childSessions.set(pendingId, { parentSessionId, autoClose, visible: !!options.openChannel, sessionKind: options.sessionKind });
 
     // Fire the turn with the explicit pending ID
     const promptLen = typeof prompt === 'string' ? prompt.length : Array.isArray(prompt) ? prompt.reduce((n, b) => n + ((b as { text?: string }).text?.length ?? 0), 0) : 0;
     log({ level: 'debug', source: 'dispatch', summary: `sendTurn entry (parent: ${parentSessionId}, vendor: ${vendor}, pending: ${pendingId.slice(0, 30)}…, promptLen: ${promptLen})` });
-    sendTurn(intent, internalSubscriber, pendingId)
+    sendTurn(intent, dataSubscriber, pendingId)
       .then((result) => {
         if (settled) return;
         log({ level: 'debug', source: 'dispatch', summary: `sendTurn resolved — sessionId: ${result.sessionId} (parent: ${parentSessionId})` });
         currentId = result.sessionId;
         // Migrate child tracking from pending to real ID
         childSessions.delete(pendingId);
-        childSessions.set(currentId, { parentSessionId, autoClose, visible: !!options.openChannel });
+        childSessions.set(currentId, { parentSessionId, autoClose, visible: !!options.openChannel, sessionKind: options.sessionKind });
 
         // Handle pending->real ID re-keying
         if (result.rekeyPromise) {
@@ -1837,7 +2500,7 @@ export async function dispatchChildSession(
           result.rekeyPromise.then((realId) => {
             if (settled) return;
             childSessions.delete(currentId);
-            childSessions.set(realId, { parentSessionId, autoClose, visible: !!options.openChannel });
+            childSessions.set(realId, { parentSessionId, autoClose, visible: !!options.openChannel, sessionKind: options.sessionKind });
             currentId = realId;
             // Persist session kind so system sessions stay hidden across restarts
             if (options.sessionKind) {
@@ -1845,6 +2508,40 @@ export async function dispatchChildSession(
             }
           }).catch(() => {});
         }
+
+        // Wait for the channel to settle. deferUntil rekey so currentId
+        // has been updated to the real ID by the time finalize runs.
+        awaitChannelIdle(result.channel, {
+          deferUntil: rekeyPromise,
+          ...(timeoutMs > 0 && { timeoutMs }),
+        }).then((reason) => {
+          if (settled) return;
+          settled = true;
+          if (reason === 'timeout') {
+            const parts: string[] = [];
+            if (lastError) parts.push(`error: ${lastError}`);
+            parts.push(`entries: [${entryTypes.join(', ')}]`);
+            if (contentSummaries.length > 0) parts.push(`content: ${contentSummaries.join(', ')}`);
+            parts.push(`text: ${text.length} chars`);
+            log({ level: 'debug', source: 'dispatch', summary: `Timeout fired: ${timeoutMs}ms elapsed, entries: ${entryTypes.length}, textLen: ${text.length} (parent: ${parentSessionId})` });
+            log({ level: 'warn', source: 'child-session', summary: `Timeout after ${timeoutMs}ms — no idle event received (parent: ${parentSessionId}, vendor: ${vendor}) — ${parts.join(' | ')}` });
+            if (text) {
+              const contextUsage = buildChildUsage(currentId, tokenAcc);
+              cleanup();
+              log({ level: 'debug', source: 'dispatch', summary: `Timeout with partial text — returning partial result (${text.length} chars)` });
+              log({ level: 'warn', source: 'child-session', summary: `Timeout with partial text (${text.length} chars) -- returning partial result (parent: ${parentSessionId}, vendor: ${vendor})` });
+              resolve({ sessionId: currentId, text, structured, contextUsage });
+            } else {
+              log({ level: 'debug', source: 'dispatch', summary: `Timeout null result: no text collected, force-closing channel (parent: ${parentSessionId})` });
+              cleanup(/* force */ true);
+              resolve(null);
+            }
+            return;
+          }
+          // turnComplete or settled — currentId already updated by rekey.then
+          log({ level: 'debug', source: 'dispatch', summary: `Idle resolved (reason: ${reason}, parent: ${parentSessionId}, textSoFar: ${text.length} chars, entries: ${entryTypes.length})` });
+          finalize(currentId);
+        });
       })
       .catch((err) => {
         if (!settled) {
@@ -1927,41 +2624,15 @@ export async function resumeChildSession(
     let text = '';
     let structured: unknown;
     let settled = false;
-    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    let backgroundTimer: ReturnType<typeof setTimeout> | null = null;
     // Token accumulators — sum per-entry usage for accurate totals (Claude)
     const tokenAcc: ChildTokenAccumulator = { input: 0, output: 0, cacheRead: 0 };
 
-    // Timeout: safety net for hung adapters / infinite loops.
-    // timeoutMs=0 disables the timeout — used for long-running agent sessions
-    // that should wait indefinitely for the turn to complete naturally.
-    const timer = timeoutMs > 0 ? setTimeout(() => {
-      if (!settled) {
-        if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-        const parts: string[] = [];
-        if (lastError) parts.push(`error: ${lastError}`);
-        parts.push(`entries: [${entryTypes.join(', ')}]`);
-        parts.push(`text: ${text.length} chars`);
-        log({ level: 'debug', source: 'dispatch', summary: `Resume timeout fired: ${timeoutMs}ms elapsed, entries: ${entryTypes.length}, textLen: ${text.length} (session: ${sessionId.slice(0, 12)}…)` });
-        log({ level: 'warn', source: 'resume-child', summary: `Timeout after ${timeoutMs}ms — session ${sessionId} — ${parts.join(' | ')}` });
-        settled = true;
-        const contextUsage = buildChildUsage(sessionId, tokenAcc, baselineCostUsd);
-        cleanup();
-        if (text) {
-          log({ level: 'debug', source: 'dispatch', summary: `Resume timeout with partial text — returning partial result (${text.length} chars)` });
-          resolve({ sessionId, text, structured, contextUsage });
-        } else {
-          log({ level: 'debug', source: 'dispatch', summary: `Resume timeout null result: no text collected (session: ${sessionId.slice(0, 12)}…)` });
-          resolve(null);
-        }
-      }
-    }, timeoutMs) : null;
-
     const cleanup = () => {
-      if (timer) clearTimeout(timer);
-      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-      const ch = getChannel(sessionId);
-      if (ch) {
-        unsubscribe(ch, internalSubscriber);
+      if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
+      const cur = getChannel(sessionId);
+      if (cur) {
+        unsubscribe(cur, dataSubscriber);
         if (autoClose) {
           closeSession(sessionId);
         }
@@ -1981,7 +2652,19 @@ export async function resumeChildSession(
     const entryTypes: string[] = [];
     let lastError: string | undefined;
 
-    const internalSubscriber: Subscriber = {
+    const finalizeResume = () => {
+      const contextUsage = buildChildUsage(sessionId, tokenAcc, baselineCostUsd);
+      cleanup();
+      if (text || structured !== undefined || entryTypes.length > 1) {
+        resolve({ sessionId, text, structured, contextUsage });
+      } else {
+        if (lastError) log({ source: 'session-manager:resume', level: 'warn',
+          summary: `Empty response with error: ${lastError}` });
+        resolve(null);
+      }
+    };
+
+    const dataSubscriber: Subscriber = {
       id: `resume-${crypto.randomUUID()}`,
       send(msg) {
         if (settled) return;
@@ -2022,57 +2705,66 @@ export async function resumeChildSession(
         // Stream entries to caller via onEntry callback
         onEntry?.(msg);
 
-        // Idle debounce (fix #8)
-        if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'active') {
-          if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+        // Any non-background status clears the ceiling — see dispatchChildSession.
+        if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status !== 'background') {
+          if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
         }
 
-        const finalizeResume = () => {
-          const contextUsage = buildChildUsage(sessionId, tokenAcc, baselineCostUsd);
-          cleanup();
-          if (text || structured !== undefined || entryTypes.length > 1) {
-            resolve({ sessionId, text, structured, contextUsage });
-          } else {
-            if (lastError) log({ source: 'session-manager:resume', level: 'warn',
-              summary: `Empty response with error: ${lastError}` });
-            resolve(null);
-          }
-        };
-
-        // Turn complete — check for authoritative turnComplete signal
-        if (msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'idle') {
-          log({ level: 'debug', source: 'dispatch', summary: `Resume idle event (session: ${sessionId.slice(0, 12)}…, textSoFar: ${text.length} chars, entries: ${entryTypes.length})` });
-
-          // Authoritative turn completion — resolve immediately, no debounce
-          if ('turnComplete' in msg.event && msg.event.turnComplete) {
+        if (timeoutMs > 0 && msg.type === 'event' && msg.event.type === 'status' && msg.event.status === 'background') {
+          if (backgroundTimer) clearTimeout(backgroundTimer);
+          backgroundTimer = setTimeout(() => {
             if (settled) return;
+            log({
+              source: 'session-manager:resume',
+              level: 'warn',
+              summary: `background ceiling reached — forcing resolve (session: ${sessionId})`,
+            });
             settled = true;
-            if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+            if (backgroundTimer) { clearTimeout(backgroundTimer); backgroundTimer = null; }
             finalizeResume();
-            return;
-          }
-
-          // Fallback: debounced idle for adapters without turnComplete
-          if (idleTimer) clearTimeout(idleTimer);
-          idleTimer = setTimeout(() => {
-            if (settled) return;
-            settled = true;
-            finalizeResume();
-          }, IDLE_SETTLE_MS);
+          }, BACKGROUND_CEILING_MS);
         }
       },
     };
 
     // Subscribe to the existing channel
-    subscribe(ch, internalSubscriber);
+    subscribe(ch, dataSubscriber);
 
     // Send the turn — no pending ID needed, session already exists
     const resumePromptLen = typeof prompt === 'string' ? prompt.length : Array.isArray(prompt) ? prompt.reduce((n, b) => n + ((b as { text?: string }).text?.length ?? 0), 0) : 0;
     log({ level: 'debug', source: 'dispatch', summary: `Resume sendTurn entry (session: ${sessionId.slice(0, 12)}…, promptLen: ${resumePromptLen})` });
-    sendTurn(intent, internalSubscriber)
+    sendTurn(intent, dataSubscriber)
       .then(() => {
         if (settled) return;
         log({ level: 'debug', source: 'dispatch', summary: `Resume sendTurn resolved for ${sessionId.slice(0, 12)}…` });
+
+        // Wait for the channel to settle.
+        awaitChannelIdle(ch, {
+          ...(timeoutMs > 0 && { timeoutMs }),
+        }).then((reason) => {
+          if (settled) return;
+          settled = true;
+          if (reason === 'timeout') {
+            const parts: string[] = [];
+            if (lastError) parts.push(`error: ${lastError}`);
+            parts.push(`entries: [${entryTypes.join(', ')}]`);
+            parts.push(`text: ${text.length} chars`);
+            log({ level: 'debug', source: 'dispatch', summary: `Resume timeout fired: ${timeoutMs}ms elapsed, entries: ${entryTypes.length}, textLen: ${text.length} (session: ${sessionId.slice(0, 12)}…)` });
+            log({ level: 'warn', source: 'resume-child', summary: `Timeout after ${timeoutMs}ms — session ${sessionId} — ${parts.join(' | ')}` });
+            const contextUsage = buildChildUsage(sessionId, tokenAcc, baselineCostUsd);
+            cleanup();
+            if (text) {
+              log({ level: 'debug', source: 'dispatch', summary: `Resume timeout with partial text — returning partial result (${text.length} chars)` });
+              resolve({ sessionId, text, structured, contextUsage });
+            } else {
+              log({ level: 'debug', source: 'dispatch', summary: `Resume timeout null result: no text collected (session: ${sessionId.slice(0, 12)}…)` });
+              resolve(null);
+            }
+            return;
+          }
+          log({ level: 'debug', source: 'dispatch', summary: `Resume idle resolved (reason: ${reason}, session: ${sessionId.slice(0, 12)}…, textSoFar: ${text.length} chars, entries: ${entryTypes.length})` });
+          finalizeResume();
+        });
       })
       .catch((err) => {
         if (!settled) {

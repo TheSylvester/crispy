@@ -12,10 +12,11 @@
  * @module settings/settings-store
  */
 
-import { readFile, writeFile, mkdir, rename, copyFile } from 'node:fs/promises';
+import { readFile, mkdir, rename, copyFile } from 'node:fs/promises';
 import { watch, existsSync, readFileSync, unlinkSync, type FSWatcher } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { log } from '../log.js';
+import { writeFileAtomic } from '../atomic-write.js';
 import { settingsPath as getSettingsPath, crispyRoot, legacyConfigDir, relayConfigPath, _setTestRoot, _isTestOverride } from '../paths.js';
 
 import type {
@@ -419,11 +420,12 @@ async function loadSettingsFile(): Promise<CrispySettingsFile> {
   }
 }
 
-/** Write settings to disk with chmod 600. */
+/** Write settings to disk with chmod 600. Atomic (write-temp + rename) so
+ * concurrent readers from other VS Code windows never see a truncated file. */
 async function saveSettingsFile(settings: CrispySettingsFile): Promise<void> {
   await mkdir(crispyRoot(), { recursive: true });
   const content = JSON.stringify(settings, null, 2) + '\n';
-  await writeFile(getSettingsPath(), content, { mode: 0o600 });
+  await writeFileAtomic(getSettingsPath(), content, { mode: 0o600 });
 }
 
 // ============================================================================

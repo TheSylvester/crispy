@@ -1,5 +1,5 @@
 ---
-name: handoff-prompt-to
+name: distill
 description: >
   Synthesize self-contained implementation prompt(s) for a fresh agent with an
   empty context window. Auto-decomposes if the task is too large. Use when the

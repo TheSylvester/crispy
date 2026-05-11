@@ -42,7 +42,6 @@ import { disposeEmbedder } from '../core/recall/embedder.js';
 import { startIpcServer, getSocketPath } from './ipc-server.js';
 import { setHostSocketPath, setDefaultCwd } from '../core/session-manager.js';
 import { isLocalConnection, validateToken, parseCookie, cookieName, setTokenCookie, getOrCreateToken } from './auth.js';
-import { registerPanelOpener } from './panel-opener.js';
 
 // __dirname is available in CJS (tsx, tsc). When esbuild bundles to ESM with
 // --platform=node it shims __dirname automatically, so this works in both modes.
@@ -434,10 +433,8 @@ export async function startServer(config: ServerConfig): Promise<ServerHandle> {
     : join(__dirname, '..').replace(/^\\\\\?\\/, '');
 
   // Dev server can't open browser tabs from the host side.
-  // The browser transport handles openPanel client-side.
-  registerPanelOpener(() => {
-    throw new Error('openPanel from CLI not supported in dev-server mode');
-  });
+  // Leaving opener unregistered makes hasOpener() return false, so
+  // session_open_channel events fall through to the webview FlexLayout.
 
   done = phase('register adapters');
   setDefaultCwd(cwd);

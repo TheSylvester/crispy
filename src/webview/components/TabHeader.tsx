@@ -18,6 +18,9 @@ import { useIsActiveTab } from '../context/TabContainerContext.js';
 import { SessionSelector } from './session-selector/index.js';
 import { useTransport } from '../context/TransportContext.js';
 import { getSessionDisplayName } from '../utils/session-display.js';
+import { InlineRename } from './session-rename/InlineRename.js';
+import { pushErrorToast } from './notifications/ErrorToast.js';
+import './status-dot.css';
 
 // ============================================================================
 // Inline SVG icons (same as TitleBar — will be shared later)
@@ -49,11 +52,57 @@ function PlusIcon(): React.JSX.Element {
   );
 }
 
+function PencilIcon(): React.JSX.Element {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      {/* Tip + body */}
+      <path d="M8.5 1.5l2 2-7 7H1.5v-2l7-7z" />
+    </svg>
+  );
+}
+
 function ToolPanelIcon(): React.JSX.Element {
   return (
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M14.7 6.5a4 4 0 0 0-4.7-3.2 4 4 0 0 0-2.8 5.3l-5.4 5.4 1.4 1.4 5.4-5.4a4 4 0 0 0 5.3-2.8l-2.3-2.3-1.5 1.5-1.4-1.4 1.5-1.5z" />
     </svg>
+  );
+}
+
+/** Short session ID badge — click to copy full session ID */
+function SessionIdBadge({ sessionId }: { sessionId: string | null }): React.JSX.Element | null {
+  const [copied, setCopied] = useState(false);
+
+  if (!sessionId) return null;
+
+  const shortId = sessionId.slice(0, 8);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      console.error('[TabHeader] Failed to copy session ID');
+    }
+  };
+
+  return (
+    <button
+      className={`crispy-titlebar__session-id-btn${copied ? ' crispy-titlebar__session-id-btn--copied' : ''}`}
+      onClick={handleCopy}
+      title={copied ? 'Copied!' : `Click to copy session ID: ${sessionId}`}
+      aria-label="Copy session ID"
+    >
+      {copied ? (
+        <span className="crispy-titlebar__session-id-label">Copied!</span>
+      ) : (
+        <>
+          <span className="crispy-titlebar__session-id-prefix">#</span>
+          <span className="crispy-titlebar__session-id-label">{shortId}</span>
+        </>
+      )}
+    </button>
   );
 }
 
@@ -69,18 +118,18 @@ function ConnectionDot({
 
   const dotModifier =
     channelState === 'streaming'
-      ? 'crispy-titlebar__dot--streaming'
+      ? 'crispy-status-dot--streaming'
       : channelState === 'idle'
-        ? 'crispy-titlebar__dot--idle'
+        ? 'crispy-status-dot--idle'
         : channelState === 'awaiting_approval'
-          ? 'crispy-titlebar__dot--approval'
+          ? 'crispy-status-dot--approval'
           : channelState === 'background'
-            ? 'crispy-titlebar__dot--background'
+            ? 'crispy-status-dot--background'
             : null;
 
   if (!dotModifier) return null;
 
-  const dotClass = `crispy-titlebar__dot ${dotModifier}${copied ? ' crispy-titlebar__dot--copied' : ''}`;
+  const dotClass = `crispy-status-dot ${dotModifier} crispy-titlebar__dot${copied ? ' crispy-titlebar__dot--copied' : ''}`;
 
   const handleCopy = async () => {
     if (!sessionId) return;
@@ -133,6 +182,7 @@ export function TabHeader(): React.JSX.Element {
   const { sessions } = useSession();
   const { effectiveSessionId, setSelectedSessionId } = useTabSession();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [renamingHeader, setRenamingHeader] = useState(false);
   const { toolPanelOpen, setToolPanelOpen } = useTabPanel();
   const { channelState } = useSessionStatus(effectiveSessionId);
   const tabController = useTabControllerOptional();
@@ -152,9 +202,24 @@ export function TabHeader(): React.JSX.Element {
       : 'Conversations',
     [currentSession],
   );
+  // Rename source — the actual existing vendor title, NOT the truncated
+  // button label. Submitting the truncated label as a new title would
+  // silently chop the original; submitting the untruncated displayName
+  // would freeze a lastUserPrompt slice as customTitle.
+  const renameSource = currentSession
+    ? (currentSession.customTitle ?? currentSession.aiTitle ?? '')
+    : '';
 
   const toggleDropdown = useCallback(() => {
     setDropdownOpen(open => !open);
+  }, []);
+
+  // Entering edit mode collapses any open dropdown so hovering UI can't
+  // float over the input and so the click-outside handler doesn't race
+  // with the input's blur.
+  const handleStartRename = useCallback(() => {
+    setDropdownOpen(false);
+    setRenamingHeader(true);
   }, []);
 
   const handleNew = useCallback(() => {
@@ -193,9 +258,12 @@ export function TabHeader(): React.JSX.Element {
     transport.postRaw?.({ kind: 'setTitle', title: label });
   }, [isActiveTab, currentSession, transport]);
 
-  // Click-outside to close session dropdown
+  // Click-outside to close session dropdown.
+  // Gated on !renamingHeader so click-outside while editing doesn't fight
+  // with the input's blur — without this gate, blur and outside-click race
+  // and the dropdown can close mid-edit on some browsers.
   useEffect(() => {
-    if (!dropdownOpen) return;
+    if (!dropdownOpen || renamingHeader) return;
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
       if (dropdownContainerRef.current && !dropdownContainerRef.current.contains(target)) {
@@ -204,20 +272,46 @@ export function TabHeader(): React.JSX.Element {
     };
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
-  }, [dropdownOpen]);
+  }, [dropdownOpen, renamingHeader]);
 
   return (
     <div className="crispy-tab-header">
-      {/* Left — Session selector + connection dot */}
+      {/* Left — Session selector + rename button + connection dot */}
       <div className="crispy-tab-header__left" ref={dropdownContainerRef}>
+        {renamingHeader && currentSession ? (
+          // Root-element swap: while editing the trigger area, we render a
+          // <div> containing the input + a visual-only chevron. This avoids
+          // nesting <input> inside <button> (invalid HTML) and prevents
+          // toggleDropdown from firing on bubbled clicks during edit.
+          <div className="crispy-titlebar__btn crispy-titlebar__session-btn crispy-titlebar__session-btn--editing">
+            <InlineRename
+              sessionId={currentSession.sessionId}
+              currentTitle={renameSource}
+              onDone={() => setRenamingHeader(false)}
+              onError={(msg) => pushErrorToast(msg)}
+              className="crispy-titlebar__rename-input"
+            />
+            <Chevron open={dropdownOpen} />
+          </div>
+        ) : (
+          <button
+            className="crispy-titlebar__btn crispy-titlebar__session-btn"
+            onClick={toggleDropdown}
+            aria-label={dropdownOpen ? 'Close sessions' : 'Open sessions'}
+            title={currentSession ? buttonLabel : 'Toggle session list'}
+          >
+            <span className="crispy-titlebar__label">{buttonLabel}</span>
+            <Chevron open={dropdownOpen} />
+          </button>
+        )}
         <button
-          className="crispy-titlebar__btn crispy-titlebar__session-btn"
-          onClick={toggleDropdown}
-          aria-label={dropdownOpen ? 'Close sessions' : 'Open sessions'}
-          title={currentSession?.title || 'Toggle session list'}
+          className="crispy-titlebar__btn crispy-titlebar__rename-btn"
+          onClick={handleStartRename}
+          disabled={!currentSession || renamingHeader}
+          title={currentSession ? 'Rename session' : 'No session selected'}
+          aria-label="Rename session"
         >
-          <span className="crispy-titlebar__label">{buttonLabel}</span>
-          <Chevron open={dropdownOpen} />
+          <PencilIcon />
         </button>
         {dropdownOpen && (
           <div className="crispy-session-dropdown">
@@ -227,8 +321,9 @@ export function TabHeader(): React.JSX.Element {
         <ConnectionDot channelState={channelState} sessionId={effectiveSessionId} />
       </div>
 
-      {/* Right — Tools + New */}
+      {/* Right — Session ID + Tools + New */}
       <div className="crispy-tab-header__right">
+        <SessionIdBadge sessionId={effectiveSessionId} />
         <button
           className={`crispy-titlebar__btn crispy-titlebar__sidebar-btn${toolPanelOpen ? ' crispy-titlebar__sidebar-btn--active' : ''}`}
           onClick={() => setToolPanelOpen(!toolPanelOpen)}

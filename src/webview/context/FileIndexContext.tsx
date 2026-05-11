@@ -59,6 +59,25 @@ export function FileIndexProvider({ children }: { children: React.ReactNode }): 
 
   const refresh = useCallback(() => setRefreshCounter(c => c + 1), []);
 
+  // OS-drop import (Tauri shell) writes files behind the file tree's back —
+  // listen for the dispatch hook's terminal events and refresh, but only if
+  // the import landed in *this* provider's cwd. Without the filter, every
+  // mounted FilePanel would re-run `git ls-files` on every import.
+  useEffect(() => {
+    if (!fullPath) return;
+    function onImportTerminal(ev: Event): void {
+      const detail = (ev as CustomEvent<{ cwd?: string }>).detail;
+      if (!detail || detail.cwd !== fullPath) return;
+      refresh();
+    }
+    window.addEventListener('crispy:import-done', onImportTerminal);
+    window.addEventListener('crispy:import-failed', onImportTerminal);
+    return () => {
+      window.removeEventListener('crispy:import-done', onImportTerminal);
+      window.removeEventListener('crispy:import-failed', onImportTerminal);
+    };
+  }, [refresh, fullPath]);
+
   // Re-fetch file index on idle transitions and after file-writing tool calls.
   // The idle refresh catches end-of-turn changes. The tool_use refresh catches
   // files created mid-turn so linkify resolves them before the turn ends.

@@ -345,37 +345,7 @@
   flex-shrink: 0;
 }
 
-/* --- Vendor Icon (inline in session items) --- */
-
-.crispy-vendor-icon {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  width: 12px;
-  height: 12px;
-  opacity: 0.85;
-}
-
-/* Per-vendor colors (for icons using currentColor) */
-.crispy-vendor-icon[data-vendor="codex"] {
-  color: var(--vscode-charts-green, #89d185);
-}
-.crispy-vendor-icon[data-vendor="opencode"] {
-  color: var(--vscode-charts-blue, #6cb6ff);
-}
-
-/* Vendor text badge fallback (unknown vendors) */
-.crispy-vendor-badge {
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  opacity: 0.6;
-  flex-shrink: 0;
-  padding: 0 4px;
-  border-radius: var(--radius-sm);
-  border: 1px solid currentColor;
-  line-height: 1.4;
-}
+/* Vendor icon styles live in vendor-icon.css (colocated with VendorIcon.tsx). */
 
 /* --- Environment Badge --- */
 
@@ -966,3 +936,42 @@
   background: var(--vscode-list-hoverBackground, #2a2d2e);
 }
 
+
+/* --- Inline rename pencil button (dropdown rows) --- */
+
+.crispy-session-item__rename-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground, #888);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+  flex-shrink: 0;
+}
+
+.crispy-session-item:hover .crispy-session-item__rename-btn,
+.crispy-session-item:focus-within .crispy-session-item__rename-btn,
+.crispy-session-item--selected .crispy-session-item__rename-btn {
+  opacity: 1;
+}
+
+.crispy-session-item__rename-btn:hover {
+  color: var(--vscode-foreground, #ccc);
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+@media (hover: none) {
+  /* Always visible on touch devices — opacity-on-hover is invisible there. */
+  .crispy-session-item__rename-btn { opacity: 1; }
+}
+
+.crispy-session-item--editing {
+  background: var(--vscode-list-hoverBackground, #2a2d2e);
+}

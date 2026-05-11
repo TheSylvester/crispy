@@ -28,7 +28,8 @@ Unified wrapper around `crispy-dispatch` (Crispy IPC) for multi-vendor dispatch:
 - Vendor selection via `--vendor` (default: `claude`)
 - Model selection via `--model` / `-m`
 - Session resume via `--resume` / `-r`
-- Default: no timeout, bypass approvals, sessions persisted, session kept alive for resume
+- Default: no timeout, bypass approvals, sessions persisted
+- **Sessions auto-close by default.** This is almost always what you want — auto-closed sessions are persisted and fully resumable via `--resume <uuid>`. Pass `--no-auto-close` only when you need the **in-memory channel** kept attached (e.g. live observation, `postMessage`, `waitForIdle`). Do **not** pass it just to enable a follow-up turn.
 - All output goes through Crispy host — sessions stream live in the UI
 
 ## Prerequisites
@@ -69,7 +70,8 @@ $CRISPY_AGENT --vendor codex --resume <UUID> "Continue"
 | `-m, --model <model>` | Model override |
 | `-r, --resume <UUID>` | Resume session by ID |
 | `--timeout <ms>` | Override timeout (default: no timeout) |
-| `--auto-close` | Close session on completion (default: kept alive) |
+| `--no-auto-close` | Keep the **in-memory channel** attached after the turn settles. Use only for live observation (`postMessage`, `waitForIdle`, watching events). **Not** required for `--resume` — auto-closed sessions are persisted and resumable. |
+| `--auto-close` | Close the in-memory channel when the turn settles (this is the default — flag exists to make intent explicit). Session is still persisted to disk and fully resumable via `--resume <uuid>`. |
 | `-f, --fork` | Fork from session (requires `--resume`) |
 | `--resume-at <msg-id>` | Fork at specific message (requires `--fork`) |
 | `--no-persist` | Don't save session to disk (default: persist) |
@@ -96,7 +98,22 @@ Returns plain text response followed by the session ID:
 
 Capture the session ID to continue the conversation with `--resume <uuid>`.
 
-Every run also saves output to `<tmpdir>/crispy-agents/crispy-agent-<timestamp>-<pid>.log`.
+For full transcript access (turn-by-turn user/assistant content), use the
+`readDialogue` RPC:
+
+```bash
+$CRISPY_DISPATCH rpc readDialogue '{"sessionId": "<uuid>"}'
+```
+
+## See also
+
+`crispy:live-sessions` — for sessions kept alive with `--no-auto-close`,
+you can `postMessage` (deliver a turn), `waitForIdle` (block until the
+target settles), and `readDialogue` (read user↔assistant pairs) without
+spawning a new `crispy-agent` subprocess. Use the live-sessions verbs
+when you already have the session ID and the session is intentionally
+alive; use `--resume` when the session may have closed and needs
+rehydration.
 
 ## Exit Codes
 

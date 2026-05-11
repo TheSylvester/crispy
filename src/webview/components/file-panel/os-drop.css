@@ -1,0 +1,203 @@
+/* OS-drop import flow — drop highlight, conflict modal, progress toast.
+ * Loaded via OsDropOverlay.tsx; styles also apply when individual file rows
+ * are highlighted by the dispatcher.
+ */
+
+[data-drop-zone][data-drop-target] {
+  outline: 2px solid var(--vscode-focusBorder, #0078d4);
+  outline-offset: -2px;
+  background-color: var(--vscode-list-dropBackground, rgba(0, 120, 212, 0.1));
+}
+
+[data-drop-zone="files-panel-root"][data-drop-target] {
+  outline-style: dashed;
+}
+
+/* ============================================================================
+ * Conflict modal
+ * ========================================================================= */
+
+.crispy-import-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.crispy-import-modal {
+  background: var(--vscode-editor-background, #1e1e1e);
+  color: var(--vscode-foreground, #cccccc);
+  border: 1px solid var(--vscode-widget-border, #303031);
+  border-radius: 6px;
+  width: min(720px, 92vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+.crispy-import-modal__header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--vscode-widget-border, #303031);
+}
+
+.crispy-import-modal__header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.crispy-import-modal__bulk {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--vscode-widget-border, #303031);
+  font-size: 12px;
+}
+
+.crispy-import-modal__bulk select {
+  margin-left: 8px;
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #cccccc);
+  border: 1px solid var(--vscode-input-border, transparent);
+  padding: 2px 4px;
+}
+
+.crispy-import-modal__list {
+  overflow: auto;
+  flex: 1;
+  padding: 0 16px;
+  font-size: 12px;
+}
+
+.crispy-import-modal__row {
+  display: grid;
+  grid-template-columns: 1fr 110px 110px 130px;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--vscode-widget-border, #2a2a2a);
+}
+
+.crispy-import-modal__row--header {
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground, #888);
+  position: sticky;
+  top: 0;
+  background: var(--vscode-editor-background, #1e1e1e);
+}
+
+.crispy-import-modal__path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.crispy-import-modal__meta {
+  font-size: 11px;
+}
+
+.crispy-import-modal__sub {
+  color: var(--vscode-descriptionForeground, #888);
+}
+
+.crispy-import-modal__row select {
+  width: 100%;
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #cccccc);
+  border: 1px solid var(--vscode-input-border, transparent);
+  padding: 2px 4px;
+}
+
+.crispy-import-modal__footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--vscode-widget-border, #303031);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.crispy-import-modal__btn {
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #ccc);
+  border: 0;
+  padding: 6px 14px;
+  cursor: pointer;
+  border-radius: 2px;
+  font: inherit;
+}
+
+.crispy-import-modal__btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+
+.crispy-import-modal__btn--primary {
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #ffffff);
+}
+
+.crispy-import-modal__btn--primary:hover {
+  background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+/* ============================================================================
+ * Progress toast
+ * ========================================================================= */
+
+.crispy-import-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 320px;
+  background: var(--vscode-notifications-background, #252526);
+  color: var(--vscode-notifications-foreground, #cccccc);
+  border: 1px solid var(--vscode-notifications-border, #303031);
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-size: 12px;
+  z-index: 10001;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.crispy-import-toast__title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.crispy-import-toast__path {
+  color: var(--vscode-descriptionForeground, #888);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 6px;
+}
+
+.crispy-import-toast__bar {
+  height: 4px;
+  background: var(--vscode-progressBar-background, #0e639c33);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.crispy-import-toast__bar-fill {
+  height: 100%;
+  background: var(--vscode-progressBar-background, #0e639c);
+  transition: width 0.15s ease-out;
+}
+
+.crispy-import-toast__cancel {
+  background: transparent;
+  border: 1px solid var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #ccc);
+  padding: 3px 10px;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.crispy-import-toast__cancel:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}

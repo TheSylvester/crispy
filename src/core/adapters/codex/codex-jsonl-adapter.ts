@@ -244,7 +244,7 @@ function emitReasoning(
         thinkingBlocks.push({
           type: 'thinking',
           thinking: item.text,
-          metadata: { isSummary: true },
+          isSummary: true,
         });
       }
     }

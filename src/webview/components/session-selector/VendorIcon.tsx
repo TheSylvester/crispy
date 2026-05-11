@@ -13,6 +13,8 @@
  * @module VendorIcon
  */
 
+import './vendor-icon.css';
+
 interface VendorIconProps {
   vendor: string;
   size?: number;

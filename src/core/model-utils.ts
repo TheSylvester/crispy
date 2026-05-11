@@ -55,6 +55,7 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   'codex:gpt-5.4':           1_050_000,
   'codex:gpt-5.4-pro':       1_050_000,
   'codex:gpt-5.4-medium':      200_000,
+  'codex:gpt-5.5':           1_000_000,
   'codex:':                    200_000,  // default Codex
   // Gemini
   'gemini:':                   1_000_000,
@@ -66,33 +67,47 @@ const CONTEXT_WINDOWS: Record<string, number> = {
 const MIN_CONTEXT_WINDOW = 200_000;
 
 /**
- * Return the context window size (in tokens) for a given vendor + model.
+ * Strict lookup: returns the context window only when the model is explicitly
+ * known (exact match, date-suffix-stripped match, or family-name match).
+ * Returns null on miss — caller decides the fallback policy.
  *
- * Handles both short aliases ("opus", "claude-opus-4-6") and date-suffixed
- * SDK model strings ("claude-opus-4-5-20251101") by trying an exact match
- * first, then stripping the date suffix for a prefix match.
+ * Used by the gauge to override an SDK-reported window only when we have a
+ * confident answer; falling through to the vendor default would clobber the
+ * SDK's authoritative value with a 200k guess for unknown models.
  */
-export function getContextWindowTokens(vendor: Vendor, model?: string): number {
-  const key = `${vendor}:${model || ''}`;
+export function lookupContextWindow(vendor: Vendor, model?: string): number | null {
+  if (!model) return null;
+  const key = `${vendor}:${model}`;
   if (CONTEXT_WINDOWS[key] !== undefined) return CONTEXT_WINDOWS[key];
   // Strip date suffix (e.g. "claude-opus-4-5-20251101" → "claude-opus-4-5")
   // SDK model strings append -YYYYMMDD or -YYYY-MM-DD; the table uses the
   // versionless form.
-  if (model) {
-    const stripped = model.replace(/(?:-\d{8}|-\d{4}-\d{2}-\d{2})$/, '');
-    if (stripped !== model) {
-      const strippedKey = `${vendor}:${stripped}`;
-      if (CONTEXT_WINDOWS[strippedKey] !== undefined) return CONTEXT_WINDOWS[strippedKey];
-    }
-    // Family-name fallback: SDK model strings vary across versions
-    // (claude-opus-4-6, claude-opus-4-5-20251101, claude-4-opus-20250514, etc.)
-    // but the family name (opus/sonnet/haiku) determines the context window.
-    const m = stripped.toLowerCase();
-    if (m.includes('opus')) return CONTEXT_WINDOWS[`${vendor}:opus`] ?? MIN_CONTEXT_WINDOW;
-    if (m.includes('sonnet')) return CONTEXT_WINDOWS[`${vendor}:sonnet`] ?? MIN_CONTEXT_WINDOW;
-    if (m.includes('haiku')) return CONTEXT_WINDOWS[`${vendor}:haiku`] ?? MIN_CONTEXT_WINDOW;
+  const stripped = model.replace(/(?:-\d{8}|-\d{4}-\d{2}-\d{2})$/, '');
+  if (stripped !== model) {
+    const strippedKey = `${vendor}:${stripped}`;
+    if (CONTEXT_WINDOWS[strippedKey] !== undefined) return CONTEXT_WINDOWS[strippedKey];
   }
-  // Try vendor default
+  // Family-name fallback: SDK model strings vary across versions
+  // (claude-opus-4-6, claude-opus-4-5-20251101, claude-4-opus-20250514, etc.)
+  // but the family name (opus/sonnet/haiku) determines the context window.
+  const m = stripped.toLowerCase();
+  if (m.includes('opus')) return CONTEXT_WINDOWS[`${vendor}:opus`] ?? null;
+  if (m.includes('sonnet')) return CONTEXT_WINDOWS[`${vendor}:sonnet`] ?? null;
+  if (m.includes('haiku')) return CONTEXT_WINDOWS[`${vendor}:haiku`] ?? null;
+  return null;
+}
+
+/**
+ * Return the context window size (in tokens) for a given vendor + model.
+ *
+ * Falls back to the vendor default, then to MIN_CONTEXT_WINDOW. Use this when
+ * a number is required and there is no SDK-authoritative value to defer to.
+ * For the gauge override path, prefer `lookupContextWindow` so unknown models
+ * don't clobber the SDK's real value.
+ */
+export function getContextWindowTokens(vendor: Vendor, model?: string): number {
+  const known = lookupContextWindow(vendor, model);
+  if (known !== null) return known;
   const vendorDefault = CONTEXT_WINDOWS[`${vendor}:`];
   if (vendorDefault !== undefined) return vendorDefault;
   return MIN_CONTEXT_WINDOW;

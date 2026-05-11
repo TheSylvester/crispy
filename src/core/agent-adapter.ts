@@ -58,8 +58,17 @@ export interface SessionInfo {
   lastUserPrompt?: string;
   vendor: Vendor;
   isSidechain?: boolean;
-  /** Short session title from the session_titles table. */
+  /**
+   * Deprecated. Vendor titles are now exposed via `customTitle` / `aiTitle`
+   * (the rename-sessions plan retired the `session_titles` DB column in v6).
+   * Retained for one release for wire-format backward compatibility; will
+   * be removed in 0.3.4. No producer populates this field.
+   */
   title?: string;
+  /** Title from JSONL `custom-title` entry (user-set via /rename). */
+  customTitle?: string;
+  /** Title from JSONL `ai-title` entry (SDK auto-generated). */
+  aiTitle?: string;
   /** 'user' = user-initiated session, 'system' = internal (Rosie, etc). */
   sessionKind?: 'user' | 'system';
   /** Remote environment label, e.g. "WSL · Ubuntu". Set by remote-proxy for proxied sessions. */
@@ -138,6 +147,34 @@ export interface VendorDiscovery {
    * @param fromOffset - Byte offset to start scanning from (default 0)
    */
   scanUserActivity?(sessionPath: string, fromOffset?: number): UserActivityScanResult;
+
+  /**
+   * Best-effort recovery of the model a session was using, by inspecting
+   * persisted session files. Returns undefined if the session file is
+   * missing, unreadable, or the cutoff UUID (when supplied) cannot be located.
+   * Callers should already have tried live in-memory state first.
+   */
+  resolveModelForSession?(sessionId: string, opts?: { upToUuid?: string }): string | undefined;
+
+  /**
+   * Stateless rename — used when no live adapter is attached for the session.
+   * Mirrors AgentAdapter.setSessionTitle so session-manager can dispatch
+   * uniformly across live and offline paths.
+   */
+  setSessionTitle?(sessionId: string, title: string): Promise<void>;
+
+  /** Stateless title read; same fallback semantics as setSessionTitle. */
+  getSessionTitle?(sessionId: string): Promise<string | null>;
+
+  /**
+   * Force-populate any internal session cache.
+   *
+   * Optional — vendors with no cache (e.g. Claude reads disk on every call)
+   * omit this. Vendors with TTL caches (Codex) implement it so callers that
+   * need a fresh, complete view (e.g. the title-migration drain at startup)
+   * can wait for population before iterating.
+   */
+  refresh?(): Promise<void>;
 }
 
 // ============================================================================
@@ -267,11 +304,16 @@ export interface AdapterSettings {
 // Adapters MUST forward spec.env to the spawned process environment.
 // session-manager injects CRISPY_SESSION_ID and CRISPY_SOCK into spec.env
 // for all session modes (fresh, resume, fork).
+// `model` is the user's explicit choice — forwarded as `--model` to the CLI.
+// `capabilityHint` is an inferred family marker used only for in-process
+// capability gating (e.g. thinking-config). Never forwarded to spawn args,
+// so the CLI's own default resolution (including the `[1m]` 1M-context
+// append) still applies when the user didn't pick a model explicitly.
 export type SessionOpenSpec =
-  | { mode: 'resume'; sessionId: string; cwd?: string; model?: string; permissionMode?: TurnSettings['permissionMode']; mcpServers?: Record<string, unknown>; plugins?: LocalPlugin[]; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' }
-  | { mode: 'fresh'; cwd: string; model?: string; permissionMode?: TurnSettings['permissionMode']; allowDangerouslySkipPermissions?: boolean; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; plugins?: LocalPlugin[]; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' }
-  | { mode: 'fork'; fromSessionId: string; atMessageId?: string; model?: string; permissionMode?: TurnSettings['permissionMode']; allowDangerouslySkipPermissions?: boolean; skipPersistSession?: boolean; outputFormat?: TurnSettings['outputFormat']; mcpServers?: Record<string, unknown>; plugins?: LocalPlugin[]; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' }
-  | { mode: 'hydrated'; cwd: string; history: TranscriptEntry[]; sourceVendor: Vendor; sourceSessionId?: string; model?: string; permissionMode?: TurnSettings['permissionMode']; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; plugins?: LocalPlugin[]; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' };
+  | { mode: 'resume'; sessionId: string; cwd?: string; model?: string; capabilityHint?: string; permissionMode?: TurnSettings['permissionMode']; mcpServers?: Record<string, unknown>; plugins?: LocalPlugin[]; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' }
+  | { mode: 'fresh'; cwd: string; model?: string; capabilityHint?: string; permissionMode?: TurnSettings['permissionMode']; allowDangerouslySkipPermissions?: boolean; extraArgs?: Record<string, string | null>; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; plugins?: LocalPlugin[]; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' }
+  | { mode: 'fork'; fromSessionId: string; atMessageId?: string; model?: string; capabilityHint?: string; permissionMode?: TurnSettings['permissionMode']; allowDangerouslySkipPermissions?: boolean; skipPersistSession?: boolean; outputFormat?: TurnSettings['outputFormat']; mcpServers?: Record<string, unknown>; plugins?: LocalPlugin[]; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' }
+  | { mode: 'hydrated'; cwd: string; history: TranscriptEntry[]; sourceVendor: Vendor; sourceSessionId?: string; model?: string; capabilityHint?: string; permissionMode?: TurnSettings['permissionMode']; skipPersistSession?: boolean; mcpServers?: Record<string, unknown>; plugins?: LocalPlugin[]; env?: Record<string, string>; systemPrompt?: string; sessionKind?: 'user' | 'system' };
 
 // ============================================================================
 // Agent Adapter Interface
@@ -381,4 +423,16 @@ export interface AgentAdapter {
    * Vendors that don't support this should throw with a descriptive message.
    */
   setPermissionMode(mode: string): Promise<void>;
+
+  /**
+   * Rename a session in the vendor's native store.
+   * Adapters that don't support rename omit this method.
+   */
+  setSessionTitle?(sessionId: string, title: string): Promise<void>;
+
+  /**
+   * Read the current vendor-native title for a session.
+   * Returns null if no title is set.
+   */
+  getSessionTitle?(sessionId: string): Promise<string | null>;
 }

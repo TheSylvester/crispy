@@ -1,0 +1,17 @@
+/* --- Inline Rename Input --- */
+
+.crispy-inline-rename {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  font: inherit;
+  color: var(--vscode-input-foreground, #d4d4d4);
+  background: var(--vscode-input-background, #3c3c3c);
+  border: 1px solid var(--vscode-focusBorder, #007acc);
+  border-radius: 3px;
+  outline: none;
+}
+
+.crispy-inline-rename:disabled {
+  opacity: 0.6;
+}

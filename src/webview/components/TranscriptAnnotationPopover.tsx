@@ -9,12 +9,25 @@
  * position so it stays within 8px of all viewport edges (same pattern as
  * FileContextMenu).
  *
+ * The annotation-mode UI (textarea + mic + actions) lives in a child component
+ * (`TranscriptAnnotationPanel`) so the voice-input hook mounts/unmounts with
+ * the modal — guaranteeing that closing the modal stops the recording.
+ *
  * @module components/TranscriptAnnotationPopover
  */
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import type { TranscriptAnnotationState } from '../hooks/useTranscriptAnnotation.js';
+import { useTransport } from '../context/TransportContext.js';
+import { useVoiceInput, type VoiceState } from '../hooks/useVoiceInput.js';
+import { MicIcon } from './control-panel/icons.js';
+
+const MIC_TITLES: Record<VoiceState, string> = {
+  idle: 'Voice input',
+  recording: 'Stop recording',
+  transcribing: 'Transcribing…',
+};
 
 /** Clamp popover position so it doesn't overflow the viewport */
 function clampToViewport(
@@ -39,6 +52,134 @@ function clampToViewport(
   return { top, left };
 }
 
+interface TranscriptAnnotationPanelProps {
+  annotationText: string;
+  setAnnotationText: (t: string) => void;
+  submitAnnotation: () => void;
+  cancelAnnotation: () => void;
+}
+
+/**
+ * Annotation-mode body: textarea + mic + cancel/insert.
+ *
+ * Mounts only while the modal is open in annotation mode. Unmounting tears
+ * down the voice hook, which stops any active recording (host or browser).
+ */
+function TranscriptAnnotationPanel({
+  annotationText,
+  setAnnotationText,
+  submitAnnotation,
+  cancelAnnotation,
+}: TranscriptAnnotationPanelProps): React.JSX.Element {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const transport = useTransport();
+  const hostCapture = useMemo(() => {
+    if (!transport.startVoiceCapture || !transport.stopVoiceCapture) return undefined;
+    return {
+      start: transport.startVoiceCapture.bind(transport),
+      stop: transport.stopVoiceCapture.bind(transport),
+    };
+  }, [transport]);
+
+  const annotationTextRef = useRef(annotationText);
+  annotationTextRef.current = annotationText;
+
+  const voice = useVoiceInput({
+    transcribe: useCallback(
+      (pcm: Float32Array, sr: number) => transport.transcribeAudio(pcm, sr),
+      [transport],
+    ),
+    onTranscript: useCallback((text: string) => {
+      const current = annotationTextRef.current;
+      const sep = current && !current.endsWith(' ') ? ' ' : '';
+      setAnnotationText(current + sep + text);
+      textareaRef.current?.focus();
+    }, [setAnnotationText]),
+    hostCapture,
+  });
+
+  // Auto-focus textarea on mount.
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
+  // Insert-while-busy: if the user clicks Insert (or Cmd+Enter) while the mic
+  // is recording/transcribing, wait for transcription to land, then submit.
+  // submitAnnotation closes over the latest annotationText, so by the time
+  // the effect fires the appended text is included.
+  const [pendingSubmit, setPendingSubmit] = useState(false);
+  useEffect(() => {
+    if (pendingSubmit && voice.state === 'idle') {
+      setPendingSubmit(false);
+      submitAnnotation();
+    }
+  }, [pendingSubmit, voice.state, submitAnnotation]);
+
+  const handleInsert = useCallback(() => {
+    if (pendingSubmit) return;
+    if (voice.state === 'idle') {
+      submitAnnotation();
+      return;
+    }
+    setPendingSubmit(true);
+    if (voice.state === 'recording') {
+      voice.toggle(); // stop + transcribe; pendingSubmit triggers submit when state goes idle
+    }
+  }, [pendingSubmit, voice, submitAnnotation]);
+
+  const handleCancel = useCallback(() => {
+    voice.abort();
+    cancelAnnotation();
+  }, [voice, cancelAnnotation]);
+
+  return (
+    <div className="crispy-annotation-popover__input">
+      <textarea
+        ref={textareaRef}
+        className="crispy-annotation-popover__textarea"
+        value={annotationText}
+        onChange={(e) => setAnnotationText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            handleInsert();
+          }
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            handleCancel();
+          }
+        }}
+        placeholder="Add a comment... (Cmd+Enter to submit)"
+        rows={3}
+      />
+      <div className="crispy-annotation-popover__actions">
+        <button
+          type="button"
+          className={`crispy-cp-mic ${voice.state !== 'idle' ? `crispy-cp-mic--${voice.state}` : ''}`}
+          title={MIC_TITLES[voice.state]}
+          disabled={voice.state === 'transcribing' || pendingSubmit}
+          onClick={voice.toggle}
+        >
+          <MicIcon />
+        </button>
+        <button
+          className="crispy-annotation-popover__cancel"
+          onClick={handleCancel}
+        >
+          Cancel
+        </button>
+        <button
+          className="crispy-annotation-popover__submit"
+          onClick={handleInsert}
+          disabled={pendingSubmit}
+        >
+          {pendingSubmit ? 'Inserting…' : 'Insert'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function TranscriptAnnotationPopover({
   selection,
   annotationMode,
@@ -49,25 +190,17 @@ export function TranscriptAnnotationPopover({
   cancelAnnotation,
 }: TranscriptAnnotationState): React.JSX.Element | null {
   const popoverRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
-  // Measure and clamp after render (selection change or mode change)
+  // Measure and clamp after render (selection change or mode change).
   useEffect(() => {
     if (!selection || !popoverRef.current) { setPos(null); return; }
     setPos(clampToViewport(selection.rect, popoverRef.current));
   }, [selection, annotationMode]);
 
-  // Auto-focus textarea on annotation mode
-  useEffect(() => {
-    if (annotationMode && textareaRef.current) {
-      textareaRef.current.focus();
-    }
-  }, [annotationMode]);
-
   if (!selection) return null;
 
-  // First render: position off-screen to measure, then clamp
+  // First render: position off-screen to measure, then clamp.
   const style = pos
     ? { top: pos.top, left: pos.left, transform: 'none' }
     : { top: -9999, left: -9999, transform: 'none' };
@@ -92,40 +225,12 @@ export function TranscriptAnnotationPopover({
           <span>Quote</span>
         </button>
       ) : (
-        <div className="crispy-annotation-popover__input">
-          <textarea
-            ref={textareaRef}
-            className="crispy-annotation-popover__textarea"
-            value={annotationText}
-            onChange={(e) => setAnnotationText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                submitAnnotation();
-              }
-              if (e.key === 'Escape') {
-                e.stopPropagation();
-                cancelAnnotation();
-              }
-            }}
-            placeholder="Add a comment... (Cmd+Enter to submit)"
-            rows={3}
-          />
-          <div className="crispy-annotation-popover__actions">
-            <button
-              className="crispy-annotation-popover__cancel"
-              onClick={cancelAnnotation}
-            >
-              Cancel
-            </button>
-            <button
-              className="crispy-annotation-popover__submit"
-              onClick={submitAnnotation}
-            >
-              Insert
-            </button>
-          </div>
-        </div>
+        <TranscriptAnnotationPanel
+          annotationText={annotationText}
+          setAnnotationText={setAnnotationText}
+          submitAnnotation={submitAnnotation}
+          cancelAnnotation={cancelAnnotation}
+        />
       )}
     </div>,
     document.body,
