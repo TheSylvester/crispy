@@ -47,6 +47,13 @@ jobs:
         working-directory: tauri
         run: pwsh scripts/bundle-runtime.ps1
 
+      # Same Cargo.lock across 0.3.2-0.3.4 means Swatinem/rust-cache restores
+      # the same target/ to every build. Cargo.toml feature changes don't
+      # invalidate the key, suspected to cause stale incremental artifacts.
+      - name: Force clean Rust build
+        working-directory: tauri/src-tauri
+        run: cargo clean
+
       - name: Build Tauri app
         working-directory: tauri
         run: npx tauri build 2>&1
