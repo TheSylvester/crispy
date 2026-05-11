@@ -21,40 +21,25 @@
 
 ## What's New in v0.3.3
 
-A live sessions panel, Windows desktop polish, and Claude Opus 4.7 thinking restored.
+A live sessions panel, tabbed terminals, and orchestration polish.
 
-### Open Sessions panel
+![Open Sessions sidebar — live inbox of running agent sessions](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/open-sessions-sidebar.png)
 
-![Open Sessions sidebar — running sessions grouped by working directory with status, last message, and relative activity time](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/open-sessions-sidebar.png)
-
-A live inbox of every running session — status dot, last message preview, and relative activity time. Sessions are grouped by working directory with git branch and dirty indicator; child sessions (from `/superthink`, dispatch) nest under their parent. Clicking a row focuses the existing panel instead of opening a duplicate. Hover a row to rename or kill the channel — closing broadcasts a teardown so subscribed panels detach cleanly.
-
-### Windows desktop app
-
-- **No more flashing console windows** when the app spawns subprocesses on Windows.
-- **Faster WSL workspace detection** — the workspace picker shows its detection state immediately instead of leaving you wondering for several seconds.
-- **WSL provisioning timeout** — a stalled `npm install` is now caught after 3 minutes instead of hanging silently.
-
-### Multi-agent orchestration
-
-- **`/live-sessions` skill** — agents can discover, message, wait on, and read peer sessions without spawning a child. Closes the loop for coordinator and observer patterns.
-- **Richer session metadata** — titles, last-message previews, and last-activity timestamps are now available to orchestration prompts.
-- **Short session ID badge** in the tab header — click to copy the full UUID.
-
-### Claude Opus 4.7 thinking restored
-
-- Bundles `claude-agent-sdk` 0.2.114 and correctly opts into summarized thinking. The thinking flag, chosen model, and 1M-context variant all survive resume, fork, and `/model` mid-session switches.
-- Custom titles (from `/rename` in Anthropic's official extension) and AI-generated titles from Claude Code now show in the session dropdown alongside Crispy's Rosie titles.
-- Clearer warning when your installed Claude CLI lags the bundled SDK, instead of silently dropping features the CLI actually supports.
-
-### Code blocks
-
-Every fenced code block in assistant output reveals copy and word-wrap buttons on hover. Wrap state is per-block; defaults off to preserve literal layout.
+- **Open Sessions panel** — live inbox of every running session, grouped by working directory with git branch and dirty indicator. Child sessions nest under their parent. Hover a row to rename or kill the channel.
+- **Tabbed terminals** — spawn as many terminals as you want, each scoped to its session's cwd.
+- **Code block controls** — hover any fenced code block for copy and word-wrap toggles.
+- **`/live-sessions` skill** — agents discover, message, wait on, and read peer sessions without spawning a child. New `postMessage`, `waitForIdle`, and `readDialogue` RPCs, plus `listOpenSessions` now returns titles, last-message previews, and last-activity timestamps. Closes the loop for coordinator and observer patterns.
+- **Session ID badge in the tab header** — click to copy the full UUID. Paste it into another agent's window and it'll recognize the ID and reach for `recall` or `readDialogue` to see what that session said.
+- **Claude Opus 4.7 thinking restored** — bundles `claude-agent-sdk` 0.2.114. The thinking flag, model, and 1M-context variant survive resume, fork, and `/model` switches.
+- **Custom session titles** — `/rename` titles and Claude Code's AI titles now show in the session dropdown.
+- **No more flashing console windows** on Windows subprocess spawns.
+- **Faster WSL workspace detection** — the picker shows detection state immediately.
 
 ### Bug fixes
 
-- **Context gauge** — resets when you start a new session instead of showing the previous session's percentage. Defers to the SDK for newly-released models instead of forcing a 200K window.
-- **Concurrent VS Code windows** — shared `~/.crispy/` state files are written atomically so a second window can't read a half-written file.
+- **Codex context gauge** — fixed for GPT-5.5 and other newly-released models.
+- **Concurrent VS Code windows** — shared `~/.crispy/` state files written atomically so a second window can't read a half-written file.
+- **WSL provisioning timeout** — stalled `npm install` caught after 3 minutes instead of hanging silently.
 - **Improved startup stability.**
 
 ## What's New in v0.3.2
@@ -70,18 +55,6 @@ Stability, polish, and a big pass on Windows compatibility.
 - **File viewer fixes** — images render instead of crashing on binary extensions, markdown preview scrolls correctly.
 - **Per-host Discord controls** — separate Discord bot toggles per host, so you can run multiple Crispies and only have one posting.
 - **Rosie tool gating (arbiter)** — new arbiter module governs Rosie Tracker's tool access. Rosie is still experimental, but can no longer go rogue.
-
-## What's New in v0.3.1
-
-Stability fixes and a superthink upgrade.
-
-- **Superthink converge mode** — agents now cross-review each other's findings and produce a unified verdict, not just parallel opinions
-- **Fork fix** — fork button now targets the right message (assistant turn before the last user message)
-- **Windows compatibility** — fixed crispy-agent failures on native Windows and Git Bash
-- **Windows extension paths** — stripped UNC prefix that broke tool paths in VS Code on Windows
-- **Singleton guard** — running `crispy` twice no longer spawns duplicate background processes
-- **Approval UI fix** — stale approval popups no longer linger after resolution
-- **Tauri updater fix** — corrected artifact signature path so auto-updates work reliably
 
 ---
 
@@ -109,7 +82,7 @@ Stability fixes and a superthink upgrade.
 
 ![Superthink visible dispatch — agents open as live tabs you can watch and fork](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/superthink-visual-full-1.gif)
 
-- `/superthink` — pit Claude and Codex against each other on the same question. Sub-agents open as live tabs you can watch. Catches bugs and blind spots a single model misses
+- `/superthink` — pit Claude and Codex against each other on the same question, then converge into a unified verdict. Sub-agents open as live tabs you can watch. Catches bugs and blind spots a single model misses
 - `/super-implement` — turn plans into self-contained execution prompts, auto-decomposed if too large
 - `/reflect` — verify prompts and plans against the codebase before execution
 - `/handoff` — distill context and rotate into a fresh session when context gets long
@@ -127,7 +100,7 @@ Stability fixes and a superthink upgrade.
 
 ![Multi-tab workbench — split sessions, file browser, terminal, and model selector in the Windows native app](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/multi-tab-workbench.png)
 
-- Multi-tab workspace — as many agent sessions as you want, arranged however you like, with built-in terminal and dockable Files/Git panels
+- Multi-tab workspace — as many agent sessions as you want, arranged however you like, with tabbed terminals and dockable Files/Git panels
 - Fork and rewind at any point — new session opens as a split tab with full context
 
 ![Fork a conversation into a new side-by-side panel](https://raw.githubusercontent.com/TheSylvester/crispy/main/media/fork.gif)
@@ -167,7 +140,7 @@ Stability fixes and a superthink upgrade.
 - Run `npm i -g crispy-code && crispy` — full UI in your browser, no VS Code required
 - Background daemon with `crispy start` / `crispy stop` / `crispy status`
 - Workspace picker with URL-based routing for multiple projects
-- Multi-tab workbench with split views, dockable panels, and built-in terminal
+- Multi-tab workbench with split views, dockable panels, and tabbed terminals
 - Same core features — memory, superthink, fork, rewind
 
 ---
