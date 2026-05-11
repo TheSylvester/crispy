@@ -881,7 +881,13 @@ export class CodexAgentAdapter implements AgentAdapter {
             // has a trustworthy occupancy snapshot.
             if (entry.type === 'assistant' && this._contextUsage && entry.message) {
               entry.message.usage = {
-                input_tokens: this._contextUsage.tokens.input,
+                // Codex includes cached tokens in inputTokens; Claude-shaped
+                // message.usage excludes them so downstream readers can add
+                // cache_read_input_tokens without double-counting.
+                input_tokens: Math.max(
+                  0,
+                  this._contextUsage.tokens.input - this._contextUsage.tokens.cacheRead,
+                ),
                 output_tokens: this._contextUsage.tokens.output,
                 cache_creation_input_tokens: this._contextUsage.tokens.cacheCreation,
                 cache_read_input_tokens: this._contextUsage.tokens.cacheRead,

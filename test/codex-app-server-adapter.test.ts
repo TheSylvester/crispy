@@ -1128,7 +1128,7 @@ describe('CodexAgentAdapter', () => {
       expect(assistantEntry?.type).toBe('entry');
       if (assistantEntry?.type === 'entry' && assistantEntry.entry.type === 'assistant') {
         expect(assistantEntry.entry.message?.usage).toEqual({
-          input_tokens: 1100,
+          input_tokens: 200,
           output_tokens: 100,
           cache_creation_input_tokens: 0,
           cache_read_input_tokens: 900,
