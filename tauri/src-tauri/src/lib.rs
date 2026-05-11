@@ -975,11 +975,15 @@ fn detect_wsl() -> Option<WslDetection> {
         .map(|o| o.status.success())
         .unwrap_or(false);
 
-    // Check installed version
+    // Check installed version. Resolve via the bin symlink so we read the
+    // package.json of whichever package npm last installed `crispy` from —
+    // avoids reading a stale `crispy/` directory left over from the
+    // pre-rename install (which would trigger a permanent version-mismatch
+    // re-provision loop, because npm install never removes orphaned packages).
     let installed_version = if crispy_installed {
         wsl_command()
             .args(["-d", &distro, "-e", "bash", "-c",
-                   "node -e \"try{process.stdout.write(require(process.env.HOME+'/.crispy/node_modules/crispy/package.json').version)}catch{process.stdout.write(require(process.env.HOME+'/.crispy/node_modules/crispy-code/package.json').version)}\" 2>/dev/null"])
+                   "node -p \"const fs=require('fs'),path=require('path');const tgt=fs.realpathSync(process.env.HOME+'/.crispy/node_modules/.bin/crispy');require(path.join(path.dirname(path.dirname(tgt)),'package.json')).version\" 2>/dev/null"])
             .output()
             .ok()
             .and_then(|o| {
@@ -1095,8 +1099,14 @@ async fn provision_wsl_crispy(app: &AppHandle, distro: &str) -> Result<(), Strin
     // Then npm install from the tarball to get correct Linux native modules.
     // npm pack on Windows strips Unix execute bits and may introduce CRLF line
     // endings.  After `npm install` we fix both so shebangs work in WSL.
+    //
+    // Strip the pre-rename `crispy/` install before npm runs: npm doesn't
+    // prune orphaned deps on install, so a stale `crispy/` (from the rename
+    // to `crispy-code`) lingers forever otherwise.
     let install_cmd = format!(
-        r#"src=$(wslpath -a -u '{}'); npm install --prefix "$HOME/.crispy" "$src" 2>&1 && \
+        r#"rm -rf "$HOME/.crispy/node_modules/crispy"; \
+[ -f "$HOME/.crispy/package.json" ] && node -e "try{{const fs=require('fs'),p=process.env.HOME+'/.crispy/package.json',j=JSON.parse(fs.readFileSync(p));if(j.dependencies&&j.dependencies.crispy){{delete j.dependencies.crispy;fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n')}}}}catch(e){{}}" 2>/dev/null; \
+src=$(wslpath -a -u '{}'); npm install --prefix "$HOME/.crispy" "$src" 2>&1 && \
 for f in "$HOME/.crispy/node_modules/crispy-code/dist/crispy-dispatch.js" \
          "$HOME/.crispy/node_modules/crispy-code/dist/crispy-cli.js" \
          "$HOME/.crispy/node_modules/crispy-code/dist/recall.js" \
@@ -1197,12 +1207,26 @@ fn start_wsl_daemon_manager(app_handle: AppHandle) {
 
         if detection.daemon_port.is_some() {
             log::info!("Killing existing WSL daemon to ensure fresh runtime");
+            // SIGTERM, then poll up to 5s for graceful exit, then SIGKILL
+            // if stubborn. Without this, the new daemon often loses a
+            // bind-port race against the dying old one and exits with
+            // "Another Crispy daemon is already running on port N".
             let _ = wsl_command()
                 .args(["-d", &detection.distro, "-e", "bash", "-c",
-                       "kill $(cat ~/.crispy/run/crispy.pid 2>/dev/null) 2>/dev/null; rm -f ~/.crispy/run/crispy.pid ~/.crispy/run/crispy.port"])
+                       r#"pid=$(cat ~/.crispy/run/crispy.pid 2>/dev/null)
+if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+  kill "$pid" 2>/dev/null
+  for i in $(seq 1 25); do
+    sleep 0.2
+    kill -0 "$pid" 2>/dev/null || break
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -9 "$pid" 2>/dev/null
+    sleep 0.5
+  fi
+fi
+rm -f ~/.crispy/run/crispy.pid ~/.crispy/run/crispy.port"#])
                 .status();
-            // Brief pause for process cleanup
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         }
 
         let port = {

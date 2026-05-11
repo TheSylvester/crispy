@@ -19,6 +19,14 @@
 
 ---
 
+## What's New in v0.3.4
+
+A Windows hotfix for WSL workspace detection.
+
+### Bug fixes
+
+- **WSL workspace detection on the Tauri desktop app** — fixed an infinite re-provision loop on Windows that left WSL sessions invisible in the workspace picker. The version probe was reading from an orphaned `node_modules/crispy/` directory left behind by older installs (pre-rename), so every startup mistakenly re-provisioned WSL and sometimes lost a port-bind race with the dying daemon. Detection now resolves through the bin symlink (always reads the actually-installed package), the install path scrubs the legacy directory, and daemon shutdown polls for graceful exit before SIGKILL instead of racing a fixed sleep. Affects anyone who installed Crispy before the package was renamed to `crispy-code`.
+
 ## What's New in v0.3.3
 
 A live sessions panel, tabbed terminals, and orchestration polish.
