@@ -26,6 +26,20 @@ on:
   push:
     tags:
       - "v*"
+  # Manual Tauri-only release: builds and releases just the Windows installer,
+  # skipping the VSIX matrix and OpenVSX publish. Use when shipping a fix that
+  # only affects the desktop shell (e.g. WSL panel regression) and you don't
+  # want to push a new VSIX version to OpenVSX.
+  workflow_dispatch:
+    inputs:
+      tauri_only:
+        description: "Skip VSIX build + OpenVSX publish — Tauri installer only"
+        type: boolean
+        default: true
+      version:
+        description: "Release tag/version (e.g. 0.3.5). Required when tauri_only=true."
+        type: string
+        required: true
 
 permissions:
   contents: write
@@ -35,6 +49,7 @@ jobs:
 
   # ── Build: one job per platform ──────────────────────────────────────────
   build:
+    if: ${{ !inputs.tauri_only }}
     strategy:
       fail-fast: false
       matrix:
@@ -161,7 +176,9 @@ jobs:
         with:
           node-version: 20
 
-      - uses: actions/download-artifact@v4
+      - name: Download VSIX artifacts (if available)
+        if: ${{ !inputs.tauri_only }}
+        uses: actions/download-artifact@v4
         with:
           path: vsix
           pattern: vsix-*
@@ -186,11 +203,12 @@ jobs:
       - name: List collected artifacts
         run: |
           echo "=== VSIX ==="
-          ls -lh vsix/ || echo "No VSIX artifacts found"
+          ls -lh vsix/ 2>/dev/null || echo "No VSIX artifacts (skipped or build failed)"
           echo "=== Tauri ==="
           ls -lh tauri/ 2>/dev/null || echo "No Tauri artifacts (build may have failed)"
 
       - name: Publish to OpenVSX
+        if: ${{ !inputs.tauri_only }}
         run: |
           shopt -s nullglob
           files=(vsix/*.vsix)
@@ -224,5 +242,8 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          # On tag push, action uses the pushed tag. On workflow_dispatch,
+          # use the inputs.version to create/update tag v${version}.
+          tag_name: ${{ inputs.version && format('v{0}', inputs.version) || '' }}
           files: release-files/*
           generate_release_notes: true

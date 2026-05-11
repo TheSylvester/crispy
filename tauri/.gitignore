@@ -6,6 +6,3 @@ src-tauri/target/
 
 # Node
 node_modules/
-
-# Generated Cargo.lock (library crate)
-Cargo.lock
