@@ -55,6 +55,7 @@ const CONTEXT_WINDOWS: Record<string, number> = {
   'codex:gpt-5.4':           1_050_000,
   'codex:gpt-5.4-pro':       1_050_000,
   'codex:gpt-5.4-medium':      200_000,
+  'codex:gpt-5.5':           1_000_000,
   'codex:':                    200_000,  // default Codex
   // Gemini
   'gemini:':                   1_000_000,

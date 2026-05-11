@@ -17,6 +17,7 @@
  */
 
 import type { AdapterSettings, TurnSettings } from '../../agent-adapter.js';
+import { lookupContextWindow } from '../../model-utils.js';
 import type { ContextUsage, MessageContent, MessageContentBlock } from '../../transcript.js';
 import type { AskForApproval } from './protocol/v2/AskForApproval.js';
 import type { SandboxMode } from './protocol/v2/SandboxMode.js';
@@ -205,7 +206,15 @@ export function mapThreadConfig(
  * Uses `last` (per-turn usage for the most recent API call) as the context
  * occupancy signal — `last.inputTokens` reflects the full input context for
  * that turn, so it shrinks after compaction. `total` is cumulative and not
- * useful for a gauge. `modelContextWindow` provides the denominator.
+ * useful for a gauge.
+ *
+ * Denominator: prefer the lookup table over `usage.modelContextWindow`. The
+ * protocol field is named like the read window but Codex populates it from
+ * the auto-compact threshold (e.g. ~258k for gpt-5.5 whose true window is
+ * 1M) — `Config` carries both `model_context_window` and
+ * `model_auto_compact_token_limit` but only one is surfaced here, and the
+ * value matches the latter. Fall through to the reported value only when
+ * the model is unknown.
  *
  * Expected usage shape from thread/tokenUsage/updated notification:
  * ```json
@@ -224,7 +233,10 @@ export function mapThreadConfig(
  * }
  * ```
  */
-export function mapTokenUsage(usage: Record<string, unknown>): ContextUsage | null {
+export function mapTokenUsage(
+  usage: Record<string, unknown>,
+  model?: string,
+): ContextUsage | null {
   const last = usage.last as Record<string, number> | undefined;
   if (!last) return null;
 
@@ -232,7 +244,9 @@ export function mapTokenUsage(usage: Record<string, unknown>): ContextUsage | nu
   const output = last.outputTokens ?? 0;
   const cacheRead = last.cachedInputTokens ?? 0;
   const totalTokens = input + output;
-  const contextWindow = (usage.modelContextWindow as number) || 200_000;
+  const known = lookupContextWindow('codex', model);
+  const reported = (usage.modelContextWindow as number) || undefined;
+  const contextWindow = known ?? reported ?? 200_000;
   const percent = Math.min(Math.round((totalTokens / contextWindow) * 100), 100);
 
   return {

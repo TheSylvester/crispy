@@ -920,7 +920,7 @@ export class CodexAgentAdapter implements AgentAdapter {
       case 'thread/tokenUsage/updated': {
         const tokenUsage = p.tokenUsage as Record<string, unknown> | undefined;
         if (tokenUsage) {
-          this._contextUsage = mapTokenUsage(tokenUsage);
+          this._contextUsage = mapTokenUsage(tokenUsage, this._settings.model);
           // Note: Do NOT emit settings_changed — contextUsage is read from
           // the adapter property by the channel, not pushed as an event.
         }
