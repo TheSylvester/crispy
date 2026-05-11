@@ -27,6 +27,7 @@ export function XTermPanel({ node }: { node: TabNode }): React.JSX.Element {
   const existingId = (node.getConfig() as Record<string, unknown> | undefined)?.terminalId as string | undefined;
   const [terminalId, setTerminalId] = useState<string | null>(existingId ?? null);
   const [error, setError] = useState<string | null>(null);
+  const [fitted, setFitted] = useState(false);
 
   // Create PTY on first mount if no existing ID
   useEffect(() => {
@@ -65,6 +66,8 @@ export function XTermPanel({ node }: { node: TabNode }): React.JSX.Element {
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon());
     term.open(containerRef.current);
+    // Focus so keystrokes go to the terminal, not the chat input behind it
+    queueMicrotask(() => term.focus());
 
     // Reattach in case this is a reconnect
     transport.attachTerminal(terminalId).catch(() => { /* first mount — no reattach needed */ });
@@ -79,30 +82,35 @@ export function XTermPanel({ node }: { node: TabNode }): React.JSX.Element {
       term.write(data);
     });
 
-    // Resize sync — ResizeObserver handles both the initial fit (once the
-    // border panel finishes layout) and subsequent resizes. The first
-    // observation fires immediately without debounce so the PTY gets correct
-    // dimensions before any output arrives.
-    let firstFit = true;
+    // Resize sync — all fits are debounced so layout has time to settle
+    // before we measure. FlexLayout hides inactive tabs via `display: none`,
+    // so when the user switches tabs the formerly-inactive XTermPanel's
+    // canvas still holds its stale fit and would paint at the wrong size
+    // for ~50ms until the refit runs. We detect the hidden→shown transition
+    // (prev size 0 → now non-zero) and re-hide during the refit, so the
+    // user sees a brief blank instead of a wrong-sized canvas.
     let fitTimer: ReturnType<typeof setTimeout> | undefined;
+    let lastWidth = 0;
+    let lastHeight = 0;
     const scheduleFit = () => {
       clearTimeout(fitTimer);
       fitTimer = setTimeout(() => {
         fitTimer = undefined;
+        if (!containerRef.current?.isConnected) return;
         fitAddon.fit();
         transport.resizeTerminal(terminalId, term.cols, term.rows);
-      }, 100);
+        setFitted(true);
+      }, 50);
     };
-    const ro = new ResizeObserver(() => {
-      clearTimeout(fitTimer);
-      if (!containerRef.current?.isConnected) return;
-      if (firstFit) {
-        firstFit = false;
-        fitAddon.fit();
-        transport.resizeTerminal(terminalId, term.cols, term.rows);
-      } else {
-        scheduleFit();
-      }
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (!r) return;
+      const wasHidden = lastWidth === 0 || lastHeight === 0;
+      const nowShown = r.width > 0 && r.height > 0;
+      lastWidth = r.width;
+      lastHeight = r.height;
+      if (wasHidden && nowShown) setFitted(false);
+      scheduleFit();
     });
     ro.observe(containerRef.current);
 
@@ -119,5 +127,5 @@ export function XTermPanel({ node }: { node: TabNode }): React.JSX.Element {
 
   if (error) return <div className="crispy-terminal-loading">{error}</div>;
   if (!terminalId) return <div className="crispy-terminal-loading">Starting terminal…</div>;
-  return <div ref={containerRef} className="crispy-terminal" />;
+  return <div ref={containerRef} className="crispy-terminal" style={{ visibility: fitted ? 'visible' : 'hidden' }} />;
 }

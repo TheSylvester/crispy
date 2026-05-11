@@ -41,7 +41,7 @@ import './flexlayout-overrides.css';
 // ============================================================================
 
 const MAIN_TABSET_ID = 'main-tabset';
-const TERMINAL_BORDER_TAB_ID = 'terminal-border-tab';
+const TERMINAL_BORDER_ID = 'border_bottom';  // FlexLayout hardcodes border IDs as `border_<location>`
 const GIT_BORDER_TAB_ID = 'git-border-tab';
 const FILES_BORDER_TAB_ID = 'files-border-tab';
 const SESSIONS_BORDER_TAB_ID = 'sessions-border-tab';
@@ -98,11 +98,9 @@ function makeDefaultModel(showTabStrip: boolean, gitPanelSide: 'left' | 'right' 
         children: [
           {
             type: 'tab' as const,
-            id: TERMINAL_BORDER_TAB_ID,
             name: 'Terminal',
             component: 'terminal',
-            enableClose: false,
-            enableDrag: false,
+            // enableClose/enableDrag inherit global tabEnableClose/tabEnableDrag (true when showTabStrip)
           },
         ],
       }] : []),
@@ -213,6 +211,7 @@ export function FlexAppLayout(): React.JSX.Element {
   const gitPanelSideRef = useRef(gitPanelSide);
   const prevActiveTabRef = useRef<string | null>(null);
   const prevTabsetCountRef = useRef(modelRef.current.getRoot().getChildren().length);
+  const lastSelectedTerminalIdxRef = useRef<number>(-1);
 
   // Determine initial active tab from the restored model
   const [activeTabId, setActiveTabId] = useState<string | null>(() => {
@@ -270,6 +269,58 @@ export function FlexAppLayout(): React.JSX.Element {
 
   // --- Tab operations (registered with controller) ---
 
+  const killTerminalIfTerminalTab = useCallback((tabId: string): void => {
+    const node = modelRef.current.getNodeById(tabId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (!node || (node as any).getComponent?.() !== 'terminal') return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const terminalId = (node.getConfig() as any)?.terminalId as string | undefined;
+    if (terminalId) {
+      transport.closeTerminal(terminalId).catch(() => { /* best-effort */ });
+    }
+    // If terminalId is missing, XTermPanel's createTerminal RPC may still be pending.
+    // The orphan PTY will die on server shutdown — acceptable per existing behavior.
+  }, [transport]);
+
+  const createTerminalTab = useCallback((): string | null => {
+    const model = modelRef.current;
+    const border = model.getNodeById(TERMINAL_BORDER_ID);
+    if (!border) return null;
+    // Collect all terminal tabs across the whole model (border + dragged-out)
+    const existing: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    model.visitNodes((node: any) => {
+      if (node.getType() === 'tab' && node.getComponent?.() === 'terminal') {
+        existing.push(node.getId());
+      }
+    });
+    // Naming: 0 existing → "Terminal" (no number). 1 existing → rename it to
+    // "Terminal 1" and name new one "Terminal 2". ≥2 existing → "Terminal N+1".
+    let newName: string;
+    if (existing.length === 0) {
+      newName = 'Terminal';
+    } else if (existing.length === 1) {
+      model.doAction(Actions.renameTab(existing[0], 'Terminal 1'));
+      newName = 'Terminal 2';
+    } else {
+      newName = `Terminal ${existing.length + 1}`;
+    }
+    model.doAction(
+      Actions.addNode(
+        {
+          type: 'tab',
+          name: newName,
+          component: 'terminal',
+        },
+        TERMINAL_BORDER_ID,
+        DockLocation.CENTER,
+        -1,
+        true, // select — this also opens the border
+      ),
+    );
+    return TERMINAL_BORDER_ID;
+  }, []);
+
   const createTab = useCallback((config?: TabCreateConfig): string => {
     const tabId = `tab-${Date.now()}`;
     const component = config?.component ?? 'transcript';
@@ -317,9 +368,10 @@ export function FlexAppLayout(): React.JSX.Element {
     // Don't close the last transcript tab
     if (isTranscriptTab && tabSessionMapRef.current.size <= 1) return;
     if (isTranscriptTab) tabSessionMapRef.current.delete(tabId);
+    killTerminalIfTerminalTab(tabId);
     modelRef.current.doAction(Actions.deleteTab(tabId));
     bump();
-  }, [bump]);
+  }, [bump, killTerminalIfTerminalTab]);
 
   const activateTab = useCallback((tabId: string) => {
     modelRef.current.doAction(Actions.selectTab(tabId));
@@ -353,8 +405,30 @@ export function FlexAppLayout(): React.JSX.Element {
 
   /** Toggle the Terminal border panel open/closed */
   const toggleTerminalBorder = useCallback(() => {
-    modelRef.current.doAction(Actions.selectTab(TERMINAL_BORDER_TAB_ID));
-  }, []);
+    const model = modelRef.current;
+    const border = model.getNodeById(TERMINAL_BORDER_ID);
+    if (!border) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const b = border as any;
+    const children = b.getChildren?.() ?? [];
+    if (children.length === 0) {
+      createTerminalTab();
+      return;
+    }
+    const selected = b.getSelected?.() ?? -1;
+    if (selected === -1) {
+      // Border collapsed — re-open. Use remembered last index if valid, else rightmost.
+      const targetIdx = (lastSelectedTerminalIdxRef.current >= 0
+        && lastSelectedTerminalIdxRef.current < children.length)
+        ? lastSelectedTerminalIdxRef.current
+        : children.length - 1;
+      model.doAction(Actions.selectTab(children[targetIdx].getId()));
+    } else {
+      // Border open — selecting the currently-selected tab toggles closed.
+      lastSelectedTerminalIdxRef.current = selected;
+      model.doAction(Actions.selectTab(children[selected].getId()));
+    }
+  }, [createTerminalTab]);
 
   /** Equalize weights of all children in the root row */
   const equalizeLayout = useCallback(() => {
@@ -486,9 +560,10 @@ export function FlexAppLayout(): React.JSX.Element {
       const isTranscriptTab = tabId && tabSessionMapRef.current.has(tabId);
       // Block closing the last transcript tab, but always allow closing non-transcript tabs
       if (isTranscriptTab && tabSessionMapRef.current.size <= 1) return undefined;
+      if (tabId) killTerminalIfTerminalTab(tabId);
     }
     return action;
-  }, []);
+  }, [killTerminalIfTerminalTab]);
 
   // --- onModelChange: detect tab activations and deletions ---
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -501,6 +576,21 @@ export function FlexAppLayout(): React.JSX.Element {
     prevTabsetCountRef.current = currentTabsetCount;
     if (tabsetCountChanged) {
       equalizeLayout();
+    }
+
+    // Track which terminal tab is selected so Alt+J can re-open to the same one
+    if (action.type === Actions.SELECT_TAB) {
+      const tabId = action.data?.tabNode as string | undefined;
+      if (tabId) {
+        const node = modelRef.current.getNodeById(tabId);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const parent = node ? (node as any).getParent?.() : null;
+        if (parent && parent.getId?.() === TERMINAL_BORDER_ID) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const idx = (parent as any).getChildren?.().findIndex((c: any) => c.getId() === tabId);
+          if (idx >= 0) lastSelectedTerminalIdxRef.current = idx;
+        }
+      }
     }
 
     if (action.type === Actions.SELECT_TAB || action.type === Actions.ADD_NODE ||
@@ -528,6 +618,18 @@ export function FlexAppLayout(): React.JSX.Element {
       const deletedTabId = action.data?.node ?? null;
       if (deletedTabId) {
         tabSessionMapRef.current.delete(deletedTabId);
+      }
+      // If a terminal close leaves exactly one terminal remaining, rename it
+      // back to plain "Terminal" (mirrors createTerminalTab's "no number for solo").
+      const remaining: { id: string; name: string }[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      modelRef.current.visitNodes((node: any) => {
+        if (node.getType() === 'tab' && node.getComponent?.() === 'terminal') {
+          remaining.push({ id: node.getId(), name: node.getName?.() ?? '' });
+        }
+      });
+      if (remaining.length === 1 && remaining[0].name !== 'Terminal') {
+        modelRef.current.doAction(Actions.renameTab(remaining[0].id, 'Terminal'));
       }
       // Use setTimeout to avoid dispatching during render
       setTimeout(() => {
@@ -567,8 +669,19 @@ export function FlexAppLayout(): React.JSX.Element {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleRenderTabSet = useCallback((node: any, renderValues: any) => {
     if (isVscode) return; // VS Code uses native editor tabs
-    // Don't add "+" to border panels (git, files, terminal)
-    if (node.getType() === 'border') return;
+    if (node.getType() === 'border') {
+      if (node.getLocation?.() === DockLocation.BOTTOM) {
+        renderValues.stickyButtons.push(
+          <button
+            key="add-terminal"
+            className="crispy-tab-add-btn"
+            title="New terminal"
+            onClick={() => createTerminalTab()}
+          >+</button>,
+        );
+      }
+      return;
+    }
     const tabsetId = node.getId() as string;
     renderValues.stickyButtons.push(
       <button
@@ -580,7 +693,7 @@ export function FlexAppLayout(): React.JSX.Element {
         +
       </button>,
     );
-  }, [createTab, isVscode]);
+  }, [createTab, createTerminalTab, isVscode]);
 
   // --- Factory: create per-tab provider cascade ---
   const factory = useCallback((node: TabNode): React.JSX.Element | null => {
