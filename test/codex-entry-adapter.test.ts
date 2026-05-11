@@ -131,8 +131,7 @@ describe('adaptCodexItem', () => {
 
       expect(thinkingBlock).toBeDefined();
       expect(thinkingBlock.thinking).toContain('Responding with greeting');
-      // isSummary is in metadata for summary entries
-      expect(thinkingBlock.metadata?.isSummary).toBe(true);
+      expect(thinkingBlock.isSummary).toBe(true);
     });
 
     it('handles reasoning with raw content', () => {
@@ -168,7 +167,7 @@ describe('adaptCodexItem', () => {
       // Should have both summary and raw content blocks
       expect(thinkingBlocks.length).toBeGreaterThanOrEqual(1);
       // First block (from summary) should have isSummary marker
-      expect(thinkingBlocks[0].metadata?.isSummary).toBe(true);
+      expect(thinkingBlocks[0].isSummary).toBe(true);
       expect(thinkingBlocks[0].thinking).toBe('Summary text');
     });
   });
