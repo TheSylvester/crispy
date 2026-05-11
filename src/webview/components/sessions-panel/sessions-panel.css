@@ -32,6 +32,7 @@
 }
 
 .crispy-sessions-panel__row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -198,9 +199,17 @@
   min-width: 0;
 }
 
-/* --- Hover-revealed kill button (destroys the live channel) --- */
+/* --- Hover-revealed kill button (destroys the live channel) ---
+ * Positioned absolute (out of flow) so the row's right-align cluster stays
+ * flush — the in-flow slot was reserving ~24px to the right of the time
+ * display even while the button was opacity:0. On hover the button overlays
+ * the time; the panel-bg backdrop occludes whatever sits underneath. */
 
 .crispy-sessions-panel__kill-btn {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -210,12 +219,11 @@
   font-size: 14px;
   line-height: 1;
   color: var(--vscode-descriptionForeground, #888);
-  background: transparent;
+  background: var(--vscode-sideBar-background, #252526);
   border: none;
   border-radius: 3px;
   cursor: pointer;
   opacity: 0;
-  flex-shrink: 0;
 }
 
 .crispy-sessions-panel__row:hover .crispy-sessions-panel__kill-btn,
