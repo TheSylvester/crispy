@@ -38,6 +38,7 @@ import type {
   SDKCompactBoundaryMessage,
   SDKTaskStartedMessage,
   SDKTaskNotificationMessage,
+  SDKTaskUpdatedMessage,
   SDKTaskProgressMessage,
   SDKLocalCommandOutputMessage,
   SDKElicitationCompleteMessage,
@@ -528,8 +529,8 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   private syntheticSessionPath: string | undefined;
   /** MCP servers created for the current query — closed on teardown. */
   private activeMcpServers: Record<string, McpServerConfig> | null = null;
-  /** Number of background agents/tasks currently running. */
-  private backgroundTaskCount = 0;
+  /** IDs of background agents/tasks currently running. Set semantics give free dedup. */
+  private backgroundTaskIds = new Set<string>();
   /** Per-instance temp dir so nested CLI processes don't purge each other's
    *  Bash tool output files (they all share /tmp/claude-<uid>/<slug>/tasks/). */
   private readonly instanceTmpdir: string;
@@ -785,8 +786,8 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     // Clean up per-instance tmpdir (created in constructor to isolate Bash tool output)
     try { rmSync(this.instanceTmpdir, { recursive: true, force: true }); } catch { /* best-effort */ }
 
-    // Reset background counter — adapter teardown always goes fully idle
-    this.backgroundTaskCount = 0;
+    // Reset background tasks — adapter teardown always goes fully idle
+    this.backgroundTaskIds.clear();
     this.emitStatus('idle');
     this.outputQueue.done();
   }
@@ -1171,6 +1172,10 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     // Reset echo suppression counter
     this.pendingSendCount = 0;
 
+    // Reset background subagent tracker — query restart must not carry stale
+    // task IDs from the previous query into the new one.
+    this.backgroundTaskIds.clear();
+
     // Deny any pending approvals (take snapshot to avoid mutation during iteration)
     const pendingEntries = [...this.pendingApprovals.values()];
     this.pendingApprovals.clear();
@@ -1234,11 +1239,11 @@ export class ClaudeAgentAdapter implements AgentAdapter {
         this.activeQuery = null;
         this.inputQueue = null;
         this.abortController = null;
-        // Reset background subagent counter — once the query loop is exiting,
+        // Reset background subagent tracker — once the query loop is exiting,
         // any in-flight subagents are unreachable, so a leaked task_started
         // (e.g. subagent aborted before delivering `task_notification`) must
         // not survive into the next query and synthesize 'background' forever.
-        this.backgroundTaskCount = 0;
+        this.backgroundTaskIds.clear();
         if (!this._closed) {
           this.emitStatus('idle');
         }
@@ -1368,6 +1373,45 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     // Skip replayed messages (they're history, not new content)
     if ('isReplay' in msg && (msg as { isReplay?: boolean }).isReplay) return;
 
+    // Background-task completion notifications arrive as user-role messages
+    // with origin.kind === 'task-notification' (text body: `<task-notification>
+    // <task-id>...</task-id>...`). These are the same logical signal as a
+    // task_notification system message, but routed through the user channel,
+    // so the system-message switch never sees them and the Set would leak.
+    //
+    // Handled BEFORE the isSynthetic gate because the SDK may mark these
+    // synthetic; the gate would otherwise drop the decrement and leak the
+    // counter. Handled BEFORE echo suppression because they're not sendTurn
+    // echoes. Emit + return; the entry is classified as system context by
+    // claude-entry-adapter.ts and filtered from the UI downstream.
+    if (msg.origin?.kind === 'task-notification') {
+      const taskIds = this.extractTaskNotificationTaskIds(msg);
+      const before = this.backgroundTaskIds.size;
+      let removed = 0;
+      if (taskIds.length > 0) {
+        for (const id of taskIds) {
+          if (this.backgroundTaskIds.delete(id)) removed++;
+        }
+      } else if (this.backgroundTaskIds.size === 1) {
+        // Defensive snap, narrowly scoped: a task-notification arrived without
+        // a parseable task_id, but exactly one task is in flight — it must be
+        // the one being notified about. Don't clear when size > 1 (could
+        // false-clear a live task), don't clear when size === 0 (nothing to do).
+        this.backgroundTaskIds.clear();
+        removed = 1;
+      }
+      log({
+        source: 'claude-adapter', level: 'info',
+        summary: `[BG] task-notification (text-route) → count=${this.backgroundTaskIds.size} (was ${before}, removed=${removed}, ids=${taskIds.length}), _status=${this._status}`,
+        data: { taskIds },
+      });
+      if (this.backgroundTaskIds.size === 0 && this._status === 'background') {
+        this.emitStatus('idle');
+      }
+      this.emitEntry(msg);
+      return;
+    }
+
     // Skip SDK-injected synthetic messages (slash command echoes like /model,
     // meta messages, transcript-only entries). These have isSynthetic: true
     // and are not real user input — letting them through pollutes the transcript
@@ -1389,6 +1433,35 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     }
 
     this.emitEntry(msg);
+  }
+
+  /**
+   * Extract every task_id from a task-notification user message's text content.
+   * Convention: text body contains one or more `<task-id>xxx</task-id>` tags.
+   * The SDK may batch multiple completions into a single message when tasks
+   * finish near-simultaneously between turns — capture all of them so each
+   * one decrements the Set.
+   * Returns an empty array if none are parseable.
+   */
+  private extractTaskNotificationTaskIds(msg: SDKUserMessage): string[] {
+    const content = msg.message?.content;
+    const texts: string[] = [];
+    if (typeof content === 'string') {
+      texts.push(content);
+    } else if (Array.isArray(content)) {
+      for (const block of content) {
+        if (typeof block === 'object' && block !== null && 'type' in block && block.type === 'text' && typeof (block as { text?: unknown }).text === 'string') {
+          texts.push((block as { text: string }).text);
+        }
+      }
+    }
+    const ids: string[] = [];
+    for (const text of texts) {
+      for (const m of text.matchAll(/<task-id>([^<]+)<\/task-id>/g)) {
+        ids.push(m[1]);
+      }
+    }
+    return ids;
   }
 
   /**
@@ -1441,10 +1514,10 @@ export class ClaudeAgentAdapter implements AgentAdapter {
     // The query stays alive (waiting for next user input via inputQueue), so
     // drainOutput's finally block won't fire until the query is fully
     // closed/aborted.
-    const endStatus = this.backgroundTaskCount > 0 ? 'background' : 'idle';
+    const endStatus = this.backgroundTaskIds.size > 0 ? 'background' : 'idle';
     log({
       source: 'claude-adapter', level: 'info',
-      summary: `[BG] result → emitStatus('${endStatus}') turnComplete, count=${this.backgroundTaskCount}`,
+      summary: `[BG] result → emitStatus('${endStatus}') turnComplete, count=${this.backgroundTaskIds.size}`,
     });
     this.emitStatus(endStatus, { turnComplete: true });
   }
@@ -1452,7 +1525,7 @@ export class ClaudeAgentAdapter implements AgentAdapter {
   private handleSystemMessage(msg: SDKMessage): void {
     const systemMsg = msg as
       | SDKSystemMessage | SDKStatusMessage | SDKCompactBoundaryMessage
-      | SDKTaskStartedMessage | SDKTaskNotificationMessage | SDKTaskProgressMessage
+      | SDKTaskStartedMessage | SDKTaskNotificationMessage | SDKTaskUpdatedMessage | SDKTaskProgressMessage
       | SDKLocalCommandOutputMessage | SDKElicitationCompleteMessage;
 
     if (!('subtype' in systemMsg)) {
@@ -1618,30 +1691,51 @@ export class ClaudeAgentAdapter implements AgentAdapter {
 
       // Background agent lifecycle
       case 'task_started': {
-        this.backgroundTaskCount++;
-        const m = msg as unknown as Record<string, unknown>;
+        const m = msg as SDKTaskStartedMessage;
+        if (typeof m.task_id === 'string') {
+          this.backgroundTaskIds.add(m.task_id);
+        }
         log({
           source: 'claude-adapter', level: 'info',
-          summary: `[BG] task_started → count=${this.backgroundTaskCount}`,
+          summary: `[BG] task_started → count=${this.backgroundTaskIds.size}`,
           data: { taskId: m.task_id, toolUseId: m.tool_use_id, description: m.description, taskType: m.task_type },
         });
         this.emitEntry(msg);
         break;
       }
       case 'task_notification': {
-        const before = this.backgroundTaskCount;
-        this.backgroundTaskCount = Math.max(0, this.backgroundTaskCount - 1);
-        const m = msg as unknown as Record<string, unknown>;
+        const m = msg as SDKTaskNotificationMessage;
+        const before = this.backgroundTaskIds.size;
+        const removed = typeof m.task_id === 'string' && this.backgroundTaskIds.delete(m.task_id);
         log({
           source: 'claude-adapter', level: 'info',
-          summary: `[BG] task_notification (${m.status}) → count=${this.backgroundTaskCount} (was ${before}), _status=${this._status}`,
+          summary: `[BG] task_notification (${m.status}) → count=${this.backgroundTaskIds.size} (was ${before}, removed=${removed}), _status=${this._status}`,
           data: { taskId: m.task_id, toolUseId: m.tool_use_id, status: m.status },
         });
         this.emitEntry(msg);
         // All background tasks finished while in background state → go idle
-        if (this.backgroundTaskCount === 0 && this._status === 'background') {
+        if (this.backgroundTaskIds.size === 0 && this._status === 'background') {
           this.emitStatus('idle');
         }
+        break;
+      }
+      case 'task_updated': {
+        const m = msg as SDKTaskUpdatedMessage;
+        const status = m.patch?.status;
+        const terminal = status === 'completed' || status === 'failed' || status === 'killed';
+        if (terminal && typeof m.task_id === 'string') {
+          const before = this.backgroundTaskIds.size;
+          const removed = this.backgroundTaskIds.delete(m.task_id);
+          log({
+            source: 'claude-adapter', level: 'info',
+            summary: `[BG] task_updated (${status}) → count=${this.backgroundTaskIds.size} (was ${before}, removed=${removed}), _status=${this._status}`,
+            data: { taskId: m.task_id, status },
+          });
+          if (this.backgroundTaskIds.size === 0 && this._status === 'background') {
+            this.emitStatus('idle');
+          }
+        }
+        this.emitEntry(msg);
         break;
       }
 
